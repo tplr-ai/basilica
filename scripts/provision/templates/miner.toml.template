@@ -1,0 +1,77 @@
+# Miner Configuration Template
+# This file is used to generate environment-specific configurations
+
+[bittensor]
+wallet_name = "${MINER_WALLET_NAME}"
+hotkey_name = "${MINER_HOTKEY_NAME}"
+network = "${BITTENSOR_NETWORK}"
+netuid = ${BITTENSOR_NETUID}
+chain_endpoint = "${BITTENSOR_CHAIN_ENDPOINT}"
+external_ip = "${MINER_EXTERNAL_IP}"
+uid = 0
+coldkey_name = "default"
+axon_port = ${MINER_AXON_PORT}
+max_weight_uids = 256
+skip_registration = false
+
+[database]
+url = "sqlite:///opt/basilica/data/miner.db?mode=rwc"
+run_migrations = true
+max_connections = 10
+
+[server]
+host = "0.0.0.0"
+port = ${MINER_HTTP_PORT}
+max_connections = 1000
+request_timeout = { secs = 30 }
+
+[logging]
+level = "info"
+format = "json"
+output = "./miner.log"
+max_file_size = 104857600
+max_files = 10
+
+[metrics]
+enabled = true
+host = "0.0.0.0"
+port = ${MINER_METRICS_PORT}
+path = "/metrics"
+retention_period = { secs = 604800 }
+
+[validator_comms]
+max_concurrent_sessions = 50
+request_timeout = { secs = 30 }
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.auth.token_validation]
+issuer = "basilica-validator"
+audience = "basilica-miner"
+expiration_leeway = { secs = 60 }
+
+[validator_comms.rate_limit]
+enabled = true
+requests_per_second = 10
+burst_capacity = 20
+
+[executor_management]
+health_check_interval = { secs = 60 }
+health_check_timeout = { secs = 10 }
+max_retry_attempts = 3
+auto_recovery = true
+
+# Executors will be added dynamically
+executors = [
+    ${EXECUTOR_CONFIG}
+]
+
+[security]
+enable_mtls = ${ENABLE_TLS}
+jwt_secret = "testnet-secret-change-in-production-use-secure-value"
+allowed_validators = []
+require_client_cert = false
+
+# Remote executor deployment is disabled for this deployment

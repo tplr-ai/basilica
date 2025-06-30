@@ -1,0 +1,89 @@
+# Basilica Miner Configuration for Local Testing Environment
+# This configuration is optimized for development and integration testing
+
+[bittensor]
+wallet_name = "test_miner"
+hotkey_name = "default"
+network = "local"  # Use local network
+netuid = 1  # Local subnet ID
+chain_endpoint = "ws://localhost:9944"  # Local subtensor on host
+weight_interval_secs = 300
+uid = 0  # Will be auto-discovered during registration
+coldkey_name = "default"
+axon_port = 8091
+external_ip = "127.0.0.1"  # Localhost for testing
+max_weight_uids = 256
+skip_registration = true  # Skip chain registration for local testing
+
+[database]
+url = "sqlite:///var/lib/basilica/miner/miner.db?mode=rwc"
+max_connections = 10
+min_connections = 1
+run_migrations = true
+
+[database.connect_timeout]
+secs = 30
+nanos = 0
+
+[database.max_lifetime]
+secs = 3600
+nanos = 0
+
+[server]
+host = "0.0.0.0"
+port = 8092
+max_connections = 1000
+tls_enabled = false
+
+[server.request_timeout]
+secs = 30
+nanos = 0
+
+[validator_comms]
+max_concurrent_sessions = 50  # Reduced for testing
+request_timeout = { secs = 30 }
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.rate_limit]
+enabled = true
+requests_per_second = 10
+burst_capacity = 20
+
+[executor_management]
+# Configure executor to connect to the local executor service
+[[executor_management.executors]]
+id = "localtest-executor"
+grpc_address = "localhost:50051"
+name = "LocalTest Executor"
+health_check_interval = { secs = 30 }  # More frequent for testing
+health_check_timeout = { secs = 10 }
+max_retry_attempts = 3
+auto_recovery = true
+
+[security]
+enable_mtls = false
+jwt_secret = "localtest-jwt-secret-change-in-production"
+allowed_validators = []  # Empty = allow all validators for testing
+verify_signatures = false  # Disabled for local testing
+token_expiration = { secs = 3600 }
+skip_registration = true  # Skip chain registration for local testing
+
+[logging]
+level = "debug"
+format = "pretty"
+stdout = true
+
+[metrics]
+enabled = true
+
+[metrics.prometheus]
+host = "0.0.0.0"
+port = 9092
+path = "/metrics"
+
+# Note: Remote executor deployment is disabled for local testing
+# In production, configure [remote_executor_deployment] section for 
+# automatic deployment to remote GPU machines via SSH

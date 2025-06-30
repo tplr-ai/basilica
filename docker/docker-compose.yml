@@ -1,0 +1,64 @@
+services:
+  miner:
+    build:
+      context: ..
+      dockerfile: docker/miner.Dockerfile
+    container_name: basilica-miner
+    ports:
+      - "8092:8092"  # Validator communications port
+      - "8091:8091"  # Axon port
+      - "9091:9091"  # Metrics port
+    volumes:
+      - ./configs/miner.toml:/config/miner.toml:ro
+      - miner-data:/data
+    environment:
+      - RUST_LOG=info
+    command: ["-c", "/config/miner.toml", "--log-level", "info"]
+    networks:
+      - basilica-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  executor:
+    build:
+      context: ..
+      dockerfile: docker/executor.Dockerfile
+    container_name: basilica-executor
+    ports:
+      - "50051:50051"  # gRPC port
+      - "9090:9090"     # Metrics port
+      - "2222:22"       # SSH port for validator access
+    volumes:
+      - ./configs/executor.toml:/config/executor.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - executor-data:/data
+    environment:
+      - RUST_LOG=info
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command: ["--server", "-c", "/config/executor.toml", "--log-level", "info"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    privileged: true
+    networks:
+      - basilica-network
+    restart: unless-stopped
+    depends_on:
+      - miner
+
+networks:
+  basilica-network:
+    driver: bridge
+
+volumes:
+  miner-data:
+  executor-data:

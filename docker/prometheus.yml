@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'miner'
+    static_configs:
+      - targets: ['miner:9091']
+    metrics_path: '/metrics'
+
+  - job_name: 'executor'
+    static_configs:
+      - targets: ['executor:9092']
+    metrics_path: '/metrics'
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # NVIDIA GPU metrics (if nvidia_gpu_exporter is running)
+  - job_name: 'nvidia_gpu'
+    static_configs:
+      - targets: ['executor:9835']

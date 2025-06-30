@@ -1,0 +1,302 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # Detect changes to determine which services need building
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      executor: ${{ steps.changes.outputs.executor }}
+      gpu-attestor: ${{ steps.changes.outputs.gpu-attestor }}
+      validator: ${{ steps.changes.outputs.validator }}
+      workspace: ${{ steps.changes.outputs.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            executor:
+              - 'crates/executor/**'
+              - 'crates/common/**'
+              - 'crates/protocol/**'
+              - 'scripts/executor/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            gpu-attestor:
+              - 'crates/gpu-attestor/**'
+              - 'crates/common/**'
+              - 'scripts/gpu-attestor/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            validator:
+              - 'crates/validator/**'
+              - 'crates/common/**'
+              - 'crates/protocol/**'
+              - 'scripts/validator/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            workspace:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - '.github/workflows/**'
+
+  quick-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Cache system dependencies
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-format-lint
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Generate test key for gpu-attestor
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Quick check builds
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo check -p common -p protocol -p bittensor
+      - name: Run clippy on core packages
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo clippy -p common -p protocol -p bittensor --all-targets -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+
+  # Lint complex packages
+  lint-complex:
+    runs-on: ubuntu-latest
+    needs: quick-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Cache system dependencies
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-lint-complex
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Generate test key for gpu-attestor
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
+      - name: Run clippy on complex packages
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
+          cargo clippy -p executor --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
+          # Run clippy on gpu-attestor but exclude examples that require actual GPUs
+          cargo clippy -p gpu-attestor --lib --bins --tests --features cuda,opencl -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A clippy::if_same_then_else -A clippy::needless_bool -A clippy::missing_safety_doc -A dead_code
+
+  # Build and test executor
+  build-executor:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.executor == 'true' || needs.changes.outputs.workspace == 'true'
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Cache system dependencies
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-executor
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev xxd
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Check executor builds
+        run: cargo check -p executor
+      - name: Test executor crate (unit tests only)
+        run: cargo test -p executor --lib
+      - name: Test executor CLI functionality
+        run: |
+          cargo build -p executor
+          ./target/debug/executor --help
+      - name: Test Docker build script
+        run: |
+          chmod +x scripts/executor/build.sh
+          ./scripts/executor/build.sh --no-extract --debug
+
+  # Build and test gpu-attestor
+  build-gpu-attestor:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.gpu-attestor == 'true' || needs.changes.outputs.workspace == 'true'
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Cache system dependencies
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-gpu-attestor
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+          # Install newer CMake for shaderc-sys
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+          sudo apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
+          sudo apt-get update
+          sudo apt-get install -y cmake
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Generate test key for build
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
+      - name: Check gpu-attestor builds
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo check -p gpu-attestor --features cuda,opencl
+      - name: Test gpu-attestor crate (unit tests only)
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo test -p gpu-attestor --lib --features cuda,opencl
+      - name: Test gpu-attestor CLI functionality
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo build -p gpu-attestor
+          ./target/debug/gpu-attestor --help
+      - name: Test Docker build script
+        run: |
+          chmod +x scripts/gpu-attestor/build.sh
+          ./scripts/gpu-attestor/build.sh --no-extract --debug
+
+  # Build and test validator
+  build-validator:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.validator == 'true' || needs.changes.outputs.workspace == 'true'
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+      - name: Cache system dependencies
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-validator
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler pkg-config libssl-dev xxd
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+      - name: Check validator builds
+        run: cargo check -p validator
+      - name: Test validator crate (unit tests only)
+        run: cargo test -p validator --lib
+      - name: Test validator CLI functionality
+        run: |
+          cargo build -p validator
+          ./target/debug/validator --help
+      - name: Test Docker build script
+        run: |
+          chmod +x scripts/validator/build.sh
+          ./scripts/validator/build.sh --no-extract --debug
+
+  # Final status check
+  ci-success:
+    runs-on: ubuntu-latest
+    needs:
+      - quick-checks
+      - lint-complex
+      - build-executor
+      - build-gpu-attestor
+      - build-validator
+    if: always()
+    steps:
+      - name: Check if all jobs succeeded
+        run: |
+          if [[ "${{ needs.quick-checks.result }}" == "success" && \
+                "${{ needs.lint-complex.result }}" == "success" && \
+                ("${{ needs.build-executor.result }}" == "success" || "${{ needs.build-executor.result }}" == "skipped") && \
+                ("${{ needs.build-gpu-attestor.result }}" == "success" || "${{ needs.build-gpu-attestor.result }}" == "skipped") && \
+                ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") ]]; then
+            echo "All CI checks passed!"
+            exit 0
+          else
+            echo "Some CI checks failed!"
+            exit 1
+          fi

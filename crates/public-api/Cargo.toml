@@ -1,0 +1,97 @@
+[package]
+name = "public-api"
+version = "0.1.0"
+edition = "2021"
+authors = ["Basilica Team"]
+description = "Smart HTTP gateway for Basilica validator network"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Internal dependencies
+common = { path = "../common" }
+bittensor = { path = "../bittensor" }
+protocol = { path = "../protocol" }
+
+# Async runtime
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tokio-stream = "0.1"
+async-trait = { workspace = true }
+async-stream = "0.3"
+
+# Web framework
+axum = { workspace = true, features = ["ws"] }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "trace", "timeout"] }
+hyper = { version = "1.0", features = ["full"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging and metrics
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+
+# Configuration
+figment = { workspace = true }
+
+# Authentication
+jsonwebtoken = "9.2"
+argon2 = "0.5"
+
+# Rate limiting
+governor = "0.6"
+nonzero_ext = "0.3"
+
+# Caching
+moka = { version = "0.12", features = ["future"] }
+redis = { version = "0.24", features = [
+  "tokio-comp",
+  "connection-manager",
+], optional = true }
+
+# OpenAPI documentation
+utoipa = { version = "4.1", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
+
+# Concurrent collections
+dashmap = "5.5"
+parking_lot = "0.12"
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+futures = "0.3"
+pin-project = "1.1"
+once_cell = "1.19"
+url = "2.5"
+sha2 = "0.10"
+
+# Load balancing algorithms
+weighted-rs = "0.1"
+rand = { workspace = true }
+
+[dev-dependencies]
+criterion = "0.5"
+mockall = "0.12"
+wiremock = "0.6"
+
+[features]
+default = ["redis-cache"]
+redis-cache = ["redis"]
+
+[[bin]]
+name = "public-api"
+path = "src/main.rs"

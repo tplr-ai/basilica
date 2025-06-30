@@ -1,0 +1,252 @@
+// Executor Control Protocol - Miner to Executor gRPC communication
+// This service allows miners to control and interact with executor agents
+
+syntax = "proto3";
+
+package basilca.executor.v1;
+
+import "common.proto";
+
+// ExecutorControl service for managing executor agents
+// Implemented by: executor_agent
+// Called by: miner_node
+service ExecutorControl {
+  // Provision validator access by setting up SSH keys or access tokens
+  // Replaces the old SSH key upload mechanism
+  rpc ProvisionValidatorAccess(ProvisionAccessRequest) returns (ProvisionAccessResponse);
+  
+  // Execute system profiling to collect machine specifications
+  // Replaces running machine_scrape.py
+  rpc ExecuteSystemProfile(SystemProfileRequest) returns (SystemProfileResponse);
+  
+  // Execute computational challenge for verification
+  rpc ExecuteComputationalChallenge(ChallengeRequest) returns (ChallengeResponse);
+  
+  // Execute performance benchmarks
+  rpc ExecuteBenchmark(BenchmarkRequest) returns (BenchmarkResponse);
+  
+  // Manage containers (create, delete, start, stop, add SSH keys)
+  rpc ManageContainer(ContainerOpRequest) returns (ContainerOpResponse);
+  
+  // Stream container and system logs
+  rpc StreamLogs(LogSubscriptionRequest) returns (stream basilca.common.v1.LogEntry);
+  
+  // Health check and heartbeat
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Request to provision validator access
+message ProvisionAccessRequest {
+  // Validator hotkey requesting access
+  string validator_hotkey = 1;
+  
+  // SSH public key for validator (if using SSH)
+  string ssh_public_key = 2;
+  
+  // Access token or temporary credentials
+  string access_token = 3;
+  
+  // Access duration in seconds
+  uint64 duration_seconds = 4;
+  
+  // Access type (ssh, api, etc.)
+  string access_type = 5;
+  
+  // Additional configuration
+  map<string, string> config = 6;
+}
+
+message ProvisionAccessResponse {
+  // Whether access was successfully provisioned
+  bool success = 1;
+  
+  // Connection details for validator
+  string connection_endpoint = 2;
+  
+  // Access credentials or instructions
+  string credentials = 3;
+  
+  // Expiration time
+  basilca.common.v1.Timestamp expires_at = 4;
+  
+  // Error information if failed
+  basilca.common.v1.ErrorInfo error = 5;
+}
+
+// Request for system profiling
+message SystemProfileRequest {
+  // Session key for encryption of sensitive data
+  string session_key = 1;
+  
+  // Key name mapping for JSON field obfuscation
+  map<string, string> key_mapping = 2;
+  
+  // Profiling depth (basic, detailed, full)
+  string profile_depth = 3;
+  
+  // Include performance benchmarks
+  bool include_benchmarks = 4;
+  
+  // Requesting validator hotkey
+  string validator_hotkey = 5;
+}
+
+message SystemProfileResponse {
+  // Encrypted and obfuscated system profile data
+  string encrypted_profile = 1;
+  
+  // Encryption nonce
+  string encryption_nonce = 2;
+  
+  // Profile collection timestamp
+  basilca.common.v1.Timestamp collected_at = 3;
+  
+  // Profile hash for integrity verification
+  string profile_hash = 4;
+  
+  // Error information if failed
+  basilca.common.v1.ErrorInfo error = 5;
+}
+
+// Challenge execution request
+message ChallengeRequest {
+  // Challenge parameters
+  basilca.common.v1.ChallengeParameters parameters = 1;
+  
+  // Timeout for challenge execution
+  uint64 timeout_seconds = 2;
+  
+  // Requesting validator hotkey
+  string validator_hotkey = 3;
+  
+  // Challenge nonce for uniqueness
+  string nonce = 4;
+}
+
+message ChallengeResponse {
+  // Challenge execution result
+  basilca.common.v1.ChallengeResult result = 1;
+  
+  // Execution metadata
+  map<string, string> metadata = 2;
+  
+  // Error information if failed
+  basilca.common.v1.ErrorInfo error = 3;
+}
+
+// Benchmark execution request
+message BenchmarkRequest {
+  // Benchmark type (cpu, gpu, memory, network, disk)
+  string benchmark_type = 1;
+  
+  // Benchmark duration in seconds
+  uint64 duration_seconds = 2;
+  
+  // Benchmark parameters
+  map<string, string> parameters = 3;
+  
+  // Requesting validator hotkey
+  string validator_hotkey = 4;
+}
+
+message BenchmarkResponse {
+  // Benchmark results
+  map<string, string> results = 1;
+  
+  // Performance score
+  double score = 2;
+  
+  // Execution details
+  string execution_details = 3;
+  
+  // Error information if failed
+  basilca.common.v1.ErrorInfo error = 4;
+}
+
+// Container operation request
+message ContainerOpRequest {
+  // Operation type (create, delete, start, stop, add_key, get_status)
+  string operation = 1;
+  
+  // Container specification (for create)
+  basilca.common.v1.ContainerSpec container_spec = 2;
+  
+  // Container ID (for other operations)
+  string container_id = 3;
+  
+  // SSH public key to add (for add_key operation)
+  string ssh_public_key = 4;
+  
+  // Operation parameters
+  map<string, string> parameters = 5;
+  
+  // Requesting validator hotkey
+  string validator_hotkey = 6;
+}
+
+message ContainerOpResponse {
+  // Operation success status
+  bool success = 1;
+  
+  // Container ID (for create operation)
+  string container_id = 2;
+  
+  // Container status
+  basilca.common.v1.ContainerStatus status = 3;
+  
+  // Operation result details
+  string details = 4;
+  
+  // Error information if failed
+  basilca.common.v1.ErrorInfo error = 5;
+}
+
+// Log subscription request
+message LogSubscriptionRequest {
+  // Container ID to stream logs from (optional)
+  string container_id = 1;
+  
+  // Log sources to include (stdout, stderr, system)
+  repeated string sources = 2;
+  
+  // Follow logs (tail -f behavior)
+  bool follow = 3;
+  
+  // Number of historical lines to include
+  uint32 tail_lines = 4;
+  
+  // Log level filter
+  string level_filter = 5;
+  
+  // Requesting validator hotkey
+  string validator_hotkey = 6;
+}
+
+// Health check request
+message HealthCheckRequest {
+  // Requesting entity
+  string requester = 1;
+  
+  // Check type (basic, detailed)
+  string check_type = 2;
+}
+
+message HealthCheckResponse {
+  // Overall health status
+  string status = 1;
+  
+  // System resource status
+  map<string, string> resource_status = 2;
+  
+  // Docker status
+  string docker_status = 3;
+  
+  // Uptime in seconds
+  uint64 uptime_seconds = 4;
+  
+  // Last update timestamp
+  basilca.common.v1.Timestamp last_update = 5;
+  
+  // Additional health metrics
+  map<string, string> metrics = 6;
+} 

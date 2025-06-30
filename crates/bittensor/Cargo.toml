@@ -1,0 +1,41 @@
+[package]
+name = "bittensor"
+version = "0.1.0"
+edition = "2021"
+description = "Centralized Bittensor chain interactions via crabtensor"
+rust-version = "1.70"
+
+[features]
+default = []
+testnet = []
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+# Bittensor integration
+crabtensor = { workspace = true }
+
+# Additional dependencies for subxt and crypto
+subxt = "0.38"
+hex = "0.4"
+sp-core = "34.0.0"
+rand = "0.8"
+chrono = "0.4"
+
+# Internal dependencies
+common = { path = "../common" }
+
+[build-dependencies]
+tokio = { workspace = true }
+subxt-codegen = "0.38"
+subxt-metadata = "0.38"
+subxt-utils-fetchmetadata = "0.38"
+parity-scale-codec = "3.6"
+
+[dev-dependencies]
+tokio-test = "0.4" 

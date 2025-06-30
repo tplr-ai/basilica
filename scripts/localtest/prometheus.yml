@@ -1,0 +1,39 @@
+# Prometheus configuration for Basilica local testing
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Basilica Validator metrics
+  - job_name: 'basilica-validator'
+    static_configs:
+      - targets: ['validator:8081']
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    scheme: http
+
+  # Basilica Executor metrics  
+  - job_name: 'basilica-executor'
+    static_configs:
+      - targets: ['executor:9090']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    scheme: http
+
+  # SQLite metrics are collected via application metrics
+    metrics_path: /metrics
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    scheme: http

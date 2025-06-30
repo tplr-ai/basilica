@@ -1,0 +1,63 @@
+[package]
+name = "common"
+version = "0.1.0"
+edition = "2021"
+description = "Core shared types, errors, traits, and cryptographic utilities for Basilca "
+rust-version = "1.70"
+
+[dependencies]
+# Use workspace dependencies
+thiserror = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
+blake3 = { workspace = true }
+aes-gcm = { workspace = true }
+rand = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-journald = { workspace = true }
+async-trait = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+figment = { workspace = true }
+toml = "0.8"
+hex = "0.4"
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+
+# Additional dependencies specific to common_basilca
+# SS58 format validation (adjust version as needed)
+# ss58-registry = "1.0"  # TODO: Add when implementing Hotkey validation
+
+# Bittensor integration via crabtensor
+crabtensor = { workspace = true }
+sp-core = "34.0.0"
+chrono = { workspace = true, features = ["serde"] }
+
+# Cryptographic dependencies
+ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+signature = "2.2"
+pbkdf2 = { version = "0.12", features = ["hmac"] }
+argon2 = "0.5"
+ssh-key = { version = "0.6", features = ["ed25519", "rand_core", "std"] }
+zeroize = { version = "1.7", features = ["derive"] }
+base64 = "0.22"
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio = { workspace = true }
+serde_json = { workspace = true }
+tempfile = "3.8"
+
+[features]
+default = []
+# Feature for enabling additional crypto utilities if needed
+crypto-extra = []
+# Database features
+sqlite = ["sqlx/sqlite"]
+
+[dependencies.sqlx]
+version = "0.7"
+features = ["runtime-tokio", "tls-rustls", "migrate", "uuid", "chrono"]
+optional = true

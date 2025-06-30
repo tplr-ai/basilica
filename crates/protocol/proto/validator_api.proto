@@ -1,0 +1,103 @@
+// Validator External API Protocol - For external services like Celium
+syntax = "proto3";
+
+package basilca.validator.v1;
+
+import "common.proto";
+
+// ValidatorExternalApi service for external consumption
+service ValidatorExternalApi {
+  // List available capacity across the network
+  rpc ListAvailableCapacity(ListCapacityRequest) returns (ListCapacityResponse);
+  
+  // Rent GPU capacity from the network
+  rpc RentCapacity(RentCapacityRequest) returns (RentCapacityResponse);
+  
+  // Terminate an active rental
+  rpc TerminateRental(TerminateRentalRequest) returns (TerminateRentalResponse);
+  
+  // Get status of a rental
+  rpc GetRentalStatus(RentalStatusRequest) returns (RentalStatusResponse);
+  
+  // Stream rental logs
+  rpc StreamRentalLogs(RentalLogRequest) returns (stream basilca.common.v1.LogEntry);
+}
+
+message ListCapacityRequest {
+  // API key for authentication
+  string api_key = 1;
+  
+  // Resource filter criteria
+  basilca.common.v1.ResourceLimits requirements = 2;
+  
+  // Geographic preference
+  string location_preference = 3;
+  
+  // Price range
+  double max_price_per_hour = 4;
+}
+
+message CapacityOffer {
+  string offer_id = 1;
+  string miner_hotkey = 2;
+  string executor_id = 3;
+  basilca.common.v1.GpuSpec gpu_spec = 4;
+  basilca.common.v1.ResourceLimits available_resources = 5;
+  double price_per_hour = 6;
+  string location = 7;
+  double reliability_score = 8;
+}
+
+message ListCapacityResponse {
+  repeated CapacityOffer offers = 1;
+  uint32 total_offers = 2;
+  basilca.common.v1.ErrorInfo error = 3;
+}
+
+message RentCapacityRequest {
+  string api_key = 1;
+  string offer_id = 2;
+  uint64 rental_duration_hours = 3;
+  basilca.common.v1.ContainerSpec container_spec = 4;
+  string user_ssh_public_key = 5;
+}
+
+message RentCapacityResponse {
+  string rental_id = 1;
+  string connection_info = 2;
+  string ssh_endpoint = 3;
+  basilca.common.v1.Timestamp rental_start = 4;
+  basilca.common.v1.Timestamp rental_end = 5;
+  basilca.common.v1.ErrorInfo error = 6;
+}
+
+message TerminateRentalRequest {
+  string api_key = 1;
+  string rental_id = 2;
+}
+
+message TerminateRentalResponse {
+  bool success = 1;
+  basilca.common.v1.Timestamp terminated_at = 2;
+  basilca.common.v1.ErrorInfo error = 3;
+}
+
+message RentalStatusRequest {
+  string api_key = 1;
+  string rental_id = 2;
+}
+
+message RentalStatusResponse {
+  string status = 1;
+  basilca.common.v1.ContainerStatus container_status = 2;
+  basilca.common.v1.ResourceUsageStats resource_usage = 3;
+  basilca.common.v1.Timestamp last_update = 4;
+  basilca.common.v1.ErrorInfo error = 5;
+}
+
+message RentalLogRequest {
+  string api_key = 1;
+  string rental_id = 2;
+  bool follow = 3;
+  uint32 tail_lines = 4;
+} 

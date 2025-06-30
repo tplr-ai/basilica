@@ -1,0 +1,71 @@
+services:
+  executor:
+    image: basilica/executor:latest
+    container_name: basilica-executor
+    restart: unless-stopped
+
+    network_mode: host
+
+    privileged: true
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+      - /:/host:rw
+
+      - /etc/ssh:/etc/ssh:rw
+      - /etc/passwd:/etc/passwd:rw
+      - /etc/shadow:/etc/shadow:rw
+      - /etc/group:/etc/group:rw
+      - /home:/home:rw
+      - /root:/root:rw
+
+      - /var/lib/basilica:/var/lib/basilica:rw
+      - /etc/basilica:/etc/basilica:rw
+
+      - /proc:/proc:rw
+      - /sys:/sys:rw
+      - /dev:/dev:rw
+
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+
+      - /usr/bin/useradd:/usr/bin/useradd:ro
+      - /usr/bin/userdel:/usr/bin/userdel:ro
+      - /usr/bin/usermod:/usr/bin/usermod:ro
+      - /usr/bin/id:/usr/bin/id:ro
+      - /usr/bin/ssh-keygen:/usr/bin/ssh-keygen:ro
+      - /usr/bin/chmod:/usr/bin/chmod:ro
+      - /usr/bin/chown:/usr/bin/chown:ro
+
+      - ../../executor.toml:/app/executor.toml:ro
+
+    environment:
+      - RUST_LOG=info
+      - DOCKER_HOST=unix:///var/run/docker.sock
+
+    command: ["--config", "/app/executor.toml", "--server"]
+    logging:
+      driver: "journald"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/executor", "system", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+networks:
+  basilica_network:
+    driver: bridge

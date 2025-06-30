@@ -1,0 +1,84 @@
+[package]
+name = "gpu-attestor"
+version = "0.1.0"
+edition = "2021"
+description = "Secure GPU hardware attestation binary for the Basilica network"
+
+[[bin]]
+name = "gpu-attestor"
+path = "src/main.rs"
+
+[[example]]
+name = "hopper_blackwell_validation"
+required-features = ["cuda"]
+
+[[example]]
+name = "h100_multi_gpu_validation"
+required-features = ["cuda"]
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
+blake3 = { workspace = true }
+rand = { workspace = true }
+sysinfo = { workspace = true }
+chrono = { workspace = true }
+
+# Local dependencies
+common = { path = "../common" }
+
+# FFI
+libc = { workspace = true }
+
+# GPU-specific dependencies
+nvml-wrapper = "0.9"
+
+# Crypto and VDF
+rsa = "0.9"
+sha2 = "0.10"
+hmac = "0.12"
+signature = "2.2"
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
+hex = "0.4"
+num-traits = "0.2"
+num-bigint = "0.4"
+zeroize = "1.7"
+rand_chacha = "0.3"
+
+
+reqwest = { version = "0.11", features = ["json"] }
+
+# System information and hardware access
+dmidecode = "0.1"
+procfs = "0.16"
+
+# Docker integration
+bollard = { workspace = true }
+
+# Binary manipulation for integrity checks
+object = "0.32"
+goblin = "0.8"
+
+# Optional GPU compute dependencies
+ocl = { version = "0.19", optional = true }
+vulkano = { version = "0.34", optional = true }
+vulkano-shaders = { version = "0.34", optional = true }
+
+[features]
+default = ["cuda"]
+cuda = []  # CUDA support via direct FFI in build.rs
+opencl = ["ocl"]
+vulkan = ["vulkano", "vulkano-shaders"]
+
+[build-dependencies]
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3.8"

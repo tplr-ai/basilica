@@ -1,0 +1,72 @@
+# Basilica Test Environment Configuration
+# Copy this file to test.conf and adjust values for your environment
+
+# Service endpoints
+VALIDATOR_HOST="localhost"
+VALIDATOR_PORT="8080"
+VALIDATOR_API_PORT="8080"
+VALIDATOR_METRICS_PORT="8081"
+
+MINER_HOST="localhost"
+MINER_GRPC_PORT="8092"
+MINER_METRICS_PORT="9092"
+
+EXECUTOR_HOST="localhost"
+EXECUTOR_GRPC_PORT="50051"
+EXECUTOR_METRICS_PORT="9090"
+
+# Docker compose services (for internal communication)
+VALIDATOR_SERVICE="validator"
+MINER_SERVICE="miner"
+EXECUTOR_SERVICE="executor"
+SSH_TARGET_SERVICE="ssh-target"
+
+# Test parameters
+TEST_TIMEOUT_SECONDS="30"
+TEST_RETRY_COUNT="3"
+TEST_RETRY_DELAY="5"
+
+# Load test configuration
+LOAD_TEST_CONCURRENCY="5"
+LOAD_TEST_DURATION="60"
+LOAD_TEST_RATE_LIMIT_REQUESTS="50"
+
+# Feature flags
+ENABLE_GPU_TESTS="true"
+ENABLE_MONITORING_TESTS="true"
+ENABLE_LOAD_TESTS="true"
+ENABLE_SECURITY_TESTS="true"
+ENABLE_FAILOVER_TESTS="true"
+
+# Authentication
+VALIDATOR_API_KEY="test_api_key_12345"
+
+# Paths
+SHARED_ATTESTOR_PATH="/shared/attestor"
+VALIDATOR_KEYS_PATH="/etc/basilica/keys"
+TEST_WORK_DIR="/tmp/basilica_test"
+
+# Database paths (inside containers)
+VALIDATOR_DB_PATH="/var/lib/basilica/validator/validator.db"
+MINER_DB_PATH="/var/lib/basilica/miner/miner.db"
+
+# SSH test configuration
+SSH_TEST_USER="testuser"
+SSH_TEST_KEY="${VALIDATOR_KEYS_PATH}/id_rsa"
+
+# Monitoring endpoints
+PROMETHEUS_HOST="localhost"
+PROMETHEUS_PORT="9091"
+GRAFANA_HOST="localhost"
+GRAFANA_PORT="3000"
+
+# Production test configuration (optional)
+# Set these to test against real production servers
+# PRODUCTION_TEST_ENABLED="false"
+# PRODUCTION_SSH_KEY_PATH=""
+# PRODUCTION_EXECUTOR_HOST=""
+# PRODUCTION_EXECUTOR_PORT=""
+# PRODUCTION_MINER_HOST=""
+# PRODUCTION_MINER_PORT=""
+# PRODUCTION_VALIDATOR_HOST=""
+# PRODUCTION_VALIDATOR_PORT=""

@@ -1,0 +1,60 @@
+services:
+  gpu-attestor:
+    image: basilica/gpu-attestor:latest
+    container_name: basilica-gpu-attestor
+    restart: "no"  # Run once for attestation
+
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+
+    volumes:
+      # Output directory for attestation files
+      - /var/lib/basilica/attestations:/attestation:rw
+      
+      # GPU device access
+      - /dev:/dev:ro
+      
+      # System information access
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      
+      # Docker socket for container attestation
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    # GPU access configuration
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    networks:
+      - basilica_network
+
+    # Default attestation command
+    command: [
+      "--executor-id", "standalone-executor",
+      "--output-path", "/attestation/attestation",
+      "--log-level", "info"
+    ]
+    
+    logging:
+      driver: "journald"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Health check to verify attestation completion
+    healthcheck:
+      test: ["CMD", "test", "-f", "/attestation/attestation.json"]
+      interval: 30s
+      timeout: 10s
+      retries: 1
+      start_period: 60s
+
+networks:
+  basilica_network:
+    driver: bridge

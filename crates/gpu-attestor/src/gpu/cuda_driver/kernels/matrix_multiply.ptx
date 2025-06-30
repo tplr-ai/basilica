@@ -1,0 +1,120 @@
+.version 6.0
+.target sm_50
+.address_size 64
+
+.visible .entry matrix_multiply(
+    .param .u64 matrix_multiply_param_0,
+    .param .u64 matrix_multiply_param_1,
+    .param .u64 matrix_multiply_param_2,
+    .param .u32 matrix_multiply_param_3,
+    .param .u32 matrix_multiply_param_4,
+    .param .u32 matrix_multiply_param_5
+)
+{
+    .reg .pred %p<3>;
+    .reg .b32 %r<14>;
+    .reg .f64 %fd<5>;
+    .reg .b64 %rd<13>;
+
+    ld.param.u64 %rd1, [matrix_multiply_param_0];
+    ld.param.u64 %rd2, [matrix_multiply_param_1];
+    ld.param.u64 %rd3, [matrix_multiply_param_2];
+    ld.param.u32 %r2, [matrix_multiply_param_3];
+    ld.param.u32 %r3, [matrix_multiply_param_4];
+    ld.param.u32 %r4, [matrix_multiply_param_5];
+
+    mov.u32 %r5, %ctaid.x;
+    mov.u32 %r6, %ntid.x;
+    mov.u32 %r7, %tid.x;
+    mad.lo.s32 %r1, %r6, %r5, %r7;
+
+    mov.u32 %r8, %ctaid.y;
+    mov.u32 %r9, %ntid.y;
+    mov.u32 %r10, %tid.y;
+    mad.lo.s32 %r11, %r9, %r8, %r10;
+
+    setp.ge.s32 %p1, %r11, %r2;
+    setp.ge.s32 %p2, %r1, %r4;
+    or.pred %p1, %p1, %p2;
+    @%p1 bra $L__BB0_5;
+
+    mov.f64 %fd1, 0d0000000000000000;
+    mov.u32 %r12, 0;
+
+$L__BB0_2:
+    setp.ge.s32 %p2, %r12, %r3;
+    @%p2 bra $L__BB0_4;
+
+    mad.lo.s32 %r13, %r11, %r3, %r12;
+    mul.wide.s32 %rd4, %r13, 8;
+    add.s64 %rd5, %rd1, %rd4;
+    ld.global.f64 %fd2, [%rd5];
+
+    mad.lo.s32 %r13, %r12, %r4, %r1;
+    mul.wide.s32 %rd6, %r13, 8;
+    add.s64 %rd7, %rd2, %rd6;
+    ld.global.f64 %fd3, [%rd7];
+
+    fma.rn.f64 %fd1, %fd2, %fd3, %fd1;
+    add.s32 %r12, %r12, 1;
+    bra.uni $L__BB0_2;
+
+$L__BB0_4:
+    mad.lo.s32 %r13, %r11, %r4, %r1;
+    mul.wide.s32 %rd8, %r13, 8;
+    add.s64 %rd9, %rd3, %rd8;
+    st.global.f64 [%rd9], %fd1;
+
+$L__BB0_5:
+    ret;
+}
+
+.visible .entry init_rng(
+    .param .u64 init_rng_param_0,
+    .param .u64 init_rng_param_1
+)
+{
+    .reg .b64 %rd<4>;
+
+    ld.param.u64 %rd1, [init_rng_param_0];
+    ld.param.u64 %rd2, [init_rng_param_1];
+    st.global.u64 [%rd1], %rd2;
+    ret;
+}
+
+.visible .entry generate_random(
+    .param .u64 generate_random_param_0,
+    .param .u64 generate_random_param_1,
+    .param .u32 generate_random_param_2
+)
+{
+    .reg .pred %p<2>;
+    .reg .b32 %r<7>;
+    .reg .f64 %fd<2>;
+    .reg .b64 %rd<5>;
+
+    ld.param.u64 %rd1, [generate_random_param_0];
+    ld.param.u64 %rd2, [generate_random_param_1];
+    ld.param.u32 %r1, [generate_random_param_2];
+
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %ctaid.x;
+    mov.u32 %r4, %tid.x;
+    mad.lo.s32 %r5, %r2, %r3, %r4;
+
+    setp.ge.u32 %p1, %r5, %r1;
+    @%p1 bra $L__BB2_2;
+
+    ld.global.u64 %rd3, [%rd2];
+    add.u64 %rd3, %rd3, %r5;
+    and.b64 %rd3, %rd3, 9223372036854775807;
+    cvt.rn.f64.u64 %fd1, %rd3;
+    mul.f64 %fd1, %fd1, 0d3CA0000000000000;
+
+    mul.wide.u32 %rd4, %r5, 8;
+    add.s64 %rd4, %rd1, %rd4;
+    st.global.f64 [%rd4], %fd1;
+
+$L__BB2_2:
+    ret;
+}

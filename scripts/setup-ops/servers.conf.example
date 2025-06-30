@@ -1,0 +1,7 @@
+# Basilica Server Configuration
+# Edit this file to match your server setup
+
+# Format: role=user@host:port
+VALIDATOR=root@1.1.1.1:123456
+MINER=root@1.1.1.1:123456
+EXECUTOR=root@1.1.1.1:123456

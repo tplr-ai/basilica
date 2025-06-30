@@ -1,0 +1,67 @@
+// Miner Discovery Protocol - Validator to Miner communication
+syntax = "proto3";
+
+package basilca.miner.v1;
+
+import "common.proto";
+
+// MinerDiscovery service for validator-miner interaction
+service MinerDiscovery {
+  // Authenticate validator with the miner
+  rpc AuthenticateValidator(ValidatorAuthRequest) returns (MinerAuthResponse);
+  
+  // Request available executor leases from miner
+  rpc RequestExecutorLease(LeaseRequest) returns (LeaseOfferResponse);
+  
+  // Initiate session with specific executor
+  rpc InitiateExecutorSession(SessionInitRequest) returns (SessionInitResponse);
+}
+
+message ValidatorAuthRequest {
+  string validator_hotkey = 1;
+  string signature = 2;
+  string nonce = 3;
+  basilca.common.v1.Timestamp timestamp = 4;
+}
+
+message MinerAuthResponse {
+  bool authenticated = 1;
+  string session_token = 2;
+  basilca.common.v1.Timestamp expires_at = 3;
+  basilca.common.v1.ErrorInfo error = 4;
+}
+
+message LeaseRequest {
+  string validator_hotkey = 1;
+  string session_token = 2;
+  // Resource requirements
+  basilca.common.v1.ResourceLimits requirements = 3;
+  uint64 lease_duration_seconds = 4;
+}
+
+message ExecutorConnectionDetails {
+  string executor_id = 1;
+  string grpc_endpoint = 2;
+  basilca.common.v1.GpuSpec gpu_spec = 3;
+  basilca.common.v1.ResourceLimits available_resources = 4;
+  string status = 5;
+}
+
+message LeaseOfferResponse {
+  repeated ExecutorConnectionDetails available_executors = 1;
+  basilca.common.v1.ErrorInfo error = 2;
+}
+
+message SessionInitRequest {
+  string validator_hotkey = 1;
+  string session_token = 2;
+  string executor_id = 3;
+  string session_type = 4; // verification, rental, etc.
+}
+
+message SessionInitResponse {
+  bool success = 1;
+  string session_id = 2;
+  string access_credentials = 3;
+  basilca.common.v1.ErrorInfo error = 4;
+} 

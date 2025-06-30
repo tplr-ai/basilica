@@ -1,0 +1,53 @@
+# Basilica Executor Configuration Example
+
+# Server configuration
+[server]
+host = "0.0.0.0"
+port = 50051
+
+# Logging configuration
+[logging]
+level = "info"
+format = "json"
+
+# Metrics configuration
+[metrics]
+enabled = true
+port = 9090
+
+# System monitoring configuration
+[system]
+update_interval = 10
+enable_gpu_monitoring = true
+enable_network_monitoring = true
+max_cpu_usage = 90.0
+max_memory_usage = 90.0
+max_gpu_memory_usage = 90.0
+min_disk_space_gb = 10
+
+# Docker configuration
+[docker]
+socket_path = "/var/run/docker.sock"
+network_name = "basilica"
+enable_gpu_support = true
+pull_timeout = 300
+stop_timeout = 30
+
+# Validator access configuration
+[validator]
+enabled = false
+ssh_port = 22
+max_sessions = 10
+session_timeout = 3600
+
+# Managing miner hotkey (for authentication)
+managing_miner_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+
+# Miner registration configuration (optional)
+# Uncomment and configure to enable miner registration
+# [miner_registration]
+# miner_grpc_endpoint = "http://miner.example.com:50052"
+# miner_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+# heartbeat_interval_seconds = 30
+# reconnection_delay_seconds = 5
+# max_reconnection_attempts = 10

@@ -1,0 +1,105 @@
+# Basilica Miner Configuration - Example
+# Copy this file to miner.toml and customize for your environment
+
+# Bittensor Network Configuration
+[bittensor]
+# IMPORTANT: Replace with your actual wallet and hotkey names
+wallet_name = "YOUR_WALLET_NAME"
+hotkey_name = "YOUR_HOTKEY_NAME"
+network = "finney"  # Use "local" for development
+netuid = 27  # Basilica subnet ID
+chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
+# IMPORTANT: Replace with your server's public IP
+external_ip = "YOUR_PUBLIC_IP_HERE"
+
+# Server Configuration
+[server]
+host = "0.0.0.0"
+port = 8092  # gRPC server port
+max_connections = 1000
+request_timeout = 30
+
+# Axon Configuration (Bittensor integration)
+[axon]
+port = 8091
+external_ip = "YOUR_PUBLIC_IP_HERE"  # Must match bittensor.external_ip
+max_requests_per_second = 100
+
+# Database Configuration
+[database]
+url = "sqlite:/opt/basilica/data/miner.db"
+max_connections = 10
+min_connections = 2
+run_migrations = true
+backup_enabled = true
+
+# Logging Configuration
+[logging]
+level = "info"
+format = "json"
+enable_file_logging = true
+log_dir = "/var/log/basilica"
+
+# Metrics Configuration
+[metrics]
+enabled = true
+port = 9091
+collection_interval = 30
+
+# Executor Fleet Management
+[executor_management]
+health_check_interval = "60s"
+health_check_timeout = "10s"
+max_retry_attempts = 3
+auto_recovery = true
+
+# IMPORTANT: Configure your executor machines
+[[executor_management.executors]]
+id = "executor-1"
+grpc_address = "YOUR_EXECUTOR_IP:50051"
+name = "Primary Executor"
+# Optional: specific configuration per executor
+
+# Security Configuration
+[security]
+enable_tls = false  # Set to true for production
+verify_signatures = true
+rate_limit_requests_per_minute = 600
+# IMPORTANT: Add your validator IPs
+allowed_validators = [
+    "YOUR_VALIDATOR_IP_HERE",
+]
+
+# Authentication settings
+[auth]
+jwt_secret = ""  # Will be auto-generated if empty
+token_expiry = 3600  # 1 hour
+enable_miner_authentication = true
+
+# Remote Executor Deployment (optional)
+[remote_executor_deployment]
+auto_deploy = false
+auto_start = false
+health_check_interval = "30s"
+local_executor_binary = "/opt/basilica/bin/executor"
+executor_config_template = "production"
+
+# SSH configuration for remote deployment
+[[remote_executor_deployment.remote_machines]]
+id = "executor-machine-1"
+name = "Primary GPU Machine"
+gpu_count = 1
+executor_port = 50051
+executor_data_dir = "/opt/basilica"
+
+[remote_executor_deployment.remote_machines.ssh]
+host = "YOUR_EXECUTOR_IP"
+port = 22
+username = "basilica"  # Use dedicated user, not root
+private_key_path = "/etc/basilica/keys/miner_to_executor"
+jump_host = ""  # Optional bastion host
+ssh_options = [
+    "StrictHostKeyChecking=no",
+    "UserKnownHostsFile=/dev/null",
+    "ConnectTimeout=10"
+]

@@ -1,0 +1,110 @@
+// Executor Management Protocol - Miner to Executor communication
+// This service allows miners to manage their executors
+syntax = "proto3";
+
+package basilca.executor_management.v1;
+
+import "common.proto";
+
+// ExecutorManagement service for miner-executor management
+// Implemented by: executor
+// Called by: miner
+service ExecutorManagement {
+  // Health check from miner to executor
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  
+  // Update SSH keys on executor
+  rpc UpdateSSHKeys(SSHKeyUpdate) returns (SSHKeyUpdateResponse);
+  
+  // Get executor operational status
+  rpc GetStatus(StatusRequest) returns (StatusResponse);
+}
+
+// Health check request from miner
+message HealthCheckRequest {
+  // Miner identifier
+  string miner_hotkey = 1;
+  
+  // Check type (basic, detailed)
+  string check_type = 2;
+  
+  // Timestamp
+  basilca.common.v1.Timestamp timestamp = 3;
+}
+
+message HealthCheckResponse {
+  // Health status (healthy, unhealthy)
+  string status = 1;
+  
+  // Resource availability
+  map<string, string> resource_status = 2;
+  
+  // Docker status
+  string docker_status = 3;
+  
+  // Uptime in seconds
+  uint64 uptime_seconds = 4;
+  
+  // Current container count
+  uint32 container_count = 5;
+  
+  // Active challenges
+  uint32 active_challenges = 6;
+}
+
+// SSH key update request
+message SSHKeyUpdate {
+  // Operation type (add, remove)
+  string operation = 1;
+  
+  // Validator hotkey
+  string validator_hotkey = 2;
+  
+  // SSH public key
+  string ssh_public_key = 3;
+  
+  // Miner authorization
+  string miner_hotkey = 4;
+  string signature = 5;
+}
+
+message SSHKeyUpdateResponse {
+  // Success status
+  bool success = 1;
+  
+  // Operation message
+  string message = 2;
+  
+  // Error if any
+  basilca.common.v1.ErrorInfo error = 3;
+}
+
+// Status request
+message StatusRequest {
+  // Include detailed metrics
+  bool detailed = 1;
+}
+
+message StatusResponse {
+  // Executor ID
+  string executor_id = 1;
+  
+  // Operational status
+  string status = 2;
+  
+  // System information
+  basilca.common.v1.MachineInfo machine_info = 3;
+  
+  // Current resource usage
+  basilca.common.v1.ResourceUsageStats resource_usage = 4;
+  
+  // Container statistics
+  uint32 total_containers = 5;
+  uint32 active_containers = 6;
+  
+  // Validation session info
+  uint32 active_validators = 7;
+  
+  // Uptime
+  uint64 uptime_seconds = 8;
+}

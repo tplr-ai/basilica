@@ -1,0 +1,81 @@
+# Basilica Executor Configuration - Example
+# Copy this file to executor.toml and customize for your environment
+
+[server]
+host = "0.0.0.0"
+port = 50051
+
+[logging]
+level = "info"
+format = "json"
+
+[metrics]
+enabled = true
+port = 9090
+
+[system]
+update_interval = 10
+enable_gpu_monitoring = true
+enable_network_monitoring = true
+max_cpu_usage = 90.0
+max_memory_usage = 90.0
+max_gpu_memory_usage = 90.0
+min_disk_space_gb = 10
+
+[docker]
+socket_path = "/var/run/docker.sock"
+network_name = "basilica"
+enable_gpu_support = true
+pull_timeout = 300
+stop_timeout = 30
+
+[validator]
+enabled = true
+ssh_port = 22
+max_sessions = 10
+session_timeout = 3600
+
+# IMPORTANT: Replace with your actual miner's hotkey
+managing_miner_hotkey = "YOUR_MINER_HOTKEY_HERE"
+
+# Security settings
+[security]
+allowed_validator_ips = [
+    "YOUR_VALIDATOR_IP_HERE",
+]
+allowed_miner_ips = [
+    "YOUR_MINER_IP_HERE", 
+]
+ssh_key_path = "/etc/basilica/keys/executor_ssh"
+require_authentication = true
+session_encryption = true
+
+# Resource limits
+[resources]
+max_containers = 10
+max_memory_per_container = "8g"
+max_cpu_per_container = 4.0
+gpu_allocation_strategy = "exclusive"
+
+# Network discovery
+[discovery]
+miner_endpoints = [
+    "YOUR_MINER_IP:8092",
+]
+validator_endpoints = [
+    "YOUR_VALIDATOR_IP:8080",
+]
+
+# Database configuration
+[database]
+url = "sqlite:/opt/basilica/data/executor.db"
+run_migrations = true
+backup_enabled = true
+backup_interval = 86400  # 24 hours in seconds
+
+# GPU Attestor configuration
+[gpu_attestor]
+binary_path = "/opt/basilica/bin/gpu-attestor"
+attestation_dir = "/opt/basilica/data/attestations"
+vdf_difficulty = 1000
+enable_network_benchmarks = true

@@ -1,0 +1,54 @@
+# Executor Configuration Template
+# This file is used to generate environment-specific configurations
+
+[server]
+host = "0.0.0.0"
+port = ${EXECUTOR_GRPC_PORT}
+
+[health]
+enabled = true
+port = ${EXECUTOR_HEALTH_PORT}
+
+[system]
+enable_gpu_monitoring = true
+enable_network_monitoring = true
+metrics_collection_interval = { secs = 30 }
+
+[docker]
+socket_path = "/var/run/docker.sock"
+enable_gpu_support = true
+default_runtime = "nvidia"
+cleanup_containers = true
+container_timeout = { secs = 3600 }
+
+[validator]
+ssh_port = 22
+max_sessions = 10
+session_timeout = 3600
+managing_miner_hotkey = "${MINER_HOTKEY}"
+allowed_validators = []
+
+[database]
+url = "sqlite://./data/executor.db?mode=rwc"
+run_migrations = true
+max_connections = 10
+
+[storage]
+data_dir = "/opt/basilica/data"
+attestation_dir = "/opt/basilica/data/attestations"
+temp_dir = "/tmp/basilica"
+
+[gpu_attestor]
+binary_path = "/opt/basilica/bin/gpu-attestor"
+attestation_interval = { secs = 3600 }
+vdf_difficulty = 1000
+
+[logging]
+level = "info"
+format = "json"
+output = "/opt/basilica/logs/executor.log"
+
+[security]
+enable_tls = ${ENABLE_TLS}
+verify_signatures = ${VERIFY_SIGNATURES}
+allowed_ips = []
