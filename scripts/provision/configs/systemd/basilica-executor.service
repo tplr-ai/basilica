@@ -1,0 +1,40 @@
+[Unit]
+Description=Basilica Executor Service
+Documentation=https://github.com/spacejar/basilica
+After=network-online.target docker.service
+Wants=network-online.target
+RequiresMountsFor=/var/lib/basilica
+
+[Service]
+Type=simple
+User=basilica
+Group=basilica
+SupplementaryGroups=docker
+WorkingDirectory=/var/lib/basilica/executor
+Environment=RUST_LOG=info
+Environment=RUST_BACKTRACE=1
+ExecStart=/usr/local/bin/executor --server --config /etc/basilica/executor.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+TimeoutStartSec=60
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=basilica-executor
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/basilica /var/log/basilica /var/run/docker.sock
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

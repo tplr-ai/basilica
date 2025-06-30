@@ -1,0 +1,496 @@
+// Common message types shared across all Basilca services
+// Version: 1.0
+
+syntax = "proto3";
+
+package basilca.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// Timestamp wrapper for consistent time handling
+message Timestamp {
+  google.protobuf.Timestamp value = 1;
+}
+
+// Unique resource identifier
+message ResourceId {
+  string value = 1;
+}
+
+// GPU specification details
+message GpuSpec {
+  // GPU model name (e.g., "RTX 4090", "A100")
+  string model = 1;
+  
+  // GPU memory in MB
+  uint64 memory_mb = 2;
+  
+  // GPU unique identifier/UUID
+  string uuid = 3;
+  
+  // Driver version
+  string driver_version = 4;
+  
+  // CUDA version (if applicable)
+  string cuda_version = 5;
+  
+  // GPU utilization percentage (0-100)
+  double utilization_percent = 6;
+  
+  // Memory utilization percentage (0-100)
+  double memory_utilization_percent = 7;
+  
+  // Temperature in Celsius
+  double temperature_celsius = 8;
+  
+  // Power consumption in watts
+  double power_watts = 9;
+  
+  // Clock speeds
+  uint32 core_clock_mhz = 10;
+  uint32 memory_clock_mhz = 11;
+  
+  // Compute capability (for CUDA GPUs)
+  string compute_capability = 12;
+}
+
+// CPU specification details
+message CpuSpec {
+  // CPU model name
+  string model = 1;
+  
+  // Number of physical cores
+  uint32 physical_cores = 2;
+  
+  // Number of logical cores (with hyperthreading)
+  uint32 logical_cores = 3;
+  
+  // Base frequency in MHz
+  uint32 base_frequency_mhz = 4;
+  
+  // Max frequency in MHz
+  uint32 max_frequency_mhz = 5;
+  
+  // CPU architecture (x86_64, arm64, etc.)
+  string architecture = 6;
+  
+  // CPU vendor (Intel, AMD, etc.)
+  string vendor = 7;
+  
+  // Cache sizes in KB
+  uint32 l1_cache_kb = 8;
+  uint32 l2_cache_kb = 9;
+  uint32 l3_cache_kb = 10;
+  
+  // Current utilization percentage (0-100)
+  double utilization_percent = 11;
+  
+  // Current temperature in Celsius
+  double temperature_celsius = 12;
+}
+
+// Memory specification
+message MemorySpec {
+  // Total system memory in MB
+  uint64 total_mb = 1;
+  
+  // Available memory in MB
+  uint64 available_mb = 2;
+  
+  // Used memory in MB
+  uint64 used_mb = 3;
+  
+  // Memory type (DDR4, DDR5, etc.)
+  string memory_type = 4;
+  
+  // Memory speed in MHz
+  uint32 speed_mhz = 5;
+}
+
+// Storage specification
+message StorageSpec {
+  // Total storage in MB
+  uint64 total_mb = 1;
+  
+  // Available storage in MB
+  uint64 available_mb = 2;
+  
+  // Used storage in MB
+  uint64 used_mb = 3;
+  
+  // Storage type (SSD, HDD, NVMe)
+  string storage_type = 4;
+  
+  // Mount point or drive identifier
+  string mount_point = 5;
+  
+  // Read speed in MB/s
+  double read_speed_mbps = 6;
+  
+  // Write speed in MB/s
+  double write_speed_mbps = 7;
+}
+
+// Network performance metrics
+message NetworkPerformance {
+  // Download bandwidth in Mbps
+  double download_mbps = 1;
+  
+  // Upload bandwidth in Mbps
+  double upload_mbps = 2;
+  
+  // Latency in milliseconds
+  double latency_ms = 3;
+  
+  // Packet loss percentage (0-100)
+  double packet_loss_percent = 4;
+  
+  // Network interface name
+  string interface_name = 5;
+  
+  // Public IP address
+  string public_ip = 6;
+  
+  // Geographic location (optional)
+  string location = 7;
+}
+
+// Operating system information
+message OsInfo {
+  // OS name (Linux, Windows, macOS)
+  string name = 1;
+  
+  // OS version
+  string version = 2;
+  
+  // Kernel version
+  string kernel_version = 3;
+  
+  // Distribution (for Linux)
+  string distribution = 4;
+  
+  // Architecture (x86_64, arm64)
+  string architecture = 5;
+  
+  // Hostname
+  string hostname = 6;
+  
+  // Uptime in seconds
+  uint64 uptime_seconds = 7;
+}
+
+// Docker environment information
+message DockerInfo {
+  // Docker version
+  string version = 1;
+  
+  // Docker API version
+  string api_version = 2;
+  
+  // Available storage driver
+  string storage_driver = 3;
+  
+  // Running containers count
+  uint32 running_containers = 4;
+  
+  // Total containers count
+  uint32 total_containers = 5;
+  
+  // Total images count
+  uint32 total_images = 6;
+  
+  // Whether Docker is accessible
+  bool accessible = 7;
+  
+  // Whether GPU support is available (nvidia-docker, etc.)
+  bool gpu_support = 8;
+  
+  // Security features (AppArmor, SELinux, Seccomp)
+  repeated string security_features = 9;
+}
+
+// System resource limits and quotas
+message ResourceLimits {
+  // Maximum CPU cores that can be allocated
+  uint32 max_cpu_cores = 1;
+  
+  // Maximum memory in MB that can be allocated
+  uint64 max_memory_mb = 2;
+  
+  // Maximum storage in MB that can be allocated
+  uint64 max_storage_mb = 3;
+  
+  // Maximum number of concurrent containers
+  uint32 max_containers = 4;
+  
+  // Network bandwidth limit in Mbps
+  double max_bandwidth_mbps = 5;
+  
+  // Maximum GPU count that can be allocated
+  uint32 max_gpus = 6;
+}
+
+// Challenge parameters for computational verification
+message ChallengeParameters {
+  // Challenge type identifier
+  string challenge_type = 1;
+  
+  // Challenge-specific parameters as JSON
+  string parameters_json = 2;
+  
+  // Expected computation time in seconds
+  uint32 expected_duration_seconds = 3;
+  
+  // Difficulty level (1-10)
+  uint32 difficulty_level = 4;
+  
+  // Random seed for deterministic results
+  string seed = 5;
+  
+  // Machine information for context
+  MachineInfo machine_info = 6;
+}
+
+// Machine information for challenge context
+message MachineInfo {
+  // GPU specifications used in challenge
+  repeated GpuSpec gpus = 1;
+  
+  // CPU specification
+  CpuSpec cpu = 2;
+  
+  // Memory specification
+  MemorySpec memory = 3;
+  
+  // Operating system info
+  OsInfo os_info = 4;
+  
+  // Unique machine fingerprint
+  string fingerprint = 5;
+}
+
+// Challenge solution/result
+message ChallengeResult {
+  // Solution data (format depends on challenge type)
+  string solution = 1;
+  
+  // Execution time in milliseconds
+  uint64 execution_time_ms = 2;
+  
+  // GPU utilization during execution
+  repeated double gpu_utilization = 3;
+  
+  // Memory usage during execution in MB
+  uint64 memory_usage_mb = 4;
+  
+  // Any error messages
+  string error_message = 5;
+  
+  // Additional metadata as JSON
+  string metadata_json = 6;
+}
+
+// Container specification for rental
+message ContainerSpec {
+  // Docker image to run
+  string image = 1;
+  
+  // Environment variables
+  map<string, string> environment = 2;
+  
+  // Port mappings (container_port -> host_port)
+  map<string, string> port_mappings = 3;
+  
+  // Volume mounts (host_path -> container_path)
+  map<string, string> volume_mounts = 4;
+  
+  // Resource limits
+  ResourceLimits resource_limits = 5;
+  
+  // Command to run (overrides Docker CMD)
+  repeated string command = 6;
+  
+  // Working directory
+  string working_directory = 7;
+  
+  // User to run as
+  string user = 8;
+  
+  // GPU requirements
+  repeated string gpu_requirements = 9;
+  
+  // Network mode
+  string network_mode = 10;
+}
+
+// Container status information
+message ContainerStatus {
+  // Container ID
+  string container_id = 1;
+  
+  // Current status (running, stopped, error, etc.)
+  string status = 2;
+  
+  // Status message
+  string status_message = 3;
+  
+  // Created timestamp
+  Timestamp created_at = 4;
+  
+  // Started timestamp (if applicable)
+  Timestamp started_at = 5;
+  
+  // Finished timestamp (if applicable)
+  Timestamp finished_at = 6;
+  
+  // Exit code (if finished)
+  int32 exit_code = 7;
+  
+  // Resource usage statistics
+  ResourceUsageStats resource_usage = 8;
+}
+
+// Resource usage statistics
+message ResourceUsageStats {
+  // CPU usage percentage
+  double cpu_percent = 1;
+  
+  // Memory usage in MB
+  uint64 memory_mb = 2;
+  
+  // Network I/O in bytes
+  uint64 network_rx_bytes = 3;
+  uint64 network_tx_bytes = 4;
+  
+  // Disk I/O in bytes
+  uint64 disk_read_bytes = 5;
+  uint64 disk_write_bytes = 6;
+  
+  // GPU usage (if applicable)
+  repeated double gpu_utilization = 7;
+  repeated uint64 gpu_memory_mb = 8;
+}
+
+// Log entry for streaming logs
+message LogEntry {
+  // Timestamp of log entry
+  Timestamp timestamp = 1;
+  
+  // Log level (INFO, WARN, ERROR, DEBUG)
+  string level = 2;
+  
+  // Source of log (stdout, stderr, system)
+  string source = 3;
+  
+  // Log message content
+  string message = 4;
+  
+  // Additional metadata
+  map<string, string> metadata = 5;
+}
+
+// Error information
+message ErrorInfo {
+  // Error code
+  string code = 1;
+  
+  // Human-readable error message
+  string message = 2;
+  
+  // Additional error details
+  map<string, string> details = 3;
+  
+  // Timestamp when error occurred
+  Timestamp timestamp = 4;
+  
+  // Stack trace (if available)
+  string stack_trace = 5;
+}
+
+// GPU attestation report from gpu-attestor
+message GpuAttestation {
+  // Attestation report data
+  bytes attestation_data = 1;
+  
+  // Signature of the attestation
+  bytes signature = 2;
+  
+  // Certificate chain
+  repeated bytes certificate_chain = 3;
+  
+  // GPU specifications included in attestation
+  GpuSpec gpu_spec = 4;
+  
+  // Timestamp of attestation
+  Timestamp timestamp = 5;
+  
+  // Attestation type/method
+  string attestation_type = 6;
+  
+  // Additional metadata
+  map<string, string> metadata = 7;
+}
+
+// System profile including hardware and software information
+message SystemProfile {
+  // CPU specifications
+  CpuSpec cpu = 1;
+  
+  // Memory specifications
+  MemorySpec memory = 2;
+  
+  // Storage specifications
+  repeated StorageSpec storage = 3;
+  
+  // Network performance
+  NetworkPerformance network = 4;
+  
+  // Operating system information
+  OsInfo os_info = 5;
+  
+  // Docker environment information
+  DockerInfo docker_info = 6;
+  
+  // GPU specifications (can be multiple)
+  repeated GpuSpec gpus = 7;
+  
+  // System fingerprint
+  string fingerprint = 8;
+  
+  // Profile timestamp
+  Timestamp timestamp = 9;
+}
+
+// Resource utilization metrics
+message ResourceUtilization {
+  // CPU usage percentage (0-100)
+  double cpu_percent = 1;
+  
+  // Memory usage in MB
+  uint64 memory_used_mb = 2;
+  
+  // Memory total in MB
+  uint64 memory_total_mb = 3;
+  
+  // Storage usage in MB
+  uint64 storage_used_mb = 4;
+  
+  // Storage total in MB
+  uint64 storage_total_mb = 5;
+  
+  // Network I/O rates
+  double network_rx_mbps = 6;
+  double network_tx_mbps = 7;
+  
+  // GPU utilization (per GPU)
+  repeated double gpu_utilization_percent = 8;
+  
+  // GPU memory usage (per GPU) in MB
+  repeated uint64 gpu_memory_used_mb = 9;
+  
+  // Number of running containers
+  uint32 running_containers = 10;
+  
+  // Timestamp of measurement
+  Timestamp timestamp = 11;
+} 

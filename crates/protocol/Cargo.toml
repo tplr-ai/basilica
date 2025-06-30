@@ -1,0 +1,27 @@
+[package]
+name = "protocol"
+version = "0.1.0"
+edition = "2021"
+description = "gRPC protocol definitions and message types for Basilca  communication"
+rust-version = "1.70"
+
+[dependencies]
+# Use workspace dependencies
+common = { path = "../common" }
+tonic = { workspace = true, features = ["tls"] }
+prost = { workspace = true }
+prost-types = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }
+
+[features]
+default = []
+# Feature for client-side stubs
+client = []
+# Feature for server-side stubs  
+server = [] 

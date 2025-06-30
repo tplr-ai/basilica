@@ -1,0 +1,51 @@
+# Build-only compose file for creating all Basilica images
+# Usage: docker compose -f docker-compose.build.yml build
+
+services:
+  # Build validator image
+  validator-build:
+    build:
+      context: ../../
+      dockerfile: scripts/validator/Dockerfile
+      args:
+        BUILD_MODE: release
+    image: basilica/validator:localtest
+    container_name: basilica-validator-build
+    command: ["--help"]  # Just show help and exit
+
+  # Build executor image  
+  executor-build:
+    build:
+      context: ../../
+      dockerfile: scripts/executor/Dockerfile
+      args:
+        BUILD_MODE: release
+    image: basilica/executor:localtest
+    container_name: basilica-executor-build
+    command: ["--help"]  # Just show help and exit
+
+  # Build miner image
+  miner-build:
+    build:
+      context: ../../
+      dockerfile: scripts/miner/Dockerfile
+      args:
+        BUILD_MODE: release
+    image: basilica/miner:localtest
+    container_name: basilica-miner-build
+    command: ["--help"]  # Just show help and exit
+
+  # Build gpu-attestor image
+  gpu-attestor-build:
+    build:
+      context: ../../
+      dockerfile: scripts/gpu-attestor/Dockerfile
+      args:
+        VALIDATOR_PUBLIC_KEY: "${VALIDATOR_PUBLIC_KEY:-0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798}"
+    image: basilica/gpu-attestor:localtest
+    container_name: basilica-gpu-attestor-build
+    command: ["--help"]  # Just show help and exit
+
+networks:
+  basilica_network:
+    driver: bridge

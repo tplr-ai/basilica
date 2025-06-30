@@ -1,0 +1,56 @@
+# Basilica Public API Configuration
+
+[server]
+bind_address = "0.0.0.0:8000"
+max_connections = 10000
+request_timeout = 30
+enable_compression = true
+cors_origins = ["*"]
+
+[bittensor]
+network = "finney"
+netuid = 42
+discovery_interval = 60
+min_validator_score = 0.5
+
+[load_balancer]
+strategy = "weighted_score"
+health_check_interval = 30
+connection_timeout = 10
+max_retries = 3
+retry_backoff_multiplier = 2.0
+max_pool_size = 100
+
+[cache]
+backend = "redis"
+default_ttl = 300
+max_size = 10000
+redis_url = "redis://redis:6379"
+key_prefix = "basilica:api:"
+
+[rate_limit]
+default_requests_per_minute = 60
+burst_size = 100
+per_ip_limiting = true
+premium_requests_per_minute = 600
+storage_backend = "redis"
+redis_url = "redis://redis:6379"
+
+[auth]
+api_key_header = "X-API-Key"
+jwt_secret = "change-me-in-production"
+jwt_expiration_hours = 24
+allow_anonymous = true
+master_api_keys = []
+
+[telemetry]
+enable_metrics = true
+metrics_path = "/metrics"
+enable_tracing = true
+trace_sample_rate = 0.1
+
+[discovery]
+max_validators = 100
+validator_timeout = 30
+enable_failover = true
+failover_threshold = 3

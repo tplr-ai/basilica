@@ -1,0 +1,61 @@
+services:
+  miner:
+    image: basilica/miner:latest
+    container_name: basilica-miner
+    restart: unless-stopped
+
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+
+    volumes:
+      # Configuration
+      - ../../miner.toml:/app/miner.toml:ro
+      
+      # Data persistence
+      - /var/lib/basilica:/var/lib/basilica:rw
+      - /etc/basilica:/etc/basilica:rw
+      
+      # SSH keys for executor access management
+      - /etc/ssh:/etc/ssh:ro
+      - ~/.ssh:/root/.ssh:ro
+      
+      # Bittensor wallet access
+      - ~/.bittensor:/home/basilica/.bittensor:rw
+      
+      # Log access
+      - /var/log/basilica:/var/log/basilica:rw
+
+    ports:
+      - "8092:8092"   # Miner gRPC server for validator communications
+      - "8091:8091"   # Bittensor axon server port  
+      - "9092:9092"   # Prometheus metrics endpoint
+
+    networks:
+      - basilica_network
+
+    command: ["--config", "/app/miner.toml"]
+    
+    logging:
+      driver: "journald"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/miner", "status", "--config", "/app/miner.toml"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+networks:
+  basilica_network:
+    driver: bridge

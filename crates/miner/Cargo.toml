@@ -1,0 +1,85 @@
+[package]
+name = "miner"
+version = "0.1.0"
+edition = "2021"
+description = "Basilca Miner - Bittensor neuron that manages executor fleets"
+rust-version = "1.70"
+
+[lib]
+name = "miner"
+path = "src/lib.rs"
+
+[[bin]]
+name = "miner"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+figment = { workspace = true }
+sqlx = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = "0.12"
+tonic-health = "0.10.2"
+uuid = { workspace = true }
+chrono = { workspace = true }
+blake3 = { workspace = true }
+clap = { workspace = true }
+# Storage functionality (if needed in future)
+# memmap2 = { workspace = true }
+
+# Internal dependencies
+common = { path = "../common" }
+protocol = { path = "../protocol" }
+bittensor = { path = "../bittensor" }
+
+# Miner-specific dependencies
+# HTTP client for external communications
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# Task scheduling and job management
+cron = "0.12"
+
+# Configuration
+toml = "0.8"
+
+# Connection pooling
+deadpool = "0.10"
+
+# Rate limiting
+governor = "0.6"
+
+# JSON Web Tokens for authentication
+jsonwebtoken = "9.2"
+
+# Background job processing
+async-trait = "0.1"
+
+# System and network utilities
+socket2 = "0.5"
+
+# Random number generation
+rand = "0.8"
+
+[dev-dependencies]
+tempfile = "3.8"
+serial_test = "3.0"
+mockall = "0.11"
+futures = "0.3"
+
+[features]
+default = []
+# Enable test utilities for executor communication
+test-utils = []
+# Enable development mode with additional debugging
+dev-mode = ["tracing-subscriber/env-filter"] 

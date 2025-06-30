@@ -1,0 +1,244 @@
+#!/bin/bash
+# Configuration generator for Basilica services
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/common.sh"
+
+# Source SSH wrapper to use identity file
+source "$SCRIPT_DIR/../lib/ssh-wrapper.sh"
+
+TEMPLATE_DIR="$SCRIPT_DIR/templates"
+CONFIG_OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-$BASILICA_ROOT}"
+
+# Generate configuration from template
+generate_config() {
+    local template_file="$1"
+    local output_file="$2"
+    local env_file="$3"
+    
+    if [[ ! -f "$template_file" ]]; then
+        log_error "Template not found: $template_file"
+        return 1
+    fi
+    
+    if [[ ! -f "$env_file" ]]; then
+        log_error "Environment file not found: $env_file"
+        return 1
+    fi
+    
+    log_info "Generating config from $(basename "$template_file")"
+    
+    # Load environment variables
+    source "$env_file"
+    
+    # Process template
+    local content
+    content=$(cat "$template_file")
+    
+    # Replace all template variables
+    while IFS= read -r line; do
+        if [[ "$line" =~ \{\{([A-Z_]+)\}\} ]]; then
+            local var_name="${BASH_REMATCH[1]}"
+            local var_value="${!var_name}"
+            content="${content//\{\{$var_name\}\}/$var_value}"
+        fi
+    done <<< "$(echo "$content" | grep -o '{{[A-Z_]\+}}')"
+    
+    # Write output file
+    echo "$content" > "$output_file"
+    
+    # Validate the generated config
+    validate_toml "$output_file" || {
+        log_error "Generated configuration is invalid"
+        rm -f "$output_file"
+        return 1
+    }
+    
+    log_success "Generated: $output_file"
+}
+
+# Validate TOML file syntax
+validate_toml() {
+    local file="$1"
+    
+    # Basic TOML validation using Python if available
+    if command -v python3 >/dev/null 2>&1; then
+        python3 -c "
+import sys
+try:
+    import toml
+    with open('$file', 'r') as f:
+        toml.load(f)
+    sys.exit(0)
+except Exception as e:
+    print(f'TOML validation error: {e}', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null
+        return $?
+    else
+        # Fallback: basic syntax check
+        grep -E '^\s*\[' "$file" >/dev/null || {
+            log_warn "No TOML sections found in $file"
+            return 1
+        }
+        return 0
+    fi
+}
+
+# Generate executor configuration
+generate_executor_config() {
+    local env="${1:-production}"
+    local env_file="$SCRIPT_DIR/environments/${env}.conf"
+    local output_file="${CONFIG_OUTPUT_DIR}/executor.toml"
+    
+    # Set default values if not in environment
+    export EXECUTOR_GRPC_PORT="${EXECUTOR_GRPC_PORT:-50051}"
+    export EXECUTOR_HEALTH_PORT="${EXECUTOR_HEALTH_PORT:-8091}"
+    export MINER_HOTKEY="${MINER_HOTKEY:-5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY}"
+    export ENABLE_TLS="${ENABLE_TLS:-false}"
+    export VERIFY_SIGNATURES="${VERIFY_SIGNATURES:-true}"
+    
+    generate_config "$TEMPLATE_DIR/executor.toml.template" "$output_file" "$env_file"
+}
+
+# Generate miner configuration
+generate_miner_config() {
+    local env="${1:-production}"
+    local env_file="$SCRIPT_DIR/environments/${env}.conf"
+    local output_file="${CONFIG_OUTPUT_DIR}/miner.toml"
+    
+    # Load environment to get executor details
+    source "$env_file"
+    
+    # Set default values
+    export MINER_WALLET_NAME="${MINER_WALLET_NAME:-miner}"
+    export MINER_HOTKEY_NAME="${MINER_HOTKEY_NAME:-default}"
+    export BITTENSOR_NETWORK="${BITTENSOR_NETWORK:-finney}"
+    export BITTENSOR_NETUID="${BITTENSOR_NETUID:-27}"
+    export BITTENSOR_CHAIN_ENDPOINT="${BITTENSOR_CHAIN_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
+    export MINER_EXTERNAL_IP="${MINER_EXTERNAL_IP:-$MINER_HOST}"
+    export MINER_HTTP_PORT="${MINER_HTTP_PORT:-8092}"
+    export MINER_METRICS_PORT="${MINER_METRICS_PORT:-9092}"
+    export MINER_AXON_PORT="${MINER_AXON_PORT:-8091}"
+    export ENABLE_TLS="${ENABLE_TLS:-false}"
+    export JWT_SECRET="${JWT_SECRET:-$(openssl rand -base64 32)}"
+    
+    # Generate executor configuration
+    local executor_config="{ id = \"executor-1\", grpc_address = \"${EXECUTOR_HOST}:${EXECUTOR_GRPC_PORT}\", name = \"Production Executor\" }"
+    export EXECUTOR_CONFIG="$executor_config"
+    
+    generate_config "$TEMPLATE_DIR/miner.toml.template" "$output_file" "$env_file"
+}
+
+# Generate validator configuration
+generate_validator_config() {
+    local env="${1:-production}"
+    local env_file="$SCRIPT_DIR/environments/${env}.conf"
+    local output_file="${CONFIG_OUTPUT_DIR}/validator.toml"
+    
+    # Set default values
+    export VALIDATOR_WALLET_NAME="${VALIDATOR_WALLET_NAME:-validator}"
+    export VALIDATOR_HOTKEY_NAME="${VALIDATOR_HOTKEY_NAME:-default}"
+    export BITTENSOR_NETWORK="${BITTENSOR_NETWORK:-finney}"
+    export VALIDATOR_NETUID="${VALIDATOR_NETUID:-42}"
+    export BITTENSOR_CHAIN_ENDPOINT="${BITTENSOR_CHAIN_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
+    export VALIDATOR_HTTP_PORT="${VALIDATOR_HTTP_PORT:-8080}"
+    export VALIDATOR_METRICS_PORT="${VALIDATOR_METRICS_PORT:-9090}"
+    export ENABLE_AUTH="${ENABLE_AUTH:-false}"
+    
+    generate_config "$TEMPLATE_DIR/validator.toml.template" "$output_file" "$env_file"
+}
+
+# Generate all configurations
+generate_all_configs() {
+    local env="${1:-production}"
+    
+    log_header "Generating configurations for $env environment"
+    
+    generate_executor_config "$env" || return 1
+    generate_miner_config "$env" || return 1
+    generate_validator_config "$env" || return 1
+    
+    log_success "All configurations generated successfully"
+}
+
+# Validate all configurations
+validate_all_configs() {
+    log_header "Validating configurations"
+    
+    local configs=("executor.toml" "miner.toml" "validator.toml")
+    local all_valid=true
+    
+    for config in "${configs[@]}"; do
+        if [[ -f "$CONFIG_OUTPUT_DIR/$config" ]]; then
+            if validate_toml "$CONFIG_OUTPUT_DIR/$config"; then
+                log_success "$config is valid"
+            else
+                log_error "$config is invalid"
+                all_valid=false
+            fi
+        else
+            log_warn "$config not found"
+        fi
+    done
+    
+    if [[ "$all_valid" == true ]]; then
+        log_success "All configurations are valid"
+        return 0
+    else
+        log_error "Some configurations are invalid"
+        return 1
+    fi
+}
+
+# Main function
+main() {
+    local command="${1:-help}"
+    shift || true
+    
+    case "$command" in
+        executor)
+            generate_executor_config "$@"
+            ;;
+        miner)
+            generate_miner_config "$@"
+            ;;
+        validator)
+            generate_validator_config "$@"
+            ;;
+        all)
+            generate_all_configs "$@"
+            ;;
+        validate)
+            validate_all_configs
+            ;;
+        help|*)
+            cat << EOF
+Basilica Configuration Generator
+
+Usage: config-generator.sh <command> [environment]
+
+Commands:
+    executor    Generate executor configuration
+    miner       Generate miner configuration
+    validator   Generate validator configuration
+    all         Generate all configurations
+    validate    Validate existing configurations
+    
+Environment:
+    production  Production environment (default)
+    staging     Staging environment
+    
+Examples:
+    config-generator.sh all production
+    config-generator.sh validate
+    
+Output directory: $CONFIG_OUTPUT_DIR
+EOF
+            ;;
+    esac
+}
+
+main "$@"

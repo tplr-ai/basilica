@@ -1,0 +1,27 @@
+services:
+  public-api:
+    build:
+      context: ../..
+      dockerfile: scripts/public-api/Dockerfile
+    image: basilica/public-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      - RUST_LOG=info
+      - BITTENSOR_WALLET_NAME=test-wallet
+      - BITTENSOR_HOTKEY_NAME=test-hotkey
+    command: ["--config", "/config/public-api.toml"]
+    volumes:
+      - ./public-api.toml:/config/public-api.toml:ro
+      - ./test-wallets/test-wallet:/home/basilica/.bittensor/wallets/test-wallet:ro
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  redis-data:

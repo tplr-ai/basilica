@@ -1,0 +1,70 @@
+# Miner Configuration for Docker Development
+
+[server]
+host = "0.0.0.0"
+port = 8092
+
+[database]
+url = "sqlite:/tmp/miner.db?mode=rwc"
+max_connections = 5
+min_connections = 1
+connect_timeout = { secs = 5, nanos = 0 }
+run_migrations = true
+
+[logging]
+level = "info"
+format = "pretty"
+
+[metrics]
+enabled = true
+host = "0.0.0.0"
+port = 9091
+
+[bittensor]
+wallet_name = "templar_test"
+hotkey_name = "M1"
+network = "finney"
+netuid = 27
+uid = 0
+coldkey_name = "default"
+axon_port = 8091
+# external_ip is omitted (None)
+max_weight_uids = 256
+
+[validator_comms]
+request_timeout = { secs = 30, nanos = 0 }
+max_concurrent_sessions = 100
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.auth.token_validation]
+validate_issuer = true
+validate_audience = true
+validate_expiration = true
+clock_skew_tolerance = { secs = 60, nanos = 0 }
+
+[validator_comms.rate_limit]
+enabled = true
+requests_per_second = 10
+burst_capacity = 20
+window_duration = { secs = 60, nanos = 0 }
+
+[executor_management]
+health_check_interval = { secs = 30, nanos = 0 }
+health_check_timeout = { secs = 10, nanos = 0 }
+max_retry_attempts = 3
+auto_recovery = true
+
+[[executor_management.executors]]
+id = "docker-executor-1"
+name = "Docker GPU Executor"
+grpc_address = "executor:50051"
+
+[security]
+enable_mtls = false
+jwt_secret = "dev-secret-change-in-production"
+token_expiration = { secs = 3600, nanos = 0 }
+allowed_validators = []
+verify_signatures = false  # Disabled for development

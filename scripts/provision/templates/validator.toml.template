@@ -1,0 +1,72 @@
+# Validator Configuration Template
+# This file is used to generate environment-specific configurations
+
+[database]
+url = "sqlite:///opt/basilica/data/validator.db?mode=rwc"
+max_connections = 10
+run_migrations = true
+
+[server]
+host = "0.0.0.0"
+port = ${VALIDATOR_HTTP_PORT}
+max_connections = 1000
+request_timeout = { secs = 30 }
+
+[bittensor]
+wallet_name = "${VALIDATOR_WALLET_NAME}"
+hotkey_name = "${VALIDATOR_HOTKEY_NAME}"
+network = "${BITTENSOR_NETWORK}"
+netuid = ${BITTENSOR_NETUID}
+chain_endpoint = "${BITTENSOR_CHAIN_ENDPOINT}"
+weight_interval_secs = 300
+
+[verification]
+max_concurrent_verifications = 50
+min_score_threshold = 0.1
+verification_interval = { secs = 600 }
+challenge_timeout = { secs = 120 }
+retry_attempts = 3
+retry_delay = { secs = 5 }
+
+[ssh_validation]
+enabled = true
+timeout = { secs = 60 }
+max_file_size = "10MB"
+allowed_commands = ["gpu-attestor", "nvidia-smi"]
+temp_dir = "/tmp/basilica-validation"
+
+[scoring]
+gpu_weight = 0.4
+cpu_weight = 0.2
+memory_weight = 0.2
+network_weight = 0.1
+reliability_weight = 0.1
+
+[metrics]
+enabled = true
+host = "0.0.0.0"
+port = ${VALIDATOR_METRICS_PORT}
+path = "/metrics"
+retention_period = { secs = 604800 }
+
+[logging]
+level = "info"
+format = "json"
+output = "./validator.log"
+max_file_size = 104857600
+max_files = 10
+
+[api]
+enabled = true
+swagger_enabled = true
+cors_enabled = true
+cors_origins = ["*"]
+rate_limit = 100
+
+[storage]
+data_dir = "/opt/basilica/data"
+
+[security]
+enable_authentication = ${ENABLE_AUTH}
+api_key_header = "X-API-Key"
+allowed_api_keys = []

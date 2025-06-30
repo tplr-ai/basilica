@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+target/
+Dockerfile
+.dockerignore
+
+# Development files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+docs/
+*.md
+
+# Test files
+**/tests/
+**/benches/
+
+# Config files (will be mounted, but keep Cargo.toml)
+config/
+*.toml
+!Cargo.toml
+!Cargo.lock
+
+# Logs and temporary files
+*.log
+*.tmp
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build cache
+.cargo/registry
+.cargo/git
+
+# Local data
+*.db
+*.db-journal
+executor.db*
+miner.db*

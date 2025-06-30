@@ -1,0 +1,44 @@
+[Unit]
+Description=Basilica Executor Service
+Documentation=https://github.com/spacejar/basilica
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/basilica
+ExecStartPre=/bin/bash -c 'mkdir -p /opt/basilica/{data,logs}'
+ExecStart=/opt/basilica/bin/executor --config /opt/basilica/config/executor.toml --server
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/basilica/logs/executor.log
+StandardError=append:/opt/basilica/logs/executor.error.log
+
+# Security settings
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/basilica /var/run/docker.sock /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=false
+LockPersonality=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryLimit=4G
+CPUQuota=200%
+
+# Environment
+Environment="RUST_LOG=info"
+Environment="RUST_BACKTRACE=1"
+
+[Install]
+WantedBy=multi-user.target

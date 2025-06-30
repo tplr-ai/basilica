@@ -1,0 +1,83 @@
+[package]
+name = "validator"
+version = "0.1.0"
+edition = "2021"
+description = "Basilca Validator - Bittensor neuron for verification and scoring"
+rust-version = "1.70"
+
+[lib]
+name = "validator"
+path = "src/lib.rs"
+
+[[bin]]
+name = "validator"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace dependencies
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+figment = { workspace = true }
+sqlx = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+blake3 = { workspace = true }
+clap = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["limit"] }
+
+# Additional dependencies for validator
+futures = "0.3"
+async-trait = "0.1"
+toml = "0.8"
+
+# Internal dependencies
+common = { path = "../common" }
+protocol = { path = "../protocol" }
+bittensor = { path = "../bittensor" }
+gpu-attestor = { path = "../gpu-attestor" }
+
+# Validator-specific dependencies
+# Bittensor integration (placeholder - adjust when available)
+# bittensor-rs = "0.1"
+
+# HTTP client for external communications
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# Challenge implementation dependencies
+nalgebra = { version = "0.32", features = ["serde-serialize"] }
+rand = "0.8"
+rand_chacha = "0.3"
+sha2 = "0.10"
+hex = "0.4"
+fastrand = "2.0"
+
+# P256 ECDSA signature verification for attestation
+p256 = { version = "0.13", features = ["ecdsa"] }
+signature = "2.2"
+
+# System information and process management
+sysinfo = "0.30"
+
+[dev-dependencies]
+tempfile = "3.8"
+serial_test = "3.0"
+mockall = "0.11"
+
+[features]
+default = []
+# Enable test utilities
+test-utils = []
+# Enable development mode with additional debugging
+dev-mode = ["tracing-subscriber/env-filter"]

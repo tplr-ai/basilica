@@ -1,0 +1,192 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-executor:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: basilica-executor-linux-x86_64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: basilica-executor-macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: basilica-executor-macos-aarch64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: basilica-executor-windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-executor-${{ matrix.target }}
+
+      # Install system dependencies
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler pkg-config libssl-dev
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install protobuf pkg-config openssl
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install protoc
+          
+      # Build release binary
+      - name: Build executor
+        run: cargo build --release --target ${{ matrix.target }} -p executor
+
+      # Package binary
+      - name: Package binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/executor dist/
+          cp README.md dist/
+          cp executor.toml.example dist/
+          tar -czf ${{ matrix.name }}.tar.gz -C dist .
+
+      - name: Package binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir dist
+          copy target\${{ matrix.target }}\release\executor.exe dist\
+          copy README.md dist\
+          copy executor.toml.example dist\
+          Compress-Archive -Path dist\* -DestinationPath ${{ matrix.name }}.zip
+
+      # Upload release assets
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            ${{ matrix.name }}.tar.gz
+            ${{ matrix.name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-gpu-attestor:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            name: basilica-gpu-attestor-linux-x86_64
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            name: basilica-gpu-attestor-macos-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            name: basilica-gpu-attestor-macos-aarch64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            name: basilica-gpu-attestor-windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-gpu-attestor-${{ matrix.target }}
+
+      # Install system dependencies
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install pkg-config openssl
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Windows builds may need additional setup for OpenSSL
+          echo "Windows build setup"
+          
+      # Generate test key (gpu-attestor requires validator public key)
+      - name: Generate test key
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
+
+      # Build release binary
+      - name: Build gpu-attestor
+        run: cargo build --release --target ${{ matrix.target }} -p gpu-attestor
+
+      # Package binary
+      - name: Package binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/gpu-attestor dist/
+          cp README.md dist/
+          cp crates/gpu-attestor/README.md dist/GPU_ATTESTOR_README.md
+          tar -czf ${{ matrix.name }}.tar.gz -C dist .
+
+      - name: Package binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir dist
+          copy target\${{ matrix.target }}\release\gpu-attestor.exe dist\
+          copy README.md dist\
+          copy crates\gpu-attestor\README.md dist\GPU_ATTESTOR_README.md
+          Compress-Archive -Path dist\* -DestinationPath ${{ matrix.name }}.zip
+
+      # Upload release assets
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            ${{ matrix.name }}.tar.gz
+            ${{ matrix.name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

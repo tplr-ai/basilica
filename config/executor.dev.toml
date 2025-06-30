@@ -1,0 +1,51 @@
+# Development Executor Configuration
+
+[server]
+host = "0.0.0.0"
+port = 50051
+max_connections = 100
+
+# Managing miner hotkey - should match your miner in development
+managing_miner_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+
+[system]
+enable_gpu_monitoring = true
+enable_network_monitoring = true
+enable_memory_monitoring = true
+enable_cpu_monitoring = true
+update_interval = "5s"
+max_cpu_usage = 90.0
+max_memory_usage = 90.0
+max_gpu_memory_usage = 90.0
+enable_metrics_recording = true
+
+[docker]
+socket_path = "/var/run/docker.sock"
+network_mode = "bridge"
+enable_gpu_support = true
+gpu_device_ids = ["0"]
+cleanup_containers = true
+container_timeout = "300s"
+max_containers = 10
+
+[validator]
+enabled = true
+strict_ssh_restrictions = false
+
+[validator.access_config]
+# Allow connections from Docker network in dev
+ip_whitelist = ["172.16.0.0/12", "10.0.0.0/8"]
+
+[logging]
+level = "debug"
+format = "pretty"
+stdout = true
+
+[metrics]
+enabled = true
+collection_interval = "10s"
+
+[metrics.prometheus]
+enabled = true
+port = 9092
+path = "/metrics"

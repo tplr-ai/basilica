@@ -1,0 +1,38 @@
+# Development Miner Configuration
+network = "local"
+netuid = 1
+
+[server]
+host = "0.0.0.0"
+port = 8080
+max_connections = 100
+request_timeout = "30s"
+
+[database]
+# Using PostgreSQL in dev
+url = "postgresql://basilica:basilica_dev@postgres/basilica"
+max_connections = 10
+min_connections = 2
+run_migrations = true
+
+[logging]
+level = "debug"
+format = "pretty"
+stdout = true
+
+[metrics]
+enabled = true
+collection_interval = "10s"
+
+[metrics.prometheus]
+enabled = true
+port = 9091
+path = "/metrics"
+
+[bittensor]
+network = "local"
+netuid = 1
+wallet_name = "default"
+wallet_hotkey = "default"
+# For local development, use local subtensor
+# subtensor_url = "ws://subtensor:9944"

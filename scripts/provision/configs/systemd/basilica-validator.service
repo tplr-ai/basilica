@@ -1,0 +1,40 @@
+[Unit]
+Description=Basilica Validator Service
+Documentation=https://github.com/spacejar/basilica
+After=network-online.target
+Wants=network-online.target
+RequiresMountsFor=/var/lib/basilica
+
+[Service]
+Type=simple
+User=basilica
+Group=basilica
+WorkingDirectory=/var/lib/basilica/validator
+Environment=RUST_LOG=info
+Environment=RUST_BACKTRACE=1
+ExecStart=/usr/local/bin/validator start --config /etc/basilica/validator.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+TimeoutStartSec=60
+TimeoutStopSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=basilica-validator
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/basilica /var/log/basilica
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

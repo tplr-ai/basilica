@@ -1,0 +1,69 @@
+[package]
+name = "executor"
+version = "0.1.0"
+edition = "2021"
+description = "Basilca Executor - Agent running on GPU machines that executes tasks securely"
+
+[lib]
+name = "executor"
+path = "src/lib.rs"
+
+[[bin]]
+name = "executor"
+path = "src/main.rs"
+
+[dependencies]
+prost-types = "0.12"
+# Workspace dependencies
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+figment = { workspace = true }
+sqlx = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+blake3 = { workspace = true }
+aes-gcm = { workspace = true }
+rand = { workspace = true }
+sysinfo = { workspace = true }
+bollard = { workspace = true }
+
+# Internal dependencies
+common = { path = "../common", features = ["sqlite"] }
+protocol = { path = "../protocol" }
+gpu-attestor = { path = "../gpu-attestor" }
+
+# Additional required dependencies
+clap = { version = "4.4", features = ["derive"] }
+futures-util = "0.3"
+async-trait = "0.1"
+tokio-stream = "0.1"
+hex = "0.4"
+
+# Executor-specific dependencies
+# GPU monitoring
+nvml-wrapper = "0.9"
+# File system utilities
+fs_extra = "1.3"
+# System information
+num_cpus = "1.16"
+# TOML configuration
+toml = "0.8"
+
+
+[dev-dependencies]
+tempfile = "3.8"
+serial_test = "3.0"
+mockall = "0.11"
+
+[features]
+default = []

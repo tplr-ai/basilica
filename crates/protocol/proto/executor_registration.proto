@@ -1,0 +1,154 @@
+// Executor Registration Protocol - Executor to Miner communication
+// This service allows executors to register with their managing miner
+syntax = "proto3";
+
+package basilca.executor_registration.v1;
+
+import "common.proto";
+
+// ExecutorRegistration service for executor-miner registration
+// Implemented by: miner_node
+// Called by: executor_agent
+service ExecutorRegistration {
+  // Register executor with the miner
+  rpc RegisterExecutor(RegisterExecutorRequest) returns (RegisterExecutorResponse);
+  
+  // Update executor status and capabilities
+  rpc UpdateExecutorStatus(UpdateExecutorStatusRequest) returns (UpdateExecutorStatusResponse);
+  
+  // Unregister executor from the miner
+  rpc UnregisterExecutor(UnregisterExecutorRequest) returns (UnregisterExecutorResponse);
+  
+  // Send heartbeat to maintain registration
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+// Request to register an executor
+message RegisterExecutorRequest {
+  // Executor unique identifier
+  string executor_id = 1;
+  
+  // gRPC address where the executor control service is available
+  string grpc_address = 2;
+  
+  // GPU attestation report from gpu-attestor
+  basilca.common.v1.GpuAttestation gpu_attestation = 3;
+  
+  // System profile including CPU, memory, storage
+  basilca.common.v1.SystemProfile system_profile = 4;
+  
+  // Executor software version
+  string version = 5;
+  
+  // Miner credentials for authentication
+  string miner_hotkey = 6;
+  string signature = 7;
+  string nonce = 8;
+  
+  // Additional metadata
+  map<string, string> metadata = 9;
+}
+
+message RegisterExecutorResponse {
+  // Registration success status
+  bool success = 1;
+  
+  // Registration token for future requests
+  string registration_token = 2;
+  
+  // Expected heartbeat interval in seconds
+  uint64 heartbeat_interval_seconds = 3;
+  
+  // Configuration updates for the executor
+  map<string, string> config_updates = 4;
+  
+  // Error information if registration failed
+  basilca.common.v1.ErrorInfo error = 5;
+}
+
+// Request to update executor status
+message UpdateExecutorStatusRequest {
+  // Executor identifier
+  string executor_id = 1;
+  
+  // Registration token from initial registration
+  string registration_token = 2;
+  
+  // Current executor status (online, offline, maintenance, etc.)
+  string status = 3;
+  
+  // Updated resource availability
+  basilca.common.v1.ResourceLimits available_resources = 4;
+  
+  // Updated GPU status if changed
+  basilca.common.v1.GpuSpec gpu_spec = 5;
+  
+  // Additional status metadata
+  map<string, string> metadata = 6;
+}
+
+message UpdateExecutorStatusResponse {
+  // Update success status
+  bool success = 1;
+  
+  // Configuration updates if any
+  map<string, string> config_updates = 2;
+  
+  // Error information if update failed
+  basilca.common.v1.ErrorInfo error = 3;
+}
+
+// Request to unregister an executor
+message UnregisterExecutorRequest {
+  // Executor identifier
+  string executor_id = 1;
+  
+  // Registration token
+  string registration_token = 2;
+  
+  // Reason for unregistration
+  string reason = 3;
+}
+
+message UnregisterExecutorResponse {
+  // Unregistration success status
+  bool success = 1;
+  
+  // Final message or instructions
+  string message = 2;
+  
+  // Error information if unregistration failed
+  basilca.common.v1.ErrorInfo error = 3;
+}
+
+// Heartbeat request to maintain registration
+message HeartbeatRequest {
+  // Executor identifier
+  string executor_id = 1;
+  
+  // Registration token
+  string registration_token = 2;
+  
+  // Current resource utilization
+  basilca.common.v1.ResourceUtilization resource_utilization = 3;
+  
+  // Health status
+  map<string, string> health_status = 4;
+  
+  // Timestamp
+  basilca.common.v1.Timestamp timestamp = 5;
+}
+
+message HeartbeatResponse {
+  // Heartbeat acknowledged
+  bool acknowledged = 1;
+  
+  // Configuration updates if any
+  map<string, string> config_updates = 2;
+  
+  // Commands for the executor (if any)
+  repeated string commands = 3;
+  
+  // Error information if heartbeat processing failed
+  basilca.common.v1.ErrorInfo error = 4;
+}

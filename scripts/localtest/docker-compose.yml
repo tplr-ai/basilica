@@ -1,0 +1,231 @@
+services:
+
+  # Validator service using built image
+  validator:
+    image: basilica/validator:localtest
+    container_name: basilica-validator
+    environment:
+      RUST_LOG: debug
+      RUST_BACKTRACE: 1
+    network_mode: host  # Use host network to access local subtensor
+    volumes:
+      - ./validator.toml:/etc/basilica/validator.toml:ro
+      - ./keys:/etc/basilica/keys:ro
+      - attestor_share:/shared/attestor:ro
+      - validator_data:/var/lib/basilica/validator
+      - ~/.bittensor:/root/.bittensor
+    # Ports not needed with host network mode
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/validator && touch /var/lib/basilica/validator/validator.db && exec /usr/local/bin/validator start --config /etc/basilica/validator.toml --local-test"]
+
+  # Miner service using built image
+  miner:
+    image: basilica/miner:localtest
+    container_name: basilica-miner
+    user: root  # Override USER directive for testing
+    network_mode: host  # Use host network to access local subtensor
+    environment:
+      RUST_LOG: debug
+      RUST_BACKTRACE: 1
+    volumes:
+      - ./miner.toml:/etc/basilica/miner.toml:ro
+      - ./keys:/etc/basilica/keys:ro
+      - miner_data:/var/lib/basilica/miner
+      - ~/.bittensor:/root/.bittensor
+    # Ports not needed with host network mode
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9092/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /var/lib/basilica/miner && touch /var/lib/basilica/miner/miner.db && exec /usr/local/bin/miner --config /etc/basilica/miner.toml --metrics --metrics-addr 0.0.0.0:9092"]
+    depends_on:
+      - executor  # Miner manages executor fleet
+      - subtensor  # Local chain for testing
+
+  # Executor service using built image
+  executor:
+    image: basilica/executor:localtest
+    container_name: basilica-executor
+    privileged: true  # Required for Docker-in-Docker and GPU access
+    environment:
+      RUST_LOG: debug
+      RUST_BACKTRACE: 1
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./executor.toml:/etc/basilica/executor.toml:ro
+      - executor_data:/var/lib/basilica/executor
+      - attestor_share:/shared/attestor:rw
+      - /dev:/dev  # For GPU access
+    ports:
+      - "50051:50051"  # gRPC server
+      - "9090:9090"    # Metrics
+    networks:
+      - basilica_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/executor", "system", "health", "--config", "/etc/basilica/executor.toml"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+    command: ["--server", "--config", "/etc/basilica/executor.toml"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # GPU attestor service using built image
+  gpu-attestor:
+    image: basilica/gpu-attestor:localtest
+    container_name: basilica-gpu-attestor
+    environment:
+      RUST_LOG: debug
+    volumes:
+      - attestor_share:/shared/attestor:rw
+      - /dev:/dev:ro  # For GPU detection
+    networks:
+      - basilica_network
+    restart: "no"  # Run once for testing
+    profiles:
+      - attestor  # Only start when specifically requested
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: [
+      "--executor-id", "docker-test-executor",
+      "--output-path", "/shared/attestor/attestation",
+      "--log-level", "debug",
+      "--verbose"
+    ]
+
+  # SSH server for testing SSH validation
+  ssh-target:
+    image: ubuntu:22.04
+    container_name: basilica-ssh-target
+    environment:
+      ROOT_PASSWORD: testpass123
+    volumes:
+      - ./ssh-setup.sh:/setup.sh:ro
+      - ./keys:/keys:ro
+      - attestor_share:/shared/attestor:rw
+      - ssh_home:/home/testuser
+    ports:
+      - "2222:22"
+    networks:
+      - basilica_network
+    restart: unless-stopped
+    profiles:
+      - ssh-test  # Only start when testing SSH validation
+    command: >
+      bash -c "
+        apt-get update &&
+        apt-get install -y openssh-server sudo curl &&
+        (id testuser && userdel -r testuser) || true &&
+        useradd -m -s /bin/bash testuser &&
+        echo 'testuser:testpass123' | chpasswd &&
+        echo 'testuser ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers &&
+        mkdir -p /home/testuser/.ssh &&
+        cp /keys/id_rsa.pub /home/testuser/.ssh/authorized_keys &&
+        chown -R testuser:testuser /home/testuser/.ssh &&
+        chmod 700 /home/testuser/.ssh &&
+        chmod 600 /home/testuser/.ssh/authorized_keys &&
+        mkdir -p /var/run/sshd &&
+        /usr/sbin/sshd -D
+      "
+
+  # Local Subtensor node for testing
+  subtensor:
+    image: ghcr.io/opentensor/subtensor-localnet:devnet-ready
+    container_name: basilica-subtensor
+    ports:
+      - "9944:9944"  # WebSocket RPC
+      - "9945:9945"  # HTTP RPC 
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9944"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Prometheus for monitoring
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: basilica-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9091:9090"  # Avoid conflict with executor metrics
+    networks:
+      - basilica_network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: basilica-grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    ports:
+      - "3000:3000"
+    networks:
+      - basilica_network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    depends_on:
+      - prometheus
+
+volumes:
+  validator_data:
+    driver: local
+  miner_data:
+    driver: local
+  executor_data:
+    driver: local
+  attestor_share:
+    driver: local
+  ssh_home:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  basilica_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

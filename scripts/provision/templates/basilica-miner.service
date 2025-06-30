@@ -1,0 +1,43 @@
+[Unit]
+Description=Basilica Miner Service
+Documentation=https://github.com/spacejar/basilica
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/basilica
+ExecStartPre=/bin/bash -c 'mkdir -p /opt/basilica/{data,logs}'
+ExecStart=/opt/basilica/bin/miner --config /opt/basilica/config/miner.toml
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/basilica/logs/miner.log
+StandardError=append:/opt/basilica/logs/miner.error.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=false
+ReadWritePaths=/opt/basilica /root/.bittensor
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryLimit=2G
+CPUQuota=100%
+
+# Environment
+Environment="RUST_LOG=info"
+Environment="RUST_BACKTRACE=1"
+
+[Install]
+WantedBy=multi-user.target

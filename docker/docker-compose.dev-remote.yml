@@ -1,0 +1,73 @@
+# Development Docker Compose with Remote Executors
+# This version uses the new remote executor management system
+
+services:
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: basilica-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: basilica-grafana
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  # Miner that manages remote executors
+  miner:
+    build:
+      context: ..
+      dockerfile: docker/miner.Dockerfile
+      args:
+        BUILD_MODE: debug
+    container_name: basilica-miner-dev
+    user: root
+    network_mode: host
+    volumes:
+      - ./configs:/config:ro
+      - miner-data:/data
+      - ~/.bittensor:/root/.bittensor:ro
+      - ~/.ssh/basilica_gpu_test:/root/.ssh/basilica_gpu_test:ro  # SSH key for remote executor access
+      - ~/.ssh/basilica_gpu_test.pub:/root/.ssh/basilica_gpu_test.pub:ro
+      - ../target/release/executor:/executor-binary:ro  # Pre-built executor to deploy
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    command: ["-c", "/config/miner-local.toml", "--log-level", "debug"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "grpc-health-probe", "-addr=localhost:8092"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # gRPC UI for debugging
+  grpcui:
+    image: fullstorydev/grpcui:latest
+    container_name: basilica-grpcui
+    command: -plaintext -port 8081 localhost:8092
+    network_mode: host
+    depends_on:
+      - miner
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  miner-data:

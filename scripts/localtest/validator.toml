@@ -1,0 +1,96 @@
+# Basilica Validator Configuration for Local Testing
+# This configuration is optimized for development and testing
+
+[database]
+url = "sqlite:///var/lib/basilica/validator/validator.db"
+max_connections = 10
+min_connections = 1
+run_migrations = true
+
+[database.connect_timeout]
+secs = 30
+nanos = 0
+
+[database.idle_timeout]
+secs = 600
+nanos = 0
+
+[database.max_lifetime]
+secs = 3600
+nanos = 0
+
+[server]
+host = "0.0.0.0"
+port = 8080
+max_connections = 1000
+tls_enabled = false
+
+[server.request_timeout]
+secs = 30
+nanos = 0
+
+[server.keep_alive_timeout]
+secs = 60
+nanos = 0
+
+[logging]
+level = "debug"
+format = "text"
+stdout = true
+max_file_size = 104857600
+max_files = 5
+
+[logging.targets]
+
+[metrics]
+enabled = true
+
+[metrics.collection_interval]
+secs = 30
+nanos = 0
+
+[metrics.prometheus]
+host = "0.0.0.0"
+port = 8081
+path = "/metrics"
+
+[metrics.default_labels]
+
+[metrics.retention_period]
+secs = 604800
+nanos = 0
+
+[bittensor]
+wallet_name = "test_validator"
+hotkey_name = "test_hotkey"
+network = "local"
+netuid = 1
+chain_endpoint = "ws://localhost:9944"
+weight_interval_secs = 300
+
+[verification]
+max_concurrent_verifications = 3
+min_score_threshold = 0.0
+min_stake_threshold = 0.0
+max_miners_per_round = 10
+netuid = 1
+
+[verification.verification_interval]
+secs = 60
+nanos = 0
+
+[verification.challenge_timeout]
+secs = 60
+nanos = 0
+
+[verification.min_verification_interval]
+secs = 30
+nanos = 0
+
+[storage]
+data_dir = "/var/lib/basilica/validator"
+
+[api]
+api_key = "test_api_key_12345"
+max_body_size = 1048576
+bind_address = "0.0.0.0:8080"

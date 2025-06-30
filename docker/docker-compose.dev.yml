@@ -1,0 +1,145 @@
+# Development Docker Compose with additional services
+
+services:
+  # PostgreSQL database (alternative to SQLite)
+  postgres:
+    image: postgres:15-alpine
+    container_name: basilica-postgres
+    environment:
+      POSTGRES_DB: basilica
+      POSTGRES_USER: basilica
+      POSTGRES_PASSWORD: basilica_dev
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - basilica-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basilica"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: basilica-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    networks:
+      - basilica-network
+
+  # Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: basilica-grafana
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    networks:
+      - basilica-network
+    depends_on:
+      - prometheus
+
+  # Miner with dev configuration
+  miner:
+    build:
+      context: ..
+      dockerfile: docker/miner.Dockerfile
+      args:
+        BUILD_MODE: debug  # Use debug build for faster compilation
+    container_name: basilica-miner-dev
+    network_mode: host  # Use host network to access local subtensor on localhost:9945
+    volumes:
+      - ./configs:/config:ro
+      - ../crates:/workspace/crates:ro  # Mount source for debugging
+      - miner-data:/data
+      - ~/.bittensor:/root/.bittensor:ro  # Mount wallet directory
+    environment:
+      - BASILCA_CONFIG_FILE=/config/miner-local.toml  # Use local config for localhost
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+      - BASILCA_METRICS__PROMETHEUS__ENABLED=true
+      - BASILCA_METRICS__PROMETHEUS__PORT=9091
+    restart: unless-stopped
+
+  # Executor with dev configuration
+  executor:
+    build:
+      context: ..
+      dockerfile: docker/executor.Dockerfile
+    container_name: basilica-executor-dev
+    ports:
+      - "50051:50051"
+      - "9092:9092"  # Metrics port
+    volumes:
+      - ./configs:/config:ro
+      - ../crates:/workspace/crates:ro  # Mount source for debugging
+      - /var/run/docker.sock:/var/run/docker.sock
+      - executor-data:/data
+    environment:
+      - BASILCA_CONFIG_FILE=/config/executor.toml
+      - VALIDATOR_PUBLIC_KEY_FILE=/config/public_key.hex
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+      - BASILCA_METRICS__PROMETHEUS__ENABLED=true
+      - BASILCA_METRICS__PROMETHEUS__PORT=9092
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    privileged: true
+    networks:
+      - basilica-network
+    restart: unless-stopped
+    depends_on:
+      - miner
+
+  # gRPC UI for testing
+  grpcui:
+    image: fullstorydev/grpcui:latest
+    container_name: basilica-grpcui
+    command: ["-plaintext", "-port", "8081", "executor:50051"]
+    ports:
+      - "8081:8081"
+    networks:
+      - basilica-network
+    depends_on:
+      - executor
+
+  # Local Bittensor node (for development)
+  # subtensor:
+  #   image: opentensor/subtensor:latest
+  #   container_name: basilica-subtensor
+  #   ports:
+  #     - "9933:9933"  # RPC
+  #     - "9944:9944"  # WebSocket
+  #     - "30333:30333"  # P2P
+  #   command: ["--dev", "--rpc-external", "--ws-external"]
+  #   networks:
+  #     - basilica-network
+
+networks:
+  basilica-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+  miner-data:
+  executor-data:

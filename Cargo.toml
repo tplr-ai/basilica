@@ -1,0 +1,81 @@
+[workspace]
+members = [
+    "crates/common",
+    "crates/protocol", 
+    "crates/executor",
+    "crates/miner", 
+    "crates/validator",
+    "crates/bittensor",
+    "crates/gpu-attestor",
+    "crates/public-api",
+]
+resolver = "2"
+
+# Workspace-wide dependencies that all crates can use
+[workspace.dependencies]
+# Async runtime and utilities
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = "0.7"
+async-trait = "0.1"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Logging and metrics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-journald = "0.3"
+metrics = "0.22"
+metrics-exporter-prometheus = "0.12"
+
+# Configuration
+figment = { version = "0.10", features = ["toml", "env"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "sqlite", "uuid", "chrono", "json"] }
+
+# gRPC and networking
+tonic = "0.10"
+tonic-build = "0.10"
+prost = "0.12"
+prost-types = "0.12"
+
+# Crypto and security
+blake3 = "1.5"
+aes-gcm = "0.10"
+rand = "0.8"
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.0", features = ["derive"] }
+
+# System information
+sysinfo = "0.30"
+
+# Docker integration
+bollard = "0.15"
+
+# HTTP server (for validator API)
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Memory-mapped storage
+memmap2 = "0.9"
+
+# FFI
+libc = "0.2"
+
+# Bittensor integration via crabtensor
+crabtensor = { git = "https://github.com/storb-tech/crabtensor", tag = "v0.5.2" }
+
+[workspace.metadata]
+# Workspace metadata for tooling
+rust-version = "1.70"
