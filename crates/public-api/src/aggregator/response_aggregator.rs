@@ -94,11 +94,12 @@ impl ResponseAggregator {
         let results = futures::future::join_all(tasks).await;
         let mut responses = Vec::new();
 
-        for result in results {
-            if let Ok(Some(response)) = result {
-                responses.push(response);
-            }
-        }
+        responses.extend(
+            results
+                .into_iter()
+                .flatten()
+                .flatten()
+        );
 
         if responses.is_empty() {
             Err(Error::Aggregation {
