@@ -210,7 +210,8 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/executor/build.sh
-          BITTENSOR_NETWORK=test ./scripts/executor/build.sh --no-extract --debug
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/executor/build.sh --no-extract --debug
 
   # Build and test gpu-attestor
   build-gpu-attestor:
@@ -237,7 +238,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+          sudo apt-get install -y pkg-config libssl-dev xxd
           # Install newer CMake for shaderc-sys
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
           sudo apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
@@ -315,7 +316,8 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/validator/build.sh
-          BITTENSOR_NETWORK=test ./scripts/validator/build.sh --no-extract --debug
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/validator/build.sh --no-extract --debug
 
   # Build and test miner
   build-miner:
