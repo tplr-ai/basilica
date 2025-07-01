@@ -44,7 +44,6 @@ hotkey_name = "default"
 network = "finney"  # or "test" for testnet
 netuid = 39  # Basilica subnet
 chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
-weight_interval_secs = 300
 axon_port = 9090
 
 [executor]

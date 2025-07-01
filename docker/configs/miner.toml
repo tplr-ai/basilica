@@ -25,7 +25,6 @@ wallet_name = "templar_test"
 hotkey_name = "M1"
 network = "finney"
 netuid = 27
-uid = 0
 coldkey_name = "default"
 axon_port = 8091
 # external_ip is omitted (None)

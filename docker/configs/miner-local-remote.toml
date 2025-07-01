@@ -25,7 +25,6 @@ wallet_name = "templar_test"
 hotkey_name = "M1"
 network = "local"
 netuid = 2
-uid = 0
 coldkey_name = "default"
 axon_port = 8091
 chain_endpoint = "ws://localhost:9945"

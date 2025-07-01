@@ -8,7 +8,7 @@ network = "local"  # Use local network
 netuid = 1  # Local subnet ID
 chain_endpoint = "ws://localhost:9944"  # Local subtensor on host
 weight_interval_secs = 300
-uid = 0  # Will be auto-discovered during registration
+# UID will be auto-discovered during registration
 coldkey_name = "default"
 axon_port = 8091
 external_ip = "127.0.0.1"  # Localhost for testing
