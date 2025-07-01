@@ -48,6 +48,28 @@ lint-ci: gen-key fmt-check
     cargo clippy -p common -p protocol -p executor -p gpu-attestor -p bittensor --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn
 
 # =============================================================================
+# TEST COMMANDS
+# =============================================================================
+
+# Run tests
+test-run *ARGS:
+    #!/usr/bin/env bash
+    chmod +x scripts/test/run.sh
+    ./scripts/test/run.sh {{ARGS}}
+
+# Verify test implementation
+test-verify:
+    #!/usr/bin/env bash
+    chmod +x scripts/test/verify.sh
+    ./scripts/test/verify.sh
+
+# Show test statistics
+test-stats *ARGS:
+    #!/usr/bin/env bash
+    chmod +x scripts/test/stats.sh
+    ./scripts/test/stats.sh {{ARGS}}
+
+# =============================================================================
 # WORKSPACE COMMANDS
 # =============================================================================
 
@@ -114,8 +136,32 @@ docker-build-gpu-attestor: gen-key
 docker-build: docker-build-executor docker-build-gpu-attestor
 
 # =============================================================================
-# DOCKER COMPOSE COMMANDS
+# DEPLOYMENT COMMANDS
 # =============================================================================
+
+# Deploy miner to remote server
+deploy-miner HOST PORT="22":
+    #!/usr/bin/env bash
+    chmod +x scripts/miner/deploy.sh
+    ./scripts/miner/deploy.sh {{HOST}} {{PORT}}
+
+# Deploy executor to remote server
+deploy-executor HOST PORT="22":
+    #!/usr/bin/env bash
+    chmod +x scripts/executor/deploy.sh
+    ./scripts/executor/deploy.sh {{HOST}} {{PORT}}
+
+# Deploy validator to remote server
+deploy-validator HOST PORT="22":
+    #!/usr/bin/env bash
+    chmod +x scripts/validator/deploy.sh
+    ./scripts/validator/deploy.sh {{HOST}} {{PORT}}
+
+# Deploy public-api to remote server
+deploy-public-api HOST PORT="22":
+    #!/usr/bin/env bash
+    chmod +x scripts/public-api/deploy.sh
+    ./scripts/public-api/deploy.sh {{HOST}} {{PORT}}
 
 # Set docker compose command (use v2 by default)
 docker_compose := "docker compose"
@@ -221,66 +267,66 @@ clean-remote:
     #!/usr/bin/env bash
     echo "Cleaning remote binaries and data..."
     echo "===================================="
-    
+
     # Stop all services first
     echo "Stopping services..."
     ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
     sleep 2
-    
+
     # Clean executor
     echo "Cleaning executor at 64.247.196.98..."
     ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "rm -rf /opt/basilica/bin/* /opt/basilica/config/* /opt/basilica/data/* /opt/basilica/logs/*" 2>/dev/null || echo "  Warning: Could not clean executor"
-    
+
     # Clean miner
     echo "Cleaning miner at 51.159.160.71..."
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "rm -rf /opt/basilica/bin/* /opt/basilica/config/* /opt/basilica/data/* /opt/basilica/logs/*" 2>/dev/null || echo "  Warning: Could not clean miner"
-    
+
     # Clean validator
     echo "Cleaning validator at 51.159.130.131..."
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "rm -rf /opt/basilica/bin/* /opt/basilica/config/* /opt/basilica/data/* /opt/basilica/logs/*" 2>/dev/null || echo "  Warning: Could not clean validator"
-    
+
     echo "Remote cleanup complete!"
 
 # Run integration tests (use 'just int clean' to wipe remote servers first)
 int MODE="":
     #!/usr/bin/env bash
     set -euo pipefail
-    
+
     # Check if clean mode is requested
     if [ "{{ MODE }}" = "clean" ]; then
         echo "Clean mode: Full cleanup and rebuild"
         echo "===================================="
-        
+
         # Delete local binaries
         echo "Deleting local binaries..."
         rm -f validator miner executor gpu-attestor
         echo "Local binaries deleted"
-        
+
         # Stop all services
         echo "Stopping all remote services..."
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f executor || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.183.42 -p 61993 "pkill -f validator || true" 2>/dev/null || true
         sleep 2
-        
+
         # Clean all remote directories
         echo "Cleaning remote directories..."
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.183.42 -p 61993 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
-        
+
         echo "Remote cleanup complete!"
         echo ""
-        
+
         # Force rebuild
         NEED_BUILD=true
     fi
-    
+
     echo "Starting smart integration tests..."
     echo "================================"
-    
+
     # Check if binaries exist locally
     NEED_BUILD=false
     for binary in validator miner executor gpu-attestor; do
@@ -289,7 +335,7 @@ int MODE="":
             NEED_BUILD=true
         fi
     done
-    
+
     if [ "$NEED_BUILD" = "true" ]; then
         echo "Building missing binaries..."
         [ ! -f validator ] && ./scripts/validator/build.sh
@@ -299,19 +345,19 @@ int MODE="":
     else
         echo "All binaries exist, skipping build"
     fi
-    
+
     # Check configurations
     if [ ! -f executor.toml ] || [ ! -f miner.toml ] || [ ! -f validator.toml ]; then
         echo "Generating configurations..."
         ./scripts/basilica.sh provision config production
     else
-        echo "Configurations exist, skipping generation"
+        echo "Configurations exist"
     fi
-    
+
     # Deploy only if needed
     echo "Checking deployment status..."
     NEED_DEPLOY=false
-    
+
     # Check each server
     if ! ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "test -f /opt/basilica/bin/executor" 2>/dev/null; then
         NEED_DEPLOY=true
@@ -322,90 +368,90 @@ int MODE="":
     if ! ssh -i ~/.ssh/tplr root@51.159.183.42 -p 61993 "test -f /opt/basilica/bin/validator" 2>/dev/null; then
         NEED_DEPLOY=true
     fi
-    
+
     if [ "$NEED_DEPLOY" = "true" ]; then
         echo "Deploying binaries..."
         ./scripts/basilica.sh deploy binaries production
     else
         echo "Binaries already deployed, skipping"
     fi
-    
+
     # Check if services are running
     echo "Checking service status..."
-    
+
     # Stop services if needed
     echo "Stopping any running services..."
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f executor || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.183.42 -p 61993 "pkill -f validator || true" 2>/dev/null || true
-    
+
     sleep 2
-    
+
     # Note about executor environment
     echo "Note: Executor at 51.159.130.131 is running in a Docker container"
     echo "      Port 50051 may not be accessible externally without port mapping"
     echo "      Hardware attestation requires --privileged flag on the container"
-    
+
     # Start services
     echo "Starting executor..."
     ssh -i ~/.ssh/tplr -f root@51.159.130.131 -p 41199 'cd /opt/basilica && /opt/basilica/bin/executor --server --config /opt/basilica/config/executor.toml > /opt/basilica/logs/executor.log 2>&1 &'
     echo "Executor started"
-    
+
     echo "Starting miner..."
     ssh -i ~/.ssh/tplr -f root@51.159.160.71 -p 55960 'cd /opt/basilica && /opt/basilica/bin/miner --config /opt/basilica/config/miner.toml > /opt/basilica/logs/miner.log 2>&1 &'
     echo "Miner started"
-    
+
     echo "Starting validator..."
     ssh -i ~/.ssh/tplr -f root@51.159.183.42 -p 61993 'cd /opt/basilica && /opt/basilica/bin/validator start --config /opt/basilica/config/validator.toml > /opt/basilica/logs/validator.log 2>&1 &'
     echo "Validator started"
-    
+
     # Give services time to start
     echo "Waiting for services to start..."
     sleep 5
-    
+
     # Check status
     echo "Checking miner status..."
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "ps aux | grep 'miner --config' | grep -v grep || echo 'Miner process not found'"
-    
+
     echo "Checking validator status..."
     ssh -i ~/.ssh/tplr root@51.159.183.42 -p 61993 "ps aux | grep 'validator start' | grep -v grep || echo 'Validator process not found'"
-    
+
     echo "Checking executor status..."
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "ps aux | grep 'executor --server' | grep -v grep || echo 'Executor process not found'"
-    
+
     # Check logs
     echo "Checking miner logs..."
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "tail -20 /opt/basilica/logs/miner.log 2>/dev/null || echo 'No miner logs found'"
-    
+
     echo "Checking validator logs..."
     ssh -i ~/.ssh/tplr root@51.159.183.42 -p 61993 "tail -20 /opt/basilica/logs/validator.log 2>/dev/null || echo 'No validator logs found'"
-    
+
     echo "Checking executor logs..."
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "tail -20 /opt/basilica/logs/executor.log 2>/dev/null || echo 'No executor logs found'"
-    
+
     # Health checks
     echo ""
     echo "Running health checks..."
-    
+
     echo "Testing Executor (gRPC port 50051):"
     # Executor only has gRPC, not HTTP health
     timeout 2 bash -c "</dev/tcp/51.159.130.131/50051" 2>/dev/null && echo " ✓ Executor gRPC port 50051 is accessible" || echo " ✗ Executor gRPC port 50051 is NOT accessible"
-    
+
     echo ""
     echo "Testing Miner health (HTTP port 8080):"
     curl -s --max-time 5 http://51.159.160.71:8080/health && echo " ✓ Miner health check passed" || echo " ✗ Miner health check failed"
-    
+
     echo ""
     echo "Testing Validator health (HTTP port 8081):"
     curl -s --max-time 5 http://51.159.183.42:8081/health && echo " ✓ Validator health check passed" || echo " ✗ Validator health check failed"
-    
+
     # Test miner-executor connectivity
     echo ""
     echo "Testing Miner -> Executor connectivity:"
     # First check if executor is listening
     echo " Checking if executor is listening on port 50051..."
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "grep -q 'Starting gRPC server on 0.0.0.0:50051' /opt/basilica/logs/executor.log && echo '  ✓ Executor says it is listening on port 50051' || echo '  ✗ Executor not listening'"
-    
+
     # Test connectivity from miner
     if ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "timeout 2 bash -c '</dev/tcp/51.159.130.131/50051' 2>/dev/null"; then
         echo " ✓ Miner can reach Executor on port 50051"
@@ -422,16 +468,16 @@ int MODE="":
             echo " ✗ Executor not accessible even locally"
         fi
     fi
-    
+
     # GPU attestation test
     echo ""
     echo "Testing GPU attestation:"
-    
+
     # Check container status
     echo "Checking executor environment..."
     if ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "[ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null"; then
         echo " ℹ️  Executor is running in a Docker container"
-        
+
         # Check if we have privileged access
         if ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "[ -r /dev/mem ] && dmidecode -t system >/dev/null 2>&1"; then
             echo " ✓ Container has privileged access"
@@ -450,14 +496,14 @@ int MODE="":
         echo "Running GPU attestation with full hardware collection..."
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "/opt/basilica/bin/gpu-attestor --executor-id prod-executor-1 --output /opt/basilica/data/attestations/test" && echo " ✓ GPU attestation completed successfully" || echo " ✗ GPU attestation failed"
     fi
-    
+
     # Docker container test
     echo ""
     echo "Testing Docker container creation:"
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "docker rm -f cpu-rental-test 2>/dev/null || true"
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "docker run -d --name cpu-rental-test --restart unless-stopped ubuntu:22.04 bash -c 'echo Container is running && sleep infinity'" || echo "Docker container creation failed"
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "docker ps | grep rental" || echo "Docker container not running"
-    
+
     echo "================================"
     echo "Integration tests completed!"
     echo ""
@@ -475,45 +521,45 @@ int MODE="":
 int-testnet MODE="":
     #!/usr/bin/env bash
     set -euo pipefail
-    
+
     # Check if clean mode is requested
     if [ "{{ MODE }}" = "clean" ]; then
         echo "Clean mode: Full cleanup and rebuild"
         echo "===================================="
-        
+
         # Delete local binaries
         echo "Deleting local binaries..."
         rm -f validator miner executor gpu-attestor
         echo "Local binaries deleted"
-        
+
         # Stop all services
         echo "Stopping all remote services..."
         ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
         sleep 2
-        
+
         # Clean all remote directories
         echo "Cleaning remote directories..."
         ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
-        
+
         echo "Remote cleanup complete!"
         echo ""
-        
+
         # Force rebuild with testnet metadata
         echo "Forcing rebuild with testnet metadata..."
         export BITTENSOR_NETWORK=test
         NEED_BUILD=true
     fi
-    
+
     echo "Starting Basilica testnet integration tests..."
     echo "============================================"
     echo "Target: Bittensor Testnet Subnet 387"
     echo "Chain: wss://test.finney.opentensor.ai:443"
     echo ""
-    
+
     # Check if binaries exist locally
     NEED_BUILD=false
     for binary in validator miner executor gpu-attestor; do
@@ -522,13 +568,13 @@ int-testnet MODE="":
             NEED_BUILD=true
         fi
     done
-    
+
     if [ "$NEED_BUILD" = "true" ]; then
         echo "Building missing binaries for TESTNET..."
         echo "Setting BITTENSOR_NETWORK=test for metadata generation"
         export BITTENSOR_NETWORK=test
         export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443"
-        
+
         [ ! -f validator ] && BITTENSOR_NETWORK=test ./scripts/validator/build.sh
         [ ! -f miner ] && BITTENSOR_NETWORK=test ./scripts/miner/build.sh
         [ ! -f executor ] && BITTENSOR_NETWORK=test ./scripts/executor/build.sh
@@ -536,15 +582,15 @@ int-testnet MODE="":
     else
         echo "All binaries exist, skipping build"
     fi
-    
+
     # Generate testnet configurations
     echo "Generating testnet configurations..."
     ./scripts/basilica.sh provision config testnet
-    
+
     # Check deployment status
     echo "Checking deployment status..."
     NEED_DEPLOY=false
-    
+
     # Check each server
     if ! ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "test -f /opt/basilica/bin/executor" 2>/dev/null; then
         NEED_DEPLOY=true
@@ -555,83 +601,79 @@ int-testnet MODE="":
     if ! ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "test -f /opt/basilica/bin/validator" 2>/dev/null; then
         NEED_DEPLOY=true
     fi
-    
+
     if [ "$NEED_DEPLOY" = "true" ]; then
         echo "Deploying binaries to testnet servers..."
         ./scripts/basilica.sh deploy binaries testnet
     else
         echo "Binaries already deployed, skipping"
     fi
-    
+
     # Stop any running services
     echo "Stopping any running services..."
     ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
-    
+
     sleep 2
-    
-    # Deploy testnet configurations
-    echo "Deploying testnet configurations..."
-    ./scripts/basilica.sh provision config testnet
-    
+
     # Start services with testnet configs
     echo "Starting executor (testnet mode)..."
     ssh -i ~/.ssh/tplr -f root@64.247.196.98 -p 9001 'cd /opt/basilica && /opt/basilica/bin/executor --server --config /opt/basilica/config/executor.toml > /opt/basilica/logs/executor-testnet.log 2>&1 &'
     echo "Executor started"
-    
+
     echo "Starting miner (testnet mode)..."
     ssh -i ~/.ssh/tplr -f root@51.159.160.71 -p 55960 'cd /opt/basilica && /opt/basilica/bin/miner --config /opt/basilica/config/miner.toml > /opt/basilica/logs/miner-testnet.log 2>&1 &'
     echo "Miner started"
-    
+
     echo "Starting validator (testnet mode)..."
     ssh -i ~/.ssh/tplr -f root@51.159.130.131 -p 41199 'cd /opt/basilica && /opt/basilica/bin/validator start --config /opt/basilica/config/validator.toml > /opt/basilica/logs/validator-testnet.log 2>&1 &'
     echo "Validator started"
-    
+
     # Give services time to start and register
     echo "Waiting for services to start and register on testnet..."
     sleep 10
-    
+
     # Check status
     echo ""
     echo "Checking testnet service status..."
     echo "================================"
-    
+
     echo "Miner process:"
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "ps aux | grep 'miner --config' | grep -v grep || echo 'Miner process not found'"
-    
+
     echo ""
     echo "Validator process:"
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "ps aux | grep 'validator start' | grep -v grep || echo 'Validator process not found'"
-    
+
     echo ""
     echo "Executor process:"
     ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "ps aux | grep 'executor --server' | grep -v grep || echo 'Executor process not found'"
-    
+
     # Check testnet registration
     echo ""
     echo "Checking Bittensor testnet registration..."
     echo "========================================="
-    
+
     echo "Miner logs (checking for testnet registration):"
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "grep -E '(test|387|finney)' /opt/basilica/logs/miner-testnet.log 2>/dev/null | tail -10 || echo 'No testnet logs found yet'"
-    
+
     echo ""
     echo "Validator logs (checking for testnet registration):"
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "grep -E '(test|387|finney)' /opt/basilica/logs/validator-testnet.log 2>/dev/null | tail -10 || echo 'No testnet logs found yet'"
-    
+
     # Health checks
     echo ""
     echo "Running testnet health checks..."
     echo "================================"
-    
+
     echo "Testing Miner health (HTTP port 8080):"
     curl -s --max-time 5 http://51.159.160.71:8080/health && echo " ✓ Miner health check passed" || echo " ✗ Miner health check failed"
-    
+
     echo ""
     echo "Testing Validator health (HTTP port 8081):"
     curl -s --max-time 5 http://51.159.130.131:8081/health && echo " ✓ Validator health check passed" || echo " ✗ Validator health check failed"
-    
+
     echo ""
     echo "============================================"
     echo "Testnet integration test setup completed!"

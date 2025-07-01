@@ -1,0 +1,119 @@
+# Basilica Public API Configuration Example
+# Copy this file to public-api.toml and customize for your environment
+
+[server]
+host = "0.0.0.0"
+port = 8000
+enable_cors = true
+cors_origins = ["*"]
+max_request_size = 10485760  # 10MB
+request_timeout = 60
+
+[logging]
+level = "info"  # Options: debug, info, warn, error
+format = "json"  # Options: json, pretty
+enable_file_logging = true
+log_dir = "/var/log/basilica"
+
+[metrics]
+enabled = true
+port = 8080
+
+# Prometheus metrics
+[metrics.prometheus]
+enabled = true
+port = 9090
+
+[validator]
+grpc_endpoint = "validator:50053"
+connection_timeout = 30
+request_timeout = 60
+max_retries = 3
+retry_delay = 5
+
+[redis]
+url = "redis://localhost:6379"
+pool_size = 10
+connection_timeout = 5
+max_retries = 3
+
+[cache]
+enabled = true
+ttl = 300  # 5 minutes
+max_entries = 10000
+eviction_policy = "lru"  # Options: lru, lfu, ttl
+
+[auth]
+enable_authentication = false
+jwt_secret = ""  # Will be auto-generated if empty
+token_expiry = 3600  # 1 hour
+refresh_token_expiry = 604800  # 7 days
+
+[rate_limiting]
+enabled = true
+requests_per_minute = 100
+burst_size = 20
+per_ip = true
+per_user = true
+
+[rate_limit]
+default_limit = 100
+default_window = 60  # seconds
+burst_multiplier = 2
+
+# Endpoint-specific limits
+[[rate_limit.endpoints]]
+path = "/api/v1/compute/submit"
+limit = 10
+window = 60
+
+[[rate_limit.endpoints]]
+path = "/api/v1/status/*"
+limit = 300
+window = 60
+
+[health_check]
+enabled = true
+interval = 30
+timeout = 10
+check_redis = true
+check_validator = true
+
+[load_balancer]
+strategy = "round_robin"  # Options: round_robin, least_connections, weighted
+health_check_interval = 10
+unhealthy_threshold = 3
+healthy_threshold = 2
+
+# Validator pool configuration
+[[load_balancer.validators]]
+endpoint = "validator1:50053"
+weight = 1
+
+[security]
+enable_tls = false  # Set to true for production
+require_https = false  # Set to true for production
+allowed_origins = ["*"]
+max_request_body_size = 10485760  # 10MB
+request_id_header = "X-Request-ID"
+
+# API Documentation
+[docs]
+enabled = true
+path = "/docs"
+title = "Basilica Public API"
+version = "1.0.0"
+
+# Webhook Configuration
+[webhooks]
+enabled = false
+max_retries = 3
+timeout = 30
+verify_ssl = true
+
+# Database Configuration (for audit logs)
+[database]
+url = "postgresql://basilica:YOUR_PASSWORD@localhost:5432/basilica_api"
+max_connections = 10
+min_connections = 2
+log_queries = false

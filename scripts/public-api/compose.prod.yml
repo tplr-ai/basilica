@@ -1,0 +1,64 @@
+services:
+  public-api:
+    image: ghcr.io/tplr-ai/basilica-public-api:latest
+    container_name: basilica-public-api
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    
+    volumes:
+      - ../../config/public-api.toml:/app/public-api.toml:ro
+      - public-api-data:/app/data
+    
+    ports:
+      - "8000:8000"    # HTTP API
+      - "8080:8080"    # Metrics endpoint
+    
+    networks:
+      - basilica_network
+    
+    command: ["--config", "/app/public-api.toml"]
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: basilica-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - basilica_network
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: basilica-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
+    command: --label-enable --cleanup --interval 300
+
+networks:
+  basilica_network:
+    driver: bridge
+
+volumes:
+  public-api-data:
+  redis-data:

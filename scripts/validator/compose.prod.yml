@@ -1,0 +1,54 @@
+services:
+  validator:
+    image: ghcr.io/tplr-ai/basilica-validator:latest
+    container_name: basilica-validator
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+
+    volumes:
+      - ../../config/validator.toml:/app/validator.toml:ro
+      - validator-data:/app/data
+      - ~/.ssh:/app/keys:ro
+      - ~/.bittensor:/home/basilica/.bittensor:rw
+      - /var/log/basilica:/var/log/basilica:rw
+
+    ports:
+      - "50053:50053"   # gRPC server
+      - "3000:3000"     # Public API
+      - "8080:8080"     # Metrics
+
+    networks:
+      - basilica_network
+
+    command: ["--config", "/app/validator.toml"]
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: basilica-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
+    command: --label-enable --cleanup --interval 300
+
+networks:
+  basilica_network:
+    driver: bridge
+
+volumes:
+  validator-data:

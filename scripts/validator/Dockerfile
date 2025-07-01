@@ -15,21 +15,28 @@ WORKDIR /workspace
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
-COPY src/ ./src/
 COPY crates/ ./crates/
 
 # Build arguments
 ARG BUILD_MODE=release
 ARG FEATURES=""
-ARG BITTENSOR_NETWORK=""
+ARG BITTENSOR_NETWORK="test"
 ARG METADATA_CHAIN_ENDPOINT=""
 
-# Set environment variables for the build
-ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK}
+# Set environment variables for the build - default to test network if not specified
+ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK:-test}
 ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
 
 # Build the validator directly (workspace should resolve dependencies)
-RUN if [ "$BUILD_MODE" = "release" ]; then \
+# Set explicit endpoint if network is specified but endpoint is not
+RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
+        case "$BITTENSOR_NETWORK" in \
+            test) export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443" ;; \
+            local) export METADATA_CHAIN_ENDPOINT="ws://subtensor:9944" ;; \
+            finney|*) export METADATA_CHAIN_ENDPOINT="wss://entrypoint-finney.opentensor.ai:443" ;; \
+        esac; \
+    fi && \
+    if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
             cargo build --release -p validator --features "$FEATURES"; \
         else \

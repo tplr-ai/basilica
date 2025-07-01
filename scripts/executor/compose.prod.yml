@@ -1,0 +1,64 @@
+services:
+  executor:
+    image: ghcr.io/tplr-ai/basilica-executor:latest
+    container_name: basilica-executor
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+    privileged: true
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../config/executor.toml:/app/executor.toml:ro
+      - executor-data:/app/data
+      - /dev:/dev:rw
+
+    environment:
+      - RUST_LOG=info
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    ports:
+      - "50052:50052"   # gRPC server
+      - "8080:8080"     # Metrics
+      - "22222:22"      # SSH for validator
+
+    networks:
+      - basilica_network
+
+    command: ["--config", "/app/executor.toml"]
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: basilica-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
+    command: --label-enable --cleanup --interval 300
+
+networks:
+  basilica_network:
+    driver: bridge
+
+volumes:
+  executor-data:

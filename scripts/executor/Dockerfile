@@ -19,7 +19,6 @@ WORKDIR /workspace
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
-COPY src/ ./src/
 COPY crates/ ./crates/
 
 # Build arguments
