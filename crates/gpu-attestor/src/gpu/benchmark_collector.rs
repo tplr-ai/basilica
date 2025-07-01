@@ -9,13 +9,15 @@ use anyhow::Result;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::attestation::types::{
-    CudaDriverBenchmarkResults, GpuBenchmarkResults, MatrixMultiplicationResult, SingleGpuBenchmark,
-};
+#[cfg(feature = "cuda")]
+use crate::attestation::types::{CudaDriverBenchmarkResults, MatrixMultiplicationResult};
+use crate::attestation::types::{GpuBenchmarkResults, SingleGpuBenchmark};
 use crate::gpu::benchmarks::{BenchmarkBackend, GpuBenchmarkRunner};
 #[cfg(feature = "cuda")]
 use crate::gpu::cuda_driver::{CudaMatrixCompute, MatrixCompute, MatrixDimensions};
-use crate::gpu::{GpuDetector, GpuVendor};
+use crate::gpu::GpuDetector;
+#[cfg(feature = "cuda")]
+use crate::gpu::GpuVendor;
 
 /// Collect comprehensive GPU benchmarks for all available GPUs
 pub async fn collect_gpu_benchmarks() -> Result<GpuBenchmarkResults> {
@@ -206,6 +208,7 @@ fn get_cuda_driver_version() -> Option<String> {
 
 /// Get CUDA driver version if available (stub when CUDA is disabled)
 #[cfg(not(feature = "cuda"))]
+#[allow(dead_code)]
 fn get_cuda_driver_version() -> Option<String> {
     None
 }
