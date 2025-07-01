@@ -19,12 +19,15 @@ WORKDIR /workspace
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
-COPY src/ ./src/
 COPY crates/ ./crates/
 
 # Build arguments
 ARG BUILD_MODE=release
 ARG FEATURES=""
+ARG VALIDATOR_PUBLIC_KEY=""
+
+# Set environment variables for the build
+ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
 
 # Build the executor directly (workspace should resolve dependencies)
 RUN if [ "$BUILD_MODE" = "release" ]; then \

@@ -22,7 +22,7 @@ pub struct MinerClientConfig {
     pub timeout: Duration,
     /// Number of retry attempts
     pub max_retries: u32,
-    /// Offset from axon port to gRPC port (default: axon_port becomes 50061)
+    /// Offset from axon port to gRPC port (default: gRPC port is 8080)
     pub grpc_port_offset: Option<u16>,
     /// Whether to use TLS for gRPC connections
     pub use_tls: bool,
@@ -33,7 +33,7 @@ impl Default for MinerClientConfig {
         Self {
             timeout: Duration::from_secs(30),
             max_retries: 3,
-            grpc_port_offset: None, // Will use default port 50061
+            grpc_port_offset: None, // Will use default port 8080
             use_tls: false,
         }
     }
@@ -119,7 +119,7 @@ impl MinerClient {
     /// Extract gRPC endpoint from axon endpoint
     ///
     /// Converts axon endpoint (e.g., "http://1.2.3.4:8091") to gRPC endpoint
-    /// using configured port mapping or default port 50061
+    /// using configured port mapping or default port 8080
     pub fn axon_to_grpc_endpoint(&self, axon_endpoint: &str) -> Result<String> {
         // Parse the axon endpoint
         let url = url::Url::parse(axon_endpoint)
@@ -136,8 +136,8 @@ impl MinerClient {
                 .ok_or_else(|| anyhow::anyhow!("No port in axon endpoint"))?;
             axon_port + offset
         } else {
-            // Default gRPC port for miners
-            50061
+            // Default gRPC port for miners (same as HTTP port)
+            8080
         };
 
         // Build gRPC endpoint
@@ -370,7 +370,7 @@ mod tests {
 
         let axon = "http://192.168.1.100:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "http://192.168.1.100:50061");
+        assert_eq!(grpc, "http://192.168.1.100:8080");
     }
 
     #[test]
@@ -392,6 +392,6 @@ mod tests {
 
         let axon = "http://example.com:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "https://example.com:50061");
+        assert_eq!(grpc, "https://example.com:8080");
     }
 }

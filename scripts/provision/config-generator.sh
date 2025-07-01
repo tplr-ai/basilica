@@ -6,8 +6,11 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../lib/common.sh"
 
-# Source SSH wrapper to use identity file
-source "$SCRIPT_DIR/../lib/ssh-wrapper.sh"
+# SSH wrapper not needed for dynamic discovery
+# If ssh-wrapper.sh exists, source it for backward compatibility
+if [[ -f "$SCRIPT_DIR/../lib/ssh-wrapper.sh" ]]; then
+    source "$SCRIPT_DIR/../lib/ssh-wrapper.sh"
+fi
 
 TEMPLATE_DIR="$SCRIPT_DIR/templates"
 CONFIG_OUTPUT_DIR="${CONFIG_OUTPUT_DIR:-$BASILICA_ROOT}"

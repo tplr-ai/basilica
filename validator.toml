@@ -8,19 +8,19 @@ run_migrations = true
 
 [server]
 host = "0.0.0.0"
-port = ${VALIDATOR_HTTP_PORT}
+port = 8081
 max_connections = 1000
 request_timeout = { secs = 30 }
 
 [bittensor]
-wallet_name = "${VALIDATOR_WALLET_NAME}"
-hotkey_name = "${VALIDATOR_HOTKEY_NAME}"
-network = "${BITTENSOR_NETWORK}"
-netuid = ${BITTENSOR_NETUID}
-chain_endpoint = "${BITTENSOR_CHAIN_ENDPOINT}"
+wallet_name = "validator"
+hotkey_name = "default"
+network = "test"
+netuid = 387
+chain_endpoint = "wss://test.finney.opentensor.ai:443"
 weight_interval_secs = 300
 axon_port = 9091
-external_ip = "${VALIDATOR_HOST}"
+external_ip = "51.159.130.131"
 
 [verification]
 max_concurrent_verifications = 50
@@ -36,7 +36,7 @@ fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
 # Optional: gRPC port offset from axon port
 # For testnet, miner HTTP/gRPC is on 8080, axon is on 8091, so we need offset
-grpc_port_offset = ${GRPC_PORT_OFFSET}
+grpc_port_offset = -11
 
 [ssh_validation]
 enabled = true
@@ -55,7 +55,7 @@ reliability_weight = 0.1
 [metrics]
 enabled = true
 host = "0.0.0.0"
-port = ${VALIDATOR_METRICS_PORT}
+port = 9090
 path = "/metrics"
 retention_period = { secs = 604800 }
 
@@ -77,6 +77,6 @@ rate_limit = 100
 data_dir = "/opt/basilica/data"
 
 [security]
-enable_authentication = ${ENABLE_AUTH}
+enable_authentication = false
 api_key_header = "X-API-Key"
 allowed_api_keys = []
