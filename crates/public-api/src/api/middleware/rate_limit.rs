@@ -17,21 +17,24 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 /// Rate limit key type
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-enum RateLimitKey {
+pub(super) enum RateLimitKey {
     /// IP-based rate limiting
     Ip(String),
     /// API key-based rate limiting
     ApiKey(String),
 }
 
+/// Type alias for rate limiter
+type RateLimiterType = Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>;
+
 /// Rate limiter storage
 pub struct RateLimitStorage {
     /// Default limiter for anonymous requests
-    default_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
+    default_limiter: RateLimiterType,
     /// Per-IP limiters
-    ip_limiters: Arc<DashMap<String, Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>,
+    ip_limiters: Arc<DashMap<String, RateLimiterType>>,
     /// Per-API key limiters
-    api_key_limiters: Arc<DashMap<String, Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>>>,
+    api_key_limiters: Arc<DashMap<String, RateLimiterType>>,
     /// Configuration
     config: Arc<crate::config::RateLimitConfig>,
 }
@@ -134,7 +137,9 @@ impl RateLimitStorage {
 /// Rate limit middleware
 #[derive(Clone)]
 pub struct RateLimitMiddleware {
+    #[allow(dead_code)]
     storage: Arc<RateLimitStorage>,
+    #[allow(dead_code)]
     config: Arc<crate::config::Config>,
 }
 
@@ -162,6 +167,7 @@ impl RateLimitMiddleware {
     }
 
     /// Extract rate limit key from request
+    #[allow(dead_code)]
     fn extract_key(req: &Request) -> RateLimitKey {
         // First check for API key
         if let Some(api_key) = req.headers().get("X-API-Key").and_then(|h| h.to_str().ok()) {
