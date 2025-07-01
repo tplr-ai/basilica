@@ -1,10 +1,11 @@
 //! Integration tests for dynamic discovery
 
 #[cfg(test)]
-mod tests {
-    use crate::miner_prover::miner_client::{MinerClient, MinerClientConfig};
-    use common::identity::Hotkey;
-    use std::time::Duration;
+use crate::miner_prover::miner_client::{MinerClient, MinerClientConfig};
+#[cfg(test)]
+use common::identity::Hotkey;
+#[cfg(test)]
+use std::time::Duration;
 
     #[test]
     fn test_axon_to_grpc_endpoint_conversion() {
@@ -157,4 +158,3 @@ mod tests {
         assert_eq!(config.cache_miner_info_ttl, Duration::from_secs(300));
         assert_eq!(config.grpc_port_offset, Some(42000));
     }
-}

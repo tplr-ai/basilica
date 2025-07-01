@@ -372,8 +372,10 @@ mod tests {
 
     #[test]
     fn test_axon_to_grpc_endpoint_with_offset() {
-        let mut config = MinerClientConfig::default();
-        config.grpc_port_offset = Some(1000);
+        let config = MinerClientConfig {
+            grpc_port_offset: Some(1000),
+            ..Default::default()
+        };
         let client = MinerClient::new(config, Hotkey::new("test".to_string()).unwrap());
 
         let axon = "http://10.0.0.1:8091";
@@ -383,8 +385,10 @@ mod tests {
 
     #[test]
     fn test_axon_to_grpc_endpoint_with_tls() {
-        let mut config = MinerClientConfig::default();
-        config.use_tls = true;
+        let config = MinerClientConfig {
+            use_tls: true,
+            ..Default::default()
+        };
         let client = MinerClient::new(config, Hotkey::new("test".to_string()).unwrap());
 
         let axon = "http://example.com:8091";
