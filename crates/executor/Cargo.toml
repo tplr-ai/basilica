@@ -40,7 +40,7 @@ bollard = { workspace = true }
 # Internal dependencies
 common = { path = "../common", features = ["sqlite"] }
 protocol = { path = "../protocol" }
-gpu-attestor = { path = "../gpu-attestor" }
+gpu-attestor = { path = "../gpu-attestor", default-features = false }
 
 # Additional required dependencies
 clap = { version = "4.4", features = ["derive"] }

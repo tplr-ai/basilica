@@ -148,8 +148,8 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
           cargo clippy -p executor --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
-          # Run clippy on gpu-attestor but exclude examples that require actual GPUs
-          cargo clippy -p gpu-attestor --lib --bins --tests --features cuda,opencl -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A clippy::if_same_then_else -A clippy::needless_bool -A clippy::missing_safety_doc -A dead_code
+          # Run clippy on gpu-attestor without GPU features (not available in CI)
+          cargo clippy -p gpu-attestor --lib --bins --tests --no-default-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A clippy::if_same_then_else -A clippy::needless_bool -A clippy::missing_safety_doc -A dead_code
           # Run clippy on miner
           cargo clippy -p miner --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
           # Run clippy on validator
@@ -204,6 +204,7 @@ jobs:
           cargo test -p executor --lib
       - name: Test executor CLI functionality
         run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p executor
           ./target/debug/executor --help
       - name: Test Docker build script
@@ -251,15 +252,15 @@ jobs:
       - name: Check gpu-attestor builds
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p gpu-attestor
+          cargo check -p gpu-attestor --no-default-features
       - name: Test gpu-attestor crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p gpu-attestor --lib
+          cargo test -p gpu-attestor --lib --no-default-features
       - name: Test gpu-attestor CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p gpu-attestor
+          cargo build -p gpu-attestor --no-default-features
           ./target/debug/gpu-attestor --help
       - name: Test Docker build script
         run: |
@@ -308,6 +309,7 @@ jobs:
           cargo test -p validator --lib
       - name: Test validator CLI functionality
         run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p validator
           ./target/debug/validator --help
       - name: Test Docker build script
@@ -362,6 +364,7 @@ jobs:
           cargo test -p miner --lib
       - name: Test miner CLI functionality
         run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p miner
           ./target/debug/miner --help
       - name: Test Docker build script
@@ -416,6 +419,7 @@ jobs:
           cargo test -p public-api --lib
       - name: Test public-api CLI functionality
         run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p public-api
           ./target/debug/public-api --help
       - name: Test Docker build script

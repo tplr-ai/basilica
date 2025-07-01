@@ -16,7 +16,6 @@ RUN rustup component add rustfmt
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
-COPY src/ ./src/
 
 ARG VALIDATOR_PUBLIC_KEY
 ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
