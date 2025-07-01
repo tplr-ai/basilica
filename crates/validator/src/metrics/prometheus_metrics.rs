@@ -203,6 +203,7 @@ impl ValidatorPrometheusMetrics {
     }
 
     /// Update system metrics
+    #[allow(clippy::too_many_arguments)]
     pub fn update_system_metrics(
         &self,
         cpu_percent: f64,

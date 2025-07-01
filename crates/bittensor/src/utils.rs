@@ -152,7 +152,7 @@ where
     T: subxt::tx::Signer<subxt::PolkadotConfig>,
 {
     // Sign the data
-    let signature = signer.sign(data);
+    let _signature = signer.sign(data);
     // For now, just return a placeholder - we'll need to implement proper signing
     // when we have a working signer type
     hex::encode(vec![0u8; 64])

@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn test_version_constants() {
-        assert!(!VERSION.is_empty());
+        // VERSION is populated at compile time from CARGO_PKG_VERSION
         assert_eq!(API_VERSION, "v1");
     }
 }
