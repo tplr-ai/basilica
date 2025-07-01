@@ -1,6 +1,6 @@
-# Basilica Miner
+# Basilica Validator
 
-Bittensor neuron that manages executor fleets and handles validator communications.
+Bittensor neuron for verification and scoring of miners and executors.
 
 ## Quick Start
 
@@ -28,19 +28,19 @@ docker-compose -f compose.dev.yml up
 
 Copy and edit the configuration:
 ```bash
-cp ../../config/miner.toml.example ../../config/miner.toml
+cp ../../config/validator.toml.example ../../config/validator.toml
 ```
 
 Key settings:
 - `[bittensor]` - Wallet name, hotkey, network (finney/test/local)
-- `[server]` - Port 50051 for gRPC
-- `[executor_management]` - Configure executor fleet
-- `[database]` - PostgreSQL or SQLite connection
+- `[server]` - Port 50053 for gRPC
+- `[verification]` - GPU attestation and benchmark settings
+- `[ssh_validation]` - SSH connection parameters
 
 ## Ports
 
-- `50051` - gRPC server for validator requests
-- `8091` - Bittensor axon port
+- `50053` - gRPC server
+- `3000` - Public API
 - `8080` - Metrics endpoint
 
 ## Environment Variables
@@ -51,28 +51,37 @@ BITTENSOR_WALLET_NAME=your_wallet
 BITTENSOR_HOTKEY_NAME=your_hotkey
 POSTGRES_PASSWORD=secure_password
 JWT_SECRET=your_secret
-MINER_PUBLIC_IP=your_ip
+VALIDATOR_PUBLIC_IP=your_ip
 ```
 
 ## Commands
 
 ```bash
 # Status
-docker exec basilica-miner miner status
+docker exec basilica-validator validator status
 
-# List executors
-docker exec basilica-miner miner executor list
+# List miners
+docker exec basilica-validator validator miner list
 
-# Database operations
-docker exec basilica-miner miner database status
+# Run verification
+docker exec basilica-validator validator verify --miner-uid 123
 ```
 
 ## Deployment
 
 ```bash
 # Deploy to production
-./deploy.sh root@51.159.160.71 55960
+./deploy.sh root@51.159.130.131 41199
 
 # Check logs
-ssh root@51.159.160.71 -p 55960 'cd /opt/basilica && docker-compose logs -f miner'
+ssh root@51.159.130.131 -p 41199 'cd /opt/basilica && docker-compose logs -f validator'
 ```
+
+## SSH Keys
+
+Generate validator SSH keys:
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/validator_ssh -N ""
+```
+
+The public key must be added to executor machines for verification access.

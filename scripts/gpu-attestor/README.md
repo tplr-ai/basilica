@@ -1,36 +1,80 @@
-# GPU Attestor Build Pipeline
+# Basilica GPU Attestor
 
-Build gpu-attestor with Docker and local binaries.
+GPU verification tool that validates hardware authenticity and performance.
 
 ## Quick Start
 
 ```bash
-# Generate keys
-./scripts/gen-key.sh
+# Generate validator key
+../gen-key.sh
 
-# Build everything
-./scripts/gpu-attestor/build.sh
+# Build with validator key
+./build.sh
 
-# Run with Docker
-docker run --rm -v $(pwd)/output:/attestation basilica/gpu-attestor:latest
-
-# Run locally
-./gpu-attestor
+# Run attestation
+docker run --rm --gpus all basilica/gpu-attestor:latest
 ```
+
+## Files
+
+- `Dockerfile` - Container image with CUDA/OpenCL support
+- `build.sh` - Build script with validator key embedding
+- `gen-key.sh` - Key generation script (in parent directory)
+
+## Configuration
+
+Copy and edit the configuration:
+```bash
+cp ../../config/gpu-attestor.toml.example ../../config/gpu-attestor.toml
+```
+
+Key settings:
+- `[attestor]` - Validator key path and output directory
+- `[gpu]` - Device selection and benchmark settings
+- `[vdf]` - Verifiable delay function parameters
+- `[benchmarks]` - CUDA/OpenCL test configuration
+
+## Build Requirements
+
+- Validator public key (generated with gen-key.sh)
+- CUDA toolkit (for CUDA support)
+- OpenCL headers (for OpenCL support)
 
 ## Build Options
 
 ```bash
-./build.sh --key <hex>           # Specify key
-./build.sh --no-extract          # Don't extract binary to local
-./build.sh --no-image            # Skip Docker image creation
-./build.sh --debug               # Debug build
-./build.sh --image-name <name>   # Custom image name
-./build.sh --features <features> # Cargo features
+# Build with specific key
+./build.sh --key <hex>
+
+# Debug build
+./build.sh --debug
+
+# Custom image name
+./build.sh --image-name my-attestor --image-tag v1.0
 ```
 
-Build always happens in Docker. `--no-extract` skips copying the binary to local filesystem.
+## Running Attestation
 
-## Key Detection
+```bash
+# Run on all GPUs
+docker run --rm --gpus all \
+  -v $(pwd)/output:/attestation \
+  basilica/gpu-attestor:latest
 
-Auto-detects from: `private_key.pem` → `public_key.hex` → `public_key.pem`
+# Run on specific GPU
+docker run --rm --gpus '"device=0"' \
+  -v $(pwd)/output:/attestation \
+  basilica/gpu-attestor:latest
+```
+
+## Output
+
+Attestation results are saved as JSON:
+- GPU specifications
+- Performance benchmarks
+- VDF computation proof
+- Cryptographic signature
+
+## Integration
+
+The attestor is deployed to executor machines and run by validators via SSH to verify GPU authenticity.

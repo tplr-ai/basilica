@@ -1,0 +1,19 @@
+# Monitoring stack overlay for localtest
+# Uses shared monitoring configurations from config/monitoring/
+
+services:
+  prometheus:
+    volumes:
+      - ../../config/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    environment:
+      ENVIRONMENT: localtest
+
+  grafana:
+    volumes:
+      - ../../config/monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  prometheus_data:
+  grafana_data:
