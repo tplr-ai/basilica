@@ -10,10 +10,9 @@ fn main() {
     // Handle CUDA linking if feature is enabled
     if env::var("CARGO_FEATURE_CUDA").is_ok() {
         link_cuda();
+        // Handle PTX compilation for CUDA Driver API only when CUDA is enabled
+        compile_ptx_kernels();
     }
-
-    // Handle PTX compilation for CUDA Driver API
-    compile_ptx_kernels();
 }
 
 fn embed_validator_key() {

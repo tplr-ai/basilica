@@ -18,7 +18,7 @@ use std::{
 
 /// Cache key components
 #[derive(Debug, Hash, PartialEq, Eq)]
-struct CacheKey {
+pub(super) struct CacheKey {
     /// HTTP method
     method: String,
     /// Request path
@@ -31,7 +31,7 @@ struct CacheKey {
 
 /// Cached response data
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct CachedResponse {
+pub(super) struct CachedResponse {
     /// Response status code
     status: u16,
     /// Response headers
@@ -150,7 +150,9 @@ impl CacheStorage {
 /// Cache middleware
 #[derive(Clone)]
 pub struct CacheMiddleware {
+    #[allow(dead_code)]
     storage: Arc<CacheStorage>,
+    #[allow(dead_code)]
     config: Arc<crate::config::Config>,
 }
 

@@ -136,7 +136,8 @@ async fn main() {
         match network.as_str() {
             "test" => "wss://test.finney.opentensor.ai:443".to_string(),
             "local" => "ws://subtensor:9944".to_string(),
-            "finney" | _ => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
+            "finney" => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
+            _ => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
         }
     };
 

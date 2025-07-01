@@ -1,0 +1,59 @@
+# Consolidated Prometheus configuration for Basilica
+# This configuration can be used for both docker/ and localtest/ environments
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Basilica Miner metrics
+  - job_name: 'basilica-miner'
+    static_configs:
+      - targets: ['miner:9091', 'basilica-miner:9092']  # Support both container names
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Basilica Executor metrics  
+  - job_name: 'basilica-executor'
+    static_configs:
+      - targets: ['executor:9092', 'executor:9090', 'basilica-executor:9090']  # Multiple possible endpoints
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Basilica Validator metrics (only in localtest)
+  - job_name: 'basilica-validator'
+    static_configs:
+      - targets: ['validator:8081', 'basilica-validator:8081']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # NVIDIA GPU metrics (if nvidia_gpu_exporter is running)
+  - job_name: 'nvidia_gpu'
+    static_configs:
+      - targets: ['executor:9835', 'basilica-executor:9835']
+    scrape_interval: 30s
+
+  # Node exporter metrics (if running)
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+# Alerting configuration (can be extended)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+          # - 'alertmanager:9093'
+
+# Load rules from external files
+rule_files:
+  # - 'rules/*.yml'

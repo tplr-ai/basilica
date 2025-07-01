@@ -1,0 +1,53 @@
+services:
+  miner:
+    image: ghcr.io/tplr-ai/basilica-miner:latest
+    container_name: basilica-miner
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+
+    volumes:
+      - ../../config/miner.toml:/app/miner.toml:ro
+      - miner-data:/app/data
+      - ~/.bittensor:/home/basilica/.bittensor:rw
+      - /var/log/basilica:/var/log/basilica:rw
+
+    ports:
+      - "50051:50051"   # gRPC server
+      - "8091:8091"     # Bittensor axon port
+      - "8080:8080"     # Metrics endpoint
+
+    networks:
+      - basilica_network
+
+    command: ["--config", "/app/miner.toml"]
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: basilica-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
+    command: --label-enable --cleanup --interval 300
+
+networks:
+  basilica_network:
+    driver: bridge
+
+volumes:
+  miner-data:

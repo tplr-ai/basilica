@@ -9,12 +9,15 @@ use anyhow::Result;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-use crate::attestation::types::{
-    CudaDriverBenchmarkResults, GpuBenchmarkResults, MatrixMultiplicationResult, SingleGpuBenchmark,
-};
+#[cfg(feature = "cuda")]
+use crate::attestation::types::{CudaDriverBenchmarkResults, MatrixMultiplicationResult};
+use crate::attestation::types::{GpuBenchmarkResults, SingleGpuBenchmark};
 use crate::gpu::benchmarks::{BenchmarkBackend, GpuBenchmarkRunner};
+#[cfg(feature = "cuda")]
 use crate::gpu::cuda_driver::{CudaMatrixCompute, MatrixCompute, MatrixDimensions};
-use crate::gpu::{GpuDetector, GpuVendor};
+use crate::gpu::GpuDetector;
+#[cfg(feature = "cuda")]
+use crate::gpu::GpuVendor;
 
 /// Collect comprehensive GPU benchmarks for all available GPUs
 pub async fn collect_gpu_benchmarks() -> Result<GpuBenchmarkResults> {
@@ -65,6 +68,7 @@ pub async fn collect_gpu_benchmarks() -> Result<GpuBenchmarkResults> {
         }
 
         // Try CUDA Driver API benchmarks if this is an NVIDIA GPU
+        #[cfg(feature = "cuda")]
         if gpu_info.vendor == GpuVendor::Nvidia {
             match run_cuda_driver_benchmarks(idx as u32).await {
                 Ok(cuda_results) => {
@@ -114,6 +118,7 @@ async fn run_standard_benchmarks(gpu_index: u32) -> Result<(f64, f64, BenchmarkB
 }
 
 /// Run CUDA Driver API benchmarks
+#[cfg(feature = "cuda")]
 async fn run_cuda_driver_benchmarks(gpu_index: u32) -> Result<CudaDriverBenchmarkResults> {
     info!("Initializing CUDA Driver API for GPU {}", gpu_index);
 
@@ -179,6 +184,7 @@ async fn run_cuda_driver_benchmarks(gpu_index: u32) -> Result<CudaDriverBenchmar
 }
 
 /// Get CUDA driver version if available
+#[cfg(feature = "cuda")]
 fn get_cuda_driver_version() -> Option<String> {
     // Try to get CUDA driver version
     match std::process::Command::new("nvidia-smi")
@@ -198,4 +204,11 @@ fn get_cuda_driver_version() -> Option<String> {
         }
         Err(_) => None,
     }
+}
+
+/// Get CUDA driver version if available (stub when CUDA is disabled)
+#[cfg(not(feature = "cuda"))]
+#[allow(dead_code)]
+fn get_cuda_driver_version() -> Option<String> {
+    None
 }

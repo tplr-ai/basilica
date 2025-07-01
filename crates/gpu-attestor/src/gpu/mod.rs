@@ -12,6 +12,7 @@ pub mod types;
 pub mod cuda_ffi;
 
 // CUDA Driver API module for matrix multiplication
+#[cfg(feature = "cuda")]
 pub mod cuda_driver;
 
 // Re-export commonly used items

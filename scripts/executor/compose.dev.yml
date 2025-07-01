@@ -1,0 +1,42 @@
+services:
+  executor:
+    build:
+      context: ../..
+      dockerfile: scripts/executor/Dockerfile
+    container_name: basilica-executor-dev
+    restart: unless-stopped
+
+    privileged: true
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../../config/executor.toml:/app/executor.toml:ro
+      - executor-data-dev:/app/data
+      
+      # Source code for development
+      - ../../crates:/app/crates:ro
+      - ../../Cargo.toml:/app/Cargo.toml:ro
+      - ../../Cargo.lock:/app/Cargo.lock:ro
+
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+    ports:
+      - "50052:50052"   # gRPC server
+      - "8080:8080"     # Metrics
+      - "22222:22"      # SSH for validator
+
+    networks:
+      - basilica_network_dev
+
+    command: ["--config", "/app/executor.toml"]
+
+networks:
+  basilica_network_dev:
+    driver: bridge
+
+volumes:
+  executor-data-dev:

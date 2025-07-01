@@ -1,0 +1,48 @@
+services:
+  public-api:
+    build:
+      context: ../..
+      dockerfile: scripts/public-api/Dockerfile
+    container_name: basilica-public-api-dev
+    restart: unless-stopped
+    
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    
+    volumes:
+      - ../../config/public-api.toml:/app/public-api.toml:ro
+      - public-api-data-dev:/app/data
+      - ../../crates:/app/crates:ro
+      - ../../Cargo.toml:/app/Cargo.toml:ro
+      - ../../Cargo.lock:/app/Cargo.lock:ro
+    
+    ports:
+      - "8000:8000"    # HTTP API
+      - "8080:8080"    # Metrics endpoint
+    
+    networks:
+      - basilica_network_dev
+    
+    command: ["--config", "/app/public-api.toml"]
+    
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: basilica-redis-dev
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data-dev:/data
+    networks:
+      - basilica_network_dev
+
+networks:
+  basilica_network_dev:
+    driver: bridge
+
+volumes:
+  public-api-data-dev:
+  redis-data-dev:

@@ -76,8 +76,7 @@ async fn auth_handler(
     req: Request<Body>,
     next: Next,
 ) -> Result<Response<Body>, crate::error::Error> {
-    // Create auth middleware and handle request
-    let _auth = auth::AuthMiddleware::new(state.clone());
+    // Handle authentication
     auth::AuthMiddleware::handle(State(state), req, next).await
 }
 

@@ -1,133 +1,81 @@
-# Executor Build Pipeline
+# Basilica Executor
 
-Build basilica executor with Docker and extract local binaries.
+GPU machine agent for container task execution with validator SSH access.
 
 ## Quick Start
 
 ```bash
-# Build everything (Docker image + local binary)
-./scripts/executor/build.sh
+# Build
+./build.sh
 
-# Run with Docker
-docker run --rm -p 8080:8080 -p 8081:8081 -v /var/run/docker.sock:/var/run/docker.sock basilica/executor:latest
+# Deploy
+./deploy.sh user@host port
 
-# Run locally (after extraction)
-./executor --gen-config  # Generate sample config
-./executor --config executor.toml
+# Run locally
+docker-compose -f compose.dev.yml up
 ```
 
-## Build Options
+## Files
+
+- `Dockerfile` - Container image with NVIDIA GPU support
+- `build.sh` - Build script for Docker image and binary extraction
+- `deploy.sh` - Remote deployment script
+- `compose.prod.yml` - Production docker-compose with watchtower
+- `compose.dev.yml` - Development docker-compose with local build
+
+## Configuration
+
+Copy and edit the configuration:
+```bash
+cp ../../config/executor.toml.example ../../config/executor.toml
+```
+
+Key settings:
+- `[server]` - Port 50052 for gRPC
+- `[docker]` - Container runtime settings
+- `[validator]` - SSH access configuration
+- `[gpu_attestor]` - GPU verification settings
+
+## Ports
+
+- `50052` - gRPC server
+- `8080` - Metrics endpoint
+- `22222` - SSH for validator access
+
+## GPU Requirements
+
+- NVIDIA GPU with CUDA support
+- nvidia-docker2 installed
+- NVIDIA driver 470.57.02+
+
+## Commands
 
 ```bash
-./build.sh --image-name <name>   # Custom image name (default: basilica/executor)
-./build.sh --image-tag <tag>     # Custom image tag (default: latest)
-./build.sh --no-extract          # Don't extract binary to local filesystem
-./build.sh --no-image            # Skip Docker image creation (local build only)
-./build.sh --debug               # Debug build instead of release
-./build.sh --features <features> # Additional cargo features to enable
+# System info
+docker exec basilica-executor executor system info
+
+# Validator access
+docker exec basilica-executor executor validator list
+
+# Container management
+docker exec basilica-executor executor container list
 ```
 
-## Examples
+## Deployment
 
 ```bash
-# Build debug version with custom name
-./scripts/executor/build.sh --debug --image-name my-executor --image-tag dev
+# Deploy to GPU server
+./deploy.sh root@64.247.196.98 9001
 
-# Build with custom features (if any are added to executor)
-./scripts/executor/build.sh --features "some-feature"
+# Verify GPU
+ssh root@64.247.196.98 -p 9001 'nvidia-smi'
 
-# Only extract binary (don't rebuild image)
-./scripts/executor/build.sh --no-image
-
-# Only build image (don't extract binary)
-./scripts/executor/build.sh --no-extract
+# Check logs
+ssh root@64.247.196.98 -p 9001 'cd /opt/basilica && docker-compose logs -f executor'
 ```
-
-## Docker Usage
-
-The built Docker image includes:
-
-- Executor binary at `/usr/local/bin/executor`
-- Docker daemon access (requires mounting socket)
-- Required system dependencies
-
-### Running with Docker
-
-```bash
-# Basic run
-docker run --rm basilica/executor:latest --help
-
-# Simple run with Docker access
-docker run -d \
-  --name basilica-executor \
-  -p 8080:8080 \
-  -p 8081:8081 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  basilica/executor:latest
-
-# With custom config
-docker run -d \
-  -v $(pwd)/executor.toml:/app/executor.toml:ro \
-  basilica/executor:latest --config /app/executor.toml
-```
-
-### Docker Compose for Host Management
-
-For full host management capabilities, use Docker Compose:
-
-```bash
-# Build the image first
-./scripts/executor/build.sh
-
-# Start with Docker Compose
-cd scripts/executor
-docker compose up -d
-
-# View logs
-docker compose logs -f
-
-# Stop
-docker compose down
-```
-
-The Docker Compose setup provides:
-- **Host network access** - Full network visibility
-- **Privileged mode** - System-level operations
-- **Docker socket** - Container management
-- **Host filesystem** - SSH user management
-- **System directories** - Process and hardware monitoring
-
-## Local Binary Usage
-
-After extraction, the binary supports all executor commands:
-
-```bash
-# Generate sample configuration
-./executor --gen-config
-
-# Run executor daemon
-./executor --config executor.toml
-
-# Validator access management
-sudo ./executor validator grant --hotkey "5ABC..." --ssh-public-key "ssh-rsa ..."
-sudo ./executor validator list
-sudo ./executor validator revoke --hotkey "5ABC..."
-
-# System monitoring
-./executor system info
-./executor system health
-```
-
-## Build Requirements
-
-- Docker (for containerized builds)
-- Rust 1.87+ (for local development)
-- OpenSSL development libraries
-- pkg-config
 
 ## Security Notes
 
-- The Docker image runs SSH server on port 22
-- Validator SSH access creates system users dynamically
-- Requires Docker socket access for container management
-- Uses sudo for system-level operations
+- Runs privileged for Docker-in-Docker
+- Manages validator SSH access via system users
+- GPU attestation verifies hardware authenticity
