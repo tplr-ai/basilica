@@ -12,7 +12,7 @@ use common::config::{
     ServerConfig,
 };
 use common::error::ConfigurationError;
-use common::identity::{Hotkey, MinerUid};
+use common::identity::Hotkey;
 
 /// Remote machine configuration for executor deployment
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,9 +85,6 @@ pub struct MinerBittensorConfig {
     /// Common Bittensor configuration
     #[serde(flatten)]
     pub common: BittensorConfig,
-
-    /// Miner's unique identifier on the network
-    pub uid: MinerUid,
 
     /// Coldkey name for wallet operations
     pub coldkey_name: String,
@@ -287,11 +284,10 @@ impl Default for MinerBittensorConfig {
                 wallet_name: "miner".to_string(),
                 hotkey_name: "default".to_string(),
                 network: "finney".to_string(),
-                netuid: 27, // Basilca subnet ID
-                chain_endpoint: Some("wss://entrypoint-finney.opentensor.ai:443".to_string()),
+                netuid: 39,                // Basilca subnet ID
+                chain_endpoint: None,      // Will be auto-detected based on network
                 weight_interval_secs: 300, // 5 minutes
             },
-            uid: MinerUid::from(0),
             coldkey_name: "default".to_string(),
             axon_port: 8091,
             external_ip: None,

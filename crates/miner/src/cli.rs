@@ -294,11 +294,12 @@ pub async fn handle_config_command(command: ConfigCommand, config: &MinerConfig)
 /// Show miner status
 pub async fn show_miner_status(config: &MinerConfig) -> Result<()> {
     println!("=== Basilca Miner Status ===");
-    println!("Miner UID: {}", config.bittensor.uid.as_u16());
+    println!("Network: {}", config.bittensor.common.network);
     println!("Hotkey: {}", config.bittensor.common.hotkey_name);
     println!("Netuid: {}", config.bittensor.common.netuid);
     println!("Axon Port: {}", config.bittensor.axon_port);
     println!("Validator Comms: {:?}", config.validator_comms.auth.method);
+    println!("Note: UID will be discovered from chain on startup");
     println!();
 
     // Show configured executors

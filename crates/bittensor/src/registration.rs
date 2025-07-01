@@ -29,6 +29,15 @@ pub struct RegistrationConfig {
 }
 
 /// Chain registration service for one-time startup registration
+///
+/// This service is used by both miners and validators to:
+/// 1. Register their presence on the Bittensor network
+/// 2. Publish their axon endpoint for discovery
+/// 3. Discover their assigned UID from the metagraph
+///
+/// The UID is dynamically discovered from the chain based on the neuron's hotkey,
+/// ensuring it's always accurate and up-to-date. UIDs should never be hardcoded
+/// in configuration files.
 #[derive(Clone)]
 pub struct ChainRegistration {
     config: RegistrationConfig,
@@ -233,7 +242,16 @@ impl ChainRegistration {
         }
     }
 
-    /// Get discovered UID
+    /// Get the UID discovered from the metagraph
+    ///
+    /// Returns the neuron's UID as discovered from the chain based on its hotkey.
+    /// This is the authoritative source for a neuron's UID and should be used
+    /// instead of any hardcoded configuration values.
+    ///
+    /// Returns `None` if:
+    /// - The neuron hasn't been registered yet
+    /// - Registration is skipped (local testing mode)
+    /// - The hotkey wasn't found in the metagraph
     pub async fn get_discovered_uid(&self) -> Option<u16> {
         self.state.read().await.discovered_uid
     }

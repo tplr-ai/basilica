@@ -18,7 +18,7 @@ pub struct BittensorConfig {
     /// Hotkey name for the neuron
     pub hotkey_name: String,
 
-    /// Network to connect to (e.g., "finney", "test", "local")
+    /// Network to connect to ("finney", "test", or "local")
     pub network: String,
 
     /// Subnet netuid
@@ -336,6 +336,23 @@ impl ConfigValidation for ServerConfig {
     }
 }
 
+impl BittensorConfig {
+    /// Get the chain endpoint, auto-detecting based on network if not explicitly configured
+    pub fn get_chain_endpoint(&self) -> String {
+        self.chain_endpoint
+            .clone()
+            .unwrap_or_else(|| match self.network.as_str() {
+                "local" => "ws://127.0.0.1:9944".to_string(),
+                "finney" => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
+                "test" => "wss://test.finney.opentensor.ai:443".to_string(),
+                _ => panic!(
+                    "Unknown network: {}. Valid networks are: finney, test, local",
+                    self.network
+                ),
+            })
+    }
+}
+
 impl ConfigValidation for BittensorConfig {
     type Error = ConfigurationError;
 
@@ -372,7 +389,15 @@ impl ConfigValidation for BittensorConfig {
             });
         }
 
-        Ok(())
+        // Validate network is a known type
+        match self.network.as_str() {
+            "finney" | "test" | "local" => Ok(()),
+            _ => Err(ConfigurationError::InvalidValue {
+                key: "network".to_string(),
+                value: self.network.clone(),
+                reason: "Unknown network. Valid networks are: finney, test, local".to_string(),
+            }),
+        }
     }
 }
 
@@ -414,5 +439,84 @@ impl ConfigValidation for GrpcServerConfig {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bittensor_config_endpoint_resolution() {
+        // Test finney network
+        let finney_config = BittensorConfig {
+            network: "finney".to_string(),
+            chain_endpoint: None,
+            ..Default::default()
+        };
+        assert_eq!(
+            finney_config.get_chain_endpoint(),
+            "wss://entrypoint-finney.opentensor.ai:443"
+        );
+
+        // Test test network
+        let test_config = BittensorConfig {
+            network: "test".to_string(),
+            chain_endpoint: None,
+            ..Default::default()
+        };
+        assert_eq!(
+            test_config.get_chain_endpoint(),
+            "wss://test.finney.opentensor.ai:443"
+        );
+
+        // Test local network
+        let local_config = BittensorConfig {
+            network: "local".to_string(),
+            chain_endpoint: None,
+            ..Default::default()
+        };
+        assert_eq!(local_config.get_chain_endpoint(), "ws://subtensor:9944");
+
+        // Test custom endpoint override
+        let custom_config = BittensorConfig {
+            network: "finney".to_string(),
+            chain_endpoint: Some("wss://custom.endpoint.com:443".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            custom_config.get_chain_endpoint(),
+            "wss://custom.endpoint.com:443"
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Unknown network: invalid")]
+    fn test_bittensor_config_invalid_network() {
+        let invalid_config = BittensorConfig {
+            network: "invalid".to_string(),
+            chain_endpoint: None,
+            ..Default::default()
+        };
+        invalid_config.get_chain_endpoint();
+    }
+
+    #[test]
+    fn test_bittensor_config_network_validation() {
+        // Valid networks should pass
+        for network in &["finney", "test", "local"] {
+            let config = BittensorConfig {
+                network: network.to_string(),
+                ..Default::default()
+            };
+            assert!(config.validate().is_ok());
+        }
+
+        // Invalid network should fail
+        let invalid_config = BittensorConfig {
+            network: "invalid".to_string(),
+            ..Default::default()
+        };
+        assert!(invalid_config.validate().is_err());
     }
 }

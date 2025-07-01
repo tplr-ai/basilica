@@ -116,7 +116,7 @@ generate_miner_config() {
     export MINER_WALLET_NAME="${MINER_WALLET_NAME:-miner}"
     export MINER_HOTKEY_NAME="${MINER_HOTKEY_NAME:-default}"
     export BITTENSOR_NETWORK="${BITTENSOR_NETWORK:-finney}"
-    export BITTENSOR_NETUID="${BITTENSOR_NETUID:-27}"
+    export BITTENSOR_NETUID="${BITTENSOR_NETUID:-39}"
     export BITTENSOR_CHAIN_ENDPOINT="${BITTENSOR_CHAIN_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
     export MINER_EXTERNAL_IP="${MINER_EXTERNAL_IP:-$MINER_HOST}"
     export MINER_HTTP_PORT="${MINER_HTTP_PORT:-8092}"

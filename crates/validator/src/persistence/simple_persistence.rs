@@ -22,7 +22,21 @@ impl SimplePersistence {
         database_path: &str,
         _validator_hotkey: String,
     ) -> Result<Self, anyhow::Error> {
-        let pool = sqlx::SqlitePool::connect(&format!("sqlite:{database_path}")).await?;
+        // Create database URL with proper connection mode
+        let db_url = if database_path.starts_with("sqlite:") {
+            database_path.to_string()
+        } else {
+            format!("sqlite:{database_path}")
+        };
+
+        // Add connection mode for read-write-create if not present
+        let final_url = if db_url.contains("?") {
+            db_url
+        } else {
+            format!("{db_url}?mode=rwc")
+        };
+
+        let pool = sqlx::SqlitePool::connect(&final_url).await?;
 
         let instance = Self { pool };
         instance.run_migrations().await?;
