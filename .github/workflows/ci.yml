@@ -210,7 +210,8 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/executor/build.sh
-          BITTENSOR_NETWORK=test ./scripts/executor/build.sh --no-extract --debug
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/executor/build.sh --no-extract --debug
 
   # Build and test gpu-attestor
   build-gpu-attestor:
@@ -315,7 +316,8 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/validator/build.sh
-          BITTENSOR_NETWORK=test ./scripts/validator/build.sh --no-extract --debug
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/validator/build.sh --no-extract --debug
 
   # Build and test miner
   build-miner:
