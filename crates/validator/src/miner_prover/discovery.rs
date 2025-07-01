@@ -179,7 +179,7 @@ impl MinerDiscovery {
 
     fn prioritize_by_stake(
         &self,
-        miners: &mut Vec<MinerInfo>,
+        miners: &mut [MinerInfo],
         metagraph: &bittensor::Metagraph<AccountId>,
     ) {
         miners.sort_by(|a, b| {

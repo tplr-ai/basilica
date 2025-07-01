@@ -1,0 +1,93 @@
+# Basilica Miner Configuration Example
+# Copy this file to miner.toml and customize for your environment
+
+# Bittensor Network Configuration
+[bittensor]
+wallet_name = "YOUR_WALLET_NAME"
+hotkey_name = "YOUR_HOTKEY_NAME"
+network = "finney"  # Options: finney, test, local
+netuid = 39  # Basilica subnet ID
+chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
+external_ip = "YOUR_PUBLIC_IP_HERE"
+
+# Server Configuration
+[server]
+host = "0.0.0.0"
+port = 50051  # gRPC server port
+max_connections = 1000
+request_timeout = 30
+
+# Axon Configuration (Bittensor integration)
+[axon]
+port = 8091
+external_ip = "YOUR_PUBLIC_IP_HERE"
+max_requests_per_second = 100
+
+# Database Configuration
+[database]
+url = "postgresql://basilica:YOUR_PASSWORD@localhost:5432/basilica_miner"
+max_connections = 10
+min_connections = 2
+run_migrations = true
+backup_enabled = true
+
+# Logging Configuration
+[logging]
+level = "info"  # Options: debug, info, warn, error
+format = "json"  # Options: json, pretty
+enable_file_logging = true
+log_dir = "/var/log/basilica"
+
+# Metrics Configuration
+[metrics]
+enabled = true
+port = 8080
+collection_interval = 30
+
+# Prometheus metrics
+[metrics.prometheus]
+enabled = true
+port = 9090
+
+# Executor Fleet Management
+[executor_management]
+health_check_interval = "60s"
+health_check_timeout = "10s"
+max_retry_attempts = 3
+auto_recovery = true
+
+# Configure your executor machines
+[[executor_management.executors]]
+id = "executor-1"
+grpc_address = "YOUR_EXECUTOR_IP:50052"
+name = "Primary Executor"
+
+# Validator Communications
+[validator_comms]
+request_timeout = { secs = 30, nanos = 0 }
+max_concurrent_sessions = 100
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.rate_limit]
+enabled = true
+requests_per_second = 10
+burst_capacity = 20
+window_duration = { secs = 60, nanos = 0 }
+
+# Security Configuration
+[security]
+enable_tls = false  # Set to true for production
+verify_signatures = true
+rate_limit_requests_per_minute = 600
+allowed_validators = [
+    "YOUR_VALIDATOR_IP_HERE",
+]
+
+# Authentication settings
+[auth]
+jwt_secret = ""  # Will be auto-generated if empty
+token_expiry = 3600  # 1 hour
+enable_miner_authentication = true

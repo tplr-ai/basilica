@@ -22,8 +22,8 @@ async fn run_migrations() -> Result<()> {
     let config = ValidatorConfig::load()?;
 
     // Extract database path from SQLite URL
-    let db_path = if config.database.url.starts_with("sqlite:") {
-        &config.database.url[7..] // Remove "sqlite:" prefix
+    let db_path = if let Some(stripped) = config.database.url.strip_prefix("sqlite:") {
+        stripped
     } else {
         return Err(anyhow::anyhow!("Only SQLite databases are supported"));
     };
@@ -173,11 +173,11 @@ async fn show_database_status() -> Result<()> {
     };
 
     // Check if database file exists and get size
-    let db_path = if config.database.url.starts_with("sqlite:") {
-        &config.database.url[7..]
-    } else {
-        "unknown"
-    };
+    let db_path = config
+        .database
+        .url
+        .strip_prefix("sqlite:")
+        .unwrap_or("unknown");
 
     if let Ok(metadata) = std::fs::metadata(db_path) {
         println!(

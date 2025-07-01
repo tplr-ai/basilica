@@ -21,6 +21,7 @@ pub struct VerificationLog {
 }
 
 impl VerificationLog {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         executor_id: String,
         validator_hotkey: String,

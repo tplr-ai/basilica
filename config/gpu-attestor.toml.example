@@ -1,0 +1,117 @@
+# Basilica GPU Attestor Configuration Example
+# Copy this file to gpu-attestor.toml and customize for your environment
+
+[attestor]
+# Validator public key path (required for signature verification)
+validator_key_path = "/etc/basilica/keys/validator_key.pub"
+
+# Output directory for attestation results
+output_dir = "/opt/basilica/attestations"
+
+# Attestation interval in seconds (0 = one-time run)
+interval = 0
+
+# Enable continuous attestation mode
+continuous = false
+
+[gpu]
+# GPU device selection (comma-separated indices or "all")
+devices = "all"
+
+# Enable GPU benchmarking
+enable_benchmarks = true
+
+# Benchmark iterations
+benchmark_iterations = 100
+
+# Memory test size in MB
+memory_test_size = 1024
+
+[vdf]
+# VDF (Verifiable Delay Function) difficulty
+difficulty = 1000
+
+# VDF iterations
+iterations = 1000000
+
+# Enable VDF computation
+enabled = true
+
+[benchmarks]
+# Enable CUDA benchmarks
+cuda_enabled = true
+
+# Enable OpenCL benchmarks
+opencl_enabled = true
+
+# Enable Vulkan benchmarks
+vulkan_enabled = false
+
+# Matrix multiplication size
+matrix_size = 1024
+
+# FFT size
+fft_size = 1048576
+
+# Memory bandwidth test size
+memory_bandwidth_size = 134217728  # 128MB
+
+[network]
+# Enable network benchmarks
+enabled = true
+
+# Test endpoints for network benchmarking
+test_endpoints = [
+    "8.8.8.8:53",
+    "1.1.1.1:53",
+]
+
+# Network test duration in seconds
+test_duration = 10
+
+# Packet size for tests
+packet_size = 1024
+
+[security]
+# Enable secure attestation
+secure_mode = true
+
+# Verify validator signatures
+verify_signatures = true
+
+# Hardware security module support
+hsm_enabled = false
+
+# TPM (Trusted Platform Module) support
+tpm_enabled = false
+
+[output]
+# Output format (json, yaml, toml)
+format = "json"
+
+# Include raw benchmark data
+include_raw_data = false
+
+# Compress output
+compress = false
+
+# Sign attestation results
+sign_results = true
+
+[logging]
+level = "info"  # Options: debug, info, warn, error
+format = "json"  # Options: json, pretty
+file = "/var/log/basilica/gpu-attestor.log"
+
+[cache]
+# Cache attestation results
+enabled = true
+
+# Cache directory
+directory = "/var/cache/basilica/attestations"
+
+# Cache TTL in seconds
+ttl = 3600
+
+# Maximum cache size in MB
+max_size = 1024

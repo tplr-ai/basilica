@@ -129,11 +129,9 @@ fn create_log_stream(
                                     buffer = buffer[line_end + 1..].to_string();
 
                                     // Parse SSE format
-                                    if line.starts_with("data: ") {
-                                        let data = line[6..].to_string();
+                                    if let Some(data) = line.strip_prefix("data: ") {
                                         yield Ok(Event::default().data(data));
-                                    } else if line.starts_with("event: ") {
-                                        let event_type = line[7..].to_string();
+                                    } else if let Some(event_type) = line.strip_prefix("event: ") {
                                         if event_type == "done" {
                                             yield Ok(Event::default().event("done").data(""));
                                             return;

@@ -33,6 +33,7 @@ pub enum RentalStatus {
 }
 
 impl Rental {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         executor_id: String,
         customer_public_key: String,

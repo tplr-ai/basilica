@@ -70,6 +70,11 @@ if [[ -n "$FEATURES" ]]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg FEATURES=$FEATURES"
 fi
 
+# Pass VALIDATOR_PUBLIC_KEY if set
+if [[ -n "$VALIDATOR_PUBLIC_KEY" ]]; then
+    BUILD_ARGS="$BUILD_ARGS --build-arg VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY"
+fi
+
 # Pass Bittensor network configuration if set
 if [[ -n "$BITTENSOR_NETWORK" ]]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg BITTENSOR_NETWORK=$BITTENSOR_NETWORK"

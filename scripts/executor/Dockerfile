@@ -26,10 +26,8 @@ ARG BUILD_MODE=release
 ARG FEATURES=""
 ARG VALIDATOR_PUBLIC_KEY=""
 
-# Set environment variables for the build
-ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
-
 # Build the executor directly (workspace should resolve dependencies)
+ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
 RUN if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
             cargo build --release -p executor --features "$FEATURES"; \

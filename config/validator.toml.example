@@ -1,0 +1,155 @@
+# Basilica Validator Configuration Example
+# Copy this file to validator.toml and customize for your environment
+
+# Bittensor Network Configuration
+[bittensor]
+wallet_name = "YOUR_VALIDATOR_WALLET"
+hotkey_name = "YOUR_VALIDATOR_HOTKEY"
+network = "finney"  # Options: finney, test, local
+netuid = 39  # Basilica subnet ID
+chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
+
+# API Server Configuration
+[server]
+host = "0.0.0.0"
+port = 50053
+max_connections = 500
+request_timeout = 30
+
+# Public API Configuration
+[api]
+enabled = true
+host = "0.0.0.0"
+port = 3000
+enable_cors = true
+cors_origins = ["*"]
+max_request_size = 10485760  # 10MB
+
+# Database Configuration  
+[database]
+url = "postgresql://basilica:YOUR_PASSWORD@localhost:5432/basilica_validator"
+max_connections = 20
+min_connections = 5
+run_migrations = true
+backup_enabled = true
+backup_interval = 86400  # 24 hours
+
+# Logging Configuration
+[logging]
+level = "info"  # Options: debug, info, warn, error
+format = "json"  # Options: json, pretty
+enable_file_logging = true
+log_dir = "/var/log/basilica"
+
+# Metrics Configuration
+[metrics]
+enabled = true
+port = 8080
+collection_interval = 30
+
+# Prometheus metrics
+[metrics.prometheus]
+enabled = true
+port = 9090
+
+# Validation Configuration
+[validation]
+max_concurrent_validations = 10
+validation_timeout = 120
+challenge_timeout = 60
+min_score_threshold = 0.1
+verification_interval = 600  # 10 minutes
+min_verification_interval = 1800  # 30 minutes
+
+# Verification Suite Configuration
+[verification]
+enabled = true
+max_concurrent_checks = 5
+verification_timeout = 300
+retry_attempts = 3
+
+[verification.gpu_attestation]
+enabled = true
+required_score = 0.8
+timeout = 120
+
+[verification.performance_benchmark]
+enabled = true
+min_tflops = 10.0
+timeout = 180
+
+[verification.network_connectivity]
+enabled = true
+min_bandwidth_mbps = 100
+max_latency_ms = 50
+
+# Scoring Configuration
+[scoring]
+min_stake_threshold = 1000.0
+max_miners_to_validate = 20
+score_decay_factor = 0.95
+weight_update_interval = 300  # 5 minutes
+
+# SSH Validation Configuration
+[ssh_validation]
+max_concurrent_sessions = 5
+session_timeout = 300  # 5 minutes
+connection_timeout = 30
+retry_attempts = 3
+cleanup_temp_files = true
+
+# SSH Keys Configuration
+[ssh_keys]
+private_key_path = "/etc/basilica/keys/validator_ssh"
+public_key_path = "/etc/basilica/keys/validator_ssh.pub"
+key_type = "ed25519"
+
+# Security Configuration
+[security]
+enable_tls = false  # Set to true for production
+require_https = false  # Set to true for production
+rate_limit_requests_per_minute = 1000
+allowed_miners = [
+    "YOUR_MINER_IP_HERE",
+]
+
+# API Authentication
+[api_auth]
+enable_authentication = true
+jwt_secret = ""  # Will be auto-generated if empty
+token_expiry = 3600  # 1 hour
+require_signature_verification = true
+
+# Storage Configuration
+[storage]
+data_dir = "/opt/basilica/data"
+max_storage_gb = 100
+cleanup_interval = 86400  # 24 hours
+retention_days = 30
+
+# Performance Tuning
+[performance]
+worker_threads = 4
+max_blocking_threads = 512
+thread_stack_size = 2097152  # 2MB
+
+# Health Check Configuration
+[health_checks]
+enabled = true
+interval = 30
+timeout = 10
+max_failures = 3
+
+# Backup Configuration
+[backup]
+enabled = true
+retention_days = 30
+backup_dir = "/var/backups/basilica"
+compress_backups = true
+
+# TLS Configuration (for production)
+[tls]
+enabled = false
+cert_path = "/etc/basilica/certs/validator.crt"
+key_path = "/etc/basilica/certs/validator.key"
+ca_cert_path = "/etc/basilica/certs/ca.crt"
