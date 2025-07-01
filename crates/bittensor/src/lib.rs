@@ -11,8 +11,8 @@ pub mod retry;
 pub mod service;
 pub mod utils;
 
-// Include our generated API module when building for testnet
-#[cfg(feature = "testnet")]
+// Include our generated API module
+// We always use our own metadata to ensure compatibility
 pub mod api;
 
 #[cfg(test)]
@@ -30,15 +30,14 @@ pub use utils::{
     set_weights_payload, tao_to_rao, verify_bittensor_signature, NormalizedWeight,
 };
 
-// Re-export the entire crabtensor api module for full access to types
-pub use crabtensor::api;
-
-// Re-export key crabtensor types for convenience
-pub use crabtensor::api::runtime_types::pallet_subtensor::{
+// Re-export key types from our generated API
+pub use crate::api::api::runtime_types::pallet_subtensor::{
     pallet::{AxonInfo, PrometheusInfo},
     rpc_info::{
         metagraph::{Metagraph, SelectiveMetagraph},
         neuron_info::{NeuronInfo, NeuronInfoLite},
     },
 };
-pub use crabtensor::AccountId;
+
+// Type alias for AccountId
+pub type AccountId = subxt::config::polkadot::AccountId32;

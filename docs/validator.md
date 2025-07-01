@@ -16,6 +16,7 @@ The validator component performs critical network functions:
 - Linux system with stable internet connection
 - SSH access for remote verification
 - SQLite for verification history storage
+- Validator public key file (for building from source)
 
 ## Quick Start
 
@@ -26,71 +27,116 @@ Create and fund a validator wallet:
 ```bash
 # Create wallet if needed (skip if you already have one)
 btcli wallet new_coldkey --wallet.name validator
-btcli wallet new_hotkey --wallet.name validator --wallet.hotkey validator
+btcli wallet new_hotkey --wallet.name validator --wallet.hotkey default
 
 # Register on the subnet (requires stake)
-btcli subnet register --netuid 39 --wallet.name validator --wallet.hotkey validator
+btcli subnet register --netuid 39 --wallet.name validator --wallet.hotkey default
 ```
+
+**Note**: The wallet file format has changed. The validator now supports both JSON wallet files (new format) and raw seed phrases (old format). The JSON format includes fields like `secretPhrase`, `publicKey`, `accountId`, etc.
 
 ### 2. Configure the Validator
 
 Create a `validator.toml` configuration file:
 
 ```toml
-[database]
-url = "sqlite:///opt/basilica/data/validator.db?mode=rwc"
-max_connections = 10
-min_connections = 2
-
 [server]
 host = "0.0.0.0"
-port = 8081
+port = 8080
+
+[database]
+url = "sqlite:./data/validator.db"
+max_connections = 5
+min_connections = 1
+run_migrations = true
 
 [bittensor]
 wallet_name = "validator"
-hotkey_name = "validator"
-network = "finney"  # or "test" for testnet
-netuid = 39  # Basilica subnet
-chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
+hotkey_name = "default"
+network = "finney"  # Options: "finney", "test", or "local"
+netuid = 39  # Basilica subnet (use 387 for test network)
+# chain_endpoint is auto-detected based on network if not specified
+# finney: wss://entrypoint-finney.opentensor.ai:443
+# test: wss://test.finney.opentensor.ai:443  
+# local: ws://127.0.0.1:9944
 weight_interval_secs = 300
 axon_port = 9091
+# external_ip = "your.external.ip.here"  # Optional
 
 [verification]
-verification_interval = { secs = 600 }
+verification_interval = { secs = 600, nanos = 0 }
 max_concurrent_verifications = 50
-challenge_timeout = { secs = 120 }
+challenge_timeout = { secs = 120, nanos = 0 }
 min_score_threshold = 0.1
 min_stake_threshold = 1.0
 max_miners_per_round = 20
-min_verification_interval = { secs = 1800 }
+min_verification_interval = { secs = 1800, nanos = 0 }
+netuid = 39  # Should match bittensor.netuid
 
 [storage]
-data_dir = "/opt/basilica/data"
+data_dir = "./data"
 
 [api]
-bind_address = "0.0.0.0:8081"
+bind_address = "0.0.0.0:8080"
 max_body_size = 1048576
+# api_key = "your-api-key-here"  # Optional
 
 [logging]
 level = "info"
 format = "pretty"
+
+[metrics]
+enabled = true
+[metrics.prometheus]
+enabled = true
+port = 9090
 ```
 
-### 3. Start the Validator
+### 3. Build and Start the Validator
+
+#### Building from Source
 
 ```bash
-# Using the binary
-./validator start --config validator.toml
+# Ensure you have a validator public key file
+# If not provided, generate one:
+./scripts/gen-key.sh  # Creates public_key.hex
 
-# Or using Docker
+# Build with the validator public key
+VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n') cargo build -p validator
+
+# Or set as environment variable
+export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n')
+cargo build -p validator
+```
+
+#### Running the Validator
+
+```bash
+# Create data directory if it doesn't exist
+mkdir -p data
+
+# Using the binary
+./target/debug/validator start --config config/validator.toml
+
+# Or using cargo
+cargo run -p validator -- start --config config/validator.toml
+
+# Using Docker
 docker run -d \
   -v ~/.bittensor:/root/.bittensor \
-  -v ./validator.toml:/config/validator.toml \
-  -v ./data:/opt/basilica/data \
-  -p 8081:8081 \
+  -v ./config/validator.toml:/config/validator.toml \
+  -v ./data:/data \
+  -p 8080:8080 \
   -p 9091:9091 \
   basilica/validator:latest
 ```
+
+**Important Notes**:
+- The validator will automatically discover its UID from the Bittensor metagraph based on its hotkey
+- UIDs are no longer hardcoded in configuration files
+- The chain endpoint is auto-detected based on the network type if not explicitly specified
+- Ensure the data directory exists and has proper permissions
+- The database path in the config should use the format `sqlite:./data/validator.db`
 
 ## Verification Process
 
@@ -214,13 +260,13 @@ max_miners_per_round = 20
 
 ```bash
 # Check validator health
-curl http://localhost:8081/health
+curl http://localhost:8080/health
 
-# View current metrics
-curl http://localhost:8081/metrics
+# View current metrics (Prometheus format)
+curl http://localhost:9090/metrics
 
 # Get verification statistics
-curl http://localhost:8081/api/v1/stats
+curl http://localhost:8080/api/v1/stats
 ```
 
 ### Performance Metrics
@@ -283,11 +329,30 @@ Error: SSH verification timeout for miner UID 123
 
 **Database Errors**
 ```
-Error: database is locked
+Error: unable to open database file
 ```
-- Check file permissions on database
-- Ensure single validator instance
-- Consider database maintenance
+- Ensure the data directory exists (e.g., `mkdir -p data`)
+- Check file permissions on the data directory
+- Verify the database URL in config uses proper format: `sqlite:./data/validator.db`
+- The validator now correctly handles both relative and absolute paths
+- SQLite connection mode `?mode=rwc` is automatically added for read-write-create
+
+**Wallet Loading Error**
+```
+Error: Failed to load hotkey: Invalid format
+```
+- Ensure wallet file exists at `~/.bittensor/wallets/{wallet_name}/hotkeys/{hotkey_name}`
+- Check if the wallet is in the correct format (JSON with secretPhrase field or raw seed phrase)
+- Verify file permissions allow reading
+- You can copy an existing wallet: `cp ~/.bittensor/wallets/miner/hotkeys/default ~/.bittensor/wallets/validator/hotkeys/default`
+
+**Build Error - Missing Validator Key**
+```
+Error: No validator key found - cannot build gpu-attestor
+```
+- Ensure you have a `public_key.hex` file in the project root
+- Generate one using: `./scripts/gen-key.sh`
+- Or set the VALIDATOR_PUBLIC_KEY environment variable with a 66-character hex string
 
 ### Debug Mode
 

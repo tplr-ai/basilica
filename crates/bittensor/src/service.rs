@@ -6,25 +6,80 @@ use crate::error::BittensorError;
 use crate::retry::{CircuitBreaker, RetryExecutor};
 use anyhow::Result;
 use common::config::BittensorConfig;
-use crabtensor::{
-    axon::{serve_axon_payload, AxonProtocol},
-    subtensor::{from_url, Subtensor},
-    wallet::{home_hotkey_location, load_key_seed, signer_from_seed, Signer},
-    weights::{set_weights_payload, NormalizedWeight},
-    AccountId,
-};
+// Import our own utilities
+use crate::utils::{set_weights_payload, NormalizedWeight};
+use crate::AccountId;
 
-// Use our own API module for testnet compatibility
-#[cfg(feature = "testnet")]
-use crate::api;
+// Wallet utilities - we'll implement these
+use std::path::PathBuf;
 
-// Use crabtensor's API for mainnet (default)
-#[cfg(not(feature = "testnet"))]
-use crabtensor::api;
+// Always use our own generated API module
+use crate::api::api;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, info, warn};
+
+// Use subxt directly with our generated API
+use subxt::OnlineClient;
+use subxt::PolkadotConfig;
+
+// Type alias for our chain client
+type ChainClient = OnlineClient<PolkadotConfig>;
+
+// Type alias for Signer
+type Signer = subxt::tx::PairSigner<PolkadotConfig, subxt::ext::sp_core::sr25519::Pair>;
+
+// Wallet helper functions
+fn home_hotkey_location(wallet_name: &str, hotkey_name: &str) -> Option<PathBuf> {
+    home::home_dir().map(|home| {
+        home.join(".bittensor")
+            .join("wallets")
+            .join(wallet_name)
+            .join("hotkeys")
+            .join(hotkey_name)
+    })
+}
+
+fn load_key_seed(path: &PathBuf) -> Result<String, Box<dyn std::error::Error>> {
+    let content = std::fs::read_to_string(path)?;
+
+    // Try to parse as JSON first (new format)
+    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&content) {
+        if let Some(secret_phrase) = json_value.get("secretPhrase").and_then(|v| v.as_str()) {
+            return Ok(secret_phrase.to_string());
+        }
+        // Fall back to secretSeed if secretPhrase is not available
+        if let Some(secret_seed) = json_value.get("secretSeed").and_then(|v| v.as_str()) {
+            return Ok(secret_seed.to_string());
+        }
+        return Err("JSON wallet file missing secretPhrase or secretSeed".into());
+    }
+
+    // If not JSON, assume it's a raw seed phrase (old format)
+    Ok(content.trim().to_string())
+}
+
+fn signer_from_seed(seed: &str) -> Result<Signer, Box<dyn std::error::Error>> {
+    use subxt::ext::sp_core::Pair;
+
+    // Try to create pair from string (could be mnemonic or hex seed)
+    let pair = if seed.starts_with("0x") {
+        // It's a hex seed
+        let seed_bytes = hex::decode(&seed[2..])?;
+        if seed_bytes.len() != 32 {
+            return Err("Invalid seed length".into());
+        }
+        let mut seed_array = [0u8; 32];
+        seed_array.copy_from_slice(&seed_bytes);
+        subxt::ext::sp_core::sr25519::Pair::from_seed(&seed_array)
+    } else {
+        // It's a mnemonic phrase
+        subxt::ext::sp_core::sr25519::Pair::from_string(seed, None)?
+    };
+
+    Ok(subxt::tx::PairSigner::new(pair))
+}
 
 // Import the metagraph types
 use crate::{Metagraph, SelectiveMetagraph};
@@ -32,7 +87,7 @@ use crate::{Metagraph, SelectiveMetagraph};
 /// Central service for Bittensor chain interactions with retry mechanisms
 pub struct Service {
     config: BittensorConfig,
-    subtensor: Subtensor,
+    client: ChainClient,
     signer: Signer,
     retry_executor: RetryExecutor,
     circuit_breaker: Arc<Mutex<CircuitBreaker>>,
@@ -51,7 +106,7 @@ impl Service {
     ///
     /// # Errors
     ///
-    /// * `NetworkError` - If connection to the subtensor network fails
+    /// * `NetworkError` - If connection to the client network fails
     /// * `WalletError` - If wallet key loading or signer creation fails
     pub async fn new(config: BittensorConfig) -> Result<Self, BittensorError> {
         info!(
@@ -59,42 +114,40 @@ impl Service {
             config.network
         );
 
-        // Create subtensor connection using the config's endpoint resolution
-        let subtensor_url = config.get_chain_endpoint();
+        // Create client connection using the config's endpoint resolution
+        let chain_url = config.get_chain_endpoint();
 
-        info!("Subtensor URL: {}", subtensor_url);
+        info!("Chain URL: {}", chain_url);
 
-        // Create subtensor connection - handle insecure ws:// URLs for local development
-        let subtensor = if subtensor_url.starts_with("ws://")
-            && !subtensor_url.starts_with("wss://")
-        {
+        // Create our own client using our generated metadata
+        let client = if chain_url.starts_with("ws://") && !chain_url.starts_with("wss://") {
             warn!(
                 "Using insecure WebSocket connection for local development: {}",
-                subtensor_url
+                chain_url
             );
 
             // For subxt 0.38, we need to create an RpcClient that allows insecure URLs
             use subxt::backend::legacy::LegacyBackend;
             use subxt::backend::rpc::RpcClient;
 
-            let rpc_client = RpcClient::from_insecure_url(&subtensor_url)
+            let rpc_client = RpcClient::from_insecure_url(&chain_url)
                 .await
                 .map_err(|e| BittensorError::NetworkError {
                     message: format!("Failed to create RPC client: {e}"),
                 })?;
 
             let backend = LegacyBackend::builder().build(rpc_client);
-            Subtensor::from_backend(Arc::new(backend))
+            OnlineClient::<PolkadotConfig>::from_backend(Arc::new(backend))
                 .await
                 .map_err(|e| BittensorError::NetworkError {
-                    message: format!("Failed to create subtensor from backend: {e}"),
+                    message: format!("Failed to create client from backend: {e}"),
                 })?
         } else {
-            info!("Using secure connection for: {}", subtensor_url);
-            from_url(&subtensor_url)
+            info!("Using secure connection for: {}", chain_url);
+            OnlineClient::<PolkadotConfig>::from_url(&chain_url)
                 .await
                 .map_err(|e| BittensorError::NetworkError {
-                    message: format!("Failed to connect to subtensor: {e}"),
+                    message: format!("Failed to connect to chain: {e}"),
                 })?
         };
 
@@ -104,8 +157,13 @@ impl Service {
                 message: "Failed to find home directory".to_string(),
             })?;
 
+        info!(
+            "Loading hotkey from path: {:?} (wallet: {}, hotkey: {})",
+            hotkey_path, config.wallet_name, config.hotkey_name
+        );
+
         let seed = load_key_seed(&hotkey_path).map_err(|e| BittensorError::WalletError {
-            message: format!("Failed to load hotkey seed: {e}"),
+            message: format!("Failed to load hotkey from {hotkey_path:?}: {e}"),
         })?;
 
         let signer = signer_from_seed(&seed).map_err(|e| BittensorError::WalletError {
@@ -114,7 +172,7 @@ impl Service {
 
         let service = Self {
             config,
-            subtensor,
+            client,
             signer,
             retry_executor: RetryExecutor::new().with_timeout(Duration::from_secs(300)),
             circuit_breaker: Arc::new(Mutex::new(CircuitBreaker::new(
@@ -126,7 +184,6 @@ impl Service {
         info!("Bittensor service initialized successfully with retry mechanisms");
         Ok(service)
     }
-
 
     /// Serves an axon on the Bittensor network with retry logic.
     ///
@@ -154,12 +211,25 @@ impl Service {
         );
 
         let operation = || {
-            let payload = serve_axon_payload(netuid, axon_addr, AxonProtocol::Tcp);
-            let subtensor = &self.subtensor;
+            // Create serve_axon payload using our generated API
+            let (ip, ip_type): (u128, u8) = match axon_addr.ip() {
+                std::net::IpAddr::V4(ipv4) => (ipv4.to_bits() as u128, 4),
+                std::net::IpAddr::V6(ipv6) => (ipv6.to_bits(), 6),
+            };
+            let port = axon_addr.port();
+            let protocol = 0; // TCP = 0, UDP = 1
+
+            let payload = api::tx().subtensor_module().serve_axon(
+                netuid, 0, // version (u32)
+                ip, port, ip_type, protocol, 0, // placeholder1
+                0, // placeholder2
+            );
+
+            let client = &self.client;
             let signer = &self.signer;
 
             async move {
-                subtensor
+                client
                     .tx()
                     .sign_and_submit_then_watch_default(&payload, signer)
                     .await
@@ -253,11 +323,11 @@ impl Service {
 
             // Create set_weights payload with version_key = 0
             let payload = set_weights_payload(netuid, normalized_weights, 0);
-            let subtensor = &self.subtensor;
+            let client = &self.client;
             let signer = &self.signer;
 
             async move {
-                subtensor
+                client
                     .tx()
                     .sign_and_submit_then_watch_default(&payload, signer)
                     .await
@@ -324,14 +394,14 @@ impl Service {
     > {
         debug!("Getting neuron info for UID: {} on netuid: {}", uid, netuid);
 
-        let runtime_api = self
-            .subtensor
-            .runtime_api()
-            .at_latest()
-            .await
-            .map_err(|e| BittensorError::RpcError {
-                message: format!("Failed to get runtime API: {e}"),
-            })?;
+        let runtime_api =
+            self.client
+                .runtime_api()
+                .at_latest()
+                .await
+                .map_err(|e| BittensorError::RpcError {
+                    message: format!("Failed to get runtime API: {e}"),
+                })?;
 
         let neuron_info = runtime_api
             .call(
@@ -368,9 +438,9 @@ impl Service {
         );
 
         let operation = || {
-            let subtensor = &self.subtensor;
+            let client = &self.client;
             async move {
-                let runtime_api = subtensor.runtime_api().at_latest().await.map_err(|e| {
+                let runtime_api = client.runtime_api().at_latest().await.map_err(|e| {
                     let err_msg = e.to_string();
                     let err_lower = err_msg.to_lowercase();
 
@@ -481,14 +551,14 @@ impl Service {
             fields.len()
         );
 
-        let runtime_api = self
-            .subtensor
-            .runtime_api()
-            .at_latest()
-            .await
-            .map_err(|e| BittensorError::RpcError {
-                message: format!("Failed to get runtime API: {e}"),
-            })?;
+        let runtime_api =
+            self.client
+                .runtime_api()
+                .at_latest()
+                .await
+                .map_err(|e| BittensorError::RpcError {
+                    message: format!("Failed to get runtime API: {e}"),
+                })?;
 
         let selective_metagraph = runtime_api
             .call(
@@ -532,7 +602,7 @@ impl Service {
     /// ```
     pub async fn get_block_number(&self) -> Result<u64, BittensorError> {
         let latest_block =
-            self.subtensor
+            self.client
                 .blocks()
                 .at_latest()
                 .await
@@ -578,7 +648,7 @@ impl Service {
         T: subxt::tx::Payload,
     {
         let tx_result = self
-            .subtensor
+            .client
             .tx()
             .sign_and_submit_default(&payload, &self.signer)
             .await

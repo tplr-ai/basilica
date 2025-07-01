@@ -284,8 +284,8 @@ impl Default for MinerBittensorConfig {
                 wallet_name: "miner".to_string(),
                 hotkey_name: "default".to_string(),
                 network: "finney".to_string(),
-                netuid: 27, // Basilca subnet ID
-                chain_endpoint: None, // Will be auto-detected based on network
+                netuid: 39,                // Basilca subnet ID
+                chain_endpoint: None,      // Will be auto-detected based on network
                 weight_interval_secs: 300, // 5 minutes
             },
             coldkey_name: "default".to_string(),

@@ -1,14 +1,13 @@
-# Miner Configuration for Docker Development
+# Miner configuration for test network
 
 [server]
 host = "0.0.0.0"
 port = 8092
 
 [database]
-url = "sqlite:/tmp/miner.db?mode=rwc"
+url = "sqlite:./data/miner.db"
 max_connections = 5
 min_connections = 1
-connect_timeout = { secs = 5, nanos = 0 }
 run_migrations = true
 
 [logging]
@@ -17,18 +16,18 @@ format = "pretty"
 
 [metrics]
 enabled = true
-host = "0.0.0.0"
+[metrics.prometheus]
+enabled = true
 port = 9091
 
 [bittensor]
-wallet_name = "templar_test"
-hotkey_name = "M1"
-network = "finney"
-netuid = 39
+wallet_name = "test_miner"
+hotkey_name = "default"
+network = "test"
+netuid = 387
 coldkey_name = "default"
 axon_port = 8091
-# external_ip is omitted (None)
-max_weight_uids = 256
+# Note: skip_registration is NOT set, so it will try to register on chain
 
 [validator_comms]
 request_timeout = { secs = 30, nanos = 0 }
@@ -37,12 +36,6 @@ max_concurrent_sessions = 100
 [validator_comms.auth]
 enabled = true
 method = "bittensor_signature"
-
-[validator_comms.auth.token_validation]
-validate_issuer = true
-validate_audience = true
-validate_expiration = true
-clock_skew_tolerance = { secs = 60, nanos = 0 }
 
 [validator_comms.rate_limit]
 enabled = true
@@ -57,13 +50,13 @@ max_retry_attempts = 3
 auto_recovery = true
 
 [[executor_management.executors]]
-id = "docker-executor-1"
-name = "Docker GPU Executor"
-grpc_address = "executor:50051"
+id = "test-executor-1"
+name = "Test Executor"
+grpc_address = "127.0.0.1:50051"
 
 [security]
 enable_mtls = false
-jwt_secret = "dev-secret-change-in-production"
+jwt_secret = "test-secret-change-in-production"
 token_expiration = { secs = 3600, nanos = 0 }
 allowed_validators = []
-verify_signatures = false  # Disabled for development
+verify_signatures = true
