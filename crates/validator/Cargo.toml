@@ -41,6 +41,8 @@ tower-http = { workspace = true, features = ["limit"] }
 futures = "0.3"
 async-trait = "0.1"
 toml = "0.8"
+url = "2.5"
+prost-types = "0.13"
 
 # Internal dependencies
 common = { path = "../common" }

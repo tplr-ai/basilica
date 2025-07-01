@@ -4,9 +4,16 @@
 //! This module is organized following SOLID principles with clear separation of concerns.
 
 pub mod discovery;
+pub mod miner_client;
 pub mod scheduler;
 pub mod types;
 pub mod verification;
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod test_discovery;
 
 pub use discovery::MinerDiscovery;
 pub use scheduler::VerificationScheduler;

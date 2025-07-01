@@ -71,6 +71,37 @@ pub struct VerificationConfig {
     pub min_verification_interval: Duration,
     /// Network ID for the subnet
     pub netuid: u16,
+    /// Enable dynamic discovery of executor SSH details from miners
+    #[serde(default = "default_use_dynamic_discovery")]
+    pub use_dynamic_discovery: bool,
+    /// Timeout for miner discovery operations
+    #[serde(default = "default_discovery_timeout")]
+    pub discovery_timeout: Duration,
+    /// Fall back to static SSH config if dynamic discovery fails
+    #[serde(default = "default_fallback_to_static")]
+    pub fallback_to_static: bool,
+    /// Cache miner endpoint info TTL
+    #[serde(default = "default_cache_miner_info_ttl")]
+    pub cache_miner_info_ttl: Duration,
+    /// gRPC port offset from axon port (if not using default 50061)
+    #[serde(default)]
+    pub grpc_port_offset: Option<u16>,
+}
+
+fn default_use_dynamic_discovery() -> bool {
+    true
+}
+
+fn default_discovery_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
+fn default_fallback_to_static() -> bool {
+    true
+}
+
+fn default_cache_miner_info_ttl() -> Duration {
+    Duration::from_secs(300) // 5 minutes
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -124,6 +155,11 @@ impl Default for ValidatorConfig {
                 max_miners_per_round: 20,
                 min_verification_interval: Duration::from_secs(1800), // 30 minutes
                 netuid: 1,                                            // Default subnet
+                use_dynamic_discovery: default_use_dynamic_discovery(),
+                discovery_timeout: default_discovery_timeout(),
+                fallback_to_static: default_fallback_to_static(),
+                cache_miner_info_ttl: default_cache_miner_info_ttl(),
+                grpc_port_offset: None,
             },
             storage: StorageConfig {
                 data_dir: "./data".to_string(),
