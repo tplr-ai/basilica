@@ -4,6 +4,7 @@ mod integration_tests {
     use crate::gpu::{GpuInfo, GpuVendor};
 
     #[test]
+    #[ignore = "Requires physical GPU hardware"]
     fn test_performance_validation_spoofing_detection() {
         let validator = PerformanceValidator::new();
 
@@ -103,6 +104,7 @@ mod integration_tests {
     }
 
     #[test]
+    #[ignore = "Requires physical GPU hardware"]
     fn test_h200_profile_validation() {
         let validator = PerformanceValidator::new();
 

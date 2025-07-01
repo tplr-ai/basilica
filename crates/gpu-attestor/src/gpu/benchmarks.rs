@@ -656,6 +656,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "May require GPU hardware"]
     fn test_benchmark_runner_creation() {
         let result = GpuBenchmarkRunner::new(0);
         // May fail if no GPU backend is available
