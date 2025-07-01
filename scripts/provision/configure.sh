@@ -131,7 +131,7 @@ nanos = 0
 wallet_name = "${VALIDATOR_WALLET_NAME:-validator}"
 hotkey_name = "${VALIDATOR_HOTKEY_NAME:-default}"
 network = "${BITTENSOR_NETWORK:-finney}"
-netuid = ${BITTENSOR_NETUID:-27}
+netuid = ${BITTENSOR_NETUID:-39}
 chain_endpoint = "${BITTENSOR_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
 weight_interval_secs = 300
 
@@ -140,7 +140,7 @@ max_concurrent_verifications = ${VALIDATOR_MAX_CONCURRENT:-50}
 min_score_threshold = ${VALIDATOR_MIN_SCORE:-0.1}
 min_stake_threshold = ${VALIDATOR_MIN_STAKE:-1000.0}
 max_miners_per_round = ${VALIDATOR_MAX_MINERS:-20}
-netuid = ${BITTENSOR_NETUID:-27}
+netuid = ${BITTENSOR_NETUID:-39}
 
 [verification.verification_interval]
 secs = ${VALIDATOR_VERIFY_INTERVAL:-600}
@@ -213,7 +213,7 @@ generate_miner_config() {
 wallet_name = "${MINER_WALLET_NAME:-miner}"
 hotkey_name = "${MINER_HOTKEY_NAME:-default}"
 network = "${BITTENSOR_NETWORK:-finney}"
-netuid = ${BITTENSOR_NETUID:-27}
+netuid = ${BITTENSOR_NETUID:-39}
 chain_endpoint = "${BITTENSOR_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
 weight_interval_secs = 300
 uid = 0  # Auto-discovered from chain

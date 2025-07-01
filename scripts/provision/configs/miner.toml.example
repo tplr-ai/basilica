@@ -7,7 +7,7 @@
 wallet_name = "YOUR_WALLET_NAME"
 hotkey_name = "YOUR_HOTKEY_NAME"
 network = "finney"  # Use "local" for development
-netuid = 27  # Basilica subnet ID
+netuid = 39  # Basilica subnet ID
 chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
 # IMPORTANT: Replace with your server's public IP
 external_ip = "YOUR_PUBLIC_IP_HERE"

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use sysinfo::{Pid, System};
 use tokio::signal;
+use tracing::debug;
 use tracing::error;
 
 pub async fn handle_start(config_path: Option<PathBuf>, local_test: bool) -> Result<()> {
@@ -245,9 +246,25 @@ async fn start_validator_services(
         std::path::PathBuf::from(&config.storage.data_dir).join("validator_storage.json");
     let storage = common::MemoryStorage::with_file(storage_path).await?;
 
-    let db_path = std::path::PathBuf::from(&config.storage.data_dir).join("validator.db");
+    // Extract database path from URL (remove sqlite: prefix if present)
+    let db_url = &config.database.url;
+    let db_path = if db_url.starts_with("sqlite:") {
+        &db_url[7..] // Remove "sqlite:" prefix
+    } else {
+        db_url
+    };
+
+    debug!("Database URL: {}", db_url);
+    debug!("Database path: {}", db_path);
+
+    // Ensure the database directory exists
+    if let Some(parent) = std::path::Path::new(db_path).parent() {
+        debug!("Creating directory: {:?}", parent);
+        std::fs::create_dir_all(parent)?;
+    }
+
     let persistence = crate::persistence::SimplePersistence::new(
-        db_path.to_str().unwrap(),
+        db_path,
         config.bittensor.common.hotkey_name.clone(),
     )
     .await?;
@@ -273,6 +290,15 @@ async fn start_validator_services(
         // Perform one-time startup registration
         chain_registration.register_startup().await?;
         HandlerUtils::print_success("Validator registered on chain with axon endpoint");
+
+        // Log the discovered UID
+        if let Some(uid) = chain_registration.get_discovered_uid().await {
+            HandlerUtils::print_info(&format!("Validator registered with discovered UID: {uid}"));
+        } else {
+            HandlerUtils::print_warning(
+                "No UID discovered - validator may not be registered on chain",
+            );
+        }
 
         let miner_prover = Some(crate::miner_prover::MinerProver::new(
             config.verification.clone(),

@@ -339,14 +339,17 @@ impl ConfigValidation for ServerConfig {
 impl BittensorConfig {
     /// Get the chain endpoint, auto-detecting based on network if not explicitly configured
     pub fn get_chain_endpoint(&self) -> String {
-        self.chain_endpoint.clone().unwrap_or_else(|| {
-            match self.network.as_str() {
-                "local" => "ws://subtensor:9944".to_string(),
+        self.chain_endpoint
+            .clone()
+            .unwrap_or_else(|| match self.network.as_str() {
+                "local" => "ws://127.0.0.1:9944".to_string(),
                 "finney" => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
                 "test" => "wss://test.finney.opentensor.ai:443".to_string(),
-                _ => panic!("Unknown network: {}. Valid networks are: finney, test, local", self.network),
-            }
-        })
+                _ => panic!(
+                    "Unknown network: {}. Valid networks are: finney, test, local",
+                    self.network
+                ),
+            })
     }
 }
 

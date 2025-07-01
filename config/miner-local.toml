@@ -1,0 +1,50 @@
+# Local development miner configuration
+# This config skips chain registration for testing without a subtensor node
+
+[server]
+host = "0.0.0.0"
+port = 8092
+
+[database]
+url = "sqlite:./data/miner.db"
+run_migrations = true
+
+[logging]
+level = "info"
+format = "pretty"
+
+[metrics]
+enabled = false
+
+[bittensor]
+wallet_name = "default"
+hotkey_name = "default"
+network = "local"
+netuid = 1
+coldkey_name = "default"
+axon_port = 8091
+# Skip registration for local testing without subtensor
+skip_registration = true
+
+[validator_comms]
+request_timeout = { secs = 30, nanos = 0 }
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.rate_limit]
+enabled = true
+
+[executor_management]
+health_check_interval = { secs = 30, nanos = 0 }
+
+[[executor_management.executors]]
+id = "local-executor-1"
+name = "Local Test Executor"
+grpc_address = "127.0.0.1:50051"
+
+[security]
+enable_mtls = false
+jwt_secret = "local-test-secret"
+verify_signatures = false

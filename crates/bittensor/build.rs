@@ -29,24 +29,24 @@ fn detect_config_from_files() -> ConfigData {
         "config/validator.toml",
         "../config/miner.toml",
         "../config/validator.toml",
-        "../../miner.toml",              // From crates/bittensor to root
-        "../../validator.toml",          // From crates/bittensor to root
+        "../../miner.toml",     // From crates/bittensor to root
+        "../../validator.toml", // From crates/bittensor to root
         "../../config/miner.toml",
         "../../config/validator.toml",
     ];
 
     let mut config = ConfigData::default();
-    
+
     for path in config_paths {
-        if let Ok(contents) = fs::read_to_string(&path) {
-            println!("cargo:warning=Found and reading configuration from: {}", path);
-            
+        if let Ok(contents) = fs::read_to_string(path) {
+            println!("cargo:warning=Found and reading configuration from: {path}");
+
             // Parse TOML to find network and chain_endpoint
             let mut in_bittensor_section = false;
-            
+
             for line in contents.lines() {
                 let line = line.trim();
-                
+
                 // Check for [bittensor] section
                 if line == "[bittensor]" {
                     in_bittensor_section = true;
@@ -54,7 +54,7 @@ fn detect_config_from_files() -> ConfigData {
                 } else if line.starts_with('[') {
                     in_bittensor_section = false;
                 }
-                
+
                 // Look for network in any section or bittensor section
                 if line.starts_with("network") && line.contains('=') {
                     if let Some(value) = line.split('=').nth(1) {
@@ -68,9 +68,10 @@ fn detect_config_from_files() -> ConfigData {
                         }
                     }
                 }
-                
+
                 // Look for chain_endpoint in bittensor section
-                if in_bittensor_section && line.starts_with("chain_endpoint") && line.contains('=') {
+                if in_bittensor_section && line.starts_with("chain_endpoint") && line.contains('=')
+                {
                     if let Some(value) = line.split('=').nth(1) {
                         // Remove comments and trim
                         let value = if let Some(comment_pos) = value.find('#') {
@@ -78,7 +79,7 @@ fn detect_config_from_files() -> ConfigData {
                         } else {
                             value
                         };
-                        
+
                         let endpoint = value
                             .trim()
                             .trim_matches('"')
@@ -90,14 +91,14 @@ fn detect_config_from_files() -> ConfigData {
                     }
                 }
             }
-            
+
             // If we found what we need, stop searching
             if config.network.is_some() {
                 break;
             }
         }
     }
-    
+
     config
 }
 
@@ -112,7 +113,7 @@ async fn main() {
 
     // Detect configuration from files
     let config = detect_config_from_files();
-    
+
     // Determine which network we're building for
     // Priority: 1. Environment variable, 2. Config file, 3. Default to finney
     let network = env::var("BITTENSOR_NETWORK")
@@ -128,7 +129,7 @@ async fn main() {
     let endpoint = if let Ok(custom_endpoint) = env::var("METADATA_CHAIN_ENDPOINT") {
         custom_endpoint
     } else if let Some(config_endpoint) = config.chain_endpoint {
-        println!("cargo:warning=Using chain_endpoint from config: {}", config_endpoint);
+        println!("cargo:warning=Using chain_endpoint from config: {config_endpoint}");
         config_endpoint
     } else {
         // Auto-detect endpoint based on network (same logic as BittensorConfig::get_chain_endpoint)

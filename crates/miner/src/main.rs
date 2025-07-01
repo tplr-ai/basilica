@@ -519,12 +519,26 @@ fn init_logging(level: &str) -> Result<()> {
 
 /// Load configuration from file and environment
 fn load_config(config_path: &str) -> Result<MinerConfig> {
+    use common::config::ConfigValidation;
+
     let path = PathBuf::from(config_path);
     let config = if path.exists() {
         MinerConfig::load_from_file(&path)?
     } else {
         MinerConfig::load()?
     };
+
+    // Validate configuration before proceeding
+    config.validate()?;
+
+    // Log any warnings
+    let warnings = config.warnings();
+    if !warnings.is_empty() {
+        warn!("Configuration warnings:");
+        for warning in warnings {
+            warn!("  - {}", warning);
+        }
+    }
 
     Ok(config)
 }

@@ -86,7 +86,7 @@ docker run --rm basilica/miner:latest --gen-config > miner.toml
 wallet_name = "your_miner_wallet"
 hotkey_name = "your_hotkey"
 network = "finney"
-netuid = 27  # Basilca subnet ID
+netuid = 39  # Basilca subnet ID
 chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
 external_ip = "YOUR_PUBLIC_IP"  # Required for production
 
