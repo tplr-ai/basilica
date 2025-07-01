@@ -126,8 +126,7 @@ pub struct MinerState {
 impl MinerState {
     /// Initialize miner state
     pub async fn new(config: MinerConfig, enable_metrics: bool) -> Result<Self> {
-        let miner_uid = config.bittensor.uid;
-        info!("Initializing miner with UID: {}", miner_uid.as_u16());
+        info!("Initializing miner...");
 
         // Initialize metrics system if enabled
         let metrics = if enable_metrics && config.metrics.enabled {
@@ -197,6 +196,9 @@ impl MinerState {
 
         let jwt_service = validator_comms.jwt_service.clone();
 
+        // Use a placeholder UID that will be updated after chain registration
+        let miner_uid = MinerUid::from(0);
+
         Ok(Self {
             config,
             miner_uid,
@@ -238,6 +240,8 @@ impl MinerState {
         // Log the discovered UID
         if let Some(uid) = self.chain_registration.get_discovered_uid().await {
             info!("Miner registered with discovered UID: {}", uid);
+        } else {
+            warn!("No UID discovered - miner may not be registered on chain");
         }
 
         // Start validator communications server

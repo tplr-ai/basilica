@@ -372,9 +372,7 @@ fn validate_bittensor_config(
         errors.push("hotkey_name cannot be empty".to_string());
     }
 
-    if config.uid.as_u16() == 0 {
-        warnings.push("UID is 0, will be auto-discovered from chain".to_string());
-    }
+    // UID will be auto-discovered from chain during startup
 
     if config.external_ip.is_none() {
         suggestions.push("Consider setting external_ip for production deployments".to_string());

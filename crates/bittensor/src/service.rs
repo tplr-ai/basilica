@@ -8,7 +8,7 @@ use anyhow::Result;
 use common::config::BittensorConfig;
 use crabtensor::{
     axon::{serve_axon_payload, AxonProtocol},
-    subtensor::{from_url, Subtensor, SubtensorUrl},
+    subtensor::{from_url, Subtensor},
     wallet::{home_hotkey_location, load_key_seed, signer_from_seed, Signer},
     weights::{set_weights_payload, NormalizedWeight},
     AccountId,
@@ -59,9 +59,8 @@ impl Service {
             config.network
         );
 
-        // Create subtensor connection
-        let subtensor_url =
-            Self::get_subtensor_url(&config.network, config.chain_endpoint.as_deref());
+        // Create subtensor connection using the config's endpoint resolution
+        let subtensor_url = config.get_chain_endpoint();
 
         info!("Subtensor URL: {}", subtensor_url);
 
@@ -128,32 +127,6 @@ impl Service {
         Ok(service)
     }
 
-    /// Gets the subtensor URL for the specified network.
-    ///
-    /// # Arguments
-    ///
-    /// * `network` - The network name (e.g., "finney", "test", "local", "archive")
-    /// * `chain_endpoint` - Optional custom chain endpoint URL
-    ///
-    /// # Returns
-    ///
-    /// * `String` - The appropriate subtensor URL for the network
-    fn get_subtensor_url(network: &str, chain_endpoint: Option<&str>) -> String {
-        if let Some(endpoint) = chain_endpoint {
-            return endpoint.to_string();
-        }
-
-        match network {
-            "finney" => SubtensorUrl::Finney.as_ref().to_string(),
-            "test" => SubtensorUrl::Test.as_ref().to_string(),
-            "local" => SubtensorUrl::Local.as_ref().to_string(),
-            "archive" => SubtensorUrl::Archive.as_ref().to_string(),
-            _ => {
-                warn!("Unknown network '{}', using finney endpoint", network);
-                SubtensorUrl::Finney.as_ref().to_string()
-            }
-        }
-    }
 
     /// Serves an axon on the Bittensor network with retry logic.
     ///
