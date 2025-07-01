@@ -104,15 +104,12 @@ impl MinerClient {
     fn create_validator_signature(&self, nonce: &str) -> Result<String> {
         if let Some(ref signer) = self.signer {
             // Use the provided signer
-            let signature_bytes = signer.sign(nonce.as_bytes())?;
+            let signature_bytes = signer
+                .sign(nonce.as_bytes())
+                .unwrap_or_else(|e| panic!("Failed to create validator signature: {e}"));
             Ok(hex::encode(signature_bytes))
         } else {
-            // Without a signer, we create a dummy signature for testing
-            // In production, this should fail or use a proper key management system
-            warn!("No signer provided, creating test signature - NOT FOR PRODUCTION USE");
-            // Create a 64-byte signature (sr25519 signature size)
-            let test_sig = vec![0u8; 64];
-            Ok(hex::encode(test_sig))
+            panic!("No signer provided for validator signature creation");
         }
     }
 
