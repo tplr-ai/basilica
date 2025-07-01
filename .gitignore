@@ -93,3 +93,10 @@ backup/*.sql
 tmp/
 temp/
 .venv/
+
+# Binaries
+executor        
+gpu-attestor
+miner
+validator
+

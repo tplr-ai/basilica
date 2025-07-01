@@ -292,10 +292,20 @@ int MODE="":
     
     if [ "$NEED_BUILD" = "true" ]; then
         echo "Building missing binaries..."
+        # Check for validator public key
+        if [ -f "public_key.hex" ]; then
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+            echo "Using validator public key: ${VALIDATOR_PUBLIC_KEY:0:10}..."
+        else
+            echo "No public_key.hex found, generating key..."
+            ./scripts/gen-key.sh
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+        fi
+        
         [ ! -f validator ] && ./scripts/validator/build.sh
         [ ! -f miner ] && ./scripts/miner/build.sh
         [ ! -f executor ] && ./scripts/executor/build.sh
-        [ ! -f gpu-attestor ] && ./scripts/gpu-attestor/build.sh
+        [ ! -f gpu-attestor ] && VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/gpu-attestor/build.sh
     else
         echo "All binaries exist, skipping build"
     fi
@@ -529,10 +539,20 @@ int-testnet MODE="":
         export BITTENSOR_NETWORK=test
         export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443"
         
+        # Check for validator public key
+        if [ -f "public_key.hex" ]; then
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+            echo "Using validator public key: ${VALIDATOR_PUBLIC_KEY:0:10}..."
+        else
+            echo "No public_key.hex found, generating key..."
+            ./scripts/gen-key.sh
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+        fi
+        
         [ ! -f validator ] && BITTENSOR_NETWORK=test ./scripts/validator/build.sh
         [ ! -f miner ] && BITTENSOR_NETWORK=test ./scripts/miner/build.sh
         [ ! -f executor ] && BITTENSOR_NETWORK=test ./scripts/executor/build.sh
-        [ ! -f gpu-attestor ] && BITTENSOR_NETWORK=test ./scripts/gpu-attestor/build.sh
+        [ ! -f gpu-attestor ] && BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/gpu-attestor/build.sh
     else
         echo "All binaries exist, skipping build"
     fi

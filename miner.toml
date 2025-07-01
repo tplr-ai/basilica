@@ -1,0 +1,77 @@
+# Miner Configuration Template
+# This file is used to generate environment-specific configurations
+
+[bittensor]
+wallet_name = "test_miner"
+hotkey_name = "default"
+network = "test"
+netuid = 387
+chain_endpoint = "wss://test.finney.opentensor.ai:443"
+external_ip = "51.159.160.71"
+uid = 0
+coldkey_name = "default"
+axon_port = 8091
+max_weight_uids = 256
+skip_registration = false
+
+[database]
+url = "sqlite:///opt/basilica/data/miner.db?mode=rwc"
+run_migrations = true
+max_connections = 10
+
+[server]
+host = "0.0.0.0"
+port = 8080
+max_connections = 1000
+request_timeout = { secs = 30 }
+
+[logging]
+level = "info"
+format = "json"
+output = "./miner.log"
+max_file_size = 104857600
+max_files = 10
+
+[metrics]
+enabled = true
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"
+retention_period = { secs = 604800 }
+
+[validator_comms]
+max_concurrent_sessions = 50
+request_timeout = { secs = 30 }
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.auth.token_validation]
+issuer = "basilica-validator"
+audience = "basilica-miner"
+expiration_leeway = { secs = 60 }
+
+[validator_comms.rate_limit]
+enabled = true
+requests_per_second = 10
+burst_capacity = 20
+
+[executor_management]
+health_check_interval = { secs = 60 }
+health_check_timeout = { secs = 10 }
+max_retry_attempts = 3
+auto_recovery = true
+
+# Executors will be added dynamically
+executors = [
+    { id = "executor-1", grpc_address = "64.247.196.98:50051", name = "Testnet Executor 1" }
+]
+
+[security]
+enable_mtls = false
+jwt_secret = "testnet-secret-change-in-production-use-secure-value"
+allowed_validators = []
+require_client_cert = false
+
+# Remote executor deployment is disabled for this deployment

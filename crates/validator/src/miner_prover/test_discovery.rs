@@ -24,10 +24,10 @@ mod tests {
             Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap();
         let client = MinerClient::new(config.clone(), hotkey.clone());
 
-        // Test default port
+        // Test default port (now 8080, same as miner HTTP)
         let axon = "http://192.168.1.100:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "http://192.168.1.100:50061");
+        assert_eq!(grpc, "http://192.168.1.100:8080");
 
         // Test with port offset
         let mut config_with_offset = config;

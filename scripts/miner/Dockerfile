@@ -15,7 +15,6 @@ WORKDIR /workspace
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
-COPY src/ ./src/
 COPY crates/ ./crates/
 
 # Build arguments
@@ -23,10 +22,12 @@ ARG BUILD_MODE=release
 ARG FEATURES=""
 ARG BITTENSOR_NETWORK=""
 ARG METADATA_CHAIN_ENDPOINT=""
+ARG VALIDATOR_PUBLIC_KEY=""
 
 # Set environment variables for the build
 ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK}
 ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
+ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
 
 # Build the miner directly (workspace should resolve dependencies)
 RUN if [ "$BUILD_MODE" = "release" ]; then \

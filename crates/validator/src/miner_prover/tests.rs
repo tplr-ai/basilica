@@ -20,10 +20,10 @@ mod tests {
 
         // Test default port mapping (axon port -> gRPC port 50061)
         let test_cases = vec![
-            ("http://192.168.1.100:8091", "http://192.168.1.100:50061"),
-            ("http://10.0.0.1:9091", "http://10.0.0.1:50061"),
-            ("http://example.com:8091", "http://example.com:50061"),
-            ("http://[2001:db8::1]:8091", "http://[2001:db8::1]:50061"),
+            ("http://192.168.1.100:8091", "http://192.168.1.100:8080"),
+            ("http://10.0.0.1:9091", "http://10.0.0.1:8080"),
+            ("http://example.com:8091", "http://example.com:8080"),
+            ("http://[2001:db8::1]:8091", "http://[2001:db8::1]:8080"),
         ];
 
         for (axon, expected) in test_cases {
@@ -53,7 +53,7 @@ mod tests {
         let result = client_with_tls
             .axon_to_grpc_endpoint("http://example.com:8091")
             .unwrap();
-        assert_eq!(result, "https://example.com:50061");
+        assert_eq!(result, "https://example.com:8080");
     }
 
     #[test]

@@ -20,6 +20,9 @@ services:
       - /etc/ssh:/etc/ssh:ro
       - ~/.ssh:/root/.ssh:ro
       
+      # Bittensor wallet access
+      - ~/.bittensor:/root/.bittensor:rw
+      
       # Shared attestor binary access
       - /usr/local/bin/gpu-attestor:/usr/local/bin/gpu-attestor:ro
       
