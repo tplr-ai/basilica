@@ -6,7 +6,7 @@ use crate::error::BittensorError;
 use crate::AccountId;
 use common::identity::Hotkey;
 use std::str::FromStr;
-use subxt::ext::sp_core::sr25519;
+use subxt::ext::sp_core::{sr25519, Pair};
 
 /// Convert a Hotkey to an AccountId
 pub fn hotkey_to_account_id(hotkey: &Hotkey) -> Result<AccountId, BittensorError> {
@@ -146,16 +146,45 @@ pub fn verify_bittensor_signature(
     }
 }
 
+/// Signature type used by Bittensor (sr25519)
+pub type BittensorSignature = sr25519::Signature;
+
+/// Sign a message with a keypair
+///
+/// This is the direct signing method that takes an sr25519 keypair
+/// and returns a signature that can be verified with `verify_bittensor_signature`.
+pub fn sign_with_keypair(keypair: &sr25519::Pair, message: &[u8]) -> BittensorSignature {
+    keypair.sign(message)
+}
+
+/// Sign a message and return hex-encoded signature
+///
+/// This is a convenience method that signs with a keypair and returns
+/// a hex-encoded string suitable for transmission.
+pub fn sign_message_hex(keypair: &sr25519::Pair, message: &[u8]) -> String {
+    let signature = sign_with_keypair(keypair, message);
+    hex::encode(signature.0)
+}
+
 /// Create a signature using a signer
+///
+/// This function signs data with a subxt signer and returns a hex-encoded signature.
+/// Use `Service::sign_data` for signing with the service's hotkey.
 pub fn create_signature<T>(signer: &T, data: &[u8]) -> String
 where
     T: subxt::tx::Signer<subxt::PolkadotConfig>,
 {
     // Sign the data
     let signature = signer.sign(data);
-    // For now, just return a placeholder - we'll need to implement proper signing
-    // when we have a working signer type
-    hex::encode(vec![0u8; 64])
+
+    // Extract sr25519 signature bytes
+    match signature {
+        subxt::utils::MultiSignature::Sr25519(sig) => hex::encode(sig),
+        _ => {
+            // This shouldn't happen with our signer type, but handle it gracefully
+            hex::encode(vec![0u8; 64])
+        }
+    }
 }
 
 #[cfg(test)]
