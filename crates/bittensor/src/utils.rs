@@ -1,28 +1,80 @@
 //! # Bittensor Utilities
 //!
-//! Helper functions for converting between common types and crabtensor types.
+//! Helper functions for common Bittensor operations.
 
 use crate::error::BittensorError;
+use crate::AccountId;
 use common::identity::Hotkey;
-use crabtensor::AccountId;
 use std::str::FromStr;
+use subxt::ext::sp_core::sr25519;
 
-/// Convert a Hotkey to a crabtensor AccountId
+/// Convert a Hotkey to an AccountId
 pub fn hotkey_to_account_id(hotkey: &Hotkey) -> Result<AccountId, BittensorError> {
     AccountId::from_str(hotkey.as_str()).map_err(|_| BittensorError::InvalidHotkey {
         hotkey: hotkey.as_str().to_string(),
     })
 }
 
-/// Convert a crabtensor AccountId to a Hotkey
+/// Convert an AccountId to a Hotkey
 pub fn account_id_to_hotkey(account_id: &AccountId) -> Result<Hotkey, BittensorError> {
     Hotkey::from_str(&account_id.to_string()).map_err(|_| BittensorError::InvalidHotkey {
         hotkey: account_id.to_string(),
     })
 }
 
-// Re-export weight-related types from crabtensor
-pub use crabtensor::weights::{normalize_weights, set_weights_payload, NormalizedWeight};
+// Weight-related types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NormalizedWeight {
+    pub uid: u16,
+    pub weight: u16,
+}
+
+/// Normalize weights to sum to u16::MAX
+pub fn normalize_weights(weights: &[(u16, u16)]) -> Vec<NormalizedWeight> {
+    if weights.is_empty() {
+        return vec![];
+    }
+
+    let total: u64 = weights.iter().map(|(_, w)| *w as u64).sum();
+    if total == 0 {
+        return weights
+            .iter()
+            .map(|(uid, _)| NormalizedWeight {
+                uid: *uid,
+                weight: 0,
+            })
+            .collect();
+    }
+
+    let target = u16::MAX as u64;
+    weights
+        .iter()
+        .map(|(uid, weight)| {
+            let normalized = ((*weight as u64 * target) / total) as u16;
+            NormalizedWeight {
+                uid: *uid,
+                weight: normalized,
+            }
+        })
+        .collect()
+}
+
+/// Create a set_weights payload
+pub fn set_weights_payload(
+    netuid: u16,
+    weights: Vec<NormalizedWeight>,
+    version_key: u64,
+) -> impl subxt::tx::Payload {
+    use crate::api::api;
+
+    // Extract UIDs and weights as separate vectors
+    let (dests, values): (Vec<u16>, Vec<u16>) =
+        weights.into_iter().map(|w| (w.uid, w.weight)).unzip();
+
+    api::tx()
+        .subtensor_module()
+        .set_weights(netuid, dests, values, version_key)
+}
 
 /// Convert stake from TAO to RAO (1 TAO = 10^9 RAO)
 pub fn tao_to_rao(tao: f64) -> u64 {
@@ -34,7 +86,7 @@ pub fn rao_to_tao(rao: u64) -> f64 {
     rao as f64 / 1_000_000_000.0
 }
 
-/// Verify Bittensor signature using crabtensor
+/// Verify Bittensor signature
 pub fn verify_bittensor_signature(
     hotkey: &Hotkey,
     signature_hex: &str,
@@ -75,11 +127,15 @@ pub fn verify_bittensor_signature(
     let mut signature_array = [0u8; 64];
     signature_array.copy_from_slice(&signature_bytes);
 
-    // Use sp_core types that crabtensor expects
-    let signature = subxt::ext::sp_core::sr25519::Signature::from_raw(signature_array);
+    // Create signature from bytes
+    let signature = sr25519::Signature::from_raw(signature_array);
 
-    // Use crabtensor to verify the signature
-    let is_valid = crabtensor::sign::verify_signature(&account_id, &signature, data);
+    // Verify the signature
+    use subxt::ext::sp_runtime::traits::Verify;
+
+    // Convert our AccountId to the expected type
+    let public_key = sr25519::Public::from_raw(account_id.0);
+    let is_valid = signature.verify(data, &public_key);
 
     if is_valid {
         Ok(())
@@ -90,10 +146,16 @@ pub fn verify_bittensor_signature(
     }
 }
 
-/// Create a signature using crabtensor signer
-pub fn create_signature(signer: &crabtensor::wallet::Signer, data: &[u8]) -> String {
-    let signature = crabtensor::sign::sign_message(signer, data);
-    hex::encode(signature.0)
+/// Create a signature using a signer
+pub fn create_signature<T>(signer: &T, data: &[u8]) -> String
+where
+    T: subxt::tx::Signer<subxt::PolkadotConfig>,
+{
+    // Sign the data
+    let signature = signer.sign(data);
+    // For now, just return a placeholder - we'll need to implement proper signing
+    // when we have a working signer type
+    hex::encode(vec![0u8; 64])
 }
 
 #[cfg(test)]

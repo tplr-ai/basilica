@@ -19,8 +19,8 @@ impl ChainRegistration {
     /// Create a new chain registration service
     pub async fn new(config: MinerBittensorConfig) -> Result<Self> {
         info!(
-            "Initializing chain registration for miner UID: {}",
-            config.uid.as_u16()
+            "Initializing chain registration for network: {}",
+            config.common.network
         );
 
         // Initialize the bittensor service

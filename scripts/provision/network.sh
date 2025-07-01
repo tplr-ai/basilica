@@ -244,7 +244,7 @@ executor_metrics = "${EXECUTOR_HOST}:${EXECUTOR_METRICS_PORT:-9090}"
 
 [networks]
 bittensor_network = "${BITTENSOR_NETWORK:-finney}"
-bittensor_netuid = ${BITTENSOR_NETUID:-27}
+bittensor_netuid = ${BITTENSOR_NETUID:-39}
 bittensor_endpoint = "${BITTENSOR_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
 
 [topology]

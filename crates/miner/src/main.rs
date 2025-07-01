@@ -126,8 +126,7 @@ pub struct MinerState {
 impl MinerState {
     /// Initialize miner state
     pub async fn new(config: MinerConfig, enable_metrics: bool) -> Result<Self> {
-        let miner_uid = config.bittensor.uid;
-        info!("Initializing miner with UID: {}", miner_uid.as_u16());
+        info!("Initializing miner...");
 
         // Initialize metrics system if enabled
         let metrics = if enable_metrics && config.metrics.enabled {
@@ -197,6 +196,9 @@ impl MinerState {
 
         let jwt_service = validator_comms.jwt_service.clone();
 
+        // Use a placeholder UID that will be updated after chain registration
+        let miner_uid = MinerUid::from(0);
+
         Ok(Self {
             config,
             miner_uid,
@@ -238,6 +240,8 @@ impl MinerState {
         // Log the discovered UID
         if let Some(uid) = self.chain_registration.get_discovered_uid().await {
             info!("Miner registered with discovered UID: {}", uid);
+        } else {
+            warn!("No UID discovered - miner may not be registered on chain");
         }
 
         // Start validator communications server
@@ -515,12 +519,26 @@ fn init_logging(level: &str) -> Result<()> {
 
 /// Load configuration from file and environment
 fn load_config(config_path: &str) -> Result<MinerConfig> {
+    use common::config::ConfigValidation;
+
     let path = PathBuf::from(config_path);
     let config = if path.exists() {
         MinerConfig::load_from_file(&path)?
     } else {
         MinerConfig::load()?
     };
+
+    // Validate configuration before proceeding
+    config.validate()?;
+
+    // Log any warnings
+    let warnings = config.warnings();
+    if !warnings.is_empty() {
+        warn!("Configuration warnings:");
+        for warning in warnings {
+            warn!("  - {}", warning);
+        }
+    }
 
     Ok(config)
 }

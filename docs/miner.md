@@ -29,6 +29,8 @@ btcli wallet new_coldkey --wallet.name miner
 btcli wallet new_hotkey --wallet.name miner --wallet.hotkey default
 ```
 
+**Note**: The wallet file format has changed. The miner now supports both JSON wallet files (new format) and raw seed phrases (old format). The JSON format includes fields like `secretPhrase`, `publicKey`, `accountId`, etc.
+
 ### 2. Configure the Miner
 
 Create a `miner.toml` configuration file:
@@ -36,41 +38,74 @@ Create a `miner.toml` configuration file:
 ```toml
 [server]
 host = "0.0.0.0"
-port = 8080
+port = 8092
+
+[database]
+url = "sqlite:./data/miner.db"
+max_connections = 5
+min_connections = 1
+run_migrations = true
 
 [bittensor]
 wallet_name = "miner"
 hotkey_name = "default"
-network = "finney"  # or "test" for testnet
-netuid = 39  # Basilica subnet
-chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
-weight_interval_secs = 300
-axon_port = 9090
+network = "finney"  # Options: "finney", "test", or "local"
+netuid = 39  # Basilica subnet (use 387 for test network)
+# chain_endpoint is auto-detected based on network if not specified
+# finney: wss://entrypoint-finney.opentensor.ai:443
+# test: wss://test.finney.opentensor.ai:443
+# local: ws://127.0.0.1:9944
+coldkey_name = "default"
+axon_port = 8091
+# external_ip = "your.external.ip.here"  # Optional
 
-[executor]
-deployment_mode = "ssh"
-ssh_key_path = "~/.ssh/id_rsa"
-max_concurrent_deployments = 5
-health_check_interval = { secs = 30 }
-reconnect_interval = { secs = 60 }
+[executor_management]
+health_check_interval = { secs = 30, nanos = 0 }
+health_check_timeout = { secs = 10, nanos = 0 }
+max_retry_attempts = 3
+auto_recovery = true
 
 # Define your executor machines
-[[executor.configs]]
-id = "gpu-1"
-grpc_address = "executor1.example.com:50051"
+[[executor_management.executors]]
+id = "executor-1"
 name = "GPU Executor 1"
+grpc_address = "127.0.0.1:50051"
 
-[[executor.configs]]
-id = "gpu-2"
-grpc_address = "executor2.example.com:50051"
+[[executor_management.executors]]
+id = "executor-2"
 name = "GPU Executor 2"
+grpc_address = "executor2.example.com:50051"
 
-[storage]
-data_dir = "./data"
+[validator_comms]
+request_timeout = { secs = 30, nanos = 0 }
+max_concurrent_sessions = 100
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.rate_limit]
+enabled = true
+requests_per_second = 10
+burst_capacity = 20
+window_duration = { secs = 60, nanos = 0 }
+
+[security]
+enable_mtls = false
+jwt_secret = "your-secure-secret-key"
+token_expiration = { secs = 3600, nanos = 0 }
+allowed_validators = []
+verify_signatures = true
 
 [logging]
 level = "info"
 format = "pretty"
+
+[metrics]
+enabled = true
+[metrics.prometheus]
+enabled = true
+port = 9091
 ```
 
 ### 3. Set Up Executors
@@ -105,20 +140,41 @@ attestation_dir = "/opt/basilica/attestations"
 level = "info"
 ```
 
-### 4. Start the Miner
+### 4. Build and Start the Miner
+
+#### Building from Source
+
+```bash
+# Build the miner
+cargo build -p miner
+
+# Or build in release mode for better performance
+cargo build -p miner --release
+```
+
+#### Running the Miner
 
 ```bash
 # Using the binary
-./miner --config miner.toml
+./target/debug/miner --config config/miner.toml
 
-# Or using Docker
+# Or using cargo
+cargo run -p miner -- --config config/miner.toml
+
+# Using Docker
 docker run -d \
   -v ~/.bittensor:/root/.bittensor \
-  -v ./miner.toml:/config/miner.toml \
-  -p 8080:8080 \
-  -p 9090:9090 \
+  -v ./config/miner.toml:/config/miner.toml \
+  -p 8092:8092 \
+  -p 8091:8091 \
   basilica/miner:latest
 ```
+
+**Important Notes**:
+- The miner will automatically discover its UID from the Bittensor metagraph based on its hotkey
+- UIDs are no longer hardcoded in configuration files
+- The chain endpoint is auto-detected based on the network type if not explicitly specified
+- Ensure the data directory exists and has proper permissions
 
 ## Advanced Configuration
 
@@ -182,6 +238,29 @@ Error: Failed to serve axon on network
 - Ensure wallet has sufficient TAO for registration
 - Verify you're connected to the correct network
 - Check if hotkey is already registered
+
+**Wallet Loading Error**
+```
+Error: Failed to load hotkey: Invalid format
+```
+- Ensure wallet file exists at `~/.bittensor/wallets/{wallet_name}/hotkeys/{hotkey_name}`
+- Check if the wallet is in the correct format (JSON with secretPhrase field or raw seed phrase)
+- Verify file permissions allow reading
+
+**Database Connection Error**
+```
+Error: unable to open database file
+```
+- Ensure the data directory exists (e.g., `mkdir -p data`)
+- Check file permissions on the data directory
+- Verify the database URL in config uses proper format: `sqlite:./data/miner.db`
+
+**Executor Configuration Error**
+```
+Error: At least one executor must be configured
+```
+- Ensure at least one executor is defined in the `[[executor_management.executors]]` section
+- Verify the executor configuration syntax is correct
 
 **Hardware Attestation Failed**
 ```

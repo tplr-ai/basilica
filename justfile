@@ -32,7 +32,7 @@ fmt-check:
 fix: gen-key
     #!/usr/bin/env bash
     export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-    cargo clippy --fix --allow-dirty --workspace --all-targets --exclude integration-tests -- -A clippy::too_many_arguments -A clippy::ptr_arg -A dead_code
+    cargo clippy --fix --allow-dirty --workspace --all-targets -- -A clippy::too_many_arguments -A clippy::ptr_arg -A dead_code
     cargo fmt --all
 
 # Lint workspace packages

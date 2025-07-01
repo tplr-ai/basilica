@@ -7,7 +7,7 @@
 wallet_name = "YOUR_VALIDATOR_WALLET"
 hotkey_name = "YOUR_VALIDATOR_HOTKEY"
 network = "finney"  # Use "local" for development
-netuid = 27  # Basilica subnet ID
+netuid = 39  # Basilica subnet ID
 chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
 
 # API Server Configuration

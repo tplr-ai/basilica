@@ -362,9 +362,9 @@ impl From<subxt::Error> for BittensorError {
     }
 }
 
-// Enhanced conversions from crabtensor wallet errors
-impl From<crabtensor::wallet::AccountLoadingError> for BittensorError {
-    fn from(err: crabtensor::wallet::AccountLoadingError) -> Self {
+// Enhanced conversions from wallet errors
+impl From<std::io::Error> for BittensorError {
+    fn from(err: std::io::Error) -> Self {
         let err_msg = err.to_string();
         let err_lower = err_msg.to_lowercase();
 
@@ -397,34 +397,7 @@ impl From<subxt::ext::sp_core::crypto::SecretStringError> for BittensorError {
     }
 }
 
-// Additional crabtensor error conversions
-impl From<std::io::Error> for BittensorError {
-    fn from(err: std::io::Error) -> Self {
-        let err_msg = err.to_string();
-        let err_lower = err_msg.to_lowercase();
-
-        if err_lower.contains("timeout") {
-            BittensorError::OperationTimeout {
-                operation: "file_io".to_string(),
-                timeout: Duration::from_secs(30),
-            }
-        } else if err_lower.contains("permission") {
-            BittensorError::ConfigError {
-                field: "file_permissions".to_string(),
-                message: format!("File permission error: {err}"),
-            }
-        } else if err_lower.contains("not found") {
-            BittensorError::ConfigError {
-                field: "file_path".to_string(),
-                message: format!("File not found: {err}"),
-            }
-        } else {
-            BittensorError::WalletLoadingError {
-                message: format!("I/O error: {err}"),
-            }
-        }
-    }
-}
+// Remove duplicate - already implemented above
 
 impl BittensorError {
     /// Gets the error category for retry logic

@@ -209,7 +209,7 @@ gpu_allocation_strategy = "exclusive"
 wallet_name = "miner"
 hotkey_name = "default"
 network = "finney"
-netuid = 27
+netuid = 39
 external_ip = "203.0.113.1"
 
 [executor_management]
