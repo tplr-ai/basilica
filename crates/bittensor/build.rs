@@ -1,7 +1,7 @@
 //! Build script for bittensor crate to generate correct metadata based on network
 
 use std::env;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -12,22 +12,130 @@ use subxt_codegen::CodegenBuilder;
 use subxt_metadata::Metadata;
 use subxt_utils_fetchmetadata::{self as fetch_metadata, MetadataVersion};
 
+/// Configuration data extracted from TOML files
+#[derive(Default)]
+struct ConfigData {
+    network: Option<String>,
+    chain_endpoint: Option<String>,
+}
+
+/// Try to detect network and endpoint from configuration files
+fn detect_config_from_files() -> ConfigData {
+    // Try to find config files in common locations
+    let config_paths = vec![
+        "miner.toml",
+        "validator.toml",
+        "config/miner.toml",
+        "config/validator.toml",
+        "../config/miner.toml",
+        "../config/validator.toml",
+        "../../miner.toml",              // From crates/bittensor to root
+        "../../validator.toml",          // From crates/bittensor to root
+        "../../config/miner.toml",
+        "../../config/validator.toml",
+    ];
+
+    let mut config = ConfigData::default();
+    
+    for path in config_paths {
+        if let Ok(contents) = fs::read_to_string(&path) {
+            println!("cargo:warning=Found and reading configuration from: {}", path);
+            
+            // Parse TOML to find network and chain_endpoint
+            let mut in_bittensor_section = false;
+            
+            for line in contents.lines() {
+                let line = line.trim();
+                
+                // Check for [bittensor] section
+                if line == "[bittensor]" {
+                    in_bittensor_section = true;
+                    continue;
+                } else if line.starts_with('[') {
+                    in_bittensor_section = false;
+                }
+                
+                // Look for network in any section or bittensor section
+                if line.starts_with("network") && line.contains('=') {
+                    if let Some(value) = line.split('=').nth(1) {
+                        let network = value
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string();
+                        if !network.is_empty() && config.network.is_none() {
+                            config.network = Some(network);
+                        }
+                    }
+                }
+                
+                // Look for chain_endpoint in bittensor section
+                if in_bittensor_section && line.starts_with("chain_endpoint") && line.contains('=') {
+                    if let Some(value) = line.split('=').nth(1) {
+                        // Remove comments and trim
+                        let value = if let Some(comment_pos) = value.find('#') {
+                            &value[..comment_pos]
+                        } else {
+                            value
+                        };
+                        
+                        let endpoint = value
+                            .trim()
+                            .trim_matches('"')
+                            .trim_matches('\'')
+                            .to_string();
+                        if !endpoint.is_empty() && config.chain_endpoint.is_none() {
+                            config.chain_endpoint = Some(endpoint);
+                        }
+                    }
+                }
+            }
+            
+            // If we found what we need, stop searching
+            if config.network.is_some() {
+                break;
+            }
+        }
+    }
+    
+    config
+}
+
 #[tokio::main]
 async fn main() {
     println!("cargo:rerun-if-env-changed=BITTENSOR_NETWORK");
     println!("cargo:rerun-if-env-changed=METADATA_CHAIN_ENDPOINT");
+    println!("cargo:rerun-if-changed=miner.toml");
+    println!("cargo:rerun-if-changed=validator.toml");
+    println!("cargo:rerun-if-changed=config/miner.toml");
+    println!("cargo:rerun-if-changed=config/validator.toml");
 
+    // Detect configuration from files
+    let config = detect_config_from_files();
+    
     // Determine which network we're building for
-    let network = env::var("BITTENSOR_NETWORK").unwrap_or_else(|_| "finney".to_string());
+    // Priority: 1. Environment variable, 2. Config file, 3. Default to finney
+    let network = env::var("BITTENSOR_NETWORK")
+        .ok()
+        .or(config.network)
+        .unwrap_or_else(|| {
+            println!("cargo:warning=No network configuration found, defaulting to 'finney'");
+            "finney".to_string()
+        });
 
     // Get the appropriate endpoint
+    // Priority: 1. Env var, 2. Config file chain_endpoint, 3. Auto-detect from network
     let endpoint = if let Ok(custom_endpoint) = env::var("METADATA_CHAIN_ENDPOINT") {
         custom_endpoint
+    } else if let Some(config_endpoint) = config.chain_endpoint {
+        println!("cargo:warning=Using chain_endpoint from config: {}", config_endpoint);
+        config_endpoint
     } else {
+        // Auto-detect endpoint based on network (same logic as BittensorConfig::get_chain_endpoint)
         match network.as_str() {
-            "test" | "testnet" => "wss://test.finney.opentensor.ai:443".to_string(),
-            "local" => "ws://127.0.0.1:9944".to_string(),
-            _ => "wss://entrypoint-finney.opentensor.ai:443".to_string(), // Default to mainnet
+            "test" => "wss://test.finney.opentensor.ai:443".to_string(),
+            "local" => "ws://subtensor:9944".to_string(),
+            "finney" | _ => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
         }
     };
 
