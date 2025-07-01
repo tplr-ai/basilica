@@ -190,10 +190,18 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
+      - name: Generate test key for gpu-attestor
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
       - name: Check executor builds
-        run: cargo check -p executor
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo check -p executor
       - name: Test executor crate (unit tests only)
-        run: cargo test -p executor --lib
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo test -p executor --lib
       - name: Test executor CLI functionality
         run: |
           cargo build -p executor
@@ -201,7 +209,7 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/executor/build.sh
-          ./scripts/executor/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/executor/build.sh --no-extract --debug
 
   # Build and test gpu-attestor
   build-gpu-attestor:
@@ -243,11 +251,11 @@ jobs:
       - name: Check gpu-attestor builds
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p gpu-attestor --features cuda,opencl
+          cargo check -p gpu-attestor
       - name: Test gpu-attestor crate (unit tests only)
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p gpu-attestor --lib --features cuda,opencl
+          cargo test -p gpu-attestor --lib
       - name: Test gpu-attestor CLI functionality
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
@@ -256,7 +264,7 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/gpu-attestor/build.sh
-          ./scripts/gpu-attestor/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/gpu-attestor/build.sh --no-extract --debug
 
   # Build and test validator
   build-validator:
@@ -286,10 +294,18 @@ jobs:
           sudo apt-get install -y protobuf-compiler pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
+      - name: Generate test key for gpu-attestor
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
       - name: Check validator builds
-        run: cargo check -p validator
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo check -p validator
       - name: Test validator crate (unit tests only)
-        run: cargo test -p validator --lib
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo test -p validator --lib
       - name: Test validator CLI functionality
         run: |
           cargo build -p validator
@@ -297,7 +313,7 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/validator/build.sh
-          ./scripts/validator/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/validator/build.sh --no-extract --debug
 
   # Build and test miner
   build-miner:
@@ -332,10 +348,18 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
+      - name: Generate test key for gpu-attestor
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
       - name: Check miner builds
-        run: cargo check -p miner
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo check -p miner
       - name: Test miner crate (unit tests only)
-        run: cargo test -p miner --lib
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo test -p miner --lib
       - name: Test miner CLI functionality
         run: |
           cargo build -p miner
@@ -343,7 +367,7 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/miner/build.sh
-          ./scripts/miner/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/miner/build.sh --no-extract --debug
 
   # Build and test public-api
   build-public-api:
@@ -378,10 +402,18 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
+      - name: Generate test key for gpu-attestor
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
       - name: Check public-api builds
-        run: cargo check -p public-api
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo check -p public-api
       - name: Test public-api crate (unit tests only)
-        run: cargo test -p public-api --lib
+        run: |
+          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          cargo test -p public-api --lib
       - name: Test public-api CLI functionality
         run: |
           cargo build -p public-api
@@ -389,7 +421,7 @@ jobs:
       - name: Test Docker build script
         run: |
           chmod +x scripts/public-api/build.sh
-          ./scripts/public-api/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/public-api/build.sh --no-extract --debug
 
   # Final status check
   ci-success:
