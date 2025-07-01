@@ -64,9 +64,9 @@ fn signer_from_seed(seed: &str) -> Result<Signer, Box<dyn std::error::Error>> {
     use subxt::ext::sp_core::Pair;
 
     // Try to create pair from string (could be mnemonic or hex seed)
-    let pair = if seed.starts_with("0x") {
+    let pair = if let Some(stripped) = seed.strip_prefix("0x") {
         // It's a hex seed
-        let seed_bytes = hex::decode(&seed[2..])?;
+        let seed_bytes = hex::decode(stripped)?;
         if seed_bytes.len() != 32 {
             return Err("Invalid seed length".into());
         }
@@ -213,8 +213,8 @@ impl Service {
         let operation = || {
             // Create serve_axon payload using our generated API
             let (ip, ip_type): (u128, u8) = match axon_addr.ip() {
-                std::net::IpAddr::V4(ipv4) => (ipv4.to_bits() as u128, 4),
-                std::net::IpAddr::V6(ipv6) => (ipv6.to_bits(), 6),
+                std::net::IpAddr::V4(ipv4) => (u32::from(ipv4) as u128, 4),
+                std::net::IpAddr::V6(ipv6) => (u128::from(ipv6), 6),
             };
             let port = axon_addr.port();
             let protocol = 0; // TCP = 0, UDP = 1
