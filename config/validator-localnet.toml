@@ -1,0 +1,69 @@
+# Validator Configuration for Local Subtensor Network
+
+[database]
+url = "sqlite:///app/data/validator.db?mode=rwc"
+max_connections = 10
+min_connections = 1
+run_migrations = true
+connect_timeout = { secs = 30, nanos = 0 }
+idle_timeout = { secs = 600, nanos = 0 }
+max_lifetime = { secs = 3600, nanos = 0 }
+
+[server]
+host = "0.0.0.0"
+port = 8080
+max_connections = 1000
+tls_enabled = false
+request_timeout = { secs = 30, nanos = 0 }
+keep_alive_timeout = { secs = 60, nanos = 0 }
+
+[logging]
+level = "debug"
+format = "pretty"
+stdout = true
+max_file_size = 104857600
+max_files = 5
+
+[metrics]
+enabled = true
+collection_interval = { secs = 30, nanos = 0 }
+
+[metrics.prometheus]
+host = "0.0.0.0"
+port = 8081
+path = "/metrics"
+
+[metrics.retention_period]
+secs = 604800
+nanos = 0
+
+[bittensor]
+wallet_name = "test_validator"
+hotkey_name = "test_hotkey"
+network = "local"
+netuid = 1  # Default subnet for local testing
+chain_endpoint = "ws://subtensor-alice:9944"
+weight_interval_secs = 300
+coldkey_name = "default"
+
+[verification]
+max_concurrent_verifications = 3
+min_score_threshold = 0.0
+min_stake_threshold = 0.0
+max_miners_per_round = 10
+netuid = 1  # Same as bittensor.netuid
+verification_interval = { secs = 60, nanos = 0 }
+challenge_timeout = { secs = 60, nanos = 0 }
+min_verification_interval = { secs = 30, nanos = 0 }
+
+[storage]
+data_dir = "/app/data/validator-data"
+
+[api]
+api_key = "localnet_api_key_12345"
+max_body_size = 1048576
+bind_address = "0.0.0.0:8080"
+
+[security]
+enable_mtls = false
+verify_signatures = false  # Disabled for localnet testing

@@ -23,6 +23,10 @@ COPY crates/ ./crates/
 ARG BUILD_MODE=release
 ARG FEATURES=""
 
+# Set build environment for network if needed
+ARG BITTENSOR_NETWORK=finney
+ENV BITTENSOR_NETWORK=$BITTENSOR_NETWORK
+
 # Build the public-api binary
 RUN if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
