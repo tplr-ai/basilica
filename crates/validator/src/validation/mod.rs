@@ -5,8 +5,8 @@
 
 pub mod attestor;
 pub mod challenge_generator;
-pub mod gpu_validator;
 pub mod factory;
+pub mod gpu_validator;
 pub mod integrity;
 pub mod key_manager;
 pub mod signature_verifier;
@@ -16,3 +16,6 @@ pub mod validator;
 pub use factory::*;
 pub use types::*;
 pub use validator::*;
+
+#[cfg(test)]
+mod challenge_generator_tests;

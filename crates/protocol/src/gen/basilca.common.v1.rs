@@ -282,15 +282,21 @@ pub struct ChallengeParameters {
     /// Total number of matrices to generate and hold in VRAM
     #[prost(uint32, tag = "9")]
     pub num_matrices: u32,
-    /// Index of first matrix operand (0-based)
+    /// Index of first matrix operand (0-based) - DEPRECATED for v2
     #[prost(uint32, tag = "10")]
     pub matrix_a_index: u32,
-    /// Index of second matrix operand (0-based)
+    /// Index of second matrix operand (0-based) - DEPRECATED for v2
     #[prost(uint32, tag = "11")]
     pub matrix_b_index: u32,
     /// Validator's nonce for replay protection
     #[prost(string, tag = "12")]
     pub validator_nonce: ::prost::alloc::string::String,
+    /// Number of matrix multiplication iterations for bandwidth testing (v2)
+    #[prost(uint32, tag = "13")]
+    pub num_iterations: u32,
+    /// Sampling rate for validator verification (0.0-1.0, default 0.1 = 10%)
+    #[prost(float, tag = "14")]
+    pub verification_sample_rate: f32,
 }
 /// Machine information for challenge context
 #[derive(serde::Serialize, serde::Deserialize)]

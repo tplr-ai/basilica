@@ -17,6 +17,6 @@ fn main() -> Result<()> {
     println!();
     println!("Note: GPU tests require a CUDA-capable GPU and the gpu-attestor binary built.");
     println!("      Set GPU_ATTESTOR_PATH environment variable if needed.");
-    
+
     Ok(())
 }

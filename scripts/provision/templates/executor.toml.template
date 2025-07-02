@@ -41,7 +41,7 @@ temp_dir = "/tmp/basilica"
 [gpu_attestor]
 binary_path = "/opt/basilica/bin/gpu-attestor"
 attestation_interval = { secs = 3600 }
-vdf_difficulty = 1000
+pow_difficulty = 1000
 
 [logging]
 level = "info"

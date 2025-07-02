@@ -327,7 +327,7 @@ cmd_workflow() {
     
     # Test basic attestation (if GPU available)
     run_test "gpu_attestation_basic" \
-        "ssh -p $EXECUTOR_PORT $EXECUTOR_USER@$EXECUTOR_HOST 'timeout 60 /usr/local/bin/gpu-attestor --executor-id validation-$(date +%s) --output /tmp/validation-attestation --skip-vdf --skip-network-benchmark'" \
+        "ssh -p $EXECUTOR_PORT $EXECUTOR_USER@$EXECUTOR_HOST 'timeout 60 /usr/local/bin/gpu-attestor --executor-id validation-$(date +%s) --output /tmp/validation-attestation --skip-pow --skip-network-benchmark'" \
         "Basic GPU attestation can complete"
     
     # SSH validation workflow simulation

@@ -148,9 +148,9 @@ async fn test_remote_attestation_execution() -> Result<()> {
     let options = ValidationOptions {
         skip_network_benchmark: false,
         skip_hardware_collection: false,
-        skip_vdf: false,
-        vdf_difficulty: 1000,
-        vdf_algorithm: "simple".to_string(),
+        skip_pow: false,
+        pow_difficulty: 1000,
+        pow_algorithm: "simple".to_string(),
         custom_args: vec![],
     };
     

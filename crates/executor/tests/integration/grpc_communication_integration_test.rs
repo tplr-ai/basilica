@@ -107,7 +107,7 @@ async fn test_validation_session_flow() -> Result<()> {
         validator_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         validation_type: "hardware_attestation".to_string(),
         parameters: serde_json::json!({
-            "vdf_difficulty": 1000,
+            "pow_difficulty": 1000,
             "collect_gpu_info": true
         })
         .to_string(),

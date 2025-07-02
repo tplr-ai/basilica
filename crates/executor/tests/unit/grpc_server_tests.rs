@@ -129,38 +129,6 @@ async fn test_execute_system_profile() {
 }
 
 #[tokio::test]
-async fn test_execute_vdf_challenge() {
-    let state = Arc::new(create_test_executor_state().await);
-    let service = ExecutorControlService::new(state);
-
-    let params = ChallengeParameters {
-        challenge_type: "vdf".to_string(),
-        seed: "test_seed".to_string(),
-        difficulty: 1000,
-        parameters_json: r#"{"iterations": 1000}"#.to_string(),
-        timeout_ms: 60000,
-    };
-
-    let request = Request::new(ChallengeRequest {
-        validator_hotkey: "test_validator".to_string(),
-        challenge_id: "test_challenge_1".to_string(),
-        parameters: Some(params),
-        nonce: 12345,
-        timestamp: Some(Timestamp::default()),
-    });
-
-    let response = service.execute_computational_challenge(request).await;
-    assert!(response.is_ok());
-
-    let resp = response.unwrap().into_inner();
-    assert!(resp.result.is_some());
-
-    let result = resp.result.unwrap();
-    assert!(!result.solution.is_empty());
-    assert_eq!(result.gpu_utilization, vec![100.0]);
-}
-
-#[tokio::test]
 async fn test_execute_hardware_attestation_challenge() {
     let state = Arc::new(create_test_executor_state().await);
     let service = ExecutorControlService::new(state);

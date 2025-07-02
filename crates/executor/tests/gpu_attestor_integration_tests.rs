@@ -1,19 +1,16 @@
 //! Integration tests for GPU attestor functionality
 //!
 //! These tests validate the executor's integration with the gpu-attestor crate,
-//! including hardware attestation generation, VDF challenge computation, and
-//! system information collection.
+//! including hardware attestation generation and system information collection.
 //!
 //! NOTE: Many of these tests are commented out because they require:
 //! - Root access (for dmidecode)
 //! - GPU hardware
 //! - Docker installation
-//! - Proper VDF parameters (non-zero modulus)
 
 use anyhow::Result;
 use gpu_attestor::{
     attest_system, check_system_requirements, collect_system_info, query_all_gpus,
-    vdf::{compute_vdf_proof, VdfAlgorithm, VdfChallenge, VdfParameters},
     AttestationBuilder, AttestationSigner, AttestationVerifier, DockerCollector,
     NetworkBenchmarker,
 };
@@ -115,167 +112,6 @@ mod gpu_attestor_tests {
         Ok(())
     }
 
-    #[test]
-    #[ignore = "VDF implementation requires proper RSA modulus"]
-    fn test_vdf_challenge_computation() -> Result<()> {
-        // Create simple VDF parameters with non-zero modulus
-        let mut modulus = vec![0u8; 256];
-        modulus[0] = 1; // Set first byte to avoid zero modulus
-        modulus[255] = 1; // Set last byte to ensure it's odd
-        let params = VdfParameters {
-            modulus,
-            generator: vec![2u8],
-            difficulty: 100, // Low difficulty for testing
-            challenge_seed: b"test_seed".to_vec(),
-        };
-
-        let challenge = VdfChallenge {
-            parameters: params,
-            expected_computation_time_ms: 10,
-            max_allowed_time_ms: 10000,
-            min_required_time_ms: 0,
-        };
-
-        // Test different VDF algorithms
-        let algorithms = vec![
-            VdfAlgorithm::SimpleSequential,
-            VdfAlgorithm::Wesolowski,
-            VdfAlgorithm::Pietrzak,
-        ];
-
-        for algorithm in algorithms {
-            match compute_vdf_proof(&challenge, algorithm.clone()) {
-                Ok(proof) => {
-                    // Verify proof structure
-                    assert!(!proof.output.is_empty());
-                    assert!(!proof.proof.is_empty());
-                    assert!(proof.computation_time_ms > 0);
-                    assert_eq!(proof.algorithm, algorithm);
-                }
-                Err(e) => {
-                    // Some algorithms might not be implemented
-                    println!("VDF algorithm {algorithm:?} failed: {e}");
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    #[ignore = "VDF implementation requires proper RSA modulus"]
-    fn test_vdf_time_bounds_validation() -> Result<()> {
-        // Create challenge with impossible time bounds
-        let params = VdfParameters {
-            modulus: vec![0u8; 256],
-            generator: vec![2u8],
-            difficulty: 1000000, // High difficulty
-            challenge_seed: b"test".to_vec(),
-        };
-
-        let challenge = VdfChallenge {
-            parameters: params,
-            expected_computation_time_ms: 1,
-            max_allowed_time_ms: 1, // Impossible to meet
-            min_required_time_ms: 0,
-        };
-
-        // This should fail due to time constraints
-        let result = compute_vdf_proof(&challenge, VdfAlgorithm::SimpleSequential);
-
-        // Either it fails or takes longer than allowed
-        if let Ok(proof) = result {
-            assert!(proof.computation_time_ms > challenge.max_allowed_time_ms);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    #[ignore = "VDF implementation requires proper RSA modulus"]
-    fn test_attestation_with_vdf_proof() -> Result<()> {
-        // Create simple VDF proof
-        let params = VdfParameters {
-            modulus: vec![0u8; 256],
-            generator: vec![2u8],
-            difficulty: 10, // Very low for testing
-            challenge_seed: b"test_challenge".to_vec(),
-        };
-
-        let challenge = VdfChallenge {
-            parameters: params,
-            expected_computation_time_ms: 1,
-            max_allowed_time_ms: 1000,
-            min_required_time_ms: 0,
-        };
-
-        match compute_vdf_proof(&challenge, VdfAlgorithm::SimpleSequential) {
-            Ok(vdf_proof) => {
-                // Build attestation with VDF proof
-                let attestation = AttestationBuilder::new("test-executor".to_string())
-                    .with_vdf_proof(vdf_proof.clone())
-                    .build();
-
-                // Verify attestation includes VDF proof
-                assert!(attestation.has_vdf_proof());
-                assert_eq!(attestation.vdf_proof.unwrap().output, vdf_proof.output);
-            }
-            Err(e) => {
-                println!("VDF proof generation failed: {e}");
-            }
-        }
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    #[ignore = "VDF implementation requires proper RSA modulus"]
-    async fn test_concurrent_vdf_computations() -> Result<()> {
-        // Create multiple challenges
-        let challenges: Vec<_> = (0..3)
-            .map(|i| {
-                let params = VdfParameters {
-                    modulus: vec![0u8; 256],
-                    generator: vec![2u8],
-                    difficulty: 50 + i * 10,
-                    challenge_seed: format!("test_seed_{i}").into_bytes(),
-                };
-
-                VdfChallenge {
-                    parameters: params,
-                    expected_computation_time_ms: 10,
-                    max_allowed_time_ms: 10000,
-                    min_required_time_ms: 0,
-                }
-            })
-            .collect();
-
-        // Compute VDFs concurrently
-        let handles: Vec<_> = challenges
-            .into_iter()
-            .map(|challenge| {
-                tokio::spawn(async move {
-                    compute_vdf_proof(&challenge, VdfAlgorithm::SimpleSequential)
-                })
-            })
-            .collect();
-
-        // Collect results
-        let mut successful_proofs = 0;
-        for handle in handles {
-            if let Ok(Ok(proof)) = handle.await {
-                assert!(proof.computation_time_ms > 0);
-                assert!(!proof.output.is_empty());
-                successful_proofs += 1;
-            }
-        }
-
-        // At least some should succeed
-        assert!(successful_proofs > 0);
-
-        Ok(())
-    }
-
     #[tokio::test]
     async fn test_network_latency_measurement() -> Result<()> {
         // Test network benchmarking
@@ -353,7 +189,6 @@ mod attestation_edge_cases {
         assert_eq!(attestation.executor_id, "test-executor");
         assert!(attestation.is_recent());
         assert!(attestation.gpu_info.is_empty());
-        assert!(attestation.vdf_proof.is_none());
 
         Ok(())
     }
@@ -369,37 +204,6 @@ mod attestation_edge_cases {
 
         assert_eq!(attestation.executor_id, deserialized.executor_id);
         assert_eq!(attestation.version, deserialized.version);
-
-        Ok(())
-    }
-
-    #[test]
-    #[ignore = "VDF implementation requires proper RSA modulus"]
-    fn test_vdf_edge_cases() -> Result<()> {
-        // Test with minimal parameters
-        let params = VdfParameters {
-            modulus: vec![0u8; 32], // Small modulus
-            generator: vec![2u8],
-            difficulty: 1, // Minimal difficulty
-            challenge_seed: vec![],
-        };
-
-        let challenge = VdfChallenge {
-            parameters: params,
-            expected_computation_time_ms: 0,
-            max_allowed_time_ms: 1000,
-            min_required_time_ms: 0,
-        };
-
-        match compute_vdf_proof(&challenge, VdfAlgorithm::SimpleSequential) {
-            Ok(proof) => {
-                assert!(!proof.output.is_empty());
-            }
-            Err(e) => {
-                // May fail with invalid parameters
-                println!("VDF edge case failed as expected: {e}");
-            }
-        }
 
         Ok(())
     }

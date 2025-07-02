@@ -77,5 +77,5 @@ backup_interval = 86400  # 24 hours in seconds
 [gpu_attestor]
 binary_path = "/opt/basilica/bin/gpu-attestor"
 attestation_dir = "/opt/basilica/data/attestations"
-vdf_difficulty = 1000
+pow_difficulty = 1000
 enable_network_benchmarks = true

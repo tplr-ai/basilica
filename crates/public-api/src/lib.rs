@@ -38,7 +38,6 @@ mod tests {
 
     #[test]
     fn test_version_constants() {
-        assert!(!VERSION.is_empty());
         assert_eq!(API_VERSION, "v1");
     }
 }

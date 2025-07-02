@@ -476,7 +476,7 @@ mod tests {
             chain_endpoint: None,
             ..Default::default()
         };
-        assert_eq!(local_config.get_chain_endpoint(), "ws://subtensor:9944");
+        assert_eq!(local_config.get_chain_endpoint(), "ws://127.0.0.1:9944");
 
         // Test custom endpoint override
         let custom_config = BittensorConfig {

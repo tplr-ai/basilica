@@ -86,9 +86,9 @@ async fn test_complete_validation_workflow() -> Result<()> {
     let options = ValidationOptions {
         skip_network_benchmark: false,
         skip_hardware_collection: false,
-        skip_vdf: false,
-        vdf_difficulty: 1000,
-        vdf_algorithm: "simple".to_string(),
+        skip_pow: false,
+        pow_difficulty: 1000,
+        pow_algorithm: "simple".to_string(),
         custom_args: vec![],
     };
     
@@ -457,10 +457,10 @@ fn calculate_score(attestation_data: &AttestationData) -> Result<f64> {
         score += gpu_score * 0.4;
     }
     
-    // VDF score (10%)
-    if let Some(vdf) = &attestation_data.vdf_result {
-        let vdf_score = if vdf.iterations >= vdf.difficulty as u64 { 1.0 } else { 0.5 };
-        score += vdf_score * 0.1;
+    // GPU PoW score (10%)
+    if let Some(pow_result) = &attestation_data.pow_result {
+        let pow_score = if pow_result.iterations >= pow_result.difficulty as u64 { 1.0 } else { 0.5 };
+        score += pow_score * 0.1;
     }
     
     // Environment score (10%)

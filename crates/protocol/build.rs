@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
-    
+
     // Create the gen directory if it doesn't exist
     std::fs::create_dir_all("src/gen")?;
 
@@ -21,13 +21,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file_descriptor_set_path(out_dir.join("descriptor.bin"))
         .include_file("mod.rs")
         // Enable serde serialization for messages that don't contain timestamps
-        .type_attribute("ChallengeParameters", "#[derive(serde::Serialize, serde::Deserialize)]")
-        .type_attribute("ChallengeResult", "#[derive(serde::Serialize, serde::Deserialize)]")
-        .type_attribute("GpuPerformanceBaseline", "#[derive(serde::Serialize, serde::Deserialize)]")
-        .type_attribute("MachineInfo", "#[derive(serde::Serialize, serde::Deserialize)]")
+        .type_attribute(
+            "ChallengeParameters",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "ChallengeResult",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "GpuPerformanceBaseline",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "MachineInfo",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
         .type_attribute("GpuSpec", "#[derive(serde::Serialize, serde::Deserialize)]")
         .type_attribute("CpuSpec", "#[derive(serde::Serialize, serde::Deserialize)]")
-        .type_attribute("MemorySpec", "#[derive(serde::Serialize, serde::Deserialize)]")
+        .type_attribute(
+            "MemorySpec",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
         .type_attribute("OsInfo", "#[derive(serde::Serialize, serde::Deserialize)]")
         .compile(
             &[

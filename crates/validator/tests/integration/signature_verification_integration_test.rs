@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use tempfile::TempDir;
 use validator::validation::{
     AttestationData, AttestationIntegration, AttestationReport, GpuInfo, HardwareInfo,
-    SignatureVerifier, VdfResult,
+    SignatureVerifier,
 };
 
 #[tokio::test]
@@ -106,14 +106,7 @@ async fn test_attestation_signature_verification() -> Result<()> {
             "bandwidth_mbps": 10000,
             "latency_ms": 2.5
         }),
-        vdf_result: Some(VdfResult {
-            algorithm: "simple".to_string(),
-            difficulty: 1000,
-            input: "test-input-12345".to_string(),
-            output: "computed-output-67890".to_string(),
-            iterations: 1000,
-            duration_ms: 125,
-        }),
+        pow_result: None, // GPU PoW to be implemented
         integrity_hash: "1234567890abcdef".to_string(),
     };
     
@@ -200,14 +193,7 @@ async fn test_attestation_integration_parsing() -> Result<()> {
             "public_ip": "198.51.100.42",
             "bandwidth_mbps": 25000
         }),
-        vdf_result: Some(VdfResult {
-            algorithm: "advanced".to_string(),
-            difficulty: 5000,
-            input: "integration-test-input".to_string(),
-            output: "integration-test-output".to_string(),
-            iterations: 5000,
-            duration_ms: 523,
-        }),
+        pow_result: None, // GPU PoW to be implemented
         integrity_hash: "fedcba0987654321".to_string(),
     };
     
@@ -312,7 +298,7 @@ async fn test_key_rotation_scenario() -> Result<()> {
         os_info: serde_json::json!({"name": "TestOS"}),
         docker_info: None,
         network_info: serde_json::json!({"test": true}),
-        vdf_result: None,
+        pow_result: None,
         integrity_hash: "test-hash".to_string(),
     };
     
@@ -381,7 +367,7 @@ async fn test_concurrent_signature_verifications() -> Result<()> {
                 os_info: serde_json::json!({"test": i}),
                 docker_info: None,
                 network_info: serde_json::json!({"concurrent": true}),
-                vdf_result: None,
+                pow_result: None,
                 integrity_hash: format!("hash-{}", i),
             };
             

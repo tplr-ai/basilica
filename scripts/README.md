@@ -261,7 +261,6 @@ docker compose exec executor /opt/basilica/bin/executor --health-check
 ```bash
 docker compose exec executor /opt/basilica/bin/gpu-attestor \
   --executor-id local-test \
-  --skip-vdf \
   --output /tmp/test-attestation
 ```
 

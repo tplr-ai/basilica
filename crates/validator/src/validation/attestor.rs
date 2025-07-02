@@ -331,7 +331,6 @@ mod tests {
                 },
             },
             network_benchmark: None,
-            vdf_proof: None,
             validator_nonce: None,
         };
 
@@ -382,7 +381,6 @@ mod tests {
                 },
             },
             network_benchmark: None,
-            vdf_proof: None,
             validator_nonce: None,
         };
 
@@ -429,7 +427,6 @@ mod tests {
                 },
             },
             network_benchmark: None,
-            vdf_proof: None,
             validator_nonce: None,
         };
 

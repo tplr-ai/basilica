@@ -43,7 +43,7 @@ The executor is the GPU machine agent:
 The hardware attestation component:
 
 - **Hardware Detection**: Identifies GPU specifications and capabilities
-- **VDF Computer**: Generates verifiable delay functions for proof-of-work
+- **GPU PoW Computer**: Executes GPU proof-of-work challenges
 - **Crypto Signer**: Creates P256 ECDSA signatures for hardware proofs
 - **Attestation Generator**: Produces cryptographically verifiable hardware claims
 

@@ -260,14 +260,20 @@ message ChallengeParameters {
   // Total number of matrices to generate and hold in VRAM
   uint32 num_matrices = 9;
   
-  // Index of first matrix operand (0-based)
+  // Index of first matrix operand (0-based) - DEPRECATED for v2
   uint32 matrix_a_index = 10;
   
-  // Index of second matrix operand (0-based)
+  // Index of second matrix operand (0-based) - DEPRECATED for v2
   uint32 matrix_b_index = 11;
   
   // Validator's nonce for replay protection
   string validator_nonce = 12;
+  
+  // Number of matrix multiplication iterations for bandwidth testing (v2)
+  uint32 num_iterations = 13;
+  
+  // Sampling rate for validator verification (0.0-1.0, default 0.1 = 10%)
+  float verification_sample_rate = 14;
 }
 
 // Machine information for challenge context

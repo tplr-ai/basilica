@@ -22,7 +22,7 @@ fi
 # Step 1: Check GPU availability
 echo -e "${YELLOW}Step 1: Checking GPU availability...${NC}"
 # Run attestation to check if GPU is available
-$GPU_ATTESTOR_PATH --skip-network-benchmark --skip-vdf --skip-os-attestation --skip-docker-attestation --output gpu_test > gpu_detection.log 2>&1
+$GPU_ATTESTOR_PATH --skip-network-benchmark --skip-os-attestation --skip-docker-attestation --output gpu_test > gpu_detection.log 2>&1
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✓ GPU detected${NC}"

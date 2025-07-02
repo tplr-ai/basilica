@@ -235,8 +235,6 @@ pub struct AttestationReport {
     pub system_info: SystemInfo,
     /// Network benchmark results
     pub network_benchmark: Option<NetworkBenchmark>,
-    /// VDF proof results
-    pub vdf_proof: Option<VdfProof>,
     /// Validator-provided nonce for replay protection
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validator_nonce: Option<String>,
@@ -346,15 +344,6 @@ pub struct DnsTest {
     pub success: bool,
     /// Resolution time in milliseconds
     pub resolution_time_ms: f64,
-}
-
-/// VDF proof from gpu-attestor
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VdfProof {
-    /// Computation time in milliseconds
-    pub computation_time_ms: u64,
-    /// VDF algorithm used
-    pub algorithm: String,
 }
 
 // ============================================================================

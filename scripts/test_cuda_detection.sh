@@ -25,7 +25,6 @@ echo -e "${YELLOW}Testing GPU detection via CUDA driver API...${NC}"
 # Set a timeout to prevent hanging
 timeout 10s $GPU_ATTESTOR_PATH \
     --skip-network-benchmark \
-    --skip-vdf \
     --skip-os-attestation \
     --skip-docker-attestation \
     # --skip-gpu-benchmarks \
