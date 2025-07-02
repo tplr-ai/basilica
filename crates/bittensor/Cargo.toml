@@ -48,6 +48,7 @@ parity-scale-codec = "3.6"
 [[bin]]
 name = "generate-metadata"
 path = "src/bin/generate-metadata.rs"
+required-features = ["generate-metadata"]
 
 [dev-dependencies]
 tokio-test = "0.4" 
