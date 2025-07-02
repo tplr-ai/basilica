@@ -124,10 +124,7 @@ fn main() {
         "local" => "metadata/local.rs",
         "finney" => "metadata/finney.rs",
         _ => {
-            println!(
-                "cargo:warning=Unknown network '{}', using finney metadata",
-                network
-            );
+            println!("cargo:warning=Unknown network '{network}', using finney metadata");
             "metadata/finney.rs"
         }
     };
@@ -135,14 +132,10 @@ fn main() {
     // Copy the metadata file to the output directory
     if let Err(e) = fs::copy(metadata_source, &metadata_path) {
         panic!(
-            "Failed to copy metadata file from {} to {:?}: {}. \
-            Make sure to generate metadata files first using `cargo run --bin generate-metadata`",
-            metadata_source, metadata_path, e
+            "Failed to copy metadata file from {metadata_source} to {metadata_path:?}: {e}. \
+            Make sure to generate metadata files first using `cargo run --bin generate-metadata`"
         );
     }
 
-    println!(
-        "cargo:warning=Using pre-generated metadata from {}",
-        metadata_source
-    );
+    println!("cargo:warning=Using pre-generated metadata from {metadata_source}");
 }
