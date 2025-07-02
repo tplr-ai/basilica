@@ -1,7 +1,7 @@
 //! Tool to generate metadata files for different Bittensor networks
-//! 
+//!
 //! Usage: cargo run --bin generate-metadata -- [network]
-//! 
+//!
 //! Networks: finney, test, local
 
 use std::env;
@@ -36,7 +36,8 @@ async fn main() {
             generate_metadata("test", "wss://test.finney.opentensor.ai:443").await;
         }
         "local" => {
-            let endpoint = env::var("LOCAL_ENDPOINT").unwrap_or_else(|_| "ws://localhost:9944".to_string());
+            let endpoint =
+                env::var("LOCAL_ENDPOINT").unwrap_or_else(|_| "ws://localhost:9944".to_string());
             generate_metadata("local", &endpoint).await;
         }
         _ => {
@@ -49,21 +50,21 @@ async fn main() {
 }
 
 async fn generate_metadata(network: &str, endpoint: &str) {
-    println!("Generating metadata for {} network from {}", network, endpoint);
+    println!(
+        "Generating metadata for {} network from {}",
+        network, endpoint
+    );
 
     // Fetch metadata from the chain
-    let metadata_bytes: Vec<u8> = match fetch_metadata::from_url(
-        endpoint.try_into().unwrap(),
-        MetadataVersion::Latest,
-    )
-    .await
-    {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            eprintln!("Failed to fetch metadata for {}: {}", network, e);
-            return;
-        }
-    };
+    let metadata_bytes: Vec<u8> =
+        match fetch_metadata::from_url(endpoint.try_into().unwrap(), MetadataVersion::Latest).await
+        {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                eprintln!("Failed to fetch metadata for {}: {}", network, e);
+                return;
+            }
+        };
 
     let mut metadata_bytes: &[u8] = &metadata_bytes;
     let metadata = Metadata::decode(&mut metadata_bytes).expect("Failed to decode metadata");
@@ -85,7 +86,7 @@ async fn generate_metadata(network: &str, endpoint: &str) {
         .expect("Failed to generate code from metadata");
 
     let output_path = format!("metadata/{}.rs", network);
-    
+
     // Try to format the code
     let formatted_code = match Command::new("rustfmt")
         .arg("--edition=2021")
@@ -109,5 +110,8 @@ async fn generate_metadata(network: &str, endpoint: &str) {
     let mut file = File::create(&output_path).expect("Failed to create metadata file");
     write!(file, "{}", formatted_code).expect("Failed to write metadata");
 
-    println!("Generated metadata for {} network at {}", network, output_path);
+    println!(
+        "Generated metadata for {} network at {}",
+        network, output_path
+    );
 }

@@ -124,7 +124,10 @@ fn main() {
         "local" => "metadata/local.rs",
         "finney" => "metadata/finney.rs",
         _ => {
-            println!("cargo:warning=Unknown network '{}', using finney metadata", network);
+            println!(
+                "cargo:warning=Unknown network '{}', using finney metadata",
+                network
+            );
             "metadata/finney.rs"
         }
     };
@@ -138,5 +141,8 @@ fn main() {
         );
     }
 
-    println!("cargo:warning=Using pre-generated metadata from {}", metadata_source);
+    println!(
+        "cargo:warning=Using pre-generated metadata from {}",
+        metadata_source
+    );
 }
