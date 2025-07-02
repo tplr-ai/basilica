@@ -721,6 +721,20 @@ int-testnet MODE="":
 
 
 # =============================================================================
+# LOCALNET COMMANDS
+# =============================================================================
+
+# Start local Subtensor network with all Basilica services
+localnet:
+    #!/usr/bin/env bash
+    cd scripts/localnet && ./setup.sh
+
+# Restart localnet services (rebuilds containers)
+localnet-restart:
+    #!/usr/bin/env bash
+    cd scripts/localnet && ./restart.sh
+
+# =============================================================================
 # SHOW HELP
 # =============================================================================
 

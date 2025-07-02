@@ -1,0 +1,200 @@
+# Local Subtensor network + Basilica services
+services:
+  # Local Subtensor nodes
+  alice:
+    image: ghcr.io/opentensor/subtensor-localnet:latest
+    container_name: subtensor-alice
+    ports:
+      - "9944:9944"
+      - "30334:30334"
+    volumes:
+      - subtensor-alice:/tmp/alice
+    command:
+      - --base-path=/tmp/alice
+      - --chain=local
+      - --alice
+      - --port=30334
+      - --rpc-port=9944
+      - --validator
+      - --rpc-external
+      - --rpc-cors=all
+      - --rpc-methods=unsafe
+      - --allow-private-ipv4
+      - --unsafe-force-node-key-generation
+
+  # Reuse existing Basilica services by extending from their compose files
+  miner:
+    extends:
+      file: ../miner/compose.dev.yml
+      service: miner
+    container_name: basilica-miner-localnet
+    build:
+      context: ../..
+      args:
+        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
+        BITTENSOR_NETWORK: "local"
+      dockerfile: scripts/miner/Dockerfile
+    networks:
+      - basilica_network_dev
+      - default
+    volumes:
+      - ../../config/miner-localnet.toml:/app/miner.toml:ro
+      - miner-data:/app/data
+      - ./wallets:/var/lib/basilica/miner/.bittensor/wallets:ro
+      - miner-ssh:/var/lib/basilica/miner/.ssh
+      - ./ssh-keys/validator_keys:/opt/basilica/ssh_keys:ro
+    depends_on:
+      alice:
+        condition: service_started
+      executor:
+        condition: service_healthy
+    command: ["--config", "/app/miner.toml"]
+    ports: !override
+      - "8092:50051"   # gRPC server (override dev's 50051:50051)
+      - "9091:8091"     # Bittensor axon port (override dev's 8091:8091)
+      - "8090:8080"     # Metrics endpoint (override dev's 8080:8080)
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    restart: unless-stopped
+
+  executor:
+    extends:
+      file: ../executor/compose.dev.yml
+      service: executor
+    container_name: basilica-executor-localnet
+    build:
+      context: ../..
+      dockerfile: scripts/executor/Dockerfile
+      args:
+        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
+        BITTENSOR_NETWORK: "local"
+    networks:
+      - basilica_network_dev
+    volumes:
+      - ../../config/executor-localnet.toml:/app/executor.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - executor-data:/app/data
+      - ~/.ssh:/root/.ssh:ro
+    command: ["--server", "--config", "/app/executor.toml"]
+    ports: !override
+      - "50052:50052"  # gRPC server
+      - "8082:8080"   # Metrics endpoint (map to 8082 to avoid conflicts)
+      - "22222:22"    # SSH for validator
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "50052"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    # GPU support (requires NVIDIA Container Toolkit)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  validator:
+    extends:
+      file: ../validator/compose.dev.yml
+      service: validator
+    container_name: basilica-validator-localnet
+    build:
+      context: ../..
+      args:
+        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
+        BITTENSOR_NETWORK: "local"
+      dockerfile: scripts/validator/Dockerfile
+    networks:
+      - basilica_network_dev
+      - default
+    volumes:
+      - ../../config/validator-localnet.toml:/app/validator.toml:ro
+      - validator-data:/app/data
+      - ~/.ssh:/app/keys:ro
+      - ~/.bittensor:/root/.bittensor:rw
+    depends_on:
+      - alice
+      - miner
+    command: ["start", "--config", "/app/validator.toml", "--local-test"]
+    ports: !override
+      - "50053:50053"
+      - "3002:3000"
+      - "8088:8080"
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    restart: unless-stopped
+
+  prometheus:
+    extends:
+      file: ../../docker/docker-compose.dev-sqlite.yml
+      service: prometheus
+
+  grafana:
+    extends:
+      file: ../../docker/docker-compose.dev-sqlite.yml
+      service: grafana
+
+  grpcui:
+    extends:
+      file: ../../docker/docker-compose.dev-sqlite.yml
+      service: grpcui
+
+  public-api:
+    extends:
+      file: ../public-api/compose.dev.yml
+      service: public-api
+    container_name: basilica-public-api-localnet
+    build:
+      context: ../..
+      args:
+        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
+        BITTENSOR_NETWORK: "local"
+      dockerfile: scripts/public-api/Dockerfile
+    networks:
+      - basilica_network_dev
+      - default
+    volumes:
+      - ../../config/public-api-localnet.toml:/app/public-api.toml:ro
+      - public-api-data:/app/data
+      - ./wallets:/home/basilica/.bittensor/wallets:ro
+    depends_on:
+      - redis
+      - validator
+    command: ["--config", "/app/public-api.toml"]
+    ports: !override
+      - "8000:8000"
+      - "8089:8080"
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+    restart: unless-stopped
+
+  redis:
+    extends:
+      file: ../public-api/compose.dev.yml
+      service: redis
+    container_name: basilica-redis-localnet
+
+networks:
+  basilica_network_dev:
+    driver: bridge
+
+volumes:
+  subtensor-alice:
+  miner-data:
+  miner-data-dev:
+  miner-ssh:
+  miner-ssh-keys:
+  executor-data:
+  executor-data-dev:
+  validator-data:
+  validator-data-dev:
+  prometheus-data:
+  grafana-data:
+  public-api-data:
+  public-api-data-dev:
+  redis-data-dev:

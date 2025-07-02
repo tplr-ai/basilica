@@ -23,19 +23,20 @@ WORKDIR /usr/src/basilica
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
-COPY src/ ./src/
 
-# Generate validator key for build
-COPY scripts/gen-key.sh ./scripts/
-RUN chmod +x scripts/gen-key.sh && ./scripts/gen-key.sh
+# Copy validator key for build
+COPY docker/public_key.hex ./
+
+# Set validator public key from file
+RUN export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex) && echo "VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY" > .env
 
 # Build executor and gpu-attestor - use BUILD_MODE arg to control debug/release
-ENV VALIDATOR_PUBLIC_KEY_FILE=/usr/src/basilica/public_key.hex
 ARG BUILD_MODE=release
-RUN if [ "$BUILD_MODE" = "debug" ]; then \
-        cargo build -p executor -p gpu-attestor; \
+RUN export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex) && \
+    if [ "$BUILD_MODE" = "debug" ]; then \
+        cargo build -p executor; \
     else \
-        cargo build --release -p executor -p gpu-attestor; \
+        cargo build --release -p executor; \
     fi
 
 # Runtime stage - based on NVIDIA CUDA image for GPU support
@@ -72,7 +73,7 @@ RUN mkdir -p /var/lib/basilica /config /var/run/sshd /data && \
 # Copy binary from builder - handle both debug and release paths
 ARG BUILD_MODE=release
 COPY --from=builder /usr/src/basilica/target/${BUILD_MODE}/executor /usr/local/bin/executor
-COPY --from=builder /usr/src/basilica/target/${BUILD_MODE}/gpu-attestor /usr/local/bin/gpu-attestor
+# Skip gpu-attestor for now as it requires CUDA to build
 
 # Copy validator public key
 COPY --from=builder /usr/src/basilica/public_key.hex /config/public_key.hex
