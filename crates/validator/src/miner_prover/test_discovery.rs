@@ -112,7 +112,8 @@ mod tests {
     fn test_miner_info_creation() {
         let uid = MinerUid::new(1);
         let endpoint = "http://127.0.0.1:8091".to_string();
-        let hotkey = Hotkey::new("test_miner".to_string()).unwrap();
+        let hotkey =
+            Hotkey::new("5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string()).unwrap();
 
         let miner_info = MinerInfo {
             uid,

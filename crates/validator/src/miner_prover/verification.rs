@@ -46,7 +46,10 @@ impl VerificationEngine {
                 grpc_port_offset: config.grpc_port_offset,
                 ..Default::default()
             },
-            validator_hotkey: Hotkey::new("placeholder".to_string()).unwrap(),
+            validator_hotkey: Hotkey::new(
+                "5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy".to_string(),
+            )
+            .unwrap(),
             ssh_client: Arc::new(ValidatorSshClient::new()),
             hardware_validator: None,
             use_dynamic_discovery: false, // Disabled without proper initialization
