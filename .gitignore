@@ -100,3 +100,5 @@ gpu-attestor
 miner
 validator
 
+*.s.md
+

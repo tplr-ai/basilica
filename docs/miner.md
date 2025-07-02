@@ -9,6 +9,7 @@ The miner component manages a fleet of GPU executor machines, handling:
 - Executor fleet management via gRPC
 - Task distribution and monitoring
 - Serving compute requests through the Axon server
+- GPU verification through Proof-of-Work challenges
 
 ## Prerequisites
 
@@ -270,6 +271,15 @@ Error: GPU attestation failed: No NVIDIA driver found
 - Run executor with `--privileged` if using Docker
 - Verify GPU is properly detected with `nvidia-smi`
 
+**GPU PoW Challenge Failed**
+```
+Error: Failed to initialize GPU PRNG kernel - CUDA kernels required
+```
+- Ensure CUDA is properly installed on the executor
+- Verify gpu-attestor binary has access to CUDA libraries
+- Check that PTX files are compiled correctly during build
+- No CPU fallback is available - actual GPU hardware is required
+
 ### Logs and Debugging
 
 Enable debug logging for detailed troubleshooting:
@@ -289,6 +299,30 @@ tail -f ./logs/miner.log
 tail -f /opt/basilica/logs/executor.log
 ```
 
+## GPU Verification
+
+Miners must prove they possess the GPUs they claim through the GPU Proof-of-Work system:
+
+1. **How It Works**
+   - Validators send computational challenges to miners
+   - Challenges require generating large matrices using a random seed
+   - Miners must multiply specific matrices and compute checksums
+   - Results are verified by validators with matching GPU models
+
+2. **Requirements**
+   - NVIDIA GPU with CUDA support
+   - Sufficient VRAM for matrix operations (~90% utilization)
+   - GPU kernels compiled during build (no CPU fallback)
+   - Fast execution times (typically 50-200ms for H100)
+
+3. **Testing GPU PoW**
+   ```bash
+   # Test GPU detection and challenge execution
+   ./scripts/test_gpu_pow.sh
+   ```
+
+For detailed information, see [GPU Proof-of-Work Documentation](gpu_pow.md).
+
 ## Performance Optimization
 
 1. **Network Optimization**
@@ -301,7 +335,13 @@ tail -f /opt/basilica/logs/executor.log
    - Monitor CPU/memory usage on miner
    - Tune verification intervals based on load
 
-3. **Scaling Considerations**
+3. **GPU Performance**
+   - Ensure GPUs have adequate cooling
+   - Monitor VRAM usage during challenges
+   - Keep CUDA drivers updated
+   - Use latest gpu-attestor binary
+
+4. **Scaling Considerations**
    - Use load balancing for multiple miners
    - Implement executor pooling for efficiency
    - Consider horizontal scaling for large fleets

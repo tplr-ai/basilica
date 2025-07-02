@@ -232,10 +232,10 @@ message ResourceLimits {
 
 // Challenge parameters for computational verification
 message ChallengeParameters {
-  // Challenge type identifier
+  // Challenge type identifier (e.g. "matrix_multiplication_pow")
   string challenge_type = 1;
   
-  // Challenge-specific parameters as JSON
+  // Challenge-specific parameters (for backward compatibility)
   string parameters_json = 2;
   
   // Expected computation time in seconds
@@ -244,11 +244,30 @@ message ChallengeParameters {
   // Difficulty level (1-10)
   uint32 difficulty_level = 4;
   
-  // Random seed for deterministic results
+  // Random seed for deterministic results (legacy string format)
   string seed = 5;
   
   // Machine information for context
   MachineInfo machine_info = 6;
+  
+  // GPU PoW specific fields
+  // 64-bit seed for deterministic random matrix generation
+  uint64 gpu_pow_seed = 7;
+  
+  // Matrix dimension N for N x N matrices
+  uint32 matrix_dim = 8;
+  
+  // Total number of matrices to generate and hold in VRAM
+  uint32 num_matrices = 9;
+  
+  // Index of first matrix operand (0-based)
+  uint32 matrix_a_index = 10;
+  
+  // Index of second matrix operand (0-based)
+  uint32 matrix_b_index = 11;
+  
+  // Validator's nonce for replay protection
+  string validator_nonce = 12;
 }
 
 // Machine information for challenge context
@@ -288,6 +307,22 @@ message ChallengeResult {
   
   // Additional metadata as JSON
   string metadata_json = 6;
+  
+  // GPU PoW specific fields
+  // SHA-256 hash of the resulting matrix (32 bytes)
+  bytes result_checksum = 7;
+  
+  // Whether challenge succeeded
+  bool success = 8;
+  
+  // GPU model that executed the challenge
+  string gpu_model = 9;
+  
+  // VRAM allocated in MB
+  uint64 vram_allocated_mb = 10;
+  
+  // Challenge ID this result corresponds to
+  string challenge_id = 11;
 }
 
 // Container specification for rental
@@ -493,4 +528,25 @@ message ResourceUtilization {
   
   // Timestamp of measurement
   Timestamp timestamp = 11;
+}
+
+// Performance baseline for a specific GPU model
+message GpuPerformanceBaseline {
+  // GPU model name (e.g., "NVIDIA GeForce RTX 4090")
+  string gpu_model = 1;
+  
+  // Matrix dimension used for baseline
+  uint32 matrix_dim = 2;
+  
+  // Expected execution time in milliseconds
+  uint64 expected_time_ms = 3;
+  
+  // Tolerance percentage (e.g., 30 for ±30%)
+  uint32 tolerance_percent = 4;
+  
+  // Minimum acceptable time (prevents pre-computation)
+  uint64 min_time_ms = 5;
+  
+  // Maximum acceptable time (prevents inferior hardware)
+  uint64 max_time_ms = 6;
 } 

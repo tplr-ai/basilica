@@ -1,0 +1,122 @@
+// GPU Proof-of-Work Protocol
+// Version: 1.0
+
+syntax = "proto3";
+
+package basilca.gpu_pow.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// GPU Proof-of-Work Challenge Parameters
+message GpuPowChallenge {
+  // Unique challenge ID for tracking
+  string challenge_id = 1;
+  
+  // 64-bit seed for deterministic random matrix generation
+  uint64 seed = 2;
+  
+  // Matrix dimension N for N x N matrices
+  uint32 matrix_dim = 3;
+  
+  // Total number of matrices to generate and hold in VRAM
+  uint32 num_matrices = 4;
+  
+  // Index of first matrix operand (0-based)
+  uint32 matrix_a_index = 5;
+  
+  // Index of second matrix operand (0-based)  
+  uint32 matrix_b_index = 6;
+  
+  // Validator's nonce for replay protection
+  string validator_nonce = 7;
+  
+  // Challenge timestamp
+  google.protobuf.Timestamp timestamp = 8;
+}
+
+// GPU Proof-of-Work Challenge Result
+message GpuPowResult {
+  // Challenge ID this result corresponds to
+  string challenge_id = 1;
+  
+  // SHA-256 hash of the resulting matrix (32 bytes)
+  bytes result_checksum = 2;
+  
+  // Execution time in milliseconds (matrix multiplication only)
+  uint64 execution_time_ms = 3;
+  
+  // Error message if challenge failed
+  string error_message = 4;
+  
+  // Whether challenge succeeded
+  bool success = 5;
+  
+  // Result timestamp
+  google.protobuf.Timestamp timestamp = 6;
+  
+  // GPU model that executed the challenge
+  string gpu_model = 7;
+  
+  // VRAM allocated in MB
+  uint64 vram_allocated_mb = 8;
+}
+
+// Performance baseline for a specific GPU model
+message GpuPerformanceBaseline {
+  // GPU model name (e.g., "NVIDIA GeForce RTX 4090")
+  string gpu_model = 1;
+  
+  // Matrix dimension used for baseline
+  uint32 matrix_dim = 2;
+  
+  // Expected execution time in milliseconds
+  uint64 expected_time_ms = 3;
+  
+  // Tolerance percentage (e.g., 30 for ±30%)
+  uint32 tolerance_percent = 4;
+  
+  // Minimum acceptable time (prevents pre-computation)
+  uint64 min_time_ms = 5;
+  
+  // Maximum acceptable time (prevents inferior hardware)
+  uint64 max_time_ms = 6;
+}
+
+// Service definition for GPU PoW validation
+service GpuPowValidator {
+  // Request a new challenge from the validator
+  rpc RequestChallenge(ChallengeRequest) returns (GpuPowChallenge);
+  
+  // Submit challenge result for verification
+  rpc SubmitResult(GpuPowResult) returns (VerificationResponse);
+}
+
+// Request for a new challenge
+message ChallengeRequest {
+  // Executor ID requesting the challenge
+  string executor_id = 1;
+  
+  // Claimed GPU model
+  string claimed_gpu_model = 2;
+  
+  // Claimed VRAM in MB
+  uint64 claimed_vram_mb = 3;
+}
+
+// Response to challenge result submission
+message VerificationResponse {
+  // Whether the challenge was verified successfully
+  bool verified = 1;
+  
+  // Verification message
+  string message = 2;
+  
+  // Performance score (0-100)
+  double performance_score = 3;
+  
+  // Whether timing was within acceptable bounds
+  bool timing_valid = 4;
+  
+  // Whether checksum matched expected
+  bool checksum_valid = 5;
+}

@@ -14,6 +14,7 @@ pub struct ResourceId {
     pub value: ::prost::alloc::string::String,
 }
 /// GPU specification details
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GpuSpec {
@@ -54,6 +55,7 @@ pub struct GpuSpec {
     pub compute_capability: ::prost::alloc::string::String,
 }
 /// CPU specification details
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CpuSpec {
@@ -93,6 +95,7 @@ pub struct CpuSpec {
     pub temperature_celsius: f64,
 }
 /// Memory specification
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MemorySpec {
@@ -165,6 +168,7 @@ pub struct NetworkPerformance {
     pub location: ::prost::alloc::string::String,
 }
 /// Operating system information
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OsInfo {
@@ -246,13 +250,14 @@ pub struct ResourceLimits {
     pub max_gpus: u32,
 }
 /// Challenge parameters for computational verification
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChallengeParameters {
-    /// Challenge type identifier
+    /// Challenge type identifier (e.g. "matrix_multiplication_pow")
     #[prost(string, tag = "1")]
     pub challenge_type: ::prost::alloc::string::String,
-    /// Challenge-specific parameters as JSON
+    /// Challenge-specific parameters (for backward compatibility)
     #[prost(string, tag = "2")]
     pub parameters_json: ::prost::alloc::string::String,
     /// Expected computation time in seconds
@@ -261,14 +266,34 @@ pub struct ChallengeParameters {
     /// Difficulty level (1-10)
     #[prost(uint32, tag = "4")]
     pub difficulty_level: u32,
-    /// Random seed for deterministic results
+    /// Random seed for deterministic results (legacy string format)
     #[prost(string, tag = "5")]
     pub seed: ::prost::alloc::string::String,
     /// Machine information for context
     #[prost(message, optional, tag = "6")]
     pub machine_info: ::core::option::Option<MachineInfo>,
+    /// GPU PoW specific fields
+    /// 64-bit seed for deterministic random matrix generation
+    #[prost(uint64, tag = "7")]
+    pub gpu_pow_seed: u64,
+    /// Matrix dimension N for N x N matrices
+    #[prost(uint32, tag = "8")]
+    pub matrix_dim: u32,
+    /// Total number of matrices to generate and hold in VRAM
+    #[prost(uint32, tag = "9")]
+    pub num_matrices: u32,
+    /// Index of first matrix operand (0-based)
+    #[prost(uint32, tag = "10")]
+    pub matrix_a_index: u32,
+    /// Index of second matrix operand (0-based)
+    #[prost(uint32, tag = "11")]
+    pub matrix_b_index: u32,
+    /// Validator's nonce for replay protection
+    #[prost(string, tag = "12")]
+    pub validator_nonce: ::prost::alloc::string::String,
 }
 /// Machine information for challenge context
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MachineInfo {
@@ -289,6 +314,7 @@ pub struct MachineInfo {
     pub fingerprint: ::prost::alloc::string::String,
 }
 /// Challenge solution/result
+#[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChallengeResult {
@@ -310,6 +336,22 @@ pub struct ChallengeResult {
     /// Additional metadata as JSON
     #[prost(string, tag = "6")]
     pub metadata_json: ::prost::alloc::string::String,
+    /// GPU PoW specific fields
+    /// SHA-256 hash of the resulting matrix (32 bytes)
+    #[prost(bytes = "vec", tag = "7")]
+    pub result_checksum: ::prost::alloc::vec::Vec<u8>,
+    /// Whether challenge succeeded
+    #[prost(bool, tag = "8")]
+    pub success: bool,
+    /// GPU model that executed the challenge
+    #[prost(string, tag = "9")]
+    pub gpu_model: ::prost::alloc::string::String,
+    /// VRAM allocated in MB
+    #[prost(uint64, tag = "10")]
+    pub vram_allocated_mb: u64,
+    /// Challenge ID this result corresponds to
+    #[prost(string, tag = "11")]
+    pub challenge_id: ::prost::alloc::string::String,
 }
 /// Container specification for rental
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -553,4 +595,28 @@ pub struct ResourceUtilization {
     /// Timestamp of measurement
     #[prost(message, optional, tag = "11")]
     pub timestamp: ::core::option::Option<Timestamp>,
+}
+/// Performance baseline for a specific GPU model
+#[derive(serde::Serialize, serde::Deserialize)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GpuPerformanceBaseline {
+    /// GPU model name (e.g., "NVIDIA GeForce RTX 4090")
+    #[prost(string, tag = "1")]
+    pub gpu_model: ::prost::alloc::string::String,
+    /// Matrix dimension used for baseline
+    #[prost(uint32, tag = "2")]
+    pub matrix_dim: u32,
+    /// Expected execution time in milliseconds
+    #[prost(uint64, tag = "3")]
+    pub expected_time_ms: u64,
+    /// Tolerance percentage (e.g., 30 for ±30%)
+    #[prost(uint32, tag = "4")]
+    pub tolerance_percent: u32,
+    /// Minimum acceptable time (prevents pre-computation)
+    #[prost(uint64, tag = "5")]
+    pub min_time_ms: u64,
+    /// Maximum acceptable time (prevents inferior hardware)
+    #[prost(uint64, tag = "6")]
+    pub max_time_ms: u64,
 }
