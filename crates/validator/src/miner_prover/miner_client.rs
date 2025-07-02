@@ -363,7 +363,10 @@ mod tests {
     #[test]
     fn test_axon_to_grpc_endpoint_default() {
         let config = MinerClientConfig::default();
-        let client = MinerClient::new(config, Hotkey::new("test".to_string()).unwrap());
+        let client = MinerClient::new(
+            config,
+            Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap(),
+        );
 
         let axon = "http://192.168.1.100:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
@@ -376,7 +379,10 @@ mod tests {
             grpc_port_offset: Some(1000),
             ..Default::default()
         };
-        let client = MinerClient::new(config, Hotkey::new("test".to_string()).unwrap());
+        let client = MinerClient::new(
+            config,
+            Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap(),
+        );
 
         let axon = "http://10.0.0.1:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
@@ -389,7 +395,10 @@ mod tests {
             use_tls: true,
             ..Default::default()
         };
-        let client = MinerClient::new(config, Hotkey::new("test".to_string()).unwrap());
+        let client = MinerClient::new(
+            config,
+            Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap(),
+        );
 
         let axon = "http://example.com:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();

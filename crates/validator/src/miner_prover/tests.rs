@@ -16,7 +16,8 @@ fn test_axon_to_grpc_endpoint_conversion() {
         use_tls: false,
     };
 
-    let hotkey = Hotkey::new("test-validator".to_string()).unwrap();
+    let hotkey =
+        Hotkey::new("5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw".to_string()).unwrap();
     let client = MinerClient::new(config.clone(), hotkey);
 
     // Test default port mapping (axon port -> gRPC port 50061)
@@ -37,8 +38,10 @@ fn test_axon_to_grpc_endpoint_conversion() {
         grpc_port_offset: Some(1000),
         ..config.clone()
     };
-    let client_with_offset =
-        MinerClient::new(config_with_offset, Hotkey::new("test".to_string()).unwrap());
+    let client_with_offset = MinerClient::new(
+        config_with_offset,
+        Hotkey::new("5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw".to_string()).unwrap(),
+    );
     let result = client_with_offset
         .axon_to_grpc_endpoint("http://10.0.0.1:8091")
         .unwrap();
@@ -49,8 +52,10 @@ fn test_axon_to_grpc_endpoint_conversion() {
         use_tls: true,
         ..config
     };
-    let client_with_tls =
-        MinerClient::new(config_with_tls, Hotkey::new("test".to_string()).unwrap());
+    let client_with_tls = MinerClient::new(
+        config_with_tls,
+        Hotkey::new("5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw".to_string()).unwrap(),
+    );
     let result = client_with_tls
         .axon_to_grpc_endpoint("http://example.com:8091")
         .unwrap();
