@@ -25,12 +25,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY src/ ./src/
 
-# Generate validator key for build
-COPY scripts/gen-key.sh ./scripts/
-RUN chmod +x scripts/gen-key.sh && ./scripts/gen-key.sh
-
 # Build executor and gpu-attestor - use BUILD_MODE arg to control debug/release
-ENV VALIDATOR_PUBLIC_KEY_FILE=/usr/src/basilica/public_key.hex
 ARG BUILD_MODE=release
 RUN if [ "$BUILD_MODE" = "debug" ]; then \
         cargo build -p executor -p gpu-attestor; \
@@ -74,9 +69,6 @@ ARG BUILD_MODE=release
 COPY --from=builder /usr/src/basilica/target/${BUILD_MODE}/executor /usr/local/bin/executor
 COPY --from=builder /usr/src/basilica/target/${BUILD_MODE}/gpu-attestor /usr/local/bin/gpu-attestor
 
-# Copy validator public key
-COPY --from=builder /usr/src/basilica/public_key.hex /config/public_key.hex
-
 # Set working directory
 WORKDIR /var/lib/basilica
 
@@ -99,14 +91,8 @@ ENV BASILCA_CONFIG_FILE=/config/executor.toml
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
-# Script to read validator key and start executor
+# Script to start services
 RUN echo '#!/bin/bash\n\
-if [ -f /config/public_key.hex ]; then\n\
-    export VALIDATOR_PUBLIC_KEY=$(cat /config/public_key.hex)\n\
-elif [ -n "$VALIDATOR_PUBLIC_KEY_FILE" ] && [ -f "$VALIDATOR_PUBLIC_KEY_FILE" ]; then\n\
-    export VALIDATOR_PUBLIC_KEY=$(cat "$VALIDATOR_PUBLIC_KEY_FILE")\n\
-fi\n\
-\n\
 # Start SSH service\n\
 service ssh start\n\
 \n\

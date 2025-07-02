@@ -97,15 +97,7 @@ port = 9090
 #### Building from Source
 
 ```bash
-# Ensure you have a validator public key file
-# If not provided, generate one:
-./scripts/gen-key.sh  # Creates public_key.hex
-
-# Build with the validator public key
-VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n') cargo build -p validator
-
-# Or set as environment variable
-export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n')
+# Build the validator
 cargo build -p validator
 ```
 
@@ -347,12 +339,7 @@ Error: Failed to load hotkey: Invalid format
 - You can copy an existing wallet: `cp ~/.bittensor/wallets/miner/hotkeys/default ~/.bittensor/wallets/validator/hotkeys/default`
 
 **Build Error - Missing Validator Key**
-```
-Error: No validator key found - cannot build gpu-attestor
-```
-- Ensure you have a `public_key.hex` file in the project root
-- Generate one using: `./scripts/gen-key.sh`
-- Or set the VALIDATOR_PUBLIC_KEY environment variable with a 66-character hex string
+The gpu-attestor binary no longer requires a validator public key to build.
 
 ### Debug Mode
 

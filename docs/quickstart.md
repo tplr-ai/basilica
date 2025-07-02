@@ -162,14 +162,10 @@ Error: Failed to load hotkey: Invalid format
 ```
 **Solution**: Ensure wallet files exist and are in the correct format. The system supports both JSON wallets and raw seed phrases.
 
-### Build Error - Missing Validator Key
-```
-Error: No validator key found - cannot build gpu-attestor
-```
-**Solution**: Generate or provide a validator public key:
+### GPU Attestor Build
+The gpu-attestor binary no longer requires a validator public key to build. Simply run:
 ```bash
-./scripts/gen-key.sh
-export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n')
+cargo build --bin gpu-attestor
 ```
 
 ### Executor Configuration Error

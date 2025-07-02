@@ -43,7 +43,6 @@ cd scripts/executor
 #### GPU Attestor
 ```bash
 cd scripts/gpu-attestor
-export VALIDATOR_PUBLIC_KEY=$(cat ../../public_key.hex)
 ./build.sh --release
 ```
 

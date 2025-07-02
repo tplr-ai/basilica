@@ -17,19 +17,8 @@ WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 
-ARG VALIDATOR_PUBLIC_KEY
-ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
-
 ARG FEATURES=""
 ENV FEATURES=${FEATURES}
-
-RUN if [ -z "$VALIDATOR_PUBLIC_KEY" ]; then \
-        echo "Error: VALIDATOR_PUBLIC_KEY build argument is required"; \
-        exit 1; \
-    fi
-
-RUN echo "$VALIDATOR_PUBLIC_KEY" | grep -qE '^[0-9a-fA-F]{66}$' || \
-    (echo "Error: VALIDATOR_PUBLIC_KEY must be 66 hexadecimal characters" && exit 1)
 
 RUN if [ -n "$FEATURES" ]; then \
         echo "Building with features: $FEATURES"; \

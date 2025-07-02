@@ -7,7 +7,7 @@ members = [
     "crates/validator",
     "crates/bittensor",
     "crates/gpu-attestor",
-    "crates/public-api",
+    "crates/public-api", "crates/integration-tests",
 ]
 resolver = "2"
 

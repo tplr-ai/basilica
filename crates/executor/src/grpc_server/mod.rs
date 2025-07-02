@@ -422,6 +422,11 @@ impl ExecutorControl for ExecutorControlService {
                         "nonce": req.nonce
                     })
                     .to_string(),
+                    result_checksum: vec![],  // VDF doesn't use checksum
+                    success: true,
+                    gpu_model: String::new(),  // VDF doesn't require GPU model
+                    vram_allocated_mb: 0,
+                    challenge_id: req.nonce.clone(),
                 };
 
                 Ok(tonic::Response::new(ChallengeResponse {
@@ -451,6 +456,11 @@ impl ExecutorControl for ExecutorControlService {
                         "nonce": req.nonce,
                         "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
                     }).to_string(),
+                    result_checksum: vec![],  // Attestation doesn't use checksum
+                    success: true,
+                    gpu_model: String::new(),  // Attestation includes GPU info in solution
+                    vram_allocated_mb: 0,
+                    challenge_id: req.nonce.clone(),
                 };
 
                 Ok(tonic::Response::new(ChallengeResponse {

@@ -25,12 +25,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 COPY src/ ./src/
 
-# Generate validator key for build
-COPY scripts/gen-key.sh ./scripts/
-RUN chmod +x scripts/gen-key.sh && ./scripts/gen-key.sh
-
 # Build miner - use BUILD_MODE arg to control debug/release
-ENV VALIDATOR_PUBLIC_KEY_FILE=/usr/src/basilica/public_key.hex
 ARG BUILD_MODE=release
 RUN if [ "$BUILD_MODE" = "debug" ]; then \
         cargo build -p miner; \
