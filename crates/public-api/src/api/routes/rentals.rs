@@ -18,7 +18,7 @@ use tracing::{debug, info};
 /// Rent GPU capacity
 #[utoipa::path(
     post,
-    path = "/api/v1/rentals",
+    path = "/rentals",
     request_body = RentCapacityRequest,
     responses(
         (status = 201, description = "Rental created successfully", body = RentCapacityResponse),
@@ -70,7 +70,7 @@ pub async fn rent_capacity(
 /// Get rental status
 #[utoipa::path(
     get,
-    path = "/api/v1/rentals/{rental_id}",
+    path = "/rentals/{rental_id}",
     params(
         ("rental_id" = String, Path, description = "Rental ID"),
     ),
@@ -135,7 +135,7 @@ pub async fn get_rental_status(
 /// Terminate a rental
 #[utoipa::path(
     post,
-    path = "/api/v1/rentals/{rental_id}/terminate",
+    path = "/rentals/{rental_id}/terminate",
     params(
         ("rental_id" = String, Path, description = "Rental ID"),
     ),
