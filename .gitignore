@@ -103,8 +103,11 @@ temp/
 .venv/
 
 # Binaries
-executor        
+executor
 gpu-attestor
 miner
 validator
 
+scripts/localnet/ssh-keys
+scripts/localnet/wallets
+scripts/localnet/keys
