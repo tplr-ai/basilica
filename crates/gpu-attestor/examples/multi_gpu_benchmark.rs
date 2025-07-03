@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     // Benchmark specific GPUs with different backends
     println!("\n=== Individual GPU Benchmarking ===");
 
-    for (idx, gpu) in gpus.iter().enumerate() {
+    for (idx, _gpu) in gpus.iter().enumerate() {
         println!("\nTesting GPU {idx} with available backends:");
 
         // Try CUDA

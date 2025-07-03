@@ -106,6 +106,42 @@ fn default_cache_miner_info_ttl() -> Duration {
     Duration::from_secs(300) // 5 minutes
 }
 
+fn default_enable_automated_sessions() -> bool {
+    true
+}
+
+fn default_max_concurrent_sessions() -> usize {
+    5
+}
+
+fn default_session_rate_limit() -> usize {
+    20
+}
+
+fn default_enable_audit_logging() -> bool {
+    true
+}
+
+fn default_audit_log_path() -> PathBuf {
+    PathBuf::from("/var/log/basilica/ssh_audit.log")
+}
+
+fn default_ssh_connection_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
+fn default_ssh_command_timeout() -> Duration {
+    Duration::from_secs(60)
+}
+
+fn default_ssh_retry_attempts() -> u32 {
+    3
+}
+
+fn default_ssh_retry_delay() -> Duration {
+    Duration::from_secs(2)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StorageConfig {
     /// Storage directory path
@@ -138,6 +174,42 @@ pub struct SshSessionConfig {
 
     /// Cleanup interval for expired keys
     pub key_cleanup_interval: Duration,
+
+    /// Enable automated SSH session management during discovery
+    #[serde(default = "default_enable_automated_sessions")]
+    pub enable_automated_sessions: bool,
+
+    /// Maximum concurrent SSH sessions per validator
+    #[serde(default = "default_max_concurrent_sessions")]
+    pub max_concurrent_sessions: usize,
+
+    /// Session rate limit (sessions per hour)
+    #[serde(default = "default_session_rate_limit")]
+    pub session_rate_limit: usize,
+
+    /// Enable audit logging for SSH sessions
+    #[serde(default = "default_enable_audit_logging")]
+    pub enable_audit_logging: bool,
+
+    /// Audit log file path
+    #[serde(default = "default_audit_log_path")]
+    pub audit_log_path: PathBuf,
+
+    /// SSH connection timeout
+    #[serde(default = "default_ssh_connection_timeout")]
+    pub ssh_connection_timeout: Duration,
+
+    /// SSH command execution timeout
+    #[serde(default = "default_ssh_command_timeout")]
+    pub ssh_command_timeout: Duration,
+
+    /// Retry SSH connection attempts
+    #[serde(default = "default_ssh_retry_attempts")]
+    pub ssh_retry_attempts: u32,
+
+    /// Delay between SSH retry attempts
+    #[serde(default = "default_ssh_retry_delay")]
+    pub ssh_retry_delay: Duration,
 }
 
 impl Default for SshSessionConfig {
@@ -148,6 +220,15 @@ impl Default for SshSessionConfig {
             default_session_duration: 300, // 5 minutes
             max_session_duration: 3600,    // 1 hour
             key_cleanup_interval: Duration::from_secs(60),
+            enable_automated_sessions: default_enable_automated_sessions(),
+            max_concurrent_sessions: default_max_concurrent_sessions(),
+            session_rate_limit: default_session_rate_limit(),
+            enable_audit_logging: default_enable_audit_logging(),
+            audit_log_path: default_audit_log_path(),
+            ssh_connection_timeout: default_ssh_connection_timeout(),
+            ssh_command_timeout: default_ssh_command_timeout(),
+            ssh_retry_attempts: default_ssh_retry_attempts(),
+            ssh_retry_delay: default_ssh_retry_delay(),
         }
     }
 }

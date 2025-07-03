@@ -81,7 +81,7 @@ fn main() -> Result<()> {
     }
 
     // Benchmark specific GPUs
-    for (idx, gpu) in gpus.iter().enumerate() {
+    for (idx, _gpu) in gpus.iter().enumerate() {
         println!("\nBenchmarking GPU {idx} via validator:");
         match GpuBenchmarkRunner::new(idx as u32) {
             Ok(runner) => match validator.benchmark_memory_bandwidth_with_runner(&runner) {

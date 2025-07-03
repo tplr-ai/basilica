@@ -56,7 +56,11 @@ impl MinerDiscovery {
             .await?;
 
         if metagraph.hotkeys.is_empty() {
-            return self.get_placeholder_miners();
+            info!(
+                "No miners found in metagraph for netuid {}",
+                self.config.netuid
+            );
+            return Ok(Vec::new());
         }
 
         let mut miners = self.extract_miners_from_metagraph(&metagraph)?;
@@ -70,39 +74,6 @@ impl MinerDiscovery {
         );
 
         Ok(miners)
-    }
-
-    fn get_placeholder_miners(&self) -> Result<Vec<MinerInfo>> {
-        warn!("No neurons in metagraph - using placeholder data for testing");
-
-        let placeholder_miners = vec![
-            MinerInfo {
-                uid: MinerUid::new(0),
-                hotkey: Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string())
-                    .unwrap_or_else(|_| Hotkey::new("placeholder".to_string()).unwrap()),
-                endpoint: "http://placeholder-miner-0.example.com:8091".to_string(),
-                is_validator: false,
-                stake_tao: 10.0,
-                last_verified: None,
-                verification_score: 0.5,
-            },
-            MinerInfo {
-                uid: MinerUid::new(1),
-                hotkey: Hotkey::new("5Fbe6qGVfGPFGUCjn1AV7xfHVExrJNy1VR9CzjCPJoHPPuT4".to_string())
-                    .unwrap_or_else(|_| Hotkey::new("placeholder".to_string()).unwrap()),
-                endpoint: "http://placeholder-miner-1.example.com:8092".to_string(),
-                is_validator: false,
-                stake_tao: 5.0,
-                last_verified: None,
-                verification_score: 0.3,
-            },
-        ];
-
-        info!(
-            "Using {} placeholder miners for testing",
-            placeholder_miners.len()
-        );
-        Ok(placeholder_miners)
     }
 
     fn extract_miners_from_metagraph(
