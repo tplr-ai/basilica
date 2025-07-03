@@ -27,7 +27,8 @@ COPY src/ ./src/
 
 # Build miner - use BUILD_MODE arg to control debug/release
 ARG BUILD_MODE=release
-RUN if [ "$BUILD_MODE" = "debug" ]; then \
+RUN export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex) && \
+    if [ "$BUILD_MODE" = "debug" ]; then \
         cargo build -p miner; \
     else \
         cargo build --release -p miner; \

@@ -15,6 +15,7 @@ use std::sync::Arc;
 /// Authentication middleware
 #[derive(Clone)]
 pub struct AuthMiddleware {
+    #[allow(dead_code)]
     state: AppState,
 }
 

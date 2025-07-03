@@ -1,0 +1,36 @@
+services:
+  miner:
+    build:
+      context: ../..
+      dockerfile: scripts/miner/Dockerfile
+    container_name: basilica-miner-dev
+    restart: unless-stopped
+
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+
+    volumes:
+      - ../../config/miner.toml:/app/miner.toml:ro
+      - miner-data-dev:/app/data
+      - ~/.bittensor:/home/basilica/.bittensor:rw
+      - ../../crates:/app/crates:ro
+      - ../../Cargo.toml:/app/Cargo.toml:ro
+      - ../../Cargo.lock:/app/Cargo.lock:ro
+
+    ports:
+      - "50051:50051"   # gRPC server
+      - "8091:8091"     # Bittensor axon port
+      - "8080:8080"     # Metrics endpoint
+
+    networks:
+      - basilica_network_dev
+
+    command: ["--config", "/app/miner.toml"]
+
+networks:
+  basilica_network_dev:
+    driver: bridge
+
+volumes:
+  miner-data-dev:

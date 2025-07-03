@@ -248,8 +248,8 @@ async fn start_validator_services(
 
     // Extract database path from URL (remove sqlite: prefix if present)
     let db_url = &config.database.url;
-    let db_path = if db_url.starts_with("sqlite:") {
-        &db_url[7..] // Remove "sqlite:" prefix
+    let db_path = if let Some(stripped) = db_url.strip_prefix("sqlite:") {
+        stripped
     } else {
         db_url
     };

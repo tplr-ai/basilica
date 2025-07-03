@@ -48,7 +48,16 @@ deploy_binary() {
     log_info "Deploying $binary_name to $server_host:$server_port"
     
     # Create binary directory on remote
-    ssh -p "$server_port" "$server_user@$server_host" "mkdir -p $DEFAULT_BINARY_DIR" || {
+    ssh -p "$server_port" "$server_user@$server_host" '
+        if [ "$EUID" -eq 0 ]; then
+            mkdir -p '"$DEFAULT_BINARY_DIR"'
+        elif command -v sudo >/dev/null 2>&1; then
+            sudo mkdir -p '"$DEFAULT_BINARY_DIR"' && sudo chown -R $USER:$USER '"$DEFAULT_BINARY_DIR"'
+        else
+            echo "Error: Need root privileges to create directory '"$DEFAULT_BINARY_DIR"'"
+            exit 1
+        fi
+    ' || {
         log_error "Failed to create binary directory on $server_host"
         return 1
     }
@@ -90,7 +99,16 @@ deploy_config() {
     log_info "Deploying $config_name to $server_host:$server_port"
     
     # Create config directory on remote
-    ssh -p "$server_port" "$server_user@$server_host" "mkdir -p $DEFAULT_CONFIG_DIR" || {
+    ssh -p "$server_port" "$server_user@$server_host" '
+        if [ "$EUID" -eq 0 ]; then
+            mkdir -p '"$DEFAULT_CONFIG_DIR"'
+        elif command -v sudo >/dev/null 2>&1; then
+            sudo mkdir -p '"$DEFAULT_CONFIG_DIR"' && sudo chown -R $USER:$USER '"$DEFAULT_CONFIG_DIR"'
+        else
+            echo "Error: Need root privileges to create directory '"$DEFAULT_CONFIG_DIR"'"
+            exit 1
+        fi
+    ' || {
         log_error "Failed to create config directory on $server_host"
         return 1
     }
@@ -115,14 +133,32 @@ create_directories() {
     ssh -p "$server_port" "$server_user@$server_host" << 'EOF'
         set -e
         
+        # Check if running as root or if sudo is available
+        if [ "$EUID" -eq 0 ]; then
+            # Running as root, no sudo needed
+            SUDO_CMD=""
+        elif command -v sudo >/dev/null 2>&1; then
+            # Not root but sudo is available
+            SUDO_CMD="sudo"
+        else
+            # Not root and no sudo available
+            echo "Error: Need root privileges to create directories in /opt/basilica"
+            exit 1
+        fi
+        
         # Create all required directories
         for dir in /opt/basilica/{bin,config,data,logs,ssh_keys}; do
-            mkdir -p "$dir"
-            chmod 755 "$dir"
+            $SUDO_CMD mkdir -p "$dir"
+            $SUDO_CMD chmod 755 "$dir"
         done
         
         # Set secure permissions for SSH keys directory
-        chmod 700 /opt/basilica/ssh_keys
+        $SUDO_CMD chmod 700 /opt/basilica/ssh_keys
+        
+        # Set ownership to current user if not root
+        if [ "$EUID" -ne 0 ] && [ -n "$SUDO_CMD" ]; then
+            $SUDO_CMD chown -R $USER:$USER /opt/basilica
+        fi
         
         echo "Directories created successfully"
 EOF

@@ -954,16 +954,14 @@ impl HardwareValidator {
     /// Parse host and port from address string
     fn parse_host_port(address: &str) -> (String, Option<u16>) {
         if let Some(colon_pos) = address.rfind(':') {
-            let host = address[..colon_pos].to_string();
-            let port_str = &address[colon_pos + 1..];
-
-            if let Ok(port) = port_str.parse::<u16>() {
-                (host, Some(port))
-            } else {
-                (address.to_string(), None)
+            let (host, port_with_colon) = address.split_at(colon_pos);
+            // Strip the leading colon from port
+            if let Some(port_str) = port_with_colon.strip_prefix(':') {
+                if let Ok(port) = port_str.parse::<u16>() {
+                    return (host.to_string(), Some(port));
+                }
             }
-        } else {
-            (address.to_string(), None)
         }
+        (address.to_string(), None)
     }
 }

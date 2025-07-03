@@ -72,6 +72,14 @@ scripts/provision/configs/secrets.toml
 scripts/provision/configs/production.toml
 scripts/provision/configs/staging.toml
 
+# Configuration files in config directory
+config/miner.toml
+config/executor.toml
+config/validator.toml
+config/public-api.toml
+config/gpu-attestor.toml
+!config/*.toml.example
+
 # SSH Keys and Certificates
 scripts/provision/configs/keys/
 scripts/provision/configs/certs/
@@ -95,10 +103,15 @@ temp/
 .venv/
 
 # Binaries
-executor        
+executor
 gpu-attestor
 miner
 validator
 
 *.s.md
 
+*.s.md
+ 
+scripts/localnet/ssh-keys
+scripts/localnet/wallets
+scripts/localnet/keys

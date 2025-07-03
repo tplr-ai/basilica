@@ -1,193 +1,81 @@
-# Basilica Public API Gateway Build Scripts
+# Basilica Public API
 
-This directory contains build and deployment scripts for the Basilica Public API Gateway.
+External HTTP API service for the Basilica network.
 
-## Overview
-
-The Public API Gateway provides a unified HTTP interface to the Basilica validator network, offering:
-
-- Smart load balancing across validators
-- API key authentication and rate limiting
-- Response caching
-- OpenAPI documentation
-- Health monitoring and telemetry
-
-## Building
-
-### Local Build
+## Quick Start
 
 ```bash
+# Build
 ./build.sh
+
+# Deploy
+./deploy.sh user@host port
+
+# Run locally
+docker-compose -f compose.dev.yml up
 ```
 
-Build options:
+## Files
 
-- `PROFILE=debug` - Build debug version (default: release)
-- `TARGET=x86_64-unknown-linux-musl` - Build for different target
-- `FEATURES=redis` - Enable additional features
-
-### Docker Build
-
-```bash
-docker build -f Dockerfile -t basilica/public-api:latest ../..
-```
-
-Or using docker-compose:
-
-```bash
-docker-compose build
-```
-
-## Running
-
-### Local Execution
-
-```bash
-# Generate example configuration
-./build/public-api --gen-config > public-api.toml
-
-# Run with configuration
-./build/public-api --config public-api.toml
-```
-
-### Docker Execution
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f public-api
-
-# Stop services
-docker-compose down
-```
+- `Dockerfile` - Container image definition
+- `build.sh` - Build script for Docker image
+- `deploy.sh` - Remote deployment script
+- `compose.prod.yml` - Production docker-compose with Redis and watchtower
+- `compose.dev.yml` - Development docker-compose with local build
+- `.env.example` - Environment variables template
 
 ## Configuration
 
-The Public API Gateway supports configuration through:
+Copy and edit the configuration:
+```bash
+cp ../../config/public-api.toml.example ../../config/public-api.toml
+```
 
-1. TOML configuration file
-2. Environment variables (prefixed with `PUBLIC_API__`)
-3. Command line arguments
+Key settings:
+- `[server]` - Port 8000 for HTTP API
+- `[validator]` - gRPC endpoint for validator connection
+- `[redis]` - Cache backend configuration
+- `[rate_limiting]` - Request rate limits
 
-Key configuration sections:
+## Ports
 
-- `server` - HTTP server settings
-- `bittensor` - Network and validator discovery
-- `load_balancer` - Load balancing strategy
-- `cache` - Response caching settings
-- `rate_limit` - API rate limiting
-- `auth` - Authentication settings
-- `telemetry` - Metrics and tracing
+- `8000` - HTTP API
+- `8080` - Metrics endpoint
 
 ## API Endpoints
 
-### Public Endpoints
-
 - `GET /health` - Health check
-- `GET /api-docs/openapi.json` - OpenAPI specification
-- `GET /swagger-ui` - Interactive API documentation
+- `POST /api/v1/compute/submit` - Submit compute request
+- `GET /api/v1/compute/{id}/status` - Check request status
+- `GET /api/v1/executors` - List available executors
+- `GET /api/v1/validators` - List active validators
 
-### Authenticated Endpoints
+## Environment Variables
 
-- `POST /rentals` - Rent GPU capacity
-- `GET /rentals/{id}` - Get rental status
-- `POST /rentals/{id}/terminate` - Terminate rental
-- `GET /rentals/{id}/logs` - Stream rental logs
-- `GET /executors` - List available executors
-- `GET /validators` - List active validators
-- `GET /telemetry` - Export metrics
-
-## Monitoring
-
-### Prometheus Metrics
-
-Metrics are exposed at `/metrics` endpoint:
-
-- Request latencies
-- Response status codes
-- Cache hit rates
-- Active connections
-- Validator health status
-
-### Health Checks
-
-The `/health` endpoint provides:
-
-- Service status
-- Validator pool health
-- Cache status
-- Database connectivity
-
-## Development
-
-### Running Tests
-
+Create `.env` from `.env.example`:
 ```bash
-cargo test -p public-api
+RUST_LOG=info
+RUST_BACKTRACE=1
 ```
 
-### Local Development Setup
+## Dependencies
 
-1. Start local Bittensor network
-2. Configure validators
-3. Run the public API:
+- Redis for caching and rate limiting
+- Validator service for backend operations
 
-   ```bash
-   RUST_LOG=debug cargo run -p public-api -- --config dev.toml
-   ```
-
-## Production Deployment
-
-### Kubernetes
-
-See `deployment/k8s/public-api.yaml` for Kubernetes manifests.
-
-### Systemd
+## Deployment
 
 ```bash
-sudo cp basilica-public-api.service /etc/systemd/system/
-sudo systemctl enable basilica-public-api
-sudo systemctl start basilica-public-api
+# Deploy to production
+./deploy.sh root@api.basilica.ai 22
+
+# Check logs
+ssh root@api.basilica.ai 'cd /opt/basilica && docker-compose logs -f public-api'
 ```
 
-## Security Considerations
+## Rate Limiting
 
-1. Always use HTTPS in production
-2. Rotate JWT secrets regularly
-3. Configure rate limiting appropriately
-4. Use strong API keys
-5. Enable request logging for audit trails
-6. Configure CORS origins restrictively
-
-## Troubleshooting
-
-### Common Issues
-
-1. **No validators available**
-   - Check Bittensor network connectivity
-   - Verify subnet ID configuration
-   - Check validator discovery logs
-
-2. **High latency**
-   - Enable caching
-   - Check load balancer strategy
-   - Monitor validator health
-
-3. **Rate limit errors**
-   - Adjust rate limit configuration
-   - Use API key for higher limits
-   - Enable Redis for distributed rate limiting
-
-### Debug Mode
-
-Enable detailed logging:
-
-```bash
-RUST_LOG=debug,public_api=trace ./public-api --config public-api.toml
-```
-
-## License
-
-See the main project LICENSE file.
+Default limits:
+- 100 requests/minute per IP
+- 10 requests/minute for compute submissions
+- Configurable per endpoint in `public-api.toml`

@@ -1,0 +1,37 @@
+services:
+  validator:
+    build:
+      context: ../..
+      dockerfile: scripts/validator/Dockerfile
+    container_name: basilica-validator-dev
+    restart: unless-stopped
+
+    environment:
+      - RUST_LOG=debug
+      - RUST_BACKTRACE=1
+
+    volumes:
+      - ../../config/validator.toml:/app/validator.toml:ro
+      - validator-data-dev:/app/data
+      - ~/.ssh:/app/keys:ro
+      - ~/.bittensor:/home/basilica/.bittensor:rw
+      - ../../crates:/app/crates:ro
+      - ../../Cargo.toml:/app/Cargo.toml:ro
+      - ../../Cargo.lock:/app/Cargo.lock:ro
+
+    ports:
+      - "50053:50053"   # gRPC server
+      - "3000:3000"     # Public API
+      - "8080:8080"     # Metrics
+
+    networks:
+      - basilica_network_dev
+
+    command: ["--config", "/app/validator.toml"]
+
+networks:
+  basilica_network_dev:
+    driver: bridge
+
+volumes:
+  validator-data-dev:

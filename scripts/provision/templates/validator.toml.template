@@ -36,7 +36,7 @@ fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
 # Optional: gRPC port offset from axon port
 # For testnet, miner HTTP/gRPC is on 8080, axon is on 8091, so we need offset
-grpc_port_offset = ${GRPC_PORT_OFFSET}
+# grpc_port_offset = ${GRPC_PORT_OFFSET}  # Commented out: field expects Option<u16> (unsigned)
 
 [ssh_validation]
 enabled = true

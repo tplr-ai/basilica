@@ -48,7 +48,7 @@ prost-types = "0.13"
 common = { path = "../common" }
 protocol = { path = "../protocol" }
 bittensor = { path = "../bittensor" }
-gpu-attestor = { path = "../gpu-attestor" }
+gpu-attestor = { path = "../gpu-attestor", default-features = false }
 
 # Validator-specific dependencies
 # Bittensor integration (placeholder - adjust when available)
