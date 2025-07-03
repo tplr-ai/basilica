@@ -67,6 +67,268 @@ impl VerificationEngine {
         }
     }
 
+    /// Initiate automated SSH session setup with miner during discovery handshake
+    pub async fn initiate_discovery_ssh_handshake(
+        &self,
+        miner: &MinerInfo,
+        executors: &[ExecutorInfo],
+    ) -> Result<()> {
+        if !self.use_dynamic_discovery {
+            info!(
+                "Dynamic discovery disabled, skipping SSH handshake for miner {}",
+                miner.uid.as_u16()
+            );
+            return Ok(());
+        }
+
+        let ssh_key_manager = match &self.ssh_key_manager {
+            Some(manager) => manager,
+            None => {
+                warn!(
+                    "No SSH key manager available for discovery handshake with miner {}",
+                    miner.uid.as_u16()
+                );
+                return Ok(());
+            }
+        };
+
+        info!(
+            "Initiating SSH discovery handshake with miner {} for {} executors",
+            miner.uid.as_u16(),
+            executors.len()
+        );
+
+        // Create authenticated miner client
+        let client = self.create_authenticated_client()?;
+        let mut connection = client
+            .connect_and_authenticate(&miner.endpoint)
+            .await
+            .context("Failed to connect to miner for SSH handshake")?;
+
+        // Process each executor for SSH key distribution
+        for executor in executors {
+            if let Err(e) = self
+                .setup_executor_ssh_access(&mut connection, executor, ssh_key_manager)
+                .await
+            {
+                error!(
+                    "Failed to setup SSH access for executor {}: {}",
+                    executor.id, e
+                );
+            }
+        }
+
+        info!(
+            "Completed SSH discovery handshake with miner {}",
+            miner.uid.as_u16()
+        );
+        Ok(())
+    }
+
+    /// Setup SSH access for a specific executor during discovery
+    async fn setup_executor_ssh_access(
+        &self,
+        connection: &mut super::miner_client::AuthenticatedMinerConnection,
+        executor: &ExecutorInfo,
+        ssh_key_manager: &ValidatorSshKeyManager,
+    ) -> Result<()> {
+        // Generate ephemeral SSH keypair for this executor
+        let session_id = Uuid::new_v4().to_string();
+        let (_, public_key, _) = ssh_key_manager
+            .generate_session_keypair(&session_id)
+            .await
+            .context("Failed to generate SSH keypair for executor")?;
+
+        let public_key_openssh = ValidatorSshKeyManager::get_public_key_openssh(&public_key)
+            .context("Failed to convert public key to OpenSSH format")?;
+
+        // Request SSH session setup with validator's public key
+        let session_request = InitiateSshSessionRequest {
+            validator_hotkey: self.validator_hotkey.to_string(),
+            executor_id: executor.id.to_string(),
+            purpose: "discovery_handshake".to_string(),
+            validator_public_key: public_key_openssh,
+            session_duration_secs: 86400, // 24 hours for discovery sessions
+            session_metadata: serde_json::json!({
+                "validator_version": env!("CARGO_PKG_VERSION"),
+                "handshake_type": "discovery",
+                "session_id": session_id
+            })
+            .to_string(),
+        };
+
+        match connection.initiate_ssh_session_v2(session_request).await {
+            Ok(response) => {
+                if response.status() == SshSessionStatus::Active {
+                    info!(
+                        "Successfully setup SSH access for executor {} (session: {})",
+                        executor.id, response.session_id
+                    );
+                } else {
+                    warn!(
+                        "SSH session setup incomplete for executor {}: status={:?}",
+                        executor.id, response.status
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Failed SSH session setup for executor {}: {}",
+                    executor.id, e
+                );
+                // Clean up generated key on failure
+                if let Err(cleanup_err) = ssh_key_manager.cleanup_session_keys(&session_id).await {
+                    warn!(
+                        "Failed to cleanup SSH keys after setup failure: {}",
+                        cleanup_err
+                    );
+                }
+                return Err(e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if this verification engine supports batch processing
+    pub fn supports_batch_processing(&self) -> bool {
+        // Automated SSH verification supports batch processing when properly configured
+        self.use_dynamic_discovery && self.ssh_key_manager.is_some()
+    }
+
+    /// Execute automated verification workflow for discovered miners
+    pub async fn execute_automated_verification_workflow(
+        &self,
+        miners: &[MinerInfo],
+    ) -> Result<HashMap<MinerUid, f64>> {
+        let mut results = HashMap::new();
+
+        info!(
+            "Starting automated verification workflow for {} miners",
+            miners.len()
+        );
+
+        for miner in miners {
+            match self.verify_miner_with_ssh_automation(miner.clone()).await {
+                Ok(score) => {
+                    results.insert(miner.uid, score);
+                    info!(
+                        "Automated verification completed for miner {} with score: {:.4}",
+                        miner.uid.as_u16(),
+                        score
+                    );
+                }
+                Err(e) => {
+                    results.insert(miner.uid, 0.0);
+                    error!(
+                        "Automated verification failed for miner {}: {}",
+                        miner.uid.as_u16(),
+                        e
+                    );
+                }
+            }
+        }
+
+        info!(
+            "Completed automated verification workflow for {} miners",
+            miners.len()
+        );
+        Ok(results)
+    }
+
+    /// Verify miner with full SSH automation including discovery handshake
+    async fn verify_miner_with_ssh_automation(&self, miner: MinerInfo) -> Result<f64> {
+        info!(
+            "Starting SSH-automated verification for miner {}",
+            miner.uid.as_u16()
+        );
+
+        // Step 1: Connect to miner and discover executors
+        self.connect_to_miner(&miner).await?;
+        let executors = self.request_executor_lease(&miner).await?;
+
+        if executors.is_empty() {
+            warn!("No executors available from miner {}", miner.uid.as_u16());
+            return Ok(0.0);
+        }
+
+        // Step 2: Perform SSH discovery handshake
+        self.initiate_discovery_ssh_handshake(&miner, &executors)
+            .await?;
+
+        // Step 3: Execute verification on each executor
+        let scores = self.verify_executors_with_automation(&executors).await;
+        let final_score = self.calculate_final_score(&scores);
+
+        info!(
+            "SSH-automated verification completed for miner {} with final score: {:.4}",
+            miner.uid.as_u16(),
+            final_score
+        );
+
+        Ok(final_score)
+    }
+
+    /// Verify executors with enhanced automation
+    async fn verify_executors_with_automation(&self, executors: &[ExecutorInfo]) -> Vec<f64> {
+        let mut scores = Vec::new();
+
+        for executor in executors {
+            match self
+                .verify_executor_with_enhanced_automation(executor)
+                .await
+            {
+                Ok(score) => {
+                    scores.push(score);
+                    info!("Enhanced automation verification completed for executor {} with score: {:.4}", 
+                          executor.id, score);
+                }
+                Err(e) => {
+                    scores.push(0.0);
+                    warn!(
+                        "Enhanced automation verification failed for executor {}: {}",
+                        executor.id, e
+                    );
+                }
+            }
+        }
+
+        scores
+    }
+
+    /// Verify executor with enhanced automation including rate limiting and retry logic
+    async fn verify_executor_with_enhanced_automation(
+        &self,
+        executor: &ExecutorInfo,
+    ) -> Result<f64> {
+        let max_retries = 3;
+        let mut retry_count = 0;
+
+        while retry_count < max_retries {
+            match self.verify_executor_dynamic(executor).await {
+                Ok(score) => return Ok(score),
+                Err(e) if retry_count < max_retries - 1 => {
+                    retry_count += 1;
+                    let delay = Duration::from_millis(1000 * retry_count as u64);
+                    warn!(
+                        "Verification attempt {} failed for executor {}: {}. Retrying in {:?}",
+                        retry_count, executor.id, e, delay
+                    );
+                    tokio::time::sleep(delay).await;
+                }
+                Err(e) => {
+                    error!(
+                        "All verification attempts failed for executor {}: {}",
+                        executor.id, e
+                    );
+                    return Err(e);
+                }
+            }
+        }
+
+        unreachable!()
+    }
+
     /// Create with full configuration for dynamic discovery
     pub fn with_validator_context(
         config: VerificationConfig,

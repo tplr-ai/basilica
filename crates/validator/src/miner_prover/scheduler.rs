@@ -18,6 +18,12 @@ pub struct VerificationScheduler {
     active_verifications: HashMap<MinerUid, tokio::task::JoinHandle<()>>,
 }
 
+/// Batch verification task handle
+struct BatchVerificationHandle {
+    miners: Vec<MinerInfo>,
+    task_handle: tokio::task::JoinHandle<()>,
+}
+
 impl VerificationScheduler {
     pub fn new(config: VerificationConfig) -> Self {
         Self {
@@ -58,16 +64,41 @@ impl VerificationScheduler {
         let miners = discovery.get_miners_for_verification().await?;
         info!("Selected {} miners for verification", miners.len());
 
-        for miner in miners {
-            if !self.can_schedule_verification(&miner) {
-                continue;
-            }
+        // Filter miners that can be scheduled
+        let schedulable_miners: Vec<MinerInfo> = miners
+            .into_iter()
+            .filter(|miner| self.can_schedule_verification(miner))
+            .collect();
 
-            let miner_uid = miner.uid;
+        if schedulable_miners.is_empty() {
+            debug!("No miners available for scheduling verification");
+            return Ok(());
+        }
+
+        // Check if automated verification is available and batch process if possible
+        if schedulable_miners.len() > 1 && verification.supports_batch_processing() {
+            info!(
+                "Using batch automated verification for {} miners",
+                schedulable_miners.len()
+            );
             let handle = self
-                .spawn_verification_task(miner, verification.clone())
+                .spawn_batch_verification_task(schedulable_miners, verification.clone())
                 .await?;
-            self.active_verifications.insert(miner_uid, handle);
+
+            // Track first miner with the handle (batch processing)
+            if let Some(first_miner) = handle.miners.first() {
+                self.active_verifications
+                    .insert(first_miner.uid, handle.task_handle);
+            }
+        } else {
+            // Process individual miners
+            for miner in schedulable_miners {
+                let miner_uid = miner.uid;
+                let handle = self
+                    .spawn_verification_task(miner, verification.clone())
+                    .await?;
+                self.active_verifications.insert(miner_uid, handle);
+            }
         }
 
         Ok(())
@@ -96,23 +127,135 @@ impl VerificationScheduler {
         verification: VerificationEngine,
     ) -> Result<tokio::task::JoinHandle<()>> {
         let handle = tokio::spawn(async move {
-            info!("Starting verification for miner {}", miner.uid.as_u16());
+            info!(
+                "Starting automated verification workflow for miner {}",
+                miner.uid.as_u16()
+            );
 
-            match verification.verify_miner(miner.clone()).await {
-                Ok(score) => {
-                    info!(
-                        "Miner {} verification completed with score: {:.4}",
-                        miner.uid.as_u16(),
-                        score
-                    );
+            // Use automated verification workflow with SSH session management
+            match verification
+                .execute_automated_verification_workflow(&[miner.clone()])
+                .await
+            {
+                Ok(results) => {
+                    if let Some(score) = results.get(&miner.uid) {
+                        info!(
+                            "Miner {} automated verification completed with score: {:.4}",
+                            miner.uid.as_u16(),
+                            score
+                        );
+                    } else {
+                        warn!(
+                            "No score returned for miner {} from automated verification",
+                            miner.uid.as_u16()
+                        );
+                    }
                 }
                 Err(e) => {
-                    error!("Miner {} verification failed: {}", miner.uid.as_u16(), e);
+                    error!(
+                        "Miner {} automated verification failed: {}",
+                        miner.uid.as_u16(),
+                        e
+                    );
+
+                    // Fallback to basic verification if automated workflow fails
+                    info!(
+                        "Attempting fallback verification for miner {}",
+                        miner.uid.as_u16()
+                    );
+                    match verification.verify_miner(miner.clone()).await {
+                        Ok(score) => {
+                            info!(
+                                "Miner {} fallback verification completed with score: {:.4}",
+                                miner.uid.as_u16(),
+                                score
+                            );
+                        }
+                        Err(fallback_err) => {
+                            error!(
+                                "Miner {} fallback verification also failed: {}",
+                                miner.uid.as_u16(),
+                                fallback_err
+                            );
+                        }
+                    }
                 }
             }
         });
 
         Ok(handle)
+    }
+
+    async fn spawn_batch_verification_task(
+        &self,
+        miners: Vec<MinerInfo>,
+        verification: VerificationEngine,
+    ) -> Result<BatchVerificationHandle> {
+        let miners_clone = miners.clone();
+        let handle = tokio::spawn(async move {
+            info!(
+                "Starting batch automated verification workflow for {} miners",
+                miners.len()
+            );
+
+            match verification
+                .execute_automated_verification_workflow(&miners)
+                .await
+            {
+                Ok(results) => {
+                    for miner in &miners {
+                        if let Some(score) = results.get(&miner.uid) {
+                            info!(
+                                "Miner {} batch verification completed with score: {:.4}",
+                                miner.uid.as_u16(),
+                                score
+                            );
+                        } else {
+                            warn!(
+                                "No score returned for miner {} from batch verification",
+                                miner.uid.as_u16()
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Batch automated verification failed for {} miners: {}",
+                        miners.len(),
+                        e
+                    );
+
+                    // Fallback to individual verification for failed batch
+                    for miner in &miners {
+                        info!(
+                            "Attempting individual fallback verification for miner {}",
+                            miner.uid.as_u16()
+                        );
+                        match verification.verify_miner(miner.clone()).await {
+                            Ok(score) => {
+                                info!(
+                                    "Miner {} individual fallback completed with score: {:.4}",
+                                    miner.uid.as_u16(),
+                                    score
+                                );
+                            }
+                            Err(fallback_err) => {
+                                error!(
+                                    "Miner {} individual fallback also failed: {}",
+                                    miner.uid.as_u16(),
+                                    fallback_err
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(BatchVerificationHandle {
+            miners: miners_clone,
+            task_handle: handle,
+        })
     }
 
     async fn cleanup_completed_verifications(&mut self) {

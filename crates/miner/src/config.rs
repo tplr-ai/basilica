@@ -280,6 +280,46 @@ pub struct ExecutorSshConfig {
 
     /// Audit log path
     pub audit_log_path: Option<PathBuf>,
+
+    /// Enable automated SSH session setup during discovery
+    #[serde(default = "default_enable_automated_ssh_sessions")]
+    pub enable_automated_sessions: bool,
+
+    /// Maximum session duration in seconds
+    #[serde(default = "default_max_session_duration")]
+    pub max_session_duration: u64,
+
+    /// SSH connection timeout
+    #[serde(default = "default_ssh_connection_timeout")]
+    pub ssh_connection_timeout: Duration,
+
+    /// SSH command execution timeout  
+    #[serde(default = "default_ssh_command_timeout")]
+    pub ssh_command_timeout: Duration,
+
+    /// Enable session expiration enforcement
+    #[serde(default = "default_enable_session_expiration")]
+    pub enable_session_expiration: bool,
+
+    /// Cleanup expired SSH keys from executors
+    #[serde(default = "default_enable_key_cleanup")]
+    pub enable_key_cleanup: bool,
+
+    /// Interval for cleaning up expired SSH keys
+    #[serde(default = "default_key_cleanup_interval")]
+    pub key_cleanup_interval: Duration,
+
+    /// Rate limit window duration
+    #[serde(default = "default_rate_limit_window")]
+    pub rate_limit_window: Duration,
+
+    /// Maximum retry attempts for SSH operations
+    #[serde(default = "default_ssh_retry_attempts")]
+    pub ssh_retry_attempts: u32,
+
+    /// Delay between SSH retry attempts
+    #[serde(default = "default_ssh_retry_delay")]
+    pub ssh_retry_delay: Duration,
 }
 
 impl Default for MinerConfig {
@@ -306,6 +346,46 @@ impl Default for MinerConfig {
     }
 }
 
+fn default_enable_automated_ssh_sessions() -> bool {
+    true
+}
+
+fn default_max_session_duration() -> u64 {
+    3600 // 1 hour
+}
+
+fn default_ssh_connection_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
+fn default_ssh_command_timeout() -> Duration {
+    Duration::from_secs(60)
+}
+
+fn default_enable_session_expiration() -> bool {
+    true
+}
+
+fn default_enable_key_cleanup() -> bool {
+    true
+}
+
+fn default_key_cleanup_interval() -> Duration {
+    Duration::from_secs(300) // 5 minutes
+}
+
+fn default_rate_limit_window() -> Duration {
+    Duration::from_secs(3600) // 1 hour
+}
+
+fn default_ssh_retry_attempts() -> u32 {
+    3
+}
+
+fn default_ssh_retry_delay() -> Duration {
+    Duration::from_secs(2)
+}
+
 impl Default for ExecutorSshConfig {
     fn default() -> Self {
         Self {
@@ -316,6 +396,16 @@ impl Default for ExecutorSshConfig {
             session_rate_limit: 20, // 20 sessions per hour
             enable_audit_log: true,
             audit_log_path: Some(PathBuf::from("./data/ssh_audit.log")),
+            enable_automated_sessions: default_enable_automated_ssh_sessions(),
+            max_session_duration: default_max_session_duration(),
+            ssh_connection_timeout: default_ssh_connection_timeout(),
+            ssh_command_timeout: default_ssh_command_timeout(),
+            enable_session_expiration: default_enable_session_expiration(),
+            enable_key_cleanup: default_enable_key_cleanup(),
+            key_cleanup_interval: default_key_cleanup_interval(),
+            rate_limit_window: default_rate_limit_window(),
+            ssh_retry_attempts: default_ssh_retry_attempts(),
+            ssh_retry_delay: default_ssh_retry_delay(),
         }
     }
 }

@@ -8,6 +8,7 @@ use common::identity::ExecutorId;
 use common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, StandardSshClient,
 };
+use protocol::miner_discovery::SshSessionStatus;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -366,6 +367,286 @@ impl ExecutorConnectionManager {
 
         results
     }
+
+    /// Add validator SSH public key to executor's authorized_keys
+    pub async fn add_validator_ssh_key(
+        &self,
+        executor_id: &str,
+        public_key: &str,
+        session_id: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        use std::str::FromStr;
+        let executor_id = ExecutorId::from_str(executor_id)
+            .map_err(|e| anyhow::anyhow!("Invalid executor ID: {}", e))?;
+
+        let connection = self
+            .get_executor_connection(&executor_id.to_string())
+            .await
+            .context("Failed to get executor connection for SSH key addition")?;
+
+        // Create authorized_keys entry with session metadata and expiration
+        let key_entry = format!(
+            "{} validator-session-{} expires={} miner-managed",
+            public_key.trim(),
+            session_id,
+            expires_at.to_rfc3339()
+        );
+
+        // Ensure .ssh directory exists with proper permissions
+        let setup_ssh_cmd = r#"
+            mkdir -p ~/.ssh && \
+            chmod 700 ~/.ssh && \
+            touch ~/.ssh/authorized_keys && \
+            chmod 600 ~/.ssh/authorized_keys
+        "#;
+
+        connection
+            .execute_command(setup_ssh_cmd)
+            .await
+            .context("Failed to setup SSH directory on executor")?;
+
+        // Add the key to authorized_keys
+        let add_key_cmd = format!(
+            "echo '{}' >> ~/.ssh/authorized_keys",
+            key_entry.replace('\'', "'\"'\"'")
+        );
+
+        connection
+            .execute_command(&add_key_cmd)
+            .await
+            .context("Failed to add validator SSH key to executor")?;
+
+        info!(
+            "Added validator SSH key for session {} to executor {}",
+            session_id, executor_id
+        );
+
+        Ok(())
+    }
+
+    /// Remove validator SSH key from executor's authorized_keys
+    pub async fn remove_validator_ssh_key(
+        &self,
+        executor_id: &str,
+        session_id: &str,
+    ) -> Result<()> {
+        use std::str::FromStr;
+        let executor_id = ExecutorId::from_str(executor_id)
+            .map_err(|e| anyhow::anyhow!("Invalid executor ID: {}", e))?;
+
+        let connection = self
+            .get_executor_connection(&executor_id.to_string())
+            .await
+            .context("Failed to get executor connection for SSH key removal")?;
+
+        // Remove key by session ID comment
+        let remove_key_cmd = format!(
+            "sed -i '/validator-session-{}/d' ~/.ssh/authorized_keys 2>/dev/null || true",
+            session_id
+        );
+
+        connection
+            .execute_command(&remove_key_cmd)
+            .await
+            .context("Failed to remove validator SSH key from executor")?;
+
+        info!(
+            "Removed validator SSH key for session {} from executor {}",
+            session_id, executor_id
+        );
+
+        Ok(())
+    }
+
+    /// Clean up expired SSH keys from all executors
+    pub async fn cleanup_expired_ssh_keys(&self) -> Result<usize> {
+        let now = chrono::Utc::now();
+        let executor_ids: Vec<ExecutorId> = {
+            let executors = self.executors.read().await;
+            executors.keys().cloned().collect()
+        };
+
+        let mut cleaned_count = 0;
+
+        for executor_id in executor_ids {
+            match self
+                .cleanup_expired_keys_for_executor(&executor_id, now)
+                .await
+            {
+                Ok(count) => {
+                    cleaned_count += count;
+                    if count > 0 {
+                        info!(
+                            "Cleaned up {} expired SSH keys from executor {}",
+                            count, executor_id
+                        );
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to cleanup expired SSH keys for executor {}: {}",
+                        executor_id, e
+                    );
+                }
+            }
+        }
+
+        if cleaned_count > 0 {
+            info!(
+                "Total cleaned up {} expired SSH keys across all executors",
+                cleaned_count
+            );
+        }
+
+        Ok(cleaned_count)
+    }
+
+    /// Clean up expired SSH keys for a specific executor
+    async fn cleanup_expired_keys_for_executor(
+        &self,
+        executor_id: &ExecutorId,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<usize> {
+        let connection = match self.get_executor_connection(&executor_id.to_string()).await {
+            Ok(conn) => conn,
+            Err(_) => return Ok(0), // Skip if executor is not accessible
+        };
+
+        // Get all validator session keys and check expiration
+        let list_keys_cmd =
+            "grep -n 'validator-session-.*expires=' ~/.ssh/authorized_keys 2>/dev/null || true";
+
+        let output = connection
+            .execute_command(list_keys_cmd)
+            .await
+            .unwrap_or_default();
+
+        if output.trim().is_empty() {
+            return Ok(0);
+        }
+
+        let mut lines_to_remove = Vec::new();
+        let mut expired_count = 0;
+
+        for line in output.lines() {
+            if let Some(line_num_sep) = line.find(':') {
+                let line_num = &line[..line_num_sep];
+                let key_content = &line[line_num_sep + 1..];
+
+                // Extract expiration time
+                if let Some(expires_start) = key_content.find("expires=") {
+                    let expires_str = &key_content[expires_start + 8..];
+                    if let Some(expires_end) = expires_str.find(' ') {
+                        let expires_str = &expires_str[..expires_end];
+
+                        if let Ok(expires_at) = chrono::DateTime::parse_from_rfc3339(expires_str) {
+                            if expires_at.with_timezone(&chrono::Utc) < now {
+                                lines_to_remove.push(line_num.to_string());
+                                expired_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Remove expired keys (in reverse order to maintain line numbers)
+        for line_num in lines_to_remove.into_iter().rev() {
+            let remove_cmd = format!(
+                "sed -i '{}d' ~/.ssh/authorized_keys 2>/dev/null || true",
+                line_num
+            );
+
+            if let Err(e) = connection.execute_command(&remove_cmd).await {
+                warn!(
+                    "Failed to remove expired SSH key at line {} from executor {}: {}",
+                    line_num, executor_id, e
+                );
+            }
+        }
+
+        Ok(expired_count)
+    }
+
+    /// List active validator SSH sessions for an executor
+    pub async fn list_validator_ssh_sessions(
+        &self,
+        executor_id: &str,
+    ) -> Result<Vec<ValidatorSshSession>> {
+        use std::str::FromStr;
+        let executor_id = ExecutorId::from_str(executor_id)
+            .map_err(|e| anyhow::anyhow!("Invalid executor ID: {}", e))?;
+
+        let connection = self
+            .get_executor_connection(&executor_id.to_string())
+            .await
+            .context("Failed to get executor connection for session listing")?;
+
+        let list_cmd =
+            "grep 'validator-session-.*expires=' ~/.ssh/authorized_keys 2>/dev/null || true";
+
+        let output = connection
+            .execute_command(list_cmd)
+            .await
+            .unwrap_or_default();
+
+        let mut sessions = Vec::new();
+        let now = chrono::Utc::now();
+
+        for line in output.lines() {
+            if let Some(session_info) = self.parse_ssh_session_line(line, now) {
+                sessions.push(session_info);
+            }
+        }
+
+        Ok(sessions)
+    }
+
+    /// Parse SSH session information from authorized_keys line
+    fn parse_ssh_session_line(
+        &self,
+        line: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Option<ValidatorSshSession> {
+        // Extract session ID
+        let session_start = line.find("validator-session-")?;
+        let session_part = &line[session_start + 18..];
+        let session_end = session_part.find(' ')?;
+        let session_id = session_part[..session_end].to_string();
+
+        // Extract expiration time
+        let expires_start = line.find("expires=")?;
+        let expires_str = &line[expires_start + 8..];
+        let expires_end = expires_str.find(' ')?;
+        let expires_str = &expires_str[..expires_end];
+
+        let expires_at = chrono::DateTime::parse_from_rfc3339(expires_str)
+            .ok()?
+            .with_timezone(&chrono::Utc);
+
+        let status = if expires_at < now {
+            SshSessionStatus::Expired
+        } else {
+            SshSessionStatus::Active
+        };
+
+        Some(ValidatorSshSession {
+            session_id,
+            expires_at,
+            status,
+            key_type: "validator".to_string(),
+        })
+    }
+}
+
+/// Information about an active validator SSH session
+#[derive(Debug, Clone)]
+pub struct ValidatorSshSession {
+    pub session_id: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    pub status: SshSessionStatus,
+    pub key_type: String,
 }
 
 #[cfg(test)]
