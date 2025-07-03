@@ -25,12 +25,12 @@ pub struct SshSession {
     pub session_id: String,
     pub validator_hotkey: String,
     pub executor_id: String,
-    pub validator_public_key: String,
+    pub _validator_public_key: String,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
     pub status: SshSessionStatus,
-    pub purpose: String,
-    pub metadata: Option<String>,
+    pub _purpose: String,
+    pub _metadata: Option<String>,
 }
 
 /// Rate limit information per validator
@@ -142,12 +142,12 @@ impl SshSessionOrchestrator {
             session_id: session_id.clone(),
             validator_hotkey: request.validator_hotkey.clone(),
             executor_id: request.executor_id.clone(),
-            validator_public_key: request.validator_public_key.clone(),
+            _validator_public_key: request.validator_public_key.clone(),
             created_at: now,
             expires_at,
             status: SshSessionStatus::Active,
-            purpose: request.purpose.clone(),
-            metadata: Some(request.session_metadata.clone()),
+            _purpose: request.purpose.clone(),
+            _metadata: Some(request.session_metadata.clone()),
         };
 
         // Store session
@@ -383,10 +383,9 @@ impl SshSessionOrchestrator {
             r#"
             mkdir -p ~/.ssh && \
             chmod 700 ~/.ssh && \
-            echo '{}' >> ~/.ssh/authorized_keys && \
+            echo '{key_entry}' >> ~/.ssh/authorized_keys && \
             chmod 600 ~/.ssh/authorized_keys
-            "#,
-            key_entry
+            "#
         );
 
         executor_conn
@@ -556,8 +555,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_rate_limiting() {
-        let mut config = SshSessionConfig::default();
-        config.session_rate_limit = 2;
+        let config = SshSessionConfig {
+            session_rate_limit: 2,
+            ..Default::default()
+        };
 
         let executor_manager = Arc::new(ExecutorConnectionManager::new_test());
         let orchestrator = SshSessionOrchestrator::new(executor_manager, config);
@@ -581,8 +582,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_limits() {
-        let mut config = SshSessionConfig::default();
-        config.max_sessions_per_validator = 2;
+        let config = SshSessionConfig {
+            max_sessions_per_validator: 2,
+            ..Default::default()
+        };
 
         let executor_manager = Arc::new(ExecutorConnectionManager::new_test());
         let orchestrator = SshSessionOrchestrator::new(executor_manager, config);
@@ -594,15 +597,15 @@ mod tests {
             let mut sessions = orchestrator.sessions.write().await;
             for i in 0..2 {
                 let session = SshSession {
-                    session_id: format!("session-{}", i),
+                    session_id: format!("session-{i}"),
                     validator_hotkey: validator.to_string(),
-                    executor_id: format!("executor-{}", i),
-                    validator_public_key: "ssh-ed25519 TEST".to_string(),
+                    executor_id: format!("executor-{i}"),
+                    _validator_public_key: "ssh-ed25519 TEST".to_string(),
                     created_at: Utc::now(),
                     expires_at: Utc::now() + chrono::Duration::hours(1),
                     status: SshSessionStatus::Active,
-                    purpose: "test".to_string(),
-                    metadata: None,
+                    _purpose: "test".to_string(),
+                    _metadata: None,
                 };
                 sessions.insert(session.session_id.clone(), session);
             }

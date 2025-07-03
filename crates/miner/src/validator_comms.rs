@@ -462,8 +462,7 @@ impl MinerDiscovery for MinerDiscoveryService {
             Err(e) => {
                 error!("Failed to create SSH session: {}", e);
                 Err(Status::internal(format!(
-                    "Failed to create SSH session: {}",
-                    e
+                    "Failed to create SSH session: {e}"
                 )))
             }
         }
@@ -496,8 +495,7 @@ impl MinerDiscovery for MinerDiscoveryService {
             Err(e) => {
                 error!("Failed to close SSH session: {}", e);
                 Err(Status::internal(format!(
-                    "Failed to close SSH session: {}",
-                    e
+                    "Failed to close SSH session: {e}"
                 )))
             }
         }
@@ -530,8 +528,7 @@ impl MinerDiscovery for MinerDiscoveryService {
             Err(e) => {
                 error!("Failed to list SSH sessions: {}", e);
                 Err(Status::internal(format!(
-                    "Failed to list SSH sessions: {}",
-                    e
+                    "Failed to list SSH sessions: {e}"
                 )))
             }
         }

@@ -218,7 +218,7 @@ impl ExecutorConnectionManager {
         ssh_client
             .test_connection(&connection_details)
             .await
-            .with_context(|| format!("Failed to connect to executor {}", executor_id))?;
+            .with_context(|| format!("Failed to connect to executor {executor_id}"))?;
 
         let connection = Arc::new(ExecutorConnection {
             executor_id: executor_id.clone(),

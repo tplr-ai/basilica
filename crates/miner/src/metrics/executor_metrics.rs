@@ -34,9 +34,9 @@ struct ExecutorStats {
 
 #[derive(Debug, Default, Clone)]
 struct FleetHealthStats {
-    total_executors: u64,
-    healthy_count: u64,
-    unhealthy_count: u64,
+    _total_executors: u64,
+    _healthy_count: u64,
+    _unhealthy_count: u64,
     total_checks_last_hour: u64,
     failed_checks_last_hour: u64,
     average_fleet_response_time: Duration,
