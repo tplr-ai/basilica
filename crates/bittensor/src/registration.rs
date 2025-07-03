@@ -131,6 +131,102 @@ impl ChainRegistration {
                 "Found {} hotkey registered with UID: {}",
                 self.config.neuron_type, neuron.uid
             );
+
+            // Create the socket address for the axon
+            let axon_ip = self.determine_axon_ip().await?;
+            let axon_addr = format!("{}:{}", axon_ip, self.config.axon_port)
+                .parse()
+                .map_err(|e| anyhow::anyhow!("Invalid axon address: {}", e))?;
+
+            // Check if axon info has changed
+            let needs_update = if let Some(current_axon) = &neuron.axon_info {
+                let current_addr = &current_axon.socket_addr;
+                if current_addr != &axon_addr {
+                    info!(
+                        "Axon address has changed from {} to {} - updating registration",
+                        current_addr, axon_addr
+                    );
+                    true
+                } else {
+                    info!(
+                        "Axon already registered at {} - skipping serve_axon to avoid rate limiting",
+                        current_addr
+                    );
+                    false
+                }
+            } else {
+                info!(
+                    "No axon info found for neuron - registering new axon at {}",
+                    axon_addr
+                );
+                true
+            };
+
+            if needs_update {
+                info!(
+                    "Registering {} axon at address: {}",
+                    self.config.neuron_type, axon_addr
+                );
+
+                // Register axon once at startup
+                match self
+                    .bittensor_service
+                    .serve_axon(self.config.netuid, axon_addr)
+                    .await
+                {
+                    Ok(()) => {
+                        let mut state = self.state.write().await;
+                        state.is_registered = true;
+                        state.registration_time = Some(chrono::Utc::now());
+                        info!(
+                            "{} startup chain registration successful",
+                            self.config.neuron_type
+                        );
+                    }
+                    Err(e) => {
+                        // Check if this is a "Transaction is outdated" error
+                        let error_str = e.to_string();
+                        if error_str.contains("Transaction is outdated") {
+                            warn!(
+                                "Axon registration skipped - likely already registered at {}. Error: {}",
+                                axon_addr, e
+                            );
+                            // Mark as registered anyway since this error usually means it's already registered
+                            let mut state = self.state.write().await;
+                            state.is_registered = true;
+                            state.registration_time = Some(chrono::Utc::now());
+                        } else if error_str.contains("Custom error: 12") {
+                            // Handle rate limiting error specifically
+                            error!(
+                                "Rate limited when calling serve_axon (Custom error: 12). This typically happens when calling serve_axon too frequently. Current axon: {:?}, attempted: {}",
+                                neuron.axon_info, axon_addr
+                            );
+                            return Err(anyhow::anyhow!(
+                                "Rate limited when updating axon registration. Please wait before retrying."
+                            ));
+                        } else {
+                            error!(
+                                "{} startup chain registration failed: {}",
+                                self.config.neuron_type, e
+                            );
+                            return Err(anyhow::anyhow!(
+                                "Failed to register {} axon: {}",
+                                self.config.neuron_type,
+                                e
+                            ));
+                        }
+                    }
+                }
+            } else {
+                // Axon info hasn't changed, mark as registered without calling serve_axon
+                let mut state = self.state.write().await;
+                state.is_registered = true;
+                state.registration_time = Some(chrono::Utc::now());
+                info!(
+                    "{} registration completed - using existing axon endpoint",
+                    self.config.neuron_type
+                );
+            }
         } else {
             error!(
                 "Hotkey {} is not registered on subnet {} - please register your {} first",
@@ -140,58 +236,6 @@ impl ChainRegistration {
                 "{} hotkey {} is not registered on subnet {}. Please register your {} using btcli before starting.",
                 self.config.neuron_type, our_account_id, self.config.netuid, self.config.neuron_type
             ));
-        }
-
-        // Create the socket address for the axon
-        let axon_ip = self.determine_axon_ip().await?;
-        let axon_addr = format!("{}:{}", axon_ip, self.config.axon_port)
-            .parse()
-            .map_err(|e| anyhow::anyhow!("Invalid axon address: {}", e))?;
-
-        info!(
-            "Registering {} axon at address: {}",
-            self.config.neuron_type, axon_addr
-        );
-
-        // Register axon once at startup
-        match self
-            .bittensor_service
-            .serve_axon(self.config.netuid, axon_addr)
-            .await
-        {
-            Ok(()) => {
-                let mut state = self.state.write().await;
-                state.is_registered = true;
-                state.registration_time = Some(chrono::Utc::now());
-                info!(
-                    "{} startup chain registration successful",
-                    self.config.neuron_type
-                );
-            }
-            Err(e) => {
-                // Check if this is a "Transaction is outdated" error
-                let error_str = e.to_string();
-                if error_str.contains("Transaction is outdated") {
-                    warn!(
-                        "Axon registration skipped - likely already registered at {}. Error: {}",
-                        axon_addr, e
-                    );
-                    // Mark as registered anyway since this error usually means it's already registered
-                    let mut state = self.state.write().await;
-                    state.is_registered = true;
-                    state.registration_time = Some(chrono::Utc::now());
-                } else {
-                    error!(
-                        "{} startup chain registration failed: {}",
-                        self.config.neuron_type, e
-                    );
-                    return Err(anyhow::anyhow!(
-                        "Failed to register {} axon: {}",
-                        self.config.neuron_type,
-                        e
-                    ));
-                }
-            }
         }
 
         Ok(())
