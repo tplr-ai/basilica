@@ -236,19 +236,26 @@ impl<'a> NeuronDiscovery<'a> {
     }
 
     /// Extract axon information for a specific UID
-    fn extract_axon_info(&self, uid: u16) -> Option<AxonInfo> {
+    pub fn extract_axon_info(&self, uid: u16) -> Option<AxonInfo> {
         self.metagraph.axons.get(uid as usize).and_then(|axon| {
             // Check if axon has valid IP and port
             if axon.ip == 0 || axon.port == 0 {
                 return None;
             }
 
-            // Convert u32 IP to string format
-            let ip_bytes = axon.ip.to_be_bytes();
-            let ip_str = format!(
-                "{}.{}.{}.{}",
-                ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]
-            );
+            // Convert IP to string format based on IP type
+            let ip_str = if axon.ip_type == 4 {
+                // IPv4 addresses are stored in the lower 32 bits of the u128
+                let ipv4_bits = axon.ip as u32;
+                let ip_bytes = ipv4_bits.to_be_bytes();
+                format!(
+                    "{}.{}.{}.{}",
+                    ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]
+                )
+            } else {
+                // IPv6 handling - full u128
+                format!("{:x}", axon.ip)
+            };
 
             // Validate IP address
             if ip_str == "0.0.0.0" || ip_str == "127.0.0.1" {
