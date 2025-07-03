@@ -270,14 +270,14 @@ clean-remote:
 
     # Stop all services first
     echo "Stopping services..."
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "pkill -f executor || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
     sleep 2
 
     # Clean executor
-    echo "Cleaning executor at 64.247.196.98..."
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "rm -rf /opt/basilica/bin/* /opt/basilica/config/* /opt/basilica/data/* /opt/basilica/logs/*" 2>/dev/null || echo "  Warning: Could not clean executor"
+    echo "Cleaning executor at 185.26.8.109..."
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "rm -rf /opt/basilica/bin/* /opt/basilica/config/* /opt/basilica/data/* /opt/basilica/logs/*" 2>/dev/null || echo "  Warning: Could not clean executor"
 
     # Clean miner
     echo "Cleaning miner at 51.159.160.71..."
@@ -544,14 +544,14 @@ int-testnet MODE="":
 
         # Stop all services
         echo "Stopping all remote services..."
-        ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
+        ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "pkill -f executor || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
         sleep 2
 
         # Clean all remote directories
         echo "Cleaning remote directories..."
-        ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
+        ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
 
@@ -612,7 +612,7 @@ int-testnet MODE="":
     NEED_DEPLOY=false
 
     # Check each server
-    if ! ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "test -f /opt/basilica/bin/executor" 2>/dev/null; then
+    if ! ssh -i ~/.ssh/tplr root@185.26.8.109 -p 9001 "test -f /opt/basilica/bin/executor" 2>/dev/null; then
         NEED_DEPLOY=true
     fi
     if ! ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "test -f /opt/basilica/bin/miner" 2>/dev/null; then
@@ -631,7 +631,7 @@ int-testnet MODE="":
 
     # Stop any running services
     echo "Stopping any running services..."
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "pkill -f executor || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
 
@@ -639,7 +639,7 @@ int-testnet MODE="":
 
     # Start services with testnet configs
     echo "Starting executor (testnet mode)..."
-    ssh -i ~/.ssh/tplr -f root@64.247.196.98 -p 9001 'cd /opt/basilica && /opt/basilica/bin/executor --server --config /opt/basilica/config/executor.toml > /opt/basilica/logs/executor-testnet.log 2>&1 &'
+    ssh -i ~/.ssh/tplr -f shadeform@185.26.8.109 -p 22 'cd /opt/basilica && /opt/basilica/bin/executor --server --config /opt/basilica/config/executor.toml > /opt/basilica/logs/executor-testnet.log 2>&1 &'
     echo "Executor started"
 
     echo "Starting miner (testnet mode)..."
@@ -668,7 +668,7 @@ int-testnet MODE="":
 
     echo ""
     echo "Executor process:"
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "ps aux | grep 'executor --server' | grep -v grep || echo 'Executor process not found'"
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "ps aux | grep 'executor --server' | grep -v grep || echo 'Executor process not found'"
 
     # Check testnet registration
     echo ""
@@ -717,7 +717,7 @@ int-testnet MODE="":
     echo "To view logs:"
     echo "- Miner: ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 'tail -f /opt/basilica/logs/miner-testnet.log'"
     echo "- Validator: ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 'tail -f /opt/basilica/logs/validator-testnet.log'"
-    echo "- Executor: ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 'tail -f /opt/basilica/logs/executor-testnet.log'"
+    echo "- Executor: ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 'tail -f /opt/basilica/logs/executor-testnet.log'"
 
 
 # =============================================================================

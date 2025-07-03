@@ -35,8 +35,8 @@ discovery_timeout = { secs = 30 }
 fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
 # Miner gRPC is on same port as HTTP (8080), axon is on 8091
-# So we need offset of -11 to reach gRPC from axon port
-grpc_port_offset = -11
+# Default behavior: axon port -> gRPC port mapping is handled by the client
+# grpc_port_offset = None  # Let the client handle default mapping
 
 [ssh_validation]
 enabled = true

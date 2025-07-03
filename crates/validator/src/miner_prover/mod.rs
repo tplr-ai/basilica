@@ -36,9 +36,22 @@ pub struct MinerProver {
 impl MinerProver {
     /// Create a new MinerProver instance
     pub fn new(config: VerificationConfig, bittensor_service: Arc<BittensorService>) -> Self {
-        let discovery = MinerDiscovery::new(bittensor_service, config.clone());
+        let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
         let scheduler = VerificationScheduler::new(config.clone());
-        let verification = VerificationEngine::new(config);
+        
+        // Create SSH client and hardware validator (optional)
+        let ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
+        let hardware_validator = None; // Can be configured later if needed
+        let ssh_key_path = None; // Can be configured later if needed
+        
+        // Use with_bittensor_service to properly load the validator's hotkey
+        let verification = VerificationEngine::with_bittensor_service(
+            config,
+            bittensor_service,
+            ssh_client,
+            hardware_validator,
+            ssh_key_path,
+        );
 
         Self {
             discovery,
