@@ -41,10 +41,23 @@ impl TestConfig {
     fn new() -> Result<Self> {
         // Path to gpu-attestor binary - prefer release build for performance
         let gpu_attestor_path = std::env::var("GPU_ATTESTOR_PATH").unwrap_or_else(|_| {
+            // Try to find the workspace root
+            let manifest_dir = env!("CARGO_MANIFEST_DIR");
+            let workspace_root = std::path::Path::new(manifest_dir)
+                .parent()
+                .and_then(|p| p.parent())
+                .unwrap_or_else(|| std::path::Path::new("."));
+            
             // Check if release build exists
-            if std::path::Path::new("../../target/release/gpu-attestor").exists() {
-                "../../target/release/gpu-attestor".to_string()
+            let release_path = workspace_root.join("target/release/gpu-attestor");
+            let debug_path = workspace_root.join("target/debug/gpu-attestor");
+            
+            if release_path.exists() {
+                release_path.to_string_lossy().to_string()
+            } else if debug_path.exists() {
+                debug_path.to_string_lossy().to_string()
             } else {
+                // Fallback to relative path
                 "../../target/debug/gpu-attestor".to_string()
             }
         });
@@ -131,6 +144,42 @@ async fn simulate_miner_executor(
     Ok(result)
 }
 
+/// Detect GPUs using the unified detector
+async fn detect_gpus(config: &TestConfig) -> Result<()> {
+    info!("Detecting GPUs on the system using unified detector...");
+    
+    // Execute gpu-attestor with --detect flag
+    let output = Command::new(&config.gpu_attestor_path)
+        .arg("--detect")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("Failed to execute gpu-attestor --detect")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("gpu-attestor --detect failed: {}", stderr);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse the output to check GPU count
+    let gpu_count = stdout.lines()
+        .find(|line| line.contains("Total GPUs detected:"))
+        .and_then(|line| line.split(':').last())
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    
+    info!("Detected {} GPU(s) using unified detector", gpu_count);
+    
+    // Verify at least one GPU is present
+    if gpu_count == 0 {
+        anyhow::bail!("No GPUs detected. This test requires at least one CUDA-capable GPU.");
+    }
+    
+    Ok(())
+}
+
 /// The main end-to-end test
 #[tokio::test]
 async fn gpu_pow_end_to_end_flow() -> Result<()> {
@@ -144,6 +193,10 @@ async fn gpu_pow_end_to_end_flow() -> Result<()> {
 
     // Load test configuration
     let config = TestConfig::new()?;
+    
+    // Step 0: Detect GPUs using unified detector
+    info!("\n--- Step 0: GPU Detection ---");
+    detect_gpus(&config).await?;
 
     // Step 1: Initialize validator
     info!("\n--- Step 1: Validator Initialization ---");
