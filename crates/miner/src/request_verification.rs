@@ -34,7 +34,7 @@ pub struct RequestSignature {
 
 /// Request verification service
 #[derive(Clone)]
-pub struct RequestVerificationService {
+pub struct _RequestVerificationService {
     /// Maximum age of a valid request (default: 5 minutes)
     max_request_age: Duration,
     /// Used nonces to prevent replay attacks
@@ -45,7 +45,8 @@ pub struct RequestVerificationService {
     verify_signatures: bool,
 }
 
-impl RequestVerificationService {
+#[allow(dead_code)]
+impl _RequestVerificationService {
     /// Create a new request verification service
     pub fn new(
         max_request_age: Duration,
@@ -240,12 +241,13 @@ impl RequestVerificationService {
 }
 
 /// gRPC interceptor for request verification
-pub struct RequestVerificationInterceptor {
-    verification_service: Arc<RequestVerificationService>,
+pub struct _RequestVerificationInterceptor {
+    verification_service: Arc<_RequestVerificationService>,
 }
 
-impl RequestVerificationInterceptor {
-    pub fn new(verification_service: Arc<RequestVerificationService>) -> Self {
+#[allow(dead_code)]
+impl _RequestVerificationInterceptor {
+    pub fn new(verification_service: Arc<_RequestVerificationService>) -> Self {
         Self {
             verification_service,
         }
