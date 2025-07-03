@@ -63,8 +63,6 @@ pub struct VerificationConfig {
     pub challenge_timeout: Duration,
     /// Minimum score threshold for miners
     pub min_score_threshold: f64,
-    /// Minimum stake threshold in TAO for miners to be verified
-    pub min_stake_threshold: f64,
     /// Maximum number of miners to verify per round
     pub max_miners_per_round: usize,
     /// Minimum interval between verifications of the same miner
@@ -151,7 +149,6 @@ impl Default for ValidatorConfig {
                 max_concurrent_verifications: 50,
                 challenge_timeout: Duration::from_secs(120),
                 min_score_threshold: 0.1,
-                min_stake_threshold: 1.0, // 1 TAO minimum
                 max_miners_per_round: 20,
                 min_verification_interval: Duration::from_secs(1800), // 30 minutes
                 netuid: 1,                                            // Default subnet

@@ -71,7 +71,6 @@ mod tests {
             max_concurrent_verifications: 10,
             challenge_timeout: Duration::from_secs(60),
             min_score_threshold: 0.0,
-            min_stake_threshold: 0.0,
             max_miners_per_round: 10,
             min_verification_interval: Duration::from_secs(3600),
             netuid: 1,

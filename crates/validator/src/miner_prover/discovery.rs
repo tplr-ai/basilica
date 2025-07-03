@@ -132,14 +132,6 @@ impl MinerDiscovery {
                 .unwrap_or(0);
             let stake_tao = bittensor::rao_to_tao(total_stake);
 
-            if stake_tao < self.config.min_stake_threshold {
-                debug!(
-                    "Skipping miner {} due to low stake: {:.2} TAO",
-                    uid, stake_tao
-                );
-                continue;
-            }
-
             let endpoint = self.extract_endpoint(metagraph, uid as usize)?;
             if endpoint.is_none() {
                 warn!("Miner {} has no axon info, skipping", uid);
