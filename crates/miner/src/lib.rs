@@ -7,6 +7,7 @@ pub mod bittensor_core;
 pub mod cli;
 pub mod config;
 pub mod executor_manager;
+pub mod executors;
 pub mod persistence;
 pub mod request_verification;
 pub mod session_cleanup;

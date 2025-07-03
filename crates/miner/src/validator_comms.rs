@@ -20,15 +20,17 @@ use tracing::{debug, error, info, warn};
 use common::identity::Hotkey;
 use protocol::miner_discovery::{
     miner_discovery_server::{MinerDiscovery, MinerDiscoveryServer},
-    ExecutorConnectionDetails, LeaseOfferResponse, LeaseRequest, MinerAuthResponse,
-    SessionInitRequest, SessionInitResponse, ValidatorAuthRequest,
+    CloseSshSessionRequest, CloseSshSessionResponse, ExecutorConnectionDetails,
+    InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseOfferResponse, LeaseRequest,
+    ListSshSessionsRequest, ListSshSessionsResponse, MinerAuthResponse, SessionInitRequest,
+    SessionInitResponse, ValidatorAuthRequest,
 };
 
 use crate::auth::JwtAuthService;
 use crate::config::{SecurityConfig, ValidatorCommsConfig};
 use crate::executor_manager::ExecutorManager;
 use crate::persistence::RegistrationDb;
-use crate::ssh::ValidatorAccessService;
+use crate::ssh::{SshSessionOrchestrator, ValidatorAccessService};
 use crate::validator_discovery::ValidatorDiscovery;
 
 /// Validator communications server
@@ -41,6 +43,7 @@ pub struct ValidatorCommsServer {
     ssh_access_service: ValidatorAccessService,
     pub jwt_service: Arc<JwtAuthService>,
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
+    ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
 }
 
 impl ValidatorCommsServer {
@@ -71,7 +74,17 @@ impl ValidatorCommsServer {
             ssh_access_service,
             jwt_service,
             validator_discovery,
+            ssh_session_orchestrator: None,
         })
+    }
+
+    /// Set SSH session orchestrator
+    pub fn with_ssh_session_orchestrator(
+        mut self,
+        orchestrator: Arc<SshSessionOrchestrator>,
+    ) -> Self {
+        self.ssh_session_orchestrator = Some(orchestrator);
+        self
     }
 
     /// Start serving gRPC requests
@@ -86,6 +99,7 @@ impl ValidatorCommsServer {
             ssh_access_service: self.ssh_access_service.clone(),
             jwt_service: self.jwt_service.clone(),
             validator_discovery: self.validator_discovery.clone(),
+            ssh_session_orchestrator: self.ssh_session_orchestrator.clone(),
         };
 
         // Create health reporter
@@ -122,6 +136,7 @@ struct MinerDiscoveryService {
     ssh_access_service: ValidatorAccessService,
     jwt_service: Arc<JwtAuthService>,
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
+    ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
 }
 
 #[tonic::async_trait]
@@ -419,6 +434,108 @@ impl MinerDiscovery for MinerDiscoveryService {
 
         Ok(Response::new(response))
     }
+
+    /// Initiate SSH session with public key
+    async fn initiate_ssh_session(
+        &self,
+        request: Request<InitiateSshSessionRequest>,
+    ) -> Result<Response<InitiateSshSessionResponse>, Status> {
+        let req = request.into_inner();
+
+        debug!(
+            "Received SSH session request from validator {} for executor {}",
+            req.validator_hotkey, req.executor_id
+        );
+
+        // Check if SSH session orchestrator is available
+        let orchestrator = self
+            .ssh_session_orchestrator
+            .as_ref()
+            .ok_or_else(|| Status::internal("SSH session management not configured"))?;
+
+        // Use orchestrator to create session
+        match orchestrator.create_session(req).await {
+            Ok(response) => {
+                info!("SSH session created successfully: {}", response.session_id);
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                error!("Failed to create SSH session: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to create SSH session: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// Close SSH session
+    async fn close_ssh_session(
+        &self,
+        request: Request<CloseSshSessionRequest>,
+    ) -> Result<Response<CloseSshSessionResponse>, Status> {
+        let req = request.into_inner();
+
+        debug!(
+            "Received close SSH session request from validator {} for session {}",
+            req.validator_hotkey, req.session_id
+        );
+
+        // Check if SSH session orchestrator is available
+        let orchestrator = self
+            .ssh_session_orchestrator
+            .as_ref()
+            .ok_or_else(|| Status::internal("SSH session management not configured"))?;
+
+        // Use orchestrator to close session
+        match orchestrator.close_session(req).await {
+            Ok(response) => {
+                info!("SSH session closed successfully");
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                error!("Failed to close SSH session: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to close SSH session: {}",
+                    e
+                )))
+            }
+        }
+    }
+
+    /// List SSH sessions
+    async fn list_ssh_sessions(
+        &self,
+        request: Request<ListSshSessionsRequest>,
+    ) -> Result<Response<ListSshSessionsResponse>, Status> {
+        let req = request.into_inner();
+
+        debug!(
+            "Received list SSH sessions request from validator {}",
+            req.validator_hotkey
+        );
+
+        // Check if SSH session orchestrator is available
+        let orchestrator = self
+            .ssh_session_orchestrator
+            .as_ref()
+            .ok_or_else(|| Status::internal("SSH session management not configured"))?;
+
+        // Use orchestrator to list sessions
+        match orchestrator.list_sessions(req).await {
+            Ok(response) => {
+                info!("Listed {} SSH sessions", response.sessions.len());
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                error!("Failed to list SSH sessions: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to list SSH sessions: {}",
+                    e
+                )))
+            }
+        }
+    }
 }
 
 /// Create GPU spec from available executor information
@@ -544,6 +661,7 @@ mod tests {
             ssh_access_service,
             jwt_service,
             validator_discovery: None,
+            ssh_session_orchestrator: None,
         };
 
         // Test with production-level verification enabled
@@ -642,6 +760,7 @@ mod tests {
             ssh_access_service,
             jwt_service,
             validator_discovery: None,
+            ssh_session_orchestrator: None,
         };
 
         // Test various invalid signature scenarios to ensure production verification works

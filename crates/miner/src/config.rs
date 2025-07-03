@@ -77,6 +77,9 @@ pub struct MinerConfig {
 
     /// Security configuration
     pub security: SecurityConfig,
+
+    /// SSH session configuration for validator access
+    pub ssh_session: ExecutorSshConfig,
 }
 
 /// Miner-specific Bittensor configuration
@@ -254,6 +257,31 @@ pub struct RateLimitConfig {
     pub window_duration: Duration,
 }
 
+/// SSH configuration for executor access by validators
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutorSshConfig {
+    /// Path to miner's SSH key for executor access
+    pub miner_executor_key_path: PathBuf,
+
+    /// Default username for executor SSH
+    pub default_executor_username: String,
+
+    /// Session cleanup interval
+    pub session_cleanup_interval: Duration,
+
+    /// Maximum concurrent sessions per validator
+    pub max_sessions_per_validator: usize,
+
+    /// Session rate limit (sessions per hour)
+    pub session_rate_limit: usize,
+
+    /// Enable session audit logging
+    pub enable_audit_log: bool,
+
+    /// Audit log path
+    pub audit_log_path: Option<PathBuf>,
+}
+
 impl Default for MinerConfig {
     fn default() -> Self {
         Self {
@@ -273,6 +301,21 @@ impl Default for MinerConfig {
             executor_management: ExecutorManagementConfig::default(),
             remote_executor_deployment: None,
             security: SecurityConfig::default(),
+            ssh_session: ExecutorSshConfig::default(),
+        }
+    }
+}
+
+impl Default for ExecutorSshConfig {
+    fn default() -> Self {
+        Self {
+            miner_executor_key_path: PathBuf::from("~/.ssh/miner_executor_key"),
+            default_executor_username: "executor".to_string(),
+            session_cleanup_interval: Duration::from_secs(60),
+            max_sessions_per_validator: 5,
+            session_rate_limit: 20, // 20 sessions per hour
+            enable_audit_log: true,
+            audit_log_path: Some(PathBuf::from("./data/ssh_audit.log")),
         }
     }
 }

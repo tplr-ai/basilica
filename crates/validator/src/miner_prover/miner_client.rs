@@ -11,7 +11,8 @@ use tracing::{debug, info, warn};
 
 use common::identity::Hotkey;
 use protocol::miner_discovery::{
-    miner_discovery_client::MinerDiscoveryClient, ExecutorConnectionDetails, LeaseRequest,
+    miner_discovery_client::MinerDiscoveryClient, CloseSshSessionRequest, CloseSshSessionResponse,
+    ExecutorConnectionDetails, InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseRequest,
     SessionInitRequest, ValidatorAuthRequest,
 };
 
@@ -303,7 +304,7 @@ impl AuthenticatedMinerConnection {
         Ok(response.available_executors)
     }
 
-    /// Initiate SSH session with a specific executor
+    /// Initiate SSH session with a specific executor (legacy method)
     pub async fn initiate_ssh_session(
         &mut self,
         executor_id: &str,
@@ -346,6 +347,56 @@ impl AuthenticatedMinerConnection {
             session_id: response.session_id,
             access_credentials: response.access_credentials,
         })
+    }
+
+    /// Initiate SSH session with public key (new method)
+    pub async fn initiate_ssh_session_v2(
+        &mut self,
+        request: InitiateSshSessionRequest,
+    ) -> Result<InitiateSshSessionResponse> {
+        info!(
+            "Initiating SSH session for executor {} with public key",
+            request.executor_id
+        );
+
+        let response = self
+            .client
+            .initiate_ssh_session(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initiate SSH session: {}", e))?;
+
+        let response = response.into_inner();
+
+        info!(
+            "SSH session response: session_id={}, status={:?}",
+            response.session_id, response.status
+        );
+
+        Ok(response)
+    }
+
+    /// Close SSH session
+    pub async fn close_ssh_session(
+        &mut self,
+        request: CloseSshSessionRequest,
+    ) -> Result<CloseSshSessionResponse> {
+        info!("Closing SSH session {}", request.session_id);
+
+        let response = self
+            .client
+            .close_ssh_session(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to close SSH session: {}", e))?;
+
+        let response = response.into_inner();
+
+        if response.success {
+            info!("Successfully closed SSH session");
+        } else {
+            warn!("Failed to close SSH session: {}", response.message);
+        }
+
+        Ok(response)
     }
 }
 
