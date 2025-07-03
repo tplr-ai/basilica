@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use common::config::{
@@ -51,6 +52,9 @@ pub struct ValidatorConfig {
 
     /// API-specific configuration
     pub api: ApiConfig,
+
+    /// SSH session configuration
+    pub ssh_session: SshSessionConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,6 +122,36 @@ pub struct ApiConfig {
     pub bind_address: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshSessionConfig {
+    /// Directory for storing ephemeral SSH keys
+    pub ssh_key_directory: PathBuf,
+
+    /// SSH key algorithm (ed25519, rsa, ecdsa)
+    pub key_algorithm: String,
+
+    /// Default session duration in seconds
+    pub default_session_duration: u64,
+
+    /// Maximum session duration in seconds
+    pub max_session_duration: u64,
+
+    /// Cleanup interval for expired keys
+    pub key_cleanup_interval: Duration,
+}
+
+impl Default for SshSessionConfig {
+    fn default() -> Self {
+        Self {
+            ssh_key_directory: PathBuf::from("/tmp/validator_ssh_keys"),
+            key_algorithm: "ed25519".to_string(),
+            default_session_duration: 300, // 5 minutes
+            max_session_duration: 3600,    // 1 hour
+            key_cleanup_interval: Duration::from_secs(60),
+        }
+    }
+}
+
 impl Default for ValidatorConfig {
     fn default() -> Self {
         Self {
@@ -166,6 +200,7 @@ impl Default for ValidatorConfig {
                 max_body_size: 1024 * 1024, // 1MB
                 bind_address: "0.0.0.0:8080".to_string(),
             },
+            ssh_session: SshSessionConfig::default(),
         }
     }
 }

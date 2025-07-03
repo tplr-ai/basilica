@@ -31,6 +31,10 @@
 //! - **Comprehensive Logging**: All operations logged for audit purposes
 //! - **Retry Logic**: Handles transient failures without compromising security
 
+pub mod key_manager;
+
+pub use key_manager::ValidatorSshKeyManager;
+
 #[cfg(test)]
 mod tests;
 
