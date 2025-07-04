@@ -8,6 +8,7 @@ pub mod miner_client;
 pub mod scheduler;
 pub mod types;
 pub mod verification;
+pub mod verification_engine_builder;
 
 #[cfg(test)]
 mod tests;
