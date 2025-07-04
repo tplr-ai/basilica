@@ -147,7 +147,7 @@ impl MinerDiscovery {
             }
 
             // Validate that the port is reasonable
-            if axon.port == 0 || axon.port > 65535 {
+            if axon.port == 0 {
                 debug!("Miner {} has invalid port {}, skipping", uid, axon.port);
                 return None;
             }

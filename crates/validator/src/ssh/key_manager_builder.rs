@@ -438,7 +438,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("algorithm cannot be empty"));
+            .contains("SSH key algorithm cannot be empty"));
 
         // Test invalid session duration
         config.key_algorithm = "ed25519".to_string();

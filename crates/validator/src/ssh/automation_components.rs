@@ -597,11 +597,10 @@ mod tests {
 
         let metrics = components.get_runtime_metrics();
 
-        assert!(metrics.uptime_seconds >= 0);
         assert_eq!(metrics.config_summary.key_algorithm, "ed25519");
 
         let report = components.get_status_report();
-        let report_str = format!("{}", report);
+        let report_str = format!("{report}");
         assert!(report_str.contains("SSH Automation Status Report"));
         assert!(report_str.contains("Dynamic Discovery"));
     }
