@@ -67,6 +67,7 @@ rand_chacha = "0.3"
 sha2 = "0.10"
 hex = "0.4"
 fastrand = "2.0"
+base64 = "0.21"
 
 # P256 ECDSA signature verification for attestation
 p256 = { version = "0.13", features = ["ecdsa"] }

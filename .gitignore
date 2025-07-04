@@ -103,10 +103,10 @@ temp/
 .venv/
 
 # Binaries
-executor
-gpu-attestor
-miner
-validator
+# executor
+# gpu-attestor
+# miner
+# validator
 
 *.s.md
 

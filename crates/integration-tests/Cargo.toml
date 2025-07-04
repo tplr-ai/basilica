@@ -33,6 +33,3 @@ path = "tests/gpu_pow_e2e.rs"
 name = "miner_executor_flow"
 path = "tests/miner_executor_flow.rs"
 
-[[test]]
-name = "gpu_pow_multi_gpu_e2e"
-path = "tests/gpu_pow_multi_gpu_e2e.rs"

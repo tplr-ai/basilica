@@ -506,11 +506,16 @@ impl ExecutorManager {
             // Debug logging to see exact status received
             info!(
                 "Health check response for {}: status='{}' (len={}), comparing with 'healthy'",
-                machine_id, response.status, response.status.len()
+                machine_id,
+                response.status,
+                response.status.len()
             );
             let is_healthy = response.status == "healthy";
-            info!("Health check result for {}: is_healthy={}", machine_id, is_healthy);
-            
+            info!(
+                "Health check result for {}: is_healthy={}",
+                machine_id, is_healthy
+            );
+
             executor_state.is_healthy = is_healthy;
             executor_state.last_health_check = Some(Instant::now());
             executor_state.failed_checks = 0;
