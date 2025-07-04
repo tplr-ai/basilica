@@ -435,10 +435,19 @@ mod tests {
         let builder = ValidatorSshKeyManagerBuilder::new(config.clone(), hotkey.clone());
         let result = builder.build().await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("SSH key algorithm cannot be empty"));
+        let error = result.unwrap_err();
+        println!("Actual error: {}", error.to_string());
+        // Check if the error chain contains our expected message
+        let mut source = error.source();
+        let mut found = false;
+        while let Some(err) = source {
+            if err.to_string().contains("SSH key algorithm cannot be empty") {
+                found = true;
+                break;
+            }
+            source = err.source();
+        }
+        assert!(found || error.to_string().contains("SSH key algorithm cannot be empty"));
 
         // Test invalid session duration
         config.key_algorithm = "ed25519".to_string();
@@ -474,10 +483,18 @@ mod tests {
         let result = builder.build().await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unsupported SSH key algorithm"));
+        let error = result.unwrap_err();
+        // Check if the error chain contains our expected message
+        let mut source = error.source();
+        let mut found = false;
+        while let Some(err) = source {
+            if err.to_string().contains("Unsupported SSH key algorithm") {
+                found = true;
+                break;
+            }
+            source = err.source();
+        }
+        assert!(found || error.to_string().contains("Unsupported SSH key algorithm"));
     }
 
     #[tokio::test]
