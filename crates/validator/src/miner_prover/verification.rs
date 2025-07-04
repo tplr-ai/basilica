@@ -1542,6 +1542,119 @@ impl VerificationEngine {
 
         scores.iter().sum::<f64>() / scores.len() as f64
     }
+
+    /// Get whether dynamic discovery is enabled
+    pub fn use_dynamic_discovery(&self) -> bool {
+        self.use_dynamic_discovery
+    }
+
+    /// Get SSH key manager reference
+    pub fn ssh_key_manager(&self) -> &Option<Arc<ValidatorSshKeyManager>> {
+        &self.ssh_key_manager
+    }
+
+    /// Get hardware validator reference
+    pub fn hardware_validator(&self) -> &Option<Arc<HardwareValidator>> {
+        &self.hardware_validator
+    }
+
+    /// Get bittensor service reference
+    pub fn bittensor_service(&self) -> &Option<Arc<bittensor::Service>> {
+        &self.bittensor_service
+    }
+
+    /// Get SSH key path reference
+    pub fn ssh_key_path(&self) -> &Option<PathBuf> {
+        &self.ssh_key_path
+    }
+
+    /// Create VerificationEngine with SSH automation components (new preferred method)
+    pub fn with_ssh_automation(
+        config: VerificationConfig,
+        miner_client_config: MinerClientConfig,
+        validator_hotkey: Hotkey,
+        ssh_client: Arc<ValidatorSshClient>,
+        hardware_validator: Option<Arc<HardwareValidator>>,
+        use_dynamic_discovery: bool,
+        ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
+        bittensor_service: Option<Arc<bittensor::Service>>,
+    ) -> Result<Self> {
+        // Validate required components for dynamic discovery
+        if use_dynamic_discovery && ssh_key_manager.is_none() {
+            return Err(anyhow::anyhow!(
+                "SSH key manager is required when dynamic discovery is enabled"
+            ));
+        }
+
+        Ok(Self {
+            config: config.clone(),
+            miner_client_config,
+            validator_hotkey,
+            ssh_client,
+            hardware_validator,
+            use_dynamic_discovery,
+            ssh_key_path: None, // Not used when SSH key manager is available
+            miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
+            bittensor_service,
+            ssh_key_manager,
+        })
+    }
+
+    /// Check if SSH automation is properly configured
+    pub fn is_ssh_automation_ready(&self) -> bool {
+        if self.use_dynamic_discovery() {
+            self.ssh_key_manager().is_some()
+        } else {
+            // Static configuration requires either key manager or fallback key path
+            self.ssh_key_manager().is_some() || self.ssh_key_path().is_some()
+        }
+    }
+
+    /// Get SSH automation status
+    pub fn get_ssh_automation_status(&self) -> SshAutomationStatus {
+        SshAutomationStatus {
+            dynamic_discovery_enabled: self.use_dynamic_discovery(),
+            ssh_key_manager_available: self.ssh_key_manager().is_some(),
+            hardware_validator_available: self.hardware_validator().is_some(),
+            bittensor_service_available: self.bittensor_service().is_some(),
+            fallback_key_path: self.ssh_key_path().clone(),
+        }
+    }
+
+    /// Get configuration summary for debugging
+    pub fn get_config_summary(&self) -> String {
+        format!(
+            "VerificationEngine[dynamic_discovery={}, ssh_key_manager={}, hardware_validator={}, bittensor_service={}]",
+            self.use_dynamic_discovery(),
+            self.ssh_key_manager().is_some(),
+            self.hardware_validator().is_some(),
+            self.bittensor_service().is_some()
+        )
+    }
+}
+
+/// SSH automation status information
+#[derive(Debug, Clone)]
+pub struct SshAutomationStatus {
+    pub dynamic_discovery_enabled: bool,
+    pub ssh_key_manager_available: bool,
+    pub hardware_validator_available: bool,
+    pub bittensor_service_available: bool,
+    pub fallback_key_path: Option<PathBuf>,
+}
+
+impl std::fmt::Display for SshAutomationStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "SSH Automation Status[dynamic={}, key_manager={}, hardware_validator={}, bittensor={}, fallback_key={}]",
+            self.dynamic_discovery_enabled,
+            self.ssh_key_manager_available,
+            self.hardware_validator_available,
+            self.bittensor_service_available,
+            self.fallback_key_path.as_ref().map(|p| p.display().to_string()).unwrap_or("none".to_string())
+        )
+    }
 }
 
 /// Enhanced executor information structure for detailed verification

@@ -10,7 +10,7 @@ use tokio::fs;
 use tracing::{debug, info, warn};
 
 /// Manages SSH keys for validator sessions
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ValidatorSshKeyManager {
     /// Directory for storing ephemeral keys
     key_dir: PathBuf,

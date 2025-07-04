@@ -442,8 +442,7 @@ impl ExecutorConnectionManager {
 
         // Remove key by session ID comment
         let remove_key_cmd = format!(
-            "sed -i '/validator-session-{}/d' ~/.ssh/authorized_keys 2>/dev/null || true",
-            session_id
+            "sed -i '/validator-session-{session_id}/d' ~/.ssh/authorized_keys 2>/dev/null || true"
         );
 
         connection
@@ -553,10 +552,8 @@ impl ExecutorConnectionManager {
 
         // Remove expired keys (in reverse order to maintain line numbers)
         for line_num in lines_to_remove.into_iter().rev() {
-            let remove_cmd = format!(
-                "sed -i '{}d' ~/.ssh/authorized_keys 2>/dev/null || true",
-                line_num
-            );
+            let remove_cmd =
+                format!("sed -i '{line_num}d' ~/.ssh/authorized_keys 2>/dev/null || true");
 
             if let Err(e) = connection.execute_command(&remove_cmd).await {
                 warn!(
