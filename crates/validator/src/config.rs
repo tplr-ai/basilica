@@ -47,6 +47,10 @@ pub struct ValidatorConfig {
     /// Verification configuration
     pub verification: VerificationConfig,
 
+    /// Automatic verification configuration
+    #[serde(default)]
+    pub automatic_verification: AutomaticVerificationConfig,
+
     /// Storage configuration
     pub storage: StorageConfig,
 
@@ -104,6 +108,62 @@ fn default_fallback_to_static() -> bool {
 
 fn default_cache_miner_info_ttl() -> Duration {
     Duration::from_secs(300) // 5 minutes
+}
+
+/// Configuration for automatic verification during discovery
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutomaticVerificationConfig {
+    /// Enable automatic verification during discovery
+    #[serde(default = "default_enable_automatic")]
+    pub enabled: bool,
+
+    /// Discovery verification interval (seconds)
+    #[serde(default = "default_discovery_interval")]
+    pub discovery_interval: u64,
+
+    /// Minimum time between verifications for the same miner (hours)
+    #[serde(default = "default_min_verification_interval_hours")]
+    pub min_verification_interval_hours: u64,
+
+    /// Maximum concurrent verifications
+    #[serde(default = "default_max_concurrent_verifications")]
+    pub max_concurrent_verifications: usize,
+
+    /// Enable SSH session automation
+    #[serde(default = "default_enable_ssh_automation")]
+    pub enable_ssh_automation: bool,
+}
+
+fn default_enable_automatic() -> bool {
+    true
+}
+
+fn default_discovery_interval() -> u64 {
+    300 // 5 minutes
+}
+
+fn default_min_verification_interval_hours() -> u64 {
+    1
+}
+
+fn default_max_concurrent_verifications() -> usize {
+    5
+}
+
+fn default_enable_ssh_automation() -> bool {
+    true
+}
+
+impl Default for AutomaticVerificationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_enable_automatic(),
+            discovery_interval: default_discovery_interval(),
+            min_verification_interval_hours: default_min_verification_interval_hours(),
+            max_concurrent_verifications: default_max_concurrent_verifications(),
+            enable_ssh_automation: default_enable_ssh_automation(),
+        }
+    }
 }
 
 fn default_enable_automated_sessions() -> bool {
@@ -273,6 +333,7 @@ impl Default for ValidatorConfig {
                 cache_miner_info_ttl: default_cache_miner_info_ttl(),
                 grpc_port_offset: None,
             },
+            automatic_verification: AutomaticVerificationConfig::default(),
             storage: StorageConfig {
                 data_dir: "./data".to_string(),
             },
