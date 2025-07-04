@@ -428,24 +428,65 @@ impl VerificationEngine {
         &self,
         miner_endpoint: &str,
     ) -> Result<Vec<ExecutorInfoDetailed>> {
-        info!("Discovering executors from miner at: {}", miner_endpoint);
+        info!(
+            "[EVAL_FLOW] Starting executor discovery from miner at: {}",
+            miner_endpoint
+        );
+        debug!("[EVAL_FLOW] Using config: timeout={:?}, grpc_port_offset={:?}, use_dynamic_discovery={}", 
+               self.config.discovery_timeout, self.config.grpc_port_offset, self.use_dynamic_discovery);
 
         // Validate endpoint before attempting connection
         if self.is_invalid_endpoint(miner_endpoint) {
+            error!(
+                "[EVAL_FLOW] Invalid miner endpoint detected: {}",
+                miner_endpoint
+            );
             return Err(anyhow::anyhow!(
                 "Invalid miner endpoint: {}. Skipping discovery.",
                 miner_endpoint
             ));
         }
+        info!(
+            "[EVAL_FLOW] Endpoint validation passed for: {}",
+            miner_endpoint
+        );
 
         // Create authenticated miner client
+        info!(
+            "[EVAL_FLOW] Creating authenticated miner client with validator hotkey: {}",
+            self.validator_hotkey
+                .to_string()
+                .chars()
+                .take(8)
+                .collect::<String>()
+                + "..."
+        );
         let client = self.create_authenticated_client()?;
 
         // Connect and authenticate to miner
-        let mut connection = client
-            .connect_and_authenticate(miner_endpoint)
-            .await
-            .context("Failed to connect to miner for executor discovery")?;
+        info!(
+            "[EVAL_FLOW] Attempting gRPC connection to miner at: {}",
+            miner_endpoint
+        );
+        let connection_start = std::time::Instant::now();
+        let mut connection = match client.connect_and_authenticate(miner_endpoint).await {
+            Ok(conn) => {
+                info!(
+                    "[EVAL_FLOW] Successfully connected and authenticated to miner in {:?}",
+                    connection_start.elapsed()
+                );
+                conn
+            }
+            Err(e) => {
+                error!(
+                    "[EVAL_FLOW] Failed to connect to miner at {} after {:?}: {}",
+                    miner_endpoint,
+                    connection_start.elapsed(),
+                    e
+                );
+                return Err(e).context("Failed to connect to miner for executor discovery");
+            }
+        };
 
         // Request executors with requirements
         let requirements = protocol::common::ResourceLimits {
@@ -459,17 +500,40 @@ impl VerificationEngine {
 
         let lease_duration = Duration::from_secs(3600); // 1 hour lease
 
+        info!("[EVAL_FLOW] Requesting executors with requirements: cpu_cores={}, memory_mb={}, storage_mb={}, max_gpus={}, lease_duration={:?}",
+              requirements.max_cpu_cores, requirements.max_memory_mb, requirements.max_storage_mb,
+              requirements.max_gpus, lease_duration);
+
+        let request_start = std::time::Instant::now();
         let executor_details = match connection
             .request_executors(Some(requirements), lease_duration)
             .await
         {
-            Ok(details) => details,
+            Ok(details) => {
+                info!(
+                    "[EVAL_FLOW] Successfully received executor details in {:?}, count={}",
+                    request_start.elapsed(),
+                    details.len()
+                );
+                for (i, detail) in details.iter().enumerate() {
+                    debug!(
+                        "[EVAL_FLOW] Executor {}: id={}, grpc_endpoint={}",
+                        i, detail.executor_id, detail.grpc_endpoint
+                    );
+                }
+                details
+            }
             Err(e) => {
-                error!("Failed to request executors from miner: {}", e);
+                error!(
+                    "[EVAL_FLOW] Failed to request executors from miner after {:?}: {}",
+                    request_start.elapsed(),
+                    e
+                );
                 return Ok(vec![]);
             }
         };
 
+        let executor_count = executor_details.len();
         let executors: Vec<ExecutorInfoDetailed> = executor_details
             .into_iter()
             .map(|details| ExecutorInfoDetailed {
@@ -483,8 +547,9 @@ impl VerificationEngine {
             .collect();
 
         info!(
-            "Successfully discovered {} executors from miner",
-            executors.len()
+            "[EVAL_FLOW] Executor discovery completed: {} executors mapped from {} details",
+            executors.len(),
+            executor_count
         );
 
         Ok(executors)
@@ -497,24 +562,54 @@ impl VerificationEngine {
         executor_info: &ExecutorInfoDetailed,
     ) -> Result<ExecutorVerificationResult> {
         info!(
-            "Starting SSH automation verification for executor {}",
-            executor_info.id
+            "[EVAL_FLOW] Starting SSH automation verification for executor {} via miner {}",
+            executor_info.id, miner_endpoint
+        );
+        debug!(
+            "[EVAL_FLOW] Executor info: host={}, port={}, grpc_endpoint={}, capabilities={:?}",
+            executor_info.host,
+            executor_info.port,
+            executor_info.grpc_endpoint,
+            executor_info.capabilities
         );
 
         // Create authenticated miner client
+        info!("[EVAL_FLOW] Creating authenticated client for SSH verification");
         let client = self.create_authenticated_client()?;
 
         // Connect and authenticate to miner
-        let mut connection = client
-            .connect_and_authenticate(miner_endpoint)
-            .await
-            .context("Failed to connect to miner for SSH verification")?;
+        info!("[EVAL_FLOW] Establishing connection to miner for SSH session setup");
+        let ssh_connect_start = std::time::Instant::now();
+        let mut connection = match client.connect_and_authenticate(miner_endpoint).await {
+            Ok(conn) => {
+                info!(
+                    "[EVAL_FLOW] SSH verification connection established in {:?}",
+                    ssh_connect_start.elapsed()
+                );
+                conn
+            }
+            Err(e) => {
+                error!(
+                    "[EVAL_FLOW] SSH verification connection failed after {:?}: {}",
+                    ssh_connect_start.elapsed(),
+                    e
+                );
+                return Err(e).context("Failed to connect to miner for SSH verification");
+            }
+        };
 
         // Generate ephemeral SSH keypair if we have key manager
+        info!(
+            "[EVAL_FLOW] Generating SSH session keys for executor {}",
+            executor_info.id
+        );
+        let key_gen_start = std::time::Instant::now();
         let (session_id, public_key_openssh, _key_path) = if let Some(ref key_manager) =
             self.ssh_key_manager
         {
             let session_id = Uuid::new_v4().to_string();
+            info!("[EVAL_FLOW] Session ID generated: {}", session_id);
+
             let (_, public_key, key_path) = key_manager
                 .generate_session_keypair(&session_id)
                 .await
@@ -523,8 +618,22 @@ impl VerificationEngine {
             let public_key_openssh = ValidatorSshKeyManager::get_public_key_openssh(&public_key)
                 .context("Failed to convert public key to OpenSSH format")?;
 
+            info!(
+                "[EVAL_FLOW] SSH keypair generated in {:?}, public key length: {} chars",
+                key_gen_start.elapsed(),
+                public_key_openssh.len()
+            );
+            debug!(
+                "[EVAL_FLOW] Public key preview: {}...",
+                public_key_openssh.chars().take(50).collect::<String>()
+            );
+
             (session_id, public_key_openssh, key_path)
         } else {
+            error!(
+                "[EVAL_FLOW] No SSH key manager available for verification of executor {}",
+                executor_info.id
+            );
             return Err(anyhow::anyhow!(
                 "No SSH key manager available for verification"
             ));
@@ -544,12 +653,32 @@ impl VerificationEngine {
             .to_string(),
         };
 
+        info!(
+            "[EVAL_FLOW] Initiating SSH session with executor {} via miner",
+            executor_info.id
+        );
+        debug!("[EVAL_FLOW] Session request: validator_hotkey={}, executor_id={}, purpose={}, duration={}s",
+               session_request.validator_hotkey.chars().take(8).collect::<String>() + "...",
+               session_request.executor_id, session_request.purpose, session_request.session_duration_secs);
+
+        let session_start = std::time::Instant::now();
         let session_info = match connection.initiate_ssh_session_v2(session_request).await {
-            Ok(info) => info,
+            Ok(info) => {
+                info!(
+                    "[EVAL_FLOW] SSH session initiation response received in {:?}, status={:?}",
+                    session_start.elapsed(),
+                    info.status()
+                );
+                debug!("[EVAL_FLOW] Session details: session_id={}, expires_at={}, credentials_length={}",
+                       info.session_id, info.expires_at, info.access_credentials.len());
+                info
+            }
             Err(e) => {
                 error!(
-                    "Failed to initiate SSH session for executor {}: {}",
-                    executor_info.id, e
+                    "[EVAL_FLOW] Failed to initiate SSH session for executor {} after {:?}: {}",
+                    executor_info.id,
+                    session_start.elapsed(),
+                    e
                 );
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
@@ -561,6 +690,11 @@ impl VerificationEngine {
 
         // Check if session was successfully created
         if session_info.status() != SshSessionStatus::Active {
+            error!(
+                "[EVAL_FLOW] SSH session not active for executor {}: status={:?}",
+                executor_info.id,
+                session_info.status()
+            );
             return Ok(ExecutorVerificationResult {
                 executor_id: executor_info.id.clone(),
                 verification_score: 0.0,
@@ -569,14 +703,30 @@ impl VerificationEngine {
         }
 
         info!(
-            "SSH session created for executor {}: session_id={}",
-            executor_info.id, session_info.session_id
+            "[EVAL_FLOW] SSH session active for executor {}: session_id={}, expires_at={}",
+            executor_info.id, session_info.session_id, session_info.expires_at
         );
 
         // Parse SSH credentials and test connection
+        info!(
+            "[EVAL_FLOW] Parsing SSH credentials for executor {}",
+            executor_info.id
+        );
+        debug!(
+            "[EVAL_FLOW] Raw credentials: {}",
+            session_info.access_credentials
+        );
         let ssh_details = match self.parse_ssh_credentials(&session_info.access_credentials) {
-            Ok(details) => details,
+            Ok(details) => {
+                info!("[EVAL_FLOW] SSH credentials parsed successfully: host={}, port={}, username={}",
+                      details.host, details.port, details.username);
+                details
+            }
             Err(e) => {
+                error!(
+                    "[EVAL_FLOW] Failed to parse SSH credentials for executor {}: {}",
+                    executor_info.id, e
+                );
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
                     verification_score: 0.0,
@@ -586,46 +736,85 @@ impl VerificationEngine {
         };
 
         // Test SSH connection
+        info!(
+            "[EVAL_FLOW] Testing SSH connection to executor {} at {}:{}",
+            executor_info.id, ssh_details.host, ssh_details.port
+        );
+        let connection_test_start = std::time::Instant::now();
         let verification_score = match self.ssh_client.test_connection(&ssh_details).await {
             Ok(_) => {
                 info!(
-                    "SSH connection test successful for executor {}",
-                    executor_info.id
+                    "[EVAL_FLOW] SSH connection test successful for executor {} in {:?}",
+                    executor_info.id,
+                    connection_test_start.elapsed()
                 );
                 0.8 // Good score for successful SSH verification
             }
             Err(e) => {
                 error!(
-                    "SSH connection test failed for executor {}: {}",
-                    executor_info.id, e
+                    "[EVAL_FLOW] SSH connection test failed for executor {} after {:?}: {}",
+                    executor_info.id,
+                    connection_test_start.elapsed(),
+                    e
                 );
                 0.0
             }
         };
 
         // Close SSH session
+        info!(
+            "[EVAL_FLOW] Closing SSH session {} for executor {}",
+            session_info.session_id, executor_info.id
+        );
         let close_request = CloseSshSessionRequest {
             session_id: session_info.session_id.clone(),
             validator_hotkey: self.validator_hotkey.to_string(),
             reason: "verification_complete".to_string(),
         };
 
+        let close_start = std::time::Instant::now();
         if let Err(e) = connection.close_ssh_session(close_request).await {
             warn!(
-                "Failed to close SSH session {}: {}",
-                session_info.session_id, e
+                "[EVAL_FLOW] Failed to close SSH session {} after {:?}: {}",
+                session_info.session_id,
+                close_start.elapsed(),
+                e
+            );
+        } else {
+            info!(
+                "[EVAL_FLOW] SSH session {} closed successfully in {:?}",
+                session_info.session_id,
+                close_start.elapsed()
             );
         }
 
         // Cleanup local keys
+        info!(
+            "[EVAL_FLOW] Cleaning up SSH keys for session {}",
+            session_id
+        );
         if let Some(ref key_manager) = self.ssh_key_manager {
+            let cleanup_start = std::time::Instant::now();
             if let Err(e) = key_manager.cleanup_session_keys(&session_id).await {
                 warn!(
-                    "Failed to cleanup SSH keys for session {}: {}",
-                    session_id, e
+                    "[EVAL_FLOW] Failed to cleanup SSH keys for session {} after {:?}: {}",
+                    session_id,
+                    cleanup_start.elapsed(),
+                    e
+                );
+            } else {
+                debug!(
+                    "[EVAL_FLOW] SSH keys cleaned up for session {} in {:?}",
+                    session_id,
+                    cleanup_start.elapsed()
                 );
             }
         }
+
+        info!(
+            "[EVAL_FLOW] SSH verification completed for executor {} with score: {:.2}",
+            executor_info.id, verification_score
+        );
 
         Ok(ExecutorVerificationResult {
             executor_id: executor_info.id.clone(),

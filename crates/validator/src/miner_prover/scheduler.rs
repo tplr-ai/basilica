@@ -74,8 +74,6 @@ impl VerificationScheduler {
                 }
             }
         }
-
-        Ok(())
     }
 
     /// Run automatic verification cycle for discovered miners
@@ -84,29 +82,71 @@ impl VerificationScheduler {
         discovery: &MinerDiscovery,
         verification: &VerificationEngine,
     ) -> Result<()> {
-        info!("Starting discovery-based verification cycle");
+        info!("[EVAL_FLOW] Starting discovery-based verification cycle");
+        let cycle_start = std::time::Instant::now();
 
         // Get current miners from discovery
+        info!("[EVAL_FLOW] Fetching miners from discovery service");
+        let discovery_start = std::time::Instant::now();
         let discovered_miners = discovery.get_miners_for_verification().await?;
 
         info!(
-            "Discovered {} active miners for verification",
+            "[EVAL_FLOW] Discovery completed in {:?}: {} active miners for verification",
+            discovery_start.elapsed(),
             discovered_miners.len()
         );
 
+        // Log detailed miner information
+        for (i, miner) in discovered_miners.iter().enumerate() {
+            debug!(
+                "[EVAL_FLOW] Miner {}: UID={}, endpoint={}, stake={:.2} TAO, last_verified={:?}",
+                i,
+                miner.uid.as_u16(),
+                miner.endpoint,
+                miner.stake_tao,
+                miner.last_verified
+            );
+        }
+
         // Trigger verification for each discovered miner
-        for miner_info in discovered_miners {
-            if let Err(e) = self
-                .initiate_miner_verification_with_ssh(&miner_info, verification)
+        info!(
+            "[EVAL_FLOW] Initiating verification tasks for {} miners",
+            discovered_miners.len()
+        );
+        let mut verification_tasks = 0;
+        let mut verification_failures = 0;
+
+        for (i, miner_info) in discovered_miners.iter().enumerate() {
+            info!(
+                "[EVAL_FLOW] Processing miner {}/{}: UID={}",
+                i + 1,
+                discovered_miners.len(),
+                miner_info.uid.as_u16()
+            );
+
+            match self
+                .initiate_miner_verification_with_ssh(miner_info, verification)
                 .await
             {
-                warn!(
-                    "Failed to initiate verification for miner {}: {}",
-                    miner_info.uid.as_u16(),
-                    e
-                );
+                Ok(_) => {
+                    verification_tasks += 1;
+                    info!(
+                        "[EVAL_FLOW] Successfully initiated verification task for miner {}",
+                        miner_info.uid.as_u16()
+                    );
+                }
+                Err(e) => {
+                    verification_failures += 1;
+                    warn!(
+                        "[EVAL_FLOW] Failed to initiate verification for miner {} (attempt {}/{}): {}",
+                        miner_info.uid.as_u16(), i + 1, discovered_miners.len(), e
+                    );
+                }
             }
         }
+
+        info!("[EVAL_FLOW] Discovery verification cycle completed in {:?}: {} tasks initiated, {} failures",
+              cycle_start.elapsed(), verification_tasks, verification_failures);
 
         Ok(())
     }
@@ -118,20 +158,35 @@ impl VerificationScheduler {
         verification: &VerificationEngine,
     ) -> Result<()> {
         info!(
-            "Initiating automated verification with SSH for miner UID: {}",
+            "[EVAL_FLOW] Initiating automated verification with SSH for miner UID: {}",
             miner_info.uid.as_u16()
+        );
+        debug!(
+            "[EVAL_FLOW] Miner details: endpoint={}, stake={:.2} TAO, is_validator={}",
+            miner_info.endpoint, miner_info.stake_tao, miner_info.is_validator
         );
 
         // Check if miner was recently verified
         if let Some(last_verified) = miner_info.last_verified {
             let time_since_verification = chrono::Utc::now().signed_duration_since(last_verified);
+            info!(
+                "[EVAL_FLOW] Miner {} was last verified {:?} ago",
+                miner_info.uid.as_u16(),
+                time_since_verification
+            );
             if time_since_verification < chrono::Duration::hours(1) {
-                debug!(
-                    "Miner {} was verified recently, skipping",
-                    miner_info.uid.as_u16()
+                info!(
+                    "[EVAL_FLOW] Miner {} was verified recently ({:?} ago), skipping",
+                    miner_info.uid.as_u16(),
+                    time_since_verification
                 );
                 return Ok(());
             }
+        } else {
+            info!(
+                "[EVAL_FLOW] Miner {} has never been verified, proceeding with verification",
+                miner_info.uid.as_u16()
+            );
         }
 
         // Create verification task with SSH automation
@@ -145,8 +200,30 @@ impl VerificationScheduler {
         };
 
         // Spawn verification task with SSH automation
-        self.spawn_automated_verification_task(verification_task, verification)
-            .await?;
+        info!(
+            "[EVAL_FLOW] Spawning automated verification task for miner {}",
+            miner_info.uid.as_u16()
+        );
+        let spawn_start = std::time::Instant::now();
+        let result = self
+            .spawn_automated_verification_task(verification_task, verification)
+            .await;
+
+        match &result {
+            Ok(_) => info!(
+                "[EVAL_FLOW] Verification task spawned successfully for miner {} in {:?}",
+                miner_info.uid.as_u16(),
+                spawn_start.elapsed()
+            ),
+            Err(e) => error!(
+                "[EVAL_FLOW] Failed to spawn verification task for miner {} after {:?}: {}",
+                miner_info.uid.as_u16(),
+                spawn_start.elapsed(),
+                e
+            ),
+        }
+
+        result?;
 
         Ok(())
     }
@@ -161,18 +238,37 @@ impl VerificationScheduler {
         let task_id = uuid::Uuid::new_v4();
 
         info!(
-            "Spawning automated verification task {} for miner UID: {}",
+            "[EVAL_FLOW] Spawning automated verification task {} for miner UID: {}",
             task_id, task.miner_uid
+        );
+        debug!(
+            "[EVAL_FLOW] Task details: type={:?}, timeout={:?}, endpoint={}",
+            task.verification_type, task.timeout, task.miner_endpoint
         );
 
         // Track active verification
+        info!(
+            "[EVAL_FLOW] Registering verification task {} in active tasks tracker",
+            task_id
+        );
         {
             let mut active_verifications = self.active_verification_tasks.write().await;
             active_verifications.insert(task_id, task.clone());
+            info!(
+                "[EVAL_FLOW] Active verification tasks count: {}",
+                active_verifications.len()
+            );
         }
 
         // Spawn verification task
+        info!("[EVAL_FLOW] Spawning tokio task for verification workflow execution");
         let verification_handle = tokio::spawn(async move {
+            info!(
+                "[EVAL_FLOW] Starting automated verification workflow for miner {} in task {}",
+                task.miner_uid, task_id
+            );
+            let workflow_start = std::time::Instant::now();
+
             let result = verification_engine
                 .execute_automated_verification_workflow(&task)
                 .await;
@@ -180,15 +276,25 @@ impl VerificationScheduler {
             match result {
                 Ok(verification_result) => {
                     info!(
-                        "Automated verification completed for miner {}: score={}",
-                        task.miner_uid, verification_result.overall_score
+                        "[EVAL_FLOW] Automated verification completed for miner {} in {:?}: score={:.2} (task: {})",
+                        task.miner_uid, workflow_start.elapsed(), verification_result.overall_score, task_id
                     );
+                    debug!(
+                        "[EVAL_FLOW] Verification steps completed: {}",
+                        verification_result.verification_steps.len()
+                    );
+                    for step in &verification_result.verification_steps {
+                        debug!(
+                            "[EVAL_FLOW]   Step: {} - {:?} - {}",
+                            step.step_name, step.status, step.details
+                        );
+                    }
                     Ok(verification_result)
                 }
                 Err(e) => {
                     error!(
-                        "Automated verification failed for miner {}: {}",
-                        task.miner_uid, e
+                        "[EVAL_FLOW] Automated verification failed for miner {} after {:?} (task: {}): {}",
+                        task.miner_uid, workflow_start.elapsed(), task_id, e
                     );
                     Err(e)
                 }
@@ -196,9 +302,17 @@ impl VerificationScheduler {
         });
 
         // Store verification handle for cleanup
+        info!(
+            "[EVAL_FLOW] Storing verification handle for task {} cleanup tracking",
+            task_id
+        );
         {
             let mut verification_handles = self.verification_handles.write().await;
             verification_handles.insert(task_id, verification_handle);
+            info!(
+                "[EVAL_FLOW] Total verification handles tracked: {}",
+                verification_handles.len()
+            );
         }
 
         Ok(())

@@ -37,7 +37,7 @@ impl MinerProver {
     /// Create a new MinerProver instance
     pub fn new(
         config: VerificationConfig,
-        automatic_config: crate::config::AutomaticVerificationConfig,
+        _automatic_config: crate::config::AutomaticVerificationConfig,
         bittensor_service: Arc<BittensorService>,
     ) -> Self {
         let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
@@ -57,7 +57,7 @@ impl MinerProver {
         );
 
         // Create shutdown channel for the scheduler
-        let (shutdown_tx, shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+        let (_shutdown_tx, _shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
 
         // Create scheduler with automatic verification configuration
         let scheduler = VerificationScheduler::new(config.clone());
