@@ -347,7 +347,7 @@ int MODE="":
             ./scripts/gen-key.sh
             export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
         fi
-        
+
         [ ! -f validator ] && ./scripts/validator/build.sh
         [ ! -f miner ] && ./scripts/miner/build.sh
         [ ! -f executor ] && ./scripts/executor/build.sh
@@ -584,7 +584,7 @@ int-testnet MODE="":
         echo "Setting BITTENSOR_NETWORK=test for metadata generation"
         export BITTENSOR_NETWORK=test
         export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443"
-        
+
         # Check for validator public key
         if [ -f "public_key.hex" ]; then
             export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
@@ -594,7 +594,7 @@ int-testnet MODE="":
             ./scripts/gen-key.sh
             export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
         fi
-        
+
         [ ! -f validator ] && BITTENSOR_NETWORK=test ./scripts/validator/build.sh
         [ ! -f miner ] && BITTENSOR_NETWORK=test ./scripts/miner/build.sh
         [ ! -f executor ] && BITTENSOR_NETWORK=test ./scripts/executor/build.sh

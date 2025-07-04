@@ -389,7 +389,7 @@ impl ExecutorManagementService {
             std::env::var("HOME").unwrap_or_else(|_| "/home/executor".to_string()) + "/.ssh";
         std::fs::create_dir_all(&ssh_dir)?;
 
-        let authorized_keys_path = format!("{}/authorized_keys", ssh_dir);
+        let authorized_keys_path = format!("{ssh_dir}/authorized_keys");
 
         // Create authorized_keys entry with session metadata
         let key_entry = if let Some(session_id) = session_id {
@@ -447,7 +447,7 @@ impl ExecutorManagementService {
     ) -> anyhow::Result<()> {
         let ssh_dir =
             std::env::var("HOME").unwrap_or_else(|_| "/home/executor".to_string()) + "/.ssh";
-        let authorized_keys_path = format!("{}/authorized_keys", ssh_dir);
+        let authorized_keys_path = format!("{ssh_dir}/authorized_keys");
 
         if !std::path::Path::new(&authorized_keys_path).exists() {
             return Ok(());
@@ -456,8 +456,8 @@ impl ExecutorManagementService {
         let content = std::fs::read_to_string(&authorized_keys_path)?;
         let filtered_content: String = content
             .lines()
-            .filter(|line| !line.contains(&format!("validator-session-{}", session_id)))
-            .map(|line| format!("{}\n", line))
+            .filter(|line| !line.contains(&format!("validator-session-{session_id}")))
+            .map(|line| format!("{line}\n"))
             .collect();
 
         std::fs::write(&authorized_keys_path, filtered_content)?;
@@ -474,7 +474,7 @@ impl ExecutorManagementService {
     async fn cleanup_expired_keys(&self) -> anyhow::Result<usize> {
         let ssh_dir =
             std::env::var("HOME").unwrap_or_else(|_| "/home/executor".to_string()) + "/.ssh";
-        let authorized_keys_path = format!("{}/authorized_keys", ssh_dir);
+        let authorized_keys_path = format!("{ssh_dir}/authorized_keys");
 
         if !std::path::Path::new(&authorized_keys_path).exists() {
             return Ok(0);
@@ -503,7 +503,7 @@ impl ExecutorManagementService {
                         }
                     }
                 }
-                Some(format!("{}\n", line))
+                Some(format!("{line}\n"))
             })
             .collect();
 
@@ -522,7 +522,7 @@ impl ExecutorManagementService {
     async fn list_active_ssh_sessions(&self) -> anyhow::Result<Vec<SshSessionInfo>> {
         let ssh_dir =
             std::env::var("HOME").unwrap_or_else(|_| "/home/executor".to_string()) + "/.ssh";
-        let authorized_keys_path = format!("{}/authorized_keys", ssh_dir);
+        let authorized_keys_path = format!("{ssh_dir}/authorized_keys");
 
         if !std::path::Path::new(&authorized_keys_path).exists() {
             return Ok(Vec::new());
