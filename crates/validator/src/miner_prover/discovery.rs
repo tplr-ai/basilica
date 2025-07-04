@@ -48,7 +48,7 @@ impl MinerDiscovery {
 
     /// Get list of miners that need verification using metagraph
     pub async fn get_miners_for_verification(&self) -> Result<Vec<MinerInfo>> {
-        info!("Fetching miners from metagraph for verification");
+        info!("Fetching ALL miners from metagraph for verification (no filtering)");
 
         let metagraph = self
             .bittensor_service
@@ -63,12 +63,10 @@ impl MinerDiscovery {
             return Ok(Vec::new());
         }
 
-        let mut miners = self.extract_miners_from_metagraph(&metagraph)?;
-        self.prioritize_by_stake(&mut miners, &metagraph);
-        miners.truncate(self.config.max_miners_per_round);
+        let miners = self.extract_miners_from_metagraph(&metagraph)?;
 
         info!(
-            "Selected {} miners for verification from {} total neurons",
+            "Selected ALL {} miners for verification from {} total neurons",
             miners.len(),
             metagraph.hotkeys.len()
         );
@@ -81,7 +79,6 @@ impl MinerDiscovery {
         metagraph: &bittensor::Metagraph<AccountId>,
     ) -> Result<Vec<MinerInfo>> {
         let mut miners = Vec::new();
-        let now = chrono::Utc::now();
 
         for (uid, hotkey_account) in metagraph.hotkeys.iter().enumerate() {
             let uid = uid as u16;
@@ -119,11 +116,7 @@ impl MinerDiscovery {
                 verification_score: 0.0,
             };
 
-            let min_interval =
-                chrono::Duration::from_std(self.config.min_verification_interval).unwrap();
-            if miner.needs_verification(min_interval, now) {
-                miners.push(miner);
-            }
+            miners.push(miner);
         }
 
         Ok(miners)
@@ -166,26 +159,6 @@ impl MinerDiscovery {
             );
             Some(endpoint)
         }))
-    }
-
-    fn prioritize_by_stake(
-        &self,
-        miners: &mut [MinerInfo],
-        metagraph: &bittensor::Metagraph<AccountId>,
-    ) {
-        miners.sort_by(|a, b| {
-            let stake_a = metagraph
-                .total_stake
-                .get(a.uid.as_u16() as usize)
-                .map(|s| s.0)
-                .unwrap_or(0);
-            let stake_b = metagraph
-                .total_stake
-                .get(b.uid.as_u16() as usize)
-                .map(|s| s.0)
-                .unwrap_or(0);
-            stake_b.cmp(&stake_a)
-        });
     }
 
     /// Get miner axon info from metagraph by UID
