@@ -4,9 +4,17 @@
 //! This module is organized following SOLID principles with clear separation of concerns.
 
 pub mod discovery;
+pub mod miner_client;
 pub mod scheduler;
 pub mod types;
 pub mod verification;
+pub mod verification_engine_builder;
+
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod test_discovery;
 
 pub use discovery::MinerDiscovery;
 pub use scheduler::VerificationScheduler;
@@ -28,10 +36,32 @@ pub struct MinerProver {
 
 impl MinerProver {
     /// Create a new MinerProver instance
-    pub fn new(config: VerificationConfig, bittensor_service: Arc<BittensorService>) -> Self {
-        let discovery = MinerDiscovery::new(bittensor_service, config.clone());
+    pub fn new(
+        config: VerificationConfig,
+        _automatic_config: crate::config::AutomaticVerificationConfig,
+        bittensor_service: Arc<BittensorService>,
+    ) -> Self {
+        let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
+
+        // Create SSH client and hardware validator (optional)
+        let ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
+        let hardware_validator = None; // Can be configured later if needed
+        let ssh_key_path = None; // Can be configured later if needed
+
+        // Use with_bittensor_service to properly load the validator's hotkey
+        let verification = VerificationEngine::with_bittensor_service(
+            config.clone(),
+            bittensor_service.clone(),
+            ssh_client,
+            hardware_validator,
+            ssh_key_path,
+        );
+
+        // Create shutdown channel for the scheduler
+        let (_shutdown_tx, _shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+
+        // Create scheduler with automatic verification configuration
         let scheduler = VerificationScheduler::new(config.clone());
-        let verification = VerificationEngine::new(config);
 
         Self {
             discovery,
@@ -42,7 +72,7 @@ impl MinerProver {
 
     /// Start the miner verification loop
     pub async fn start(&mut self) -> Result<()> {
-        info!("Starting miner prover");
+        info!("Starting miner prover with automatic SSH session management");
         self.scheduler
             .start(self.discovery.clone(), self.verification.clone())
             .await

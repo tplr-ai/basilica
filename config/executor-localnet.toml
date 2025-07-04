@@ -1,0 +1,67 @@
+# Basilica Executor Configuration for Local Network
+
+# Server configuration
+[server]
+host = "0.0.0.0"
+port = 50052
+
+# Logging configuration
+[logging]
+level = "info"  # Changed from debug to reduce noise in localnet
+format = "pretty"
+
+# Metrics configuration
+[metrics]
+enabled = true
+port = 8080
+
+# System monitoring configuration
+[system]
+update_interval = { secs = 10, nanos = 0 }
+enable_gpu_monitoring = true  # Will work if GPU is available, otherwise logs info message
+enable_network_monitoring = true
+max_cpu_usage = 90.0
+max_memory_usage = 90.0
+max_gpu_memory_usage = 90.0
+min_disk_space_gb = 10
+
+# Docker configuration - IMPORTANT for GPU support
+[docker]
+socket_path = "/var/run/docker.sock"
+network_name = "basilica"
+enable_gpu_support = true
+pull_timeout = { secs = 300, nanos = 0 }
+stop_timeout = { secs = 30, nanos = 0 }
+
+# GPU Runtime Configuration
+# This tells Docker to use the NVIDIA runtime for GPU containers
+[docker.gpu_config]
+runtime = "nvidia"
+device_requests = [
+    { count = -1, capabilities = [["gpu"]] }
+]
+
+# Validator access configuration
+[validator]
+enabled = true
+ssh_port = 2222
+max_sessions = 10
+session_timeout = { secs = 3600, nanos = 0 }
+
+# Static miner configuration (as per SPEC v1.6)
+[miner]
+managing_miner_hotkey = "5EyazzhAq8Ygtfvo29di484uXVgTSUX35qCtksUR6skDdBqz"
+managing_miner_address = "http://miner:50051"
+
+# Health check configuration
+[health]
+check_interval_seconds = 30
+gpu_check_enabled = true
+docker_check_enabled = true
+
+# Resource limits for containers
+[resources]
+max_containers = 10
+default_cpu_limit = "4.0"
+default_memory_limit = "8Gi"
+default_gpu_limit = 1

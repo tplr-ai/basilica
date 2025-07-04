@@ -148,7 +148,7 @@ impl Default for TelemetryTracker {
 /// Get telemetry data
 #[utoipa::path(
     get,
-    path = "/api/v1/telemetry",
+    path = "/telemetry",
     responses(
         (status = 200, description = "Telemetry data", body = TelemetryResponse),
     ),

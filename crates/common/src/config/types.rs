@@ -127,14 +127,22 @@ pub struct SslConfig {
     pub verify_hostname: bool,
 }
 
-/// Common server configuration
+/// Enhanced server configuration with advertised address support
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
-    /// Host to bind to
+    /// Internal binding host (default: "0.0.0.0")
     pub host: String,
 
-    /// Port to bind to
+    /// Internal binding port
     pub port: u16,
+
+    /// Optional advertised host (external address for client connections)
+    #[serde(default)]
+    pub advertised_host: Option<String>,
+
+    /// Optional advertised port (external port for client connections)
+    #[serde(default)]
+    pub advertised_port: Option<u16>,
 
     /// Maximum number of concurrent connections
     pub max_connections: u32,
@@ -144,6 +152,10 @@ pub struct ServerConfig {
 
     /// Keep-alive timeout
     pub keep_alive_timeout: Duration,
+
+    /// Enable TLS for advertised endpoint
+    #[serde(default)]
+    pub advertised_tls: bool,
 
     /// Enable TLS
     pub tls_enabled: bool,
@@ -155,14 +167,67 @@ pub struct ServerConfig {
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            host: "127.0.0.1".to_string(),
+            host: "0.0.0.0".to_string(),
             port: 8080,
+            advertised_host: None,
+            advertised_port: None,
             max_connections: 1000,
             request_timeout: Duration::from_secs(30),
             keep_alive_timeout: Duration::from_secs(60),
+            advertised_tls: false,
             tls_enabled: false,
             tls_config: None,
         }
+    }
+}
+
+impl ServerConfig {
+    /// Get the listening address (internal binding)
+    pub fn listen_address(&self) -> String {
+        format!("{}:{}", self.host, self.port)
+    }
+
+    /// Get the advertised address (external endpoint for clients)
+    pub fn advertised_address(&self) -> String {
+        let advertised_host = self.advertised_host.as_ref().unwrap_or(&self.host);
+        let advertised_port = self.advertised_port.unwrap_or(self.port);
+        format!("{advertised_host}:{advertised_port}")
+    }
+
+    /// Get the full advertised URL with protocol
+    pub fn advertised_url(&self, default_protocol: &str) -> String {
+        let protocol = if self.advertised_tls {
+            "https"
+        } else {
+            default_protocol
+        };
+        format!("{}://{}", protocol, self.advertised_address())
+    }
+
+    /// Check if advertised address differs from listening address
+    pub fn has_address_separation(&self) -> bool {
+        self.advertised_host.is_some() || self.advertised_port.is_some()
+    }
+
+    /// Validate configuration consistency
+    pub fn validate_advertised_config(&self) -> Result<(), String> {
+        if self.port == 0 {
+            return Err("Port cannot be zero".to_string());
+        }
+
+        if let Some(advertised_port) = self.advertised_port {
+            if advertised_port == 0 {
+                return Err("Advertised port cannot be zero".to_string());
+            }
+        }
+
+        if let Some(ref advertised_host) = self.advertised_host {
+            if advertised_host.is_empty() {
+                return Err("Advertised host cannot be empty".to_string());
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -318,11 +383,12 @@ impl ConfigValidation for ServerConfig {
     type Error = ConfigurationError;
 
     fn validate(&self) -> Result<(), Self::Error> {
-        if self.port == 0 {
+        // Use the new advertised config validation
+        if let Err(msg) = self.validate_advertised_config() {
             return Err(ConfigurationError::InvalidValue {
-                key: "port".to_string(),
-                value: self.port.to_string(),
-                reason: "Port must be greater than 0".to_string(),
+                key: "server_config".to_string(),
+                value: "advertised_address".to_string(),
+                reason: msg,
             });
         }
 
@@ -476,7 +542,7 @@ mod tests {
             chain_endpoint: None,
             ..Default::default()
         };
-        assert_eq!(local_config.get_chain_endpoint(), "ws://subtensor:9944");
+        assert_eq!(local_config.get_chain_endpoint(), "ws://127.0.0.1:9944");
 
         // Test custom endpoint override
         let custom_config = BittensorConfig {

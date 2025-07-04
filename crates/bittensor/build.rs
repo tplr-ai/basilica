@@ -1,16 +1,8 @@
 //! Build script for bittensor crate to generate correct metadata based on network
 
 use std::env;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
-use std::process::{Command, Stdio};
-
-use parity_scale_codec::Decode;
-use subxt_codegen::syn::parse_quote;
-use subxt_codegen::CodegenBuilder;
-use subxt_metadata::Metadata;
-use subxt_utils_fetchmetadata::{self as fetch_metadata, MetadataVersion};
 
 /// Configuration data extracted from TOML files
 #[derive(Default)]
@@ -102,14 +94,11 @@ fn detect_config_from_files() -> ConfigData {
     config
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     println!("cargo:rerun-if-env-changed=BITTENSOR_NETWORK");
-    println!("cargo:rerun-if-env-changed=METADATA_CHAIN_ENDPOINT");
-    println!("cargo:rerun-if-changed=miner.toml");
-    println!("cargo:rerun-if-changed=validator.toml");
-    println!("cargo:rerun-if-changed=config/miner.toml");
-    println!("cargo:rerun-if-changed=config/validator.toml");
+    println!("cargo:rerun-if-changed=metadata/finney.rs");
+    println!("cargo:rerun-if-changed=metadata/test.rs");
+    println!("cargo:rerun-if-changed=metadata/local.rs");
 
     // Detect configuration from files
     let config = detect_config_from_files();
@@ -124,78 +113,29 @@ async fn main() {
             "finney".to_string()
         });
 
-    // Get the appropriate endpoint
-    // Priority: 1. Env var, 2. Config file chain_endpoint, 3. Auto-detect from network
-    let endpoint = if let Ok(custom_endpoint) = env::var("METADATA_CHAIN_ENDPOINT") {
-        custom_endpoint
-    } else if let Some(config_endpoint) = config.chain_endpoint {
-        println!("cargo:warning=Using chain_endpoint from config: {config_endpoint}");
-        config_endpoint
-    } else {
-        // Auto-detect endpoint based on network (same logic as BittensorConfig::get_chain_endpoint)
-        match network.as_str() {
-            "test" => "wss://test.finney.opentensor.ai:443".to_string(),
-            "local" => "ws://subtensor:9944".to_string(),
-            "finney" => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
-            _ => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
-        }
-    };
-
-    println!(
-        "cargo:warning=Building bittensor metadata for network: {network} with endpoint: {endpoint}"
-    );
+    println!("cargo:warning=Building bittensor metadata for network: {network}");
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let metadata_path = Path::new(&out_dir).join("metadata.rs");
 
-    // Fetch metadata from the chain
-    let metadata_bytes = fetch_metadata::from_url(
-        endpoint.as_str().try_into().unwrap(),
-        MetadataVersion::Latest,
-    )
-    .await
-    .expect("Failed to fetch metadata from chain");
+    // Copy the appropriate pre-generated metadata file
+    let metadata_source = match network.as_str() {
+        "test" => "metadata/test.rs",
+        "local" => "metadata/local.rs",
+        "finney" => "metadata/finney.rs",
+        _ => {
+            println!("cargo:warning=Unknown network '{network}', using finney metadata");
+            "metadata/finney.rs"
+        }
+    };
 
-    let mut metadata_bytes: &[u8] = &metadata_bytes;
-    let metadata = Metadata::decode(&mut metadata_bytes).expect("Failed to decode metadata");
-
-    // Generate code with same configuration as crabtensor
-    let mut codegen = CodegenBuilder::new();
-    codegen.set_additional_global_derives(vec![parse_quote!(Clone)]);
-    codegen.add_derives_for_type(
-        parse_quote!(pallet_subtensor::rpc_info::neuron_info::NeuronInfoLite),
-        vec![
-            parse_quote!(serde::Deserialize),
-            parse_quote!(serde::Serialize),
-        ],
-        true,
-    );
-
-    let code = codegen
-        .generate(metadata)
-        .expect("Failed to generate code from metadata");
-    let file_output = File::create(&metadata_path).expect("Failed to create metadata file");
-
-    // Format the generated code
-    let mut process = Command::new("rustfmt")
-        .stdin(Stdio::piped())
-        .stdout(file_output)
-        .spawn()
-        .unwrap_or_else(|_| {
-            // If rustfmt is not available, write unformatted
-            let mut file = File::create(&metadata_path).expect("Failed to create metadata file");
-            write!(file, "{code}").expect("Failed to write metadata");
-            std::process::exit(0);
-        });
-
-    if let Some(stdin) = process.stdin.as_mut() {
-        write!(stdin, "{code}").expect("Failed to write to rustfmt");
+    // Copy the metadata file to the output directory
+    if let Err(e) = fs::copy(metadata_source, &metadata_path) {
+        panic!(
+            "Failed to copy metadata file from {metadata_source} to {metadata_path:?}: {e}. \
+            Make sure to generate metadata files first using `cargo run --bin generate-metadata`"
+        );
     }
 
-    process.wait().expect("Failed to wait for rustfmt");
-
-    // Create a module file that re-exports the generated metadata
-    let mod_path = Path::new(&out_dir).join("mod.rs");
-    let mut mod_file = File::create(mod_path).expect("Failed to create mod.rs");
-    writeln!(mod_file, "pub mod metadata;").expect("Failed to write mod.rs");
+    println!("cargo:warning=Using pre-generated metadata from {metadata_source}");
 }

@@ -52,6 +52,7 @@ cron = "0.12"
 
 # Configuration
 toml = "0.8"
+url = "2.5"
 
 # Connection pooling
 deadpool = "0.10"

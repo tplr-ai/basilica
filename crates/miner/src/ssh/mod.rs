@@ -9,9 +9,11 @@
 pub mod cleanup;
 pub mod config;
 pub mod session_manager;
+pub mod session_orchestrator;
 pub mod validator_access;
 
 pub use cleanup::*;
 pub use config::*;
 pub use session_manager::*;
+pub use session_orchestrator::*;
 pub use validator_access::*;

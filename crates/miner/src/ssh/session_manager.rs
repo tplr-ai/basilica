@@ -239,7 +239,8 @@ impl SshSessionManager {
     }
 
     /// Get session statistics
-    pub async fn get_session_stats(&self) -> Result<SessionStats> {
+    #[allow(dead_code)]
+    pub async fn _get_session_stats(&self) -> Result<SessionStats> {
         let sessions = self.sessions.read().await;
         let now = Utc::now();
 

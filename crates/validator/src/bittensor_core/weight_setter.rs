@@ -65,6 +65,14 @@ impl WeightSetter {
         })
     }
 
+    /// Get the validator's hotkey as a string
+    pub fn get_validator_hotkey(&self) -> Result<String> {
+        let account_id = self.bittensor_service.get_account_id();
+        let hotkey = bittensor::account_id_to_hotkey(account_id)
+            .map_err(|e| anyhow::anyhow!("Failed to convert account_id to hotkey: {}", e))?;
+        Ok(hotkey.to_string())
+    }
+
     /// Start the weight setting loop
     pub async fn start(&self) -> Result<()> {
         // Check every 12 seconds (1 block time on Bittensor)

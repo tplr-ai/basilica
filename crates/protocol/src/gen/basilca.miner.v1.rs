@@ -85,6 +85,124 @@ pub struct SessionInitResponse {
     #[prost(message, optional, tag = "4")]
     pub error: ::core::option::Option<super::super::common::v1::ErrorInfo>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitiateSshSessionRequest {
+    #[prost(string, tag = "1")]
+    pub validator_hotkey: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub executor_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub purpose: ::prost::alloc::string::String,
+    /// Required: SSH public key
+    #[prost(string, tag = "4")]
+    pub validator_public_key: ::prost::alloc::string::String,
+    /// Required: Max session length
+    #[prost(int64, tag = "5")]
+    pub session_duration_secs: i64,
+    /// Optional: For audit trail
+    #[prost(string, tag = "6")]
+    pub session_metadata: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitiateSshSessionResponse {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    /// Format: "username@host:port"
+    #[prost(string, tag = "2")]
+    pub access_credentials: ::prost::alloc::string::String,
+    /// Unix timestamp
+    #[prost(int64, tag = "3")]
+    pub expires_at: i64,
+    /// Confirm executor ID
+    #[prost(string, tag = "4")]
+    pub executor_id: ::prost::alloc::string::String,
+    /// Session setup status
+    #[prost(enumeration = "SshSessionStatus", tag = "5")]
+    pub status: i32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseSshSessionRequest {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub validator_hotkey: ::prost::alloc::string::String,
+    /// For audit trail
+    #[prost(string, tag = "3")]
+    pub reason: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseSshSessionResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListSshSessionsRequest {
+    #[prost(string, tag = "1")]
+    pub validator_hotkey: ::prost::alloc::string::String,
+    #[prost(bool, tag = "2")]
+    pub include_expired: bool,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListSshSessionsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub sessions: ::prost::alloc::vec::Vec<SshSession>,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SshSession {
+    #[prost(string, tag = "1")]
+    pub session_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub executor_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub validator_hotkey: ::prost::alloc::string::String,
+    #[prost(int64, tag = "4")]
+    pub created_at: i64,
+    #[prost(int64, tag = "5")]
+    pub expires_at: i64,
+    #[prost(enumeration = "SshSessionStatus", tag = "6")]
+    pub status: i32,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SshSessionStatus {
+    Unknown = 0,
+    Active = 1,
+    Expired = 2,
+    Failed = 3,
+}
+impl SshSessionStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SshSessionStatus::Unknown => "SSH_SESSION_STATUS_UNKNOWN",
+            SshSessionStatus::Active => "SSH_SESSION_STATUS_ACTIVE",
+            SshSessionStatus::Expired => "SSH_SESSION_STATUS_EXPIRED",
+            SshSessionStatus::Failed => "SSH_SESSION_STATUS_FAILED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SSH_SESSION_STATUS_UNKNOWN" => Some(Self::Unknown),
+            "SSH_SESSION_STATUS_ACTIVE" => Some(Self::Active),
+            "SSH_SESSION_STATUS_EXPIRED" => Some(Self::Expired),
+            "SSH_SESSION_STATUS_FAILED" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+}
 /// Generated client implementations.
 pub mod miner_discovery_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -264,6 +382,91 @@ pub mod miner_discovery_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// SSH Session Management
+        pub async fn initiate_ssh_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::InitiateSshSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::InitiateSshSessionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/basilca.miner.v1.MinerDiscovery/InitiateSshSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "basilca.miner.v1.MinerDiscovery",
+                        "InitiateSshSession",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn close_ssh_session(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CloseSshSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseSshSessionResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/basilca.miner.v1.MinerDiscovery/CloseSshSession",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("basilca.miner.v1.MinerDiscovery", "CloseSshSession"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_ssh_sessions(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListSshSessionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSshSessionsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/basilca.miner.v1.MinerDiscovery/ListSshSessions",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("basilca.miner.v1.MinerDiscovery", "ListSshSessions"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -295,6 +498,28 @@ pub mod miner_discovery_server {
             request: tonic::Request<super::SessionInitRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SessionInitResponse>,
+            tonic::Status,
+        >;
+        /// SSH Session Management
+        async fn initiate_ssh_session(
+            &self,
+            request: tonic::Request<super::InitiateSshSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::InitiateSshSessionResponse>,
+            tonic::Status,
+        >;
+        async fn close_ssh_session(
+            &self,
+            request: tonic::Request<super::CloseSshSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseSshSessionResponse>,
+            tonic::Status,
+        >;
+        async fn list_ssh_sessions(
+            &self,
+            request: tonic::Request<super::ListSshSessionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSshSessionsResponse>,
             tonic::Status,
         >;
     }
@@ -513,6 +738,147 @@ pub mod miner_discovery_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InitiateExecutorSessionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/basilca.miner.v1.MinerDiscovery/InitiateSshSession" => {
+                    #[allow(non_camel_case_types)]
+                    struct InitiateSshSessionSvc<T: MinerDiscovery>(pub Arc<T>);
+                    impl<
+                        T: MinerDiscovery,
+                    > tonic::server::UnaryService<super::InitiateSshSessionRequest>
+                    for InitiateSshSessionSvc<T> {
+                        type Response = super::InitiateSshSessionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::InitiateSshSessionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MinerDiscovery>::initiate_ssh_session(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = InitiateSshSessionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/basilca.miner.v1.MinerDiscovery/CloseSshSession" => {
+                    #[allow(non_camel_case_types)]
+                    struct CloseSshSessionSvc<T: MinerDiscovery>(pub Arc<T>);
+                    impl<
+                        T: MinerDiscovery,
+                    > tonic::server::UnaryService<super::CloseSshSessionRequest>
+                    for CloseSshSessionSvc<T> {
+                        type Response = super::CloseSshSessionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CloseSshSessionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MinerDiscovery>::close_ssh_session(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CloseSshSessionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/basilca.miner.v1.MinerDiscovery/ListSshSessions" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListSshSessionsSvc<T: MinerDiscovery>(pub Arc<T>);
+                    impl<
+                        T: MinerDiscovery,
+                    > tonic::server::UnaryService<super::ListSshSessionsRequest>
+                    for ListSshSessionsSvc<T> {
+                        type Response = super::ListSshSessionsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListSshSessionsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MinerDiscovery>::list_ssh_sessions(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListSshSessionsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -18,6 +18,7 @@ mod bittensor_core;
 mod cli;
 mod config;
 mod executor_manager;
+mod executors;
 mod metrics;
 mod persistence;
 mod request_verification;

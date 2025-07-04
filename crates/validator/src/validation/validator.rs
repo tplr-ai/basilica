@@ -255,9 +255,19 @@ impl HardwareValidator {
             info!("Step 6: Storing validation result in database");
 
             // Create verification log from attestation result
+            let validator_hotkey = if let Some(ref weight_setter) = self.weight_setter {
+                weight_setter.get_validator_hotkey().unwrap_or_else(|e| {
+                    warn!("Failed to get validator hotkey from weight setter: {}", e);
+                    "unknown_validator".to_string()
+                })
+            } else {
+                warn!("WeightSetter not available, using fallback hotkey");
+                "unknown_validator".to_string()
+            };
+
             let verification_log = VerificationLog::new(
                 executor_details.executor_id().to_string(),
-                "validator_hotkey".to_string(), // TODO: Get from config
+                validator_hotkey,
                 "attestation".to_string(),
                 0.0, // Score will be calculated later by scoring service
                 true,
@@ -313,9 +323,19 @@ impl HardwareValidator {
             info!("Step 6: Storing failed validation result in database");
 
             // Store failed validation
+            let validator_hotkey = if let Some(ref weight_setter) = self.weight_setter {
+                weight_setter.get_validator_hotkey().unwrap_or_else(|e| {
+                    warn!("Failed to get validator hotkey from weight setter: {}", e);
+                    "unknown_validator".to_string()
+                })
+            } else {
+                warn!("WeightSetter not available, using fallback hotkey");
+                "unknown_validator".to_string()
+            };
+
             let verification_log = VerificationLog::new(
                 executor_details.executor_id().to_string(),
-                "validator_hotkey".to_string(), // TODO: Get from config
+                validator_hotkey,
                 "attestation".to_string(),
                 0.0, // Score for failed validation
                 false,

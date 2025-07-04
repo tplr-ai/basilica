@@ -21,15 +21,50 @@ impl ValidatorAccessService {
         Self { state }
     }
 
+    /// Extract client IP address from gRPC request metadata
+    fn extract_client_ip<T>(&self, request: &Request<T>) -> Option<std::net::IpAddr> {
+        // Try to get the remote address from the request
+        if let Some(remote_addr) = request.remote_addr() {
+            return Some(remote_addr.ip());
+        }
+
+        // Try to get the client IP from X-Forwarded-For header (for proxy scenarios)
+        if let Some(forwarded_for) = request.metadata().get("x-forwarded-for") {
+            if let Ok(forwarded_str) = forwarded_for.to_str() {
+                // X-Forwarded-For can contain multiple IPs, take the first one
+                let first_ip = forwarded_str.split(',').next()?.trim();
+                if let Ok(ip) = first_ip.parse::<std::net::IpAddr>() {
+                    return Some(ip);
+                }
+            }
+        }
+
+        // Try to get the client IP from X-Real-IP header
+        if let Some(real_ip) = request.metadata().get("x-real-ip") {
+            if let Ok(real_ip_str) = real_ip.to_str() {
+                if let Ok(ip) = real_ip_str.parse::<std::net::IpAddr>() {
+                    return Some(ip);
+                }
+            }
+        }
+
+        // No IP found
+        warn!("Could not extract client IP from request metadata");
+        None
+    }
+
     /// Handle validator access request with enhanced security
     pub async fn handle_access_request(
         &self,
         request: Request<ValidatorAccessRequest>,
     ) -> Result<Response<ValidatorAccessResponse>, Status> {
+        // Extract client IP from request metadata before consuming the request
+        let client_ip = self.extract_client_ip(&request);
+
         let req = request.into_inner();
         info!(
-            "Handling enhanced access request for validator: {}",
-            req.hotkey
+            "Handling enhanced access request for validator: {} from IP: {:?}",
+            req.hotkey, client_ip
         );
 
         let state = &*self.state;
@@ -48,7 +83,6 @@ impl ValidatorAccessService {
 
         // Check rate limits first
         let access_control = validation_service.access_control();
-        let client_ip = None; // TODO: Extract from request metadata
 
         if !access_control
             .authenticate_request(&validator_id, client_ip, RequestType::Api)

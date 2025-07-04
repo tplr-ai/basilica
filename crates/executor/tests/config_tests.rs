@@ -6,7 +6,7 @@ use executor::config::docker::DockerConfigValidation;
 use executor::config::system::SystemConfigValidation;
 use executor::config::{
     ContainerNetworkConfig, ContainerRegistryConfig, ContainerResourceLimits, DockerConfig,
-    ExecutorConfig, PortMapping, SystemConfig,
+    ExecutorAdvertisedEndpoint, ExecutorConfig, PortMapping, SystemConfig,
 };
 use executor::validation_session::{
     AccessControlConfig, HotkeyVerificationConfig, RateLimitConfig, ValidatorConfig, ValidatorRole,
@@ -204,6 +204,7 @@ fn test_executor_config_custom() {
             .unwrap(),
         logging: LoggingConfig::default(),
         metrics: MetricsConfig::default(),
+        advertised_endpoint: ExecutorAdvertisedEndpoint::default(),
     };
 
     assert_eq!(config.server.host, "127.0.0.1");

@@ -707,6 +707,50 @@ impl Service {
     pub fn get_netuid(&self) -> u16 {
         self.config.netuid
     }
+
+    /// Sign data with the service's signer (hotkey)
+    ///
+    /// This method signs arbitrary data with the validator/miner's hotkey.
+    /// The signature can be verified using `verify_bittensor_signature`.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The data to sign
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, BittensorError>` - Hex-encoded signature string
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use bittensor::Service;
+    /// # use common::config::BittensorConfig;
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let config = BittensorConfig::default();
+    /// # let service = Service::new(config).await?;
+    /// let nonce = "test-nonce-123";
+    /// let signature = service.sign_data(nonce.as_bytes())?;
+    /// println!("Signature: {}", signature);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn sign_data(&self, data: &[u8]) -> Result<String, BittensorError> {
+        use subxt::tx::Signer as SignerTrait;
+
+        // Sign the data with our signer
+        let signature = self.signer.sign(data);
+
+        // For sr25519, we need to extract the signature bytes
+        // The MultiSignature contains the actual signature data
+        match signature {
+            subxt::utils::MultiSignature::Sr25519(sig) => Ok(hex::encode(sig)),
+            _ => Err(BittensorError::AuthError {
+                message: "Unexpected signature type - expected Sr25519".to_string(),
+            }),
+        }
+    }
 }
 
 impl Service {

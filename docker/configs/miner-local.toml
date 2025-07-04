@@ -23,13 +23,12 @@ port = 9091
 [bittensor]
 wallet_name = "templar_test"
 hotkey_name = "M1"
-network = "local"
-netuid = 2
+network = "test"
+netuid = 387
 coldkey_name = "default"
 axon_port = 8091
-# For local chain, we need to specify the endpoint
-# Using localhost since we're in host network mode
-chain_endpoint = "ws://localhost:9945"
+# For test network, endpoint will be auto-detected as wss://test.finney.opentensor.ai:443
+# chain_endpoint = "wss://test.finney.opentensor.ai:443"
 # Set external IP for axon registration (required by chain validation)
 # Using a private network IP that will pass chain validation
 # This is only for local development - in production, use your actual external IP

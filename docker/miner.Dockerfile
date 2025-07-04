@@ -23,16 +23,17 @@ WORKDIR /usr/src/basilica
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
-COPY src/ ./src/
 
-# Generate validator key for build
-COPY scripts/gen-key.sh ./scripts/
-RUN chmod +x scripts/gen-key.sh && ./scripts/gen-key.sh
+# Copy validator key for build
+COPY docker/public_key.hex ./
+
+# Set validator public key from file
+RUN export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex) && echo "VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY" > .env
 
 # Build miner - use BUILD_MODE arg to control debug/release
-ENV VALIDATOR_PUBLIC_KEY_FILE=/usr/src/basilica/public_key.hex
 ARG BUILD_MODE=release
-RUN if [ "$BUILD_MODE" = "debug" ]; then \
+RUN export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex) && \
+    if [ "$BUILD_MODE" = "debug" ]; then \
         cargo build -p miner; \
     else \
         cargo build --release -p miner; \

@@ -16,7 +16,7 @@ use tracing::{debug, warn};
 /// List miners
 #[utoipa::path(
     get,
-    path = "/api/v1/miners",
+    path = "/miners",
     params(
         ("min_gpu_count" = Option<u32>, Query, description = "Minimum GPU count"),
         ("min_score" = Option<f64>, Query, description = "Minimum score"),
@@ -121,7 +121,7 @@ pub async fn list_miners(
 /// Get miner by ID
 #[utoipa::path(
     get,
-    path = "/api/v1/miners/{miner_id}",
+    path = "/miners/{miner_id}",
     params(
         ("miner_id" = String, Path, description = "Miner ID"),
     ),

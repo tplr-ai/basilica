@@ -45,6 +45,7 @@ pub struct RequestVerificationService {
     verify_signatures: bool,
 }
 
+#[allow(dead_code)]
 impl RequestVerificationService {
     /// Create a new request verification service
     pub fn new(
@@ -240,11 +241,12 @@ impl RequestVerificationService {
 }
 
 /// gRPC interceptor for request verification
-pub struct RequestVerificationInterceptor {
+pub struct _RequestVerificationInterceptor {
     verification_service: Arc<RequestVerificationService>,
 }
 
-impl RequestVerificationInterceptor {
+#[allow(dead_code)]
+impl _RequestVerificationInterceptor {
     pub fn new(verification_service: Arc<RequestVerificationService>) -> Self {
         Self {
             verification_service,

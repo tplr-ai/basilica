@@ -6,9 +6,12 @@
 //! - List available executors
 //! - Coordinate SSH access to executors
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::executor_manager::AvailableExecutor;
@@ -20,15 +23,17 @@ use tracing::{debug, error, info, warn};
 use common::identity::Hotkey;
 use protocol::miner_discovery::{
     miner_discovery_server::{MinerDiscovery, MinerDiscoveryServer},
-    ExecutorConnectionDetails, LeaseOfferResponse, LeaseRequest, MinerAuthResponse,
-    SessionInitRequest, SessionInitResponse, ValidatorAuthRequest,
+    CloseSshSessionRequest, CloseSshSessionResponse, ExecutorConnectionDetails,
+    InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseOfferResponse, LeaseRequest,
+    ListSshSessionsRequest, ListSshSessionsResponse, MinerAuthResponse, SessionInitRequest,
+    SessionInitResponse, ValidatorAuthRequest,
 };
 
 use crate::auth::JwtAuthService;
-use crate::config::{SecurityConfig, ValidatorCommsConfig};
+use crate::config::{MinerConfig, SecurityConfig, ValidatorCommsConfig};
 use crate::executor_manager::ExecutorManager;
 use crate::persistence::RegistrationDb;
-use crate::ssh::ValidatorAccessService;
+use crate::ssh::{SshSessionOrchestrator, ValidatorAccessService};
 use crate::validator_discovery::ValidatorDiscovery;
 
 /// Validator communications server
@@ -41,6 +46,8 @@ pub struct ValidatorCommsServer {
     ssh_access_service: ValidatorAccessService,
     pub jwt_service: Arc<JwtAuthService>,
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
+    ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
+    endpoint_registry: Arc<RwLock<HashMap<String, String>>>,
 }
 
 impl ValidatorCommsServer {
@@ -71,7 +78,18 @@ impl ValidatorCommsServer {
             ssh_access_service,
             jwt_service,
             validator_discovery,
+            ssh_session_orchestrator: None,
+            endpoint_registry: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+
+    /// Set SSH session orchestrator
+    pub fn with_ssh_session_orchestrator(
+        mut self,
+        orchestrator: Arc<SshSessionOrchestrator>,
+    ) -> Self {
+        self.ssh_session_orchestrator = Some(orchestrator);
+        self
     }
 
     /// Start serving gRPC requests
@@ -86,6 +104,7 @@ impl ValidatorCommsServer {
             ssh_access_service: self.ssh_access_service.clone(),
             jwt_service: self.jwt_service.clone(),
             validator_discovery: self.validator_discovery.clone(),
+            ssh_session_orchestrator: self.ssh_session_orchestrator.clone(),
         };
 
         // Create health reporter
@@ -110,6 +129,179 @@ impl ValidatorCommsServer {
 
         Ok(())
     }
+
+    /// Start the gRPC server with advertised address configuration
+    pub async fn start_server_with_advertised_config(&self, config: &MinerConfig) -> Result<()> {
+        let listen_addr: SocketAddr =
+            config.server.listen_address().parse().with_context(|| {
+                format!("Invalid listen address: {}", config.server.listen_address())
+            })?;
+        let advertised_endpoint = config.get_advertised_grpc_endpoint();
+
+        info!("Starting miner gRPC server with advertised address support:");
+        info!("  Internal binding: {}", listen_addr);
+        info!("  Advertised endpoint: {}", advertised_endpoint);
+        info!(
+            "  Address separation: {}",
+            config.server.has_address_separation()
+        );
+
+        // Validate configuration before starting
+        config
+            .validate_advertised_addresses()
+            .with_context(|| "Invalid advertised address configuration")?;
+
+        // Create gRPC services
+        let miner_discovery_service = MinerDiscoveryService {
+            _config: self.config.clone(),
+            security_config: self.security_config.clone(),
+            executor_manager: self.executor_manager.clone(),
+            db: self.db.clone(),
+            ssh_access_service: self.ssh_access_service.clone(),
+            jwt_service: self.jwt_service.clone(),
+            validator_discovery: self.validator_discovery.clone(),
+            ssh_session_orchestrator: self.ssh_session_orchestrator.clone(),
+        };
+
+        // Create health reporter
+        let (mut health_reporter, health_service) = health_reporter();
+
+        // Set the service as serving
+        health_reporter
+            .set_serving::<MinerDiscoveryServer<MinerDiscoveryService>>()
+            .await;
+
+        // Configure server with TLS if advertised endpoint uses HTTPS
+        let mut server_builder = Server::builder();
+
+        if advertised_endpoint.starts_with("https://") {
+            info!("Configuring TLS for advertised HTTPS endpoint");
+            if let Some(tls_config) = self.load_tls_config(config).await? {
+                server_builder = server_builder.tls_config(tls_config)?;
+            } else {
+                warn!("HTTPS advertised endpoint specified but no TLS configuration found");
+            }
+        }
+
+        let server = server_builder
+            .add_service(health_service)
+            .add_service(MinerDiscoveryServer::new(miner_discovery_service))
+            .serve(listen_addr);
+
+        // Register advertised endpoint with service discovery
+        self.register_advertised_endpoint(&advertised_endpoint)
+            .await?;
+
+        // Start background tasks for endpoint validation
+        self.start_endpoint_health_monitor(&advertised_endpoint)
+            .await?;
+
+        info!("Miner gRPC server successfully started and advertised");
+        server.await?;
+        Ok(())
+    }
+
+    /// Register the advertised endpoint with internal service registry
+    async fn register_advertised_endpoint(&self, endpoint: &str) -> Result<()> {
+        info!("Registering advertised gRPC endpoint: {}", endpoint);
+
+        // Store advertised endpoint for discovery responses
+        let mut endpoint_registry = self.endpoint_registry.write().await;
+        endpoint_registry.insert("grpc_endpoint".to_string(), endpoint.to_string());
+        endpoint_registry.insert(
+            "registration_timestamp".to_string(),
+            chrono::Utc::now().to_rfc3339(),
+        );
+
+        // Validate endpoint accessibility
+        self.validate_endpoint_accessibility(endpoint).await?;
+
+        info!("Successfully registered advertised gRPC endpoint");
+        Ok(())
+    }
+
+    /// Validate that the advertised endpoint is accessible
+    async fn validate_endpoint_accessibility(&self, endpoint: &str) -> Result<()> {
+        let url = url::Url::parse(endpoint)
+            .with_context(|| format!("Invalid endpoint URL: {endpoint}"))?;
+
+        let host = url
+            .host_str()
+            .ok_or_else(|| anyhow!("No host in endpoint URL"))?;
+        let port = url
+            .port()
+            .ok_or_else(|| anyhow!("No port in endpoint URL"))?;
+
+        // Test basic connectivity
+        match tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio::net::TcpStream::connect((host, port)),
+        )
+        .await
+        {
+            Ok(Ok(_)) => {
+                info!("Advertised endpoint {} is accessible", endpoint);
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                warn!("Advertised endpoint {} is not accessible: {}", endpoint, e);
+                Err(anyhow!("Endpoint not accessible: {}", e))
+            }
+            Err(_) => {
+                warn!(
+                    "Timeout testing accessibility of advertised endpoint {}",
+                    endpoint
+                );
+                Err(anyhow!("Endpoint accessibility test timed out"))
+            }
+        }
+    }
+
+    /// Start health monitoring for advertised endpoint
+    async fn start_endpoint_health_monitor(&self, endpoint: &str) -> Result<()> {
+        let endpoint = endpoint.to_string();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(60));
+
+            loop {
+                interval.tick().await;
+
+                if let Err(e) = Self::check_endpoint_health(&endpoint).await {
+                    warn!("Advertised endpoint health check failed: {}", e);
+                } else {
+                    debug!("Advertised endpoint health check passed: {}", endpoint);
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Check health of advertised endpoint
+    async fn check_endpoint_health(endpoint: &str) -> Result<()> {
+        let url = url::Url::parse(endpoint)?;
+        let host = url.host_str().ok_or_else(|| anyhow!("No host"))?;
+        let port = url.port().ok_or_else(|| anyhow!("No port"))?;
+
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            tokio::net::TcpStream::connect((host, port)),
+        )
+        .await??;
+
+        Ok(())
+    }
+
+    /// Load TLS configuration for HTTPS endpoints
+    async fn load_tls_config(
+        &self,
+        _config: &MinerConfig,
+    ) -> Result<Option<tonic::transport::ServerTlsConfig>> {
+        // TLS configuration loading logic would be implemented here
+        // This would typically load certificates from configuration
+        Ok(None)
+    }
 }
 
 /// Simplified gRPC service implementation for miner discovery
@@ -122,6 +314,7 @@ struct MinerDiscoveryService {
     ssh_access_service: ValidatorAccessService,
     jwt_service: Arc<JwtAuthService>,
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
+    ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
 }
 
 #[tonic::async_trait]
@@ -419,6 +612,105 @@ impl MinerDiscovery for MinerDiscoveryService {
 
         Ok(Response::new(response))
     }
+
+    /// Initiate SSH session with public key
+    async fn initiate_ssh_session(
+        &self,
+        request: Request<InitiateSshSessionRequest>,
+    ) -> Result<Response<InitiateSshSessionResponse>, Status> {
+        let req = request.into_inner();
+
+        debug!(
+            "Received SSH session request from validator {} for executor {}",
+            req.validator_hotkey, req.executor_id
+        );
+
+        // Check if SSH session orchestrator is available
+        let orchestrator = self
+            .ssh_session_orchestrator
+            .as_ref()
+            .ok_or_else(|| Status::internal("SSH session management not configured"))?;
+
+        // Use orchestrator to create session
+        match orchestrator.create_session(req).await {
+            Ok(response) => {
+                info!("SSH session created successfully: {}", response.session_id);
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                error!("Failed to create SSH session: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to create SSH session: {e}"
+                )))
+            }
+        }
+    }
+
+    /// Close SSH session
+    async fn close_ssh_session(
+        &self,
+        request: Request<CloseSshSessionRequest>,
+    ) -> Result<Response<CloseSshSessionResponse>, Status> {
+        let req = request.into_inner();
+
+        debug!(
+            "Received close SSH session request from validator {} for session {}",
+            req.validator_hotkey, req.session_id
+        );
+
+        // Check if SSH session orchestrator is available
+        let orchestrator = self
+            .ssh_session_orchestrator
+            .as_ref()
+            .ok_or_else(|| Status::internal("SSH session management not configured"))?;
+
+        // Use orchestrator to close session
+        match orchestrator.close_session(req).await {
+            Ok(response) => {
+                info!("SSH session closed successfully");
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                error!("Failed to close SSH session: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to close SSH session: {e}"
+                )))
+            }
+        }
+    }
+
+    /// List SSH sessions
+    async fn list_ssh_sessions(
+        &self,
+        request: Request<ListSshSessionsRequest>,
+    ) -> Result<Response<ListSshSessionsResponse>, Status> {
+        let req = request.into_inner();
+
+        debug!(
+            "Received list SSH sessions request from validator {}",
+            req.validator_hotkey
+        );
+
+        // Check if SSH session orchestrator is available
+        let orchestrator = self
+            .ssh_session_orchestrator
+            .as_ref()
+            .ok_or_else(|| Status::internal("SSH session management not configured"))?;
+
+        // Use orchestrator to list sessions
+        match orchestrator.list_sessions(req).await {
+            Ok(response) => {
+                info!("Listed {} SSH sessions", response.sessions.len());
+                Ok(Response::new(response))
+            }
+            Err(e) => {
+                error!("Failed to list SSH sessions: {}", e);
+                Err(Status::internal(format!(
+                    "Failed to list SSH sessions: {e}"
+                )))
+            }
+        }
+    }
 }
 
 /// Create GPU spec from available executor information
@@ -544,6 +836,7 @@ mod tests {
             ssh_access_service,
             jwt_service,
             validator_discovery: None,
+            ssh_session_orchestrator: None,
         };
 
         // Test with production-level verification enabled
@@ -642,6 +935,7 @@ mod tests {
             ssh_access_service,
             jwt_service,
             validator_discovery: None,
+            ssh_session_orchestrator: None,
         };
 
         // Test various invalid signature scenarios to ensure production verification works

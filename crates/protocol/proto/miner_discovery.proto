@@ -15,6 +15,11 @@ service MinerDiscovery {
   
   // Initiate session with specific executor
   rpc InitiateExecutorSession(SessionInitRequest) returns (SessionInitResponse);
+  
+  // SSH Session Management
+  rpc InitiateSshSession(InitiateSshSessionRequest) returns (InitiateSshSessionResponse);
+  rpc CloseSshSession(CloseSshSessionRequest) returns (CloseSshSessionResponse);
+  rpc ListSshSessions(ListSshSessionsRequest) returns (ListSshSessionsResponse);
 }
 
 message ValidatorAuthRequest {
@@ -64,4 +69,59 @@ message SessionInitResponse {
   string session_id = 2;
   string access_credentials = 3;
   basilca.common.v1.ErrorInfo error = 4;
+}
+
+// SSH Session Management Messages
+
+message InitiateSshSessionRequest {
+  string validator_hotkey = 1;
+  string executor_id = 2;
+  string purpose = 3;
+  string validator_public_key = 4;  // Required: SSH public key
+  int64 session_duration_secs = 5;  // Required: Max session length
+  string session_metadata = 6;      // Optional: For audit trail
+}
+
+message InitiateSshSessionResponse {
+  string session_id = 1;
+  string access_credentials = 2;     // Format: "username@host:port"
+  int64 expires_at = 3;             // Unix timestamp
+  string executor_id = 4;           // Confirm executor ID
+  SshSessionStatus status = 5;      // Session setup status
+}
+
+enum SshSessionStatus {
+  SSH_SESSION_STATUS_UNKNOWN = 0;
+  SSH_SESSION_STATUS_ACTIVE = 1;
+  SSH_SESSION_STATUS_EXPIRED = 2;
+  SSH_SESSION_STATUS_FAILED = 3;
+}
+
+message CloseSshSessionRequest {
+  string session_id = 1;
+  string validator_hotkey = 2;
+  string reason = 3;                // For audit trail
+}
+
+message CloseSshSessionResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ListSshSessionsRequest {
+  string validator_hotkey = 1;
+  bool include_expired = 2;
+}
+
+message ListSshSessionsResponse {
+  repeated SshSession sessions = 1;
+}
+
+message SshSession {
+  string session_id = 1;
+  string executor_id = 2;
+  string validator_hotkey = 3;
+  int64 created_at = 4;
+  int64 expires_at = 5;
+  SshSessionStatus status = 6;
 } 

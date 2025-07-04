@@ -17,7 +17,7 @@ use tracing::{debug, error, warn};
 /// Stream rental logs
 #[utoipa::path(
     get,
-    path = "/api/v1/rentals/{rental_id}/logs",
+    path = "/rentals/{rental_id}/logs",
     params(
         ("rental_id" = String, Path, description = "Rental ID"),
         ("follow" = Option<bool>, Query, description = "Follow logs"),

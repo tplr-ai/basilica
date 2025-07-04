@@ -36,7 +36,7 @@ pub enum ExecutorOperation {
 
 /// Executor connection information
 #[derive(Debug)]
-pub struct ExecutorConnection {
+pub struct _ExecutorConnection {
     pub executor_id: String,
     pub grpc_address: String,
     pub is_available: bool,

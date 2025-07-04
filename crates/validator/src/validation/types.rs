@@ -183,6 +183,10 @@ pub enum ValidationError {
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
+    /// Cryptographic operation error
+    #[error("Cryptographic error: {0}")]
+    CryptoError(String),
+
     /// Binary not found
     #[error("GPU attestor binary not found at: {0}")]
     BinaryNotFound(PathBuf),

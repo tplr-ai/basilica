@@ -13,7 +13,7 @@ use axum::{
 /// List validators
 #[utoipa::path(
     get,
-    path = "/api/v1/validators",
+    path = "/validators",
     responses(
         (status = 200, description = "List of validators", body = ListValidatorsResponse),
     ),
@@ -47,7 +47,7 @@ pub async fn list_validators(
 /// Get validator by ID
 #[utoipa::path(
     get,
-    path = "/api/v1/validators/{validator_id}",
+    path = "/validators/{validator_id}",
     params(
         ("validator_id" = u16, Path, description = "Validator UID"),
     ),

@@ -16,7 +16,7 @@ use tracing::{debug, warn};
 /// List executors
 #[utoipa::path(
     get,
-    path = "/api/v1/executors",
+    path = "/executors",
     params(
         ("min_gpu_count" = Option<u32>, Query, description = "Minimum GPU count"),
         ("gpu_type" = Option<String>, Query, description = "GPU type filter"),
@@ -117,7 +117,7 @@ pub async fn list_executors(
 /// Get executor by ID
 #[utoipa::path(
     get,
-    path = "/api/v1/executors/{executor_id}",
+    path = "/executors/{executor_id}",
     params(
         ("executor_id" = String, Path, description = "Executor ID"),
     ),
