@@ -13,7 +13,7 @@ use common::config::{
 };
 use common::error::ConfigurationError;
 
-/// Validator-specific Bittensor configuration
+/// Enhanced validator Bittensor configuration with advertised address support
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorBittensorConfig {
     /// Common Bittensor configuration
@@ -25,6 +25,13 @@ pub struct ValidatorBittensorConfig {
 
     /// External IP address for the axon
     pub external_ip: Option<String>,
+
+    /// Advertised axon endpoint override (full URL)
+    pub advertised_axon_endpoint: Option<String>,
+
+    /// Enable TLS for advertised axon endpoint
+    #[serde(default)]
+    pub advertised_axon_tls: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -318,6 +325,8 @@ impl Default for ValidatorConfig {
                 },
                 axon_port: 9090,
                 external_ip: None,
+                advertised_axon_endpoint: None,
+                advertised_axon_tls: false,
             },
             verification: VerificationConfig {
                 verification_interval: Duration::from_secs(600),
@@ -388,6 +397,15 @@ impl ConfigValidation for ValidatorConfig {
             });
         }
 
+        // Validate advertised axon configuration
+        if let Err(msg) = self.bittensor.validate_advertised_axon() {
+            return Err(ConfigurationError::InvalidValue {
+                key: "bittensor.advertised_axon".to_string(),
+                value: "advertised_endpoint".to_string(),
+                reason: msg,
+            });
+        }
+
         Ok(())
     }
 
@@ -404,6 +422,62 @@ impl ConfigValidation for ValidatorConfig {
         }
 
         warnings
+    }
+}
+
+impl ValidatorBittensorConfig {
+    /// Get the advertised axon endpoint for chain registration
+    pub fn get_advertised_axon_endpoint(&self) -> String {
+        if let Some(endpoint) = &self.advertised_axon_endpoint {
+            endpoint.clone()
+        } else if let Some(external_ip) = &self.external_ip {
+            let protocol = if self.advertised_axon_tls {
+                "https"
+            } else {
+                "http"
+            };
+            format!("{}://{}:{}", protocol, external_ip, self.axon_port)
+        } else {
+            format!("http://0.0.0.0:{}", self.axon_port)
+        }
+    }
+
+    /// Extract host and port from advertised axon endpoint
+    pub fn get_advertised_axon_host_port(&self) -> Result<(String, u16), String> {
+        let endpoint = self.get_advertised_axon_endpoint();
+
+        let url = url::Url::parse(&endpoint)
+            .map_err(|e| format!("Invalid advertised axon endpoint: {}", e))?;
+
+        let host = url
+            .host_str()
+            .ok_or_else(|| "No host in advertised axon endpoint".to_string())?
+            .to_string();
+
+        let port = url
+            .port()
+            .ok_or_else(|| "No port in advertised axon endpoint".to_string())?;
+
+        Ok((host, port))
+    }
+
+    /// Validate advertised axon configuration
+    pub fn validate_advertised_axon(&self) -> Result<(), String> {
+        if let Some(ref endpoint) = self.advertised_axon_endpoint {
+            if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+                return Err(
+                    "Advertised axon endpoint must start with http:// or https://".to_string(),
+                );
+            }
+
+            let _ = self.get_advertised_axon_host_port()?;
+        }
+
+        if self.axon_port == 0 {
+            return Err("Axon port cannot be zero".to_string());
+        }
+
+        Ok(())
     }
 }
 

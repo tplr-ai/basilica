@@ -134,8 +134,8 @@ impl MinerClient {
                 .ok_or_else(|| anyhow::anyhow!("No port in axon endpoint"))?;
             axon_port + offset
         } else {
-            // Default gRPC port for miners (same as HTTP port)
-            8080
+            // Use same port as axon when no offset is configured
+            url.port().unwrap_or(8080)
         };
 
         // Build gRPC endpoint

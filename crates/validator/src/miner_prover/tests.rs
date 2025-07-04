@@ -20,12 +20,12 @@ fn test_axon_to_grpc_endpoint_conversion() {
         Hotkey::new("5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw".to_string()).unwrap();
     let client = MinerClient::new(config.clone(), hotkey);
 
-    // Test default port mapping (axon port -> gRPC port 50061)
+    // Test default port mapping (axon port -> same gRPC port when no offset)
     let test_cases = vec![
-        ("http://192.168.1.100:8091", "http://192.168.1.100:8080"),
-        ("http://10.0.0.1:9091", "http://10.0.0.1:8080"),
-        ("http://example.com:8091", "http://example.com:8080"),
-        ("http://[2001:db8::1]:8091", "http://[2001:db8::1]:8080"),
+        ("http://192.168.1.100:8091", "http://192.168.1.100:8091"),
+        ("http://10.0.0.1:9091", "http://10.0.0.1:9091"),
+        ("http://example.com:8091", "http://example.com:8091"),
+        ("http://[2001:db8::1]:8091", "http://[2001:db8::1]:8091"),
     ];
 
     for (axon, expected) in test_cases {
@@ -59,7 +59,7 @@ fn test_axon_to_grpc_endpoint_conversion() {
     let result = client_with_tls
         .axon_to_grpc_endpoint("http://example.com:8091")
         .unwrap();
-    assert_eq!(result, "https://example.com:8080");
+    assert_eq!(result, "https://example.com:8091");
 }
 
 #[test]

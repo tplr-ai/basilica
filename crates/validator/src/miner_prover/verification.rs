@@ -429,7 +429,7 @@ impl VerificationEngine {
             "[EVAL_FLOW] Starting executor discovery from miner at: {}",
             miner_endpoint
         );
-        debug!("[EVAL_FLOW] Using config: timeout={:?}, grpc_port_offset={:?}, use_dynamic_discovery={}", 
+        debug!("[EVAL_FLOW] Using config: timeout={:?}, grpc_port_offset={:?}, use_dynamic_discovery={}",
                self.config.discovery_timeout, self.config.grpc_port_offset, self.use_dynamic_discovery);
 
         // Validate endpoint before attempting connection
@@ -820,13 +820,39 @@ impl VerificationEngine {
         })
     }
 
-    /// Store verification result (placeholder implementation)
+    /// Store verification result in memory storage
     async fn store_verification_result(&self, miner_uid: u16, score: f64) -> Result<()> {
         info!(
             "Storing verification result for miner {}: score={:.2}",
             miner_uid, score
         );
-        // TODO: Implement actual storage (database, cache, etc.)
+
+        // Store verification result with timestamp and miner info
+        let verification_entry = serde_json::json!({
+            "miner_uid": miner_uid,
+            "score": score,
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "verification_method": "dynamic_discovery"
+        });
+
+        // Write to verification results file for persistence
+        let results_file = "/tmp/basilica_verification_results.json";
+        let mut results = if let Ok(content) = tokio::fs::read_to_string(results_file).await {
+            serde_json::from_str::<Vec<serde_json::Value>>(&content).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        results.push(verification_entry);
+
+        let results_json = serde_json::to_string_pretty(&results)?;
+        tokio::fs::write(results_file, results_json).await?;
+
+        info!(
+            "Verification result stored for miner {}: score={:.2}",
+            miner_uid, score
+        );
+
         Ok(())
     }
 
@@ -899,7 +925,7 @@ impl VerificationEngine {
             {
                 Ok(score) => {
                     scores.push(score);
-                    info!("Enhanced automation verification completed for executor {} with score: {:.4}", 
+                    info!("Enhanced automation verification completed for executor {} with score: {:.4}",
                           executor.id, score);
                 }
                 Err(e) => {
