@@ -3,6 +3,13 @@
 //! Manages cryptographic keys for binary signing and validation with automatic rotation.
 
 use super::types::{EphemeralKey, KeyRotationConfig, ValidationError, ValidationResult};
+use p256::elliptic_curve::sec1::ToEncodedPoint;
+use p256::{
+    ecdsa::{Signature, SigningKey, VerifyingKey},
+    PublicKey, SecretKey,
+};
+use rand::rngs::OsRng;
+use signature::Verifier;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use tokio::fs;
@@ -123,7 +130,7 @@ impl EphemeralKeyManager {
 
         // In a real implementation, this would generate actual cryptographic keys
         // For now, we simulate with a placeholder
-        let public_key_hex = self.generate_placeholder_key(&key_id).await?;
+        let public_key_hex = self.generate_p256_key(&key_id).await?;
 
         Ok(EphemeralKey {
             key_id,
@@ -134,24 +141,54 @@ impl EphemeralKeyManager {
         })
     }
 
-    /// Generate placeholder key (replace with actual key generation)
-    async fn generate_placeholder_key(&self, key_id: &str) -> ValidationResult<String> {
-        // TODO: Replace with actual P256 key generation
-        // This is a placeholder implementation
-        use sha2::{Digest, Sha256};
+    /// Generate P256 ECDSA keypair for cryptographic signing
+    async fn generate_p256_key(&self, key_id: &str) -> ValidationResult<String> {
+        debug!("Generating P256 ECDSA keypair for key_id: {}", key_id);
 
-        let mut hasher = Sha256::new();
-        hasher.update(key_id.as_bytes());
-        hasher.update(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or(Duration::ZERO)
-                .as_secs()
-                .to_le_bytes(),
-        );
+        // Generate a cryptographically secure P256 private key
+        let secret_key = SecretKey::random(&mut OsRng);
+        let signing_key = SigningKey::from(secret_key.clone());
 
-        let hash = hasher.finalize();
-        Ok(hex::encode(hash))
+        // Extract the public key
+        let verifying_key = VerifyingKey::from(&signing_key);
+        let public_key = PublicKey::from(&verifying_key);
+
+        // Encode the public key as compressed point for storage
+        let public_key_bytes = public_key.to_encoded_point(true); // true = compressed format
+        let public_key_hex = hex::encode(public_key_bytes.as_bytes());
+
+        // Store the private key securely for later use in signing
+        // In production, this should be stored in a secure key store
+        let private_key_hex = hex::encode(secret_key.to_bytes());
+
+        // For now, store both keys in a secure location
+        // TODO: In production, implement proper key storage with HSM or secure enclave
+        let key_storage_path = format!("/tmp/basilica_keys/{}.key", key_id);
+        if let Some(parent) = std::path::Path::new(&key_storage_path).parent() {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                ValidationError::CryptoError(format!("Failed to create key directory: {}", e))
+            })?;
+        }
+
+        // Store private key with restricted permissions
+        tokio::fs::write(&key_storage_path, private_key_hex.as_bytes())
+            .await
+            .map_err(|e| {
+                ValidationError::CryptoError(format!("Failed to store private key: {}", e))
+            })?;
+
+        // Set restrictive permissions (Unix only)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let permissions = std::fs::Permissions::from_mode(0o600); // Owner read/write only
+            std::fs::set_permissions(&key_storage_path, permissions).map_err(|e| {
+                ValidationError::CryptoError(format!("Failed to set key permissions: {}", e))
+            })?;
+        }
+
+        info!("Generated and stored P256 keypair for key_id: {}", key_id);
+        Ok(public_key_hex)
     }
 
     /// Load keys from disk storage
@@ -233,11 +270,11 @@ impl EphemeralKeyManager {
         Ok(())
     }
 
-    /// Verify a signature using any available key
-    pub fn verify_signature(
+    /// Verify P256 ECDSA signature against stored key
+    pub async fn verify_signature(
         &self,
-        _data: &[u8],
-        _signature: &str,
+        data: &[u8],
+        signature_hex: &str,
         key_id: &str,
     ) -> ValidationResult<bool> {
         if let Some(key) = self.get_key_by_id(key_id) {
@@ -246,10 +283,70 @@ impl EphemeralKeyManager {
                 return Ok(false);
             }
 
-            // TODO: Implement actual signature verification
-            // This is a placeholder implementation
-            debug!("Verifying signature with key: {}", key_id);
-            Ok(true) // Placeholder
+            debug!("Verifying P256 ECDSA signature with key: {}", key_id);
+
+            // Load the corresponding private key to reconstruct the public key
+            let key_storage_path = format!("/tmp/basilica_keys/{}.key", key_id);
+
+            let private_key_hex = match tokio::fs::read_to_string(&key_storage_path).await {
+                Ok(content) => content,
+                Err(e) => {
+                    warn!("Failed to read private key for verification: {}", e);
+                    return Ok(false);
+                }
+            };
+
+            // Parse the private key from hex
+            let private_key_bytes = match hex::decode(private_key_hex.trim()) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!("Failed to decode private key hex: {}", e);
+                    return Ok(false);
+                }
+            };
+
+            // Reconstruct the secret key
+            let secret_key = match SecretKey::from_slice(&private_key_bytes) {
+                Ok(key) => key,
+                Err(e) => {
+                    warn!("Failed to reconstruct secret key: {}", e);
+                    return Ok(false);
+                }
+            };
+
+            // Get the verifying key (public key) from the signing key
+            let signing_key = SigningKey::from(secret_key);
+            let verifying_key = VerifyingKey::from(&signing_key);
+
+            // Parse the signature from hex
+            let signature_bytes = match hex::decode(signature_hex) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!("Failed to decode signature hex: {}", e);
+                    return Ok(false);
+                }
+            };
+
+            // Parse the signature
+            let signature = match Signature::from_slice(&signature_bytes) {
+                Ok(sig) => sig,
+                Err(e) => {
+                    warn!("Failed to parse signature: {}", e);
+                    return Ok(false);
+                }
+            };
+
+            // Verify the signature
+            match verifying_key.verify(data, &signature) {
+                Ok(()) => {
+                    debug!("Signature verification successful for key: {}", key_id);
+                    Ok(true)
+                }
+                Err(e) => {
+                    warn!("Signature verification failed for key {}: {}", key_id, e);
+                    Ok(false)
+                }
+            }
         } else {
             warn!("Key not found for verification: {}", key_id);
             Ok(false)

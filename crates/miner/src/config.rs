@@ -80,6 +80,10 @@ pub struct MinerConfig {
 
     /// SSH session configuration for validator access
     pub ssh_session: ExecutorSshConfig,
+
+    /// Advertised address configuration
+    #[serde(default)]
+    pub advertised_addresses: MinerAdvertisedAddresses,
 }
 
 /// Miner-specific Bittensor configuration
@@ -322,6 +326,19 @@ pub struct ExecutorSshConfig {
     pub ssh_retry_delay: Duration,
 }
 
+/// Advertised address configuration for miner services
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MinerAdvertisedAddresses {
+    /// Advertised gRPC endpoint for validator communication
+    pub grpc_endpoint: Option<String>,
+    /// Advertised discovery endpoint for miner-to-miner communication
+    pub discovery_endpoint: Option<String>,
+    /// Override axon endpoint for Bittensor chain registration
+    pub axon_endpoint: Option<String>,
+    /// Advertised metrics endpoint
+    pub metrics_endpoint: Option<String>,
+}
+
 impl Default for MinerConfig {
     fn default() -> Self {
         Self {
@@ -342,6 +359,7 @@ impl Default for MinerConfig {
             remote_executor_deployment: None,
             security: SecurityConfig::default(),
             ssh_session: ExecutorSshConfig::default(),
+            advertised_addresses: MinerAdvertisedAddresses::default(),
         }
     }
 }
@@ -633,6 +651,76 @@ impl MinerConfig {
     /// Load configuration from specific file
     pub fn load_from_file(path: &Path) -> Result<Self> {
         Ok(loader::load_from_file::<Self>(path)?)
+    }
+
+    /// Get the advertised gRPC endpoint for validators
+    pub fn get_advertised_grpc_endpoint(&self) -> String {
+        self.advertised_addresses
+            .grpc_endpoint
+            .as_ref()
+            .unwrap_or(&self.server.advertised_url("http"))
+            .clone()
+    }
+
+    /// Get the advertised axon endpoint for Bittensor registration
+    pub fn get_advertised_axon_endpoint(&self) -> String {
+        if let Some(endpoint) = &self.advertised_addresses.axon_endpoint {
+            endpoint.clone()
+        } else if let Some(external_ip) = &self.bittensor.external_ip {
+            format!("http://{}:{}", external_ip, self.bittensor.axon_port)
+        } else {
+            let advertised_host = self
+                .server
+                .advertised_host
+                .as_ref()
+                .unwrap_or(&self.server.host);
+            format!("http://{}:{}", advertised_host, self.bittensor.axon_port)
+        }
+    }
+
+    /// Get the advertised metrics endpoint
+    pub fn get_advertised_metrics_endpoint(&self) -> String {
+        self.advertised_addresses
+            .metrics_endpoint
+            .as_ref()
+            .unwrap_or(&format!(
+                "http://{}:{}",
+                self.server
+                    .advertised_host
+                    .as_ref()
+                    .unwrap_or(&self.server.host),
+                self.metrics
+                    .prometheus
+                    .as_ref()
+                    .map(|p| p.port)
+                    .unwrap_or(9090)
+            ))
+            .clone()
+    }
+
+    /// Validate all advertised address configurations
+    pub fn validate_advertised_addresses(&self) -> Result<()> {
+        self.server
+            .validate_advertised_config()
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        if let Some(ref grpc_endpoint) = self.advertised_addresses.grpc_endpoint {
+            if !grpc_endpoint.starts_with("http://") && !grpc_endpoint.starts_with("https://") {
+                return Err(anyhow::anyhow!(
+                    "gRPC endpoint must start with http:// or https://"
+                ));
+            }
+        }
+
+        if let Some(ref axon_endpoint) = self.advertised_addresses.axon_endpoint {
+            if !axon_endpoint.starts_with("http://") && !axon_endpoint.starts_with("https://") {
+                return Err(anyhow::anyhow!(
+                    "Axon endpoint must start with http:// or https://"
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
