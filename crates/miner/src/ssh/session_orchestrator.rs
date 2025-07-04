@@ -448,8 +448,16 @@ impl SshSessionOrchestrator {
         Ok(())
     }
 
+    /// Start the background cleanup task
+    pub async fn start_cleanup_task(self: Arc<Self>) {
+        info!("Starting SSH session cleanup task");
+        tokio::spawn(async move {
+            self.run_cleanup_task().await;
+        });
+    }
+
     /// Run periodic cleanup task
-    pub async fn run_cleanup_task(&self) {
+    async fn run_cleanup_task(&self) {
         let mut interval = tokio::time::interval(self.config.cleanup_interval);
 
         loop {

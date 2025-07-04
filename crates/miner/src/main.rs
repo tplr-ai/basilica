@@ -17,7 +17,7 @@ mod auth;
 mod bittensor_core;
 mod cli;
 mod config;
-mod executor_manager;
+// mod executor_manager; // Replaced by executors module
 mod executors;
 mod metrics;
 mod persistence;
@@ -29,12 +29,13 @@ mod validator_discovery;
 
 use auth::JwtAuthService;
 use bittensor_core::ChainRegistration;
-use common::ssh::manager::DefaultSshService;
+// use common::ssh::manager::DefaultSshService; // Not needed with current architecture
 use config::MinerConfig;
-use executor_manager::ExecutorManager;
+use executors::{ExecutorConnectionManager, ExecutorInfo};
+use executors::connection_manager::ExecutorConnectionConfig;
 use persistence::RegistrationDb;
 use session_cleanup::run_cleanup_service;
-use ssh::{MinerSshConfig, SshCleanupService, ValidatorAccessService};
+use ssh::{MinerSshConfig, SshSessionConfig, SshSessionOrchestrator};
 use validator_comms::ValidatorCommsServer;
 
 #[derive(Parser, Debug)]
@@ -116,9 +117,9 @@ pub struct MinerState {
     pub miner_uid: MinerUid,
     pub chain_registration: ChainRegistration,
     pub validator_comms: ValidatorCommsServer,
-    pub executor_manager: Arc<ExecutorManager>,
+    pub executor_manager: Arc<ExecutorConnectionManager>,
     pub registration_db: RegistrationDb,
-    pub ssh_access_service: ValidatorAccessService,
+    pub ssh_session_orchestrator: Arc<SshSessionOrchestrator>,
     pub jwt_service: std::sync::Arc<JwtAuthService>,
     pub metrics: Option<metrics::MinerMetrics>,
     pub validator_discovery: Option<std::sync::Arc<validator_discovery::ValidatorDiscovery>>,
@@ -140,24 +141,43 @@ impl MinerState {
         // Initialize persistence layer
         let registration_db = RegistrationDb::new(&config.database).await?;
 
-        // Initialize executor manager
-        let executor_manager =
-            Arc::new(ExecutorManager::new(&config, registration_db.clone()).await?);
+        // Initialize executor connection manager
+        let executor_config = ExecutorConnectionConfig::default();
+        let executor_manager = Arc::new(ExecutorConnectionManager::new(executor_config));
+        
+        // Register executors from config
+        for executor in &config.executor_management.executors {
+            let (host, _grpc_port) = if let Some(colon_pos) = executor.grpc_address.rfind(':') {
+                let host = &executor.grpc_address[..colon_pos];
+                let port = executor.grpc_address[colon_pos + 1..].parse().unwrap_or(50051);
+                (host.to_string(), port)
+            } else {
+                (executor.grpc_address.clone(), 50051)
+            };
+            
+            let info = ExecutorInfo {
+                id: executor.id.parse().unwrap_or_else(|_| common::identity::ExecutorId::new()),
+                host: host.clone(),
+                ssh_port: 22,
+                ssh_username: "executor".to_string(),
+                grpc_endpoint: Some(executor.grpc_address.clone()),
+                last_health_check: None,
+                is_healthy: true,
+                gpu_count: 1, // Default to 1 GPU
+                resources: None,
+            };
+            executor_manager.register_executor(info).await?;
+        }
 
         // Initialize SSH services
-        let ssh_config = MinerSshConfig::default();
-        let ssh_service = std::sync::Arc::new(DefaultSshService::new(ssh_config.clone())?);
-        let ssh_access_service = ValidatorAccessService::new(
-            ssh_config.clone(),
-            ssh_service,
-            executor_manager.clone(),
-            registration_db.clone(),
-        )
-        .await?;
-
+        let _ssh_config = MinerSshConfig::default();
+        let ssh_session_config = SshSessionConfig::default();
+        let ssh_session_orchestrator = Arc::new(
+            SshSessionOrchestrator::new(executor_manager.clone(), ssh_session_config)
+        );
+        
         // Start SSH cleanup background task
-        let cleanup_service = SshCleanupService::new(ssh_access_service.clone(), &ssh_config);
-        cleanup_service.start_cleanup_task().await?;
+        ssh_session_orchestrator.clone().start_cleanup_task().await;
 
         // Initialize Bittensor chain registration
         let chain_registration = ChainRegistration::new(config.bittensor.clone()).await?;
@@ -185,15 +205,17 @@ impl MinerState {
         };
 
         // Initialize validator communications server
-        let validator_comms = ValidatorCommsServer::new(
+        let mut validator_comms = ValidatorCommsServer::new(
             config.validator_comms.clone(),
             config.security.clone(),
             executor_manager.clone(),
             registration_db.clone(),
-            ssh_access_service.clone(),
             validator_discovery.clone(),
         )
         .await?;
+        
+        // Set the SSH session orchestrator
+        validator_comms = validator_comms.with_ssh_session_orchestrator(ssh_session_orchestrator.clone());
 
         let jwt_service = validator_comms.jwt_service.clone();
 
@@ -207,7 +229,7 @@ impl MinerState {
             validator_comms,
             executor_manager,
             registration_db,
-            ssh_access_service,
+            ssh_session_orchestrator,
             jwt_service,
             metrics,
             validator_discovery,
@@ -420,83 +442,15 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
 
 /// Handle deploy executors command
 async fn handle_deploy_executors(
-    config: &MinerConfig,
-    dry_run: bool,
+    _config: &MinerConfig,
+    _dry_run: bool,
     _only_machines: Option<String>,
-    status_only: bool,
+    _status_only: bool,
 ) -> Result<()> {
-    // Check if deployment is configured
-    let deployment_config = config
-        .remote_executor_deployment
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No executor deployment configuration found"))?;
+    // TODO: Implement deployment functionality with ExecutorConnectionManager
+    Err(anyhow::anyhow!("Executor deployment functionality is being refactored. Please deploy executors manually for now."))
 
-    // Initialize persistence
-    let db = RegistrationDb::new(&config.database).await?;
-
-    // Create executor manager
-    let manager = ExecutorManager::new(config, db).await?;
-
-    // Status check only
-    if status_only {
-        let available = manager.list_available().await?;
-        info!("Checking status of executors...");
-
-        if available.is_empty() {
-            warn!("No healthy executors found");
-        } else {
-            for executor in available {
-                info!("✓ {} ({}) - Available", executor.name, executor.id);
-                info!(
-                    "  GPUs: {}, Address: {}",
-                    executor.gpu_count, executor.grpc_address
-                );
-            }
-        }
-        return Ok(());
-    }
-
-    // Dry run
-    if dry_run {
-        info!("DRY RUN: Would deploy executors to the following machines:");
-        for machine in &deployment_config.remote_machines {
-            info!(
-                "  - {} ({}) at {}:{}",
-                machine.name, machine.id, machine.ssh.host, machine.ssh.port
-            );
-            info!("    SSH user: {}", machine.ssh.username);
-            info!("    GPU count: {}", machine.gpu_count.unwrap_or(0));
-            info!("    Executor port: {}", machine.executor_port);
-        }
-        return Ok(());
-    }
-
-    // Actual deployment
-    info!("Deploying executors...");
-    let results = manager.deploy_all().await?;
-
-    // Report results
-    let successful = results.iter().filter(|r| r.success).count();
-    let failed = results.len() - successful;
-
-    info!("\nDeployment Summary:");
-    info!("  Successful: {}", successful);
-    info!("  Failed: {}", failed);
-
-    // Show details
-    for result in &results {
-        if result.success {
-            info!("✓ {} - Deployed successfully", result.machine_name);
-        } else {
-            error!(
-                "✗ {} - Failed: {}",
-                result.machine_name,
-                result.error.as_ref().unwrap()
-            );
-        }
-    }
-
-    Ok(())
+    // Implementation removed - see TODO above
 }
 
 /// Initialize structured logging

@@ -13,7 +13,7 @@ use common::identity::Hotkey;
 use protocol::miner_discovery::{
     miner_discovery_client::MinerDiscoveryClient, CloseSshSessionRequest, CloseSshSessionResponse,
     ExecutorConnectionDetails, InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseRequest,
-    SessionInitRequest, ValidatorAuthRequest,
+    ValidatorAuthRequest,
 };
 
 /// Configuration for the miner client
@@ -304,50 +304,8 @@ impl AuthenticatedMinerConnection {
         Ok(response.available_executors)
     }
 
-    /// Initiate SSH session with a specific executor (legacy method)
-    pub async fn initiate_ssh_session(
-        &mut self,
-        executor_id: &str,
-        session_type: &str,
-    ) -> Result<SshSessionInfo> {
-        info!(
-            "Initiating {} session with executor {}",
-            session_type, executor_id
-        );
-
-        let request = SessionInitRequest {
-            validator_hotkey: String::new(), // Will be extracted from token by miner
-            session_token: self.session_token.clone(),
-            executor_id: executor_id.to_string(),
-            session_type: session_type.to_string(),
-        };
-
-        let response = self
-            .client
-            .initiate_executor_session(request)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initiate session: {}", e))?;
-
-        let response = response.into_inner();
-
-        if !response.success {
-            let error_msg = response
-                .error
-                .map(|e| e.message)
-                .unwrap_or_else(|| "Unknown error".to_string());
-            return Err(anyhow::anyhow!("Session initiation failed: {}", error_msg));
-        }
-
-        info!(
-            "Successfully initiated session {} with executor {}",
-            response.session_id, executor_id
-        );
-
-        Ok(SshSessionInfo {
-            session_id: response.session_id,
-            access_credentials: response.access_credentials,
-        })
-    }
+    // Legacy initiate_ssh_session method has been removed.
+    // Use initiate_ssh_session_v2 with validator-provided SSH keys instead.
 
     /// Initiate SSH session with public key (new method)
     pub async fn initiate_ssh_session_v2(
@@ -400,12 +358,6 @@ impl AuthenticatedMinerConnection {
     }
 }
 
-/// Information about an SSH session
-#[derive(Debug, Clone)]
-pub struct SshSessionInfo {
-    pub session_id: String,
-    pub access_credentials: String,
-}
 
 #[cfg(test)]
 mod tests {
