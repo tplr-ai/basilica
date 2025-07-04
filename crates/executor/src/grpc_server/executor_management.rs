@@ -336,7 +336,7 @@ impl ExecutorManagementService {
 
         Ok(Response::new(SshKeyUpdateResponse {
             success: true,
-            message: format!("Cleaned up {} expired SSH keys", cleaned_count),
+            message: format!("Cleaned up {cleaned_count} expired SSH keys"),
             error: None,
         }))
     }
@@ -368,7 +368,7 @@ impl ExecutorManagementService {
 
         Ok(Response::new(SshKeyUpdateResponse {
             success: true,
-            message: format!("Active SSH sessions: [{}]", session_info),
+            message: format!("Active SSH sessions: [{session_info}]"),
             error: None,
         }))
     }

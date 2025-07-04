@@ -12,7 +12,7 @@ use common::identity::MinerUid;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tracing::{debug, error, info, warn};
@@ -26,8 +26,6 @@ pub struct VerificationScheduler {
         Arc<RwLock<HashMap<Uuid, JoinHandle<Result<super::verification::VerificationResult>>>>>,
     /// For tracking active verifications by UUID
     active_verification_tasks: Arc<RwLock<HashMap<Uuid, VerificationTask>>>,
-    /// Shutdown channel receiver
-    shutdown_rx: broadcast::Receiver<()>,
 }
 
 /// Batch verification task handle
@@ -38,13 +36,11 @@ struct BatchVerificationHandle {
 
 impl VerificationScheduler {
     pub fn new(config: VerificationConfig) -> Self {
-        let (_shutdown_tx, shutdown_rx) = broadcast::channel(1);
         Self {
             config,
             active_verifications: HashMap::new(),
             verification_handles: Arc::new(RwLock::new(HashMap::new())),
             active_verification_tasks: Arc::new(RwLock::new(HashMap::new())),
-            shutdown_rx,
         }
     }
 
@@ -75,10 +71,6 @@ impl VerificationScheduler {
                     if let Err(e) = self.run_discovery_verification_cycle(&discovery, &verification).await {
                         error!("Discovery verification cycle failed: {}", e);
                     }
-                }
-                _ = self.shutdown_rx.recv() => {
-                    info!("Verification scheduler shutdown requested");
-                    break;
                 }
             }
         }

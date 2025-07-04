@@ -134,10 +134,38 @@ impl MinerDiscovery {
         metagraph: &bittensor::Metagraph<AccountId>,
         uid: usize,
     ) -> Result<Option<String>> {
-        Ok(metagraph
-            .axons
-            .get(uid)
-            .map(|axon| self.axon_info_to_endpoint(axon)))
+        Ok(metagraph.axons.get(uid).and_then(|axon| {
+            // Validate that the IP is not zero (unset)
+            if axon.ip == 0 {
+                debug!("Miner {} has zero IP address, skipping", uid);
+                return None;
+            }
+
+            // For IPv4, validate that we have a non-zero IP in the lower 32 bits
+            if axon.ip_type == 4 {
+                let ipv4_bits = axon.ip as u32;
+                if ipv4_bits == 0 {
+                    debug!(
+                        "Miner {} has zero IPv4 address in lower 32 bits, skipping",
+                        uid
+                    );
+                    return None;
+                }
+            }
+
+            // Validate that the port is reasonable
+            if axon.port == 0 || axon.port > 65535 {
+                debug!("Miner {} has invalid port {}, skipping", uid, axon.port);
+                return None;
+            }
+
+            let endpoint = self.axon_info_to_endpoint(axon);
+            debug!(
+                "Miner {} endpoint: {} (IP: {}, port: {})",
+                uid, endpoint, axon.ip, axon.port
+            );
+            Some(endpoint)
+        }))
     }
 
     fn prioritize_by_stake(
@@ -211,21 +239,39 @@ impl MinerDiscovery {
 
     /// Convert u128 IP representation to string
     fn u128_to_ip(&self, ip: u128, ip_type: u8) -> String {
+        if ip == 0 {
+            warn!("Attempting to convert zero IP address to string");
+            return "0.0.0.0".to_string();
+        }
+
         if ip_type == 4 {
-            // IPv4
-            let bytes = ip.to_be_bytes();
-            format!("{}.{}.{}.{}", bytes[12], bytes[13], bytes[14], bytes[15])
+            // IPv4 - Extract from lower 32 bits (this is how miners actually store IPs)
+            let ipv4_bits = ip as u32;
+            let ip_bytes = ipv4_bits.to_be_bytes();
+            format!(
+                "{}.{}.{}.{}",
+                ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]
+            )
         } else {
             // IPv6
             let bytes = ip.to_be_bytes();
             let segments: Vec<u16> = (0..8)
                 .map(|i| u16::from_be_bytes([bytes[i * 2], bytes[i * 2 + 1]]))
                 .collect();
-            segments
+
+            // Use standard IPv6 representation with :: compression for zeros
+            let ipv6_str = segments
                 .iter()
                 .map(|&s| format!("{s:x}"))
                 .collect::<Vec<_>>()
-                .join(":")
+                .join(":");
+
+            // Handle IPv6 zero compression (simplified)
+            if ipv6_str == "0:0:0:0:0:0:0:0" {
+                "::".to_string()
+            } else {
+                ipv6_str
+            }
         }
     }
 
