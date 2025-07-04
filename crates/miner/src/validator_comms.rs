@@ -223,7 +223,7 @@ impl ValidatorCommsServer {
     /// Validate that the advertised endpoint is accessible
     async fn validate_endpoint_accessibility(&self, endpoint: &str) -> Result<()> {
         let url = url::Url::parse(endpoint)
-            .with_context(|| format!("Invalid endpoint URL: {}", endpoint))?;
+            .with_context(|| format!("Invalid endpoint URL: {endpoint}"))?;
 
         let host = url
             .host_str()
