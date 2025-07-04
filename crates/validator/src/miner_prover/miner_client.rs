@@ -32,7 +32,7 @@ pub struct MinerClientConfig {
 impl Default for MinerClientConfig {
     fn default() -> Self {
         Self {
-            timeout: Duration::from_secs(30),
+            timeout: Duration::from_secs(120), // Increased to 120s for better reliability with slow/distant miners
             max_retries: 3,
             grpc_port_offset: None, // Will use default port 8080
             use_tls: false,
@@ -232,7 +232,7 @@ impl MinerClient {
         Fut: std::future::Future<Output = Result<T>>,
     {
         let mut attempt = 0;
-        let mut backoff = Duration::from_millis(100);
+        let mut backoff = Duration::from_millis(500); // Increased initial backoff
 
         loop {
             match call().await {
@@ -240,7 +240,10 @@ impl MinerClient {
                 Err(e) => {
                     attempt += 1;
                     if attempt >= self.config.max_retries {
-                        return Err(e);
+                        return Err(e.context(format!(
+                            "Failed after {} attempts with exponential backoff",
+                            self.config.max_retries
+                        )));
                     }
 
                     warn!(
@@ -249,7 +252,7 @@ impl MinerClient {
                     );
 
                     tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(Duration::from_secs(5));
+                    backoff = (backoff * 2).min(Duration::from_secs(10)); // Increased max backoff
                 }
             }
         }

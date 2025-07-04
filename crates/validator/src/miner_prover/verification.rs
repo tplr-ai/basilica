@@ -21,7 +21,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -65,6 +65,38 @@ impl VerificationEngine {
             bittensor_service: None,
             ssh_key_manager: None,
         }
+    }
+
+    /// Check if an endpoint is invalid
+    fn is_invalid_endpoint(&self, endpoint: &str) -> bool {
+        // Check for common invalid patterns
+        if endpoint.contains("0:0:0:0:0:0:0:0")
+            || endpoint.contains("0.0.0.0")
+            || endpoint.is_empty()
+            || !endpoint.starts_with("http")
+        {
+            debug!("Invalid endpoint detected: {}", endpoint);
+            return true;
+        }
+
+        // Validate URL parsing
+        if let Ok(url) = url::Url::parse(endpoint) {
+            if let Some(host) = url.host_str() {
+                // Check for zero or loopback addresses that indicate invalid configuration
+                if host == "0.0.0.0" || host == "::" || host == "localhost" || host == "127.0.0.1" {
+                    debug!("Invalid host in endpoint: {}", endpoint);
+                    return true;
+                }
+            } else {
+                debug!("No host found in endpoint: {}", endpoint);
+                return true;
+            }
+        } else {
+            debug!("Failed to parse endpoint as URL: {}", endpoint);
+            return true;
+        }
+
+        false
     }
 
     /// Initiate automated SSH session setup with miner during discovery handshake
@@ -397,6 +429,14 @@ impl VerificationEngine {
         miner_endpoint: &str,
     ) -> Result<Vec<ExecutorInfoDetailed>> {
         info!("Discovering executors from miner at: {}", miner_endpoint);
+
+        // Validate endpoint before attempting connection
+        if self.is_invalid_endpoint(miner_endpoint) {
+            return Err(anyhow::anyhow!(
+                "Invalid miner endpoint: {}. Skipping discovery.",
+                miner_endpoint
+            ));
+        }
 
         // Create authenticated miner client
         let client = self.create_authenticated_client()?;
