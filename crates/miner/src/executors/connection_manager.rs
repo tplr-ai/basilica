@@ -9,6 +9,7 @@ use common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, StandardSshClient,
 };
 use protocol::miner_discovery::SshSessionStatus;
+use protocol::common::ResourceUsageStats;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -26,6 +27,18 @@ pub struct ExecutorInfo {
     pub grpc_endpoint: Option<String>,
     pub last_health_check: Option<Instant>,
     pub is_healthy: bool,
+    pub gpu_count: u32,
+    pub resources: Option<ResourceUsageStats>,
+}
+
+/// Available executor information (for compatibility with ExecutorManager)
+#[derive(Debug, Clone)]
+pub struct AvailableExecutor {
+    pub id: String,
+    pub name: String,
+    pub grpc_address: String,
+    pub resources: Option<ResourceUsageStats>,
+    pub gpu_count: u32,
 }
 
 /// SSH connection to an executor
@@ -108,6 +121,7 @@ impl Default for ExecutorConnectionConfig {
 }
 
 /// Manages connections to multiple executors
+#[derive(Clone)]
 pub struct ExecutorConnectionManager {
     /// Configuration
     config: ExecutorConnectionConfig,
@@ -253,6 +267,32 @@ impl ExecutorConnectionManager {
     pub async fn list_executors(&self) -> Vec<ExecutorInfo> {
         let executors = self.executors.read().await;
         executors.values().cloned().collect()
+    }
+
+    /// Get available executors (for compatibility with ExecutorManager)
+    pub async fn list_available(&self) -> Result<Vec<AvailableExecutor>> {
+        let executors = self.executors.read().await;
+        Ok(executors
+            .values()
+            .filter(|info| info.is_healthy)
+            .map(|info| AvailableExecutor {
+                id: info.id.to_string(),
+                name: format!("Executor {}", info.id),
+                grpc_address: info.grpc_endpoint.clone().unwrap_or_else(|| format!("{}:50051", info.host)),
+                resources: info.resources.clone(),
+                gpu_count: info.gpu_count,
+            })
+            .collect())
+    }
+
+    /// Start monitoring executors (for compatibility with ExecutorManager)
+    pub async fn start_monitoring(&self) -> Result<()> {
+        info!("Starting executor health monitoring");
+        let self_clone = self.clone();
+        tokio::spawn(async move {
+            self_clone.run_health_check_task().await;
+        });
+        Ok(())
     }
 
     /// Perform health check on an executor

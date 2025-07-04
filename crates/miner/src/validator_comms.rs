@@ -9,9 +9,8 @@
 use anyhow::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use uuid::Uuid;
 
-use crate::executor_manager::AvailableExecutor;
+use crate::executors::AvailableExecutor;
 
 use tonic::{transport::Server, Request, Response, Status};
 use tonic_health::server::health_reporter;
@@ -28,9 +27,9 @@ use protocol::miner_discovery::{
 
 use crate::auth::JwtAuthService;
 use crate::config::{SecurityConfig, ValidatorCommsConfig};
-use crate::executor_manager::ExecutorManager;
+use crate::executors::ExecutorConnectionManager;
 use crate::persistence::RegistrationDb;
-use crate::ssh::{SshSessionOrchestrator, ValidatorAccessService};
+use crate::ssh::SshSessionOrchestrator;
 use crate::validator_discovery::ValidatorDiscovery;
 
 /// Validator communications server
@@ -38,9 +37,8 @@ use crate::validator_discovery::ValidatorDiscovery;
 pub struct ValidatorCommsServer {
     config: ValidatorCommsConfig,
     security_config: SecurityConfig,
-    executor_manager: Arc<ExecutorManager>,
+    executor_manager: Arc<ExecutorConnectionManager>,
     db: RegistrationDb,
-    ssh_access_service: ValidatorAccessService,
     pub jwt_service: Arc<JwtAuthService>,
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
     ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
@@ -51,9 +49,8 @@ impl ValidatorCommsServer {
     pub async fn new(
         config: ValidatorCommsConfig,
         security_config: SecurityConfig,
-        executor_manager: Arc<ExecutorManager>,
+        executor_manager: Arc<ExecutorConnectionManager>,
         db: RegistrationDb,
-        ssh_access_service: ValidatorAccessService,
         validator_discovery: Option<Arc<ValidatorDiscovery>>,
     ) -> Result<Self> {
         info!("Initializing validator communications server");
@@ -71,7 +68,6 @@ impl ValidatorCommsServer {
             security_config,
             executor_manager,
             db,
-            ssh_access_service,
             jwt_service,
             validator_discovery,
             ssh_session_orchestrator: None,
@@ -96,7 +92,6 @@ impl ValidatorCommsServer {
             security_config: self.security_config.clone(),
             executor_manager: self.executor_manager.clone(),
             db: self.db.clone(),
-            ssh_access_service: self.ssh_access_service.clone(),
             jwt_service: self.jwt_service.clone(),
             validator_discovery: self.validator_discovery.clone(),
             ssh_session_orchestrator: self.ssh_session_orchestrator.clone(),
@@ -131,9 +126,8 @@ impl ValidatorCommsServer {
 struct MinerDiscoveryService {
     _config: ValidatorCommsConfig,
     security_config: SecurityConfig,
-    executor_manager: Arc<ExecutorManager>,
+    executor_manager: Arc<ExecutorConnectionManager>,
     db: RegistrationDb,
-    ssh_access_service: ValidatorAccessService,
     jwt_service: Arc<JwtAuthService>,
     validator_discovery: Option<Arc<ValidatorDiscovery>>,
     ssh_session_orchestrator: Option<Arc<SshSessionOrchestrator>>,
@@ -347,92 +341,15 @@ impl MinerDiscovery for MinerDiscoveryService {
         Ok(Response::new(response))
     }
 
-    /// Initiate session with specific executor (adapted for SSH access)
+    /// Initiate session with specific executor (DEPRECATED - use initiate_ssh_session instead)
     async fn initiate_executor_session(
         &self,
-        request: Request<SessionInitRequest>,
+        _request: Request<SessionInitRequest>,
     ) -> Result<Response<SessionInitResponse>, Status> {
-        let session_request = request.into_inner();
-
-        debug!(
-            "Received session init request for executor {}",
-            session_request.executor_id
-        );
-
-        // Validate JWT token
-        let claims = self
-            .jwt_service
-            .validate_token(&session_request.session_token)
-            .await
-            .map_err(|e| {
-                debug!("Token validation failed: {}", e);
-                Status::unauthenticated("Invalid or expired session token")
-            })?;
-
-        // Check if validator has permission to access executors
-        if !claims.permissions.contains(&"executor.access".to_string()) {
-            return Err(Status::permission_denied("Insufficient permissions"));
-        }
-
-        // Verify the validator hotkey matches
-        if claims.sub != session_request.validator_hotkey {
-            return Err(Status::permission_denied("Token validator mismatch"));
-        }
-
-        debug!(
-            "Validated session init request from validator: {}",
-            claims.sub
-        );
-
-        // Create SSH session for the validator to access the executor
-        let connection_string = match self
-            .ssh_access_service
-            .provision_validator_access(
-                &session_request.validator_hotkey,
-                &session_request.executor_id,
-                None, // Use default timeout
-            )
-            .await
-        {
-            Ok(connection) => connection,
-            Err(e) => {
-                error!("Failed to provision SSH access: {}", e);
-                return Err(Status::internal(format!(
-                    "Failed to create SSH access: {e}"
-                )));
-            }
-        };
-
-        let session_id = format!("session_{}", Uuid::new_v4().simple());
-
-        // Record the session initiation
-        if let Err(e) = self
-            .db
-            .record_validator_interaction(
-                &session_request.validator_hotkey,
-                "session_init",
-                true,
-                Some(
-                    serde_json::json!({
-                        "executor_id": session_request.executor_id,
-                        "session_type": session_request.session_type,
-                    })
-                    .to_string(),
-                ),
-            )
-            .await
-        {
-            error!("Failed to record session initiation: {}", e);
-        }
-
-        let response = SessionInitResponse {
-            success: true,
-            session_id,
-            access_credentials: connection_string,
-            error: None,
-        };
-
-        Ok(Response::new(response))
+        error!("Legacy initiate_executor_session called - this method is deprecated");
+        Err(Status::unimplemented(
+            "This method is deprecated. Please use initiate_ssh_session instead with validator-provided SSH keys."
+        ))
     }
 
     /// Initiate SSH session with public key
@@ -622,22 +539,8 @@ mod tests {
                 .unwrap(),
         );
 
-        // Create SSH access service for testing
-        let ssh_config = crate::ssh::MinerSshConfig {
-            key_directory: std::path::PathBuf::from("/tmp/test_ssh_keys"),
-            ..crate::ssh::MinerSshConfig::default()
-        };
-        let ssh_service = std::sync::Arc::new(
-            common::ssh::manager::DefaultSshService::new(ssh_config.clone()).unwrap(),
-        );
-        let ssh_access_service = crate::ssh::ValidatorAccessService::new(
-            ssh_config,
-            ssh_service,
-            executor_manager.clone(),
-            db.clone(),
-        )
-        .await
-        .unwrap();
+        // SSH session orchestrator not created for tests due to architectural changes
+        // TODO: Update tests to use ExecutorConnectionManager instead of ExecutorManager
 
         // Create JWT service for testing
         let jwt_service = Arc::new(
@@ -655,7 +558,6 @@ mod tests {
             security_config,
             executor_manager,
             db,
-            ssh_access_service,
             jwt_service,
             validator_discovery: None,
             ssh_session_orchestrator: None,
@@ -721,22 +623,8 @@ mod tests {
                 .unwrap(),
         );
 
-        // Create SSH access service for testing
-        let ssh_config = crate::ssh::MinerSshConfig {
-            key_directory: std::path::PathBuf::from("/tmp/test_ssh_keys"),
-            ..crate::ssh::MinerSshConfig::default()
-        };
-        let ssh_service = std::sync::Arc::new(
-            common::ssh::manager::DefaultSshService::new(ssh_config.clone()).unwrap(),
-        );
-        let ssh_access_service = crate::ssh::ValidatorAccessService::new(
-            ssh_config,
-            ssh_service,
-            executor_manager.clone(),
-            db.clone(),
-        )
-        .await
-        .unwrap();
+        // SSH session orchestrator not created for tests due to architectural changes
+        // TODO: Update tests to use ExecutorConnectionManager instead of ExecutorManager
 
         // Create JWT service for testing
         let jwt_service = Arc::new(
@@ -754,7 +642,6 @@ mod tests {
             security_config,
             executor_manager,
             db,
-            ssh_access_service,
             jwt_service,
             validator_discovery: None,
             ssh_session_orchestrator: None,

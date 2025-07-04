@@ -18,4 +18,4 @@ pub mod validator_discovery;
 // Re-export commonly used types
 pub use config::{ExecutorConfig, MinerConfig, SecurityConfig};
 pub use executor_manager::ExecutorManager;
-pub use ssh::{MinerSshConfig, SshSessionManager, ValidatorAccessService};
+pub use ssh::{MinerSshConfig, SshSessionOrchestrator};

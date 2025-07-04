@@ -105,3 +105,5 @@ temp/
 scripts/localnet/ssh-keys
 scripts/localnet/wallets
 scripts/localnet/keys
+discovery_and_ssh_provisioning.md
+summary.md

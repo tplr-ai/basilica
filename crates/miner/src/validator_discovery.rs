@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::executor_manager::{AvailableExecutor, ExecutorManager};
+use crate::executors::{AvailableExecutor, ExecutorConnectionManager};
 
 /// Information about a discovered validator
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub struct ValidatorInfo {
 /// Manages validator discovery and executor assignments
 pub struct ValidatorDiscovery {
     bittensor_service: Arc<bittensor::Service>,
-    executor_manager: Arc<ExecutorManager>,
+    executor_manager: Arc<ExecutorConnectionManager>,
     assignment_strategy: Box<dyn AssignmentStrategy>,
     assignments: Arc<RwLock<HashMap<String, Vec<String>>>>, // validator_hotkey -> executor_ids
     netuid: u16,
@@ -50,7 +50,7 @@ impl ValidatorDiscovery {
     /// Create a new validator discovery service
     pub fn new(
         bittensor_service: Arc<bittensor::Service>,
-        executor_manager: Arc<ExecutorManager>,
+        executor_manager: Arc<ExecutorConnectionManager>,
         assignment_strategy: Box<dyn AssignmentStrategy>,
         netuid: u16,
     ) -> Self {
