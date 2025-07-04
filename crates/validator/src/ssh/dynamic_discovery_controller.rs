@@ -156,8 +156,7 @@ impl DynamicDiscoveryController {
                             result.add_passed("SSH directory has correct permissions (0700)");
                         } else {
                             result.add_warning(format!(
-                                "SSH directory permissions ({:o}) are not optimal (expected 0700)",
-                                mode
+                                "SSH directory permissions ({mode:o}) are not optimal (expected 0700)"
                             ));
                         }
                     } else {
@@ -174,7 +173,7 @@ impl DynamicDiscoveryController {
                     result.add_passed("SSH key directory created successfully");
                 }
                 Err(e) => {
-                    result.add_failed(format!("Cannot create SSH key directory: {}", e));
+                    result.add_failed(format!("Cannot create SSH key directory: {e}"));
                 }
             }
         }
@@ -269,7 +268,7 @@ impl DynamicDiscoveryController {
                 }
             }
             Err(e) => {
-                result.add_warning(format!("SSH command not found in PATH: {}", e));
+                result.add_warning(format!("SSH command not found in PATH: {e}"));
             }
         }
 
@@ -305,12 +304,9 @@ impl DynamicDiscoveryController {
         // Validate gRPC port offset configuration
         if let Some(offset) = self.verification_config.grpc_port_offset {
             if offset > 0 && offset < 65535 {
-                result.add_passed(format!(
-                    "gRPC port offset configuration is valid: {}",
-                    offset
-                ));
+                result.add_passed(format!("gRPC port offset configuration is valid: {offset}"));
             } else {
-                result.add_failed(format!("gRPC port offset is invalid: {}", offset));
+                result.add_failed(format!("gRPC port offset is invalid: {offset}"));
             }
         } else {
             result.add_passed("Using default gRPC port configuration");
@@ -346,11 +342,11 @@ impl DynamicDiscoveryController {
             Ok(_) => {
                 result.add_passed("SSH directory is writable");
                 if let Err(e) = fs::remove_file(&test_file).await {
-                    result.add_warning(format!("Failed to clean up test file: {}", e));
+                    result.add_warning(format!("Failed to clean up test file: {e}"));
                 }
             }
             Err(e) => {
-                result.add_failed(format!("SSH directory is not writable: {}", e));
+                result.add_failed(format!("SSH directory is not writable: {e}"));
             }
         }
 
@@ -377,7 +373,7 @@ impl DynamicDiscoveryController {
                             result.add_passed("Audit log directory created");
                         }
                         Err(e) => {
-                            result.add_warning(format!("Cannot create audit log directory: {}", e));
+                            result.add_warning(format!("Cannot create audit log directory: {e}"));
                         }
                     }
                 }
@@ -417,8 +413,7 @@ impl DynamicDiscoveryController {
             result.add_passed("Key cleanup interval is within reasonable range");
         } else {
             result.add_warning(format!(
-                "Key cleanup interval ({}s) may be too short or too long",
-                cleanup_secs
+                "Key cleanup interval ({cleanup_secs}s) may be too short or too long"
             ));
         }
     }
@@ -711,7 +706,7 @@ mod tests {
 
         // May be true or false depending on system prerequisites, but should not error
         let enabled = result.unwrap();
-        println!("Dynamic discovery enabled: {}", enabled);
+        println!("Dynamic discovery enabled: {enabled}");
     }
 
     #[tokio::test]
@@ -741,7 +736,7 @@ mod tests {
         assert!(summary.ssh_automation_enabled);
         assert_eq!(summary.key_algorithm, "ed25519");
 
-        let display_str = format!("{}", summary);
+        let display_str = format!("{summary}");
         assert!(display_str.contains("enabled=true"));
         assert!(display_str.contains("algo=ed25519"));
     }

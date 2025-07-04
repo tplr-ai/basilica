@@ -321,7 +321,7 @@ impl VerificationEngine {
                         step_name: format!("ssh_verification_{}", executor_info.id),
                         status: StepStatus::Completed,
                         duration: workflow_start.elapsed(),
-                        details: format!("SSH verification completed, score: {}", score),
+                        details: format!("SSH verification completed, score: {score}"),
                     });
                 }
                 Err(e) => {
@@ -333,7 +333,7 @@ impl VerificationEngine {
                         step_name: format!("ssh_verification_{}", executor_info.id),
                         status: StepStatus::Failed,
                         duration: workflow_start.elapsed(),
-                        details: format!("SSH verification error: {}", e),
+                        details: format!("SSH verification error: {e}"),
                     });
                 }
             }
@@ -358,10 +358,7 @@ impl VerificationEngine {
             step_name: "result_storage".to_string(),
             status: StepStatus::Completed,
             duration: workflow_start.elapsed(),
-            details: format!(
-                "Stored verification result with score: {:.2}",
-                overall_score
-            ),
+            details: format!("Stored verification result with score: {overall_score:.2}"),
         });
 
         info!(
@@ -683,7 +680,7 @@ impl VerificationEngine {
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
                     verification_score: 0.0,
-                    error: Some(format!("SSH session initiation failed: {}", e)),
+                    error: Some(format!("SSH session initiation failed: {e}")),
                 });
             }
         };
@@ -730,7 +727,7 @@ impl VerificationEngine {
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
                     verification_score: 0.0,
-                    error: Some(format!("Failed to parse SSH credentials: {}", e)),
+                    error: Some(format!("Failed to parse SSH credentials: {e}")),
                 });
             }
         };

@@ -63,7 +63,7 @@ impl ValidatorSshKeyManager {
         };
 
         // Save private key with restricted permissions
-        let key_path = self.key_dir.join(format!("session_{}.pem", session_id));
+        let key_path = self.key_dir.join(format!("session_{session_id}.pem"));
 
         // Write key to file
         fs::write(&key_path, key_content.as_bytes())
@@ -93,7 +93,7 @@ impl ValidatorSshKeyManager {
 
     /// Get the path to a session's private key
     pub fn get_session_key_path(&self, session_id: &str) -> PathBuf {
-        self.key_dir.join(format!("session_{}.pem", session_id))
+        self.key_dir.join(format!("session_{session_id}.pem"))
     }
 
     /// Clean up session keys
@@ -244,7 +244,7 @@ mod tests {
 
         // Generate multiple keys
         for i in 0..3 {
-            let session_id = format!("test-expire-{}", i);
+            let session_id = format!("test-expire-{i}");
             key_manager
                 .generate_session_keypair(&session_id)
                 .await

@@ -334,7 +334,7 @@ mod tests {
             fallback_key_path: Some(PathBuf::from("/test/key")),
         };
 
-        let display_str = format!("{}", status);
+        let display_str = format!("{status}");
         assert!(display_str.contains("dynamic=true"));
         assert!(display_str.contains("key_manager=true"));
         assert!(display_str.contains("hardware_validator=false"));
