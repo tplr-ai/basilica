@@ -25,6 +25,13 @@ message FreivaldsChallenge {
   
   // Expected GPU configuration (for symmetric verification fallback)
   uint32 expected_gpu_count = 5;
+  
+  // Timeout for matrix computation in milliseconds
+  // Based on benchmarks: 256x256=15ms, 512x512=25ms, 1024x1024=100ms, 2048x2048=550ms
+  uint32 computation_timeout_ms = 6;
+  
+  // Timeout for full protocol round including network latency
+  uint32 protocol_timeout_ms = 7;
 }
 
 // Commitment response from miner after computing C = A × B

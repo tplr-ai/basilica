@@ -16,6 +16,9 @@ sha2 = "0.10"
 tempfile = "3.8"
 futures = "0.3"
 reqwest = { version = "0.11", features = ["json"] }
+chrono = "0.4"
+num_cpus = "1.16"
+prost-types = "0.12"
 
 # Internal dependencies
 validator = { path = "../validator" }
@@ -37,4 +40,8 @@ path = "tests/miner_executor_flow.rs"
 [[test]]
 name = "freivalds_e2e"
 path = "tests/freivalds_e2e.rs"
+
+[[test]]
+name = "freivalds_same_machine_e2e"
+path = "tests/freivalds_same_machine_e2e.rs"
 

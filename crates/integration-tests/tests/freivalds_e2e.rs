@@ -7,9 +7,8 @@ use std::time::Duration;
 use tracing::info;
 
 // Import from gpu-attestor for the handler and validator
-use gpu_attestor::gpu::cuda_driver::{CudaDevice, CudaContext};
 use gpu_attestor::challenge::freivalds_handler::FreivaldsHandler;
-use gpu_attestor::gpu::GpuDevice;
+use gpu_attestor::gpu::cuda_driver::{CudaContext, CudaDevice};
 use gpu_attestor::validation::freivalds_validator::{FreivaldsValidator, FreivaldsValidatorConfig};
 
 // Import protocol types
@@ -19,36 +18,55 @@ use protocol::basilca::freivalds_gpu_pow::v1::CommitmentResponse;
 async fn create_test_handler() -> Result<FreivaldsHandler> {
     // Try to detect actual GPUs on the system
     use gpu_attestor::gpu::GpuDetector;
-    
+
     let detector = match GpuDetector::detect_all() {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("Skipping Freivalds tests - GPU detection failed: {}", e);
+            eprintln!("Skipping Freivalds tests - GPU detection failed: {e}");
             return Err(anyhow::anyhow!("GPU detection failed"));
         }
     };
-    
+
     if detector.devices.is_empty() {
         eprintln!("Skipping Freivalds tests - No GPUs detected");
         return Err(anyhow::anyhow!("No GPUs available"));
     }
-    
-    // Use the first GPU device
-    let gpu_device = detector.devices[0].clone();
-    
-    // Initialize CUDA device
-    let cuda_device = match CudaDevice::init_device(gpu_device.device_id as i32) {
-        Ok(dev) => dev,
-        Err(e) => {
-            eprintln!("Skipping Freivalds tests - CUDA device init failed: {}", e);
-            return Err(anyhow::anyhow!("CUDA initialization failed"));
-        }
-    };
 
-    // Create CUDA context
-    let cuda_context = Arc::new(CudaContext::new(cuda_device)?);
+    info!(
+        "Detected {} GPU(s) for Freivalds testing",
+        detector.devices.len()
+    );
 
-    FreivaldsHandler::new(vec![gpu_device], vec![cuda_context])
+    // Initialize CUDA contexts for ALL GPUs
+    let mut cuda_contexts = Vec::new();
+
+    for device in &detector.devices {
+        info!(
+            "Initializing GPU {}: {} ({:.0} MB)",
+            device.device_id,
+            device.name,
+            device.memory_total / (1024 * 1024)
+        );
+
+        let cuda_device = match CudaDevice::init_device(device.device_id as i32) {
+            Ok(dev) => dev,
+            Err(e) => {
+                eprintln!(
+                    "Failed to initialize CUDA device {}: {}",
+                    device.device_id, e
+                );
+                return Err(anyhow::anyhow!(
+                    "CUDA initialization failed for device {}",
+                    device.device_id
+                ));
+            }
+        };
+
+        let context = Arc::new(CudaContext::new(cuda_device)?);
+        cuda_contexts.push(context);
+    }
+
+    FreivaldsHandler::new(detector.devices, cuda_contexts)
 }
 
 #[tokio::test]
@@ -62,6 +80,10 @@ async fn test_freivalds_full_protocol_flow() -> Result<()> {
         session_timeout: Duration::from_secs(60),
         verification_rounds: 1,
         verify_all_spot_checks: true,
+        network_latency_ms: 50,
+        timeout_overhead_factor: 2.0,
+        enable_concurrent_verification: true,
+        max_verification_threads: 8,
     };
     let validator = FreivaldsValidator::new(config);
 
@@ -86,6 +108,10 @@ async fn test_freivalds_full_protocol_flow() -> Result<()> {
     assert_eq!(challenge.expected_gpu_count, expected_gpu_count);
     assert_eq!(challenge.master_seed.len(), 16);
     assert!(challenge.session_id.starts_with("freivalds_session_"));
+
+    // Verify timeout values are set (64x64 matrix should have base 10ms)
+    assert!(challenge.computation_timeout_ms > 0);
+    assert!(challenge.protocol_timeout_ms > challenge.computation_timeout_ms);
 
     // Step 2: Execute challenge on handler (miner side)
     info!("Step 2: Executing challenge on handler");

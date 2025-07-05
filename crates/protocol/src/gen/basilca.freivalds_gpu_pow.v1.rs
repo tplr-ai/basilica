@@ -18,6 +18,13 @@ pub struct FreivaldsChallenge {
     /// Expected GPU configuration (for symmetric verification fallback)
     #[prost(uint32, tag = "5")]
     pub expected_gpu_count: u32,
+    /// Timeout for matrix computation in milliseconds
+    /// Based on benchmarks: 256x256=15ms, 512x512=25ms, 1024x1024=100ms, 2048x2048=550ms
+    #[prost(uint32, tag = "6")]
+    pub computation_timeout_ms: u32,
+    /// Timeout for full protocol round including network latency
+    #[prost(uint32, tag = "7")]
+    pub protocol_timeout_ms: u32,
 }
 /// Commitment response from miner after computing C = A × B
 #[allow(clippy::derive_partial_eq_without_eq)]

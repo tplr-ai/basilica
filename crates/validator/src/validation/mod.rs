@@ -7,6 +7,7 @@ pub mod attestor;
 pub mod challenge_generator;
 pub mod factory;
 pub mod freivalds_validator;
+pub mod gpu_profile_query;
 pub mod gpu_validator;
 pub mod gpu_validator_v2;
 pub mod integrity;
