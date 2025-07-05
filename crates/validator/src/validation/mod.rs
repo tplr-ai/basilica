@@ -6,12 +6,12 @@
 pub mod attestor;
 pub mod challenge_generator;
 pub mod factory;
-pub mod freivalds_validator;
 pub mod gpu_profile_query;
 pub mod gpu_validator;
 pub mod gpu_validator_v2;
 pub mod integrity;
 pub mod key_manager;
+pub mod secure_validator;
 pub mod signature_verifier;
 pub mod types;
 pub mod validator;

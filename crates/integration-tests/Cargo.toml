@@ -1,5 +1,5 @@
 [package]
-name = "integration_tests"
+name = "integration-tests"
 version = "0.1.0"
 edition = "2021"
 
@@ -38,10 +38,10 @@ name = "miner_executor_flow"
 path = "tests/miner_executor_flow.rs"
 
 [[test]]
-name = "freivalds_e2e"
-path = "tests/freivalds_e2e.rs"
+name = "secure_gpu_validation_e2e"
+path = "tests/secure_gpu_validation_e2e.rs"
 
 [[test]]
-name = "freivalds_same_machine_e2e"
-path = "tests/freivalds_same_machine_e2e.rs"
+name = "vm_protected_validation_e2e"
+path = "tests/vm_protected_validation_e2e.rs"
 

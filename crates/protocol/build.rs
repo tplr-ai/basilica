@@ -53,7 +53,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/executor_registration.proto",
                 "proto/executor_management.proto",
                 "proto/gpu_pow.proto",
-                "proto/freivalds_gpu_pow.proto",
             ],
             &["proto"],
         )?;
