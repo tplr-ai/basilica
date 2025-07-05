@@ -21,6 +21,7 @@ reqwest = { version = "0.11", features = ["json"] }
 validator = { path = "../validator" }
 protocol = { path = "../protocol" }
 common = { path = "../common" }
+gpu-attestor = { path = "../gpu-attestor" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -32,4 +33,8 @@ path = "tests/gpu_pow_e2e.rs"
 [[test]]
 name = "miner_executor_flow"
 path = "tests/miner_executor_flow.rs"
+
+[[test]]
+name = "freivalds_e2e"
+path = "tests/freivalds_e2e.rs"
 

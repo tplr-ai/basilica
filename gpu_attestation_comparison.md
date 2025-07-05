@@ -1,14 +1,14 @@
-# GPU Attestation Comparison: Basilisk GPU Attestor vs Prime Intellect GPU Challenge
+# GPU Attestation Comparison: Basilca GPU Attestor vs Prime Intellect GPU Challenge
 
 ## Overview
 
 This document compares two different approaches to GPU attestation and verification:
-1. **Basilisk GPU Attestor** - A hardware attestation system for the Basilisk network
+1. **Basilca GPU Attestor** - A hardware attestation system for the Basilca network
 2. **Prime Intellect GPU Challenge** - A matrix multiplication verification protocol
 
 ## Core Approach Comparison
 
-### Basilisk GPU Attestor
+### Basilca GPU Attestor
 - **Purpose**: Validates GPU hardware capabilities and executes proof-of-work challenges
 - **Method**: Bandwidth-intensive matrix multiplication with deterministic execution
 - **Architecture**: Rust-based with CUDA kernels
@@ -24,7 +24,7 @@ This document compares two different approaches to GPU attestation and verificat
 
 ### 1. Implementation Language and Stack
 
-| Aspect | Basilisk GPU Attestor | Prime Intellect |
+| Aspect | Basilca GPU Attestor | Prime Intellect |
 |--------|---------------------|-----------------|
 | Language | Rust | Python |
 | GPU Framework | CUDA Driver API (low-level) | PyTorch (high-level) |
@@ -33,7 +33,7 @@ This document compares two different approaches to GPU attestation and verificat
 
 ### 2. Verification Approach
 
-#### Basilisk GPU Attestor
+#### Basilca GPU Attestor
 **Pros:**
 - Deterministic execution ensures reproducibility
 - Direct hardware validation through CUDA
@@ -59,7 +59,7 @@ This document compares two different approaches to GPU attestation and verificat
 
 ### 3. Performance Characteristics
 
-| Metric | Basilisk GPU Attestor | Prime Intellect |
+| Metric | Basilca GPU Attestor | Prime Intellect |
 |--------|---------------------|-----------------|
 | Memory Utilization | 95.3% (77.7GB/80GB on H100) | Variable based on matrix size |
 | Bandwidth Utilization | 0.015% (major optimization needed) | Not specified |
@@ -68,7 +68,7 @@ This document compares two different approaches to GPU attestation and verificat
 
 ### 4. Security Model
 
-#### Basilisk GPU Attestor
+#### Basilca GPU Attestor
 **Pros:**
 - Hardware-level attestation
 - Binary integrity checks
@@ -92,7 +92,7 @@ This document compares two different approaches to GPU attestation and verificat
 
 ### 5. Ease of Use and Integration
 
-#### Basilisk GPU Attestor
+#### Basilca GPU Attestor
 **Pros:**
 - Single binary execution
 - CLI interface
@@ -117,7 +117,7 @@ This document compares two different approaches to GPU attestation and verificat
 
 ### 6. Use Case Suitability
 
-#### Basilisk GPU Attestor is better for:
+#### Basilca GPU Attestor is better for:
 - Hardware capability attestation
 - Mining/PoW applications requiring specific GPU validation
 - Scenarios where validator has similar hardware
@@ -131,7 +131,7 @@ This document compares two different approaches to GPU attestation and verificat
 
 ## Architecture Comparison
 
-### Basilisk GPU Attestor Architecture
+### Basilca GPU Attestor Architecture
 ```
 GPU Detection → Challenge Reception → Work Distribution → 
 Parallel Execution → Validation → Checksum Generation → 
@@ -148,24 +148,24 @@ Final Verification
 ## Key Technical Differences
 
 ### 1. GPU Interaction
-- **Basilisk**: Direct CUDA Driver API calls, kernel management
+- **Basilca**: Direct CUDA Driver API calls, kernel management
 - **Prime**: High-level PyTorch operations
 
 ### 2. Determinism
-- **Basilisk**: Philox PRNG for deterministic matrix generation
+- **Basilca**: Philox PRNG for deterministic matrix generation
 - **Prime**: XORShift128+ for deterministic row generation
 
 ### 3. Memory Management
-- **Basilisk**: Aggressive pre-allocation (75GB per GPU)
+- **Basilca**: Aggressive pre-allocation (75GB per GPU)
 - **Prime**: Dynamic allocation based on matrix size
 
 ### 4. Verification Cost
-- **Basilisk**: O(n³) for validator (symmetric)
+- **Basilca**: O(n³) for validator (symmetric)
 - **Prime**: O(n²) for validator (asymmetric)
 
 ## Recommendations
 
-### When to use Basilisk GPU Attestor:
+### When to use Basilca GPU Attestor:
 1. Need hardware-specific attestation
 2. Validator has access to similar GPU resources
 3. Require deterministic, reproducible proofs
@@ -179,7 +179,7 @@ Final Verification
 
 ## Future Improvements
 
-### Basilisk GPU Attestor needs:
+### Basilca GPU Attestor needs:
 - Tensor core utilization
 - Bandwidth optimization (currently at 0.015%)
 - Re-enable additional validation mechanisms
@@ -195,7 +195,7 @@ Final Verification
 
 Both systems serve different purposes and excel in different scenarios:
 
-- **Basilisk GPU Attestor** is superior for hardware attestation and deterministic proof-of-work in trusted environments where validators have comparable resources.
+- **Basilca GPU Attestor** is superior for hardware attestation and deterministic proof-of-work in trusted environments where validators have comparable resources.
 
 - **Prime Intellect GPU Challenge** is superior for verifying computational work from untrusted sources with minimal validator resources, using mathematical proofs rather than symmetric execution.
 

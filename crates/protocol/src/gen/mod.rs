@@ -20,6 +20,16 @@ pub mod basilca {
             include!("basilca.executor_registration.v1.rs");
         }
     }
+    pub mod freivalds_gpu_pow {
+        pub mod v1 {
+            include!("basilca.freivalds_gpu_pow.v1.rs");
+        }
+    }
+    pub mod gpu_pow {
+        pub mod v1 {
+            include!("basilca.gpu_pow.v1.rs");
+        }
+    }
     pub mod miner {
         pub mod v1 {
             include!("basilca.miner.v1.rs");
