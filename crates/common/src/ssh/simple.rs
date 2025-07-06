@@ -181,7 +181,81 @@ impl SimpleSshUsers {
     }
 
     /// Generate username for validator
+    /// Creates a Linux-compliant username by hashing the hotkey to ensure:
+    /// - Maximum 32 characters (Linux limit)
+    /// - Only alphanumeric characters and underscores
+    /// - Starts with a letter
     pub fn validator_username(hotkey: &str) -> String {
-        format!("validator_{hotkey}")
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        // Create a hash of the hotkey
+        let mut hasher = DefaultHasher::new();
+        hotkey.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Convert to hex and take first 24 characters to ensure total length < 32
+        let hash_hex = format!("{:x}", hash);
+        let truncated_hash = &hash_hex[..hash_hex.len().min(24)];
+
+        // Ensure username starts with letter, contains only valid chars, and is under 32 chars
+        format!("val_{}", truncated_hash)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validator_username_generation() {
+        let hotkey = "5FZbLC8tt9BsYXVyK3aq2aFHeQhfQexNRyQy83oatY7vkvn8";
+        let username = SimpleSshUsers::validator_username(hotkey);
+
+        // Check username constraints
+        assert!(
+            username.len() <= 32,
+            "Username too long: {}",
+            username.len()
+        );
+        assert!(
+            username.starts_with("val_"),
+            "Username should start with 'val_'"
+        );
+        assert!(
+            username
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_'),
+            "Username contains invalid characters: {}",
+            username
+        );
+
+        println!("Generated username: {}", username);
+    }
+
+    #[test]
+    fn test_validator_username_consistency() {
+        let hotkey = "5FZbLC8tt9BsYXVyK3aq2aFHeQhfQexNRyQy83oatY7vkvn8";
+        let username1 = SimpleSshUsers::validator_username(hotkey);
+        let username2 = SimpleSshUsers::validator_username(hotkey);
+
+        assert_eq!(
+            username1, username2,
+            "Username generation should be deterministic"
+        );
+    }
+
+    #[test]
+    fn test_validator_username_different_hotkeys() {
+        let hotkey1 = "5FZbLC8tt9BsYXVyK3aq2aFHeQhfQexNRyQy83oatY7vkvn8";
+        let hotkey2 = "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty";
+
+        let username1 = SimpleSshUsers::validator_username(hotkey1);
+        let username2 = SimpleSshUsers::validator_username(hotkey2);
+
+        assert_ne!(
+            username1, username2,
+            "Different hotkeys should generate different usernames"
+        );
     }
 }
