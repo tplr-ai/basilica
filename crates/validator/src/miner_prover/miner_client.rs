@@ -134,8 +134,10 @@ impl MinerClient {
                 .ok_or_else(|| anyhow::anyhow!("No port in axon endpoint"))?;
             axon_port + offset
         } else {
-            // Use default gRPC port when no offset is configured
-            8080
+            // Use the same port as the axon endpoint when no offset is configured
+            // This handles cases where the miner is behind NAT/proxy and advertises external ports
+            url.port()
+                .ok_or_else(|| anyhow::anyhow!("No port in axon endpoint"))?
         };
 
         // Build gRPC endpoint
@@ -424,7 +426,7 @@ mod tests {
 
         let axon = "http://192.168.1.100:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "http://192.168.1.100:8080");
+        assert_eq!(grpc, "http://192.168.1.100:8091");
     }
 
     #[test]
@@ -456,6 +458,6 @@ mod tests {
 
         let axon = "http://example.com:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "https://example.com:8080");
+        assert_eq!(grpc, "https://example.com:8091");
     }
 }

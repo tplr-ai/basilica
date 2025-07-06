@@ -436,18 +436,26 @@ mod tests {
         let result = builder.build().await;
         assert!(result.is_err());
         let error = result.unwrap_err();
-        println!("Actual error: {}", error.to_string());
+        println!("Actual error: {}", error);
         // Check if the error chain contains our expected message
         let mut source = error.source();
         let mut found = false;
         while let Some(err) = source {
-            if err.to_string().contains("SSH key algorithm cannot be empty") {
+            if err
+                .to_string()
+                .contains("SSH key algorithm cannot be empty")
+            {
                 found = true;
                 break;
             }
             source = err.source();
         }
-        assert!(found || error.to_string().contains("SSH key algorithm cannot be empty"));
+        assert!(
+            found
+                || error
+                    .to_string()
+                    .contains("SSH key algorithm cannot be empty")
+        );
 
         // Test invalid session duration
         config.key_algorithm = "ed25519".to_string();
