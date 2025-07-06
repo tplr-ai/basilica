@@ -132,6 +132,76 @@ pub enum DatabaseCommand {
     Integrity,
 }
 
+/// Manual executor assignment subcommands
+#[derive(Subcommand, Debug)]
+pub enum AssignmentCommand {
+    /// Assign an executor to a validator
+    Assign {
+        /// Executor ID to assign
+        executor_id: String,
+        /// Validator hotkey to assign to
+        validator_hotkey: String,
+        /// Optional notes for the assignment
+        #[arg(short, long)]
+        notes: Option<String>,
+    },
+
+    /// Remove executor assignment
+    Unassign {
+        /// Executor ID to unassign
+        executor_id: String,
+    },
+
+    /// List current assignments
+    List {
+        /// Filter by validator hotkey
+        #[arg(short, long)]
+        validator: Option<String>,
+    },
+
+    /// Show assignment coverage statistics
+    Coverage,
+
+    /// Show validator stakes
+    Stakes {
+        /// Minimum stake threshold in TAO
+        #[arg(long)]
+        min_stake: Option<f64>,
+    },
+
+    /// Get assignment suggestions
+    Suggest {
+        /// Minimum coverage target (0.0 - 1.0)
+        #[arg(long, default_value = "0.5")]
+        min_coverage: f64,
+    },
+
+    /// Export assignments to JSON file
+    Export {
+        /// Output file path
+        path: String,
+    },
+
+    /// Import assignments from JSON file
+    Import {
+        /// Input file path
+        path: String,
+        /// Perform dry run without making changes
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Show assignment history
+    History {
+        /// Filter by executor ID
+        #[arg(short, long)]
+        executor_id: Option<String>,
+        /// Maximum number of records to show
+        #[arg(short, long, default_value = "20")]
+        limit: i64,
+    },
+}
+
 /// Configuration management subcommands
 #[derive(Subcommand, Debug)]
 pub enum ConfigCommand {
@@ -264,6 +334,14 @@ pub async fn handle_database_command(command: DatabaseCommand, config: &MinerCon
     };
 
     handlers::handle_database_command(operation, config).await
+}
+
+/// Handle assignment management commands
+pub async fn handle_assignment_command(
+    command: &AssignmentCommand,
+    config: &MinerConfig,
+) -> Result<()> {
+    handlers::handle_assignment_command(command, config).await
 }
 
 /// Handle configuration management commands

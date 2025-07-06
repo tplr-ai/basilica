@@ -23,6 +23,7 @@ mod executors;
 mod metrics;
 mod persistence;
 mod request_verification;
+mod services;
 mod session_cleanup;
 mod ssh;
 mod validator_comms;
@@ -77,6 +78,11 @@ enum Commands {
     Validator {
         #[command(subcommand)]
         validator_cmd: cli::ValidatorCommand,
+    },
+    /// Manual executor assignment commands
+    Assignment {
+        #[command(subcommand)]
+        assignment_cmd: cli::AssignmentCommand,
     },
     /// Service management commands
     Service {
@@ -453,6 +459,9 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
             let db = RegistrationDb::new(&config.database).await?;
             cli::handle_validator_command(validator_cmd, db).await
         }
+        Commands::Assignment { assignment_cmd } => {
+            cli::handle_assignment_command(&assignment_cmd, config).await
+        }
         Commands::Service { service_cmd } => cli::handle_service_command(service_cmd, config).await,
         Commands::Database { database_cmd } => {
             cli::handle_database_command(database_cmd, config).await
@@ -463,6 +472,10 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
             let mut db_config = config.database.clone();
             db_config.run_migrations = true;
             let _db = RegistrationDb::new(&db_config).await?;
+            // Also run assignment migrations
+            let assignment_pool = sqlx::SqlitePool::connect(&config.database.url).await?;
+            let assignment_db = persistence::AssignmentDb::new(assignment_pool);
+            assignment_db.run_migrations().await?;
             println!("Database migrations completed successfully");
             Ok(())
         }
