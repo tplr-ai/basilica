@@ -197,10 +197,11 @@ impl ExecutorControl for ExecutorControlService {
                 tonic::Status::internal("Failed to provision access")
             })?;
 
-        // Create SSH credentials in JSON format
+        // Create SSH credentials in JSON format with correct username
+        let ssh_username = common::ssh::SimpleSshUsers::validator_username(&req.validator_hotkey);
         let credentials = serde_json::json!({
             "ssh_private_key": private_key_pem,
-            "ssh_username": format!("validator_{}", req.validator_hotkey),
+            "ssh_username": ssh_username,
             "ssh_host": "executor.local",
             "ssh_port": 22
         })

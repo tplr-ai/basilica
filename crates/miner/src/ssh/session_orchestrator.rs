@@ -130,14 +130,15 @@ impl SshSessionOrchestrator {
             .await
             .context("Failed to get executor information")?;
 
-        // Add validator's public key to executor via gRPC
-        self.add_validator_key_to_executor(
-            &executor_info,
-            &request.validator_hotkey,
-            &request.validator_public_key,
-            request.session_duration_secs as u64,
-        )
-        .await?;
+        // Add validator's public key to executor via gRPC and get actual SSH username
+        let actual_ssh_username = self
+            .add_validator_key_to_executor(
+                &executor_info,
+                &request.validator_hotkey,
+                &request.validator_public_key,
+                request.session_duration_secs as u64,
+            )
+            .await?;
 
         // Create session record
         let now = Utc::now();
@@ -205,7 +206,7 @@ impl SshSessionOrchestrator {
             session_id,
             access_credentials: format!(
                 "{}@{}:{}",
-                executor_info.ssh_username, executor_info.host, executor_info.ssh_port
+                actual_ssh_username, executor_info.host, executor_info.ssh_port
             ),
             expires_at: expires_at.timestamp(),
             executor_id: request.executor_id,
@@ -378,7 +379,7 @@ impl SshSessionOrchestrator {
         validator_hotkey: &str,
         public_key: &str,
         duration_secs: u64,
-    ) -> Result<()> {
+    ) -> Result<String> {
         // Get the executor's gRPC endpoint
         let grpc_endpoint = executor_info
             .grpc_endpoint
@@ -403,11 +404,24 @@ impl SshSessionOrchestrator {
             ));
         }
 
+        // Parse SSH username from the credentials JSON response
+        let actual_ssh_username = if let Ok(credentials_json) =
+            serde_json::from_str::<serde_json::Value>(&response.credentials)
+        {
+            credentials_json["ssh_username"]
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| executor_info.ssh_username.clone())
+        } else {
+            // Fallback to config if JSON parsing fails
+            executor_info.ssh_username.clone()
+        };
+
         info!(
-            "Added validator key for {} to executor {} via gRPC",
-            validator_hotkey, executor_info.id
+            "Added validator key for {} to executor {} via gRPC, SSH username: {}",
+            validator_hotkey, executor_info.id, actual_ssh_username
         );
-        Ok(())
+        Ok(actual_ssh_username)
     }
 
     /// Remove validator key from executor via gRPC
