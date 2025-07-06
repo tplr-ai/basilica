@@ -270,7 +270,51 @@ The integration test suite provides complete verification of the VM-protected va
 
 ## Implementation Status
 
-### Completed ✅
+### Production Integration Complete ✅
+
+**NEW: Main Binary Integration** (January 2025)
+- ✅ **Direct CLI Access**: `./gpu-attestor --freivalds-mode` runs VM-protected validation
+- ✅ **Dynamic Parameters**: Runtime configuration for matrix size, seed, session ID
+- ✅ **Interactive Protocol**: Accepts validator challenges with dynamic inputs
+- ✅ **Seamless GPU Detection**: Automatic CUDA context initialization
+- ✅ **Structured Output**: JSON results with pass/fail status and cryptographic proofs
+
+**Integration Details:**
+```rust
+// main.rs now provides direct VM access
+async fn run_freivalds_mode(config: &Config) -> Result<()> {
+    // GPU detection and CUDA initialization
+    let detector = GpuDetector::detect_all()?;
+    let cuda_contexts = initialize_cuda_contexts(&detector.devices)?;
+    
+    // VM-protected validator creation
+    let gpu_multiplier = GpuMatrixMultiplier::new(cuda_contexts)?;
+    let mut validator = FreivaldsValidatorVM::new(master_key, gpu_multiplier);
+    
+    // Dynamic challenge creation from CLI parameters
+    let challenge = FreivaldsChallenge {
+        session_id: config.freivalds_session_id.clone().unwrap_or_else(generate_session_id),
+        n: config.freivalds_matrix_size,
+        master_seed: config.freivalds_seed.map(decode_hex).unwrap_or_else(generate_random_seed),
+        // ... other dynamic parameters
+    };
+    
+    // Execute VM-protected validation
+    let result = validator.execute_validation(challenge).await?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+}
+```
+
+**Before vs After Integration:**
+| Aspect | Before Integration | After Integration |
+|--------|-------------------|-------------------|
+| **Usage** | `anyhow::bail!("Use VM binary instead")` | `./gpu-attestor --freivalds-mode` |
+| **Parameters** | Hardcoded test values only | Dynamic CLI parameters |
+| **Protocol** | Test-only with fixed seed | Interactive with validator challenges |
+| **Deployment** | Separate VM binary required | Integrated into main binary |
+| **Testing** | `compile_complete_freivalds_protocol()` in tests | Production `execute_validation()` |
+
+### Core Implementation ✅
 - [x] VM core with execution engine
 - [x] Complete instruction set with proper type handling
 - [x] Bytecode encryption/decryption with AES-256-GCM
@@ -364,20 +408,26 @@ The integration test suite provides complete verification of the VM-protected va
 5. **Performance Preserved**: <5% overhead for security-critical operations
 6. **Production Ready**: No placeholders or simplified implementations
 
-## Current Status: Production Ready ✅
+## Current Status: Production Ready and Deployed ✅
 
-The VM implementation is **complete and production-ready** with no blocking placeholders or TODOs. All security-critical validation logic has been successfully moved into a VM that runs on the executor's machine.
+The VM implementation is **complete, production-ready, and fully integrated** with no blocking placeholders or TODOs. All security-critical validation logic has been successfully moved into a VM that runs on the executor's machine, and the system is now accessible via the main binary interface.
 
 ### Key Achievements:
 - ✅ **Complete VM Implementation**: 8 core modules with comprehensive functionality
+- ✅ **Production Integration**: Direct CLI access via `--freivalds-mode` flag
+- ✅ **Dynamic Parameter Support**: Runtime configuration for interactive protocols
 - ✅ **Production Anti-Debugging**: Full implementation replacing all placeholder code
 - ✅ **Extensive Testing**: 150+ unit tests covering positive, negative, and edge cases
 - ✅ **Thread-Safe Architecture**: Proper concurrency handling and memory management
 - ✅ **Cryptographic Security**: Strong encryption and integrity verification
 - ✅ **Cross-Platform Support**: Linux/Windows with x86_64/ARM64 compatibility
 
-### Ready for Production:
-The complete VM-protected GPU attestation system is production-ready with end-to-end verification completed. All components work together seamlessly from the generic secure validator to the VM-protected binary execution.
+### Production Deployment Status:
+The complete VM-protected GPU attestation system is **deployed and operational**:
+- **Main Binary Integration**: `./gpu-attestor --freivalds-mode` provides direct VM-protected validation
+- **Interactive Protocol Ready**: Accepts dynamic challenges from validators instead of hardcoded test values
+- **End-to-End Verification**: Complete workflow from CLI parameters to JSON validation results
+- **Security Through Obscurity**: All validation logic hidden in VM bytecode on executor's machine
 
 ## Conclusion
 

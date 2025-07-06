@@ -57,7 +57,7 @@ async fn test_secure_validator_basic_validation() -> Result<()> {
 
     // Create secure validator with test configuration
     let config = SecureValidatorConfig {
-        attestor_binary_path: std::path::PathBuf::from("./target/release/gpu-attestor"),
+        attestor_binary_path: std::path::PathBuf::from("./debug/release/gpu-attestor"),
         ssh_timeout: Duration::from_secs(30),
         max_execution_time: Duration::from_secs(60),
     };
