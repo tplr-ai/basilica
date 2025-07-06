@@ -713,7 +713,10 @@ impl VerificationEngine {
             "[EVAL_FLOW] Raw credentials: {}",
             session_info.access_credentials
         );
-        let ssh_details = match self.parse_ssh_credentials(&session_info.access_credentials, Some(session_key_path.clone())) {
+        let ssh_details = match self.parse_ssh_credentials(
+            &session_info.access_credentials,
+            Some(session_key_path.clone()),
+        ) {
             Ok(details) => {
                 info!("[EVAL_FLOW] SSH credentials parsed successfully: host={}, port={}, username={}",
                       details.host, details.port, details.username);
@@ -1380,7 +1383,8 @@ impl VerificationEngine {
         );
 
         // Step 4: Parse SSH credentials and create connection details
-        let ssh_details = self.parse_ssh_credentials(&session_info.access_credentials, Some(key_path.clone()))?;
+        let ssh_details =
+            self.parse_ssh_credentials(&session_info.access_credentials, Some(key_path.clone()))?;
         let executor_ssh_details = ExecutorSshDetails::new(
             executor.id.clone(),
             ssh_details.host,
@@ -1524,7 +1528,11 @@ impl VerificationEngine {
     }
 
     /// Parse SSH credentials string into connection details
-    pub fn parse_ssh_credentials(&self, credentials: &str, key_path: Option<PathBuf>) -> Result<SshConnectionDetails> {
+    pub fn parse_ssh_credentials(
+        &self,
+        credentials: &str,
+        key_path: Option<PathBuf>,
+    ) -> Result<SshConnectionDetails> {
         // Expected format: "username@host:port" or just "username@host"
         let parts: Vec<&str> = credentials.split('@').collect();
         if parts.len() != 2 {

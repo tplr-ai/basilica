@@ -156,7 +156,9 @@ impl ValidatorAccessService {
                     success: true,
                     message: "Access granted with hotkey verification".to_string(),
                     ssh_public_key: Some(ssh_public_key),
-                    ssh_username: Some(format!("validator_{}", validator_id.hotkey)),
+                    ssh_username: Some(common::ssh::SimpleSshUsers::validator_username(
+                        &validator_id.hotkey,
+                    )),
                     access_token: None,
                     expires_at: 0,
                 };
@@ -224,7 +226,9 @@ impl ValidatorAccessService {
                 success: true,
                 message: "SSH access granted successfully".to_string(),
                 ssh_public_key: Some(ssh_public_key),
-                ssh_username: Some(format!("validator_{}", validator_id.hotkey)),
+                ssh_username: Some(common::ssh::SimpleSshUsers::validator_username(
+                    &validator_id.hotkey,
+                )),
                 access_token: None,
                 expires_at: 0,
             };

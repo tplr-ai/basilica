@@ -84,14 +84,14 @@ mod tests {
 
         // Test with port
         let creds = "ubuntu@192.168.1.100:2222";
-        let details = engine.parse_ssh_credentials(creds).unwrap();
+        let details = engine.parse_ssh_credentials(creds, None).unwrap();
         assert_eq!(details.username, "ubuntu");
         assert_eq!(details.host, "192.168.1.100");
         assert_eq!(details.port, 2222);
 
         // Test without port (should default to 22)
         let creds = "admin@example.com";
-        let details = engine.parse_ssh_credentials(creds).unwrap();
+        let details = engine.parse_ssh_credentials(creds, None).unwrap();
         assert_eq!(details.username, "admin");
         assert_eq!(details.host, "example.com");
         assert_eq!(details.port, 22);
