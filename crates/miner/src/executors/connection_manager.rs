@@ -34,6 +34,7 @@ pub struct ExecutorConnection {
     pub executor_id: ExecutorId,
     ssh_client: Arc<StandardSshClient>,
     connection_details: SshConnectionDetails,
+    grpc_endpoint: Option<String>,
     last_used: Arc<RwLock<Instant>>,
 }
 
@@ -77,6 +78,11 @@ impl ExecutorConnection {
         self.ssh_client
             .test_connection(&self.connection_details)
             .await
+    }
+
+    /// Get gRPC endpoint for this executor
+    pub fn get_grpc_endpoint(&self) -> Option<&str> {
+        self.grpc_endpoint.as_deref()
     }
 }
 
@@ -225,6 +231,7 @@ impl ExecutorConnectionManager {
             executor_id: executor_id.clone(),
             ssh_client,
             connection_details,
+            grpc_endpoint: executor_info.grpc_endpoint.clone(),
             last_used: Arc::new(RwLock::new(Instant::now())),
         });
 
@@ -665,6 +672,7 @@ mod tests {
                 private_key_path: PathBuf::from("/tmp/key"),
                 timeout: Duration::from_secs(30),
             },
+            grpc_endpoint: Some("http://192.168.1.100:50051".to_string()),
             last_used: Arc::new(RwLock::new(Instant::now())),
         };
 

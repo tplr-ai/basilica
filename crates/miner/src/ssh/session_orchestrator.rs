@@ -17,7 +17,9 @@ use tokio::sync::RwLock;
 use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::executors::{ExecutorConnection, ExecutorConnectionManager};
+use crate::executors::{
+    ExecutorConnectionManager, ExecutorGrpcClient, ExecutorGrpcConfig, ExecutorInfo,
+};
 
 /// SSH Session information
 #[derive(Debug, Clone)]
@@ -48,6 +50,8 @@ pub struct SshSessionOrchestrator {
     sessions_by_validator: Arc<RwLock<HashMap<String, Vec<String>>>>,
     /// Executor connection manager
     executor_manager: Arc<ExecutorConnectionManager>,
+    /// gRPC client for executor communication
+    executor_grpc_client: ExecutorGrpcClient,
     /// Rate limiting info
     rate_limits: Arc<RwLock<HashMap<String, RateLimitInfo>>>,
     /// Configuration
@@ -84,10 +88,13 @@ impl Default for SshSessionConfig {
 impl SshSessionOrchestrator {
     /// Create a new SSH session orchestrator
     pub fn new(executor_manager: Arc<ExecutorConnectionManager>, config: SshSessionConfig) -> Self {
+        let executor_grpc_client = ExecutorGrpcClient::new(ExecutorGrpcConfig::default());
+
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             sessions_by_validator: Arc::new(RwLock::new(HashMap::new())),
             executor_manager,
+            executor_grpc_client,
             rate_limits: Arc::new(RwLock::new(HashMap::new())),
             config,
         }
@@ -116,19 +123,19 @@ impl SshSessionOrchestrator {
         // Generate session ID
         let session_id = format!("ssh-session-{}", Uuid::new_v4());
 
-        // Get executor connection
-        let executor_conn = self
+        // Get executor information (without establishing SSH connection)
+        let executor_info = self
             .executor_manager
-            .get_executor_connection(&request.executor_id)
+            .get_executor_info(&request.executor_id)
             .await
-            .context("Failed to get executor connection")?;
+            .context("Failed to get executor information")?;
 
-        // Add validator's public key to executor
+        // Add validator's public key to executor via gRPC
         self.add_validator_key_to_executor(
-            &executor_conn,
+            &executor_info,
+            &request.validator_hotkey,
             &request.validator_public_key,
-            &session_id,
-            request.session_duration_secs,
+            request.session_duration_secs as u64,
         )
         .await?;
 
@@ -196,7 +203,10 @@ impl SshSessionOrchestrator {
 
         Ok(InitiateSshSessionResponse {
             session_id,
-            access_credentials: executor_conn.get_ssh_credentials(),
+            access_credentials: format!(
+                "{}@{}:{}",
+                executor_info.ssh_username, executor_info.host, executor_info.ssh_port
+            ),
             expires_at: expires_at.timestamp(),
             executor_id: request.executor_id,
             status: SshSessionStatus::Active as i32,
@@ -361,64 +371,85 @@ impl SshSessionOrchestrator {
         Ok(())
     }
 
-    /// Add validator key to executor
+    /// Add validator key to executor via gRPC
     async fn add_validator_key_to_executor(
         &self,
-        executor_conn: &ExecutorConnection,
+        executor_info: &ExecutorInfo,
+        validator_hotkey: &str,
         public_key: &str,
-        session_id: &str,
-        duration_secs: i64,
+        duration_secs: u64,
     ) -> Result<()> {
-        // Create authorized_keys entry with expiration comment
-        let expires_at = Utc::now() + chrono::Duration::seconds(duration_secs);
-        let key_entry = format!(
-            "{} validator-session-{} expires={}",
-            public_key,
-            session_id,
-            expires_at.to_rfc3339()
-        );
+        // Get the executor's gRPC endpoint
+        let grpc_endpoint = executor_info
+            .grpc_endpoint
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Executor has no gRPC endpoint configured"))?;
 
-        // Add key to executor's authorized_keys
-        let add_key_cmd = format!(
-            r#"
-            mkdir -p ~/.ssh && \
-            chmod 700 ~/.ssh && \
-            echo '{key_entry}' >> ~/.ssh/authorized_keys && \
-            chmod 600 ~/.ssh/authorized_keys
-            "#
-        );
-
-        executor_conn
-            .execute_command(&add_key_cmd)
+        // Use gRPC to provision validator access on executor
+        let response = self
+            .executor_grpc_client
+            .provision_validator_access(grpc_endpoint, validator_hotkey, public_key, duration_secs)
             .await
-            .context("Failed to add validator key to executor")?;
+            .context("Failed to provision validator access via gRPC")?;
 
-        info!("Added validator key for session {} to executor", session_id);
+        if !response.success {
+            let error_msg = response
+                .error
+                .map(|e| e.message)
+                .unwrap_or_else(|| "Unknown error".to_string());
+            return Err(anyhow::anyhow!(
+                "Failed to add validator key: {}",
+                error_msg
+            ));
+        }
+
+        info!(
+            "Added validator key for {} to executor {} via gRPC",
+            validator_hotkey, executor_info.id
+        );
         Ok(())
     }
 
-    /// Remove validator key from executor
+    /// Remove validator key from executor via gRPC
     async fn remove_validator_key_from_executor(&self, session: &SshSession) -> Result<()> {
-        let executor_conn = self
+        let executor_info = self
             .executor_manager
-            .get_executor_connection(&session.executor_id)
+            .get_executor_info(&session.executor_id)
             .await
-            .context("Failed to get executor connection")?;
+            .context("Failed to get executor information")?;
 
-        // Remove key by session ID comment
-        let remove_key_cmd = format!(
-            r#"sed -i '/validator-session-{}/d' ~/.ssh/authorized_keys"#,
-            session.session_id
-        );
+        // Get the executor's gRPC endpoint
+        let grpc_endpoint = executor_info
+            .grpc_endpoint
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Executor has no gRPC endpoint configured"))?;
 
-        executor_conn
-            .execute_command(&remove_key_cmd)
+        // Use gRPC to revoke validator access by setting duration to 0
+        let response = self
+            .executor_grpc_client
+            .provision_validator_access(
+                grpc_endpoint,
+                &session.validator_hotkey,
+                &session._validator_public_key,
+                0, // Duration of 0 means revoke access
+            )
             .await
-            .context("Failed to remove validator key from executor")?;
+            .context("Failed to revoke validator access via gRPC")?;
+
+        if !response.success {
+            let error_msg = response
+                .error
+                .map(|e| e.message)
+                .unwrap_or_else(|| "Unknown error".to_string());
+            return Err(anyhow::anyhow!(
+                "Failed to remove validator key: {}",
+                error_msg
+            ));
+        }
 
         info!(
-            "Removed validator key for session {} from executor",
-            session.session_id
+            "Removed validator key for session {} from executor {} via gRPC",
+            session.session_id, executor_info.id
         );
         Ok(())
     }
@@ -509,6 +540,7 @@ impl Clone for SshSessionOrchestrator {
             sessions: self.sessions.clone(),
             sessions_by_validator: self.sessions_by_validator.clone(),
             executor_manager: self.executor_manager.clone(),
+            executor_grpc_client: ExecutorGrpcClient::new(ExecutorGrpcConfig::default()),
             rate_limits: self.rate_limits.clone(),
             config: self.config.clone(),
         }
