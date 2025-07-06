@@ -84,6 +84,10 @@ pub struct MinerConfig {
     /// Advertised address configuration
     #[serde(default)]
     pub advertised_addresses: MinerAdvertisedAddresses,
+
+    /// Validator assignment configuration
+    #[serde(default)]
+    pub validator_assignment: ValidatorAssignmentConfig,
 }
 
 /// Miner-specific Bittensor configuration
@@ -326,6 +330,21 @@ pub struct ExecutorSshConfig {
     pub ssh_retry_delay: Duration,
 }
 
+/// Validator assignment configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorAssignmentConfig {
+    /// Assignment strategy to use (only "round_robin" supported)
+    pub strategy: String,
+}
+
+impl Default for ValidatorAssignmentConfig {
+    fn default() -> Self {
+        Self {
+            strategy: "round_robin".to_string(),
+        }
+    }
+}
+
 /// Advertised address configuration for miner services
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MinerAdvertisedAddresses {
@@ -360,6 +379,7 @@ impl Default for MinerConfig {
             security: SecurityConfig::default(),
             ssh_session: ExecutorSshConfig::default(),
             advertised_addresses: MinerAdvertisedAddresses::default(),
+            validator_assignment: ValidatorAssignmentConfig::default(),
         }
     }
 }

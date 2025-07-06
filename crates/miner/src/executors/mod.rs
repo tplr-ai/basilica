@@ -4,4 +4,6 @@
 
 pub mod connection_manager;
 
-pub use connection_manager::{ExecutorConnection, ExecutorConnectionManager};
+pub use connection_manager::{
+    ExecutorConnection, ExecutorConnectionConfig, ExecutorConnectionManager, ExecutorInfo,
+};

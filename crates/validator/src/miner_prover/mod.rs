@@ -38,27 +38,32 @@ impl MinerProver {
     /// Create a new MinerProver instance
     pub fn new(
         config: VerificationConfig,
-        _automatic_config: crate::config::AutomaticVerificationConfig,
+        automatic_config: crate::config::AutomaticVerificationConfig,
+        ssh_session_config: crate::config::SshSessionConfig,
         bittensor_service: Arc<BittensorService>,
     ) -> Self {
         let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
 
-        // Create SSH client and hardware validator (optional)
-        let ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
-        let hardware_validator = None; // Can be configured later if needed
-        let ssh_key_path = None; // Can be configured later if needed
+        // Get validator hotkey from bittensor service
+        let validator_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())
+            .expect("Failed to convert account ID to hotkey");
 
-        // Use with_bittensor_service to properly load the validator's hotkey
-        let verification = VerificationEngine::with_bittensor_service(
-            config.clone(),
-            bittensor_service.clone(),
-            ssh_client,
-            hardware_validator,
-            ssh_key_path,
-        );
+        // Use VerificationEngineBuilder to properly initialize SSH key manager
+        let verification_engine_builder =
+            verification_engine_builder::VerificationEngineBuilder::new(
+                config.clone(),
+                automatic_config.clone(),
+                ssh_session_config.clone(),
+                validator_hotkey,
+            )
+            .with_bittensor_service(bittensor_service.clone());
 
-        // Create shutdown channel for the scheduler
-        let (_shutdown_tx, _shutdown_rx) = tokio::sync::broadcast::channel::<()>(1);
+        // Build verification engine with proper SSH key manager
+        let verification = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(async { verification_engine_builder.build().await })
+        })
+        .expect("Failed to build verification engine with SSH automation");
 
         // Create scheduler with automatic verification configuration
         let scheduler = VerificationScheduler::new(config.clone());

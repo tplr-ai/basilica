@@ -3,12 +3,13 @@
 //! Bittensor neuron that manages a fleet of executors and serves
 //! validator requests for GPU rental and computational challenges.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use common::identity::MinerUid;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::signal;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -168,12 +169,17 @@ impl MinerState {
             None
         } else {
             // Create assignment strategy based on configuration
-            // For now, using business logic assignment as default
             let strategy: Box<dyn validator_discovery::AssignmentStrategy> =
-                Box::new(validator_discovery::BusinessLogicAssignment {
-                    preferred_validators: vec![], // TODO: Load from config
-                    max_executors_per_validator: 3,
-                });
+                match config.validator_assignment.strategy.as_str() {
+                    "round_robin" => Box::new(validator_discovery::RoundRobinAssignment),
+                    _ => {
+                        tracing::warn!(
+                            "Unknown assignment strategy '{}', defaulting to round_robin",
+                            config.validator_assignment.strategy
+                        );
+                        Box::new(validator_discovery::RoundRobinAssignment)
+                    }
+                };
 
             let discovery = validator_discovery::ValidatorDiscovery::new(
                 chain_registration.get_bittensor_service(),
@@ -184,6 +190,55 @@ impl MinerState {
             Some(std::sync::Arc::new(discovery))
         };
 
+        // Initialize SSH session orchestrator
+        let executor_connection_config = executors::ExecutorConnectionConfig {
+            miner_executor_key_path: config.ssh_session.miner_executor_key_path.clone(),
+            default_executor_username: config.ssh_session.default_executor_username.clone(),
+            connection_timeout: config.ssh_session.ssh_connection_timeout,
+            max_idle_time: Duration::from_secs(300),
+            health_check_interval: Duration::from_secs(60),
+        };
+        let executor_connection_manager = Arc::new(executors::ExecutorConnectionManager::new(
+            executor_connection_config,
+        ));
+
+        // Register all executors with the connection manager
+        for executor_config in &config.executor_management.executors {
+            use std::str::FromStr;
+            let executor_info = executors::ExecutorInfo {
+                id: common::identity::ExecutorId::from_str(&executor_config.id).map_err(|e| {
+                    anyhow::anyhow!("Invalid executor ID '{}': {}", executor_config.id, e)
+                })?,
+                host: executor_config
+                    .grpc_address
+                    .split(':')
+                    .next()
+                    .unwrap_or("localhost")
+                    .to_string(),
+                ssh_port: 22, // Default SSH port
+                ssh_username: config.ssh_session.default_executor_username.clone(),
+                grpc_endpoint: Some(executor_config.grpc_address.clone()),
+                last_health_check: None,
+                is_healthy: true,
+            };
+            executor_connection_manager
+                .register_executor(executor_info)
+                .await
+                .with_context(|| format!("Failed to register executor {}", executor_config.id))?;
+        }
+
+        let ssh_session_config = ssh::SshSessionConfig {
+            max_sessions_per_validator: config.ssh_session.max_sessions_per_validator,
+            session_rate_limit: config.ssh_session.session_rate_limit,
+            cleanup_interval: config.ssh_session.session_cleanup_interval,
+            max_session_duration: Duration::from_secs(config.ssh_session.max_session_duration),
+            enable_audit_log: config.ssh_session.enable_audit_log,
+        };
+        let ssh_session_orchestrator = Arc::new(ssh::SshSessionOrchestrator::new(
+            executor_connection_manager,
+            ssh_session_config,
+        ));
+
         // Initialize validator communications server
         let validator_comms = ValidatorCommsServer::new(
             config.validator_comms.clone(),
@@ -193,7 +248,8 @@ impl MinerState {
             ssh_access_service.clone(),
             validator_discovery.clone(),
         )
-        .await?;
+        .await?
+        .with_ssh_session_orchestrator(ssh_session_orchestrator);
 
         let jwt_service = validator_comms.jwt_service.clone();
 

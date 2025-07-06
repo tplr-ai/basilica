@@ -303,6 +303,7 @@ async fn start_validator_services(
         let miner_prover = Some(crate::miner_prover::MinerProver::new(
             config.verification.clone(),
             config.automatic_verification.clone(),
+            config.ssh_session.clone(),
             bittensor_service.clone(),
         ));
 
