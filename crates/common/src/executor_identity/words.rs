@@ -34,7 +34,7 @@ pub const ADJECTIVES: [&str; 117] = [
     "tiny", "true", "turbo", // U
     "ultra", "unique", "urban", // V
     "vast", "velvet", "vital", // W
-    "warm", "wild", "wise", // Y
+    "warm", "wild", "wise",  // Y
     "young", // Z
     "zen", "zero",
 ];

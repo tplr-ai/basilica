@@ -9,9 +9,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use anyhow::Result;
     use std::collections::{HashMap, HashSet};
-    use std::sync::Arc;
     use std::time::{Duration, Instant};
     use uuid::Uuid;
 

@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::{RwLock, Mutex};
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -173,9 +173,12 @@ impl VerificationEngine {
             Some((public_key, private_key_path)) => {
                 info!("Using persistent SSH key for executor {}", executor.id);
                 (public_key.clone(), private_key_path.clone())
-            },
+            }
             None => {
-                error!("No persistent SSH key available for executor {}", executor.id);
+                error!(
+                    "No persistent SSH key available for executor {}",
+                    executor.id
+                );
                 return Err(anyhow::anyhow!("No persistent SSH key available"));
             }
         };
@@ -591,7 +594,9 @@ impl VerificationEngine {
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
                     verification_score: 0.0,
-                    error: Some("Concurrent SSH session already active for this executor".to_string()),
+                    error: Some(
+                        "Concurrent SSH session already active for this executor".to_string(),
+                    ),
                 });
             }
             // Mark this executor as having an active session
@@ -634,50 +639,55 @@ impl VerificationEngine {
             executor_info.id
         );
         let key_gen_start = std::time::Instant::now();
-        let (session_id, public_key_openssh, session_key_path) = if let Some(ref key_manager) =
-            self.ssh_key_manager
-        {
-            let session_id = Uuid::new_v4().to_string();
-            info!("[EVAL_FLOW] Session ID generated: {}", session_id);
+        let (session_id, public_key_openssh, session_key_path) =
+            if let Some(ref key_manager) = self.ssh_key_manager {
+                let session_id = Uuid::new_v4().to_string();
+                info!("[EVAL_FLOW] Session ID generated: {}", session_id);
 
-            // Use persistent SSH key instead of generating session-specific keys
-            let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
-                Some((public_key, private_key_path)) => {
-                    info!("[EVAL_FLOW] Using persistent SSH key for executor {}", executor_info.id);
-                    (public_key.clone(), private_key_path.clone())
-                },
-                None => {
-                    error!("[EVAL_FLOW] No persistent SSH key available for executor {}", executor_info.id);
-                    self.cleanup_active_session(&executor_info.id).await;
-                    return Err(anyhow::anyhow!("No persistent SSH key available"));
-                }
+                // Use persistent SSH key instead of generating session-specific keys
+                let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
+                    Some((public_key, private_key_path)) => {
+                        info!(
+                            "[EVAL_FLOW] Using persistent SSH key for executor {}",
+                            executor_info.id
+                        );
+                        (public_key.clone(), private_key_path.clone())
+                    }
+                    None => {
+                        error!(
+                            "[EVAL_FLOW] No persistent SSH key available for executor {}",
+                            executor_info.id
+                        );
+                        self.cleanup_active_session(&executor_info.id).await;
+                        return Err(anyhow::anyhow!("No persistent SSH key available"));
+                    }
+                };
+
+                info!(
+                    "[EVAL_FLOW] SSH keypair generated in {:?}, public key length: {} chars",
+                    key_gen_start.elapsed(),
+                    public_key_openssh.len()
+                );
+                debug!(
+                    "[EVAL_FLOW] Public key preview: {}...",
+                    public_key_openssh.chars().take(50).collect::<String>()
+                );
+                debug!(
+                    "[EVAL_FLOW] Full public key being sent: {}",
+                    public_key_openssh
+                );
+
+                (session_id, public_key_openssh, key_path)
+            } else {
+                error!(
+                    "[EVAL_FLOW] No SSH key manager available for verification of executor {}",
+                    executor_info.id
+                );
+                self.cleanup_active_session(&executor_info.id).await;
+                return Err(anyhow::anyhow!(
+                    "No SSH key manager available for verification"
+                ));
             };
-
-            info!(
-                "[EVAL_FLOW] SSH keypair generated in {:?}, public key length: {} chars",
-                key_gen_start.elapsed(),
-                public_key_openssh.len()
-            );
-            debug!(
-                "[EVAL_FLOW] Public key preview: {}...",
-                public_key_openssh.chars().take(50).collect::<String>()
-            );
-            debug!(
-                "[EVAL_FLOW] Full public key being sent: {}",
-                public_key_openssh
-            );
-
-            (session_id, public_key_openssh, key_path)
-        } else {
-            error!(
-                "[EVAL_FLOW] No SSH key manager available for verification of executor {}",
-                executor_info.id
-            );
-            self.cleanup_active_session(&executor_info.id).await;
-            return Err(anyhow::anyhow!(
-                "No SSH key manager available for verification"
-            ));
-        };
 
         // Request SSH session setup
         let session_request = InitiateSshSessionRequest {
@@ -777,27 +787,39 @@ impl VerificationEngine {
             Ok(details) => {
                 info!("[EVAL_FLOW] SSH credentials parsed successfully: host={}, port={}, username={}",
                       details.host, details.port, details.username);
-                
+
                 // Verify the private key file exists and has correct permissions
                 if !details.private_key_path.exists() {
-                    error!("[EVAL_FLOW] Private key file does not exist: {}", details.private_key_path.display());
+                    error!(
+                        "[EVAL_FLOW] Private key file does not exist: {}",
+                        details.private_key_path.display()
+                    );
                     self.cleanup_active_session(&executor_info.id).await;
-                    return Err(anyhow::anyhow!("Private key file not found: {}", details.private_key_path.display()));
+                    return Err(anyhow::anyhow!(
+                        "Private key file not found: {}",
+                        details.private_key_path.display()
+                    ));
                 }
-                
+
                 if let Ok(metadata) = std::fs::metadata(&details.private_key_path) {
                     #[cfg(unix)]
                     {
                         use std::os::unix::fs::PermissionsExt;
                         let mode = metadata.permissions().mode();
-                        debug!("[EVAL_FLOW] Private key file permissions: {:o}", mode & 0o777);
+                        debug!(
+                            "[EVAL_FLOW] Private key file permissions: {:o}",
+                            mode & 0o777
+                        );
                         if (mode & 0o077) != 0 {
                             warn!("[EVAL_FLOW] Private key file has overly permissive permissions: {:o}", mode & 0o777);
                         }
                     }
-                    debug!("[EVAL_FLOW] Private key file size: {} bytes", metadata.len());
+                    debug!(
+                        "[EVAL_FLOW] Private key file size: {} bytes",
+                        metadata.len()
+                    );
                 }
-                
+
                 details
             }
             Err(e) => {
@@ -820,12 +842,12 @@ impl VerificationEngine {
             executor_info.id, ssh_details.host, ssh_details.port
         );
         let connection_test_start = std::time::Instant::now();
-        
+
         let max_retries = 3;
         #[allow(unused_assignments)]
         let mut last_error = None;
         let mut verification_score = 0.0;
-        
+
         for attempt in 1..=max_retries {
             match self.ssh_client.test_connection(&ssh_details).await {
                 Ok(_) => {
@@ -886,7 +908,6 @@ impl VerificationEngine {
                 close_start.elapsed()
             );
         }
-
 
         info!(
             "[EVAL_FLOW] SSH verification completed for executor {} with score: {:.2}",
@@ -1396,32 +1417,37 @@ impl VerificationEngine {
         );
 
         // Step 1: Use persistent SSH key if we have key manager
-        let (session_id, public_key_openssh, key_path) = if let Some(ref key_manager) =
-            self.ssh_key_manager
-        {
-            let session_id = Uuid::new_v4().to_string();
-            let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
-                Some((public_key, private_key_path)) => {
-                    info!("Using persistent SSH key for executor {} dynamic verification", executor.id);
-                    (public_key.clone(), private_key_path.clone())
-                },
-                None => {
-                    error!("No persistent SSH key available for executor {} dynamic verification", executor.id);
-                    return Err(anyhow::anyhow!("No persistent SSH key available"));
-                }
-            };
+        let (session_id, public_key_openssh, key_path) =
+            if let Some(ref key_manager) = self.ssh_key_manager {
+                let session_id = Uuid::new_v4().to_string();
+                let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
+                    Some((public_key, private_key_path)) => {
+                        info!(
+                            "Using persistent SSH key for executor {} dynamic verification",
+                            executor.id
+                        );
+                        (public_key.clone(), private_key_path.clone())
+                    }
+                    None => {
+                        error!(
+                            "No persistent SSH key available for executor {} dynamic verification",
+                            executor.id
+                        );
+                        return Err(anyhow::anyhow!("No persistent SSH key available"));
+                    }
+                };
 
-            (session_id, public_key_openssh, key_path)
-        } else {
-            // Fallback to legacy mode without key generation
-            warn!("No SSH key manager available, using legacy SSH session mode");
-            let session_id = Uuid::new_v4().to_string();
-            let fallback_key_path = self
-                .ssh_key_path
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("/tmp/validator_key"));
-            (session_id, String::new(), fallback_key_path)
-        };
+                (session_id, public_key_openssh, key_path)
+            } else {
+                // Fallback to legacy mode without key generation
+                warn!("No SSH key manager available, using legacy SSH session mode");
+                let session_id = Uuid::new_v4().to_string();
+                let fallback_key_path = self
+                    .ssh_key_path
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("/tmp/validator_key"));
+                (session_id, String::new(), fallback_key_path)
+            };
 
         // Get miner endpoint from cache
         let miner_endpoint = self.get_miner_endpoint(&executor.miner_uid).await?;
@@ -1524,7 +1550,6 @@ impl VerificationEngine {
                 session_info.session_id, e
             );
         }
-
 
         Ok(verification_result)
     }

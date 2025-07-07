@@ -389,6 +389,7 @@ mod tests {
         SshSessionConfig {
             ssh_key_directory: temp_dir.path().to_path_buf(),
             key_algorithm: "ed25519".to_string(),
+            persistent_ssh_key_path: None,
             default_session_duration: 300,
             max_session_duration: 3600,
             key_cleanup_interval: Duration::from_secs(60),

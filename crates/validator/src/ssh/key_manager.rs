@@ -47,18 +47,31 @@ impl ValidatorSshKeyManager {
     }
 
     /// Load or generate persistent SSH key for validator
-    pub async fn load_or_generate_persistent_key(&mut self, key_path: Option<PathBuf>) -> Result<(String, PathBuf)> {
-        let persistent_key_path = key_path.unwrap_or_else(|| self.key_dir.join("validator_persistent.pem"));
-        
+    pub async fn load_or_generate_persistent_key(
+        &mut self,
+        key_path: Option<PathBuf>,
+    ) -> Result<(String, PathBuf)> {
+        let persistent_key_path =
+            key_path.unwrap_or_else(|| self.key_dir.join("validator_persistent.pem"));
+
         // Check if persistent key already exists
         if persistent_key_path.exists() {
-            info!("Loading existing persistent SSH key from {}", persistent_key_path.display());
-            let (public_key, private_key_path) = self.load_existing_persistent_key(&persistent_key_path).await?;
+            info!(
+                "Loading existing persistent SSH key from {}",
+                persistent_key_path.display()
+            );
+            let (public_key, private_key_path) = self
+                .load_existing_persistent_key(&persistent_key_path)
+                .await?;
             self.persistent_key = Some((public_key.clone(), private_key_path.clone()));
             Ok((public_key, private_key_path))
         } else {
-            info!("Generating new persistent SSH key at {}", persistent_key_path.display());
-            let (public_key, private_key_path) = self.generate_persistent_key(&persistent_key_path).await?;
+            info!(
+                "Generating new persistent SSH key at {}",
+                persistent_key_path.display()
+            );
+            let (public_key, private_key_path) =
+                self.generate_persistent_key(&persistent_key_path).await?;
             self.persistent_key = Some((public_key.clone(), private_key_path.clone()));
             Ok((public_key, private_key_path))
         }
@@ -70,15 +83,15 @@ impl ValidatorSshKeyManager {
         let key_content = fs::read_to_string(key_path)
             .await
             .context("Failed to read persistent SSH key file")?;
-        
+
         // Parse private key
         let private_key = PrivateKey::from_openssh(&key_content)
             .context("Failed to parse persistent SSH private key")?;
-        
+
         // Get public key
         let public_key = private_key.public_key();
-        let public_key_str = Self::get_public_key_openssh(&public_key)?;
-        
+        let public_key_str = Self::get_public_key_openssh(public_key)?;
+
         debug!("Loaded persistent SSH key from {}", key_path.display());
         Ok((public_key_str, key_path.clone()))
     }
@@ -90,25 +103,25 @@ impl ValidatorSshKeyManager {
         let private_key = PrivateKey::random(&mut rng, self.key_algorithm.clone())
             .context("Failed to generate persistent private key")?;
         let public_key = private_key.public_key();
-        
+
         // Convert to OpenSSH format
         let key_content = private_key
             .to_openssh(LineEnding::default())
             .context("Failed to convert persistent key to OpenSSH format")?;
-        let public_key_str = Self::get_public_key_openssh(&public_key)?;
-        
+        let public_key_str = Self::get_public_key_openssh(public_key)?;
+
         // Ensure parent directory exists
         if let Some(parent) = key_path.parent() {
             fs::create_dir_all(parent)
                 .await
                 .context("Failed to create persistent key directory")?;
         }
-        
+
         // Write private key to file
         fs::write(key_path, key_content.as_bytes())
             .await
             .context("Failed to write persistent private key")?;
-        
+
         // Set permissions to 0600
         #[cfg(unix)]
         {
@@ -120,7 +133,7 @@ impl ValidatorSshKeyManager {
                 .await
                 .context("Failed to set persistent key permissions")?;
         }
-        
+
         info!("Generated persistent SSH key at {}", key_path.display());
         Ok((public_key_str, key_path.clone()))
     }

@@ -336,7 +336,7 @@ pub struct ValidatorAssignmentConfig {
     /// Enable validator discovery and assignment filtering
     #[serde(default = "default_enable_validator_assignment")]
     pub enabled: bool,
-    
+
     /// Assignment strategy to use (only "round_robin" supported)
     pub strategy: String,
 }
