@@ -21,6 +21,7 @@
 pub mod config;
 pub mod crypto;
 pub mod error;
+pub mod executor_identity;
 pub mod identity;
 pub mod journal;
 pub mod metrics;
