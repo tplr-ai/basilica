@@ -1,0 +1,103 @@
+# Validator Configuration Template
+# This file is used to generate environment-specific configurations
+
+[database]
+url = "sqlite:/opt/basilica/data/validator.db?mode=rwc"
+max_connections = 10
+run_migrations = true
+
+[server]
+host = "0.0.0.0"
+port = 8081
+advertised_host = "64.247.196.98"
+advertised_port = 8081
+advertised_tls = false
+max_connections = 1000
+request_timeout = { secs = 30 }
+
+[bittensor]
+wallet_name = "test_validator"
+hotkey_name = "default"
+network = "test"
+netuid = 387
+chain_endpoint = "wss://test.finney.opentensor.ai:443"
+weight_interval_secs = 300
+axon_port = 9091
+external_ip = "64.247.196.98"
+
+[verification]
+max_concurrent_verifications = 50
+min_score_threshold = 0.1
+verification_interval = { secs = 600 }
+challenge_timeout = { secs = 120 }
+retry_attempts = 3
+retry_delay = { secs = 5 }
+netuid = 387                        # ✅ ADD THIS - Missing netuid for verification
+# Dynamic discovery settings for finding miner executors via gRPC
+use_dynamic_discovery = true
+discovery_timeout = { secs = 30 }
+fallback_to_static = true
+cache_miner_info_ttl = { secs = 300 }
+# Optional: gRPC port offset from axon port
+# For testnet, miner HTTP/gRPC is on 8080, axon is on 8091, so we need offset
+# grpc_port_offset = -11  # Commented out: field expects Option<u16> (unsigned)
+
+[ssh_validation]
+enabled = true
+timeout = { secs = 60 }
+max_file_size = "10MB"
+allowed_commands = ["gpu-attestor", "nvidia-smi"]
+temp_dir = "/tmp/basilica-validation"
+
+[scoring]
+gpu_weight = 0.4
+cpu_weight = 0.2
+memory_weight = 0.2
+network_weight = 0.1
+reliability_weight = 0.1
+
+[metrics]
+enabled = true
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"
+retention_period = { secs = 604800 }
+
+[logging]
+level = "debug"
+format = "json"
+output = "./validator.log"
+max_file_size = 104857600
+max_files = 10
+
+[api]
+enabled = true
+swagger_enabled = true
+cors_enabled = true
+cors_origins = ["*"]
+rate_limit = 100
+
+[storage]
+data_dir = "/opt/basilica/data"
+
+[security]
+enable_authentication = false
+api_key_header = "X-API-Key"
+allowed_api_keys = []
+
+[ssh_session]
+ssh_key_directory = "/opt/basilica/data/ssh_keys"
+key_algorithm = "ed25519"
+default_session_duration = 300
+max_session_duration = 3600
+key_cleanup_interval = { secs = 60, nanos = 0 }
+# ✅ Add these missing SSH session fields:
+enable_automated_sessions = true
+max_concurrent_sessions = 5
+session_rate_limit = 20
+enable_audit_logging = true
+audit_log_path = "/opt/basilica/data/ssh_audit.log"
+ssh_connection_timeout = { secs = 30, nanos = 0 }
+ssh_command_timeout = { secs = 60, nanos = 0 }
+ssh_retry_attempts = 3
+ssh_retry_delay = { secs = 2, nanos = 0 }
