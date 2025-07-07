@@ -233,6 +233,9 @@ pub struct SshSessionConfig {
     /// SSH key algorithm (ed25519, rsa, ecdsa)
     pub key_algorithm: String,
 
+    /// Path to persistent SSH private key file (optional)
+    pub persistent_ssh_key_path: Option<PathBuf>,
+
     /// Default session duration in seconds
     pub default_session_duration: u64,
 
@@ -284,6 +287,7 @@ impl Default for SshSessionConfig {
         Self {
             ssh_key_directory: PathBuf::from("/tmp/validator_ssh_keys"),
             key_algorithm: "ed25519".to_string(),
+            persistent_ssh_key_path: None,
             default_session_duration: 300, // 5 minutes
             max_session_duration: 3600,    // 1 hour
             key_cleanup_interval: Duration::from_secs(60),

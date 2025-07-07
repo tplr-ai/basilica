@@ -175,9 +175,22 @@ impl ValidatorSshKeyManagerBuilder {
     async fn initialize_key_manager(&self) -> Result<ValidatorSshKeyManager> {
         info!("Initializing SSH key manager");
 
-        let key_manager = ValidatorSshKeyManager::new(self.config.ssh_key_directory.clone())
+        let mut key_manager = ValidatorSshKeyManager::new(self.config.ssh_key_directory.clone())
             .await
             .context("Failed to create ValidatorSshKeyManager")?;
+
+        // Initialize persistent SSH key
+        info!("Loading or generating persistent SSH key");
+        let (public_key, private_key_path) = key_manager
+            .load_or_generate_persistent_key(self.config.persistent_ssh_key_path.clone())
+            .await
+            .context("Failed to load or generate persistent SSH key")?;
+
+        info!(
+            "Persistent SSH key ready: {} chars, private key at {}",
+            public_key.len(),
+            private_key_path.display()
+        );
 
         info!("SSH key manager initialized successfully");
         Ok(key_manager)

@@ -184,13 +184,14 @@ impl ExecutorControl for ExecutorControlService {
         let validator_id =
             crate::validation_session::types::ValidatorId::new(req.validator_hotkey.clone());
 
-        // Generate ephemeral SSH keypair for this session
-        let (private_key_pem, public_key_openssh) =
-            common::crypto::generate_ephemeral_ed25519_keypair();
+        // Use the SSH public key provided by the validator
+        if req.ssh_public_key.is_empty() {
+            return Err(tonic::Status::invalid_argument("SSH public key required"));
+        }
 
-        // Grant SSH access using the generated public key
+        // Grant SSH access using the validator's public key
         validation_service
-            .grant_ssh_access(&validator_id, &public_key_openssh)
+            .grant_ssh_access(&validator_id, &req.ssh_public_key)
             .await
             .map_err(|e| {
                 tracing::error!("Failed to provision SSH access: {}", e);
@@ -200,7 +201,6 @@ impl ExecutorControl for ExecutorControlService {
         // Create SSH credentials in JSON format with correct username
         let ssh_username = common::ssh::SimpleSshUsers::validator_username(&req.validator_hotkey);
         let credentials = serde_json::json!({
-            "ssh_private_key": private_key_pem,
             "ssh_username": ssh_username,
             "ssh_host": "executor.local",
             "ssh_port": 22

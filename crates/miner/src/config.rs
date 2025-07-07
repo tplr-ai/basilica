@@ -333,6 +333,10 @@ pub struct ExecutorSshConfig {
 /// Validator assignment configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorAssignmentConfig {
+    /// Enable validator discovery and assignment filtering
+    #[serde(default = "default_enable_validator_assignment")]
+    pub enabled: bool,
+    
     /// Assignment strategy to use (only "round_robin" supported)
     pub strategy: String,
 }
@@ -340,6 +344,7 @@ pub struct ValidatorAssignmentConfig {
 impl Default for ValidatorAssignmentConfig {
     fn default() -> Self {
         Self {
+            enabled: default_enable_validator_assignment(),
             strategy: "round_robin".to_string(),
         }
     }
@@ -422,6 +427,10 @@ fn default_ssh_retry_attempts() -> u32 {
 
 fn default_ssh_retry_delay() -> Duration {
     Duration::from_secs(2)
+}
+
+fn default_enable_validator_assignment() -> bool {
+    false
 }
 
 impl Default for ExecutorSshConfig {

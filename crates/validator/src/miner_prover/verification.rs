@@ -15,12 +15,12 @@ use common::ssh::SshConnectionDetails;
 use protocol::miner_discovery::{
     CloseSshSessionRequest, InitiateSshSessionRequest, SshSessionStatus,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Mutex};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -41,6 +41,8 @@ pub struct VerificationEngine {
     bittensor_service: Option<Arc<bittensor::Service>>,
     /// SSH key manager for session keys
     ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
+    /// Active SSH sessions per executor to prevent concurrent sessions
+    active_ssh_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
 impl VerificationEngine {
@@ -64,6 +66,7 @@ impl VerificationEngine {
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: None,
             ssh_key_manager: None,
+            active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -164,15 +167,18 @@ impl VerificationEngine {
         executor: &ExecutorInfo,
         ssh_key_manager: &ValidatorSshKeyManager,
     ) -> Result<()> {
-        // Generate ephemeral SSH keypair for this executor
+        // Use persistent SSH key instead of generating new session keys
         let session_id = Uuid::new_v4().to_string();
-        let (_, public_key, _) = ssh_key_manager
-            .generate_session_keypair(&session_id)
-            .await
-            .context("Failed to generate SSH keypair for executor")?;
-
-        let public_key_openssh = ValidatorSshKeyManager::get_public_key_openssh(&public_key)
-            .context("Failed to convert public key to OpenSSH format")?;
+        let (public_key_openssh, _key_path) = match ssh_key_manager.get_persistent_key() {
+            Some((public_key, private_key_path)) => {
+                info!("Using persistent SSH key for executor {}", executor.id);
+                (public_key.clone(), private_key_path.clone())
+            },
+            None => {
+                error!("No persistent SSH key available for executor {}", executor.id);
+                return Err(anyhow::anyhow!("No persistent SSH key available"));
+            }
+        };
 
         // Request SSH session setup with validator's public key
         let session_request = InitiateSshSessionRequest {
@@ -208,13 +214,6 @@ impl VerificationEngine {
                     "Failed SSH session setup for executor {}: {}",
                     executor.id, e
                 );
-                // Clean up generated key on failure
-                if let Err(cleanup_err) = ssh_key_manager.cleanup_session_keys(&session_id).await {
-                    warn!(
-                        "Failed to cleanup SSH keys after setup failure: {}",
-                        cleanup_err
-                    );
-                }
                 return Err(e);
             }
         }
@@ -552,6 +551,17 @@ impl VerificationEngine {
         Ok(executors)
     }
 
+    /// Helper function to clean up active SSH session for an executor
+    async fn cleanup_active_session(&self, executor_id: &str) {
+        let mut active_sessions = self.active_ssh_sessions.lock().await;
+        if active_sessions.remove(executor_id) {
+            info!(
+                "[EVAL_FLOW] Cleaned up active SSH session for executor {}",
+                executor_id
+            );
+        }
+    }
+
     /// Verify executor with SSH automation
     async fn verify_executor_with_ssh_automation(
         &self,
@@ -569,6 +579,28 @@ impl VerificationEngine {
             executor_info.grpc_endpoint,
             executor_info.capabilities
         );
+
+        // Check if there's already an active SSH session for this executor
+        {
+            let mut active_sessions = self.active_ssh_sessions.lock().await;
+            if active_sessions.contains(&executor_info.id) {
+                warn!(
+                    "[EVAL_FLOW] SSH session already active for executor {}, skipping concurrent verification",
+                    executor_info.id
+                );
+                return Ok(ExecutorVerificationResult {
+                    executor_id: executor_info.id.clone(),
+                    verification_score: 0.0,
+                    error: Some("Concurrent SSH session already active for this executor".to_string()),
+                });
+            }
+            // Mark this executor as having an active session
+            active_sessions.insert(executor_info.id.clone());
+            info!(
+                "[EVAL_FLOW] Marked executor {} as having active SSH session",
+                executor_info.id
+            );
+        }
 
         // Create authenticated miner client
         info!("[EVAL_FLOW] Creating authenticated client for SSH verification");
@@ -591,6 +623,7 @@ impl VerificationEngine {
                     ssh_connect_start.elapsed(),
                     e
                 );
+                self.cleanup_active_session(&executor_info.id).await;
                 return Err(e).context("Failed to connect to miner for SSH verification");
             }
         };
@@ -607,13 +640,18 @@ impl VerificationEngine {
             let session_id = Uuid::new_v4().to_string();
             info!("[EVAL_FLOW] Session ID generated: {}", session_id);
 
-            let (_, public_key, key_path) = key_manager
-                .generate_session_keypair(&session_id)
-                .await
-                .context("Failed to generate SSH keypair")?;
-
-            let public_key_openssh = ValidatorSshKeyManager::get_public_key_openssh(&public_key)
-                .context("Failed to convert public key to OpenSSH format")?;
+            // Use persistent SSH key instead of generating session-specific keys
+            let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
+                Some((public_key, private_key_path)) => {
+                    info!("[EVAL_FLOW] Using persistent SSH key for executor {}", executor_info.id);
+                    (public_key.clone(), private_key_path.clone())
+                },
+                None => {
+                    error!("[EVAL_FLOW] No persistent SSH key available for executor {}", executor_info.id);
+                    self.cleanup_active_session(&executor_info.id).await;
+                    return Err(anyhow::anyhow!("No persistent SSH key available"));
+                }
+            };
 
             info!(
                 "[EVAL_FLOW] SSH keypair generated in {:?}, public key length: {} chars",
@@ -624,6 +662,10 @@ impl VerificationEngine {
                 "[EVAL_FLOW] Public key preview: {}...",
                 public_key_openssh.chars().take(50).collect::<String>()
             );
+            debug!(
+                "[EVAL_FLOW] Full public key being sent: {}",
+                public_key_openssh
+            );
 
             (session_id, public_key_openssh, key_path)
         } else {
@@ -631,6 +673,7 @@ impl VerificationEngine {
                 "[EVAL_FLOW] No SSH key manager available for verification of executor {}",
                 executor_info.id
             );
+            self.cleanup_active_session(&executor_info.id).await;
             return Err(anyhow::anyhow!(
                 "No SSH key manager available for verification"
             ));
@@ -677,6 +720,7 @@ impl VerificationEngine {
                     session_start.elapsed(),
                     e
                 );
+                self.cleanup_active_session(&executor_info.id).await;
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
                     verification_score: 0.0,
@@ -692,6 +736,7 @@ impl VerificationEngine {
                 executor_info.id,
                 session_info.status()
             );
+            self.cleanup_active_session(&executor_info.id).await;
             return Ok(ExecutorVerificationResult {
                 executor_id: executor_info.id.clone(),
                 verification_score: 0.0,
@@ -702,6 +747,18 @@ impl VerificationEngine {
         info!(
             "[EVAL_FLOW] SSH session active for executor {}: session_id={}, expires_at={}",
             executor_info.id, session_info.session_id, session_info.expires_at
+        );
+
+        // Allow time for SSH key provisioning to complete on executor
+        info!(
+            "[EVAL_FLOW] Waiting for SSH key provisioning to complete on executor {}",
+            executor_info.id
+        );
+        let provisioning_delay = std::time::Duration::from_millis(5000); // 5 second delay to ensure proper key propagation
+        tokio::time::sleep(provisioning_delay).await;
+        info!(
+            "[EVAL_FLOW] SSH key provisioning delay completed for executor {}",
+            executor_info.id
         );
 
         // Parse SSH credentials and test connection
@@ -720,6 +777,27 @@ impl VerificationEngine {
             Ok(details) => {
                 info!("[EVAL_FLOW] SSH credentials parsed successfully: host={}, port={}, username={}",
                       details.host, details.port, details.username);
+                
+                // Verify the private key file exists and has correct permissions
+                if !details.private_key_path.exists() {
+                    error!("[EVAL_FLOW] Private key file does not exist: {}", details.private_key_path.display());
+                    self.cleanup_active_session(&executor_info.id).await;
+                    return Err(anyhow::anyhow!("Private key file not found: {}", details.private_key_path.display()));
+                }
+                
+                if let Ok(metadata) = std::fs::metadata(&details.private_key_path) {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let mode = metadata.permissions().mode();
+                        debug!("[EVAL_FLOW] Private key file permissions: {:o}", mode & 0o777);
+                        if (mode & 0o077) != 0 {
+                            warn!("[EVAL_FLOW] Private key file has overly permissive permissions: {:o}", mode & 0o777);
+                        }
+                    }
+                    debug!("[EVAL_FLOW] Private key file size: {} bytes", metadata.len());
+                }
+                
                 details
             }
             Err(e) => {
@@ -727,6 +805,7 @@ impl VerificationEngine {
                     "[EVAL_FLOW] Failed to parse SSH credentials for executor {}: {}",
                     executor_info.id, e
                 );
+                self.cleanup_active_session(&executor_info.id).await;
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
                     verification_score: 0.0,
@@ -735,31 +814,51 @@ impl VerificationEngine {
             }
         };
 
-        // Test SSH connection
+        // Test SSH connection with retry logic
         info!(
             "[EVAL_FLOW] Testing SSH connection to executor {} at {}:{}",
             executor_info.id, ssh_details.host, ssh_details.port
         );
         let connection_test_start = std::time::Instant::now();
-        let verification_score = match self.ssh_client.test_connection(&ssh_details).await {
-            Ok(_) => {
-                info!(
-                    "[EVAL_FLOW] SSH connection test successful for executor {} in {:?}",
-                    executor_info.id,
-                    connection_test_start.elapsed()
-                );
-                0.8 // Good score for successful SSH verification
+        
+        let max_retries = 3;
+        #[allow(unused_assignments)]
+        let mut last_error = None;
+        let mut verification_score = 0.0;
+        
+        for attempt in 1..=max_retries {
+            match self.ssh_client.test_connection(&ssh_details).await {
+                Ok(_) => {
+                    info!(
+                        "[EVAL_FLOW] SSH connection test successful for executor {} on attempt {} in {:?}",
+                        executor_info.id,
+                        attempt,
+                        connection_test_start.elapsed()
+                    );
+                    verification_score = 0.8; // Good score for successful SSH verification
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < max_retries {
+                        warn!(
+                            "[EVAL_FLOW] SSH connection test failed for executor {} on attempt {}, retrying in 1s: {}",
+                            executor_info.id, attempt, last_error.as_ref().unwrap()
+                        );
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    } else {
+                        error!(
+                            "[EVAL_FLOW] SSH connection test failed for executor {} after {} attempts in {:?}: {}",
+                            executor_info.id,
+                            max_retries,
+                            connection_test_start.elapsed(),
+                            last_error.as_ref().unwrap()
+                        );
+                        verification_score = 0.0;
+                    }
+                }
             }
-            Err(e) => {
-                error!(
-                    "[EVAL_FLOW] SSH connection test failed for executor {} after {:?}: {}",
-                    executor_info.id,
-                    connection_test_start.elapsed(),
-                    e
-                );
-                0.0
-            }
-        };
+        }
 
         // Close SSH session
         info!(
@@ -788,33 +887,14 @@ impl VerificationEngine {
             );
         }
 
-        // Cleanup local keys
-        info!(
-            "[EVAL_FLOW] Cleaning up SSH keys for session {}",
-            session_id
-        );
-        if let Some(ref key_manager) = self.ssh_key_manager {
-            let cleanup_start = std::time::Instant::now();
-            if let Err(e) = key_manager.cleanup_session_keys(&session_id).await {
-                warn!(
-                    "[EVAL_FLOW] Failed to cleanup SSH keys for session {} after {:?}: {}",
-                    session_id,
-                    cleanup_start.elapsed(),
-                    e
-                );
-            } else {
-                debug!(
-                    "[EVAL_FLOW] SSH keys cleaned up for session {} in {:?}",
-                    session_id,
-                    cleanup_start.elapsed()
-                );
-            }
-        }
 
         info!(
             "[EVAL_FLOW] SSH verification completed for executor {} with score: {:.2}",
             executor_info.id, verification_score
         );
+
+        // Remove executor from active sessions
+        self.cleanup_active_session(&executor_info.id).await;
 
         Ok(ExecutorVerificationResult {
             executor_id: executor_info.id.clone(),
@@ -1003,6 +1083,7 @@ impl VerificationEngine {
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: None,
             ssh_key_manager: None,
+            active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -1032,6 +1113,7 @@ impl VerificationEngine {
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: None,
             ssh_key_manager: Some(ssh_key_manager),
+            active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
@@ -1067,6 +1149,7 @@ impl VerificationEngine {
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service: Some(bittensor_service),
             ssh_key_manager,
+            active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -1312,18 +1395,21 @@ impl VerificationEngine {
             executor.miner_uid.as_u16()
         );
 
-        // Step 1: Generate ephemeral SSH keypair if we have key manager
+        // Step 1: Use persistent SSH key if we have key manager
         let (session_id, public_key_openssh, key_path) = if let Some(ref key_manager) =
             self.ssh_key_manager
         {
             let session_id = Uuid::new_v4().to_string();
-            let (_, public_key, key_path) = key_manager
-                .generate_session_keypair(&session_id)
-                .await
-                .context("Failed to generate SSH keypair")?;
-
-            let public_key_openssh = ValidatorSshKeyManager::get_public_key_openssh(&public_key)
-                .context("Failed to convert public key to OpenSSH format")?;
+            let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
+                Some((public_key, private_key_path)) => {
+                    info!("Using persistent SSH key for executor {} dynamic verification", executor.id);
+                    (public_key.clone(), private_key_path.clone())
+                },
+                None => {
+                    error!("No persistent SSH key available for executor {} dynamic verification", executor.id);
+                    return Err(anyhow::anyhow!("No persistent SSH key available"));
+                }
+            };
 
             (session_id, public_key_openssh, key_path)
         } else {
@@ -1439,15 +1525,6 @@ impl VerificationEngine {
             );
         }
 
-        // Step 7: Cleanup local keys
-        if let Some(ref key_manager) = self.ssh_key_manager {
-            if let Err(e) = key_manager.cleanup_session_keys(&session_id).await {
-                warn!(
-                    "Failed to cleanup SSH keys for session {}: {}",
-                    session_id, e
-                );
-            }
-        }
 
         Ok(verification_result)
     }
@@ -1627,6 +1704,7 @@ impl VerificationEngine {
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
             bittensor_service,
             ssh_key_manager,
+            active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
         })
     }
 
