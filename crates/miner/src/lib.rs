@@ -10,6 +10,7 @@ pub mod executor_manager;
 pub mod executors;
 pub mod persistence;
 pub mod request_verification;
+pub mod services;
 pub mod session_cleanup;
 pub mod ssh;
 pub mod validator_comms;

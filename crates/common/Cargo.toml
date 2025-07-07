@@ -44,6 +44,8 @@ ssh-key = { version = "0.6", features = ["ed25519", "rand_core", "std"] }
 zeroize = { version = "1.7", features = ["derive"] }
 base64 = "0.22"
 sha2 = "0.10"
+regex = "1.10"
+once_cell = "1.19"
 
 [dev-dependencies]
 tokio = { workspace = true }
