@@ -423,7 +423,7 @@ impl AssignmentStrategy for ManualAssignment {
                 for assignment in assignments {
                     result
                         .entry(assignment.validator_hotkey)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(assignment.executor_id);
                 }
 

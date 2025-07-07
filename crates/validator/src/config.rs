@@ -447,7 +447,7 @@ impl ValidatorBittensorConfig {
         let endpoint = self.get_advertised_axon_endpoint();
 
         let url = url::Url::parse(&endpoint)
-            .map_err(|e| format!("Invalid advertised axon endpoint: {}", e))?;
+            .map_err(|e| format!("Invalid advertised axon endpoint: {e}"))?;
 
         let host = url
             .host_str()

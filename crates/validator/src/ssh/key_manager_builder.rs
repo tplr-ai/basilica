@@ -436,7 +436,7 @@ mod tests {
         let result = builder.build().await;
         assert!(result.is_err());
         let error = result.unwrap_err();
-        println!("Actual error: {}", error);
+        println!("Actual error: {error}");
         // Check if the error chain contains our expected message
         let mut source = error.source();
         let mut found = false;

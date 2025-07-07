@@ -460,7 +460,10 @@ impl AssignmentDb {
     }
 
     /// Get assignment history for an executor
-    pub async fn get_assignment_history(&self, executor_id: &str) -> Result<Vec<AssignmentHistory>> {
+    pub async fn get_assignment_history(
+        &self,
+        executor_id: &str,
+    ) -> Result<Vec<AssignmentHistory>> {
         let rows = sqlx::query(
             r#"
             SELECT id, executor_id, validator_hotkey, action, performed_at, performed_by
@@ -489,7 +492,10 @@ impl AssignmentDb {
     }
 
     /// Get recent assignment history with limit
-    pub async fn get_recent_assignment_history(&self, limit: i64) -> Result<Vec<AssignmentHistory>> {
+    pub async fn get_recent_assignment_history(
+        &self,
+        limit: i64,
+    ) -> Result<Vec<AssignmentHistory>> {
         let rows = sqlx::query(
             r#"
             SELECT id, executor_id, validator_hotkey, action, performed_at, performed_by
@@ -534,7 +540,12 @@ mod tests {
         let db = setup_test_db().await?;
 
         let assignment = db
-            .create_assignment("exec-1", "validator-hotkey", "test-operator", Some("Test note"))
+            .create_assignment(
+                "exec-1",
+                "validator-hotkey",
+                "test-operator",
+                Some("Test note"),
+            )
             .await?;
 
         assert_eq!(assignment.executor_id, "exec-1");
@@ -570,8 +581,10 @@ mod tests {
     async fn test_validator_stakes() -> Result<()> {
         let db = setup_test_db().await?;
 
-        db.update_validator_stake("validator-1", 1000.0, 60.0).await?;
-        db.update_validator_stake("validator-2", 500.0, 40.0).await?;
+        db.update_validator_stake("validator-1", 1000.0, 60.0)
+            .await?;
+        db.update_validator_stake("validator-2", 500.0, 40.0)
+            .await?;
 
         let stakes = db.get_all_validator_stakes().await?;
         assert_eq!(stakes.len(), 2);
@@ -587,8 +600,10 @@ mod tests {
         let db = setup_test_db().await?;
 
         // Add validator stakes
-        db.update_validator_stake("validator-1", 1000.0, 60.0).await?;
-        db.update_validator_stake("validator-2", 500.0, 40.0).await?;
+        db.update_validator_stake("validator-1", 1000.0, 60.0)
+            .await?;
+        db.update_validator_stake("validator-2", 500.0, 40.0)
+            .await?;
 
         // Add assignment for 60% coverage
         db.create_assignment("exec-1", "validator-1", "test", None)
