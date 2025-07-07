@@ -163,10 +163,10 @@ impl EphemeralKeyManager {
 
         // For now, store both keys in a secure location
         // TODO: In production, implement proper key storage with HSM or secure enclave
-        let key_storage_path = format!("/tmp/basilica_keys/{}.key", key_id);
+        let key_storage_path = format!("/tmp/basilica_keys/{key_id}.key");
         if let Some(parent) = std::path::Path::new(&key_storage_path).parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                ValidationError::CryptoError(format!("Failed to create key directory: {}", e))
+                ValidationError::CryptoError(format!("Failed to create key directory: {e}"))
             })?;
         }
 
@@ -174,7 +174,7 @@ impl EphemeralKeyManager {
         tokio::fs::write(&key_storage_path, private_key_hex.as_bytes())
             .await
             .map_err(|e| {
-                ValidationError::CryptoError(format!("Failed to store private key: {}", e))
+                ValidationError::CryptoError(format!("Failed to store private key: {e}"))
             })?;
 
         // Set restrictive permissions (Unix only)
@@ -183,7 +183,7 @@ impl EphemeralKeyManager {
             use std::os::unix::fs::PermissionsExt;
             let permissions = std::fs::Permissions::from_mode(0o600); // Owner read/write only
             std::fs::set_permissions(&key_storage_path, permissions).map_err(|e| {
-                ValidationError::CryptoError(format!("Failed to set key permissions: {}", e))
+                ValidationError::CryptoError(format!("Failed to set key permissions: {e}"))
             })?;
         }
 
@@ -286,7 +286,7 @@ impl EphemeralKeyManager {
             debug!("Verifying P256 ECDSA signature with key: {}", key_id);
 
             // Load the corresponding private key to reconstruct the public key
-            let key_storage_path = format!("/tmp/basilica_keys/{}.key", key_id);
+            let key_storage_path = format!("/tmp/basilica_keys/{key_id}.key");
 
             let private_key_hex = match tokio::fs::read_to_string(&key_storage_path).await {
                 Ok(content) => content,
