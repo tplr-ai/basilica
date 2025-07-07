@@ -11,7 +11,6 @@ use crate::config::MinerConfig;
 use crate::persistence::RegistrationDb;
 
 pub mod handlers;
-pub mod help_text;
 
 /// Executor management subcommands
 #[derive(Subcommand, Debug)]
@@ -212,8 +211,30 @@ pub enum DatabaseCommand {
 
 /// Manual executor assignment subcommands
 #[derive(Subcommand, Debug)]
+#[command(about = "Manage executor-validator assignments")]
 pub enum AssignmentCommand {
     /// Assign an executor to a validator
+    #[command(long_about = r#"Assign an executor to a validator
+
+USAGE:
+    basilica assignment assign <EXECUTOR_ID> <VALIDATOR_HOTKEY> [OPTIONS]
+
+ARGS:
+    <EXECUTOR_ID>         UUID or HUID (full or prefix with min 3 chars)
+    <VALIDATOR_HOTKEY>    Validator address
+
+OPTIONS:
+    -n, --notes <NOTES>   Optional notes for the assignment
+
+EXAMPLES:
+    Assign by HUID:
+        $ basilica assignment assign swift-falcon-a3f2 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+
+    Assign by UUID:
+        $ basilica assignment assign 550e8400-e29b-41d4-a716-446655440000 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+
+    With notes:
+        $ basilica assignment assign swift-falcon-a3f2 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY --notes "Primary GPU node""#)]
     Assign {
         /// Executor ID to assign
         executor_id: String,
