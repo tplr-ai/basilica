@@ -81,6 +81,12 @@ impl ExecutorGrpcClient {
             validator_hotkey
         );
 
+        // DEBUG: Log the SSH public key being sent to executor
+        debug!(
+            "SSH public key being sent to executor: '{}' (length: {} chars)",
+            ssh_public_key, ssh_public_key.len()
+        );
+
         // Make gRPC call with retry logic
         let response = self
             .retry_grpc_call(|| {

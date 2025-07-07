@@ -169,9 +169,9 @@ impl MinerState {
         // Initialize Bittensor chain registration
         let chain_registration = ChainRegistration::new(config.bittensor.clone()).await?;
 
-        // Initialize validator discovery (optional - only if assignment is configured)
-        let validator_discovery = if config.bittensor.skip_registration {
-            // Skip validator discovery in local testing mode
+        // Initialize validator discovery based on configuration
+        let validator_discovery = if config.bittensor.skip_registration || !config.validator_assignment.enabled {
+            // Validator assignment disabled - return all executors to all validators
             None
         } else {
             // Create assignment strategy based on configuration

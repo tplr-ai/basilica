@@ -364,6 +364,12 @@ impl AuthenticatedMinerConnection {
             request.executor_id
         );
 
+        // DEBUG: Log the SSH public key being sent through the gRPC pipeline
+        debug!(
+            "SSH public key being sent to miner: '{}' (length: {} chars)",
+            request.validator_public_key, request.validator_public_key.len()
+        );
+
         let response = self
             .client
             .initiate_ssh_session(request)

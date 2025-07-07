@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use crate::executors::{
@@ -110,6 +110,12 @@ impl SshSessionOrchestrator {
             request.validator_hotkey, request.executor_id
         );
 
+        // DEBUG: Log the SSH public key received from validator
+        debug!(
+            "SSH public key received from validator: '{}' (length: {} chars)",
+            request.validator_public_key, request.validator_public_key.len()
+        );
+
         // Validate request
         self.validate_session_request(&request)?;
 
@@ -131,6 +137,11 @@ impl SshSessionOrchestrator {
             .context("Failed to get executor information")?;
 
         // Add validator's public key to executor via gRPC and get actual SSH username
+        debug!(
+            "Forwarding SSH public key to executor {} via gRPC: '{}'",
+            executor_info.id, request.validator_public_key
+        );
+
         let actual_ssh_username = self
             .add_validator_key_to_executor(
                 &executor_info,
@@ -387,6 +398,11 @@ impl SshSessionOrchestrator {
             .ok_or_else(|| anyhow::anyhow!("Executor has no gRPC endpoint configured"))?;
 
         // Use gRPC to provision validator access on executor
+        debug!(
+            "Calling provision_validator_access for validator {} on executor via gRPC endpoint {}: public_key='{}'",
+            validator_hotkey, grpc_endpoint, public_key
+        );
+
         let response = self
             .executor_grpc_client
             .provision_validator_access(grpc_endpoint, validator_hotkey, public_key, duration_secs)
