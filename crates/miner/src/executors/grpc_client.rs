@@ -84,7 +84,8 @@ impl ExecutorGrpcClient {
         // DEBUG: Log the SSH public key being sent to executor
         debug!(
             "SSH public key being sent to executor: '{}' (length: {} chars)",
-            ssh_public_key, ssh_public_key.len()
+            ssh_public_key,
+            ssh_public_key.len()
         );
 
         // Make gRPC call with retry logic

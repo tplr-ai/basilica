@@ -113,7 +113,8 @@ impl SshSessionOrchestrator {
         // DEBUG: Log the SSH public key received from validator
         debug!(
             "SSH public key received from validator: '{}' (length: {} chars)",
-            request.validator_public_key, request.validator_public_key.len()
+            request.validator_public_key,
+            request.validator_public_key.len()
         );
 
         // Validate request

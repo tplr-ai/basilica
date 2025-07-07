@@ -3,8 +3,6 @@
 //! This module provides utilities to help integrate the UUID+HUID system
 //! into existing codebases with minimal disruption.
 
-#[cfg(not(feature = "sqlite"))]
-use anyhow::Result;
 #[cfg(feature = "sqlite")]
 use anyhow::{Context, Result};
 #[cfg(feature = "sqlite")]

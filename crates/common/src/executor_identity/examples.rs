@@ -244,9 +244,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::const_is_empty)]
     fn test_example_schema_is_valid_sql() {
         // Just verify the schema string is defined
-        assert!(!EXAMPLE_SCHEMA.is_empty());
+        assert!(!EXAMPLE_SCHEMA.is_empty(), "Schema should not be empty");
         assert!(EXAMPLE_SCHEMA.contains("executor_identities"));
         assert!(EXAMPLE_SCHEMA.contains("legacy_id_mappings"));
         assert!(EXAMPLE_SCHEMA.contains("huid_collision_log"));

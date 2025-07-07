@@ -16,7 +16,11 @@ pub struct SimpleSshKeys;
 
 impl SimpleSshKeys {
     /// Add SSH public key to user's authorized_keys (idempotent - only adds if not exists)
-    pub async fn add_key_if_missing(username: &str, public_key: &str, restrictions: &[&str]) -> Result<bool> {
+    pub async fn add_key_if_missing(
+        username: &str,
+        public_key: &str,
+        restrictions: &[&str],
+    ) -> Result<bool> {
         info!("Adding SSH key for user: {} (checking if exists)", username);
 
         let home_dir = format!("/home/{username}");
@@ -27,7 +31,7 @@ impl SimpleSshKeys {
         if !Path::new(&ssh_dir).exists() {
             info!("Creating SSH directory: {}", ssh_dir);
             fs::create_dir_all(&ssh_dir)?;
-            
+
             // Set ownership immediately after creation to avoid timing issues
             Self::set_ownership(&ssh_dir, username)?;
             Self::set_permissions(&ssh_dir, 0o700)?;
@@ -40,17 +44,21 @@ impl SimpleSshKeys {
         } else {
             format!("{} {}\n", restrictions.join(","), public_key.trim())
         };
-        
+
         debug!(
-            "Formatted key entry for authorized_keys: {} (length: {} chars)", 
-            key_entry.trim(), 
+            "Formatted key entry for authorized_keys: {} (length: {} chars)",
+            key_entry.trim(),
             key_entry.len()
         );
 
         // Atomically check and append key with proper file locking
-        info!("Atomically checking and adding SSH key to authorized_keys file: {}", auth_keys_path);
-        let key_added = Self::append_key_safely_atomic(&auth_keys_path, &key_entry, public_key.trim())?;
-        
+        info!(
+            "Atomically checking and adding SSH key to authorized_keys file: {}",
+            auth_keys_path
+        );
+        let key_added =
+            Self::append_key_safely_atomic(&auth_keys_path, &key_entry, public_key.trim())?;
+
         if key_added {
             // Set permissions and ownership for the authorized_keys file
             Self::set_permissions(&auth_keys_path, 0o600)?;
@@ -58,9 +66,11 @@ impl SimpleSshKeys {
 
             // Verify the file was created correctly
             if Path::new(&auth_keys_path).exists() {
-                info!("SSH key added successfully for user: {} (file size: {} bytes)", 
-                      username, 
-                      fs::metadata(&auth_keys_path).map(|m| m.len()).unwrap_or(0));
+                info!(
+                    "SSH key added successfully for user: {} (file size: {} bytes)",
+                    username,
+                    fs::metadata(&auth_keys_path).map(|m| m.len()).unwrap_or(0)
+                );
             } else {
                 return Err(anyhow::anyhow!("authorized_keys file was not created"));
             }
@@ -83,7 +93,7 @@ impl SimpleSshKeys {
         if !Path::new(&ssh_dir).exists() {
             info!("Creating SSH directory: {}", ssh_dir);
             fs::create_dir_all(&ssh_dir)?;
-            
+
             // Set ownership immediately after creation to avoid timing issues
             Self::set_ownership(&ssh_dir, username)?;
             Self::set_permissions(&ssh_dir, 0o700)?;
@@ -96,26 +106,31 @@ impl SimpleSshKeys {
         } else {
             format!("{} {}\n", restrictions.join(","), public_key.trim())
         };
-        
+
         debug!(
-            "Formatted key entry for authorized_keys: {} (length: {} chars)", 
-            key_entry.trim(), 
+            "Formatted key entry for authorized_keys: {} (length: {} chars)",
+            key_entry.trim(),
             key_entry.len()
         );
 
         // Safely append key to authorized_keys with proper file locking
-        info!("Appending SSH key to authorized_keys file: {}", auth_keys_path);
+        info!(
+            "Appending SSH key to authorized_keys file: {}",
+            auth_keys_path
+        );
         Self::append_key_safely(&auth_keys_path, &key_entry, public_key.trim())?;
-        
+
         // Set permissions and ownership for the authorized_keys file
         Self::set_permissions(&auth_keys_path, 0o600)?;
         Self::set_ownership(&auth_keys_path, username)?;
 
         // Verify the file was created correctly
         if Path::new(&auth_keys_path).exists() {
-            info!("SSH key added successfully for user: {} (file size: {} bytes)", 
-                  username, 
-                  fs::metadata(&auth_keys_path).map(|m| m.len()).unwrap_or(0));
+            info!(
+                "SSH key added successfully for user: {} (file size: {} bytes)",
+                username,
+                fs::metadata(&auth_keys_path).map(|m| m.len()).unwrap_or(0)
+            );
         } else {
             return Err(anyhow::anyhow!("authorized_keys file was not created"));
         }
@@ -123,14 +138,17 @@ impl SimpleSshKeys {
         Ok(())
     }
 
-
     /// Atomically check for duplicates and append SSH key with file locking
-    fn append_key_safely_atomic(auth_keys_path: &str, key_entry: &str, public_key: &str) -> Result<bool> {
-        use std::os::unix::io::AsRawFd;
+    fn append_key_safely_atomic(
+        auth_keys_path: &str,
+        key_entry: &str,
+        public_key: &str,
+    ) -> Result<bool> {
         use std::io::SeekFrom;
-        
+        use std::os::unix::io::AsRawFd;
+
         info!("Processing atomic SSH key addition to: {}", auth_keys_path);
-        
+
         // Extract the actual public key part (without restrictions) for comparison
         let key_parts: Vec<&str> = public_key.split_whitespace().collect();
         let key_type_and_data = if key_parts.len() >= 2 {
@@ -138,17 +156,21 @@ impl SimpleSshKeys {
         } else {
             public_key.trim().to_string()
         };
-        
-        debug!("Extracted key data for comparison: {} (length: {})", 
-               key_type_and_data.chars().take(50).collect::<String>() + "...", 
-               key_type_and_data.len());
+
+        debug!(
+            "Extracted key data for comparison: {} (length: {})",
+            key_type_and_data.chars().take(50).collect::<String>() + "...",
+            key_type_and_data.len()
+        );
 
         // Open file for read+write+create - this allows us to read existing content and append
         let mut file = match OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
-            .open(auth_keys_path) {
+            .truncate(false)
+            .open(auth_keys_path)
+        {
             Ok(f) => f,
             Err(e) => {
                 error!("Failed to open authorized_keys file: {}", e);
@@ -158,10 +180,8 @@ impl SimpleSshKeys {
 
         // Apply exclusive file lock to prevent any concurrent access
         let fd = file.as_raw_fd();
-        let lock_result = unsafe {
-            libc::flock(fd, libc::LOCK_EX)
-        };
-        
+        let lock_result = unsafe { libc::flock(fd, libc::LOCK_EX) };
+
         if lock_result != 0 {
             warn!("Failed to acquire file lock for authorized_keys (errno: {}), proceeding without lock", 
                   std::io::Error::last_os_error());
@@ -175,8 +195,11 @@ impl SimpleSshKeys {
             warn!("Failed to read existing authorized_keys file: {}", e);
             existing_keys = String::new();
         } else if !existing_keys.is_empty() {
-            info!("Read existing authorized_keys file: {} bytes, {} lines", 
-                  existing_keys.len(), existing_keys.lines().count());
+            info!(
+                "Read existing authorized_keys file: {} bytes, {} lines",
+                existing_keys.len(),
+                existing_keys.lines().count()
+            );
         } else {
             info!("authorized_keys file is empty, will add first key");
         }
@@ -190,7 +213,7 @@ impl SimpleSshKeys {
                 // SSH key format: [restrictions] ssh-type key-data [comment]
                 // We need to find the ssh-type and key-data parts
                 let existing_parts: Vec<&str> = line.split_whitespace().collect();
-                
+
                 // Look for SSH key type (ssh-rsa, ssh-ed25519, etc.)
                 for (i, part) in existing_parts.iter().enumerate() {
                     if part.starts_with("ssh-") || part.starts_with("ecdsa-") {
@@ -211,7 +234,7 @@ impl SimpleSshKeys {
                 }
             }
         }
-        
+
         if found_duplicate {
             // Release lock and return false (no key added)
             if lock_result == 0 {
@@ -239,7 +262,10 @@ impl SimpleSshKeys {
         // Write the key entry while holding the lock
         match file.write_all(key_entry.as_bytes()) {
             Ok(_) => {
-                info!("Successfully wrote SSH key entry ({} bytes)", key_entry.len());
+                info!(
+                    "Successfully wrote SSH key entry ({} bytes)",
+                    key_entry.len()
+                );
             }
             Err(e) => {
                 error!("Failed to write SSH key to authorized_keys: {}", e);
@@ -251,7 +277,7 @@ impl SimpleSshKeys {
                 return Err(e.into());
             }
         }
-        
+
         if let Err(e) = file.flush() {
             error!("Failed to flush authorized_keys file: {}", e);
             if lock_result == 0 {
@@ -324,7 +350,7 @@ impl SimpleSshKeys {
 
     fn set_permissions(path: &str, mode: u32) -> Result<()> {
         info!("Setting permissions of {} to {:o}", path, mode);
-        
+
         let path_obj = Path::new(path);
         if path_obj.exists() {
             let mut perms = fs::metadata(path_obj)?.permissions();
@@ -346,7 +372,7 @@ impl SimpleSshKeys {
 
     fn set_ownership(path: &str, username: &str) -> Result<()> {
         info!("Setting ownership of {} to {}", path, username);
-        
+
         let output = Command::new("chown")
             .arg("-R")
             .arg(format!("{username}:{username}"))
@@ -356,8 +382,15 @@ impl SimpleSshKeys {
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            error!("Failed to set ownership for {}: stderr={}, stdout={}", path, error, stdout);
-            return Err(anyhow::anyhow!("Failed to set ownership for {}: {}", path, error));
+            error!(
+                "Failed to set ownership for {}: stderr={}, stdout={}",
+                path, error, stdout
+            );
+            return Err(anyhow::anyhow!(
+                "Failed to set ownership for {}: {}",
+                path,
+                error
+            ));
         } else {
             info!("Successfully set ownership of {} to {}", path, username);
         }
@@ -396,15 +429,20 @@ impl SimpleSshUsers {
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            
+
             // Check if the error is because the user already exists (race condition)
             if error.contains("already exists") {
-                info!("User {} was created by another process, continuing", username);
+                info!(
+                    "User {} was created by another process, continuing",
+                    username
+                );
                 return Ok(());
             }
-            
-            error!("useradd command failed for user {}: stderr={}, stdout={}", 
-                   username, error, stdout);
+
+            error!(
+                "useradd command failed for user {}: stderr={}, stdout={}",
+                username, error, stdout
+            );
             return Err(anyhow::anyhow!(
                 "Failed to create user {}: {}",
                 username,
@@ -413,15 +451,18 @@ impl SimpleSshUsers {
         }
 
         info!("Successfully created system user: {}", username);
-        
+
         // Verify the user was created and has a home directory
-        let home_dir = format!("/home/{}", username);
+        let home_dir = format!("/home/{username}");
         if !Path::new(&home_dir).exists() {
-            warn!("Home directory {} was not created for user {}", home_dir, username);
+            warn!(
+                "Home directory {} was not created for user {}",
+                home_dir, username
+            );
         } else {
             info!("Verified home directory exists: {}", home_dir);
         }
-        
+
         Ok(())
     }
 
@@ -470,11 +511,11 @@ impl SimpleSshUsers {
         let hash = hasher.finish();
 
         // Convert to hex and take first 24 characters to ensure total length < 32
-        let hash_hex = format!("{:x}", hash);
+        let hash_hex = format!("{hash:x}");
         let truncated_hash = &hash_hex[..hash_hex.len().min(24)];
 
         // Ensure username starts with letter, contains only valid chars, and is under 32 chars
-        format!("val_{}", truncated_hash)
+        format!("val_{truncated_hash}")
     }
 }
 
@@ -501,11 +542,10 @@ mod tests {
             username
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || c == '_'),
-            "Username contains invalid characters: {}",
-            username
+            "Username contains invalid characters: {username}"
         );
 
-        println!("Generated username: {}", username);
+        println!("Generated username: {username}");
     }
 
     #[test]

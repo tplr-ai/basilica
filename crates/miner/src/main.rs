@@ -170,31 +170,32 @@ impl MinerState {
         let chain_registration = ChainRegistration::new(config.bittensor.clone()).await?;
 
         // Initialize validator discovery based on configuration
-        let validator_discovery = if config.bittensor.skip_registration || !config.validator_assignment.enabled {
-            // Validator assignment disabled - return all executors to all validators
-            None
-        } else {
-            // Create assignment strategy based on configuration
-            let strategy: Box<dyn validator_discovery::AssignmentStrategy> =
-                match config.validator_assignment.strategy.as_str() {
-                    "round_robin" => Box::new(validator_discovery::RoundRobinAssignment),
-                    _ => {
-                        tracing::warn!(
-                            "Unknown assignment strategy '{}', defaulting to round_robin",
-                            config.validator_assignment.strategy
-                        );
-                        Box::new(validator_discovery::RoundRobinAssignment)
-                    }
-                };
+        let validator_discovery =
+            if config.bittensor.skip_registration || !config.validator_assignment.enabled {
+                // Validator assignment disabled - return all executors to all validators
+                None
+            } else {
+                // Create assignment strategy based on configuration
+                let strategy: Box<dyn validator_discovery::AssignmentStrategy> =
+                    match config.validator_assignment.strategy.as_str() {
+                        "round_robin" => Box::new(validator_discovery::RoundRobinAssignment),
+                        _ => {
+                            tracing::warn!(
+                                "Unknown assignment strategy '{}', defaulting to round_robin",
+                                config.validator_assignment.strategy
+                            );
+                            Box::new(validator_discovery::RoundRobinAssignment)
+                        }
+                    };
 
-            let discovery = validator_discovery::ValidatorDiscovery::new(
-                chain_registration.get_bittensor_service(),
-                executor_manager.clone(),
-                strategy,
-                config.bittensor.common.netuid,
-            );
-            Some(std::sync::Arc::new(discovery))
-        };
+                let discovery = validator_discovery::ValidatorDiscovery::new(
+                    chain_registration.get_bittensor_service(),
+                    executor_manager.clone(),
+                    strategy,
+                    config.bittensor.common.netuid,
+                );
+                Some(std::sync::Arc::new(discovery))
+            };
 
         // Initialize SSH session orchestrator
         let executor_connection_config = executors::ExecutorConnectionConfig {

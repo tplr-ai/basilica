@@ -33,7 +33,11 @@ impl ValidationSessionService {
         public_key: &str,
     ) -> Result<()> {
         info!("Granting SSH access to validator: {}", validator_id);
-        debug!("Received public key: {} (length: {} chars)", public_key, public_key.len());
+        debug!(
+            "Received public key: {} (length: {} chars)",
+            public_key,
+            public_key.len()
+        );
 
         let username = SimpleSshUsers::validator_username(&validator_id.hotkey);
 
@@ -43,7 +47,8 @@ impl ValidationSessionService {
         let restrictions = Vec::<&str>::new();
 
         // Use idempotent key addition - only adds if key doesn't exist
-        let key_added = SimpleSshKeys::add_key_if_missing(&username, public_key, &restrictions).await?;
+        let key_added =
+            SimpleSshKeys::add_key_if_missing(&username, public_key, &restrictions).await?;
 
         if key_added {
             info!("Added new SSH key for validator: {}", validator_id);
