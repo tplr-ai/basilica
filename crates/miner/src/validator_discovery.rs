@@ -464,6 +464,32 @@ mod tests {
         Ok(pool)
     }
 
+    fn create_test_config() -> MinerConfig {
+        use crate::config::MinerBittensorConfig;
+        use common::config::{BittensorConfig, DatabaseConfig};
+
+        MinerConfig {
+            bittensor: MinerBittensorConfig {
+                common: BittensorConfig {
+                    wallet_name: "test_wallet".to_string(),
+                    hotkey_name: "test_hotkey".to_string(),
+                    network: "local".to_string(),
+                    netuid: 999,
+                    chain_endpoint: Some("ws://127.0.0.1:9944".to_string()),
+                    weight_interval_secs: 300,
+                },
+                coldkey_name: "test_coldkey".to_string(),
+                skip_registration: true,
+                ..Default::default()
+            },
+            database: DatabaseConfig {
+                url: "sqlite::memory:".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
     #[tokio::test]
     async fn test_round_robin_assignment() {
         let validators = vec![
@@ -628,6 +654,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // Ignore by default as it requires network access and is just a config test
     async fn test_validator_discovery_with_manual_assignments() -> Result<()> {
         let pool = setup_test_db().await?;
         let assignment_db = AssignmentDb::new(pool.clone());
@@ -643,8 +670,8 @@ mod tests {
             .create_assignment("exec-3", "validator-hotkey-2", "test", None)
             .await?;
 
-        // Create test config with executors
-        let mut config = MinerConfig::default();
+        // Create test config with executors and skip_registration
+        let mut config = create_test_config();
         config.executor_management.executors = vec![crate::config::ExecutorConfig {
             id: "exec-1".to_string(),
             grpc_address: "127.0.0.1:50051".to_string(),
@@ -654,7 +681,9 @@ mod tests {
 
         // Mock discovery with assignment database
         let discovery = ValidatorDiscovery {
-            bittensor_service: Arc::new(bittensor::Service::new(Default::default()).await?),
+            bittensor_service: Arc::new(
+                bittensor::Service::new(config.bittensor.common.clone()).await?,
+            ),
             executor_manager: Arc::new(
                 ExecutorManager::new(&config, RegistrationDb::new(&Default::default()).await?)
                     .await?,

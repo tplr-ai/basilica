@@ -10,12 +10,13 @@
 mod tests {
     use super::super::*;
     use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
     use std::time::{Duration, Instant};
     use uuid::Uuid;
 
     // Helper to create a test identity store
     #[cfg(feature = "sqlite")]
-    async fn create_test_store() -> Result<SqliteIdentityStore> {
+    async fn create_test_store() -> anyhow::Result<SqliteIdentityStore> {
         SqliteIdentityStore::new("sqlite::memory:").await
     }
 
