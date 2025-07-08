@@ -504,10 +504,18 @@ mod tests {
         let builder = ValidatorSshKeyManagerBuilder::new(config, hotkey);
         let result = builder.build().await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Maximum session duration"));
+        let error = result.unwrap_err();
+        // Check if the error chain contains our expected message
+        let mut source = error.source();
+        let mut found = false;
+        while let Some(err) = source {
+            if err.to_string().contains("Maximum session duration") {
+                found = true;
+                break;
+            }
+            source = err.source();
+        }
+        assert!(found || error.to_string().contains("Maximum session duration"));
     }
 
     #[tokio::test]
