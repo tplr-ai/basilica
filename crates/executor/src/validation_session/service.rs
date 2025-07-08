@@ -5,7 +5,7 @@ use common::journal::{log_validator_access_granted, log_validator_access_revoked
 use common::ssh::{SimpleSshKeys, SimpleSshUsers};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 #[derive(Clone)]
 pub struct ValidationSessionService {
@@ -33,18 +33,28 @@ impl ValidationSessionService {
         public_key: &str,
     ) -> Result<()> {
         info!("Granting SSH access to validator: {}", validator_id);
+        debug!(
+            "Received public key: {} (length: {} chars)",
+            public_key,
+            public_key.len()
+        );
 
         let username = SimpleSshUsers::validator_username(&validator_id.hotkey);
 
         SimpleSshUsers::create_user(&username).await?;
 
-        let restrictions = if self.config.strict_ssh_restrictions {
-            SimpleSshKeys::get_strict_restrictions()
-        } else {
-            SimpleSshKeys::get_default_restrictions()
-        };
+        // Use empty restrictions for better compatibility
+        let restrictions = Vec::<&str>::new();
 
-        SimpleSshKeys::add_key(&username, public_key, &restrictions).await?;
+        // Use idempotent key addition - only adds if key doesn't exist
+        let key_added =
+            SimpleSshKeys::add_key_if_missing(&username, public_key, &restrictions).await?;
+
+        if key_added {
+            info!("Added new SSH key for validator: {}", validator_id);
+        } else {
+            info!("SSH key already exists for validator: {}", validator_id);
+        }
 
         let access = ValidatorAccess::new(validator_id.clone(), public_key);
 

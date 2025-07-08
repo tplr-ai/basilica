@@ -8,6 +8,7 @@ pub mod miner_client;
 pub mod scheduler;
 pub mod types;
 pub mod verification;
+pub mod verification_engine_builder;
 
 #[cfg(test)]
 mod tests;
@@ -35,23 +36,37 @@ pub struct MinerProver {
 
 impl MinerProver {
     /// Create a new MinerProver instance
-    pub fn new(config: VerificationConfig, bittensor_service: Arc<BittensorService>) -> Self {
+    pub fn new(
+        config: VerificationConfig,
+        automatic_config: crate::config::AutomaticVerificationConfig,
+        ssh_session_config: crate::config::SshSessionConfig,
+        bittensor_service: Arc<BittensorService>,
+    ) -> Self {
         let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
+
+        // Get validator hotkey from bittensor service
+        let validator_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())
+            .expect("Failed to convert account ID to hotkey");
+
+        // Use VerificationEngineBuilder to properly initialize SSH key manager
+        let verification_engine_builder =
+            verification_engine_builder::VerificationEngineBuilder::new(
+                config.clone(),
+                automatic_config.clone(),
+                ssh_session_config.clone(),
+                validator_hotkey,
+            )
+            .with_bittensor_service(bittensor_service.clone());
+
+        // Build verification engine with proper SSH key manager
+        let verification = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(async { verification_engine_builder.build().await })
+        })
+        .expect("Failed to build verification engine with SSH automation");
+
+        // Create scheduler with automatic verification configuration
         let scheduler = VerificationScheduler::new(config.clone());
-
-        // Create SSH client and hardware validator (optional)
-        let ssh_client = Arc::new(crate::ssh::ValidatorSshClient::new());
-        let hardware_validator = None; // Can be configured later if needed
-        let ssh_key_path = None; // Can be configured later if needed
-
-        // Use with_bittensor_service to properly load the validator's hotkey
-        let verification = VerificationEngine::with_bittensor_service(
-            config,
-            bittensor_service,
-            ssh_client,
-            hardware_validator,
-            ssh_key_path,
-        );
 
         Self {
             discovery,
@@ -62,7 +77,7 @@ impl MinerProver {
 
     /// Start the miner verification loop
     pub async fn start(&mut self) -> Result<()> {
-        info!("Starting miner prover");
+        info!("Starting miner prover with automatic SSH session management");
         self.scheduler
             .start(self.discovery.clone(), self.verification.clone())
             .await

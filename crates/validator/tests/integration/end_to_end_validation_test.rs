@@ -53,7 +53,6 @@ async fn test_complete_validation_workflow() -> Result<()> {
         verification: VerificationConfig {
             max_concurrent_verifications: 5,
             min_score_threshold: 0.1,
-            min_stake_threshold: 100.0,
             max_miners_per_round: 20,
             verification_interval: Duration::from_secs(600),
             challenge_timeout: Duration::from_secs(120),

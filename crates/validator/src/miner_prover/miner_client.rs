@@ -11,7 +11,8 @@ use tracing::{debug, info, warn};
 
 use common::identity::Hotkey;
 use protocol::miner_discovery::{
-    miner_discovery_client::MinerDiscoveryClient, ExecutorConnectionDetails, LeaseRequest,
+    miner_discovery_client::MinerDiscoveryClient, CloseSshSessionRequest, CloseSshSessionResponse,
+    ExecutorConnectionDetails, InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseRequest,
     SessionInitRequest, ValidatorAuthRequest,
 };
 
@@ -31,7 +32,7 @@ pub struct MinerClientConfig {
 impl Default for MinerClientConfig {
     fn default() -> Self {
         Self {
-            timeout: Duration::from_secs(30),
+            timeout: Duration::from_secs(120), // Increased to 120s for better reliability with slow/distant miners
             max_retries: 3,
             grpc_port_offset: None, // Will use default port 8080
             use_tls: false,
@@ -133,8 +134,10 @@ impl MinerClient {
                 .ok_or_else(|| anyhow::anyhow!("No port in axon endpoint"))?;
             axon_port + offset
         } else {
-            // Default gRPC port for miners (same as HTTP port)
-            8080
+            // Use the same port as the axon endpoint when no offset is configured
+            // This handles cases where the miner is behind NAT/proxy and advertises external ports
+            url.port()
+                .ok_or_else(|| anyhow::anyhow!("No port in axon endpoint"))?
         };
 
         // Build gRPC endpoint
@@ -231,7 +234,7 @@ impl MinerClient {
         Fut: std::future::Future<Output = Result<T>>,
     {
         let mut attempt = 0;
-        let mut backoff = Duration::from_millis(100);
+        let mut backoff = Duration::from_millis(500); // Increased initial backoff
 
         loop {
             match call().await {
@@ -239,7 +242,10 @@ impl MinerClient {
                 Err(e) => {
                     attempt += 1;
                     if attempt >= self.config.max_retries {
-                        return Err(e);
+                        return Err(e.context(format!(
+                            "Failed after {} attempts with exponential backoff",
+                            self.config.max_retries
+                        )));
                     }
 
                     warn!(
@@ -248,7 +254,7 @@ impl MinerClient {
                     );
 
                     tokio::time::sleep(backoff).await;
-                    backoff = (backoff * 2).min(Duration::from_secs(5));
+                    backoff = (backoff * 2).min(Duration::from_secs(10)); // Increased max backoff
                 }
             }
         }
@@ -303,7 +309,7 @@ impl AuthenticatedMinerConnection {
         Ok(response.available_executors)
     }
 
-    /// Initiate SSH session with a specific executor
+    /// Initiate SSH session with a specific executor (legacy method)
     pub async fn initiate_ssh_session(
         &mut self,
         executor_id: &str,
@@ -347,6 +353,63 @@ impl AuthenticatedMinerConnection {
             access_credentials: response.access_credentials,
         })
     }
+
+    /// Initiate SSH session with public key (new method)
+    pub async fn initiate_ssh_session_v2(
+        &mut self,
+        request: InitiateSshSessionRequest,
+    ) -> Result<InitiateSshSessionResponse> {
+        info!(
+            "Initiating SSH session for executor {} with public key",
+            request.executor_id
+        );
+
+        // DEBUG: Log the SSH public key being sent through the gRPC pipeline
+        debug!(
+            "SSH public key being sent to miner: '{}' (length: {} chars)",
+            request.validator_public_key,
+            request.validator_public_key.len()
+        );
+
+        let response = self
+            .client
+            .initiate_ssh_session(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to initiate SSH session: {}", e))?;
+
+        let response = response.into_inner();
+
+        info!(
+            "SSH session response: session_id={}, status={:?}",
+            response.session_id, response.status
+        );
+
+        Ok(response)
+    }
+
+    /// Close SSH session
+    pub async fn close_ssh_session(
+        &mut self,
+        request: CloseSshSessionRequest,
+    ) -> Result<CloseSshSessionResponse> {
+        info!("Closing SSH session {}", request.session_id);
+
+        let response = self
+            .client
+            .close_ssh_session(request)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to close SSH session: {}", e))?;
+
+        let response = response.into_inner();
+
+        if response.success {
+            info!("Successfully closed SSH session");
+        } else {
+            warn!("Failed to close SSH session: {}", response.message);
+        }
+
+        Ok(response)
+    }
 }
 
 /// Information about an SSH session
@@ -370,7 +433,7 @@ mod tests {
 
         let axon = "http://192.168.1.100:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "http://192.168.1.100:8080");
+        assert_eq!(grpc, "http://192.168.1.100:8091");
     }
 
     #[test]
@@ -402,6 +465,6 @@ mod tests {
 
         let axon = "http://example.com:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "https://example.com:8080");
+        assert_eq!(grpc, "https://example.com:8091");
     }
 }

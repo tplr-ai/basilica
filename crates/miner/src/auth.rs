@@ -53,7 +53,7 @@ pub struct ValidatorSession {
 /// Revoked token information
 #[derive(Debug, Clone)]
 struct RevokedToken {
-    token_id: String,
+    _token_id: String,
     revoked_at: chrono::DateTime<Utc>,
     expires_at: chrono::DateTime<Utc>,
 }
@@ -198,7 +198,7 @@ impl JwtAuthService {
     ) -> Result<()> {
         let mut revoked = self.revoked_tokens.write().await;
         let revoked_token = RevokedToken {
-            token_id: token_id.to_string(),
+            _token_id: token_id.to_string(),
             revoked_at: Utc::now(),
             expires_at,
         };
@@ -215,7 +215,7 @@ impl JwtAuthService {
         if let Some(session) = sessions.remove(session_id) {
             let mut revoked = self.revoked_tokens.write().await;
             let revoked_token = RevokedToken {
-                token_id: session.token_id.clone(),
+                _token_id: session.token_id.clone(),
                 revoked_at: Utc::now(),
                 expires_at: session.expires_at,
             };
@@ -245,7 +245,7 @@ impl JwtAuthService {
         for session_id in expired_sessions {
             if let Some(session) = sessions.remove(&session_id) {
                 let revoked_token = RevokedToken {
-                    token_id: session.token_id.clone(),
+                    _token_id: session.token_id.clone(),
                     revoked_at: now,
                     expires_at: session.expires_at,
                 };
