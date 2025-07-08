@@ -164,7 +164,7 @@ impl ExecutorGrpcClient {
         if executor_endpoint.starts_with("http://") || executor_endpoint.starts_with("https://") {
             Ok(executor_endpoint.to_string())
         } else {
-            Ok(format!("{}://{}", scheme, executor_endpoint))
+            Ok(format!("{scheme}://{executor_endpoint}"))
         }
     }
 
