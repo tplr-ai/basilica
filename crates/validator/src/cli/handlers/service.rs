@@ -309,6 +309,18 @@ async fn start_validator_services(
 
         // Initialize weight setter with block-based timing
         let blocks_per_weight_set = 360; // Set weights every ~1 hour (360 blocks * 12s/block)
+
+        // Create GPU profile repository and scoring engine
+        let gpu_profile_repo = Arc::new(
+            crate::persistence::gpu_profile_repository::GpuProfileRepository::new(
+                persistence_arc.pool().clone(),
+            ),
+        );
+        let gpu_scoring_engine = Arc::new(crate::gpu::GpuScoringEngine::new(
+            gpu_profile_repo,
+            0.3, // EMA alpha factor
+        ));
+
         let weight_setter = crate::bittensor_core::WeightSetter::new(
             config.bittensor.common.clone(),
             bittensor_service.clone(),
@@ -316,6 +328,8 @@ async fn start_validator_services(
             persistence_arc.clone(),
             config.verification.min_score_threshold,
             blocks_per_weight_set,
+            gpu_scoring_engine,
+            config.emission.clone(),
         )?;
         let weight_setter_arc = Arc::new(weight_setter);
 

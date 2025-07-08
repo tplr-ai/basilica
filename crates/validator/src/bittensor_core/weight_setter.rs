@@ -3,11 +3,12 @@
 //! Manages Bittensor weight setting operations for the Validator.
 //! Sets weights every N blocks based on miner scores from executor validations.
 
-use crate::persistence::entities::VerificationLog;
-use crate::persistence::SimplePersistence;
-use crate::gpu::{GpuScoringEngine, CategoryStats};
 use crate::bittensor_core::weight_allocation::WeightAllocationEngine;
 use crate::config::emission::EmissionConfig;
+use crate::gpu::categorization;
+use crate::gpu::{CategoryStats, GpuScoringEngine};
+use crate::persistence::entities::VerificationLog;
+use crate::persistence::SimplePersistence;
 use anyhow::Result;
 use bittensor::{AccountId, Metagraph, NormalizedWeight, Service as BittensorService};
 use common::config::BittensorConfig;
@@ -127,7 +128,10 @@ impl WeightSetter {
 
     /// Set weights based on GPU-based allocation with burn mechanism
     async fn set_weights_for_miners(&self) -> Result<()> {
-        info!("Setting weights for subnet {} with GPU-based allocation", self.config.netuid);
+        info!(
+            "Setting weights for subnet {} with GPU-based allocation",
+            self.config.netuid
+        );
 
         // 1. Get current metagraph
         let metagraph = self.get_metagraph().await?;
@@ -137,7 +141,10 @@ impl WeightSetter {
         );
 
         // 2. Get miners by GPU category from the scoring engine
-        let miners_by_category = self.gpu_scoring_engine.get_miners_by_gpu_category(24).await?;
+        let miners_by_category = self
+            .gpu_scoring_engine
+            .get_miners_by_gpu_category(24)
+            .await?;
 
         if miners_by_category.is_empty() {
             warn!("No miners found in any GPU category");
@@ -151,7 +158,8 @@ impl WeightSetter {
         );
 
         // 3. Calculate weight distribution using the allocation engine
-        let weight_distribution = self.weight_allocation_engine
+        let weight_distribution = self
+            .weight_allocation_engine
             .calculate_weight_distribution(miners_by_category)?;
 
         if weight_distribution.miners_served == 0 {
@@ -180,14 +188,13 @@ impl WeightSetter {
         if let Some(burn_alloc) = &weight_distribution.burn_allocation {
             info!(
                 "Burn allocation: UID {}, weight {}, {:.2}%",
-                burn_alloc.uid,
-                burn_alloc.weight,
-                burn_alloc.percentage
+                burn_alloc.uid, burn_alloc.weight, burn_alloc.percentage
             );
         }
 
         // 6. Convert to normalized weights for chain submission
-        let normalized_weights: Vec<NormalizedWeight> = weight_distribution.weights
+        let normalized_weights: Vec<NormalizedWeight> = weight_distribution
+            .weights
             .iter()
             .map(|w| NormalizedWeight {
                 uid: w.uid,
@@ -209,7 +216,8 @@ impl WeightSetter {
             .await?;
 
         // 8. Store submission metadata
-        self.store_weight_submission_metadata(&weight_distribution).await?;
+        self.store_weight_submission_metadata(&weight_distribution)
+            .await?;
 
         Ok(())
     }
@@ -221,9 +229,9 @@ impl WeightSetter {
         executor_validations: Vec<ExecutorValidationResult>,
     ) -> Result<()> {
         // Convert ExecutorValidationResult to the format expected by GPU scoring engine
-        let gpu_validations: Vec<crate::gpu::categorization::ExecutorValidationResult> = executor_validations
+        let gpu_validations: Vec<categorization::ExecutorValidationResult> = executor_validations
             .into_iter()
-            .map(|v| crate::gpu::categorization::ExecutorValidationResult {
+            .map(|v| categorization::ExecutorValidationResult {
                 executor_id: v.executor_id.to_string(),
                 is_valid: v.is_valid,
                 gpu_model: format!("H{}", v.gpu_memory_gb / 1024), // Simple conversion for now
@@ -352,7 +360,10 @@ impl WeightSetter {
         let stats_json = serde_json::to_string(&category_stats)?;
         self.storage.set_string(&stats_key, &stats_json).await?;
 
-        info!("Stored weight submission metadata with {} categories", weight_distribution.category_allocations.len());
+        info!(
+            "Stored weight submission metadata with {} categories",
+            weight_distribution.category_allocations.len()
+        );
         Ok(())
     }
 
@@ -388,7 +399,8 @@ impl WeightSetter {
             .await?;
 
         // Update the miner's GPU profile using the new system
-        self.update_miner_gpu_profile(miner_uid, recent_validations).await?;
+        self.update_miner_gpu_profile(miner_uid, recent_validations)
+            .await?;
 
         Ok(())
     }
@@ -578,9 +590,8 @@ impl WeightSetter {
 
                     match self.get_recent_miner_validations(miner_uid, 24).await {
                         Ok(validations) if !validations.is_empty() => {
-                            if let Err(e) = self
-                                .update_miner_gpu_profile(miner_uid, validations)
-                                .await
+                            if let Err(e) =
+                                self.update_miner_gpu_profile(miner_uid, validations).await
                             {
                                 warn!("Failed to update GPU profile for miner {}: {}", uid, e);
                             }

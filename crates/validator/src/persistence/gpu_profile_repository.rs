@@ -8,7 +8,7 @@ use sqlx::{Row, SqlitePool};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-use super::super::gpu::MinerGpuProfile;
+use crate::gpu::MinerGpuProfile;
 use common::identity::MinerUid;
 
 /// Repository for GPU profile operations

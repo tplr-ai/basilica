@@ -8,6 +8,8 @@ mod api;
 mod bittensor_core;
 mod cli;
 mod config;
+mod gpu;
+mod journal;
 mod metrics;
 mod miner_prover;
 mod persistence;
