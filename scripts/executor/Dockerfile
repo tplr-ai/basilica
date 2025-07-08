@@ -24,11 +24,25 @@ COPY crates/ ./crates/
 # Build arguments
 ARG BUILD_MODE=release
 ARG FEATURES=""
+ARG BITTENSOR_NETWORK="test"
+ARG METADATA_CHAIN_ENDPOINT=""
 ARG VALIDATOR_PUBLIC_KEY=""
 
-# Build the executor directly (workspace should resolve dependencies)
+# Set environment variables for the build - default to test network if not specified
+ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK:-test}
+ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
 ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
-RUN if [ "$BUILD_MODE" = "release" ]; then \
+
+# Build the executor directly (workspace should resolve dependencies)
+# Set explicit endpoint if network is specified but endpoint is not
+RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
+        case "$BITTENSOR_NETWORK" in \
+            test) export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443" ;; \
+            local) export METADATA_CHAIN_ENDPOINT="ws://subtensor:9944" ;; \
+            finney|*) export METADATA_CHAIN_ENDPOINT="wss://entrypoint-finney.opentensor.ai:443" ;; \
+        esac; \
+    fi && \
+    if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
             cargo build --release -p executor --features "$FEATURES"; \
         else \
@@ -52,6 +66,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
+
+# Create symlink for NVML library (required for GPU detection)
+RUN ln -sf /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1 /usr/lib/x86_64-linux-gnu/libnvidia-ml.so || true
 
 # Copy the built binary
 ARG BUILD_MODE=release

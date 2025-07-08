@@ -1,0 +1,91 @@
+# Testnet Validator Configuration with Dynamic Discovery Enabled
+# This configuration is for testing on Bittensor testnet subnet 387
+
+[database]
+url = "sqlite:///opt/basilica/data/validator.db?mode=rwc"
+max_connections = 10
+run_migrations = true
+
+[server]
+host = "0.0.0.0"
+port = 8081
+max_connections = 1000
+request_timeout = { secs = 30 }
+
+[bittensor]
+wallet_name = "validator"
+hotkey_name = "default"
+network = "test"
+netuid = 387
+chain_endpoint = "wss://test.finney.opentensor.ai:443"
+weight_interval_secs = 300
+
+[verification]
+max_concurrent_verifications = 50
+min_score_threshold = 0.01
+min_stake_threshold = 1.0
+max_miners_per_round = 10
+verification_interval = { secs = 300 }
+min_verification_interval = { secs = 600 }
+challenge_timeout = { secs = 120 }
+netuid = 387
+# Dynamic discovery settings - ENABLED for testnet
+use_dynamic_discovery = true
+discovery_timeout = { secs = 30 }
+fallback_to_static = true
+cache_miner_info_ttl = { secs = 300 }
+# Miner gRPC is on same port as HTTP (8080), axon is on 8091
+# Default behavior: axon port -> gRPC port mapping is handled by the client
+# grpc_port_offset = None  # Let the client handle default mapping
+
+[ssh_validation]
+enabled = true
+timeout = { secs = 60 }
+max_file_size = "10MB"
+allowed_commands = ["gpu-attestor", "nvidia-smi"]
+temp_dir = "/tmp/basilica-validation"
+
+[scoring]
+gpu_weight = 0.4
+cpu_weight = 0.2
+memory_weight = 0.2
+network_weight = 0.1
+reliability_weight = 0.1
+
+[metrics]
+enabled = true
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"
+retention_period = { secs = 604800 }
+
+[logging]
+level = "debug"
+format = "json"
+output = "./validator.log"
+max_file_size = 104857600
+max_files = 10
+
+[api]
+enabled = true
+swagger_enabled = true
+cors_enabled = true
+cors_origins = ["*"]
+rate_limit = 100
+
+[storage]
+data_dir = "/opt/basilica/data"
+
+[security]
+enable_authentication = false
+api_key_header = "X-API-Key"
+allowed_api_keys = []
+
+# Discovery section is now only used as fallback when dynamic discovery fails
+[discovery]
+enabled = true
+interval = { secs = 300 }
+
+[[discovery.endpoints]]
+name = "testnet-miner-1"
+url = "http://51.159.160.71:8080"

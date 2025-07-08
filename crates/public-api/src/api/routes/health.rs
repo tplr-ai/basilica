@@ -6,7 +6,7 @@ use axum::{extract::State, Json};
 /// Health check endpoint
 #[utoipa::path(
     get,
-    path = "/api/v1/health",
+    path = "/health",
     responses(
         (status = 200, description = "Service is healthy", body = HealthCheckResponse),
     ),

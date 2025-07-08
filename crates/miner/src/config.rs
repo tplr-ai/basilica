@@ -77,6 +77,17 @@ pub struct MinerConfig {
 
     /// Security configuration
     pub security: SecurityConfig,
+
+    /// SSH session configuration for validator access
+    pub ssh_session: ExecutorSshConfig,
+
+    /// Advertised address configuration
+    #[serde(default)]
+    pub advertised_addresses: MinerAdvertisedAddresses,
+
+    /// Validator assignment configuration
+    #[serde(default)]
+    pub validator_assignment: ValidatorAssignmentConfig,
 }
 
 /// Miner-specific Bittensor configuration
@@ -254,6 +265,104 @@ pub struct RateLimitConfig {
     pub window_duration: Duration,
 }
 
+/// SSH configuration for executor access by validators
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutorSshConfig {
+    /// Path to miner's SSH key for executor access
+    pub miner_executor_key_path: PathBuf,
+
+    /// Default username for executor SSH
+    pub default_executor_username: String,
+
+    /// Session cleanup interval
+    pub session_cleanup_interval: Duration,
+
+    /// Maximum concurrent sessions per validator
+    pub max_sessions_per_validator: usize,
+
+    /// Session rate limit (sessions per hour)
+    pub session_rate_limit: usize,
+
+    /// Enable session audit logging
+    pub enable_audit_log: bool,
+
+    /// Audit log path
+    pub audit_log_path: Option<PathBuf>,
+
+    /// Enable automated SSH session setup during discovery
+    #[serde(default = "default_enable_automated_ssh_sessions")]
+    pub enable_automated_sessions: bool,
+
+    /// Maximum session duration in seconds
+    #[serde(default = "default_max_session_duration")]
+    pub max_session_duration: u64,
+
+    /// SSH connection timeout
+    #[serde(default = "default_ssh_connection_timeout")]
+    pub ssh_connection_timeout: Duration,
+
+    /// SSH command execution timeout  
+    #[serde(default = "default_ssh_command_timeout")]
+    pub ssh_command_timeout: Duration,
+
+    /// Enable session expiration enforcement
+    #[serde(default = "default_enable_session_expiration")]
+    pub enable_session_expiration: bool,
+
+    /// Cleanup expired SSH keys from executors
+    #[serde(default = "default_enable_key_cleanup")]
+    pub enable_key_cleanup: bool,
+
+    /// Interval for cleaning up expired SSH keys
+    #[serde(default = "default_key_cleanup_interval")]
+    pub key_cleanup_interval: Duration,
+
+    /// Rate limit window duration
+    #[serde(default = "default_rate_limit_window")]
+    pub rate_limit_window: Duration,
+
+    /// Maximum retry attempts for SSH operations
+    #[serde(default = "default_ssh_retry_attempts")]
+    pub ssh_retry_attempts: u32,
+
+    /// Delay between SSH retry attempts
+    #[serde(default = "default_ssh_retry_delay")]
+    pub ssh_retry_delay: Duration,
+}
+
+/// Validator assignment configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorAssignmentConfig {
+    /// Enable validator discovery and assignment filtering
+    #[serde(default = "default_enable_validator_assignment")]
+    pub enabled: bool,
+
+    /// Assignment strategy to use (only "round_robin" supported)
+    pub strategy: String,
+}
+
+impl Default for ValidatorAssignmentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_enable_validator_assignment(),
+            strategy: "round_robin".to_string(),
+        }
+    }
+}
+
+/// Advertised address configuration for miner services
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MinerAdvertisedAddresses {
+    /// Advertised gRPC endpoint for validator communication
+    pub grpc_endpoint: Option<String>,
+    /// Advertised discovery endpoint for miner-to-miner communication
+    pub discovery_endpoint: Option<String>,
+    /// Override axon endpoint for Bittensor chain registration
+    pub axon_endpoint: Option<String>,
+    /// Advertised metrics endpoint
+    pub metrics_endpoint: Option<String>,
+}
+
 impl Default for MinerConfig {
     fn default() -> Self {
         Self {
@@ -273,6 +382,77 @@ impl Default for MinerConfig {
             executor_management: ExecutorManagementConfig::default(),
             remote_executor_deployment: None,
             security: SecurityConfig::default(),
+            ssh_session: ExecutorSshConfig::default(),
+            advertised_addresses: MinerAdvertisedAddresses::default(),
+            validator_assignment: ValidatorAssignmentConfig::default(),
+        }
+    }
+}
+
+fn default_enable_automated_ssh_sessions() -> bool {
+    true
+}
+
+fn default_max_session_duration() -> u64 {
+    3600 // 1 hour
+}
+
+fn default_ssh_connection_timeout() -> Duration {
+    Duration::from_secs(30)
+}
+
+fn default_ssh_command_timeout() -> Duration {
+    Duration::from_secs(60)
+}
+
+fn default_enable_session_expiration() -> bool {
+    true
+}
+
+fn default_enable_key_cleanup() -> bool {
+    true
+}
+
+fn default_key_cleanup_interval() -> Duration {
+    Duration::from_secs(300) // 5 minutes
+}
+
+fn default_rate_limit_window() -> Duration {
+    Duration::from_secs(3600) // 1 hour
+}
+
+fn default_ssh_retry_attempts() -> u32 {
+    3
+}
+
+fn default_ssh_retry_delay() -> Duration {
+    Duration::from_secs(2)
+}
+
+fn default_enable_validator_assignment() -> bool {
+    false
+}
+
+impl Default for ExecutorSshConfig {
+    fn default() -> Self {
+        Self {
+            miner_executor_key_path: PathBuf::from("~/.ssh/miner_executor_key"),
+            default_executor_username: "executor".to_string(),
+            session_cleanup_interval: Duration::from_secs(60),
+            max_sessions_per_validator: 5,
+            session_rate_limit: 20, // 20 sessions per hour
+            enable_audit_log: true,
+            audit_log_path: Some(PathBuf::from("./data/ssh_audit.log")),
+            enable_automated_sessions: default_enable_automated_ssh_sessions(),
+            max_session_duration: default_max_session_duration(),
+            ssh_connection_timeout: default_ssh_connection_timeout(),
+            ssh_command_timeout: default_ssh_command_timeout(),
+            enable_session_expiration: default_enable_session_expiration(),
+            enable_key_cleanup: default_enable_key_cleanup(),
+            key_cleanup_interval: default_key_cleanup_interval(),
+            rate_limit_window: default_rate_limit_window(),
+            ssh_retry_attempts: default_ssh_retry_attempts(),
+            ssh_retry_delay: default_ssh_retry_delay(),
         }
     }
 }
@@ -500,6 +680,76 @@ impl MinerConfig {
     /// Load configuration from specific file
     pub fn load_from_file(path: &Path) -> Result<Self> {
         Ok(loader::load_from_file::<Self>(path)?)
+    }
+
+    /// Get the advertised gRPC endpoint for validators
+    pub fn get_advertised_grpc_endpoint(&self) -> String {
+        self.advertised_addresses
+            .grpc_endpoint
+            .as_ref()
+            .unwrap_or(&self.server.advertised_url("http"))
+            .clone()
+    }
+
+    /// Get the advertised axon endpoint for Bittensor registration
+    pub fn get_advertised_axon_endpoint(&self) -> String {
+        if let Some(endpoint) = &self.advertised_addresses.axon_endpoint {
+            endpoint.clone()
+        } else if let Some(external_ip) = &self.bittensor.external_ip {
+            format!("http://{}:{}", external_ip, self.bittensor.axon_port)
+        } else {
+            let advertised_host = self
+                .server
+                .advertised_host
+                .as_ref()
+                .unwrap_or(&self.server.host);
+            format!("http://{}:{}", advertised_host, self.bittensor.axon_port)
+        }
+    }
+
+    /// Get the advertised metrics endpoint
+    pub fn get_advertised_metrics_endpoint(&self) -> String {
+        self.advertised_addresses
+            .metrics_endpoint
+            .as_ref()
+            .unwrap_or(&format!(
+                "http://{}:{}",
+                self.server
+                    .advertised_host
+                    .as_ref()
+                    .unwrap_or(&self.server.host),
+                self.metrics
+                    .prometheus
+                    .as_ref()
+                    .map(|p| p.port)
+                    .unwrap_or(9090)
+            ))
+            .clone()
+    }
+
+    /// Validate all advertised address configurations
+    pub fn validate_advertised_addresses(&self) -> Result<()> {
+        self.server
+            .validate_advertised_config()
+            .map_err(|e| anyhow::anyhow!(e))?;
+
+        if let Some(ref grpc_endpoint) = self.advertised_addresses.grpc_endpoint {
+            if !grpc_endpoint.starts_with("http://") && !grpc_endpoint.starts_with("https://") {
+                return Err(anyhow::anyhow!(
+                    "gRPC endpoint must start with http:// or https://"
+                ));
+            }
+        }
+
+        if let Some(ref axon_endpoint) = self.advertised_addresses.axon_endpoint {
+            if !axon_endpoint.starts_with("http://") && !axon_endpoint.starts_with("https://") {
+                return Err(anyhow::anyhow!(
+                    "Axon endpoint must start with http:// or https://"
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 

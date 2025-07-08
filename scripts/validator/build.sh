@@ -86,6 +86,16 @@ if [[ -n "$METADATA_CHAIN_ENDPOINT" ]]; then
     echo "Building with METADATA_CHAIN_ENDPOINT=$METADATA_CHAIN_ENDPOINT"
 fi
 
+# Pass validator public key if set (needed for gpu-attestor in workspace)
+if [[ -n "$VALIDATOR_PUBLIC_KEY" ]]; then
+    BUILD_ARGS="$BUILD_ARGS --build-arg VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY"
+    echo "Building with VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY:0:10}..."
+elif [[ -f "$PROJECT_ROOT/public_key.hex" ]]; then
+    VALIDATOR_PUBLIC_KEY=$(cat "$PROJECT_ROOT/public_key.hex" | tr -d '\n\r ')
+    BUILD_ARGS="$BUILD_ARGS --build-arg VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY"
+    echo "Using validator public key from public_key.hex: ${VALIDATOR_PUBLIC_KEY:0:10}..."
+fi
+
 if [[ "$BUILD_IMAGE" == "true" ]]; then
     echo "Building Docker image: $IMAGE_NAME:$IMAGE_TAG"
     docker build \

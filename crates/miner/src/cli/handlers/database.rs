@@ -29,7 +29,7 @@ pub struct DatabaseStats {
     pub file_size: u64,
     pub page_count: u64,
     pub page_size: u64,
-    pub vacuum_count: u64,
+    pub _vacuum_count: u64,
     pub table_stats: Vec<TableStats>,
     pub last_backup: Option<DateTime<Utc>>,
 }
@@ -416,7 +416,7 @@ async fn collect_database_stats(
         file_size,
         page_count: stats.page_count,
         page_size: stats.page_size,
-        vacuum_count: stats.vacuum_count,
+        _vacuum_count: stats.vacuum_count,
         table_stats: stats
             .table_stats
             .into_iter()

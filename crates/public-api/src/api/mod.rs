@@ -58,7 +58,6 @@ pub fn routes(state: AppState) -> Router<AppState> {
 pub fn docs_routes() -> Router<AppState> {
     Router::new()
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        .route("/api-docs/openapi.json", get(openapi_json))
 }
 
 /// OpenAPI documentation
@@ -116,8 +115,3 @@ pub fn docs_routes() -> Router<AppState> {
     ),
 )]
 struct ApiDoc;
-
-/// Serve OpenAPI JSON
-async fn openapi_json() -> impl axum::response::IntoResponse {
-    axum::Json(ApiDoc::openapi())
-}

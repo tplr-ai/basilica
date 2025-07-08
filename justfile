@@ -270,14 +270,14 @@ clean-remote:
 
     # Stop all services first
     echo "Stopping services..."
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "pkill -f executor || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
     sleep 2
 
     # Clean executor
-    echo "Cleaning executor at 64.247.196.98..."
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "rm -rf /opt/basilica/bin/* /opt/basilica/config/* /opt/basilica/data/* /opt/basilica/logs/*" 2>/dev/null || echo "  Warning: Could not clean executor"
+    echo "Cleaning executor at 185.26.8.109..."
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "rm -rf /opt/basilica/bin/* /opt/basilica/config/* /opt/basilica/data/* /opt/basilica/logs/*" 2>/dev/null || echo "  Warning: Could not clean executor"
 
     # Clean miner
     echo "Cleaning miner at 51.159.160.71..."
@@ -338,10 +338,20 @@ int MODE="":
 
     if [ "$NEED_BUILD" = "true" ]; then
         echo "Building missing binaries..."
+        # Check for validator public key
+        if [ -f "public_key.hex" ]; then
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+            echo "Using validator public key: ${VALIDATOR_PUBLIC_KEY:0:10}..."
+        else
+            echo "No public_key.hex found, generating key..."
+            ./scripts/gen-key.sh
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+        fi
+
         [ ! -f validator ] && ./scripts/validator/build.sh
         [ ! -f miner ] && ./scripts/miner/build.sh
         [ ! -f executor ] && ./scripts/executor/build.sh
-        [ ! -f gpu-attestor ] && ./scripts/gpu-attestor/build.sh
+        [ ! -f gpu-attestor ] && VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/gpu-attestor/build.sh
     else
         echo "All binaries exist, skipping build"
     fi
@@ -534,14 +544,14 @@ int-testnet MODE="":
 
         # Stop all services
         echo "Stopping all remote services..."
-        ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
+        ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "pkill -f executor || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
         sleep 2
 
         # Clean all remote directories
         echo "Cleaning remote directories..."
-        ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
+        ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
         ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "rm -rf /opt/basilica/{bin,config,data,logs}/*" 2>/dev/null || true
 
@@ -575,10 +585,20 @@ int-testnet MODE="":
         export BITTENSOR_NETWORK=test
         export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443"
 
+        # Check for validator public key
+        if [ -f "public_key.hex" ]; then
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+            echo "Using validator public key: ${VALIDATOR_PUBLIC_KEY:0:10}..."
+        else
+            echo "No public_key.hex found, generating key..."
+            ./scripts/gen-key.sh
+            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
+        fi
+
         [ ! -f validator ] && BITTENSOR_NETWORK=test ./scripts/validator/build.sh
         [ ! -f miner ] && BITTENSOR_NETWORK=test ./scripts/miner/build.sh
         [ ! -f executor ] && BITTENSOR_NETWORK=test ./scripts/executor/build.sh
-        [ ! -f gpu-attestor ] && BITTENSOR_NETWORK=test ./scripts/gpu-attestor/build.sh
+        [ ! -f gpu-attestor ] && BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/gpu-attestor/build.sh
     else
         echo "All binaries exist, skipping build"
     fi
@@ -592,7 +612,7 @@ int-testnet MODE="":
     NEED_DEPLOY=false
 
     # Check each server
-    if ! ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "test -f /opt/basilica/bin/executor" 2>/dev/null; then
+    if ! ssh -i ~/.ssh/tplr root@185.26.8.109 -p 9001 "test -f /opt/basilica/bin/executor" 2>/dev/null; then
         NEED_DEPLOY=true
     fi
     if ! ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "test -f /opt/basilica/bin/miner" 2>/dev/null; then
@@ -611,7 +631,7 @@ int-testnet MODE="":
 
     # Stop any running services
     echo "Stopping any running services..."
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "pkill -f executor || true" 2>/dev/null || true
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "pkill -f executor || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 "pkill -f miner || true" 2>/dev/null || true
     ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 "pkill -f validator || true" 2>/dev/null || true
 
@@ -619,7 +639,7 @@ int-testnet MODE="":
 
     # Start services with testnet configs
     echo "Starting executor (testnet mode)..."
-    ssh -i ~/.ssh/tplr -f root@64.247.196.98 -p 9001 'cd /opt/basilica && /opt/basilica/bin/executor --server --config /opt/basilica/config/executor.toml > /opt/basilica/logs/executor-testnet.log 2>&1 &'
+    ssh -i ~/.ssh/tplr -f shadeform@185.26.8.109 -p 22 'cd /opt/basilica && /opt/basilica/bin/executor --server --config /opt/basilica/config/executor.toml > /opt/basilica/logs/executor-testnet.log 2>&1 &'
     echo "Executor started"
 
     echo "Starting miner (testnet mode)..."
@@ -648,7 +668,7 @@ int-testnet MODE="":
 
     echo ""
     echo "Executor process:"
-    ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 "ps aux | grep 'executor --server' | grep -v grep || echo 'Executor process not found'"
+    ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 "ps aux | grep 'executor --server' | grep -v grep || echo 'Executor process not found'"
 
     # Check testnet registration
     echo ""
@@ -697,8 +717,22 @@ int-testnet MODE="":
     echo "To view logs:"
     echo "- Miner: ssh -i ~/.ssh/tplr root@51.159.160.71 -p 55960 'tail -f /opt/basilica/logs/miner-testnet.log'"
     echo "- Validator: ssh -i ~/.ssh/tplr root@51.159.130.131 -p 41199 'tail -f /opt/basilica/logs/validator-testnet.log'"
-    echo "- Executor: ssh -i ~/.ssh/tplr root@64.247.196.98 -p 9001 'tail -f /opt/basilica/logs/executor-testnet.log'"
+    echo "- Executor: ssh -i ~/.ssh/tplr shadeform@185.26.8.109 -p 22 'tail -f /opt/basilica/logs/executor-testnet.log'"
 
+
+# =============================================================================
+# LOCALNET COMMANDS
+# =============================================================================
+
+# Start local Subtensor network with all Basilica services
+localnet:
+    #!/usr/bin/env bash
+    cd scripts/localnet && ./setup.sh
+
+# Restart localnet services (rebuilds containers)
+localnet-restart:
+    #!/usr/bin/env bash
+    cd scripts/localnet && ./restart.sh
 
 # =============================================================================
 # SHOW HELP
