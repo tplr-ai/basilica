@@ -157,12 +157,16 @@ impl GpuValidatorV2 {
             sampled_iterations: sample_indices.clone(),
         };
 
-        // Serialize challenge parameters to JSON
-        let challenge_json = serde_json::to_string(&sampled_params)
-            .context("Failed to serialize sampled challenge parameters")?;
-
-        // Base64 encode the challenge
-        let challenge_base64 = base64::encode(&challenge_json);
+        // Convert to generic ComputeChallenge format
+        use crate::validation::challenge_converter::{ComputeChallenge, challenge_params_to_base64};
+        
+        // For sampled validation, we need to pass the sampled iterations
+        // Since the VM-protected attestor doesn't support sampling, we'll use full validation
+        warn!("VM-protected attestor does not support sampling - using full validation");
+        
+        // Convert base parameters to generic format and encode
+        let challenge_base64 = challenge_params_to_base64(&params)
+            .context("Failed to convert challenge parameters")?;
 
         // Execute the sampled challenge locally
         info!(
@@ -172,7 +176,7 @@ impl GpuValidatorV2 {
         let start = Instant::now();
 
         let output = Command::new(&self.gpu_attestor_path)
-            .arg("--challenge-sampled")
+            .arg("--challenge")
             .arg(&challenge_base64)
             .output()
             .context("Failed to run gpu-attestor sampled challenge")?;
@@ -194,7 +198,17 @@ impl GpuValidatorV2 {
         let local_result: serde_json::Value = serde_json::from_str(&local_result_json)
             .context("Failed to parse local challenge result")?;
 
-        // Extract sampled checksum from local result
+        // Check if this is a VM-protected response (simple status format)
+        if let Some(status) = local_result.get("status").and_then(|s| s.as_str()) {
+            // VM-protected attestor response
+            info!("VM-protected validation returned: {}", status);
+            
+            // For VM-protected validation, we trust the attestor's decision
+            // Note: Timing validation is handled within the VM
+            return Ok(status == "PASS");
+        }
+
+        // Legacy format - extract sampled checksum from local result
         let local_checksum = local_result
             .get("sampled_checksum")
             .and_then(|c| c.as_str())

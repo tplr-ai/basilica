@@ -486,51 +486,75 @@ impl FreivaldsVM {
 
 ### Production Integration: ✅ **COMPLETED**
 
-The VM-based Freivalds protocol has been **fully integrated into the main production binary** (`main.rs`). Users can now run VM-protected Freivalds validation directly using:
+**SECURITY ARCHITECTURE:**
 
+1. **PRIMARY SECURITY: VM VIRTUALIZATION** 🛡️
+   - Custom VM with encrypted bytecode (AES-256-GCM)
+   - Anti-debugging and anti-tampering protection
+   - Dynamic code generation and obfuscation
+   - Execution fingerprinting and integrity checks
+   - Hidden validation thresholds and algorithms in VM bytecode
+   - Makes reverse engineering "tremendously annoying"
+
+2. **ADDITIONAL LAYER: Security Through Obscurity** 🔒
+   - Generic command interface hides protocol details
+   - No Freivalds-specific terminology exposed
+   - Binary automatically determines validation type internally
+   - Validator has no knowledge of validation algorithms
+
+The VM-based validation has been **fully integrated into the main production binary**. The binary now automatically runs VM-protected validation:
+
+**Key Security Features:**
+- ✅ **VM-Protected Validation Logic**: All critical decisions made inside encrypted VM
+- ✅ **Anti-Analysis Protection**: Multi-layer anti-debugging, timing checks, obfuscation
+- ✅ **Hidden Implementation**: Validation algorithms completely hidden from attackers
+- ✅ **Dynamic Bytecode**: Session-specific encrypted bytecode generation
+- ✅ **Generic Interface**: Only exposes `--challenge` parameter with base64 data
+- ✅ **Automatic Detection**: Binary internally determines validation protocol
+
+**Usage Example:**
 ```bash
-./gpu-attestor --freivalds-mode --freivalds-matrix-size 1024
+# VM-protected validation with generic interface
+./gpu-attestor --challenge "base64_encoded_challenge_data"
+
+# The binary automatically:
+# 1. Decodes the challenge
+# 2. Initializes VM with encrypted bytecode
+# 3. Runs anti-debugging checks
+# 4. Executes validation logic in VM
+# 5. Returns only PASS/FAIL result
 ```
 
-**Key Integration Features:**
-- ✅ **Direct VM Integration**: `run_freivalds_mode()` now uses `FreivaldsValidatorVM::execute_validation()`
-- ✅ **Dynamic Parameter Support**: Accepts runtime parameters (matrix size, seed, session ID)
-- ✅ **GPU Detection**: Automatically detects and initializes available CUDA GPUs
-- ✅ **VM-Protected Execution**: All validation logic runs in the VM on executor's machine
-- ✅ **JSON Output**: Returns structured validation results with pass/fail status
-- ✅ **Error Handling**: Comprehensive error handling and logging
-
-**Usage Examples:**
-```bash
-# Basic VM-protected validation
-./gpu-attestor --freivalds-mode
-
-# Custom matrix size
-./gpu-attestor --freivalds-mode --freivalds-matrix-size 2048
-
-# With specific seed
-./gpu-attestor --freivalds-mode --freivalds-seed "1a2b3c4d..."
-
-# With session ID
-./gpu-attestor --freivalds-mode --freivalds-session-id "my_session_123"
+**Security Architecture:**
 ```
+┌─────────────────────────────────────────────────────────┐
+│                  SECURITY LAYERS                        │
+├─────────────────────────────────────────────────────────┤
+│  Layer 1: VM PROTECTION (Primary Security)              │
+│  • Encrypted bytecode (AES-256-GCM)                     │
+│  • Anti-debugging & anti-tampering                     │
+│  • Dynamic code generation                             │
+│  • Execution fingerprinting                            │
+│  • Hidden validation logic                             │
+├─────────────────────────────────────────────────────────┤
+│  Layer 2: INTERFACE OBFUSCATION (Additional)           │
+│  • Generic --challenge parameter                       │
+│  • No protocol-specific flags                          │
+│  • Automatic internal routing                          │
+└─────────────────────────────────────────────────────────┘
 
-**Integration Architecture:**
-```
-main.rs → run_freivalds_mode() → FreivaldsValidatorVM::execute_validation()
+Execution Flow:
+main.rs → run_secure_validation() → FreivaldsValidatorVM
     ↓
-VM-Protected Validation:
-1. GPU Detection & CUDA Context Creation
-2. VM-Protected Session Validation
-3. VM-Protected Anti-Debugging Checks  
-4. Native GPU Matrix Computation
-5. VM-Protected Spot Check Generation
-6. VM-Protected Freivalds Verification
-7. VM-Protected Anti-Spoofing Validation
-8. Return PASS/FAIL + Cryptographic Proof
+VM Execution:
+1. Decrypt session-specific bytecode
+2. Initialize VM with anti-debug checks
+3. Execute validation logic in protected VM
+4. Native GPU operations (not virtualized)
+5. Return generic PASS/FAIL result
 ```
 
-The implementation successfully eliminates the previous limitation where users were redirected to "use the VM binary instead" - now the VM protection is seamlessly integrated into the main production binary.
+The implementation provides **defense in depth** with VM virtualization as the primary security mechanism, making reverse engineering and tampering extremely difficult. The additional interface obfuscation ensures that even the existence of specific validation protocols is hidden from potential attackers.
 
 ### Phase 1: Core VM Infrastructure ✅ **COMPLETED**
 
@@ -583,14 +607,20 @@ The implementation successfully eliminates the previous limitation where users w
    - ✅ Complete error handling and recovery
    - ✅ Proper resource management and cleanup
 
-### Phase 5: Protocol Simplification ✅ **COMPLETED**
+### Phase 5: Security Hardening ✅ **COMPLETED**
 
-1. **Validator Compatibility** ✅
-   - ✅ Updated validator crate for PASS/FAIL protocol
-   - ✅ Simplified challenge/response structures (ComputeChallenge/AttestationResult)
-   - ✅ Removed all protocol dependencies and Freivalds references
-   - ✅ Implemented generic secure validator with security through obscurity
-   - ✅ Fixed SSH client interface for binary deployment
+1. **VM Security Implementation** ✅
+   - ✅ Encrypted bytecode with session-specific keys
+   - ✅ Multi-layer anti-debugging (ptrace, debugger detection, timing checks)
+   - ✅ Code obfuscation and dynamic instruction reordering
+   - ✅ Execution fingerprinting for tamper detection
+   - ✅ Hidden validation thresholds and algorithms in VM
+
+2. **Interface Protection** ✅
+   - ✅ Generic challenge/response protocol hiding implementation details
+   - ✅ Removed all protocol-specific references from public interfaces
+   - ✅ Automatic internal protocol detection and routing
+   - ✅ Validator has zero knowledge of validation algorithms
 
 2. **Integration Testing** ✅ **COMPLETED**
    - ✅ Updated existing integration tests for generic protocol
@@ -766,10 +796,10 @@ The virtualization design has been **fully implemented and is production-ready**
    - No validation thresholds or algorithms exposed in validator codebase
    - Network traffic reveals nothing about validation logic
 
-3. **Security Through Obscurity**
-   - Generic interfaces (ComputeChallenge, AttestationResult) hide operational details
-   - No protocol-specific terminology or references in validator
-   - VM protection makes analysis extremely difficult
+3. **Multi-Layer Security Architecture**
+   - **Primary**: VM virtualization with encrypted bytecode and anti-tampering
+   - **Secondary**: Generic interfaces hide protocol existence
+   - **Result**: Multiple independent security layers that each make attacks more difficult
 
 4. **Operational Benefits**
    - Update validation logic by updating gpu-attestor binary only
@@ -803,7 +833,28 @@ The VM implementation, validator simplification, and comprehensive integration t
 
 ## Conclusion
 
-The virtualization design has been **successfully implemented, integrated, and deployed in production**. The hybrid approach ensures that GPU computation remains at native speed while making the validation logic "tremendously annoying" to reverse engineer or tamper with.
+### Security Through VM Virtualization
+
+The virtualization design provides **robust security through VM protection**, not just obscurity. The multi-layer architecture ensures:
+
+1. **Primary Protection - VM Virtualization**:
+   - Encrypted bytecode prevents static analysis
+   - Anti-debugging measures detect and prevent runtime analysis
+   - Dynamic code generation defeats pattern matching
+   - Hidden validation logic cannot be extracted or modified
+   - Makes reverse engineering "tremendously annoying" as intended
+
+2. **Additional Protection - Interface Obfuscation**:
+   - Generic interfaces provide no hints about underlying protocols
+   - Automatic protocol detection hides implementation details
+   - Validator has zero knowledge of validation algorithms
+
+3. **Performance Preservation**:
+   - Native GPU operations remain unvirtualized
+   - <5% overhead for security operations
+   - Full CUDA performance for matrix computations
+
+The implementation has been **successfully deployed in production** with a defense-in-depth approach that combines VM protection as the primary security mechanism with interface obfuscation as an additional layer.
 
 **Complete Production Readiness Achieved:**
 

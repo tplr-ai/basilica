@@ -32,6 +32,17 @@ pub struct ComputeChallenge {
     pub protocol_timeout_ms: u32,
 }
 
+/// Raw result from gpu-attestor binary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GpuAttestorResult {
+    /// Status: "PASS" or "FAIL"
+    pub status: String,
+    /// Session ID
+    pub session_id: String,
+    /// Timestamp
+    pub timestamp: String,
+}
+
 /// Attestation result from secure validator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttestationResult {
@@ -201,8 +212,12 @@ impl SecureValidator {
         let challenge_json =
             serde_json::to_string(challenge).context("Failed to serialize challenge")?;
 
+        // Base64 encode the challenge
+        use base64::{engine::general_purpose, Engine as _};
+        let challenge_b64 = general_purpose::STANDARD.encode(&challenge_json);
+
         // Build command
-        let command = format!("/tmp/secure-attestor --challenge '{challenge_json}'");
+        let command = format!("/tmp/secure-attestor --challenge {challenge_b64}");
 
         debug!("Executing command: {}", command);
 
@@ -216,8 +231,18 @@ impl SecureValidator {
         .context("SSH execution failed")?;
 
         // Parse result from stdout
-        let result: AttestationResult =
-            serde_json::from_str(&output).context("Failed to parse attestation result")?;
+        let gpu_result: GpuAttestorResult =
+            serde_json::from_str(&output).context("Failed to parse gpu-attestor result")?;
+
+        // Convert to AttestationResult
+        let result = AttestationResult {
+            verified: gpu_result.status == "PASS",
+            message: format!(
+                "GPU attestation {} for session {}",
+                gpu_result.status, gpu_result.session_id
+            ),
+            proof: None, // VM-protected attestor doesn't expose proof details
+        };
 
         Ok(result)
     }

@@ -4,6 +4,7 @@
 //! This module contains validator-specific logic for attestation and validation.
 
 pub mod attestor;
+pub mod challenge_converter;
 pub mod challenge_generator;
 pub mod factory;
 pub mod gpu_profile_query;

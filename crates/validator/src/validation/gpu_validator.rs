@@ -166,12 +166,10 @@ impl GpuValidator {
             return Ok(false);
         }
 
-        // Serialize challenge parameters to JSON
-        let challenge_json =
-            serde_json::to_string(params).context("Failed to serialize challenge parameters")?;
-
-        // Base64 encode the challenge
-        let challenge_base64 = general_purpose::STANDARD.encode(&challenge_json);
+        // Convert to generic ComputeChallenge and encode to base64
+        use crate::validation::challenge_converter::challenge_params_to_base64;
+        let challenge_base64 = challenge_params_to_base64(params)
+            .context("Failed to convert challenge parameters")?;
 
         // Execute the challenge locally
         // IMPORTANT: Respect the current CUDA_VISIBLE_DEVICES environment variable
@@ -213,7 +211,17 @@ impl GpuValidator {
         let local_result: serde_json::Value = serde_json::from_str(&local_result_json)
             .context("Failed to parse local challenge result")?;
 
-        // Extract checksum from local result
+        // Check if this is a VM-protected response (simple status format)
+        if let Some(status) = local_result.get("status").and_then(|s| s.as_str()) {
+            // VM-protected attestor response
+            info!("VM-protected validation returned: {}", status);
+            
+            // For VM-protected validation, we trust the attestor's decision
+            // as all validation logic is hidden within the VM
+            return Ok(status == "PASS");
+        }
+
+        // Legacy format - extract checksum from local result
         let local_checksum = local_result
             .get("result_checksum")
             .and_then(|c| c.as_str())

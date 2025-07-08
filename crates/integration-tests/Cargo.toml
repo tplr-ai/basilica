@@ -19,12 +19,13 @@ reqwest = { version = "0.11", features = ["json"] }
 chrono = "0.4"
 num_cpus = "1.16"
 prost-types = "0.12"
+dirs = "5.0"
+rand = "0.8"
 
 # Internal dependencies
 validator = { path = "../validator" }
 protocol = { path = "../protocol" }
 common = { path = "../common" }
-gpu-attestor = { path = "../gpu-attestor" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -41,7 +42,12 @@ path = "tests/miner_executor_flow.rs"
 name = "secure_gpu_validation_e2e"
 path = "tests/secure_gpu_validation_e2e.rs"
 
+
 [[test]]
-name = "vm_protected_validation_e2e"
-path = "tests/vm_protected_validation_e2e.rs"
+name = "vm_secure_validation_full_e2e"
+path = "tests/vm_secure_validation_full_e2e.rs"
+
+[[test]]
+name = "vm_direct_validation_e2e"
+path = "tests/vm_direct_validation_e2e.rs"
 
