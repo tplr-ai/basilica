@@ -31,10 +31,6 @@ common = { path = "../common" }
 criterion = "0.5"
 
 [[test]]
-name = "gpu_pow_e2e"
-path = "tests/gpu_pow_e2e.rs"
-
-[[test]]
 name = "miner_executor_flow"
 path = "tests/miner_executor_flow.rs"
 
