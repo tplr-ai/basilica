@@ -268,17 +268,18 @@ impl WeightAllocationEngine {
             }
         }
 
-        // Check individual weight bounds
-        for weight in weights {
-            if weight.weight > u16::MAX {
-                return Err(anyhow!(
-                    "Weight {} for UID {} exceeds maximum {}",
-                    weight.weight,
-                    weight.uid,
-                    u16::MAX
-                ));
-            }
-        }
+        // Individual weights are already u16, so they cannot exceed u16::MAX
+        // // Check individual weight bounds
+        // for weight in weights {
+        //     if weight.weight > u16::MAX {
+        //         return Err(anyhow!(
+        //             "Weight {} for UID {} exceeds maximum {}",
+        //             weight.weight,
+        //             weight.uid,
+        //             u16::MAX
+        //         ));
+        //     }
+        // }
 
         Ok(())
     }
@@ -302,7 +303,7 @@ impl WeightAllocationEngine {
 
     /// Set minimum score threshold
     pub fn set_min_score_threshold(&mut self, threshold: f64) {
-        self.min_score_threshold = threshold.max(0.0).min(1.0);
+        self.min_score_threshold = threshold.clamp(0.0, 1.0);
     }
 }
 

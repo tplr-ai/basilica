@@ -224,6 +224,7 @@ where
 }
 
 // Helper struct for testing - implements ExecutorIdentity
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct MockExecutor {
     uuid: Uuid,

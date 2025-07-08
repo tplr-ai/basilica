@@ -792,7 +792,7 @@ mod tests {
             let handle = tokio::spawn(async move {
                 let miner_uid = MinerUid::new(i);
                 let validations = vec![ExecutorValidationResult {
-                    executor_id: format!("exec{}", i),
+                    executor_id: format!("exec{i}"),
                     is_valid: true,
                     gpu_model: "H100".to_string(),
                     gpu_count: 1,

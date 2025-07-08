@@ -29,10 +29,8 @@ mod tests {
 
     #[test]
     fn test_burn_percentage_validation() {
-        let mut config = EmissionConfig::default();
-
         // Test valid ranges
-        config.burn_percentage = 0.0;
+        let mut config = EmissionConfig { burn_percentage: 0.0, ..Default::default() };
         assert!(config.validate().is_ok());
 
         config.burn_percentage = 50.0;
@@ -101,10 +99,8 @@ mod tests {
 
     #[test]
     fn test_weight_interval_validation() {
-        let mut config = EmissionConfig::default();
-
         // Test valid intervals
-        config.weight_set_interval_blocks = 1;
+        let mut config = EmissionConfig { weight_set_interval_blocks: 1, ..Default::default() };
         assert!(config.validate().is_ok());
 
         config.weight_set_interval_blocks = 360;
@@ -222,14 +218,14 @@ H200 = 30.0
 
     #[test]
     fn test_edge_cases() {
-        // Test extreme values
-        let mut config = EmissionConfig::default();
-
-        // Test maximum values
-        config.burn_percentage = 100.0;
-        config.burn_uid = u16::MAX;
-        config.weight_set_interval_blocks = u64::MAX;
-        config.min_miners_per_category = u32::MAX;
+        // Test extreme values - maximum values
+        let mut config = EmissionConfig {
+            burn_percentage: 100.0,
+            burn_uid: u16::MAX,
+            weight_set_interval_blocks: u64::MAX,
+            min_miners_per_category: u32::MAX,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
 
         // Test unicode in GPU model names
@@ -330,10 +326,8 @@ H200 = 30.0
 
     #[test]
     fn test_min_miners_per_category_validation() {
-        let mut config = EmissionConfig::default();
-
         // Test valid values
-        config.min_miners_per_category = 1;
+        let mut config = EmissionConfig { min_miners_per_category: 1, ..Default::default() };
         assert!(config.validate().is_ok());
 
         config.min_miners_per_category = 10;

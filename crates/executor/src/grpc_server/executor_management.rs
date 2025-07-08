@@ -440,6 +440,7 @@ impl ExecutorManagementService {
     }
 
     /// Remove SSH key by session ID
+    #[allow(dead_code)]
     async fn remove_key_by_session(
         &self,
         validator_id: &crate::validation_session::types::ValidatorId,

@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 #[derive(Clone)]
 pub struct ValidationSessionService {
     access_control: Arc<ValidatorAccessControl>,
+    #[allow(dead_code)]
     config: ValidatorConfig,
 }
 

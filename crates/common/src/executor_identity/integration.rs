@@ -20,6 +20,7 @@ use crate::executor_identity::{
 /// Factory for creating identity-aware database connections
 pub struct IdentityDbFactory {
     /// Database URL
+    #[allow(dead_code)]
     database_url: String,
     /// Whether to run migrations automatically
     auto_migrate: bool,
