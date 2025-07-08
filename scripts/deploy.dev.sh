@@ -35,7 +35,7 @@ OPTIONS:
 
 EXAMPLES:
     # Deploy all services
-    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@185.26.8.109:22
+    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@160.202.129.13:22
 
     # Deploy only miner with wallet sync
     $0 -s miner -m root@51.159.160.71:46088 -w
@@ -44,7 +44,7 @@ EXAMPLES:
     $0 -s validator,miner -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -c
 
     # Deploy all services and follow logs
-    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@185.26.8.109:22 -f
+    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@160.202.129.13:22 -f
 EOF
     exit 1
 }
@@ -197,6 +197,7 @@ deploy_service() {
             start_cmd="$start_cmd ./miner --config config/miner.toml > miner.log 2>&1 &"
             ;;
         executor)
+            # CRITICAL: Executor requires sudo/root permissions for container management and system access
             start_cmd="$start_cmd sudo ./executor --server --config config/executor.toml > executor.log 2>&1 &"
             ;;
     esac
@@ -210,6 +211,7 @@ deploy_service() {
             timeout 15 ssh -o ConnectTimeout=5 "$MINER_USER@$MINER_HOST" -p "$MINER_PORT" "$start_cmd" || true
             ;;
         executor)
+            # IMPORTANT: Executor must be started with sudo for proper permissions
             timeout 15 ssh -o ConnectTimeout=5 "$EXECUTOR_USER@$EXECUTOR_HOST" -p "$EXECUTOR_PORT" "$start_cmd" || true
             ;;
     esac
@@ -217,6 +219,23 @@ deploy_service() {
     sleep 5
     if ssh_cmd "$service" "pgrep -f $service > /dev/null"; then
         log "$service started successfully"
+
+        # Special verification for executor requiring root permissions
+        if [[ "$service" == "executor" ]]; then
+            log "Verifying executor is running with proper permissions..."
+            if ssh_cmd "$service" "ps aux | grep -v grep | grep 'root.*executor'" > /dev/null; then
+                log "Executor confirmed running with root permissions"
+            else
+                log "WARNING: Executor may not be running with root permissions - check manually"
+            fi
+
+            # Verify executor is listening on gRPC port
+            if ssh_cmd "$service" "ss -tlnp | grep :50051" > /dev/null; then
+                log "Executor gRPC server listening on port 50051"
+            else
+                log "WARNING: Executor gRPC port 50051 not found - service may need restart"
+            fi
+        fi
     else
         log "ERROR: $service failed to start"
         ssh_cmd "$service" "tail -10 /opt/basilica/$service.log"

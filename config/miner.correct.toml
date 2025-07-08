@@ -103,7 +103,7 @@ nanos = 0
 
 [executor_management]
 executors = [
-  { id = "550e8400-e29b-41d4-a716-446655440001", name = "executor-1", grpc_address = "185.26.8.109:50051", host = "185.26.8.109", port = 50051, ssh_username = "shadeform", ssh_port = 22, enabled = true },
+  { id = "550e8400-e29b-41d4-a716-446655440001", name = "executor-1", grpc_address = "160.202.129.13:50051", host = "160.202.129.13", port = 50051, ssh_username = "shadeform", ssh_port = 22, enabled = true },
 ]
 max_retry_attempts = 3
 auto_recovery = true

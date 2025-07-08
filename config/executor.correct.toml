@@ -3,7 +3,7 @@ managing_miner_hotkey = "5C5FSHLrKvrjpkEbKporiz29tengUTMSNrcn8qvh1rSkgtrM"
 [server]
 host = "0.0.0.0"
 port = 50051
-advertised_host = "185.26.8.109"
+advertised_host = "160.202.129.13"
 advertised_port = 50051
 advertised_tls = false
 max_connections = 1000
@@ -115,9 +115,9 @@ rate_limit_window_seconds = 60
 [validator.access_config.role_assignments]
 
 [advertised_endpoint]
-grpc_endpoint = "http://185.26.8.109:50051"
-ssh_endpoint = "ssh://185.26.8.109:22"
-health_endpoint = "http://185.26.8.109:50052/health"
+grpc_endpoint = "http://160.202.129.13:50051"
+ssh_endpoint = "ssh://160.202.129.13:22"
+health_endpoint = "http://160.202.129.13:50052/health"
 force_tls = false
 
 [advertised_endpoint.port_mappings]
