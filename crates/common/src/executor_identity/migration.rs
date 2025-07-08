@@ -168,8 +168,10 @@ impl IdentityMigrationManager {
         legacy_ids: &[String],
         config: &MigrationConfig,
     ) -> Result<MigrationStats> {
-        let mut stats = MigrationStats::default();
-        stats.legacy_ids_found = legacy_ids.len();
+        let mut stats = MigrationStats {
+            legacy_ids_found: legacy_ids.len(),
+            ..Default::default()
+        };
 
         if config.dry_run {
             info!("DRY RUN: Would migrate {} legacy IDs", legacy_ids.len());
@@ -318,8 +320,10 @@ impl IdentityMigrationManager {
         let legacy_ids = self.scan_legacy_ids(config).await?;
 
         // Step 2: Migrate in batches
-        let mut total_stats = MigrationStats::default();
-        total_stats.legacy_ids_found = legacy_ids.len();
+        let mut total_stats = MigrationStats {
+            legacy_ids_found: legacy_ids.len(),
+            ..Default::default()
+        };
 
         for chunk in legacy_ids.chunks(config.batch_size) {
             let batch_stats = self.migrate_batch(chunk, config).await?;
@@ -593,8 +597,10 @@ mod tests {
 
         let legacy_ids = vec!["test-id".to_string()];
 
-        let mut config = MigrationConfig::default();
-        config.dry_run = true;
+        let config = MigrationConfig {
+            dry_run: true,
+            ..Default::default()
+        };
 
         let stats = manager
             .migrate_batch(&legacy_ids, &config)
@@ -708,8 +714,10 @@ mod tests {
             "valid-id".to_string(),
         ];
 
-        let mut config = MigrationConfig::default();
-        config.continue_on_error = true;
+        let config = MigrationConfig {
+            continue_on_error: true,
+            ..Default::default()
+        };
 
         let stats = manager
             .migrate_batch(&invalid_ids, &config)
@@ -725,10 +733,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_migration_report_summary() {
-        let mut stats = MigrationStats::default();
-        stats.legacy_ids_found = 10;
-        stats.successful_migrations = 8;
-        stats.failed_migrations = 2;
+        let stats = MigrationStats {
+            legacy_ids_found: 10,
+            successful_migrations: 8,
+            failed_migrations: 2,
+            ..Default::default()
+        };
 
         let mut reference_updates = HashMap::new();
         reference_updates.insert("executor_health".to_string(), 15);
