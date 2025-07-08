@@ -76,18 +76,16 @@ impl GpuScoringEngine {
             // Weight by GPU count (more GPUs = more weight)
             let weight = validation.gpu_count as f64;
 
-            // Base score from validation success
-            let mut executor_score: f64 = 1.0;
-
-            // Boost score based on GPU memory (more memory = better hardware)
-            if validation.gpu_memory_gb >= 80 {
-                executor_score *= 1.2; // 20% boost for high-memory GPUs
+            // Base score from validation success, scaled by memory
+            let executor_score = if validation.gpu_memory_gb >= 80 {
+                0.95 // High score for high-memory GPUs (80GB+)
             } else if validation.gpu_memory_gb >= 40 {
-                executor_score *= 1.1; // 10% boost for medium-memory GPUs
-            }
-
-            // Ensure score doesn't exceed 1.0
-            executor_score = executor_score.min(1.0);
+                0.85 // Medium score for medium-memory GPUs (40-79GB)
+            } else if validation.gpu_memory_gb >= 20 {
+                0.75 // Lower score for lower-memory GPUs (20-39GB)
+            } else {
+                0.65 // Lowest score for very low memory GPUs (<20GB)
+            };
 
             total_score += executor_score * weight;
             total_weight += weight;
@@ -481,13 +479,13 @@ mod tests {
         assert_eq!(profile.primary_gpu_model, "H100");
         assert!(profile.total_score > 0.0);
 
-        // Test existing profile update
+        // Test existing profile update with different memory
         let new_validations = vec![ExecutorValidationResult {
             executor_id: "exec2".to_string(),
             is_valid: true,
             gpu_model: "H100".to_string(),
             gpu_count: 1,
-            gpu_memory_gb: 80,
+            gpu_memory_gb: 40, // Different memory than first validation (80GB)
             attestation_valid: true,
             validation_timestamp: Utc::now(),
         }];
@@ -621,11 +619,20 @@ mod tests {
         let engine = GpuScoringEngine::new(repo.clone(), 0.3);
 
         // Create test profiles
+        let mut h100_counts_1 = HashMap::new();
+        h100_counts_1.insert("H100".to_string(), 2);
+
+        let mut h100_counts_2 = HashMap::new();
+        h100_counts_2.insert("H100".to_string(), 1);
+
+        let mut h200_counts = HashMap::new();
+        h200_counts.insert("H200".to_string(), 1);
+
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
                 primary_gpu_model: "H100".to_string(),
-                gpu_counts: HashMap::new(),
+                gpu_counts: h100_counts_1,
                 total_score: 0.8,
                 verification_count: 1,
                 last_updated: Utc::now(),
@@ -633,7 +640,7 @@ mod tests {
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
                 primary_gpu_model: "H100".to_string(),
-                gpu_counts: HashMap::new(),
+                gpu_counts: h100_counts_2,
                 total_score: 0.6,
                 verification_count: 1,
                 last_updated: Utc::now(),
@@ -641,7 +648,7 @@ mod tests {
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
                 primary_gpu_model: "H200".to_string(),
-                gpu_counts: HashMap::new(),
+                gpu_counts: h200_counts,
                 total_score: 0.9,
                 verification_count: 1,
                 last_updated: Utc::now(),

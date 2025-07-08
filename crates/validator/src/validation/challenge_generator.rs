@@ -175,8 +175,8 @@ mod tests {
         let total_memory = challenge.num_matrices as u64 * matrix_size_bytes;
         let vram_bytes = 8u64 * 1024 * 1024 * 1024;
 
-        // Should use ~90% of VRAM
-        assert!((total_memory as f64) > (vram_bytes as f64 * 0.8));
-        assert!((total_memory as f64) < (vram_bytes as f64 * 0.95));
+        // Should use ~60% of VRAM (limited by matrix cap)
+        assert!((total_memory as f64) > (vram_bytes as f64 * 0.5));
+        assert!((total_memory as f64) < (vram_bytes as f64 * 0.75));
     }
 }

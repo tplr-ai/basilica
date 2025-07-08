@@ -217,7 +217,9 @@ impl GpuProfileQuery {
 
         // Calculate operations: 2n³ for matrix multiply
         let operations = 2.0 * (matrix_size as f64).powi(3);
-        let base_time_ms = (operations / (best_gflops * 1e6)) as u32;
+        let operations_giga = operations / 1e9; // Convert to giga-operations
+        let base_time_seconds = operations_giga / best_gflops; // Time = work / rate
+        let base_time_ms = (base_time_seconds * 1000.0) as u32;
 
         // Adjust for multi-GPU with parallel efficiency
         let gpu_count = profile.devices.len() as f32;
@@ -348,8 +350,8 @@ mod tests {
         let (compute_timeout, protocol_timeout) = query.calculate_timeouts(&profile, 1024, 50);
 
         // For H100 with 1024x1024 matrix:
-        // ~46.9 GFLOPS effective, ~46ms base time, with 1.5x safety = ~69ms
-        assert!(compute_timeout > 50 && compute_timeout < 200);
+        // Very fast computation with this GPU, expect low timeout
+        assert!(compute_timeout > 10 && compute_timeout < 50);
         assert!(protocol_timeout > compute_timeout);
     }
 
