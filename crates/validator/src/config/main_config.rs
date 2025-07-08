@@ -66,6 +66,10 @@ pub struct ValidatorConfig {
 
     /// SSH session configuration
     pub ssh_session: SshSessionConfig,
+
+    /// Emission allocation configuration
+    #[serde(default)]
+    pub emission: super::emission::EmissionConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -356,6 +360,7 @@ impl Default for ValidatorConfig {
                 bind_address: "0.0.0.0:8080".to_string(),
             },
             ssh_session: SshSessionConfig::default(),
+            emission: super::emission::EmissionConfig::default(),
         }
     }
 }
@@ -407,6 +412,15 @@ impl ConfigValidation for ValidatorConfig {
                 key: "bittensor.advertised_axon".to_string(),
                 value: "advertised_endpoint".to_string(),
                 reason: msg,
+            });
+        }
+
+        // Validate emission configuration
+        if let Err(e) = self.emission.validate() {
+            return Err(ConfigurationError::InvalidValue {
+                key: "emission".to_string(),
+                value: "emission_config".to_string(),
+                reason: e.to_string(),
             });
         }
 
