@@ -22,12 +22,10 @@ ARG BUILD_MODE=release
 ARG FEATURES=""
 ARG BITTENSOR_NETWORK="test"
 ARG METADATA_CHAIN_ENDPOINT=""
-ARG VALIDATOR_PUBLIC_KEY=""
 
 # Set environment variables for the build - default to test network if not specified
 ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK:-test}
 ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
-ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
 
 # Build the validator directly (workspace should resolve dependencies)
 # Set explicit endpoint if network is specified but endpoint is not

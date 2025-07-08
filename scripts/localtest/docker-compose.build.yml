@@ -40,8 +40,6 @@ services:
     build:
       context: ../../
       dockerfile: scripts/gpu-attestor/Dockerfile
-      args:
-        VALIDATOR_PUBLIC_KEY: "${VALIDATOR_PUBLIC_KEY:-0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798}"
     image: basilica/gpu-attestor:localtest
     container_name: basilica-gpu-attestor-build
     command: ["--help"]  # Just show help and exit

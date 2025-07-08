@@ -29,22 +29,19 @@ fmt-check:
     cargo fmt --all -- --check
 
 # Fix linting issues and format code
-fix: gen-key
+fix:
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo clippy --fix --allow-dirty --workspace --all-targets -- -A clippy::too_many_arguments -A clippy::ptr_arg -A dead_code
     cargo fmt --all
 
 # Lint workspace packages
-lint: gen-key fmt-check
+lint: fmt-check
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo clippy --workspace --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables
 
 # Full lint check (matches CI format-and-lint job)
-lint-ci: gen-key fmt-check
+lint-ci: fmt-check
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo clippy -p common -p protocol -p executor -p gpu-attestor -p bittensor --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn
 
 # =============================================================================
@@ -74,33 +71,28 @@ test-stats *ARGS:
 # =============================================================================
 
 # Build workspace
-build: gen-key
+build:
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo build --workspace
 
 # Build workspace (release)
-build-release: gen-key
+build-release:
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo build --release --workspace
 
 # Test workspace
-test: gen-key
+test:
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo test --workspace
 
 # Check workspace
-check: gen-key
+check:
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo check --workspace
 
 # Test with coverage
-cov: gen-key
+cov:
     #!/usr/bin/env bash
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     cargo install cargo-tarpaulin 2>/dev/null || true
     cargo tarpaulin --workspace --out Html --output-dir target/coverage
 
@@ -128,7 +120,7 @@ docker-build-executor:
     ./scripts/executor/build.sh
 
 # Build gpu-attestor Docker image and extract binary
-docker-build-gpu-attestor: gen-key
+docker-build-gpu-attestor:
     chmod +x scripts/gpu-attestor/build.sh
     ./scripts/gpu-attestor/build.sh
 
@@ -183,7 +175,7 @@ docker-dev:
     docker compose -f docker/docker-compose.dev-sqlite.yml up -d
 
 # Start development with remote executors (NEW)
-dev: gen-key
+dev:
     #!/usr/bin/env bash
     set -e
     echo "🚀 Starting Basilica with remote executors..."
@@ -338,20 +330,10 @@ int MODE="":
 
     if [ "$NEED_BUILD" = "true" ]; then
         echo "Building missing binaries..."
-        # Check for validator public key
-        if [ -f "public_key.hex" ]; then
-            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
-            echo "Using validator public key: ${VALIDATOR_PUBLIC_KEY:0:10}..."
-        else
-            echo "No public_key.hex found, generating key..."
-            ./scripts/gen-key.sh
-            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
-        fi
-
         [ ! -f validator ] && ./scripts/validator/build.sh
         [ ! -f miner ] && ./scripts/miner/build.sh
         [ ! -f executor ] && ./scripts/executor/build.sh
-        [ ! -f gpu-attestor ] && VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/gpu-attestor/build.sh
+        [ ! -f gpu-attestor ] && ./scripts/gpu-attestor/build.sh
     else
         echo "All binaries exist, skipping build"
     fi
@@ -585,20 +567,10 @@ int-testnet MODE="":
         export BITTENSOR_NETWORK=test
         export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443"
 
-        # Check for validator public key
-        if [ -f "public_key.hex" ]; then
-            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
-            echo "Using validator public key: ${VALIDATOR_PUBLIC_KEY:0:10}..."
-        else
-            echo "No public_key.hex found, generating key..."
-            ./scripts/gen-key.sh
-            export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex | tr -d '\n\r ')
-        fi
-
         [ ! -f validator ] && BITTENSOR_NETWORK=test ./scripts/validator/build.sh
         [ ! -f miner ] && BITTENSOR_NETWORK=test ./scripts/miner/build.sh
         [ ! -f executor ] && BITTENSOR_NETWORK=test ./scripts/executor/build.sh
-        [ ! -f gpu-attestor ] && BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/gpu-attestor/build.sh
+        [ ! -f gpu-attestor ] && BITTENSOR_NETWORK=test ./scripts/gpu-attestor/build.sh
     else
         echo "All binaries exist, skipping build"
     fi

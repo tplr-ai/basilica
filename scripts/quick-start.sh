@@ -156,7 +156,6 @@ run_executor() {
     
     # Set environment variables
     export BASILCA_CONFIG_FILE=config/executor.toml
-    export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
     
     echo -e "${GREEN}Starting executor on port 50051...${NC}"
     ./target/release/executor
@@ -213,7 +212,6 @@ run_docker() {
             -v $(pwd)/config:/config \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -e BASILCA_CONFIG_FILE=/config/executor.toml \
-            -e VALIDATOR_PUBLIC_KEY=$(cat public_key.hex) \
             basilica-executor
         
         echo -e "${GREEN}Executor started! Check logs with: docker logs basilica-executor${NC}"

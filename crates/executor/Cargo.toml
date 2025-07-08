@@ -13,7 +13,6 @@ name = "executor"
 path = "src/main.rs"
 
 [dependencies]
-prost-types = "0.12"
 # Workspace dependencies
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -36,6 +35,7 @@ aes-gcm = { workspace = true }
 rand = { workspace = true }
 sysinfo = { workspace = true }
 bollard = { workspace = true }
+prost-types = { workspace = true }
 
 # Internal dependencies
 common = { path = "../common", features = ["sqlite"] }
@@ -47,6 +47,7 @@ futures-util = "0.3"
 async-trait = "0.1"
 tokio-stream = "0.1"
 hex = "0.4"
+base64 = "0.21"
 
 # Executor-specific dependencies
 # GPU monitoring

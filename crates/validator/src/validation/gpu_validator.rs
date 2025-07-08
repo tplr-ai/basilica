@@ -4,7 +4,6 @@
 //! Only supports validating GPUs of the same type as the validator's GPU.
 
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose, Engine as _};
 use std::process::Command;
 use std::time::Instant;
 use tracing::{info, warn};
@@ -168,8 +167,8 @@ impl GpuValidator {
 
         // Convert to generic ComputeChallenge and encode to base64
         use crate::validation::challenge_converter::challenge_params_to_base64;
-        let challenge_base64 = challenge_params_to_base64(params)
-            .context("Failed to convert challenge parameters")?;
+        let challenge_base64 =
+            challenge_params_to_base64(params).context("Failed to convert challenge parameters")?;
 
         // Execute the challenge locally
         // IMPORTANT: Respect the current CUDA_VISIBLE_DEVICES environment variable
@@ -215,7 +214,7 @@ impl GpuValidator {
         if let Some(status) = local_result.get("status").and_then(|s| s.as_str()) {
             // VM-protected attestor response
             info!("VM-protected validation returned: {}", status);
-            
+
             // For VM-protected validation, we trust the attestor's decision
             // as all validation logic is hidden within the VM
             return Ok(status == "PASS");

@@ -158,15 +158,15 @@ impl GpuValidatorV2 {
         };
 
         // Convert to generic ComputeChallenge format
-        use crate::validation::challenge_converter::{ComputeChallenge, challenge_params_to_base64};
-        
+        use crate::validation::challenge_converter::challenge_params_to_base64;
+
         // For sampled validation, we need to pass the sampled iterations
         // Since the VM-protected attestor doesn't support sampling, we'll use full validation
         warn!("VM-protected attestor does not support sampling - using full validation");
-        
+
         // Convert base parameters to generic format and encode
-        let challenge_base64 = challenge_params_to_base64(&params)
-            .context("Failed to convert challenge parameters")?;
+        let challenge_base64 =
+            challenge_params_to_base64(params).context("Failed to convert challenge parameters")?;
 
         // Execute the sampled challenge locally
         info!(
@@ -202,7 +202,7 @@ impl GpuValidatorV2 {
         if let Some(status) = local_result.get("status").and_then(|s| s.as_str()) {
             // VM-protected attestor response
             info!("VM-protected validation returned: {}", status);
-            
+
             // For VM-protected validation, we trust the attestor's decision
             // Note: Timing validation is handled within the VM
             return Ok(status == "PASS");

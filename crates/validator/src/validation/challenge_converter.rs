@@ -30,15 +30,13 @@ impl From<&ChallengeParameters> for ComputeChallenge {
     fn from(params: &ChallengeParameters) -> Self {
         // Convert seed to bytes
         let seed_bytes = params.gpu_pow_seed.to_le_bytes().to_vec();
-        
+
         // Calculate appropriate timeouts based on matrix dimension and iterations
-        let computation_timeout_ms = calculate_computation_timeout(
-            params.matrix_dim,
-            params.num_iterations
-        );
-        
+        let computation_timeout_ms =
+            calculate_computation_timeout(params.matrix_dim, params.num_iterations);
+
         let protocol_timeout_ms = computation_timeout_ms + 2000; // Add 2s overhead
-        
+
         ComputeChallenge {
             session_id: params.validator_nonce.clone(),
             problem_size: params.matrix_dim,
@@ -68,11 +66,11 @@ fn calculate_computation_timeout(matrix_dim: u32, iterations: u32) -> u32 {
         1025..=2048 => 32.0,
         _ => 64.0,
     };
-    
+
     // Calculate total time with safety margin
     let base_time = (iterations as f64 * time_per_iteration_ms) as u32;
     let safety_margin = 2.0; // 2x safety margin
-    
+
     (base_time as f64 * safety_margin) as u32
 }
 
@@ -86,7 +84,7 @@ pub fn challenge_params_to_json(params: &ChallengeParameters) -> Result<String> 
 /// Convert ChallengeParameters to base64-encoded challenge for gpu-attestor
 pub fn challenge_params_to_base64(params: &ChallengeParameters) -> Result<String> {
     use base64::{engine::general_purpose, Engine as _};
-    
+
     let json = challenge_params_to_json(params)?;
     let base64 = general_purpose::STANDARD.encode(&json);
     Ok(base64)
@@ -116,7 +114,7 @@ mod tests {
         };
 
         let compute_challenge: ComputeChallenge = (&params).into();
-        
+
         assert_eq!(compute_challenge.session_id, "test_session_123");
         assert_eq!(compute_challenge.problem_size, 1024);
         assert_eq!(compute_challenge.resource_count, 1);
@@ -145,11 +143,11 @@ mod tests {
 
         let base64 = challenge_params_to_base64(&params).unwrap();
         assert!(!base64.is_empty());
-        
+
         // Verify it's valid base64
         use base64::{engine::general_purpose, Engine as _};
         let decoded = general_purpose::STANDARD.decode(&base64).unwrap();
-        
+
         // Verify it's valid JSON
         let json = String::from_utf8(decoded).unwrap();
         let _: ComputeChallenge = serde_json::from_str(&json).unwrap();

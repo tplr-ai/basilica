@@ -27,8 +27,7 @@ COPY src/ ./src/
 
 # Build executor and gpu-attestor - use BUILD_MODE arg to control debug/release
 ARG BUILD_MODE=release
-RUN export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex) && \
-    if [ "$BUILD_MODE" = "debug" ]; then \
+RUN if [ "$BUILD_MODE" = "debug" ]; then \
         cargo build -p executor; \
     else \
         cargo build --release -p executor; \

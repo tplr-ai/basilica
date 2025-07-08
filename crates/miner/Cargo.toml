@@ -29,7 +29,7 @@ figment = { workspace = true }
 sqlx = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
-prost-types = "0.12"
+prost-types = { workspace = true }
 tonic-health = "0.10.2"
 uuid = { workspace = true }
 chrono = { workspace = true }
