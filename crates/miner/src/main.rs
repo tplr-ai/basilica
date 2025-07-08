@@ -3,12 +3,13 @@
 //! Bittensor neuron that manages a fleet of executors and serves
 //! validator requests for GPU rental and computational challenges.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use common::identity::MinerUid;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::signal;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -18,9 +19,11 @@ mod bittensor_core;
 mod cli;
 mod config;
 mod executor_manager;
+mod executors;
 mod metrics;
 mod persistence;
 mod request_verification;
+mod services;
 mod session_cleanup;
 mod ssh;
 mod validator_comms;
@@ -75,6 +78,11 @@ enum Commands {
     Validator {
         #[command(subcommand)]
         validator_cmd: cli::ValidatorCommand,
+    },
+    /// Manual executor assignment commands
+    Assignment {
+        #[command(subcommand)]
+        assignment_cmd: cli::AssignmentCommand,
     },
     /// Service management commands
     Service {
@@ -161,27 +169,82 @@ impl MinerState {
         // Initialize Bittensor chain registration
         let chain_registration = ChainRegistration::new(config.bittensor.clone()).await?;
 
-        // Initialize validator discovery (optional - only if assignment is configured)
-        let validator_discovery = if config.bittensor.skip_registration {
-            // Skip validator discovery in local testing mode
-            None
-        } else {
-            // Create assignment strategy based on configuration
-            // For now, using business logic assignment as default
-            let strategy: Box<dyn validator_discovery::AssignmentStrategy> =
-                Box::new(validator_discovery::BusinessLogicAssignment {
-                    preferred_validators: vec![], // TODO: Load from config
-                    max_executors_per_validator: 3,
-                });
+        // Initialize validator discovery based on configuration
+        let validator_discovery =
+            if config.bittensor.skip_registration || !config.validator_assignment.enabled {
+                // Validator assignment disabled - return all executors to all validators
+                None
+            } else {
+                // Create assignment strategy based on configuration
+                let strategy: Box<dyn validator_discovery::AssignmentStrategy> =
+                    match config.validator_assignment.strategy.as_str() {
+                        "round_robin" => Box::new(validator_discovery::RoundRobinAssignment),
+                        _ => {
+                            tracing::warn!(
+                                "Unknown assignment strategy '{}', defaulting to round_robin",
+                                config.validator_assignment.strategy
+                            );
+                            Box::new(validator_discovery::RoundRobinAssignment)
+                        }
+                    };
 
-            let discovery = validator_discovery::ValidatorDiscovery::new(
-                chain_registration.get_bittensor_service(),
-                executor_manager.clone(),
-                strategy,
-                config.bittensor.common.netuid,
-            );
-            Some(std::sync::Arc::new(discovery))
+                let discovery = validator_discovery::ValidatorDiscovery::new(
+                    chain_registration.get_bittensor_service(),
+                    executor_manager.clone(),
+                    strategy,
+                    config.bittensor.common.netuid,
+                );
+                Some(std::sync::Arc::new(discovery))
+            };
+
+        // Initialize SSH session orchestrator
+        let executor_connection_config = executors::ExecutorConnectionConfig {
+            miner_executor_key_path: config.ssh_session.miner_executor_key_path.clone(),
+            default_executor_username: config.ssh_session.default_executor_username.clone(),
+            connection_timeout: config.ssh_session.ssh_connection_timeout,
+            max_idle_time: Duration::from_secs(300),
+            health_check_interval: Duration::from_secs(60),
         };
+        let executor_connection_manager = Arc::new(executors::ExecutorConnectionManager::new(
+            executor_connection_config,
+        ));
+
+        // Register all executors with the connection manager
+        for executor_config in &config.executor_management.executors {
+            use std::str::FromStr;
+            let executor_info = executors::ExecutorInfo {
+                id: common::identity::ExecutorId::from_str(&executor_config.id).map_err(|e| {
+                    anyhow::anyhow!("Invalid executor ID '{}': {}", executor_config.id, e)
+                })?,
+                host: executor_config
+                    .grpc_address
+                    .split(':')
+                    .next()
+                    .unwrap_or("localhost")
+                    .to_string(),
+                ssh_port: 22, // Default SSH port
+                ssh_username: config.ssh_session.default_executor_username.clone(),
+                grpc_endpoint: Some(executor_config.grpc_address.clone()),
+                last_health_check: None,
+                is_healthy: true,
+            };
+            executor_connection_manager
+                .register_executor(executor_info)
+                .await
+                .with_context(|| format!("Failed to register executor {}", executor_config.id))?;
+        }
+
+        let ssh_session_config = ssh::SshSessionConfig {
+            max_sessions_per_validator: config.ssh_session.max_sessions_per_validator,
+            session_rate_limit: config.ssh_session.session_rate_limit,
+            cleanup_interval: config.ssh_session.session_cleanup_interval,
+            max_session_duration: Duration::from_secs(config.ssh_session.max_session_duration),
+            enable_audit_log: config.ssh_session.enable_audit_log,
+        };
+        let ssh_session_orchestrator = Arc::new(ssh::SshSessionOrchestrator::new(
+            executor_connection_manager,
+            ssh_session_config,
+        ));
 
         // Initialize validator communications server
         let validator_comms = ValidatorCommsServer::new(
@@ -192,7 +255,8 @@ impl MinerState {
             ssh_access_service.clone(),
             validator_discovery.clone(),
         )
-        .await?;
+        .await?
+        .with_ssh_session_orchestrator(ssh_session_orchestrator);
 
         let jwt_service = validator_comms.jwt_service.clone();
 
@@ -282,6 +346,27 @@ impl MinerState {
             })
         };
 
+        // Start stake monitor service
+        let stake_monitor_handle = {
+            let config = self.config.clone();
+            let pool = sqlx::SqlitePool::connect(&config.database.url)
+                .await
+                .context("Failed to create pool for stake monitor")?;
+            tokio::spawn(async move {
+                match services::StakeMonitor::new(&config, pool).await {
+                    Ok(monitor) => {
+                        info!("Starting stake monitor service");
+                        if let Err(e) = monitor.start().await {
+                            error!("Stake monitor error: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to create stake monitor: {}", e);
+                    }
+                }
+            })
+        };
+
         // Start validator discovery service if enabled
         let discovery_handle = if let Some(ref discovery) = self.validator_discovery {
             let discovery = discovery.clone();
@@ -317,6 +402,9 @@ impl MinerState {
                 _ = cleanup_handle => {
                     warn!("Session cleanup service stopped unexpectedly");
                 }
+                _ = stake_monitor_handle => {
+                    warn!("Stake monitor service stopped unexpectedly");
+                }
                 _ = discovery_handle => {
                     warn!("Validator discovery service stopped unexpectedly");
                 }
@@ -334,6 +422,9 @@ impl MinerState {
                 }
                 _ = cleanup_handle => {
                     warn!("Session cleanup service stopped unexpectedly");
+                }
+                _ = stake_monitor_handle => {
+                    warn!("Stake monitor service stopped unexpectedly");
                 }
             }
         }
@@ -396,6 +487,9 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
             let db = RegistrationDb::new(&config.database).await?;
             cli::handle_validator_command(validator_cmd, db).await
         }
+        Commands::Assignment { assignment_cmd } => {
+            cli::handle_assignment_command(&assignment_cmd, config).await
+        }
         Commands::Service { service_cmd } => cli::handle_service_command(service_cmd, config).await,
         Commands::Database { database_cmd } => {
             cli::handle_database_command(database_cmd, config).await
@@ -406,6 +500,10 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
             let mut db_config = config.database.clone();
             db_config.run_migrations = true;
             let _db = RegistrationDb::new(&db_config).await?;
+            // Also run assignment migrations
+            let assignment_pool = sqlx::SqlitePool::connect(&config.database.url).await?;
+            let assignment_db = persistence::AssignmentDb::new(assignment_pool);
+            assignment_db.run_migrations().await?;
             println!("Database migrations completed successfully");
             Ok(())
         }

@@ -111,7 +111,7 @@ temp/
 *.s.md
 
 *.s.md
- 
+
 scripts/localnet/ssh-keys
 scripts/localnet/wallets
 scripts/localnet/keys

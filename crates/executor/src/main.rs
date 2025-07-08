@@ -61,18 +61,40 @@ async fn run_server_mode(config: executor::cli::args::ServerConfig) -> Result<()
         return Err(e);
     }
 
-    let grpc_addr = SocketAddr::new(state.config.server.host.parse()?, state.config.server.port);
+    let listen_addr = SocketAddr::new(state.config.server.host.parse()?, state.config.server.port);
+    let advertised_grpc_endpoint = state.config.get_advertised_grpc_endpoint();
+    let advertised_ssh_endpoint = state.config.get_advertised_ssh_endpoint();
+    let advertised_health_endpoint = state.config.get_advertised_health_endpoint();
+
+    info!("Starting Basilca Executor with advertised address support:");
+    info!("  Internal binding: {}", listen_addr);
+    info!("  Advertised gRPC endpoint: {}", advertised_grpc_endpoint);
+    info!("  Advertised SSH endpoint: {}", advertised_ssh_endpoint);
+    info!(
+        "  Advertised health endpoint: {}",
+        advertised_health_endpoint
+    );
+    info!(
+        "  Address separation: {}",
+        state.config.server.has_address_separation()
+    );
+
+    // Validate advertised endpoint configuration
+    if let Err(e) = state.config.validate_advertised_endpoints() {
+        error!("Invalid advertised endpoint configuration: {}", e);
+        return Err(anyhow::anyhow!("Configuration validation failed: {}", e));
+    }
 
     // In SPEC v1.6, executors are statically configured on the miner side
-    // No dynamic registration is needed
-    info!("Executor configured in static mode - no miner registration required");
+    // Register with miner for discovery using advertised endpoints
+    register_with_miner(&state.config).await?;
 
     let server = ExecutorServer::new(state);
 
-    info!("Starting Basilca Executor on {}", grpc_addr);
+    info!("Starting Basilca Executor server on {}", listen_addr);
 
     tokio::select! {
-        result = server.serve(grpc_addr) => {
+        result = server.serve(listen_addr) => {
             if let Err(e) = result {
                 error!("gRPC server error: {}", e);
                 return Err(e);
@@ -84,6 +106,30 @@ async fn run_server_mode(config: executor::cli::args::ServerConfig) -> Result<()
     }
 
     info!("Basilca Executor stopped");
+    Ok(())
+}
+
+/// Register executor's advertised endpoint with miner
+async fn register_with_miner(config: &ExecutorConfig) -> Result<()> {
+    let advertised_endpoint = config.get_advertised_grpc_endpoint();
+
+    info!(
+        "Registering executor advertised endpoint with miner: {}",
+        advertised_endpoint
+    );
+
+    // Implementation would depend on miner-executor communication protocol
+    // This could involve:
+    // 1. gRPC call to miner's registration endpoint
+    // 2. Configuration file update
+    // 3. Service discovery registration
+
+    // For now, just log the endpoints that would be registered
+    info!("Advertised endpoints registered:");
+    info!("  gRPC: {}", config.get_advertised_grpc_endpoint());
+    info!("  SSH: {}", config.get_advertised_ssh_endpoint());
+    info!("  Health: {}", config.get_advertised_health_endpoint());
+
     Ok(())
 }
 

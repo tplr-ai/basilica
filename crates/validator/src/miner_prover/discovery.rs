@@ -48,7 +48,7 @@ impl MinerDiscovery {
 
     /// Get list of miners that need verification using metagraph
     pub async fn get_miners_for_verification(&self) -> Result<Vec<MinerInfo>> {
-        info!("Fetching miners from metagraph for verification");
+        info!("Fetching ALL miners from metagraph for verification (no filtering)");
 
         let metagraph = self
             .bittensor_service
@@ -56,15 +56,17 @@ impl MinerDiscovery {
             .await?;
 
         if metagraph.hotkeys.is_empty() {
-            return self.get_placeholder_miners();
+            info!(
+                "No miners found in metagraph for netuid {}",
+                self.config.netuid
+            );
+            return Ok(Vec::new());
         }
 
-        let mut miners = self.extract_miners_from_metagraph(&metagraph)?;
-        self.prioritize_by_stake(&mut miners, &metagraph);
-        miners.truncate(self.config.max_miners_per_round);
+        let miners = self.extract_miners_from_metagraph(&metagraph)?;
 
         info!(
-            "Selected {} miners for verification from {} total neurons",
+            "Selected ALL {} miners for verification from {} total neurons",
             miners.len(),
             metagraph.hotkeys.len()
         );
@@ -72,45 +74,11 @@ impl MinerDiscovery {
         Ok(miners)
     }
 
-    fn get_placeholder_miners(&self) -> Result<Vec<MinerInfo>> {
-        warn!("No neurons in metagraph - using placeholder data for testing");
-
-        let placeholder_miners = vec![
-            MinerInfo {
-                uid: MinerUid::new(0),
-                hotkey: Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string())
-                    .unwrap_or_else(|_| Hotkey::new("placeholder".to_string()).unwrap()),
-                endpoint: "http://placeholder-miner-0.example.com:8091".to_string(),
-                is_validator: false,
-                stake_tao: 10.0,
-                last_verified: None,
-                verification_score: 0.5,
-            },
-            MinerInfo {
-                uid: MinerUid::new(1),
-                hotkey: Hotkey::new("5Fbe6qGVfGPFGUCjn1AV7xfHVExrJNy1VR9CzjCPJoHPPuT4".to_string())
-                    .unwrap_or_else(|_| Hotkey::new("placeholder".to_string()).unwrap()),
-                endpoint: "http://placeholder-miner-1.example.com:8092".to_string(),
-                is_validator: false,
-                stake_tao: 5.0,
-                last_verified: None,
-                verification_score: 0.3,
-            },
-        ];
-
-        info!(
-            "Using {} placeholder miners for testing",
-            placeholder_miners.len()
-        );
-        Ok(placeholder_miners)
-    }
-
     fn extract_miners_from_metagraph(
         &self,
         metagraph: &bittensor::Metagraph<AccountId>,
     ) -> Result<Vec<MinerInfo>> {
         let mut miners = Vec::new();
-        let now = chrono::Utc::now();
 
         for (uid, hotkey_account) in metagraph.hotkeys.iter().enumerate() {
             let uid = uid as u16;
@@ -132,14 +100,6 @@ impl MinerDiscovery {
                 .unwrap_or(0);
             let stake_tao = bittensor::rao_to_tao(total_stake);
 
-            if stake_tao < self.config.min_stake_threshold {
-                debug!(
-                    "Skipping miner {} due to low stake: {:.2} TAO",
-                    uid, stake_tao
-                );
-                continue;
-            }
-
             let endpoint = self.extract_endpoint(metagraph, uid as usize)?;
             if endpoint.is_none() {
                 warn!("Miner {} has no axon info, skipping", uid);
@@ -156,11 +116,7 @@ impl MinerDiscovery {
                 verification_score: 0.0,
             };
 
-            let min_interval =
-                chrono::Duration::from_std(self.config.min_verification_interval).unwrap();
-            if miner.needs_verification(min_interval, now) {
-                miners.push(miner);
-            }
+            miners.push(miner);
         }
 
         Ok(miners)
@@ -171,30 +127,38 @@ impl MinerDiscovery {
         metagraph: &bittensor::Metagraph<AccountId>,
         uid: usize,
     ) -> Result<Option<String>> {
-        Ok(metagraph
-            .axons
-            .get(uid)
-            .map(|axon| self.axon_info_to_endpoint(axon)))
-    }
+        Ok(metagraph.axons.get(uid).and_then(|axon| {
+            // Validate that the IP is not zero (unset)
+            if axon.ip == 0 {
+                debug!("Miner {} has zero IP address, skipping", uid);
+                return None;
+            }
 
-    fn prioritize_by_stake(
-        &self,
-        miners: &mut [MinerInfo],
-        metagraph: &bittensor::Metagraph<AccountId>,
-    ) {
-        miners.sort_by(|a, b| {
-            let stake_a = metagraph
-                .total_stake
-                .get(a.uid.as_u16() as usize)
-                .map(|s| s.0)
-                .unwrap_or(0);
-            let stake_b = metagraph
-                .total_stake
-                .get(b.uid.as_u16() as usize)
-                .map(|s| s.0)
-                .unwrap_or(0);
-            stake_b.cmp(&stake_a)
-        });
+            // For IPv4, validate that we have a non-zero IP in the lower 32 bits
+            if axon.ip_type == 4 {
+                let ipv4_bits = axon.ip as u32;
+                if ipv4_bits == 0 {
+                    debug!(
+                        "Miner {} has zero IPv4 address in lower 32 bits, skipping",
+                        uid
+                    );
+                    return None;
+                }
+            }
+
+            // Validate that the port is reasonable
+            if axon.port == 0 {
+                debug!("Miner {} has invalid port {}, skipping", uid, axon.port);
+                return None;
+            }
+
+            let endpoint = self.axon_info_to_endpoint(axon);
+            debug!(
+                "Miner {} endpoint: {} (IP: {}, port: {})",
+                uid, endpoint, axon.ip, axon.port
+            );
+            Some(endpoint)
+        }))
     }
 
     /// Get miner axon info from metagraph by UID
@@ -248,21 +212,39 @@ impl MinerDiscovery {
 
     /// Convert u128 IP representation to string
     fn u128_to_ip(&self, ip: u128, ip_type: u8) -> String {
+        if ip == 0 {
+            warn!("Attempting to convert zero IP address to string");
+            return "0.0.0.0".to_string();
+        }
+
         if ip_type == 4 {
-            // IPv4
-            let bytes = ip.to_be_bytes();
-            format!("{}.{}.{}.{}", bytes[12], bytes[13], bytes[14], bytes[15])
+            // IPv4 - Extract from lower 32 bits (this is how miners actually store IPs)
+            let ipv4_bits = ip as u32;
+            let ip_bytes = ipv4_bits.to_be_bytes();
+            format!(
+                "{}.{}.{}.{}",
+                ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]
+            )
         } else {
             // IPv6
             let bytes = ip.to_be_bytes();
             let segments: Vec<u16> = (0..8)
                 .map(|i| u16::from_be_bytes([bytes[i * 2], bytes[i * 2 + 1]]))
                 .collect();
-            segments
+
+            // Use standard IPv6 representation with :: compression for zeros
+            let ipv6_str = segments
                 .iter()
                 .map(|&s| format!("{s:x}"))
                 .collect::<Vec<_>>()
-                .join(":")
+                .join(":");
+
+            // Handle IPv6 zero compression (simplified)
+            if ipv6_str == "0:0:0:0:0:0:0:0" {
+                "::".to_string()
+            } else {
+                ipv6_str
+            }
         }
     }
 

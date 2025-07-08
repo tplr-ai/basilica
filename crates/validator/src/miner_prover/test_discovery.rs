@@ -24,10 +24,10 @@ mod tests {
             Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap();
         let client = MinerClient::new(config.clone(), hotkey.clone());
 
-        // Test default port (now 8080, same as miner HTTP)
+        // Test default behavior (uses same port as axon endpoint)
         let axon = "http://192.168.1.100:8091";
         let grpc = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(grpc, "http://192.168.1.100:8080");
+        assert_eq!(grpc, "http://192.168.1.100:8091");
 
         // Test with port offset
         let mut config_with_offset = config;
@@ -71,7 +71,6 @@ mod tests {
             max_concurrent_verifications: 10,
             challenge_timeout: Duration::from_secs(60),
             min_score_threshold: 0.0,
-            min_stake_threshold: 0.0,
             max_miners_per_round: 10,
             min_verification_interval: Duration::from_secs(3600),
             netuid: 1,
@@ -85,14 +84,14 @@ mod tests {
 
         // Test with port
         let creds = "ubuntu@192.168.1.100:2222";
-        let details = engine.parse_ssh_credentials(creds).unwrap();
+        let details = engine.parse_ssh_credentials(creds, None).unwrap();
         assert_eq!(details.username, "ubuntu");
         assert_eq!(details.host, "192.168.1.100");
         assert_eq!(details.port, 2222);
 
         // Test without port (should default to 22)
         let creds = "admin@example.com";
-        let details = engine.parse_ssh_credentials(creds).unwrap();
+        let details = engine.parse_ssh_credentials(creds, None).unwrap();
         assert_eq!(details.username, "admin");
         assert_eq!(details.host, "example.com");
         assert_eq!(details.port, 22);

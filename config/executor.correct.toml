@@ -1,0 +1,125 @@
+managing_miner_hotkey = "5C5FSHLrKvrjpkEbKporiz29tengUTMSNrcn8qvh1rSkgtrM"
+
+[server]
+host = "0.0.0.0"
+port = 50051
+advertised_host = "185.26.8.109"
+advertised_port = 50051
+advertised_tls = false
+max_connections = 1000
+tls_enabled = false
+
+[server.request_timeout]
+secs = 30
+nanos = 0
+
+[server.keep_alive_timeout]
+secs = 60
+nanos = 0
+
+[health]
+port = 50052
+
+[logging]
+level = "debug"
+format = "pretty"
+stdout = true
+max_file_size = 104857600
+max_files = 5
+
+[logging.targets]
+
+[metrics]
+enabled = true
+
+[metrics.collection_interval]
+secs = 30
+nanos = 0
+
+[metrics.prometheus]
+host = "127.0.0.1"
+port = 9090
+path = "/metrics"
+
+[metrics.default_labels]
+
+[metrics.retention_period]
+secs = 604800
+nanos = 0
+
+[system]
+enable_gpu_monitoring = true
+enable_network_monitoring = true
+enable_memory_monitoring = true
+enable_cpu_monitoring = true
+max_cpu_usage = 90.0
+max_memory_usage = 90.0
+max_gpu_memory_usage = 90.0
+min_disk_space_gb = 10
+enable_metrics_recording = true
+
+[system.update_interval]
+secs = 5
+nanos = 0
+
+[docker]
+socket_path = "/var/run/docker.sock"
+default_image = "ubuntu:22.04"
+max_concurrent_containers = 10
+enable_gpu_passthrough = true
+
+[docker.resource_limits]
+memory_bytes = 8589934592
+cpu_cores = 4.0
+gpu_memory_bytes = 4294967296
+disk_io_bps = 104857600
+network_bps = 104857600
+
+[docker.network_config]
+enable_isolation = true
+allow_internet = false
+dns_servers = ["8.8.8.8", "8.8.4.4"]
+port_mappings = []
+
+[docker.container_timeout]
+secs = 3600
+nanos = 0
+
+[docker.registry]
+url = "docker.io"
+verify_signatures = true
+allowed_registries = ["docker.io", "ghcr.io", "quay.io"]
+
+[validator]
+enabled = true
+strict_ssh_restrictions = false
+ssh_port = 22
+
+[validator.access_config]
+ip_whitelist = []
+
+[validator.access_config.required_permissions]
+
+[validator.access_config.hotkey_verification]
+enabled = true
+challenge_timeout_seconds = 300
+max_signature_attempts = 3
+cleanup_interval_seconds = 600
+
+[validator.access_config.rate_limits]
+ssh_requests_per_minute = 10
+api_requests_per_minute = 100
+burst_allowance = 20
+rate_limit_window_seconds = 60
+
+[validator.access_config.role_assignments]
+
+[advertised_endpoint]
+grpc_endpoint = "http://185.26.8.109:50051"
+ssh_endpoint = "ssh://185.26.8.109:22"
+health_endpoint = "http://185.26.8.109:50052/health"
+force_tls = false
+
+[advertised_endpoint.port_mappings]
+ssh = 22
+health = 50052

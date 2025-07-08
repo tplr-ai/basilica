@@ -14,13 +14,85 @@ pub mod handlers;
 
 /// Executor management subcommands
 #[derive(Subcommand, Debug)]
+#[command(about = "Manage executors with UUID/HUID dual identifier support")]
+#[command(long_about = r#"Executor Management with Dual Identifier System
+
+Basilica uses a dual identifier system for executors:
+
+1. UUID (Universally Unique Identifier)
+   - Format: 550e8400-e29b-41d4-a716-446655440000
+   - Used internally for data integrity
+   - Guaranteed globally unique
+   - Ideal for scripts and automation
+
+2. HUID (Human-Unique Identifier)
+   - Format: adjective-noun-hex (e.g., swift-falcon-a3f2)
+   - User-friendly and memorable
+   - Used in CLI output by default
+   - Easy to communicate verbally
+
+USAGE:
+You can use either identifier in commands:
+- Full UUID: basilica executor show 550e8400-e29b-41d4-a716-446655440000
+- Full HUID: basilica executor show swift-falcon-a3f2
+- UUID prefix: basilica executor show 550e8400 (min 3 chars)
+- HUID prefix: basilica executor show swift-fal (min 3 chars)
+
+PREFIX MATCHING:
+Minimum 3 characters required for prefix matching.
+If multiple executors match, you'll see all matches with suggestions."#)]
 pub enum ExecutorCommand {
     /// List all configured executors and their health status
+    #[command(long_about = r#"List all executors with optional filtering
+
+USAGE:
+    basilica executor list [OPTIONS]
+
+OPTIONS:
+    -f, --filter <FILTER>    Filter by UUID or HUID prefix (min 3 chars)
+    -v, --verbose            Show UUID + HUID (default: HUID only)
+    -o, --output <FORMAT>    Output format [default: table]
+                            Possible values: table, json, compact, verbose
+
+EXAMPLES:
+    List all executors:
+        $ basilica executor list
+
+    Filter by prefix:
+        $ basilica executor list --filter swift
+
+    Show full details:
+        $ basilica executor list --verbose
+
+    JSON output:
+        $ basilica executor list --output json"#)]
     List,
 
     /// Show detailed information about an executor
+    #[command(long_about = r#"Show detailed information about a specific executor
+
+USAGE:
+    basilica executor show <EXECUTOR_ID> [OPTIONS]
+
+ARGS:
+    <EXECUTOR_ID>    UUID or HUID (full or prefix with min 3 chars)
+
+OPTIONS:
+    -o, --output <FORMAT>    Output format [default: text]
+                            Possible values: text, json
+
+EXAMPLES:
+    Show by full HUID:
+        $ basilica executor show swift-falcon-a3f2
+
+    Show by UUID prefix:
+        $ basilica executor show 550e8400
+
+    JSON output:
+        $ basilica executor show swift-falcon-a3f2 --output json"#)]
     Show {
-        /// Executor ID to show
+        /// Executor ID (UUID or HUID, supports prefix matching with min 3 chars)
+        #[arg(value_name = "EXECUTOR_ID")]
         executor_id: String,
     },
 
@@ -29,13 +101,15 @@ pub enum ExecutorCommand {
 
     /// Restart a specific executor
     Restart {
-        /// Executor ID to restart
+        /// Executor ID (UUID or HUID, supports prefix matching with min 3 chars)
+        #[arg(value_name = "EXECUTOR_ID")]
         executor_id: String,
     },
 
     /// View executor logs
     Logs {
-        /// Executor ID to view logs for
+        /// Executor ID (UUID or HUID, supports prefix matching with min 3 chars)
+        #[arg(value_name = "EXECUTOR_ID")]
         executor_id: String,
         /// Follow logs in real-time
         #[arg(short, long)]
@@ -47,19 +121,22 @@ pub enum ExecutorCommand {
 
     /// Connect directly to an executor
     Connect {
-        /// Executor ID to connect to
+        /// Executor ID (UUID or HUID, supports prefix matching with min 3 chars)
+        #[arg(value_name = "EXECUTOR_ID")]
         executor_id: String,
     },
 
     /// Run diagnostics on an executor
     Diagnostics {
-        /// Executor ID to diagnose
+        /// Executor ID (UUID or HUID, supports prefix matching with min 3 chars)
+        #[arg(value_name = "EXECUTOR_ID")]
         executor_id: String,
     },
 
     /// Ping an executor to test connectivity
     Ping {
-        /// Executor ID to ping
+        /// Executor ID (UUID or HUID, supports prefix matching with min 3 chars)
+        #[arg(value_name = "EXECUTOR_ID")]
         executor_id: String,
     },
 }
@@ -130,6 +207,98 @@ pub enum DatabaseCommand {
 
     /// Check database integrity
     Integrity,
+}
+
+/// Manual executor assignment subcommands
+#[derive(Subcommand, Debug)]
+#[command(about = "Manage executor-validator assignments")]
+pub enum AssignmentCommand {
+    /// Assign an executor to a validator
+    #[command(long_about = r#"Assign an executor to a validator
+
+USAGE:
+    basilica assignment assign <EXECUTOR_ID> <VALIDATOR_HOTKEY> [OPTIONS]
+
+ARGS:
+    <EXECUTOR_ID>         UUID or HUID (full or prefix with min 3 chars)
+    <VALIDATOR_HOTKEY>    Validator address
+
+OPTIONS:
+    -n, --notes <NOTES>   Optional notes for the assignment
+
+EXAMPLES:
+    Assign by HUID:
+        $ basilica assignment assign swift-falcon-a3f2 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+
+    Assign by UUID:
+        $ basilica assignment assign 550e8400-e29b-41d4-a716-446655440000 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+
+    With notes:
+        $ basilica assignment assign swift-falcon-a3f2 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY --notes "Primary GPU node""#)]
+    Assign {
+        /// Executor ID to assign
+        executor_id: String,
+        /// Validator hotkey to assign to
+        validator_hotkey: String,
+        /// Optional notes for the assignment
+        #[arg(short, long)]
+        notes: Option<String>,
+    },
+
+    /// Remove executor assignment
+    Unassign {
+        /// Executor ID to unassign
+        executor_id: String,
+    },
+
+    /// List current assignments
+    List {
+        /// Filter by validator hotkey
+        #[arg(short, long)]
+        validator: Option<String>,
+    },
+
+    /// Show assignment coverage statistics
+    Coverage,
+
+    /// Show validator stakes
+    Stakes {
+        /// Minimum stake threshold in TAO
+        #[arg(long)]
+        min_stake: Option<f64>,
+    },
+
+    /// Get assignment suggestions
+    Suggest {
+        /// Minimum coverage target (0.0 - 1.0)
+        #[arg(long, default_value = "0.5")]
+        min_coverage: f64,
+    },
+
+    /// Export assignments to JSON file
+    Export {
+        /// Output file path
+        path: String,
+    },
+
+    /// Import assignments from JSON file
+    Import {
+        /// Input file path
+        path: String,
+        /// Perform dry run without making changes
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Show assignment history
+    History {
+        /// Filter by executor ID
+        #[arg(short, long)]
+        executor_id: Option<String>,
+        /// Maximum number of records to show
+        #[arg(short, long, default_value = "20")]
+        limit: i64,
+    },
 }
 
 /// Configuration management subcommands
@@ -264,6 +433,14 @@ pub async fn handle_database_command(command: DatabaseCommand, config: &MinerCon
     };
 
     handlers::handle_database_command(operation, config).await
+}
+
+/// Handle assignment management commands
+pub async fn handle_assignment_command(
+    command: &AssignmentCommand,
+    config: &MinerConfig,
+) -> Result<()> {
+    handlers::handle_assignment_command(command, config).await
 }
 
 /// Handle configuration management commands

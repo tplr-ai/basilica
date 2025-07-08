@@ -11,6 +11,8 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use crate::executor_manager::{AvailableExecutor, ExecutorManager};
+use crate::persistence::AssignmentDb;
+use sqlx::SqlitePool;
 
 /// Information about a discovered validator
 #[derive(Debug, Clone)]
@@ -32,6 +34,7 @@ pub struct ValidatorDiscovery {
     assignment_strategy: Box<dyn AssignmentStrategy>,
     assignments: Arc<RwLock<HashMap<String, Vec<String>>>>, // validator_hotkey -> executor_ids
     netuid: u16,
+    assignment_db: Option<AssignmentDb>,
 }
 
 /// Strategy for assigning executors to validators
@@ -60,7 +63,14 @@ impl ValidatorDiscovery {
             assignment_strategy,
             assignments: Arc::new(RwLock::new(HashMap::new())),
             netuid,
+            assignment_db: None,
         }
+    }
+
+    /// Set the assignment database for manual assignments
+    pub fn with_assignment_db(mut self, db: AssignmentDb) -> Self {
+        self.assignment_db = Some(db);
+        self
     }
 
     /// Discover validators and update executor assignments
@@ -144,7 +154,25 @@ impl ValidatorDiscovery {
 
     /// Get current assignments for a specific validator
     pub async fn get_validator_assignments(&self, validator_hotkey: &str) -> Option<Vec<String>> {
-        self.assignments.read().await.get(validator_hotkey).cloned()
+        // If we have an assignment DB, use manual assignments from it
+        if let Some(ref db) = self.assignment_db {
+            match db.get_assignments_for_validator(validator_hotkey).await {
+                Ok(assignments) => {
+                    if assignments.is_empty() {
+                        None
+                    } else {
+                        Some(assignments.into_iter().map(|a| a.executor_id).collect())
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to get assignments from database: {}", e);
+                    None
+                }
+            }
+        } else {
+            // Fall back to in-memory assignments (old behavior)
+            self.assignments.read().await.get(validator_hotkey).cloned()
+        }
     }
 
     /// Get all current assignments
@@ -364,9 +392,103 @@ impl AssignmentStrategy for RoundRobinAssignment {
     }
 }
 
+/// Manual assignment strategy that reads from the database
+pub struct ManualAssignment {
+    pool: SqlitePool,
+}
+
+impl ManualAssignment {
+    /// Create a new manual assignment strategy
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl AssignmentStrategy for ManualAssignment {
+    async fn assign_executors(
+        &self,
+        _validators: Vec<ValidatorInfo>,
+        _executors: Vec<AvailableExecutor>,
+        _current_assignments: &HashMap<String, Vec<String>>,
+    ) -> HashMap<String, Vec<String>> {
+        let db = AssignmentDb::new(self.pool.clone());
+
+        // Get all assignments from the database
+        match db.get_all_assignments().await {
+            Ok(assignments) => {
+                let mut result: HashMap<String, Vec<String>> = HashMap::new();
+
+                // Group assignments by validator
+                for assignment in assignments {
+                    result
+                        .entry(assignment.validator_hotkey)
+                        .or_default()
+                        .push(assignment.executor_id);
+                }
+
+                info!(
+                    "Loaded {} validator assignments from database",
+                    result.len()
+                );
+                for (validator, executors) in &result {
+                    debug!(
+                        "Validator {} has {} executors assigned",
+                        validator,
+                        executors.len()
+                    );
+                }
+
+                result
+            }
+            Err(e) => {
+                warn!("Failed to load assignments from database: {}", e);
+                HashMap::new()
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::MinerConfig;
+    use crate::executor_manager::ExecutorManager;
+    use crate::persistence::RegistrationDb;
+    use sqlx::SqlitePool;
+
+    async fn setup_test_db() -> Result<SqlitePool> {
+        let pool = SqlitePool::connect("sqlite::memory:").await?;
+        let assignment_db = AssignmentDb::new(pool.clone());
+        assignment_db.run_migrations().await?;
+        Ok(pool)
+    }
+
+    fn create_test_config() -> MinerConfig {
+        use crate::config::MinerBittensorConfig;
+        use common::config::{BittensorConfig, DatabaseConfig};
+
+        MinerConfig {
+            bittensor: MinerBittensorConfig {
+                common: BittensorConfig {
+                    wallet_name: "test_wallet".to_string(),
+                    hotkey_name: "test_hotkey".to_string(),
+                    network: "local".to_string(),
+                    netuid: 999,
+                    chain_endpoint: Some("ws://127.0.0.1:9944".to_string()),
+                    weight_interval_secs: 300,
+                },
+                coldkey_name: "test_coldkey".to_string(),
+                skip_registration: true,
+                ..Default::default()
+            },
+            database: DatabaseConfig {
+                url: "sqlite::memory:".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
 
     #[tokio::test]
     async fn test_round_robin_assignment() {
@@ -420,5 +542,186 @@ mod tests {
             &vec!["exec1", "exec3"]
         );
         assert_eq!(assignments.get("validator2").unwrap(), &vec!["exec2"]);
+    }
+
+    #[tokio::test]
+    async fn test_manual_assignment_empty_database() -> Result<()> {
+        let pool = setup_test_db().await?;
+        let strategy = ManualAssignment::new(pool);
+
+        let validators = vec![
+            ValidatorInfo {
+                uid: 1,
+                hotkey: "val-1".to_string(),
+                stake: 1000,
+                axon_endpoint: Some("1.1.1.1:8080".to_string()),
+            },
+            ValidatorInfo {
+                uid: 2,
+                hotkey: "val-2".to_string(),
+                stake: 2000,
+                axon_endpoint: Some("2.2.2.2:8080".to_string()),
+            },
+        ];
+
+        let executors = vec![];
+        let current_assignments = HashMap::new();
+
+        let assignments = strategy
+            .assign_executors(validators, executors, &current_assignments)
+            .await;
+
+        // Should return empty assignments when database is empty
+        assert_eq!(assignments.len(), 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_manual_assignment_with_data() -> Result<()> {
+        let pool = setup_test_db().await?;
+        let db = AssignmentDb::new(pool.clone());
+
+        // Create test assignments
+        db.create_assignment("exec-1", "val-1", "test", None)
+            .await?;
+        db.create_assignment("exec-2", "val-1", "test", None)
+            .await?;
+        db.create_assignment("exec-3", "val-2", "test", None)
+            .await?;
+        db.create_assignment("exec-4", "val-3", "test", None)
+            .await?;
+
+        let strategy = ManualAssignment::new(pool);
+
+        // Strategy ignores passed validators/executors and reads from DB
+        let assignments = strategy
+            .assign_executors(vec![], vec![], &HashMap::new())
+            .await;
+
+        assert_eq!(assignments.len(), 3); // 3 validators have assignments
+
+        // Check validator 1 has 2 executors
+        let val1_execs = assignments.get("val-1").unwrap();
+        assert_eq!(val1_execs.len(), 2);
+        assert!(val1_execs.contains(&"exec-1".to_string()));
+        assert!(val1_execs.contains(&"exec-2".to_string()));
+
+        // Check validator 2 has 1 executor
+        let val2_execs = assignments.get("val-2").unwrap();
+        assert_eq!(val2_execs.len(), 1);
+        assert_eq!(val2_execs[0], "exec-3");
+
+        // Check validator 3 has 1 executor
+        let val3_execs = assignments.get("val-3").unwrap();
+        assert_eq!(val3_execs.len(), 1);
+        assert_eq!(val3_execs[0], "exec-4");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_manual_assignment_reassignment() -> Result<()> {
+        let pool = setup_test_db().await?;
+        let db = AssignmentDb::new(pool.clone());
+        let strategy = ManualAssignment::new(pool.clone());
+
+        // Initial assignment
+        db.create_assignment("exec-1", "val-1", "test", None)
+            .await?;
+
+        let assignments1 = strategy
+            .assign_executors(vec![], vec![], &HashMap::new())
+            .await;
+
+        assert_eq!(assignments1.len(), 1);
+        assert_eq!(assignments1.get("val-1").unwrap()[0], "exec-1");
+
+        // Reassign executor to different validator
+        db.delete_assignment("exec-1", "test").await?;
+        db.create_assignment("exec-1", "val-2", "test", None)
+            .await?;
+
+        let assignments2 = strategy
+            .assign_executors(vec![], vec![], &HashMap::new())
+            .await;
+
+        assert_eq!(assignments2.len(), 1);
+        assert!(!assignments2.contains_key("val-1"));
+        assert_eq!(assignments2.get("val-2").unwrap()[0], "exec-1");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[ignore] // Ignore by default as it requires network access and is just a config test
+    async fn test_validator_discovery_with_manual_assignments() -> Result<()> {
+        let pool = setup_test_db().await?;
+        let assignment_db = AssignmentDb::new(pool.clone());
+
+        // Create assignments
+        assignment_db
+            .create_assignment("exec-1", "validator-hotkey-1", "test", None)
+            .await?;
+        assignment_db
+            .create_assignment("exec-2", "validator-hotkey-1", "test", None)
+            .await?;
+        assignment_db
+            .create_assignment("exec-3", "validator-hotkey-2", "test", None)
+            .await?;
+
+        // Create test config with executors and skip_registration
+        let mut config = create_test_config();
+        config.executor_management.executors = vec![crate::config::ExecutorConfig {
+            id: "exec-1".to_string(),
+            grpc_address: "127.0.0.1:50051".to_string(),
+            name: None,
+            metadata: None,
+        }];
+
+        // Mock discovery with assignment database
+        let discovery = ValidatorDiscovery {
+            bittensor_service: Arc::new(
+                bittensor::Service::new(config.bittensor.common.clone()).await?,
+            ),
+            executor_manager: Arc::new(
+                ExecutorManager::new(&config, RegistrationDb::new(&Default::default()).await?)
+                    .await?,
+            ),
+            assignment_strategy: Box::new(ManualAssignment::new(pool.clone())),
+            assignments: Arc::new(RwLock::new(HashMap::new())),
+            netuid: 12,
+            assignment_db: Some(assignment_db),
+        };
+
+        // Test getting assignments for specific validator
+        let assignments = discovery
+            .get_validator_assignments("validator-hotkey-1")
+            .await;
+
+        assert!(assignments.is_some());
+        let exec_ids = assignments.unwrap();
+        assert_eq!(exec_ids.len(), 2);
+        assert!(exec_ids.contains(&"exec-1".to_string()));
+        assert!(exec_ids.contains(&"exec-2".to_string()));
+
+        // Test validator with one assignment
+        let assignments = discovery
+            .get_validator_assignments("validator-hotkey-2")
+            .await;
+
+        assert!(assignments.is_some());
+        let exec_ids = assignments.unwrap();
+        assert_eq!(exec_ids.len(), 1);
+        assert_eq!(exec_ids[0], "exec-3");
+
+        // Test validator with no assignments
+        let assignments = discovery
+            .get_validator_assignments("validator-hotkey-3")
+            .await;
+
+        assert!(assignments.is_none());
+
+        Ok(())
     }
 }
