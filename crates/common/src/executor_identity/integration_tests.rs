@@ -10,9 +10,11 @@
 mod tests {
     use super::super::*;
     use std::collections::{HashMap, HashSet};
-    use std::sync::Arc;
     use std::time::{Duration, Instant};
     use uuid::Uuid;
+
+    #[cfg(feature = "sqlite")]
+    use std::sync::Arc;
 
     // Helper to create a test identity store
     #[cfg(feature = "sqlite")]
