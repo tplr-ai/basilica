@@ -1,5 +1,5 @@
 [package]
-name = "integration_tests"
+name = "integration-tests"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,25 +16,34 @@ sha2 = "0.10"
 tempfile = "3.8"
 futures = "0.3"
 reqwest = { version = "0.11", features = ["json"] }
+chrono = "0.4"
+num_cpus = "1.16"
+prost-types = "0.12"
+dirs = "5.0"
+rand = "0.8"
 
 # Internal dependencies
 validator = { path = "../validator" }
 protocol = { path = "../protocol" }
 common = { path = "../common" }
-gpu-attestor = { path = "../gpu-attestor" }
 
 [dev-dependencies]
 criterion = "0.5"
-
-[[test]]
-name = "gpu_pow_e2e"
-path = "tests/gpu_pow_e2e.rs"
 
 [[test]]
 name = "miner_executor_flow"
 path = "tests/miner_executor_flow.rs"
 
 [[test]]
-name = "freivalds_e2e"
-path = "tests/freivalds_e2e.rs"
+name = "secure_gpu_validation_e2e"
+path = "tests/secure_gpu_validation_e2e.rs"
+
+
+[[test]]
+name = "vm_secure_validation_full_e2e"
+path = "tests/vm_secure_validation_full_e2e.rs"
+
+[[test]]
+name = "vm_direct_validation_e2e"
+path = "tests/vm_direct_validation_e2e.rs"
 

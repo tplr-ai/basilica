@@ -75,7 +75,7 @@ async fn restart_executor(
     db: RegistrationDb,
 ) -> Result<()> {
     info!("Restarting executor: {}", executor_id);
-    println!("🔄 Restarting executor: {executor_id}");
+    println!("Restarting executor: {executor_id}");
 
     // Find executor configuration
     let executor_config = config
@@ -112,7 +112,7 @@ async fn restart_executor(
 
     match restart_result {
         Ok(_) => {
-            println!("✅ Executor restart command sent successfully");
+            println!("Executor restart command sent successfully");
 
             // Wait a moment and check if it comes back online
             println!("   Waiting for executor to come back online...");
@@ -121,17 +121,17 @@ async fn restart_executor(
             // Check health again
             if let Ok(new_health) = check_executor_health(&executor_config.grpc_address).await {
                 if new_health {
-                    println!("✅ Executor is back online and healthy");
+                    println!("Executor is back online and healthy");
                 } else {
-                    println!("⚠️  Executor restart completed but health check failed");
+                    println!("WARNING: Executor restart completed but health check failed");
                 }
             } else {
-                println!("⚠️  Could not verify executor health after restart");
+                println!("WARNING: Could not verify executor health after restart");
             }
         }
         Err(e) => {
             error!("Failed to restart executor: {}", e);
-            println!("❌ Failed to restart executor: {e}");
+            println!("ERROR: Failed to restart executor: {e}");
             return Err(e);
         }
     }
@@ -150,7 +150,7 @@ async fn view_executor_logs(
         "Viewing logs for executor: {} (follow: {})",
         executor_id, follow
     );
-    println!("📋 Viewing logs for executor: {executor_id}");
+    println!("Viewing logs for executor: {executor_id}");
 
     // Find executor configuration
     let executor_config = config
@@ -188,10 +188,10 @@ async fn connect_to_executor(executor_id: &str, config: &MinerConfig) -> Result<
     println!("   Testing gRPC connection...");
     match test_grpc_connection(&executor_config.grpc_address).await {
         Ok(_) => {
-            println!("✅ gRPC connection successful");
+            println!("gRPC connection successful");
         }
         Err(e) => {
-            println!("❌ gRPC connection failed: {e}");
+            println!("ERROR: gRPC connection failed: {e}");
         }
     }
 
@@ -223,8 +223,8 @@ async fn connect_to_executor(executor_id: &str, config: &MinerConfig) -> Result<
             // Execute SSH connection
             let ssh_result = establish_ssh_connection(&ssh_config).await;
             match ssh_result {
-                Ok(_) => println!("✅ SSH connection established"),
-                Err(e) => println!("❌ SSH connection failed: {e}"),
+                Ok(_) => println!("SSH connection established"),
+                Err(e) => println!("ERROR: SSH connection failed: {e}"),
             }
         }
     } else {
@@ -246,7 +246,7 @@ async fn run_executor_diagnostics(
     db: RegistrationDb,
 ) -> Result<()> {
     info!("Running diagnostics for executor: {}", executor_id);
-    println!("🔍 Running diagnostics for executor: {executor_id}");
+    println!("Running diagnostics for executor: {executor_id}");
 
     // Find executor configuration
     let executor_config = config
@@ -275,9 +275,9 @@ async fn run_executor_diagnostics(
         println!(
             "Status: {}",
             if health.is_healthy {
-                "✅ Healthy"
+                "Healthy"
             } else {
-                "❌ Unhealthy"
+                "ERROR: Unhealthy"
             }
         );
         println!("Consecutive Failures: {}", health.consecutive_failures);
@@ -291,17 +291,17 @@ async fn run_executor_diagnostics(
             println!("Last Error: {error}");
         }
     } else {
-        println!("⚠️  No health records found");
+        println!("WARNING: No health records found");
     }
 
     // Test network connectivity
     println!("\n--- Network Connectivity ---");
     match test_network_connectivity(&executor_config.grpc_address).await {
         Ok(latency) => {
-            println!("✅ Network reachable (latency: {latency}ms)");
+            println!("Network reachable (latency: {latency}ms)");
         }
         Err(e) => {
-            println!("❌ Network unreachable: {e}");
+            println!("ERROR: Network unreachable: {e}");
         }
     }
 
@@ -309,10 +309,10 @@ async fn run_executor_diagnostics(
     println!("\n--- gRPC Health Check ---");
     match test_grpc_health_check(&executor_config.grpc_address).await {
         Ok(status) => {
-            println!("✅ gRPC health check passed: {status}");
+            println!("gRPC health check passed: {status}");
         }
         Err(e) => {
-            println!("❌ gRPC health check failed: {e}");
+            println!("ERROR: gRPC health check failed: {e}");
         }
     }
 
@@ -321,11 +321,11 @@ async fn run_executor_diagnostics(
     match test_executor_endpoints(&executor_config.grpc_address).await {
         Ok(results) => {
             for (endpoint, success) in results {
-                println!("{} {}", if success { "✅" } else { "❌" }, endpoint);
+                println!("{} {}", if success { "OK" } else { "ERROR" }, endpoint);
             }
         }
         Err(e) => {
-            println!("❌ Executor endpoint tests failed: {e}");
+            println!("ERROR: Executor endpoint tests failed: {e}");
         }
     }
 
@@ -336,14 +336,14 @@ async fn run_executor_diagnostics(
         if let Some(ssh_config) = get_ssh_config_for_host(&host, config) {
             match test_ssh_connectivity(&ssh_config).await {
                 Ok(_) => {
-                    println!("✅ SSH connection successful");
+                    println!("SSH connection successful");
                 }
                 Err(e) => {
-                    println!("❌ SSH connection failed: {e}");
+                    println!("ERROR: SSH connection failed: {e}");
                 }
             }
         } else {
-            println!("⚠️  No SSH configuration found");
+            println!("WARNING: No SSH configuration found");
         }
     }
 
@@ -368,11 +368,11 @@ async fn ping_executor(executor_id: &str, config: &MinerConfig) -> Result<()> {
     match test_grpc_connection(&executor_config.grpc_address).await {
         Ok(_) => {
             let duration = start_time.elapsed();
-            println!("✅ Ping successful: {}ms", duration.as_millis());
+            println!("Ping successful: {}ms", duration.as_millis());
         }
         Err(e) => {
             let duration = start_time.elapsed();
-            println!("❌ Ping failed after {}ms: {}", duration.as_millis(), e);
+            println!("ERROR: Ping failed after {}ms: {}", duration.as_millis(), e);
             return Err(e);
         }
     }

@@ -27,12 +27,12 @@ use system_profile::SystemProfileService;
 use tracing::info;
 use validator_access::ValidatorAccessService;
 
-use protocol::common::{ChallengeResult, LogEntry};
+use protocol::common::LogEntry;
 use protocol::executor_control::{
     executor_control_server::{ExecutorControl, ExecutorControlServer},
-    BenchmarkRequest, BenchmarkResponse, ChallengeRequest, ChallengeResponse, ContainerOpRequest,
-    ContainerOpResponse, HealthCheckRequest, HealthCheckResponse, LogSubscriptionRequest,
-    ProvisionAccessRequest, ProvisionAccessResponse, SystemProfileRequest, SystemProfileResponse,
+    BenchmarkRequest, BenchmarkResponse, ContainerOpRequest, ContainerOpResponse,
+    HealthCheckRequest, HealthCheckResponse, LogSubscriptionRequest, ProvisionAccessRequest,
+    ProvisionAccessResponse, SystemProfileRequest, SystemProfileResponse,
 };
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -341,62 +341,6 @@ impl ExecutorControl for ExecutorControlService {
             profile_hash,
             error: None,
         }))
-    }
-
-    async fn execute_computational_challenge(
-        &self,
-        request: tonic::Request<ChallengeRequest>,
-    ) -> Result<tonic::Response<ChallengeResponse>, tonic::Status> {
-        let req = request.into_inner();
-        info!(
-            "Computational challenge requested by validator: {}",
-            req.validator_hotkey
-        );
-
-        let params = req
-            .parameters
-            .ok_or_else(|| tonic::Status::invalid_argument("Challenge parameters required"))?;
-
-        match params.challenge_type.as_str() {
-            "hardware_attestation" => {
-                // Generate hardware attestation report
-                let attestation =
-                    gpu_attestor::attestation::AttestationBuilder::new(self.state.id.to_string())
-                        .build();
-
-                // Attestation is already complete
-
-                let result = ChallengeResult {
-                    solution: serde_json::to_string(&attestation)
-                        .map_err(|e| tonic::Status::internal(format!("Failed to serialize attestation: {e}")))?,
-                    execution_time_ms: 0, // Attestation is not time-based
-                    gpu_utilization: vec![],
-                    memory_usage_mb: 0,
-                    error_message: String::new(),
-                    metadata_json: serde_json::json!({
-                        "challenge_type": "hardware_attestation",
-                        "validator": req.validator_hotkey,
-                        "nonce": req.nonce,
-                        "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
-                    }).to_string(),
-                    result_checksum: vec![],  // Attestation doesn't use checksum
-                    success: true,
-                    gpu_model: String::new(),  // Attestation includes GPU info in solution
-                    vram_allocated_mb: 0,
-                    challenge_id: req.nonce.clone(),
-                };
-
-                Ok(tonic::Response::new(ChallengeResponse {
-                    result: Some(result),
-                    metadata: Default::default(),
-                    error: None,
-                }))
-            }
-            _ => Err(tonic::Status::invalid_argument(format!(
-                "Unknown challenge type: {}",
-                params.challenge_type
-            ))),
-        }
     }
 
     async fn execute_benchmark(

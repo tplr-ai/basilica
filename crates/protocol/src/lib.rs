@@ -100,16 +100,10 @@ pub mod basilca {
             include!("gen/basilca.validator.v1.rs");
         }
     }
-    
+
     pub mod gpu_pow {
         pub mod v1 {
             include!("gen/basilca.gpu_pow.v1.rs");
-        }
-    }
-    
-    pub mod freivalds_gpu_pow {
-        pub mod v1 {
-            include!("gen/basilca.freivalds_gpu_pow.v1.rs");
         }
     }
 }

@@ -7,6 +7,7 @@ pub mod api;
 pub mod bittensor_core;
 pub mod cli;
 pub mod config;
+pub mod gpu;
 pub mod journal;
 pub mod metrics;
 pub mod miner_prover;
@@ -35,8 +36,7 @@ pub use persistence::entities::{
 pub use persistence::SimplePersistence;
 pub use ssh::{ExecutorSshDetails, ValidatorSshClient};
 pub use validation::{
-    AttestationResult, HardwareSpecs, HardwareValidator, HardwareValidatorFactory,
-    ValidationConfig, ValidationError,
+    types::{ValidationConfig, ValidationError},
 };
 
 /// Re-export common error types

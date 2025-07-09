@@ -34,7 +34,6 @@ build_and_tag() {
             echo -e "${YELLOW}Creating Docker image for ${service}...${NC}"
             docker build -t "$tag" -f "scripts/${service}/Dockerfile" \
                 --build-arg BUILD_MODE=release \
-                ${VALIDATOR_PUBLIC_KEY:+--build-arg VALIDATOR_PUBLIC_KEY="$VALIDATOR_PUBLIC_KEY"} \
                 .
             echo -e "${GREEN}✓ Built ${tag}${NC}"
         else
@@ -55,11 +54,9 @@ if [ ! -f "$PROJECT_ROOT/public_key.hex" ]; then
     ./scripts/gen-key.sh
 fi
 
-# Export the public key for gpu-attestor build
-export VALIDATOR_PUBLIC_KEY=$(cat "$PROJECT_ROOT/public_key.hex")
 
 # Build all services
-services=("validator" "miner" "executor" "gpu-attestor")
+services=("validator" "miner" "executor")
 failed=0
 
 for service in "${services[@]}"; do

@@ -9,6 +9,7 @@ The GPU Proof-of-Work (PoW) system in Basilisk ensures that miners actually poss
 ### 1. Challenge Generation (Validator Side)
 
 The validator generates a challenge with the following parameters:
+
 - **Random Seed**: A 64-bit random number that prevents precomputation
 - **Matrix Dimension**: Size of square matrices (e.g., 256x256)
 - **Number of Matrices**: How many matrices to generate (targets ~90% VRAM usage)
@@ -31,6 +32,7 @@ ChallengeParameters {
 ### 2. Challenge Execution (Miner Side)
 
 The miner's `gpu-attestor` executes the challenge:
+
 1. **Matrix Generation**: Uses Philox4x32_10 PRNG with the seed to generate all matrices on GPU
 2. **Matrix Selection**: Extracts the two specified matrices
 3. **Matrix Multiplication**: Performs C = A × B using CUDA
@@ -40,6 +42,7 @@ The miner's `gpu-attestor` executes the challenge:
 ### 3. Verification (Validator Side)
 
 The validator verifies the result by:
+
 1. **GPU Model Check**: Only validates if miner's GPU matches validator's GPU
 2. **Local Execution**: Runs the exact same challenge on validator's GPU
 3. **Checksum Comparison**: Verifies the checksums match exactly
@@ -49,21 +52,25 @@ The validator verifies the result by:
 ## Security Properties
 
 ### Prevents Precomputation
+
 - Random seed makes it impossible to precompute results
 - Seed is combined with matrix index for deterministic generation
 - Each challenge is unique and unpredictable
 
 ### Requires Actual GPU
+
 - No CPU fallback - GPU is mandatory
 - Matrix operations are optimized for GPU parallelism
 - Large memory requirements (GB of VRAM) make CPU execution impractical
 
 ### Same-Type Validation
+
 - Validators can only verify GPUs they actually possess
 - H100 validators verify H100 miners
 - Prevents false claims about GPU models
 
 ### Timing Constraints
+
 - Execution must complete within reasonable time
 - Too fast indicates potential cheating
 - Too slow indicates inferior hardware
@@ -89,8 +96,8 @@ The validator verifies the result by:
 
 ### Challenge Protocol
 
-```
-Validator                           Miner
+```text
+Validator                           Miner's executor
     |                                 |
     |-------- Challenge Params ------>|
     |         (seed, indices)         |
@@ -135,6 +142,7 @@ cargo test gpu_pow_integration -- --ignored --nocapture
 ## Performance Characteristics
 
 For an NVIDIA H100 with 80GB VRAM:
+
 - Matrix dimension: 256×256
 - Number of matrices: ~9,700 (using 90% of VRAM)
 - Execution time: ~50-200ms depending on matrix indices

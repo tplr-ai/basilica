@@ -2,9 +2,9 @@
 
 use super::*;
 use crate::test_utils::create_test_executor_state;
-use protocol::common::{ChallengeParameters, Timestamp};
+use protocol::common::Timestamp;
 use protocol::executor_control::{
-    BenchmarkRequest, ChallengeRequest, ContainerOpRequest, ContainerSpec, HealthCheckRequest,
+    BenchmarkRequest, ContainerOpRequest, ContainerSpec, HealthCheckRequest,
     LogSubscriptionRequest, ProvisionAccessRequest, SystemProfileRequest,
 };
 use protocol::executor_management::{
@@ -70,66 +70,7 @@ async fn test_execute_system_profile() {
     assert!(!resp.profile_hash.is_empty());
 }
 
-#[tokio::test]
-async fn test_execute_hardware_attestation_challenge() {
-    let state = Arc::new(create_test_executor_state().await);
-    let service = ExecutorControlService::new(state);
 
-    let params = ChallengeParameters {
-        challenge_type: "hardware_attestation".to_string(),
-        seed: "test_seed".to_string(),
-        difficulty: 0,
-        parameters_json: "{}".to_string(),
-        timeout_ms: 60000,
-    };
-
-    let request = Request::new(ChallengeRequest {
-        validator_hotkey: "test_validator".to_string(),
-        challenge_id: "test_challenge_2".to_string(),
-        parameters: Some(params),
-        nonce: 54321,
-        timestamp: Some(Timestamp::default()),
-    });
-
-    let response = service.execute_computational_challenge(request).await;
-    assert!(response.is_ok());
-
-    let resp = response.unwrap().into_inner();
-    assert!(resp.result.is_some());
-
-    let result = resp.result.unwrap();
-    assert!(!result.solution.is_empty());
-    assert_eq!(result.execution_time_ms, 0); // Attestation is not time-based
-}
-
-#[tokio::test]
-async fn test_execute_unknown_challenge_type() {
-    let state = Arc::new(create_test_executor_state().await);
-    let service = ExecutorControlService::new(state);
-
-    let params = ChallengeParameters {
-        challenge_type: "unknown_type".to_string(),
-        seed: "test_seed".to_string(),
-        difficulty: 1000,
-        parameters_json: "{}".to_string(),
-        timeout_ms: 60000,
-    };
-
-    let request = Request::new(ChallengeRequest {
-        validator_hotkey: "test_validator".to_string(),
-        challenge_id: "test_challenge_3".to_string(),
-        parameters: Some(params),
-        nonce: 11111,
-        timestamp: Some(Timestamp::default()),
-    });
-
-    let response = service.execute_computational_challenge(request).await;
-    assert!(response.is_err());
-    assert!(response
-        .unwrap_err()
-        .message()
-        .contains("Unknown challenge type"));
-}
 
 #[tokio::test]
 async fn test_execute_gpu_benchmark() {

@@ -15,6 +15,7 @@ SYNC_WALLETS=false
 FOLLOW_LOGS=false
 HEALTH_CHECK=false
 TIMEOUT=60
+VERITAS_BINARIES_DIR=""
 
 usage() {
     cat <<EOF
@@ -31,11 +32,12 @@ OPTIONS:
     -f, --follow-logs                Stream logs after deployment
     -c, --health-check               Perform health checks on service endpoints
     -t, --timeout SECONDS           SSH timeout (default: 60)
+    -b, --veritas-binaries DIR       Directory containing veritas binaries to deploy
     -h, --help                       Show this help
 
 EXAMPLES:
     # Deploy all services
-    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@185.26.8.109:22
+    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@160.202.129.13:22
 
     # Deploy only miner with wallet sync
     $0 -s miner -m root@51.159.160.71:46088 -w
@@ -44,7 +46,10 @@ EXAMPLES:
     $0 -s validator,miner -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -c
 
     # Deploy all services and follow logs
-    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@185.26.8.109:22 -f
+    $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@160.202.129.13:22 -f
+    
+    # Deploy validator with veritas binaries
+    $0 -s validator -v root@64.247.196.98:9001 -b ../veritas/binaries
 EOF
     exit 1
 }
@@ -122,11 +127,54 @@ build_service() {
         log "ERROR: Build script scripts/$service/build.sh not found"
         exit 1
     fi
-    ./scripts/$service/build.sh
+    
+    # Build with veritas binaries if specified and service is validator
+    if [[ -n "$VERITAS_BINARIES_DIR" && "$service" == "validator" ]]; then
+        ./scripts/$service/build.sh --veritas-binaries "$VERITAS_BINARIES_DIR"
+    else
+        ./scripts/$service/build.sh
+    fi
+    
     if [[ ! -f "./$service" ]]; then
         log "ERROR: Binary ./$service not found after build"
         exit 1
     fi
+}
+
+deploy_veritas_binaries() {
+    local service="$1"
+    if [[ -z "$VERITAS_BINARIES_DIR" ]]; then
+        return
+    fi
+    
+    if [[ ! -d "$VERITAS_BINARIES_DIR" ]]; then
+        log "ERROR: Veritas binaries directory does not exist: $VERITAS_BINARIES_DIR"
+        exit 1
+    fi
+    
+    local executor_binary="$VERITAS_BINARIES_DIR/executor-binary/executor-binary"
+    local validator_binary="$VERITAS_BINARIES_DIR/validator-binary/validator-binary"
+    
+    if [[ ! -f "$executor_binary" ]]; then
+        log "ERROR: executor-binary not found at: $executor_binary"
+        exit 1
+    fi
+    
+    if [[ ! -f "$validator_binary" ]]; then
+        log "ERROR: validator-binary not found at: $validator_binary"
+        exit 1
+    fi
+    
+    log "Deploying veritas binaries to $service"
+    ssh_cmd "$service" "mkdir -p /opt/basilica/bin"
+    
+    scp_file "$service" "$executor_binary" "/opt/basilica/bin/executor-binary"
+    scp_file "$service" "$validator_binary" "/opt/basilica/bin/validator-binary"
+    
+    ssh_cmd "$service" "chmod +x /opt/basilica/bin/executor-binary"
+    ssh_cmd "$service" "chmod +x /opt/basilica/bin/validator-binary"
+    
+    log "Veritas binaries deployed successfully"
 }
 
 deploy_service() {
@@ -179,6 +227,11 @@ deploy_service() {
     scp_file "$service" "config/$service.correct.toml" "/opt/basilica/config/$service.toml"
 
     ssh_cmd "$service" "mkdir -p /opt/basilica/data && chmod 755 /opt/basilica/data"
+    
+    # Deploy veritas binaries if specified (only for validator/executor services)
+    if [[ "$service" == "validator" || "$service" == "executor" ]]; then
+        deploy_veritas_binaries "$service"
+    fi
 
     log "Setting up data directories and permissions for $service"
     case $service in
@@ -197,6 +250,7 @@ deploy_service() {
             start_cmd="$start_cmd ./miner --config config/miner.toml > miner.log 2>&1 &"
             ;;
         executor)
+            # CRITICAL: Executor requires sudo/root permissions for container management and system access
             start_cmd="$start_cmd sudo ./executor --server --config config/executor.toml > executor.log 2>&1 &"
             ;;
     esac
@@ -210,6 +264,7 @@ deploy_service() {
             timeout 15 ssh -o ConnectTimeout=5 "$MINER_USER@$MINER_HOST" -p "$MINER_PORT" "$start_cmd" || true
             ;;
         executor)
+            # IMPORTANT: Executor must be started with sudo for proper permissions
             timeout 15 ssh -o ConnectTimeout=5 "$EXECUTOR_USER@$EXECUTOR_HOST" -p "$EXECUTOR_PORT" "$start_cmd" || true
             ;;
     esac
@@ -217,6 +272,23 @@ deploy_service() {
     sleep 5
     if ssh_cmd "$service" "pgrep -f $service > /dev/null"; then
         log "$service started successfully"
+
+        # Special verification for executor requiring root permissions
+        if [[ "$service" == "executor" ]]; then
+            log "Verifying executor is running with proper permissions..."
+            if ssh_cmd "$service" "ps aux | grep -v grep | grep 'root.*executor'" > /dev/null; then
+                log "Executor confirmed running with root permissions"
+            else
+                log "WARNING: Executor may not be running with root permissions - check manually"
+            fi
+
+            # Verify executor is listening on gRPC port
+            if ssh_cmd "$service" "ss -tlnp | grep :50051" > /dev/null; then
+                log "Executor gRPC server listening on port 50051"
+            else
+                log "WARNING: Executor gRPC port 50051 not found - service may need restart"
+            fi
+        fi
     else
         log "ERROR: $service failed to start"
         ssh_cmd "$service" "tail -10 /opt/basilica/$service.log"
@@ -288,6 +360,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -t|--timeout)
             TIMEOUT="$2"
+            shift 2
+            ;;
+        -b|--veritas-binaries)
+            VERITAS_BINARIES_DIR="$2"
             shift 2
             ;;
         -h|--help)

@@ -31,7 +31,6 @@ services:
     build:
       context: ../..
       args:
-        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
         BITTENSOR_NETWORK: "local"
       dockerfile: scripts/miner/Dockerfile
     networks:
@@ -67,7 +66,6 @@ services:
       context: ../..
       dockerfile: scripts/executor/Dockerfile
       args:
-        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
         BITTENSOR_NETWORK: "local"
     networks:
       - basilica_network_dev
@@ -104,7 +102,6 @@ services:
     build:
       context: ../..
       args:
-        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
         BITTENSOR_NETWORK: "local"
       dockerfile: scripts/validator/Dockerfile
     networks:
@@ -151,7 +148,6 @@ services:
     build:
       context: ../..
       args:
-        VALIDATOR_PUBLIC_KEY: "0288547b66a787dcb4c3d5b9abfed073e10a6b3507a292ae0c8da5ee1c3c05dc4e"
         BITTENSOR_NETWORK: "local"
       dockerfile: scripts/public-api/Dockerfile
     networks:

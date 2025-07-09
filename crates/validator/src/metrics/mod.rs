@@ -4,6 +4,7 @@
 //! Implements Prometheus metrics according to the Grafana dashboard compatibility requirements.
 
 pub mod api_metrics;
+pub mod binary_validation_metrics;
 pub mod business_metrics;
 pub mod prometheus_metrics;
 

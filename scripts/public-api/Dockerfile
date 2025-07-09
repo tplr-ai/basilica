@@ -19,6 +19,9 @@ WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 
+# Fetch dependencies
+RUN cargo fetch
+
 # Build arguments
 ARG BUILD_MODE=release
 ARG FEATURES=""
@@ -26,6 +29,11 @@ ARG FEATURES=""
 # Set build environment for network if needed
 ARG BITTENSOR_NETWORK=finney
 ENV BITTENSOR_NETWORK=$BITTENSOR_NETWORK
+
+# Set space-saving environment variables
+ENV CARGO_TARGET_DIR=/tmp/target
+ENV CARGO_INCREMENTAL=0
+ENV RUST_BACKTRACE=1
 
 # Build the public-api binary
 RUN if [ "$BUILD_MODE" = "release" ]; then \
@@ -40,7 +48,10 @@ RUN if [ "$BUILD_MODE" = "release" ]; then \
         else \
             cargo build -p public-api; \
         fi; \
-    fi
+    fi && \
+    # Clean up intermediate build artifacts to save space
+    rm -rf /tmp/target/debug/deps /tmp/target/debug/incremental /tmp/target/release/deps /tmp/target/release/incremental && \
+    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -54,7 +65,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the built binary
 ARG BUILD_MODE=release
-COPY --from=builder /workspace/target/${BUILD_MODE}/public-api /usr/local/bin/public-api
+COPY --from=builder /tmp/target/${BUILD_MODE}/public-api /usr/local/bin/public-api
 
 # Make binary executable
 RUN chmod +x /usr/local/bin/public-api

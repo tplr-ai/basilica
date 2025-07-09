@@ -47,13 +47,6 @@ check_prerequisites() {
         GPU_AVAILABLE=false
     fi
     
-    if [ -z "$VALIDATOR_PUBLIC_KEY" ]; then
-        if [ -f "../../public_key.hex" ]; then
-            export VALIDATOR_PUBLIC_KEY=$(cat ../../public_key.hex)
-        else
-            export VALIDATOR_PUBLIC_KEY="0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
-        fi
-    fi
     
     log_success "Prerequisites check completed"
 }

@@ -7,7 +7,6 @@ use super::miner_client::MinerClientConfig;
 use super::verification::VerificationEngine;
 use crate::config::{AutomaticVerificationConfig, SshSessionConfig, VerificationConfig};
 use crate::ssh::{SshAutomationComponents, ValidatorSshClient};
-use crate::validation::validator::HardwareValidator;
 use anyhow::{Context, Result};
 use common::identity::Hotkey;
 use std::sync::Arc;
@@ -19,7 +18,6 @@ pub struct VerificationEngineBuilder {
     automatic_verification_config: AutomaticVerificationConfig,
     ssh_session_config: SshSessionConfig,
     validator_hotkey: Hotkey,
-    hardware_validator: Option<Arc<HardwareValidator>>,
     bittensor_service: Option<Arc<bittensor::Service>>,
     ssh_client: Option<Arc<ValidatorSshClient>>,
 }
@@ -37,16 +35,9 @@ impl VerificationEngineBuilder {
             automatic_verification_config,
             ssh_session_config,
             validator_hotkey,
-            hardware_validator: None,
             bittensor_service: None,
             ssh_client: None,
         }
-    }
-
-    /// Set hardware validator component
-    pub fn with_hardware_validator(mut self, hardware_validator: Arc<HardwareValidator>) -> Self {
-        self.hardware_validator = Some(hardware_validator);
-        self
     }
 
     /// Set Bittensor service for authentication
@@ -100,7 +91,6 @@ impl VerificationEngineBuilder {
             miner_client_config,
             self.validator_hotkey.clone(),
             ssh_client,
-            self.hardware_validator,
             ssh_automation.enable_dynamic_discovery,
             Some(ssh_automation.ssh_key_manager.clone()),
             self.bittensor_service,
@@ -301,7 +291,6 @@ mod tests {
         // Verify components are properly initialized
         let status = engine.get_ssh_automation_status();
         assert!(status.ssh_key_manager_available);
-        assert!(!status.hardware_validator_available); // Not set in this test
         assert!(!status.bittensor_service_available); // Not set in this test
     }
 
@@ -330,7 +319,6 @@ mod tests {
         let status = SshAutomationStatus {
             dynamic_discovery_enabled: true,
             ssh_key_manager_available: true,
-            hardware_validator_available: false,
             bittensor_service_available: true,
             fallback_key_path: Some(PathBuf::from("/test/key")),
         };
@@ -338,7 +326,6 @@ mod tests {
         let display_str = format!("{status}");
         assert!(display_str.contains("dynamic=true"));
         assert!(display_str.contains("key_manager=true"));
-        assert!(display_str.contains("hardware_validator=false"));
         assert!(display_str.contains("bittensor=true"));
         assert!(display_str.contains("fallback_key=/test/key"));
     }

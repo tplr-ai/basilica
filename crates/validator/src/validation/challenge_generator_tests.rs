@@ -50,9 +50,9 @@ mod tests {
         let total_memory = challenge.num_matrices as f64 * matrix_size_bytes;
         let memory_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
 
-        // Should use ~36GB (90% of 40GB)
+        // Should use close to 30GB (limited by matrix cap of 15000)
         println!("A100 actual memory usage: {memory_gb:.2}GB");
-        assert!(memory_gb > 30.0 && memory_gb < 38.0);
+        assert!(memory_gb > 28.0 && memory_gb < 32.0);
 
         // Should not exceed A100 cap
         assert!(challenge.num_matrices <= 15000);
@@ -80,9 +80,9 @@ mod tests {
         let total_memory = challenge.num_matrices as f64 * matrix_size_bytes;
         let memory_gb = total_memory / (1024.0 * 1024.0 * 1024.0);
 
-        // Should use ~14.4GB (90% of 16GB)
+        // Should use close to 5GB (limited by matrix cap of 10000)
         println!("RTX 4080 actual memory usage: {memory_gb:.2}GB");
-        assert!(memory_gb > 5.0 && memory_gb < 15.0);
+        assert!(memory_gb > 4.5 && memory_gb < 6.0);
 
         // Should not exceed small GPU cap
         assert!(challenge.num_matrices <= 10000);

@@ -42,13 +42,12 @@ futures = "0.3"
 async-trait = "0.1"
 toml = "0.8"
 url = "2.5"
-prost-types = "0.13"
+prost-types = { workspace = true }
 
 # Internal dependencies
 common = { path = "../common" }
 protocol = { path = "../protocol" }
 bittensor = { path = "../bittensor" }
-gpu-attestor = { path = "../gpu-attestor", default-features = false }
 
 # Validator-specific dependencies
 # Bittensor integration (placeholder - adjust when available)

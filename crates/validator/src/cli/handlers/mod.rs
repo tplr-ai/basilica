@@ -1,4 +1,3 @@
-use self::validation::{SshConnectArgs, SshVerifyArgs};
 use crate::cli::commands::Command;
 use crate::config::ValidatorConfig;
 use anyhow::Result;
@@ -7,7 +6,6 @@ use common::config::ConfigValidation;
 pub mod database;
 pub mod scores;
 pub mod service;
-pub mod validation;
 pub mod weights;
 
 pub struct CommandHandler;
@@ -28,117 +26,19 @@ impl CommandHandler {
             Command::Status => service::handle_status().await,
             Command::GenConfig { output } => service::handle_gen_config(output).await,
 
-            // New SSH validation commands
-            Command::Connect {
-                host,
-                username,
-                port,
-                private_key,
-                timeout,
-                executor_id,
-            } => {
-                if host.is_none() && username.is_none() && executor_id.is_none() {
-                    validation::print_usage_examples();
-                    return Ok(());
-                }
-
-                let args = SshConnectArgs {
-                    host: host.unwrap_or_else(|| {
-                        eprintln!("Error: --host is required when not using --executor-id");
-                        std::process::exit(1);
-                    }),
-                    username: username.unwrap_or_else(|| {
-                        eprintln!("Error: --username is required when not using --executor-id");
-                        std::process::exit(1);
-                    }),
-                    port,
-                    private_key,
-                    timeout,
-                    executor_id,
-                };
-                validation::handle_ssh_connect(args).await
+            // Validation commands removed with HardwareValidator
+            Command::Connect { .. } => {
+                Err(anyhow::anyhow!("Hardware validation commands have been removed. Use the verification engine API instead."))
             }
 
-            Command::Verify {
-                host,
-                username,
-                port,
-                private_key,
-                timeout,
-                executor_id,
-                miner_uid,
-                gpu_attestor_path,
-                remote_work_dir,
-                execution_timeout,
-                skip_cleanup,
-                verbose,
-            } => {
-                if host.is_none()
-                    && username.is_none()
-                    && executor_id.is_none()
-                    && miner_uid.is_none()
-                {
-                    validation::print_usage_examples();
-                    return Ok(());
-                }
-
-                let ssh_args = if host.is_some() || username.is_some() {
-                    Some(SshConnectArgs {
-                        host: host.unwrap_or_else(|| {
-                            eprintln!("Error: --host is required when not using --executor-id or --miner-uid");
-                            std::process::exit(1);
-                        }),
-                        username: username.unwrap_or_else(|| {
-                            eprintln!("Error: --username is required when not using --executor-id or --miner-uid");
-                            std::process::exit(1);
-                        }),
-                        port,
-                        private_key,
-                        timeout,
-                        executor_id: None,
-                    })
-                } else {
-                    None
-                };
-
-                let args = SshVerifyArgs {
-                    ssh_args,
-                    executor_id,
-                    miner_uid,
-                    gpu_attestor_path,
-                    remote_work_dir,
-                    execution_timeout,
-                    skip_cleanup,
-                    verbose,
-                };
-                validation::handle_ssh_verify(args).await
+            Command::Verify { .. } => {
+                Err(anyhow::anyhow!("Hardware validation commands have been removed. Use the verification engine API instead."))
             }
 
             // Legacy verification command (deprecated)
             #[allow(deprecated)]
-            Command::VerifyLegacy {
-                miner_uid,
-                executor_id,
-                all,
-            } => {
-                HandlerUtils::print_warning("WARNING: This verification method is deprecated!");
-                HandlerUtils::print_info("Please use the new validation commands:");
-                HandlerUtils::print_info("   - validator connect --host <HOST> --username <USER>");
-                HandlerUtils::print_info("   - validator verify --host <HOST> --username <USER>");
-                if let Some(id) = executor_id {
-                    HandlerUtils::print_info(&format!("   - validator verify --executor-id {id}"));
-                }
-                if let Some(uid) = miner_uid {
-                    HandlerUtils::print_info(&format!("   - validator verify --miner-uid {uid}"));
-                }
-                if all {
-                    HandlerUtils::print_info(
-                        "   - Use --miner-uid with multiple UIDs for bulk verification",
-                    );
-                }
-                Err(anyhow::anyhow!(
-                    "Legacy command deprecated. Use 'validator verify' instead."
-                ))
+            Command::VerifyLegacy { .. } => {
+                Err(anyhow::anyhow!("Legacy validation commands have been removed. Use the verification engine API instead."))
             }
 
             Command::Weights { action } => weights::handle_weights(action).await,

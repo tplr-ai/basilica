@@ -19,8 +19,6 @@ service ExecutorControl {
   // Replaces running machine_scrape.py
   rpc ExecuteSystemProfile(SystemProfileRequest) returns (SystemProfileResponse);
   
-  // Execute computational challenge for verification
-  rpc ExecuteComputationalChallenge(ChallengeRequest) returns (ChallengeResponse);
   
   // Execute performance benchmarks
   rpc ExecuteBenchmark(BenchmarkRequest) returns (BenchmarkResponse);
@@ -108,31 +106,6 @@ message SystemProfileResponse {
   basilca.common.v1.ErrorInfo error = 5;
 }
 
-// Challenge execution request
-message ChallengeRequest {
-  // Challenge parameters
-  basilca.common.v1.ChallengeParameters parameters = 1;
-  
-  // Timeout for challenge execution
-  uint64 timeout_seconds = 2;
-  
-  // Requesting validator hotkey
-  string validator_hotkey = 3;
-  
-  // Challenge nonce for uniqueness
-  string nonce = 4;
-}
-
-message ChallengeResponse {
-  // Challenge execution result
-  basilca.common.v1.ChallengeResult result = 1;
-  
-  // Execution metadata
-  map<string, string> metadata = 2;
-  
-  // Error information if failed
-  basilca.common.v1.ErrorInfo error = 3;
-}
 
 // Benchmark execution request
 message BenchmarkRequest {

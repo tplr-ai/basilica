@@ -17,6 +17,7 @@ mod tests;
 mod test_discovery;
 
 pub use discovery::MinerDiscovery;
+// pub use crate::gpu::{GpuScoringEngine, CategoryStats};
 pub use scheduler::VerificationScheduler;
 pub use types::VerificationStats;
 pub use verification::VerificationEngine;

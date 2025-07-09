@@ -7,8 +7,6 @@ use super::miner_client::{MinerClient, MinerClientConfig};
 use super::types::{ExecutorInfo, ExecutorStatus, MinerInfo};
 use crate::config::VerificationConfig;
 use crate::ssh::{ExecutorSshDetails, ValidatorSshClient, ValidatorSshKeyManager};
-use crate::validation::types::AttestationResult;
-use crate::validation::validator::HardwareValidator;
 use anyhow::{Context, Result};
 use common::identity::{ExecutorId, Hotkey, MinerUid};
 use common::ssh::SshConnectionDetails;
@@ -19,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -30,7 +28,6 @@ pub struct VerificationEngine {
     miner_client_config: MinerClientConfig,
     validator_hotkey: Hotkey,
     ssh_client: Arc<ValidatorSshClient>,
-    hardware_validator: Option<Arc<HardwareValidator>>,
     /// Whether to use dynamic discovery or fall back to static config
     use_dynamic_discovery: bool,
     /// SSH key path for executor access (fallback)
@@ -60,7 +57,6 @@ impl VerificationEngine {
             )
             .unwrap(),
             ssh_client: Arc::new(ValidatorSshClient::new()),
-            hardware_validator: None,
             use_dynamic_discovery: false, // Disabled without proper initialization
             ssh_key_path: None,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -313,7 +309,7 @@ impl VerificationEngine {
 
         for executor_info in executor_list {
             match self
-                .verify_executor_with_ssh_automation(&task.miner_endpoint, &executor_info)
+                .verify_executor_with_ssh_automation_enhanced(&task.miner_endpoint, &executor_info)
                 .await
             {
                 Ok(result) => {
@@ -565,366 +561,17 @@ impl VerificationEngine {
         }
     }
 
-    /// Verify executor with SSH automation
+    /// Verify executor with SSH automation (enhanced with binary validation)
     async fn verify_executor_with_ssh_automation(
         &self,
         miner_endpoint: &str,
         executor_info: &ExecutorInfoDetailed,
     ) -> Result<ExecutorVerificationResult> {
-        info!(
-            "[EVAL_FLOW] Starting SSH automation verification for executor {} via miner {}",
-            executor_info.id, miner_endpoint
-        );
-        debug!(
-            "[EVAL_FLOW] Executor info: host={}, port={}, grpc_endpoint={}, capabilities={:?}",
-            executor_info.host,
-            executor_info.port,
-            executor_info.grpc_endpoint,
-            executor_info.capabilities
-        );
-
-        // Check if there's already an active SSH session for this executor
-        {
-            let mut active_sessions = self.active_ssh_sessions.lock().await;
-            if active_sessions.contains(&executor_info.id) {
-                warn!(
-                    "[EVAL_FLOW] SSH session already active for executor {}, skipping concurrent verification",
-                    executor_info.id
-                );
-                return Ok(ExecutorVerificationResult {
-                    executor_id: executor_info.id.clone(),
-                    verification_score: 0.0,
-                    error: Some(
-                        "Concurrent SSH session already active for this executor".to_string(),
-                    ),
-                });
-            }
-            // Mark this executor as having an active session
-            active_sessions.insert(executor_info.id.clone());
-            info!(
-                "[EVAL_FLOW] Marked executor {} as having active SSH session",
-                executor_info.id
-            );
-        }
-
-        // Create authenticated miner client
-        info!("[EVAL_FLOW] Creating authenticated client for SSH verification");
-        let client = self.create_authenticated_client()?;
-
-        // Connect and authenticate to miner
-        info!("[EVAL_FLOW] Establishing connection to miner for SSH session setup");
-        let ssh_connect_start = std::time::Instant::now();
-        let mut connection = match client.connect_and_authenticate(miner_endpoint).await {
-            Ok(conn) => {
-                info!(
-                    "[EVAL_FLOW] SSH verification connection established in {:?}",
-                    ssh_connect_start.elapsed()
-                );
-                conn
-            }
-            Err(e) => {
-                error!(
-                    "[EVAL_FLOW] SSH verification connection failed after {:?}: {}",
-                    ssh_connect_start.elapsed(),
-                    e
-                );
-                self.cleanup_active_session(&executor_info.id).await;
-                return Err(e).context("Failed to connect to miner for SSH verification");
-            }
-        };
-
-        // Generate ephemeral SSH keypair if we have key manager
-        info!(
-            "[EVAL_FLOW] Generating SSH session keys for executor {}",
-            executor_info.id
-        );
-        let key_gen_start = std::time::Instant::now();
-        let (session_id, public_key_openssh, session_key_path) =
-            if let Some(ref key_manager) = self.ssh_key_manager {
-                let session_id = Uuid::new_v4().to_string();
-                info!("[EVAL_FLOW] Session ID generated: {}", session_id);
-
-                // Use persistent SSH key instead of generating session-specific keys
-                let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
-                    Some((public_key, private_key_path)) => {
-                        info!(
-                            "[EVAL_FLOW] Using persistent SSH key for executor {}",
-                            executor_info.id
-                        );
-                        (public_key.clone(), private_key_path.clone())
-                    }
-                    None => {
-                        error!(
-                            "[EVAL_FLOW] No persistent SSH key available for executor {}",
-                            executor_info.id
-                        );
-                        self.cleanup_active_session(&executor_info.id).await;
-                        return Err(anyhow::anyhow!("No persistent SSH key available"));
-                    }
-                };
-
-                info!(
-                    "[EVAL_FLOW] SSH keypair generated in {:?}, public key length: {} chars",
-                    key_gen_start.elapsed(),
-                    public_key_openssh.len()
-                );
-                debug!(
-                    "[EVAL_FLOW] Public key preview: {}...",
-                    public_key_openssh.chars().take(50).collect::<String>()
-                );
-                debug!(
-                    "[EVAL_FLOW] Full public key being sent: {}",
-                    public_key_openssh
-                );
-
-                (session_id, public_key_openssh, key_path)
-            } else {
-                error!(
-                    "[EVAL_FLOW] No SSH key manager available for verification of executor {}",
-                    executor_info.id
-                );
-                self.cleanup_active_session(&executor_info.id).await;
-                return Err(anyhow::anyhow!(
-                    "No SSH key manager available for verification"
-                ));
-            };
-
-        // Request SSH session setup
-        let session_request = InitiateSshSessionRequest {
-            validator_hotkey: self.validator_hotkey.to_string(),
-            executor_id: executor_info.id.clone(),
-            purpose: "automated_verification".to_string(),
-            validator_public_key: public_key_openssh,
-            session_duration_secs: 300, // 5 minutes
-            session_metadata: serde_json::json!({
-                "validator_version": env!("CARGO_PKG_VERSION"),
-                "verification_type": "automated"
-            })
-            .to_string(),
-        };
-
-        info!(
-            "[EVAL_FLOW] Initiating SSH session with executor {} via miner",
-            executor_info.id
-        );
-        debug!("[EVAL_FLOW] Session request: validator_hotkey={}, executor_id={}, purpose={}, duration={}s",
-               session_request.validator_hotkey.chars().take(8).collect::<String>() + "...",
-               session_request.executor_id, session_request.purpose, session_request.session_duration_secs);
-
-        let session_start = std::time::Instant::now();
-        let session_info = match connection.initiate_ssh_session_v2(session_request).await {
-            Ok(info) => {
-                info!(
-                    "[EVAL_FLOW] SSH session initiation response received in {:?}, status={:?}",
-                    session_start.elapsed(),
-                    info.status()
-                );
-                debug!("[EVAL_FLOW] Session details: session_id={}, expires_at={}, credentials_length={}",
-                       info.session_id, info.expires_at, info.access_credentials.len());
-                info
-            }
-            Err(e) => {
-                error!(
-                    "[EVAL_FLOW] Failed to initiate SSH session for executor {} after {:?}: {}",
-                    executor_info.id,
-                    session_start.elapsed(),
-                    e
-                );
-                self.cleanup_active_session(&executor_info.id).await;
-                return Ok(ExecutorVerificationResult {
-                    executor_id: executor_info.id.clone(),
-                    verification_score: 0.0,
-                    error: Some(format!("SSH session initiation failed: {e}")),
-                });
-            }
-        };
-
-        // Check if session was successfully created
-        if session_info.status() != SshSessionStatus::Active {
-            error!(
-                "[EVAL_FLOW] SSH session not active for executor {}: status={:?}",
-                executor_info.id,
-                session_info.status()
-            );
-            self.cleanup_active_session(&executor_info.id).await;
-            return Ok(ExecutorVerificationResult {
-                executor_id: executor_info.id.clone(),
-                verification_score: 0.0,
-                error: Some(format!("SSH session not active: {:?}", session_info.status)),
-            });
-        }
-
-        info!(
-            "[EVAL_FLOW] SSH session active for executor {}: session_id={}, expires_at={}",
-            executor_info.id, session_info.session_id, session_info.expires_at
-        );
-
-        // Allow time for SSH key provisioning to complete on executor
-        info!(
-            "[EVAL_FLOW] Waiting for SSH key provisioning to complete on executor {}",
-            executor_info.id
-        );
-        let provisioning_delay = std::time::Duration::from_millis(5000); // 5 second delay to ensure proper key propagation
-        tokio::time::sleep(provisioning_delay).await;
-        info!(
-            "[EVAL_FLOW] SSH key provisioning delay completed for executor {}",
-            executor_info.id
-        );
-
-        // Parse SSH credentials and test connection
-        info!(
-            "[EVAL_FLOW] Parsing SSH credentials for executor {}",
-            executor_info.id
-        );
-        debug!(
-            "[EVAL_FLOW] Raw credentials: {}",
-            session_info.access_credentials
-        );
-        let ssh_details = match self.parse_ssh_credentials(
-            &session_info.access_credentials,
-            Some(session_key_path.clone()),
-        ) {
-            Ok(details) => {
-                info!("[EVAL_FLOW] SSH credentials parsed successfully: host={}, port={}, username={}",
-                      details.host, details.port, details.username);
-
-                // Verify the private key file exists and has correct permissions
-                if !details.private_key_path.exists() {
-                    error!(
-                        "[EVAL_FLOW] Private key file does not exist: {}",
-                        details.private_key_path.display()
-                    );
-                    self.cleanup_active_session(&executor_info.id).await;
-                    return Err(anyhow::anyhow!(
-                        "Private key file not found: {}",
-                        details.private_key_path.display()
-                    ));
-                }
-
-                if let Ok(metadata) = std::fs::metadata(&details.private_key_path) {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        let mode = metadata.permissions().mode();
-                        debug!(
-                            "[EVAL_FLOW] Private key file permissions: {:o}",
-                            mode & 0o777
-                        );
-                        if (mode & 0o077) != 0 {
-                            warn!("[EVAL_FLOW] Private key file has overly permissive permissions: {:o}", mode & 0o777);
-                        }
-                    }
-                    debug!(
-                        "[EVAL_FLOW] Private key file size: {} bytes",
-                        metadata.len()
-                    );
-                }
-
-                details
-            }
-            Err(e) => {
-                error!(
-                    "[EVAL_FLOW] Failed to parse SSH credentials for executor {}: {}",
-                    executor_info.id, e
-                );
-                self.cleanup_active_session(&executor_info.id).await;
-                return Ok(ExecutorVerificationResult {
-                    executor_id: executor_info.id.clone(),
-                    verification_score: 0.0,
-                    error: Some(format!("Failed to parse SSH credentials: {e}")),
-                });
-            }
-        };
-
-        // Test SSH connection with retry logic
-        info!(
-            "[EVAL_FLOW] Testing SSH connection to executor {} at {}:{}",
-            executor_info.id, ssh_details.host, ssh_details.port
-        );
-        let connection_test_start = std::time::Instant::now();
-
-        let max_retries = 3;
-        #[allow(unused_assignments)]
-        let mut last_error = None;
-        let mut verification_score = 0.0;
-
-        for attempt in 1..=max_retries {
-            match self.ssh_client.test_connection(&ssh_details).await {
-                Ok(_) => {
-                    info!(
-                        "[EVAL_FLOW] SSH connection test successful for executor {} on attempt {} in {:?}",
-                        executor_info.id,
-                        attempt,
-                        connection_test_start.elapsed()
-                    );
-                    verification_score = 0.8; // Good score for successful SSH verification
-                    break;
-                }
-                Err(e) => {
-                    last_error = Some(e);
-                    if attempt < max_retries {
-                        warn!(
-                            "[EVAL_FLOW] SSH connection test failed for executor {} on attempt {}, retrying in 1s: {}",
-                            executor_info.id, attempt, last_error.as_ref().unwrap()
-                        );
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    } else {
-                        error!(
-                            "[EVAL_FLOW] SSH connection test failed for executor {} after {} attempts in {:?}: {}",
-                            executor_info.id,
-                            max_retries,
-                            connection_test_start.elapsed(),
-                            last_error.as_ref().unwrap()
-                        );
-                        verification_score = 0.0;
-                    }
-                }
-            }
-        }
-
-        // Close SSH session
-        info!(
-            "[EVAL_FLOW] Closing SSH session {} for executor {}",
-            session_info.session_id, executor_info.id
-        );
-        let close_request = CloseSshSessionRequest {
-            session_id: session_info.session_id.clone(),
-            validator_hotkey: self.validator_hotkey.to_string(),
-            reason: "verification_complete".to_string(),
-        };
-
-        let close_start = std::time::Instant::now();
-        if let Err(e) = connection.close_ssh_session(close_request).await {
-            warn!(
-                "[EVAL_FLOW] Failed to close SSH session {} after {:?}: {}",
-                session_info.session_id,
-                close_start.elapsed(),
-                e
-            );
-        } else {
-            info!(
-                "[EVAL_FLOW] SSH session {} closed successfully in {:?}",
-                session_info.session_id,
-                close_start.elapsed()
-            );
-        }
-
-        info!(
-            "[EVAL_FLOW] SSH verification completed for executor {} with score: {:.2}",
-            executor_info.id, verification_score
-        );
-
-        // Remove executor from active sessions
-        self.cleanup_active_session(&executor_info.id).await;
-
-        Ok(ExecutorVerificationResult {
-            executor_id: executor_info.id.clone(),
-            verification_score,
-            error: None,
-        })
+        // Direct call to enhanced method
+        self.verify_executor_with_ssh_automation_enhanced(miner_endpoint, executor_info)
+            .await
     }
 
-    /// Store verification result in memory storage
     async fn store_verification_result(&self, miner_uid: u16, score: f64) -> Result<()> {
         info!(
             "Storing verification result for miner {}: score={:.2}",
@@ -983,7 +630,7 @@ impl VerificationEngine {
 
         for executor_info in executor_list {
             match self
-                .verify_executor_with_ssh_automation(&miner.endpoint, &executor_info)
+                .verify_executor_with_ssh_automation_enhanced(&miner.endpoint, &executor_info)
                 .await
             {
                 Ok(result) => {
@@ -1083,7 +730,6 @@ impl VerificationEngine {
         config: VerificationConfig,
         validator_hotkey: Hotkey,
         ssh_client: Arc<ValidatorSshClient>,
-        hardware_validator: Option<Arc<HardwareValidator>>,
         ssh_key_path: Option<PathBuf>,
     ) -> Self {
         let miner_client_config = MinerClientConfig {
@@ -1098,7 +744,6 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
-            hardware_validator,
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -1113,7 +758,6 @@ impl VerificationEngine {
         config: VerificationConfig,
         validator_hotkey: Hotkey,
         ssh_client: Arc<ValidatorSshClient>,
-        hardware_validator: Option<Arc<HardwareValidator>>,
         ssh_key_manager: Arc<ValidatorSshKeyManager>,
     ) -> Result<Self> {
         let miner_client_config = MinerClientConfig {
@@ -1128,7 +772,6 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
-            hardware_validator,
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path: None,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -1143,7 +786,6 @@ impl VerificationEngine {
         config: VerificationConfig,
         bittensor_service: Arc<bittensor::Service>,
         ssh_client: Arc<ValidatorSshClient>,
-        hardware_validator: Option<Arc<HardwareValidator>>,
         ssh_key_path: Option<PathBuf>,
     ) -> Self {
         let validator_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())
@@ -1164,7 +806,6 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
-            hardware_validator,
             use_dynamic_discovery: config.use_dynamic_discovery,
             ssh_key_path,
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -1417,7 +1058,7 @@ impl VerificationEngine {
         );
 
         // Step 1: Use persistent SSH key if we have key manager
-        let (session_id, public_key_openssh, key_path) =
+        let (_session_id, public_key_openssh, key_path) =
             if let Some(ref key_manager) = self.ssh_key_manager {
                 let session_id = Uuid::new_v4().to_string();
                 let (public_key_openssh, key_path) = match key_manager.get_persistent_key() {
@@ -1506,34 +1147,25 @@ impl VerificationEngine {
             Some(self.config.challenge_timeout),
         );
 
-        // Step 5: Perform hardware validation
-        let verification_result = if let Some(ref hardware_validator) = self.hardware_validator {
-            // Perform full hardware validation
-            let result = self
-                .perform_hardware_validation(&executor_ssh_details, hardware_validator)
-                .await?;
-            self.calculate_attestation_score(&result)
-        } else {
-            // Fallback to connection test
-            match self
-                .ssh_client
-                .test_connection(&executor_ssh_details.connection)
-                .await
-            {
-                Ok(_) => {
-                    info!(
-                        "SSH connection test successful for executor {}",
-                        executor.id
-                    );
-                    0.8 // Partial score for successful connection
-                }
-                Err(e) => {
-                    error!(
-                        "SSH connection test failed for executor {}: {}",
-                        executor.id, e
-                    );
-                    0.0
-                }
+        // Step 5: Perform SSH connection test
+        let verification_result = match self
+            .ssh_client
+            .test_connection(&executor_ssh_details.connection)
+            .await
+        {
+            Ok(_) => {
+                info!(
+                    "SSH connection test successful for executor {}",
+                    executor.id
+                );
+                0.8 // Score for successful connection
+            }
+            Err(e) => {
+                error!(
+                    "SSH connection test failed for executor {}: {}",
+                    executor.id, e
+                );
+                0.0
             }
         };
 
@@ -1584,49 +1216,6 @@ impl VerificationEngine {
                 )
             },
         )
-    }
-
-    /// Perform hardware validation (placeholder for Arc compatibility)
-    async fn perform_hardware_validation(
-        &self,
-        _executor_ssh_details: &ExecutorSshDetails,
-        _hardware_validator: &Arc<HardwareValidator>,
-    ) -> Result<AttestationResult> {
-        // This is a placeholder since the actual hardware validator needs refactoring
-        // to work with Arc<HardwareValidator> instead of mutable access
-        warn!("Hardware validation not yet implemented for Arc<HardwareValidator>");
-
-        Ok(AttestationResult {
-            executor_id: _executor_ssh_details.executor_id.clone(),
-            validated_at: SystemTime::now(),
-            is_valid: true,
-            hardware_specs: None,
-            signature: None,
-            error_message: None,
-            validation_duration: Duration::from_secs(0),
-        })
-    }
-
-    /// Calculate score from attestation result
-    fn calculate_attestation_score(&self, result: &AttestationResult) -> f64 {
-        if !result.is_valid {
-            return 0.0;
-        }
-
-        // Basic scoring logic
-        let mut score: f64 = 0.5; // Base score for valid attestation
-
-        // Add score for hardware specs if available
-        if result.hardware_specs.is_some() {
-            score += 0.3;
-        }
-
-        // Add score for signature if available
-        if result.signature.is_some() {
-            score += 0.2;
-        }
-
-        score.min(1.0)
     }
 
     /// Parse SSH credentials string into connection details
@@ -1685,11 +1274,6 @@ impl VerificationEngine {
         &self.ssh_key_manager
     }
 
-    /// Get hardware validator reference
-    pub fn hardware_validator(&self) -> &Option<Arc<HardwareValidator>> {
-        &self.hardware_validator
-    }
-
     /// Get bittensor service reference
     pub fn bittensor_service(&self) -> &Option<Arc<bittensor::Service>> {
         &self.bittensor_service
@@ -1706,7 +1290,6 @@ impl VerificationEngine {
         miner_client_config: MinerClientConfig,
         validator_hotkey: Hotkey,
         ssh_client: Arc<ValidatorSshClient>,
-        hardware_validator: Option<Arc<HardwareValidator>>,
         use_dynamic_discovery: bool,
         ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
         bittensor_service: Option<Arc<bittensor::Service>>,
@@ -1723,7 +1306,6 @@ impl VerificationEngine {
             miner_client_config,
             validator_hotkey,
             ssh_client,
-            hardware_validator,
             use_dynamic_discovery,
             ssh_key_path: None, // Not used when SSH key manager is available
             miner_endpoints: Arc::new(RwLock::new(HashMap::new())),
@@ -1748,7 +1330,6 @@ impl VerificationEngine {
         SshAutomationStatus {
             dynamic_discovery_enabled: self.use_dynamic_discovery(),
             ssh_key_manager_available: self.ssh_key_manager().is_some(),
-            hardware_validator_available: self.hardware_validator().is_some(),
             bittensor_service_available: self.bittensor_service().is_some(),
             fallback_key_path: self.ssh_key_path().clone(),
         }
@@ -1757,12 +1338,486 @@ impl VerificationEngine {
     /// Get configuration summary for debugging
     pub fn get_config_summary(&self) -> String {
         format!(
-            "VerificationEngine[dynamic_discovery={}, ssh_key_manager={}, hardware_validator={}, bittensor_service={}]",
+            "VerificationEngine[dynamic_discovery={}, ssh_key_manager={}, bittensor_service={}]",
             self.use_dynamic_discovery(),
             self.ssh_key_manager().is_some(),
-            self.hardware_validator().is_some(),
             self.bittensor_service().is_some()
         )
+    }
+
+    // ====================================================================
+    // Binary Validation Methods
+    // ====================================================================
+
+    /// Execute binary validation using validator-binary
+    async fn execute_binary_validation(
+        &self,
+        ssh_details: &SshConnectionDetails,
+        _session_info: &protocol::miner_discovery::InitiateSshSessionResponse,
+    ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
+        info!("[EVAL_FLOW] Starting binary validation process");
+
+        let binary_config = &self.config.binary_validation;
+
+        // Execute validator-binary locally (it will handle executor binary upload)
+        let execution_start = std::time::Instant::now();
+        let binary_output = self
+            .execute_validator_binary_locally(ssh_details, binary_config)
+            .await?;
+        let execution_duration = execution_start.elapsed();
+
+        info!(
+            "[EVAL_FLOW] Validator binary executed in {:?}",
+            execution_duration
+        );
+
+        // Parse and validate output
+        let validation_result = self.parse_validator_binary_output(&binary_output)?;
+
+        // Calculate validation score
+        let validation_score = self.calculate_binary_validation_score(&validation_result)?;
+
+        Ok(crate::validation::types::ValidatorBinaryOutput {
+            success: validation_result.success,
+            executor_result: validation_result.executor_result,
+            error_message: validation_result.error_message,
+            execution_time_ms: execution_duration.as_millis() as u64,
+            validation_score,
+        })
+    }
+
+    /// Execute validator-binary locally with SSH parameters
+    async fn execute_validator_binary_locally(
+        &self,
+        ssh_details: &SshConnectionDetails,
+        binary_config: &crate::config::BinaryValidationConfig,
+    ) -> Result<Vec<u8>> {
+        info!("[EVAL_FLOW] Executing validator binary locally");
+
+        let mut command = tokio::process::Command::new(&binary_config.validator_binary_path);
+
+        // Configure SSH parameters and executor binary path
+        command
+            .arg("--ssh-host")
+            .arg(&ssh_details.host)
+            .arg("--ssh-port")
+            .arg(ssh_details.port.to_string())
+            .arg("--ssh-user")
+            .arg(&ssh_details.username)
+            .arg("--ssh-key")
+            .arg(&ssh_details.private_key_path)
+            .arg("--executor-path")
+            .arg(&binary_config.executor_binary_path)
+            .arg("--output-format")
+            .arg(&binary_config.output_format)
+            .arg("--timeout")
+            .arg(binary_config.execution_timeout_secs.to_string());
+
+        // Set timeout for entire process
+        let timeout_duration = Duration::from_secs(binary_config.execution_timeout_secs + 10);
+
+        // Debug: log the complete command being executed
+        debug!("[EVAL_FLOW] Executing command: {:?}", command);
+        info!("[EVAL_FLOW] Command args: validator_binary_path={:?}, ssh_host={}, ssh_port={}, ssh_user={}, ssh_key={:?}, executor_binary_path={:?}, output_format={}, timeout={}",
+              binary_config.validator_binary_path, ssh_details.host, ssh_details.port, ssh_details.username,
+              ssh_details.private_key_path, binary_config.executor_binary_path, binary_config.output_format, binary_config.execution_timeout_secs);
+
+        let output = tokio::time::timeout(timeout_duration, command.output())
+            .await
+            .context("Validator binary execution timeout")?
+            .context("Failed to execute validator binary")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!(
+                "Validator binary execution failed: {}",
+                stderr
+            ));
+        }
+
+        Ok(output.stdout)
+    }
+
+    /// Parse validator binary output
+    fn parse_validator_binary_output(
+        &self,
+        output: &[u8],
+    ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
+        let output_str = String::from_utf8_lossy(output);
+
+        // Parse JSON output
+        let parsed_output: crate::validation::types::ValidatorBinaryOutput =
+            serde_json::from_str(&output_str)
+                .context("Failed to parse validator binary JSON output")?;
+
+        // Validate structure
+        if parsed_output.success && parsed_output.executor_result.is_none() {
+            return Err(anyhow::anyhow!(
+                "Validator binary reported success but no executor result provided"
+            ));
+        }
+
+        Ok(parsed_output)
+    }
+
+    /// Calculate binary validation score based on executor result
+    fn calculate_binary_validation_score(
+        &self,
+        validation_result: &crate::validation::types::ValidatorBinaryOutput,
+    ) -> Result<f64> {
+        if !validation_result.success {
+            return Ok(0.0);
+        }
+
+        let executor_result = validation_result
+            .executor_result
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No executor result available for scoring"))?;
+
+        let mut score: f64 = 0.0;
+
+        // Base score for successful execution
+        score += 0.3;
+
+        // Anti-debug check score
+        if executor_result.anti_debug_passed {
+            score += 0.2;
+        }
+
+        // SM utilization score (higher utilization = better score)
+        let avg_utilization = executor_result.sm_utilization.avg_utilization;
+        if avg_utilization > 0.8 {
+            score += 0.2;
+        } else if avg_utilization > 0.6 {
+            score += 0.1;
+        }
+
+        // GPU resource score
+        let gpu_efficiency = executor_result.active_sms as f64 / executor_result.total_sms as f64;
+        if gpu_efficiency > 0.9 {
+            score += 0.15;
+        } else if gpu_efficiency > 0.7 {
+            score += 0.1;
+        }
+
+        // Memory bandwidth score
+        if executor_result.memory_bandwidth_gbps > 500.0 {
+            score += 0.1;
+        } else if executor_result.memory_bandwidth_gbps > 200.0 {
+            score += 0.05;
+        }
+
+        // Computation time score (reasonable timing)
+        let computation_time_ms = executor_result.computation_time_ns / 1_000_000;
+        if computation_time_ms > 10 && computation_time_ms < 5000 {
+            score += 0.05;
+        }
+
+        // Ensure score is within bounds
+        Ok(score.clamp(0.0, 1.0))
+    }
+
+    /// Calculate combined verification score from SSH and binary validation
+    fn calculate_combined_verification_score(
+        &self,
+        ssh_score: f64,
+        binary_score: f64,
+        ssh_successful: bool,
+        binary_successful: bool,
+    ) -> f64 {
+        let binary_config = &self.config.binary_validation;
+
+        // If SSH fails, total score is 0
+        if !ssh_successful {
+            return 0.0;
+        }
+
+        // If binary validation is disabled, use SSH score only
+        if !binary_config.enabled {
+            return ssh_score;
+        }
+
+        // If binary validation is enabled but failed, penalize but don't zero
+        if !binary_successful {
+            return ssh_score * 0.5; // 50% penalty for binary validation failure
+        }
+
+        // Calculate weighted combination
+        let ssh_weight = 1.0 - binary_config.score_weight;
+        let binary_weight = binary_config.score_weight;
+
+        let combined_score = (ssh_score * ssh_weight) + (binary_score * binary_weight);
+
+        // Ensure score is within bounds
+        combined_score.clamp(0.0, 1.0)
+    }
+
+    /// Cleanup SSH session after validation
+    async fn cleanup_ssh_session(
+        &self,
+        session_info: &protocol::miner_discovery::InitiateSshSessionResponse,
+    ) {
+        info!(
+            "[EVAL_FLOW] Cleaning up SSH session {}",
+            session_info.session_id
+        );
+
+        let close_request = protocol::miner_discovery::CloseSshSessionRequest {
+            session_id: session_info.session_id.clone(),
+            validator_hotkey: self.validator_hotkey.to_string(),
+            reason: "binary_validation_complete".to_string(),
+        };
+
+        // Attempt to close session gracefully
+        if let Err(e) = self.close_ssh_session_gracefully(close_request).await {
+            warn!("[EVAL_FLOW] Failed to close SSH session gracefully: {}", e);
+        }
+    }
+
+    /// Helper method for closing SSH sessions gracefully
+    async fn close_ssh_session_gracefully(
+        &self,
+        _close_request: protocol::miner_discovery::CloseSshSessionRequest,
+    ) -> Result<()> {
+        // Create a miner client
+        let _client = self.create_authenticated_client()?;
+
+        // Find the miner endpoint - this is a simplified approach
+        // In a real implementation, you'd need to determine which miner this session belongs to
+        // For now, we'll just log the attempt
+        warn!("SSH session cleanup not fully implemented - session will timeout naturally");
+        Ok(())
+    }
+
+    /// Test SSH connection with the given details
+    async fn test_ssh_connection(&self, ssh_details: &SshConnectionDetails) -> Result<()> {
+        self.ssh_client.test_connection(ssh_details).await
+    }
+
+    /// Establish SSH session (existing implementation helper)
+    async fn establish_ssh_session(
+        &self,
+        miner_endpoint: &str,
+        executor_info: &ExecutorInfoDetailed,
+    ) -> Result<(
+        SshConnectionDetails,
+        protocol::miner_discovery::InitiateSshSessionResponse,
+    )> {
+        // Create authenticated client
+        let client = self.create_authenticated_client()?;
+        let mut connection = client.connect_and_authenticate(miner_endpoint).await?;
+
+        // Get SSH key for session
+        let (private_key_path, public_key_content) =
+            if let Some(ref key_manager) = self.ssh_key_manager {
+                if let Some((public_key, private_key_path)) = key_manager.get_persistent_key() {
+                    (private_key_path.clone(), public_key.clone())
+                } else {
+                    return Err(anyhow::anyhow!("No persistent SSH key available"));
+                }
+            } else {
+                return Err(anyhow::anyhow!("SSH key manager not available"));
+            };
+
+        // Generate unique session ID
+        let session_id = Uuid::new_v4().to_string();
+
+        // Create SSH session request
+        let ssh_request = protocol::miner_discovery::InitiateSshSessionRequest {
+            validator_hotkey: self.validator_hotkey.to_string(),
+            executor_id: executor_info.id.clone(),
+            purpose: "binary_validation".to_string(),
+            validator_public_key: public_key_content,
+            session_duration_secs: 300, // 5 minutes
+            session_metadata: "binary_validation_session".to_string(),
+        };
+
+        // Initiate SSH session
+        let session_info = connection.initiate_ssh_session_v2(ssh_request).await?;
+
+        // Parse SSH credentials
+        let ssh_details =
+            self.parse_ssh_credentials(&session_info.access_credentials, Some(private_key_path))?;
+
+        Ok((ssh_details, session_info))
+    }
+
+    /// Enhanced verify executor with SSH automation and binary validation
+    async fn verify_executor_with_ssh_automation_enhanced(
+        &self,
+        miner_endpoint: &str,
+        executor_info: &ExecutorInfoDetailed,
+    ) -> Result<ExecutorVerificationResult> {
+        info!(
+            "[EVAL_FLOW] Starting enhanced SSH automation verification for executor {} via miner {}",
+            executor_info.id, miner_endpoint
+        );
+
+        let total_start = std::time::Instant::now();
+        let mut validation_details = crate::validation::types::ValidationDetails {
+            ssh_test_duration: Duration::from_secs(0),
+            binary_upload_duration: Duration::from_secs(0),
+            binary_execution_duration: Duration::from_secs(0),
+            total_validation_duration: Duration::from_secs(0),
+            ssh_score: 0.0,
+            binary_score: 0.0,
+            combined_score: 0.0,
+        };
+
+        // Check for active SSH session
+        {
+            let mut active_sessions = self.active_ssh_sessions.lock().await;
+            if active_sessions.contains(&executor_info.id) {
+                warn!(
+                    "[EVAL_FLOW] SSH session already active for executor {}, skipping concurrent verification",
+                    executor_info.id
+                );
+                return Ok(ExecutorVerificationResult {
+                    executor_id: executor_info.id.clone(),
+                    verification_score: 0.0,
+                    ssh_connection_successful: false,
+                    binary_validation_successful: false,
+                    executor_result: None,
+                    error: Some(
+                        "Concurrent SSH session already active for this executor".to_string(),
+                    ),
+                    execution_time: Duration::from_secs(0),
+                    validation_details,
+                });
+            }
+            active_sessions.insert(executor_info.id.clone());
+        }
+
+        // Establish SSH session (existing implementation)
+        let ssh_session_result = self
+            .establish_ssh_session(miner_endpoint, executor_info)
+            .await;
+        let (ssh_details, session_info) = match ssh_session_result {
+            Ok(details) => details,
+            Err(e) => {
+                self.cleanup_active_session(&executor_info.id).await;
+                return Ok(ExecutorVerificationResult {
+                    executor_id: executor_info.id.clone(),
+                    verification_score: 0.0,
+                    ssh_connection_successful: false,
+                    binary_validation_successful: false,
+                    executor_result: None,
+                    error: Some(format!("SSH session establishment failed: {}", e)),
+                    execution_time: total_start.elapsed(),
+                    validation_details,
+                });
+            }
+        };
+
+        // Phase 1: SSH Connection Test (existing implementation)
+        info!(
+            "[EVAL_FLOW] Phase 1: SSH connection test for executor {}",
+            executor_info.id
+        );
+        let ssh_test_start = std::time::Instant::now();
+
+        let ssh_connection_successful = match self.test_ssh_connection(&ssh_details).await {
+            Ok(_) => {
+                info!(
+                    "[EVAL_FLOW] SSH connection test successful for executor {}",
+                    executor_info.id
+                );
+                true
+            }
+            Err(e) => {
+                error!(
+                    "[EVAL_FLOW] SSH connection test failed for executor {}: {}",
+                    executor_info.id, e
+                );
+                false
+            }
+        };
+
+        validation_details.ssh_test_duration = ssh_test_start.elapsed();
+        validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
+
+        // Phase 2: Binary Validation (NEW)
+        let mut binary_validation_successful = false;
+        let mut executor_result = None;
+        let mut binary_score = 0.0;
+
+        info!(
+            "[EVAL_FLOW] Binary validation config check for executor {}: ssh_successful={}, enabled={}, validator_binary_path={:?}",
+            executor_info.id, ssh_connection_successful, self.config.binary_validation.enabled, self.config.binary_validation.validator_binary_path
+        );
+
+        if ssh_connection_successful && self.config.binary_validation.enabled {
+            info!(
+                "[EVAL_FLOW] Phase 2: Binary validation for executor {}",
+                executor_info.id
+            );
+
+            match self
+                .execute_binary_validation(&ssh_details, &session_info)
+                .await
+            {
+                Ok(binary_result) => {
+                    binary_validation_successful = binary_result.success;
+                    executor_result = binary_result.executor_result;
+                    binary_score = binary_result.validation_score;
+                    validation_details.binary_upload_duration = Duration::from_secs(0); // Upload handled by validator binary
+                    validation_details.binary_execution_duration =
+                        Duration::from_millis(binary_result.execution_time_ms);
+
+                    info!(
+                        "[EVAL_FLOW] Binary validation completed for executor {} - success: {}, score: {:.2}",
+                        executor_info.id, binary_validation_successful, binary_score
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        "[EVAL_FLOW] Binary validation failed for executor {}: {}",
+                        executor_info.id, e
+                    );
+                    binary_validation_successful = false;
+                    binary_score = 0.0;
+                }
+            }
+        } else if !self.config.binary_validation.enabled {
+            info!(
+                "[EVAL_FLOW] Binary validation disabled for executor {}",
+                executor_info.id
+            );
+            binary_validation_successful = true; // Not required
+            binary_score = 0.8; // Default score when disabled
+        }
+
+        // Phase 3: Calculate Combined Score
+        let combined_score = self.calculate_combined_verification_score(
+            validation_details.ssh_score,
+            binary_score,
+            ssh_connection_successful,
+            binary_validation_successful,
+        );
+
+        validation_details.combined_score = combined_score;
+        validation_details.binary_score = binary_score;
+        validation_details.total_validation_duration = total_start.elapsed();
+
+        // Phase 4: Cleanup
+        self.cleanup_ssh_session(&session_info).await;
+        self.cleanup_active_session(&executor_info.id).await;
+
+        info!(
+            "[EVAL_FLOW] Enhanced verification completed for executor {} - SSH: {}, Binary: {}, Combined: {:.2}",
+            executor_info.id, ssh_connection_successful, binary_validation_successful, combined_score
+        );
+
+        Ok(ExecutorVerificationResult {
+            executor_id: executor_info.id.clone(),
+            verification_score: combined_score,
+            ssh_connection_successful,
+            binary_validation_successful,
+            executor_result,
+            error: None,
+            execution_time: total_start.elapsed(),
+            validation_details,
+        })
     }
 }
 
@@ -1771,7 +1826,6 @@ impl VerificationEngine {
 pub struct SshAutomationStatus {
     pub dynamic_discovery_enabled: bool,
     pub ssh_key_manager_available: bool,
-    pub hardware_validator_available: bool,
     pub bittensor_service_available: bool,
     pub fallback_key_path: Option<PathBuf>,
 }
@@ -1780,12 +1834,14 @@ impl std::fmt::Display for SshAutomationStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "SSH Automation Status[dynamic={}, key_manager={}, hardware_validator={}, bittensor={}, fallback_key={}]",
+            "SSH Automation Status[dynamic={}, key_manager={}, bittensor={}, fallback_key={}]",
             self.dynamic_discovery_enabled,
             self.ssh_key_manager_available,
-            self.hardware_validator_available,
             self.bittensor_service_available,
-            self.fallback_key_path.as_ref().map(|p| p.display().to_string()).unwrap_or("none".to_string())
+            self.fallback_key_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or("none".to_string())
         )
     }
 }
@@ -1806,7 +1862,12 @@ pub struct ExecutorInfoDetailed {
 pub struct ExecutorVerificationResult {
     pub executor_id: String,
     pub verification_score: f64,
+    pub ssh_connection_successful: bool,
+    pub binary_validation_successful: bool,
+    pub executor_result: Option<crate::validation::types::ExecutorResult>,
     pub error: Option<String>,
+    pub execution_time: Duration,
+    pub validation_details: crate::validation::types::ValidationDetails,
 }
 
 /// Verification step tracking

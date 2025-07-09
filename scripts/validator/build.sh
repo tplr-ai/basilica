@@ -9,6 +9,7 @@ EXTRACT_BINARY=true
 BUILD_IMAGE=true
 RELEASE_MODE=true
 FEATURES=""
+VERITAS_BINARIES_DIR=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -36,17 +37,22 @@ while [[ $# -gt 0 ]]; do
             FEATURES="$2"
             shift 2
             ;;
+        --veritas-binaries)
+            VERITAS_BINARIES_DIR="$2"
+            shift 2
+            ;;
         --help)
-            echo "Usage: $0 [--image-name NAME] [--image-tag TAG] [--no-extract] [--no-image] [--debug] [--features FEATURES]"
+            echo "Usage: $0 [--image-name NAME] [--image-tag TAG] [--no-extract] [--no-image] [--debug] [--features FEATURES] [--veritas-binaries DIR]"
             echo ""
             echo "Options:"
-            echo "  --image-name NAME     Docker image name (default: basilica/validator)"
-            echo "  --image-tag TAG       Docker image tag (default: latest)"
-            echo "  --no-extract          Don't extract binary to local filesystem"
-            echo "  --no-image            Skip Docker image creation"
-            echo "  --debug               Build in debug mode"
-            echo "  --features FEATURES   Additional cargo features to enable"
-            echo "  --help                Show this help message"
+            echo "  --image-name NAME         Docker image name (default: basilica/validator)"
+            echo "  --image-tag TAG           Docker image tag (default: latest)"
+            echo "  --no-extract              Don't extract binary to local filesystem"
+            echo "  --no-image                Skip Docker image creation"
+            echo "  --debug                   Build in debug mode"
+            echo "  --features FEATURES       Additional cargo features to enable"
+            echo "  --veritas-binaries DIR    Directory containing executor-binary and validator-binary"
+            echo "  --help                    Show this help message"
             exit 0
             ;;
         *)
@@ -59,6 +65,37 @@ done
 
 cd "$PROJECT_ROOT"
 
+# Copy veritas binaries to build context if specified
+if [[ -n "$VERITAS_BINARIES_DIR" ]]; then
+    if [[ ! -d "$VERITAS_BINARIES_DIR" ]]; then
+        echo "Error: Veritas binaries directory does not exist: $VERITAS_BINARIES_DIR"
+        exit 1
+    fi
+
+    EXECUTOR_BINARY_PATH="$VERITAS_BINARIES_DIR/executor-binary/executor-binary"
+    VALIDATOR_BINARY_PATH="$VERITAS_BINARIES_DIR/validator-binary/validator-binary"
+
+    if [[ ! -f "$EXECUTOR_BINARY_PATH" ]]; then
+        echo "Error: executor-binary not found at: $EXECUTOR_BINARY_PATH"
+        exit 1
+    fi
+
+    if [[ ! -f "$VALIDATOR_BINARY_PATH" ]]; then
+        echo "Error: validator-binary not found at: $VALIDATOR_BINARY_PATH"
+        exit 1
+    fi
+
+    echo "Copying veritas binaries to build context..."
+    cp "$EXECUTOR_BINARY_PATH" ./executor-binary
+    cp "$VALIDATOR_BINARY_PATH" ./validator-binary
+    echo "  - executor-binary: copied to ./executor-binary"
+    echo "  - validator-binary: copied to ./validator-binary"
+else
+    # Create empty placeholder files for Docker COPY
+    touch ./executor-binary
+    touch ./validator-binary
+fi
+
 BUILD_ARGS=""
 if [[ "$RELEASE_MODE" == "true" ]]; then
     BUILD_ARGS="--build-arg BUILD_MODE=release"
@@ -70,10 +107,6 @@ if [[ -n "$FEATURES" ]]; then
     BUILD_ARGS="$BUILD_ARGS --build-arg FEATURES=$FEATURES"
 fi
 
-# Pass VALIDATOR_PUBLIC_KEY if set
-if [[ -n "$VALIDATOR_PUBLIC_KEY" ]]; then
-    BUILD_ARGS="$BUILD_ARGS --build-arg VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY"
-fi
 
 # Pass Bittensor network configuration if set
 if [[ -n "$BITTENSOR_NETWORK" ]]; then
@@ -86,18 +119,10 @@ if [[ -n "$METADATA_CHAIN_ENDPOINT" ]]; then
     echo "Building with METADATA_CHAIN_ENDPOINT=$METADATA_CHAIN_ENDPOINT"
 fi
 
-# Pass validator public key if set (needed for gpu-attestor in workspace)
-if [[ -n "$VALIDATOR_PUBLIC_KEY" ]]; then
-    BUILD_ARGS="$BUILD_ARGS --build-arg VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY"
-    echo "Building with VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY:0:10}..."
-elif [[ -f "$PROJECT_ROOT/public_key.hex" ]]; then
-    VALIDATOR_PUBLIC_KEY=$(cat "$PROJECT_ROOT/public_key.hex" | tr -d '\n\r ')
-    BUILD_ARGS="$BUILD_ARGS --build-arg VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY"
-    echo "Using validator public key from public_key.hex: ${VALIDATOR_PUBLIC_KEY:0:10}..."
-fi
 
 if [[ "$BUILD_IMAGE" == "true" ]]; then
     echo "Building Docker image: $IMAGE_NAME:$IMAGE_TAG"
+
     docker build \
         $BUILD_ARGS \
         -f scripts/validator/Dockerfile \

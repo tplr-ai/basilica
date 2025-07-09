@@ -48,7 +48,7 @@ pub async fn handle_assignment_command(
                 .await?;
 
             println!(
-                "✓ Successfully assigned executor {executor_id} to validator {validator_hotkey}"
+                "Successfully assigned executor {executor_id} to validator {validator_hotkey}"
             );
 
             if let Some(notes) = notes {
@@ -68,7 +68,7 @@ pub async fn handle_assignment_command(
                     .delete_assignment(executor_id, "cli-user")
                     .await?;
                 println!(
-                    "✓ Successfully unassigned executor {} from validator {}",
+                    "Successfully unassigned executor {} from validator {}",
                     executor_id, assignment.validator_hotkey
                 );
             } else {
@@ -151,9 +151,9 @@ pub async fn handle_assignment_command(
 
             // Coverage quality assessment
             if stats.covered_stake_percentage >= 50.0 {
-                println!("Status:                ✓ Meeting minimum coverage requirement");
+                println!("Status:                Meeting minimum coverage requirement");
             } else {
-                println!("Status:                ⚠ Below minimum 50% coverage requirement");
+                println!("Status:                WARNING: Below minimum 50% coverage requirement");
             }
         }
 
@@ -165,7 +165,7 @@ pub async fn handle_assignment_command(
             let assignments = assignment_manager.get_all_assignments().await?;
 
             if stakes.is_empty() {
-                println!("⚠ No validator stake data available. Please ensure the stake monitor service is running.");
+                println!("WARNING: No validator stake data available. Please ensure the stake monitor service is running.");
                 return Ok(());
             }
 
@@ -174,7 +174,7 @@ pub async fn handle_assignment_command(
                 .await?;
 
             if suggestions.is_empty() {
-                println!("✓ All executors are optimally assigned. No suggestions needed.");
+                println!("All executors are optimally assigned. No suggestions needed.");
             } else {
                 println!("Assignment Suggestions:");
                 println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -187,13 +187,13 @@ pub async fn handle_assignment_command(
                 for suggestion in suggestions {
                     let priority_str = match suggestion.priority {
                         crate::services::assignment_manager::AssignmentPriority::Critical => {
-                            "🔴 CRITICAL"
+                            "CRITICAL"
                         }
-                        crate::services::assignment_manager::AssignmentPriority::High => "🟠 HIGH",
+                        crate::services::assignment_manager::AssignmentPriority::High => "HIGH",
                         crate::services::assignment_manager::AssignmentPriority::Medium => {
-                            "🟡 MEDIUM"
+                            "MEDIUM"
                         }
-                        crate::services::assignment_manager::AssignmentPriority::Low => "🟢 LOW",
+                        crate::services::assignment_manager::AssignmentPriority::Low => "LOW",
                     };
 
                     println!(
@@ -267,7 +267,7 @@ pub async fn handle_assignment_command(
             let stakes = assignment_db.get_all_validator_stakes().await?;
 
             if stakes.is_empty() {
-                println!("⚠ No validator stake data available. Please ensure the stake monitor service is running.");
+                println!("WARNING: No validator stake data available. Please ensure the stake monitor service is running.");
                 return Ok(());
             }
 
@@ -309,7 +309,7 @@ pub async fn handle_assignment_command(
 
             let json = serde_json::to_string_pretty(&assignments)?;
             std::fs::write(path, json)?;
-            println!("✓ Exported {} assignments to {}", assignments.len(), path);
+            println!("Exported {} assignments to {}", assignments.len(), path);
         }
 
         AssignmentCommand::Import { path, dry_run } => {

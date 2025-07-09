@@ -125,6 +125,82 @@ impl SimplePersistence {
                 termination_reason TEXT,
                 total_cost REAL
             );
+
+            CREATE TABLE IF NOT EXISTS miner_gpu_profiles (
+                miner_uid INTEGER PRIMARY KEY,
+                primary_gpu_model TEXT NOT NULL,
+                gpu_counts_json TEXT NOT NULL,
+                total_score REAL NOT NULL,
+                verification_count INTEGER NOT NULL,
+                last_updated TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+                CONSTRAINT valid_score CHECK (total_score >= 0.0 AND total_score <= 1.0),
+                CONSTRAINT valid_count CHECK (verification_count >= 0)
+            );
+
+            CREATE TABLE IF NOT EXISTS emission_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                burn_amount INTEGER NOT NULL,
+                burn_percentage REAL NOT NULL,
+                category_distributions_json TEXT NOT NULL,
+                total_miners INTEGER NOT NULL,
+                weight_set_block INTEGER NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+                CONSTRAINT valid_burn_percentage CHECK (burn_percentage >= 0.0 AND burn_percentage <= 100.0),
+                CONSTRAINT valid_total_miners CHECK (total_miners >= 0)
+            );
+
+            CREATE TABLE IF NOT EXISTS miner_prover_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                gpu_model TEXT NOT NULL,
+                gpu_count INTEGER NOT NULL,
+                gpu_memory_gb INTEGER NOT NULL,
+                attestation_valid INTEGER NOT NULL,
+                verification_timestamp TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+                CONSTRAINT valid_gpu_count CHECK (gpu_count >= 0),
+                CONSTRAINT valid_gpu_memory CHECK (gpu_memory_gb >= 0)
+            );
+
+            CREATE TABLE IF NOT EXISTS weight_allocation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                miner_uid INTEGER NOT NULL,
+                gpu_category TEXT NOT NULL,
+                allocated_weight INTEGER NOT NULL,
+                miner_score REAL NOT NULL,
+                category_total_score REAL NOT NULL,
+                weight_set_block INTEGER NOT NULL,
+                timestamp TEXT NOT NULL,
+
+                emission_metrics_id INTEGER,
+                FOREIGN KEY (emission_metrics_id) REFERENCES emission_metrics(id),
+
+                CONSTRAINT valid_weight CHECK (allocated_weight >= 0),
+                CONSTRAINT valid_scores CHECK (miner_score >= 0.0 AND category_total_score >= 0.0)
+            );
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE INDEX IF NOT EXISTS idx_gpu_profiles_model ON miner_gpu_profiles(primary_gpu_model);
+            CREATE INDEX IF NOT EXISTS idx_gpu_profiles_score ON miner_gpu_profiles(total_score DESC);
+            CREATE INDEX IF NOT EXISTS idx_gpu_profiles_updated ON miner_gpu_profiles(last_updated);
+            CREATE INDEX IF NOT EXISTS idx_emission_metrics_timestamp ON emission_metrics(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_emission_metrics_block ON emission_metrics(weight_set_block);
+            CREATE INDEX IF NOT EXISTS idx_prover_results_miner ON miner_prover_results(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_prover_results_timestamp ON miner_prover_results(verification_timestamp);
+            CREATE INDEX IF NOT EXISTS idx_weight_history_miner ON weight_allocation_history(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_weight_history_category ON weight_allocation_history(gpu_category);
+            CREATE INDEX IF NOT EXISTS idx_weight_history_block ON weight_allocation_history(weight_set_block);
             "#,
         )
         .execute(&self.pool)
@@ -516,11 +592,11 @@ impl SimplePersistence {
         page_size: u32,
     ) -> Result<Vec<MinerData>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT 
+            "SELECT
                 id, hotkey, endpoint, verification_score, uptime_percentage,
                 last_seen, registered_at, executor_info,
                 (SELECT COUNT(*) FROM miner_executors WHERE miner_id = miners.id) as executor_count
-             FROM miners 
+             FROM miners
              ORDER BY registered_at DESC
              LIMIT ? OFFSET ?",
         )
@@ -613,11 +689,11 @@ impl SimplePersistence {
         miner_id: &str,
     ) -> Result<Option<MinerData>, anyhow::Error> {
         let row = sqlx::query(
-            "SELECT 
+            "SELECT
                 id, hotkey, endpoint, verification_score, uptime_percentage,
                 last_seen, registered_at, executor_info,
                 (SELECT COUNT(*) FROM miner_executors WHERE miner_id = miners.id) as executor_count
-             FROM miners 
+             FROM miners
              WHERE id = ?",
         )
         .bind(miner_id)
@@ -708,7 +784,7 @@ impl SimplePersistence {
     ) -> Result<Option<MinerHealthData>, anyhow::Error> {
         let rows = sqlx::query(
             "SELECT executor_id, status, last_health_check, created_at
-             FROM miner_executors 
+             FROM miner_executors
              WHERE miner_id = ?",
         )
         .bind(miner_id)
@@ -786,7 +862,7 @@ impl SimplePersistence {
     ) -> Result<Vec<ExecutorData>, anyhow::Error> {
         let rows = sqlx::query(
             "SELECT executor_id, gpu_specs, cpu_specs, location
-             FROM miner_executors 
+             FROM miner_executors
              WHERE miner_id = ?",
         )
         .bind(miner_id)

@@ -220,16 +220,21 @@ Without the validator nonce, miners could exploit the system by pre-computing re
 
 ### Overall Progress Summary
 
-The Freivalds asymmetric GPU attestation protocol implementation has been successfully completed through Phase 5:
+The Freivalds asymmetric GPU attestation protocol implementation has been successfully completed through Phase 5, with Phase 7 partially implemented:
 
 - **Phase 1**: ✅ COMPLETED - Core algorithms (XORShift128+ PRNG, Merkle Tree)
 - **Phase 2**: ✅ COMPLETED - Protocol buffers and FreivaldsHandler (miner side)
 - **Phase 3**: ✅ COMPLETED - FreivaldsValidator and integration tests
 - **Phase 4**: ✅ COMPLETED - Binary mode for SSH execution (simplified design)
-- **Phase 5**: ✅ COMPLETED - Comprehensive testing and validation
+- **Phase 5**: ✅ COMPLETED - Comprehensive testing with timeout implementation
 - **Phase 6**: 🔲 Not Started - Performance optimizations
+- **Phase 7**: 🚧 IN PROGRESS - GPU profiling COMPLETED ✅, concurrent verification pending
 
-**Key Achievement**: The Freivalds protocol is fully implemented with a simplified binary execution model, demonstrating **99.9% computation savings** for validators while maintaining security through spot checking and Merkle proofs.
+**Key Achievements**: 
+- The Freivalds protocol is fully implemented with **99.9% computation savings** for validators
+- Dynamic timeout configuration based on matrix size and benchmarks
+- Automatic GPU profiling implemented with JSON output for 8 H100 GPUs
+- Performance classification and adaptive timeout calculation working
 
 ### Benefits of Freivalds Implementation
 
@@ -404,10 +409,21 @@ Phase 2 has been successfully completed with both protocol buffer extensions and
   - Full protocol flow (challenge → commitment → verification → response)
   - Multiple concurrent sessions
   - Session timeout handling
+  - **NEW**: Timeout configuration based on matrix size benchmarks
 - **Test Results**:
   - Unit tests: 15/17 passing (2 failures due to CUDA memory issues with 512+ matrices)
   - Integration tests: 6/6 passing ✅
   - CLI mode: Successfully tested with 8 H100 GPUs
+- **Timeout Implementation** ✅:
+  - Added `computation_timeout_ms` and `protocol_timeout_ms` fields to protocol
+  - Dynamic timeout calculation based on H100 PCIe benchmark data:
+    - 256x256: 15ms base → 30ms computation timeout
+    - 512x512: 30ms base → 60ms computation timeout  
+    - 1024x1024: 120ms base → 240ms computation timeout
+    - 2048x2048: 600ms base → 1200ms computation timeout
+  - Protocol timeout includes network latency (50ms) and overhead allowances
+  - 2x safety factor for GPU performance variation
+  - Tests verify timeouts are properly set and calculated
 
 ### Phase 6: Optimization 🚀
 - **Status**: Not Started
@@ -417,6 +433,37 @@ Phase 2 has been successfully completed with both protocol buffer extensions and
   - Optimized matrix-vector multiplication kernel
   - Memory pool for session data
   - Configuration tuning (spot check count, session timeout)
+
+### Phase 7: Dynamic GPU Detection & Concurrent Verification 🔍 ✅
+- **Status**: GPU Profiling COMPLETED, Concurrent Verification Pending
+- **Completed Features**:
+  - **Automatic GPU Profiling**: ✅ CLI flag `--detect-gpus-json` outputs comprehensive GPU profile
+  - **GPU Performance Database**: ✅ H100, A100, V100, RTX series performance data included
+  - **Performance Classification**: ✅ DataCenter, Professional, Consumer, Entry tiers
+  - **Dynamic Timeout Calculation**: ✅ Based on matrix size, GPU count, and performance class
+  - **Optimal Matrix Size Detection**: ✅ Automatically calculates best matrix size for available memory
+  - **System Topology Detection**: ✅ NVLink, PCIe, and peer access matrix information
+- **Implementation Details**:
+  - New module: `crates/gpu-attestor/src/gpu/gpu_profiler.rs`
+  - JSON output format for easy integration with validators
+  - Tested with 8 H100 PCIe GPUs successfully
+  - Adaptive timeout includes parallel efficiency factors (0.85 for NVLink, 0.75 for PCIe)
+- **Example Output**:
+  ```json
+  {
+    "total_compute_power": 350.2,
+    "performance_class": "DataCenter",
+    "optimal_matrix_size": 4096,
+    "devices": [/* 8 H100 GPUs */]
+  }
+  ```
+- **Integration Features** ✅:
+  - **SSH-based GPU profile querying**: ✅ Implemented in `gpu_profile_query.rs`
+  - **Automatic timeout setting**: ✅ `generate_challenge_with_profile()` method
+  - **Cached profile queries**: ✅ 1-hour cache to reduce SSH overhead
+  - **Integrated execution**: ✅ `execute_challenge_with_profiling()` method
+- **Still Pending**:
+  - Concurrent verification implementation for parallel spot checks
 
 ---
 

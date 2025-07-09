@@ -30,5 +30,5 @@ echo "  Private key: private_key.pem (permissions: 600)" >&2
 echo "  Public key (PEM): public_key.pem" >&2
 echo "  Public key (hex): public_key.hex" >&2
 echo "" >&2
-echo "Compressed public key (for VALIDATOR_PUBLIC_KEY):" >&2
+echo "Compressed public key:" >&2
 echo "$PUBLIC_KEY_HEX"

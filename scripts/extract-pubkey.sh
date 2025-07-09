@@ -34,7 +34,7 @@ if [ -n "$EXPORT_FILE" ]; then
     openssl ec -in "$PRIVATE_KEY" -pubout -out "$EXPORT_FILE"
     echo "Public key exported to: $EXPORT_FILE" >&2
 
-    echo "Compressed hex format for VALIDATOR_PUBLIC_KEY:" >&2
+    echo "Compressed hex format:" >&2
     extract_compressed_hex "$PRIVATE_KEY"
 else
     extract_compressed_hex "$PRIVATE_KEY"

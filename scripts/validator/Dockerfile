@@ -13,21 +13,27 @@ RUN rustup component add rustfmt
 
 WORKDIR /workspace
 
-# Copy workspace files
+# Copy workspace files for dependency resolution
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
+
+# Pre-build dependencies to cache them
+RUN cargo fetch
 
 # Build arguments
 ARG BUILD_MODE=release
 ARG FEATURES=""
 ARG BITTENSOR_NETWORK="test"
 ARG METADATA_CHAIN_ENDPOINT=""
-ARG VALIDATOR_PUBLIC_KEY=""
 
 # Set environment variables for the build - default to test network if not specified
 ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK:-test}
 ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
-ENV VALIDATOR_PUBLIC_KEY=${VALIDATOR_PUBLIC_KEY}
+
+# Set environment variables to reduce build size and use less disk space
+ENV CARGO_TARGET_DIR=/tmp/target
+ENV CARGO_INCREMENTAL=0
+ENV RUST_BACKTRACE=1
 
 # Build the validator directly (workspace should resolve dependencies)
 # Set explicit endpoint if network is specified but endpoint is not
@@ -50,7 +56,12 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
         else \
             cargo build -p validator; \
         fi; \
-    fi
+    fi && \
+    # List what was built for debugging
+    ls -la /tmp/target/release/ || true && \
+    # Clean up intermediate build artifacts to save space - updated cleanup logic
+    rm -rf /tmp/target/debug/deps /tmp/target/debug/incremental /tmp/target/release/deps /tmp/target/release/incremental 2>/dev/null || true && \
+    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
 
 # Runtime image
 FROM debian:bookworm-slim
@@ -66,10 +77,19 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the built binary
 ARG BUILD_MODE=release
-COPY --from=builder /workspace/target/${BUILD_MODE}/validator /usr/local/bin/validator
+COPY --from=builder /tmp/target/${BUILD_MODE}/validator /usr/local/bin/validator
 
-# Make binary executable
-RUN chmod +x /usr/local/bin/validator
+# Create basilica bin directory
+RUN mkdir -p /opt/basilica/bin
+
+# Copy veritas binaries if they exist in build context
+COPY executor-binary /opt/basilica/bin/executor-binary
+COPY validator-binary /opt/basilica/bin/validator-binary
+
+# Make binaries executable
+RUN chmod +x /usr/local/bin/validator && \
+    chmod +x /opt/basilica/bin/executor-binary 2>/dev/null || true && \
+    chmod +x /opt/basilica/bin/validator-binary 2>/dev/null || true
 
 # Create data directory for SQLite database
 RUN mkdir -p /var/lib/basilica/validator && \

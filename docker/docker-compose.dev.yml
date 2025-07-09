@@ -90,7 +90,6 @@ services:
       - executor-data:/data
     environment:
       - BASILCA_CONFIG_FILE=/config/executor.toml
-      - VALIDATOR_PUBLIC_KEY_FILE=/config/public_key.hex
       - RUST_LOG=debug
       - RUST_BACKTRACE=1
       - BASILCA_METRICS__PROMETHEUS__ENABLED=true

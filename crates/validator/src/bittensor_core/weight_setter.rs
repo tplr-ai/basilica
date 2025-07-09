@@ -3,6 +3,10 @@
 //! Manages Bittensor weight setting operations for the Validator.
 //! Sets weights every N blocks based on miner scores from executor validations.
 
+use crate::bittensor_core::weight_allocation::WeightAllocationEngine;
+use crate::config::emission::EmissionConfig;
+use crate::gpu::categorization;
+use crate::gpu::{CategoryStats, GpuScoringEngine};
 use crate::persistence::entities::VerificationLog;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
@@ -42,6 +46,9 @@ pub struct WeightSetter {
     min_score_threshold: f64,
     blocks_per_weight_set: u64,
     last_weight_set_block: Arc<tokio::sync::Mutex<u64>>,
+    gpu_scoring_engine: Arc<GpuScoringEngine>,
+    weight_allocation_engine: Arc<WeightAllocationEngine>,
+    emission_config: EmissionConfig,
 }
 
 impl WeightSetter {
@@ -53,7 +60,15 @@ impl WeightSetter {
         persistence: Arc<SimplePersistence>,
         min_score_threshold: f64,
         blocks_per_weight_set: u64,
+        gpu_scoring_engine: Arc<GpuScoringEngine>,
+        emission_config: EmissionConfig,
     ) -> Result<Self> {
+        // Create weight allocation engine
+        let weight_allocation_engine = Arc::new(WeightAllocationEngine::new(
+            emission_config.clone(),
+            min_score_threshold,
+        ));
+
         Ok(Self {
             config,
             bittensor_service,
@@ -62,6 +77,9 @@ impl WeightSetter {
             min_score_threshold,
             blocks_per_weight_set,
             last_weight_set_block: Arc::new(tokio::sync::Mutex::new(0)),
+            gpu_scoring_engine,
+            weight_allocation_engine,
+            emission_config,
         })
     }
 
@@ -108,9 +126,12 @@ impl WeightSetter {
         }
     }
 
-    /// Set weights based on miner scores from executor validations
+    /// Set weights based on GPU-based allocation with burn mechanism
     async fn set_weights_for_miners(&self) -> Result<()> {
-        info!("Setting weights for subnet {}", self.config.netuid);
+        info!(
+            "Setting weights for subnet {} with GPU-based allocation",
+            self.config.netuid
+        );
 
         // 1. Get current metagraph
         let metagraph = self.get_metagraph().await?;
@@ -119,35 +140,69 @@ impl WeightSetter {
             metagraph.hotkeys.len()
         );
 
-        // 2. Calculate miner scores based on their executor validations
-        let miner_scores = self.calculate_miner_scores(&metagraph).await?;
+        // 2. Get miners by GPU category from the scoring engine
+        let miners_by_category = self
+            .gpu_scoring_engine
+            .get_miners_by_gpu_category(24)
+            .await?;
 
-        if miner_scores.is_empty() {
-            warn!("No miner scores available");
+        if miners_by_category.is_empty() {
+            warn!("No miners found in any GPU category");
             return Ok(());
         }
 
-        // 3. Filter by minimum threshold and prepare weights
-        let weights: Vec<(u16, f64)> = miner_scores
-            .into_iter()
-            .filter(|(_, score)| *score >= self.min_score_threshold)
-            .map(|(uid, score)| (uid.as_u16(), score))
+        info!(
+            "Found miners in {} GPU categories: {:?}",
+            miners_by_category.len(),
+            miners_by_category.keys().collect::<Vec<_>>()
+        );
+
+        // 3. Calculate weight distribution using the allocation engine
+        let weight_distribution = self
+            .weight_allocation_engine
+            .calculate_weight_distribution(miners_by_category)?;
+
+        if weight_distribution.miners_served == 0 {
+            warn!("No miners served by weight allocation");
+            return Ok(());
+        }
+
+        info!(
+            "Weight distribution calculated: {} miners served, {} categories",
+            weight_distribution.miners_served,
+            weight_distribution.category_allocations.len()
+        );
+
+        // 4. Log category allocations for transparency
+        for (category, allocation) in &weight_distribution.category_allocations {
+            info!(
+                "Category {}: {} miners, {:.2}% allocation, total score: {:.4}",
+                category,
+                allocation.miner_count,
+                allocation.allocation_percentage,
+                allocation.total_score
+            );
+        }
+
+        // 5. Log burn allocation if present
+        if let Some(burn_alloc) = &weight_distribution.burn_allocation {
+            info!(
+                "Burn allocation: UID {}, weight {}, {:.2}%",
+                burn_alloc.uid, burn_alloc.weight, burn_alloc.percentage
+            );
+        }
+
+        // 6. Convert to normalized weights for chain submission
+        let normalized_weights: Vec<NormalizedWeight> = weight_distribution
+            .weights
+            .iter()
+            .map(|w| NormalizedWeight {
+                uid: w.uid,
+                weight: w.weight,
+            })
             .collect();
 
-        if weights.is_empty() {
-            warn!(
-                "No miners meet minimum score threshold of {}",
-                self.min_score_threshold
-            );
-            return Ok(());
-        }
-
-        info!("Found {} miners meeting threshold", weights.len());
-
-        // 4. Normalize weights using chain normalization
-        let normalized_weights = self.normalize_weights_for_chain(weights.clone())?;
-
-        // 5. Get version key and submit weights
+        // 7. Get version key and submit weights
         let version_key = self.get_version_key().await?;
 
         info!(
@@ -157,131 +212,47 @@ impl WeightSetter {
         );
 
         // Submit weights to chain
-        self.submit_weights_to_chain(normalized_weights, version_key)
+        self.submit_weights_to_chain(normalized_weights.clone(), version_key)
             .await?;
 
-        // Store submission metadata
-        self.store_weight_submission_metadata(&weights).await?;
+        // 8. Store submission metadata
+        self.store_weight_submission_metadata(&weight_distribution)
+            .await?;
 
         Ok(())
     }
 
-    /// Calculate scores for each miner based on their executor validations
-    async fn calculate_miner_scores(
-        &self,
-        metagraph: &Metagraph<AccountId>,
-    ) -> Result<HashMap<MinerUid, f64>> {
-        let mut miner_scores = HashMap::new();
-
-        for (uid, _hotkey) in metagraph.hotkeys.iter().enumerate() {
-            let uid = uid as u16;
-
-            // Skip validators
-            if metagraph
-                .validator_permit
-                .get(uid as usize)
-                .copied()
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            let miner_uid = MinerUid::new(uid);
-
-            // Get miner's score based on executor validations
-            let score = self.get_miner_validation_score(miner_uid).await;
-
-            if score > 0.0 {
-                miner_scores.insert(miner_uid, score);
-                debug!("Miner {} score: {:.4}", uid, score);
-            }
-        }
-
-        info!("Calculated scores for {} miners", miner_scores.len());
-        Ok(miner_scores)
-    }
-
-    /// Get validation score for a miner based on their executors' performance
-    async fn get_miner_validation_score(&self, miner_uid: MinerUid) -> f64 {
-        let key = format!("miner_validation_score:{}", miner_uid.as_u16());
-
-        // Try to get the aggregated validation score
-        match self.storage.get_f64(&key).await {
-            Ok(Some(score)) => score,
-            Ok(None) => {
-                // No score yet - return 0.0
-                // Scores are updated by update_miner_score_from_validation
-                0.0
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to get score for miner {}: {}",
-                    miner_uid.as_u16(),
-                    e
-                );
-                0.0
-            }
-        }
-    }
-
-    /// Update miner score based on executor validation results
-    pub async fn update_miner_score_from_validation(
+    /// Update miner GPU profile from validation results
+    pub async fn update_miner_gpu_profile(
         &self,
         miner_uid: MinerUid,
         executor_validations: Vec<ExecutorValidationResult>,
     ) -> Result<()> {
-        if executor_validations.is_empty() {
-            return Ok(());
-        }
-
-        // Calculate aggregate score
-        let total_score: f64 = executor_validations
-            .iter()
-            .map(|v| {
-                if !v.is_valid || !v.attestation_valid {
-                    return 0.0;
-                }
-
-                let base_score = v.hardware_score;
-
-                // Weight by GPU quality (more GPUs and memory = higher weight)
-                let gpu_weight =
-                    (v.gpu_count as f64 * 0.1).min(0.5) + (v.gpu_memory_gb as f64 / 100.0).min(0.5);
-
-                // Weight by network performance
-                let network_weight = (v.network_bandwidth_mbps / 10000.0).clamp(0.5, 1.0);
-
-                base_score * (1.0 + gpu_weight) * network_weight
+        // Convert ExecutorValidationResult to the format expected by GPU scoring engine
+        let gpu_validations: Vec<categorization::ExecutorValidationResult> = executor_validations
+            .into_iter()
+            .map(|v| categorization::ExecutorValidationResult {
+                executor_id: v.executor_id.to_string(),
+                is_valid: v.is_valid,
+                gpu_model: format!("H{}", v.gpu_memory_gb / 1024), // Simple conversion for now
+                gpu_count: v.gpu_count,
+                gpu_memory_gb: v.gpu_memory_gb,
+                attestation_valid: v.attestation_valid,
+                validation_timestamp: v.validation_timestamp,
             })
-            .sum();
+            .collect();
 
-        let average_score = total_score / executor_validations.len() as f64;
-
-        // Apply exponential moving average for stability
-        let key = format!("miner_validation_score:{}", miner_uid.as_u16());
-        let previous_score = self
-            .storage
-            .get_f64(&key)
-            .await
-            .unwrap_or(None)
-            .unwrap_or(0.0);
-        let smoothed_score = if previous_score > 0.0 {
-            0.7 * previous_score + 0.3 * average_score // EMA with alpha=0.3
-        } else {
-            average_score
-        };
-
-        // Store the score
-        self.storage.set_f64(&key, smoothed_score).await?;
-
-        info!(
-            "Updated score for miner {} to {:.4} based on {} executor validations",
-            miner_uid.as_u16(),
-            smoothed_score,
-            executor_validations.len()
-        );
+        // Update the miner's GPU profile using the scoring engine
+        self.gpu_scoring_engine
+            .update_miner_profile_from_validation(miner_uid, gpu_validations)
+            .await?;
 
         Ok(())
+    }
+
+    /// Get category statistics for monitoring
+    pub async fn get_category_statistics(&self) -> Result<HashMap<String, CategoryStats>> {
+        self.gpu_scoring_engine.get_category_statistics().await
     }
 
     /// Normalize weights for chain submission using the provided normalization function
@@ -368,18 +339,31 @@ impl WeightSetter {
         Ok(new_version)
     }
 
-    /// Store metadata about weight submission
-    async fn store_weight_submission_metadata(&self, weights: &[(u16, f64)]) -> Result<()> {
-        // Store the weights we submitted for auditing
-        let weights_json = serde_json::to_string(weights)?;
-        let key = format!("submitted_weights:{}", self.config.netuid);
-        self.storage.set_string(&key, &weights_json).await?;
+    /// Store metadata about GPU-based weight submission
+    async fn store_weight_submission_metadata(
+        &self,
+        weight_distribution: &crate::bittensor_core::weight_allocation::WeightDistribution,
+    ) -> Result<()> {
+        // Store the weight distribution for auditing
+        let distribution_json = serde_json::to_string(weight_distribution)?;
+        let key = format!("submitted_weight_distribution:{}", self.config.netuid);
+        self.storage.set_string(&key, &distribution_json).await?;
 
         // Store submission timestamp
         let timestamp_key = format!("last_weight_submission:{}", self.config.netuid);
         let timestamp = chrono::Utc::now().timestamp();
         self.storage.set_i64(&timestamp_key, timestamp).await?;
 
+        // Store category statistics
+        let stats_key = format!("category_stats:{}", self.config.netuid);
+        let category_stats = self.gpu_scoring_engine.get_category_statistics().await?;
+        let stats_json = serde_json::to_string(&category_stats)?;
+        self.storage.set_string(&stats_key, &stats_json).await?;
+
+        info!(
+            "Stored weight submission metadata with {} categories",
+            weight_distribution.category_allocations.len()
+        );
         Ok(())
     }
 
@@ -407,15 +391,15 @@ impl WeightSetter {
         verification_log: &VerificationLog,
     ) -> Result<()> {
         // Extract validation details from the verification log
-        let _validation_result = self.extract_validation_result(executor_id, verification_log)?;
+        let validation_result = self.extract_validation_result(executor_id, verification_log)?;
 
         // Get all recent validations for this miner
         let recent_validations = self
             .get_recent_miner_validations(miner_uid, 24) // Last 24 hours
             .await?;
 
-        // Update the miner's score
-        self.update_miner_score_from_validation(miner_uid, recent_validations)
+        // Update the miner's GPU profile using the new system
+        self.update_miner_gpu_profile(miner_uid, recent_validations)
             .await?;
 
         Ok(())
@@ -606,11 +590,10 @@ impl WeightSetter {
 
                     match self.get_recent_miner_validations(miner_uid, 24).await {
                         Ok(validations) if !validations.is_empty() => {
-                            if let Err(e) = self
-                                .update_miner_score_from_validation(miner_uid, validations)
-                                .await
+                            if let Err(e) =
+                                self.update_miner_gpu_profile(miner_uid, validations).await
                             {
-                                warn!("Failed to update score for miner {}: {}", uid, e);
+                                warn!("Failed to update GPU profile for miner {}: {}", uid, e);
                             }
                         }
                         Ok(_) => {

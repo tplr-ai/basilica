@@ -86,41 +86,6 @@ pub struct SystemProfileResponse {
     #[prost(message, optional, tag = "5")]
     pub error: ::core::option::Option<super::super::common::v1::ErrorInfo>,
 }
-/// Challenge execution request
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ChallengeRequest {
-    /// Challenge parameters
-    #[prost(message, optional, tag = "1")]
-    pub parameters: ::core::option::Option<
-        super::super::common::v1::ChallengeParameters,
-    >,
-    /// Timeout for challenge execution
-    #[prost(uint64, tag = "2")]
-    pub timeout_seconds: u64,
-    /// Requesting validator hotkey
-    #[prost(string, tag = "3")]
-    pub validator_hotkey: ::prost::alloc::string::String,
-    /// Challenge nonce for uniqueness
-    #[prost(string, tag = "4")]
-    pub nonce: ::prost::alloc::string::String,
-}
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ChallengeResponse {
-    /// Challenge execution result
-    #[prost(message, optional, tag = "1")]
-    pub result: ::core::option::Option<super::super::common::v1::ChallengeResult>,
-    /// Execution metadata
-    #[prost(map = "string, string", tag = "2")]
-    pub metadata: ::std::collections::HashMap<
-        ::prost::alloc::string::String,
-        ::prost::alloc::string::String,
-    >,
-    /// Error information if failed
-    #[prost(message, optional, tag = "3")]
-    pub error: ::core::option::Option<super::super::common::v1::ErrorInfo>,
-}
 /// Benchmark execution request
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -419,37 +384,6 @@ pub mod executor_control_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Execute computational challenge for verification
-        pub async fn execute_computational_challenge(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ChallengeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ChallengeResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/basilca.executor.v1.ExecutorControl/ExecuteComputationalChallenge",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "basilca.executor.v1.ExecutorControl",
-                        "ExecuteComputationalChallenge",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         /// Execute performance benchmarks
         pub async fn execute_benchmark(
             &mut self,
@@ -595,14 +529,6 @@ pub mod executor_control_server {
             request: tonic::Request<super::SystemProfileRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SystemProfileResponse>,
-            tonic::Status,
-        >;
-        /// Execute computational challenge for verification
-        async fn execute_computational_challenge(
-            &self,
-            request: tonic::Request<super::ChallengeRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ChallengeResponse>,
             tonic::Status,
         >;
         /// Execute performance benchmarks
@@ -811,58 +737,6 @@ pub mod executor_control_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ExecuteSystemProfileSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/basilca.executor.v1.ExecutorControl/ExecuteComputationalChallenge" => {
-                    #[allow(non_camel_case_types)]
-                    struct ExecuteComputationalChallengeSvc<T: ExecutorControl>(
-                        pub Arc<T>,
-                    );
-                    impl<
-                        T: ExecutorControl,
-                    > tonic::server::UnaryService<super::ChallengeRequest>
-                    for ExecuteComputationalChallengeSvc<T> {
-                        type Response = super::ChallengeResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ChallengeRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as ExecutorControl>::execute_computational_challenge(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = ExecuteComputationalChallengeSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

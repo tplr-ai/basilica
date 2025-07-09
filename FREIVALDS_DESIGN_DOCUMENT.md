@@ -97,6 +97,11 @@ Given three n×n matrices A, B, and C, to verify that C = A × B:
 - CLI argument parsing
 - SSH deployment support
 
+#### 6. **Protocol Extensions** (`freivalds_gpu_pow.proto`)
+- Added timeout fields for dynamic configuration
+- `computation_timeout_ms`: Time limit for GPU computation
+- `protocol_timeout_ms`: Total time limit including network overhead
+
 ## Implementation Details
 
 ### Matrix Generation
@@ -304,6 +309,22 @@ Results from 8× H100 GPU system:
 | 256×256 | 3ms | <1ms | ~96% |
 | 512×512 | 12ms | 1ms | ~99% |
 | 1024×1024 | 95ms | 3ms | ~99.9% |
+
+### Timeout Configuration
+
+Dynamic timeout calculation based on matrix size and GPU performance:
+
+| Matrix Size | Base Time | Computation Timeout | Protocol Timeout |
+|-------------|-----------|-------------------|------------------|
+| 64×64 | 10ms | 20ms | 180ms |
+| 256×256 | 15ms | 30ms | 190ms |
+| 512×512 | 30ms | 60ms | 220ms |
+| 1024×1024 | 120ms | 240ms | 400ms |
+| 2048×2048 | 600ms | 1200ms | 1360ms |
+
+**Timeout Formula**:
+- Computation timeout = Base time × 2.0 (safety factor)
+- Protocol timeout = Computation timeout + 10ms (Merkle) + 100ms (network) + 50ms (serialization)
 
 ## Testing Strategy
 

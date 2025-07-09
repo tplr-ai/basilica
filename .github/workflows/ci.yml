@@ -23,7 +23,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       executor: ${{ steps.changes.outputs.executor }}
-      gpu-attestor: ${{ steps.changes.outputs.gpu-attestor }}
       validator: ${{ steps.changes.outputs.validator }}
       miner: ${{ steps.changes.outputs.miner }}
       public-api: ${{ steps.changes.outputs.public-api }}
@@ -39,12 +38,6 @@ jobs:
               - 'crates/common/**'
               - 'crates/protocol/**'
               - 'scripts/executor/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            gpu-attestor:
-              - 'crates/gpu-attestor/**'
-              - 'crates/common/**'
-              - 'scripts/gpu-attestor/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             validator:
@@ -98,7 +91,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev xxd
-      - name: Generate test key for gpu-attestor
+      - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
@@ -139,7 +132,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev xxd
-      - name: Generate test key for gpu-attestor
+      - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
@@ -148,8 +141,6 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
           cargo clippy -p executor --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
-          # Run clippy on gpu-attestor without GPU features (not available in CI)
-          cargo clippy -p gpu-attestor --lib --bins --tests --no-default-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A clippy::if_same_then_else -A clippy::needless_bool -A clippy::missing_safety_doc -A dead_code
           # Run clippy on miner
           cargo clippy -p miner --all-targets --all-features -- -D warnings -A clippy::result_large_err -A clippy::type_complexity -A clippy::manual_clamp -A clippy::too_many_arguments -A clippy::ptr_arg -A unused_variables -A clippy::manual_async_fn -A dead_code
           # Run clippy on validator
@@ -190,7 +181,7 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
-      - name: Generate test key for gpu-attestor
+      - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
@@ -207,66 +198,15 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p executor
           ./target/debug/executor --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/executor/build.sh
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/executor/build.sh --no-extract --debug
-
-  # Build and test gpu-attestor
-  build-gpu-attestor:
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.gpu-attestor == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "shared-cache"
-      - name: Cache system dependencies
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt
-          key: apt-cache-${{ runner.os }}-gpu-attestor
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev xxd
-          # Install newer CMake for shaderc-sys
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
-          sudo apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
-          sudo apt-get update
-          sudo apt-get install -y cmake
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
-      - name: Generate test key for build
-        run: |
-          chmod +x scripts/gen-key.sh
-          ./scripts/gen-key.sh
-      - name: Check gpu-attestor builds
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p gpu-attestor --no-default-features
-      - name: Test gpu-attestor crate (unit tests only)
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo test -p gpu-attestor --lib --no-default-features
-      - name: Test gpu-attestor CLI functionality
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p gpu-attestor --no-default-features
-          ./target/debug/gpu-attestor --help
-      - name: Test Docker build script
-        run: |
-          chmod +x scripts/gpu-attestor/build.sh
-          BITTENSOR_NETWORK=test ./scripts/gpu-attestor/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/executor/build.sh --no-extract
 
   # Build and test validator
   build-validator:
@@ -296,7 +236,7 @@ jobs:
           sudo apt-get install -y protobuf-compiler pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
-      - name: Generate test key for gpu-attestor
+      - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
@@ -313,11 +253,15 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p validator
           ./target/debug/validator --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/validator/build.sh
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/validator/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/validator/build.sh --no-extract
 
   # Build and test miner
   build-miner:
@@ -352,7 +296,7 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
-      - name: Generate test key for gpu-attestor
+      - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
@@ -369,10 +313,14 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p miner
           ./target/debug/miner --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/miner/build.sh
-          BITTENSOR_NETWORK=test ./scripts/miner/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/miner/build.sh --no-extract
 
   # Build and test public-api
   build-public-api:
@@ -407,7 +355,7 @@ jobs:
           sudo apt-get install -y pkg-config libssl-dev xxd
       - name: Set up Docker
         uses: docker/setup-buildx-action@v3
-      - name: Generate test key for gpu-attestor
+      - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
@@ -424,10 +372,14 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p public-api
           ./target/debug/public-api --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/public-api/build.sh
-          BITTENSOR_NETWORK=test ./scripts/public-api/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/public-api/build.sh --no-extract
 
   # Final status check
   ci-success:
@@ -436,7 +388,6 @@ jobs:
       - quick-checks
       - lint-complex
       - build-executor
-      - build-gpu-attestor
       - build-validator
       - build-miner
       - build-public-api
@@ -447,7 +398,6 @@ jobs:
           if [[ "${{ needs.quick-checks.result }}" == "success" && \
                 "${{ needs.lint-complex.result }}" == "success" && \
                 ("${{ needs.build-executor.result }}" == "success" || "${{ needs.build-executor.result }}" == "skipped") && \
-                ("${{ needs.build-gpu-attestor.result }}" == "success" || "${{ needs.build-gpu-attestor.result }}" == "skipped") && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
                 ("${{ needs.build-public-api.result }}" == "success" || "${{ needs.build-public-api.result }}" == "skipped") ]]; then

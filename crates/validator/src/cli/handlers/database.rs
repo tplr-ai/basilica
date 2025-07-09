@@ -190,7 +190,7 @@ async fn show_database_status() -> Result<()> {
     }
 
     // Query table statistics
-    println!("\n📊 Table Statistics:");
+    println!("\nTable Statistics:");
 
     let tables = vec![
         "miners",
@@ -251,7 +251,7 @@ async fn show_database_status() -> Result<()> {
     }
 
     // Database integrity check
-    println!("\n🔍 Integrity Check:");
+    println!("\nIntegrity Check:");
     let integrity_result = sqlx::query("PRAGMA integrity_check").fetch_one(&pool).await;
 
     match integrity_result {
@@ -316,7 +316,7 @@ async fn cleanup_old_records(days: u32) -> Result<()> {
             .rows_affected();
 
     if verification_logs_deleted > 0 {
-        println!("  🗑️  Deleted {verification_logs_deleted} verification log records");
+        println!("  Deleted {verification_logs_deleted} verification log records");
         total_deleted += verification_logs_deleted;
     }
 
@@ -331,7 +331,7 @@ async fn cleanup_old_records(days: u32) -> Result<()> {
 
     if verification_requests_deleted > 0 {
         println!(
-            "  🗑️  Deleted {verification_requests_deleted} completed verification request records"
+            "  Deleted {verification_requests_deleted} completed verification request records"
         );
         total_deleted += verification_requests_deleted;
     }
@@ -346,7 +346,7 @@ async fn cleanup_old_records(days: u32) -> Result<()> {
     .rows_affected();
 
     if rentals_deleted > 0 {
-        println!("  🗑️  Deleted {rentals_deleted} terminated rental records");
+        println!("  Deleted {rentals_deleted} terminated rental records");
         total_deleted += rentals_deleted;
     }
 
@@ -358,7 +358,7 @@ async fn cleanup_old_records(days: u32) -> Result<()> {
         .rows_affected();
 
     if old_miners_deleted > 0 {
-        println!("  🗑️  Deleted {old_miners_deleted} inactive miner records");
+        println!("  Deleted {old_miners_deleted} inactive miner records");
         total_deleted += old_miners_deleted;
     }
 
