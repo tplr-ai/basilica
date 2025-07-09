@@ -58,9 +58,8 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
         fi; \
     fi && \
     # Clean up intermediate build artifacts to save space
-    rm -rf /tmp/target/debug/deps && \
-    rm -rf /tmp/target/debug/incremental && \
-    find /tmp/target/debug -name "*.rlib" -delete
+    rm -rf /tmp/target/debug/deps /tmp/target/debug/incremental /tmp/target/release/deps /tmp/target/release/incremental && \
+    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
 
 # Runtime image
 FROM debian:bookworm-slim

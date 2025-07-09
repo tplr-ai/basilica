@@ -49,10 +49,9 @@ RUN if [ "$BUILD_MODE" = "release" ]; then \
             cargo build -p public-api; \
         fi; \
     fi && \
-    # Clean up intermediate artifacts to save space
-    rm -rf /root/.cargo/registry/src && \
-    rm -rf /root/.cargo/git/db && \
-    cargo clean --release -p public-api || true
+    # Clean up intermediate build artifacts to save space
+    rm -rf /tmp/target/debug/deps /tmp/target/debug/incremental /tmp/target/release/deps /tmp/target/release/incremental && \
+    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
 
 # Runtime stage
 FROM debian:bookworm-slim
