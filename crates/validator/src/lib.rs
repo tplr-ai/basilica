@@ -36,8 +36,7 @@ pub use persistence::entities::{
 pub use persistence::SimplePersistence;
 pub use ssh::{ExecutorSshDetails, ValidatorSshClient};
 pub use validation::{
-    AttestationResult, HardwareSpecs, HardwareValidator, HardwareValidatorFactory,
-    ValidationConfig, ValidationError,
+    types::{ValidationConfig, ValidationError},
 };
 
 /// Re-export common error types

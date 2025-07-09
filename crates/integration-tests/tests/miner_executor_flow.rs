@@ -118,7 +118,7 @@ async fn miner_executor_validation_flow() -> Result<()> {
     sleep(Duration::from_millis(500)).await; // Simulate verification
 
     info!(
-        "Validator: ✅ Verification PASSED for executor {}",
+        "Validator: Verification PASSED for executor {}",
         selected_executor.id
     );
 
@@ -147,19 +147,19 @@ async fn executor_failure_scenarios() -> Result<()> {
     info!("\n--- Scenario 1: Executor Offline ---");
     info!("Validator: Attempting to connect to executor...");
     sleep(Duration::from_secs(2)).await; // Simulate timeout
-    info!("Validator: ❌ Connection timeout - executor appears offline");
+    info!("Validator: ERROR: Connection timeout - executor appears offline");
 
     // Scenario 2: Executor reports wrong GPU
     info!("\n--- Scenario 2: Wrong GPU Model ---");
     info!("Executor: Claims to have NVIDIA H100");
     info!("Validator: Challenge result shows NVIDIA RTX 4090");
-    info!("Validator: ❌ GPU model mismatch - validation failed");
+    info!("Validator: ERROR: GPU model mismatch - validation failed");
 
     // Scenario 3: Executor too slow
     info!("\n--- Scenario 3: Slow Execution ---");
     info!("Executor: Taking unusually long to complete challenge...");
     sleep(Duration::from_secs(1)).await;
-    info!("Validator: ❌ Execution time exceeds threshold - possible inferior hardware");
+    info!("Validator: ERROR: Execution time exceeds threshold - possible inferior hardware");
 
     info!("\n=== Failure Scenarios Test Complete ===");
 

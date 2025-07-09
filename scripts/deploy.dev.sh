@@ -15,6 +15,7 @@ SYNC_WALLETS=false
 FOLLOW_LOGS=false
 HEALTH_CHECK=false
 TIMEOUT=60
+VERITAS_BINARIES_DIR=""
 
 usage() {
     cat <<EOF
@@ -31,6 +32,7 @@ OPTIONS:
     -f, --follow-logs                Stream logs after deployment
     -c, --health-check               Perform health checks on service endpoints
     -t, --timeout SECONDS           SSH timeout (default: 60)
+    -b, --veritas-binaries DIR       Directory containing veritas binaries to deploy
     -h, --help                       Show this help
 
 EXAMPLES:
@@ -45,6 +47,9 @@ EXAMPLES:
 
     # Deploy all services and follow logs
     $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@160.202.129.13:22 -f
+    
+    # Deploy validator with veritas binaries
+    $0 -s validator -v root@64.247.196.98:9001 -b ../veritas/binaries
 EOF
     exit 1
 }
@@ -122,11 +127,54 @@ build_service() {
         log "ERROR: Build script scripts/$service/build.sh not found"
         exit 1
     fi
-    ./scripts/$service/build.sh
+    
+    # Build with veritas binaries if specified and service is validator
+    if [[ -n "$VERITAS_BINARIES_DIR" && "$service" == "validator" ]]; then
+        ./scripts/$service/build.sh --veritas-binaries "$VERITAS_BINARIES_DIR"
+    else
+        ./scripts/$service/build.sh
+    fi
+    
     if [[ ! -f "./$service" ]]; then
         log "ERROR: Binary ./$service not found after build"
         exit 1
     fi
+}
+
+deploy_veritas_binaries() {
+    local service="$1"
+    if [[ -z "$VERITAS_BINARIES_DIR" ]]; then
+        return
+    fi
+    
+    if [[ ! -d "$VERITAS_BINARIES_DIR" ]]; then
+        log "ERROR: Veritas binaries directory does not exist: $VERITAS_BINARIES_DIR"
+        exit 1
+    fi
+    
+    local executor_binary="$VERITAS_BINARIES_DIR/executor-binary/executor-binary"
+    local validator_binary="$VERITAS_BINARIES_DIR/validator-binary/validator-binary"
+    
+    if [[ ! -f "$executor_binary" ]]; then
+        log "ERROR: executor-binary not found at: $executor_binary"
+        exit 1
+    fi
+    
+    if [[ ! -f "$validator_binary" ]]; then
+        log "ERROR: validator-binary not found at: $validator_binary"
+        exit 1
+    fi
+    
+    log "Deploying veritas binaries to $service"
+    ssh_cmd "$service" "mkdir -p /opt/basilica/bin"
+    
+    scp_file "$service" "$executor_binary" "/opt/basilica/bin/executor-binary"
+    scp_file "$service" "$validator_binary" "/opt/basilica/bin/validator-binary"
+    
+    ssh_cmd "$service" "chmod +x /opt/basilica/bin/executor-binary"
+    ssh_cmd "$service" "chmod +x /opt/basilica/bin/validator-binary"
+    
+    log "Veritas binaries deployed successfully"
 }
 
 deploy_service() {
@@ -179,6 +227,11 @@ deploy_service() {
     scp_file "$service" "config/$service.correct.toml" "/opt/basilica/config/$service.toml"
 
     ssh_cmd "$service" "mkdir -p /opt/basilica/data && chmod 755 /opt/basilica/data"
+    
+    # Deploy veritas binaries if specified (only for validator/executor services)
+    if [[ "$service" == "validator" || "$service" == "executor" ]]; then
+        deploy_veritas_binaries "$service"
+    fi
 
     log "Setting up data directories and permissions for $service"
     case $service in
@@ -307,6 +360,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -t|--timeout)
             TIMEOUT="$2"
+            shift 2
+            ;;
+        -b|--veritas-binaries)
+            VERITAS_BINARIES_DIR="$2"
             shift 2
             ;;
         -h|--help)

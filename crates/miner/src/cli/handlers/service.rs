@@ -52,7 +52,7 @@ async fn start_service(config: &MinerConfig) -> Result<()> {
     let status = get_service_status().await?;
     if status.is_running {
         warn!("Miner service is already running (PID: {:?})", status.pid);
-        println!("✅ Miner service is already running");
+        println!("Miner service is already running");
         return Ok(());
     }
 
@@ -64,7 +64,7 @@ async fn start_service(config: &MinerConfig) -> Result<()> {
             .map_err(|e| anyhow!("Failed to execute systemctl: {}", e))?;
 
         if output.status.success() {
-            println!("✅ Miner service started successfully");
+            println!("Miner service started successfully");
             info!("Miner service started via systemctl");
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -74,7 +74,7 @@ async fn start_service(config: &MinerConfig) -> Result<()> {
     } else {
         // Fallback for non-systemd systems
         warn!("Systemd not available, manual service management required");
-        println!("⚠️  Manual service management required on this system");
+        println!("WARNING: Manual service management required on this system");
         println!(
             "   Run: ./target/release/miner --config {}",
             config.database.url
@@ -92,7 +92,7 @@ async fn stop_service() -> Result<()> {
     let status = get_service_status().await?;
     if !status.is_running {
         warn!("Miner service is not currently running");
-        println!("⚠️  Miner service is not currently running");
+        println!("WARNING: Miner service is not currently running");
         return Ok(());
     }
 
@@ -104,7 +104,7 @@ async fn stop_service() -> Result<()> {
             .map_err(|e| anyhow!("Failed to execute systemctl: {}", e))?;
 
         if output.status.success() {
-            println!("✅ Miner service stopped successfully");
+            println!("Miner service stopped successfully");
             info!("Miner service stopped via systemctl");
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -120,7 +120,7 @@ async fn stop_service() -> Result<()> {
                 .map_err(|e| anyhow!("Failed to kill process: {}", e))?;
 
             if output.status.success() {
-                println!("✅ Miner service stopped successfully (PID: {pid})");
+                println!("Miner service stopped successfully (PID: {pid})");
                 info!("Miner service stopped via kill signal");
             } else {
                 let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -149,7 +149,7 @@ async fn restart_service(config: &MinerConfig) -> Result<()> {
     // Start the service again
     start_service(config).await?;
 
-    println!("✅ Miner service restarted successfully");
+    println!("Miner service restarted successfully");
     Ok(())
 }
 
@@ -161,9 +161,9 @@ async fn show_service_status() -> Result<()> {
     println!(
         "Running: {}",
         if status.is_running {
-            "✅ Yes"
+            "Yes"
         } else {
-            "❌ No"
+            "No"
         }
     );
 
@@ -212,7 +212,7 @@ async fn reload_service_config(config: &MinerConfig) -> Result<()> {
     let status = get_service_status().await?;
     if !status.is_running {
         warn!("Miner service is not running, cannot reload configuration");
-        println!("⚠️  Miner service is not running");
+        println!("WARNING: Miner service is not running");
         return Ok(());
     }
 
@@ -224,7 +224,7 @@ async fn reload_service_config(config: &MinerConfig) -> Result<()> {
             .map_err(|e| anyhow!("Failed to execute systemctl: {}", e))?;
 
         if output.status.success() {
-            println!("✅ Configuration reloaded successfully");
+            println!("Configuration reloaded successfully");
             info!("Miner service configuration reloaded");
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -240,7 +240,7 @@ async fn reload_service_config(config: &MinerConfig) -> Result<()> {
                 .map_err(|e| anyhow!("Failed to send reload signal: {}", e))?;
 
             if output.status.success() {
-                println!("✅ Reload signal sent successfully (PID: {pid})");
+                println!("Reload signal sent successfully (PID: {pid})");
                 info!("Reload signal sent to miner process");
             } else {
                 let error_msg = String::from_utf8_lossy(&output.stderr);

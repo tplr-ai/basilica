@@ -57,6 +57,8 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
             cargo build -p validator; \
         fi; \
     fi && \
+    # List what was built for debugging
+    ls -la /tmp/target/release/ || true && \
     # Clean up intermediate build artifacts to save space - updated cleanup logic
     rm -rf /tmp/target/debug/deps /tmp/target/debug/incremental /tmp/target/release/deps /tmp/target/release/incremental 2>/dev/null || true && \
     find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
@@ -77,8 +79,17 @@ RUN apt-get update && apt-get install -y \
 ARG BUILD_MODE=release
 COPY --from=builder /tmp/target/${BUILD_MODE}/validator /usr/local/bin/validator
 
-# Make binary executable
-RUN chmod +x /usr/local/bin/validator
+# Create basilica bin directory
+RUN mkdir -p /opt/basilica/bin
+
+# Copy veritas binaries if they exist in build context
+COPY executor-binary /opt/basilica/bin/executor-binary
+COPY validator-binary /opt/basilica/bin/validator-binary
+
+# Make binaries executable
+RUN chmod +x /usr/local/bin/validator && \
+    chmod +x /opt/basilica/bin/executor-binary 2>/dev/null || true && \
+    chmod +x /opt/basilica/bin/validator-binary 2>/dev/null || true
 
 # Create data directory for SQLite database
 RUN mkdir -p /var/lib/basilica/validator && \

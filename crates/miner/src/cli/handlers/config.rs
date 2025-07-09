@@ -63,7 +63,7 @@ async fn validate_config(config_path: Option<String>, current_config: &MinerConf
     let path = config_path.as_deref().unwrap_or("miner.toml");
 
     info!("Validating configuration file: {}", path);
-    println!("🔍 Validating configuration: {path}");
+    println!("Validating configuration: {path}");
 
     // Load configuration to validate
     let config_to_validate = if let Some(path) = config_path {
@@ -75,7 +75,7 @@ async fn validate_config(config_path: Option<String>, current_config: &MinerConf
             Ok(config) => config,
             Err(e) => {
                 error!("Failed to load configuration: {}", e);
-                println!("❌ Configuration loading failed: {e}");
+                println!("ERROR: Configuration loading failed: {e}");
                 return Err(e);
             }
         }
@@ -93,7 +93,7 @@ async fn validate_config(config_path: Option<String>, current_config: &MinerConf
         return Err(anyhow!("Configuration validation failed"));
     }
 
-    println!("✅ Configuration validation passed");
+    println!("Configuration validation passed");
     Ok(())
 }
 
@@ -108,7 +108,7 @@ async fn show_config(config: &MinerConfig, show_sensitive: bool) -> Result<()> {
     if !show_sensitive {
         // Mask sensitive fields
         mask_sensitive_fields(&mut config_display);
-        println!("ℹ️  Sensitive fields are masked. Use --show-sensitive to display them.");
+        println!("INFO: Sensitive fields are masked. Use --show-sensitive to display them.");
     }
 
     // Convert to TOML for display
@@ -138,10 +138,10 @@ async fn show_config(config: &MinerConfig, show_sensitive: bool) -> Result<()> {
     let validation_result = perform_comprehensive_validation(config).await?;
     println!("\n=== Validation Status ===");
     if validation_result.is_valid {
-        println!("✅ Configuration is valid");
+        println!("Configuration is valid");
     } else {
         println!(
-            "❌ Configuration has {} errors",
+            "ERROR: Configuration has {} errors",
             validation_result.errors.len()
         );
         for error in &validation_result.errors {
@@ -150,7 +150,7 @@ async fn show_config(config: &MinerConfig, show_sensitive: bool) -> Result<()> {
     }
 
     if !validation_result.warnings.is_empty() {
-        println!("⚠️  {} warnings found:", validation_result.warnings.len());
+        println!("WARNING: {} warnings found:", validation_result.warnings.len());
         for warning in &validation_result.warnings {
             println!("   Warning: {warning}");
         }
@@ -174,7 +174,7 @@ async fn reload_config(current_config: &MinerConfig) -> Result<()> {
     let validation_result = perform_comprehensive_validation(&reloaded_config).await?;
 
     if !validation_result.is_valid {
-        println!("❌ Configuration reload would fail due to validation errors:");
+        println!("ERROR: Configuration reload would fail due to validation errors:");
         for error in &validation_result.errors {
             println!("   Error: {error}");
         }
@@ -185,19 +185,19 @@ async fn reload_config(current_config: &MinerConfig) -> Result<()> {
     let requires_restart = check_restart_required(current_config, &reloaded_config);
 
     if requires_restart {
-        println!("⚠️  Configuration changes detected that require service restart:");
+        println!("WARNING: Configuration changes detected that require service restart:");
         print_config_differences(current_config, &reloaded_config);
     } else {
-        println!("✅ Configuration can be reloaded without restart");
+        println!("Configuration can be reloaded without restart");
     }
 
-    println!("ℹ️  Note: This is a simulation. Actual reload requires service integration.");
+    println!("INFO: Note: This is a simulation. Actual reload requires service integration.");
     Ok(())
 }
 
 /// Compare configurations and show differences
 async fn diff_config(current_config: &MinerConfig, other_path: &str) -> Result<()> {
-    println!("📊 Comparing configurations...");
+    println!("Comparing configurations...");
     println!("Current config vs: {other_path}");
 
     if !Path::new(other_path).exists() {
@@ -211,7 +211,7 @@ async fn diff_config(current_config: &MinerConfig, other_path: &str) -> Result<(
     let differences = compare_configurations(current_config, &other_config)?;
 
     if differences.is_empty() {
-        println!("✅ Configurations are identical");
+        println!("Configurations are identical");
         return Ok(());
     }
 
@@ -258,7 +258,7 @@ async fn export_config(
     fs::write(output_path, exported_content)
         .map_err(|e| anyhow!("Failed to write configuration file: {}", e))?;
 
-    println!("✅ Configuration exported successfully");
+    println!("Configuration exported successfully");
     println!("   Size: {} bytes", fs::metadata(output_path)?.len());
     println!("   Note: Sensitive fields have been masked for security");
 
@@ -457,10 +457,10 @@ fn validate_remote_deployment_config(
 /// Display validation results
 fn display_validation_results(result: &ValidationResult) {
     if result.is_valid {
-        println!("✅ Configuration validation passed");
+        println!("Configuration validation passed");
     } else {
         println!(
-            "❌ Configuration validation failed with {} errors",
+            "ERROR: Configuration validation failed with {} errors",
             result.errors.len()
         );
     }
@@ -473,7 +473,7 @@ fn display_validation_results(result: &ValidationResult) {
     }
 
     if !result.warnings.is_empty() {
-        println!("\n⚠️  Warnings:");
+        println!("\nWARNINGS:");
         for warning in &result.warnings {
             println!("   • {warning}");
         }

@@ -1,6 +1,3 @@
-# Validator Configuration Template
-# This file is used to generate environment-specific configurations
-
 [database]
 url = "sqlite:/opt/basilica/data/validator.db?mode=rwc"
 max_connections = 10
@@ -32,15 +29,19 @@ verification_interval = { secs = 600 }
 challenge_timeout = { secs = 120 }
 retry_attempts = 3
 retry_delay = { secs = 5 }
-netuid = 387                        # ✅ ADD THIS - Missing netuid for verification
-# Dynamic discovery settings for finding miner executors via gRPC
+netuid = 387
 use_dynamic_discovery = true
 discovery_timeout = { secs = 30 }
 fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
-# Optional: gRPC port offset from axon port
-# For testnet, miner HTTP/gRPC is on 8080, axon is on 8091, so we need offset
-# grpc_port_offset = -11  # Commented out: field expects Option<u16> (unsigned)
+
+[verification.binary_validation]
+enabled = true
+validator_binary_path = "/opt/basilica/bin/validator-binary"
+executor_binary_path = "/opt/basilica/bin/executor-binary"
+execution_timeout_secs = 120
+remote_executor_path = "/tmp/executor-binary"
+output_format = "json"
 
 [ssh_validation]
 enabled = true
@@ -91,7 +92,6 @@ key_algorithm = "ed25519"
 default_session_duration = 300
 max_session_duration = 3600
 key_cleanup_interval = { secs = 60, nanos = 0 }
-# ✅ Add these missing SSH session fields:
 enable_automated_sessions = true
 max_concurrent_sessions = 5
 session_rate_limit = 20

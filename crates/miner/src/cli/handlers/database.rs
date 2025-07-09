@@ -60,7 +60,7 @@ pub async fn handle_database_command(
 /// Backup the miner database
 async fn backup_database(config: &MinerConfig, backup_path: &str) -> Result<()> {
     info!("Starting database backup to: {}", backup_path);
-    println!("💾 Backing up database to: {backup_path}");
+    println!("Backing up database to: {backup_path}");
 
     // Parse database URL to get the file path
     let db_path = extract_db_path_from_url(&config.database.url)?;
@@ -91,7 +91,7 @@ async fn backup_database(config: &MinerConfig, backup_path: &str) -> Result<()> 
     info!("Performing hot backup using VACUUM INTO");
     match perform_hot_backup(&db, &final_backup_path).await {
         Ok(_) => {
-            println!("✅ Database backup completed successfully");
+            println!("Database backup completed successfully");
             println!("   Backup location: {}", final_backup_path.display());
             info!("Database backup completed: {}", final_backup_path.display());
         }
@@ -102,7 +102,7 @@ async fn backup_database(config: &MinerConfig, backup_path: &str) -> Result<()> 
             fs::copy(&db_path, &final_backup_path)
                 .map_err(|e| anyhow!("Failed to copy database file: {}", e))?;
 
-            println!("⚠️  Fallback backup completed (file copy)");
+            println!("WARNING: Fallback backup completed (file copy)");
             println!("   Backup location: {}", final_backup_path.display());
             warn!("Database backup completed using file copy fallback");
         }
@@ -110,7 +110,7 @@ async fn backup_database(config: &MinerConfig, backup_path: &str) -> Result<()> 
 
     // Verify backup integrity
     if verify_backup_integrity(&final_backup_path).await? {
-        println!("✅ Backup integrity verified");
+        println!("Backup integrity verified");
     } else {
         error!("Backup integrity check failed");
         return Err(anyhow!("Backup integrity check failed"));
@@ -122,7 +122,7 @@ async fn backup_database(config: &MinerConfig, backup_path: &str) -> Result<()> 
 /// Restore database from backup
 async fn restore_database(config: &MinerConfig, backup_path: &str) -> Result<()> {
     info!("Starting database restore from: {}", backup_path);
-    println!("📥 Restoring database from: {backup_path}");
+    println!("Restoring database from: {backup_path}");
 
     // Check if backup file exists
     if !Path::new(backup_path).exists() {
@@ -146,19 +146,19 @@ async fn restore_database(config: &MinerConfig, backup_path: &str) -> Result<()>
         );
         fs::copy(&db_path, &backup_current)
             .map_err(|e| anyhow!("Failed to backup current database: {}", e))?;
-        println!("📦 Current database backed up to: {backup_current}");
+        println!("Current database backed up to: {backup_current}");
     }
 
     // Restore the database
     fs::copy(backup_path, &db_path).map_err(|e| anyhow!("Failed to restore database: {}", e))?;
 
-    println!("✅ Database restored successfully");
+    println!("Database restored successfully");
     info!("Database restored from: {}", backup_path);
 
     // Test the restored database
     match RegistrationDb::new(&config.database).await {
         Ok(_) => {
-            println!("✅ Restored database connection verified");
+            println!("Restored database connection verified");
         }
         Err(e) => {
             error!("Restored database connection failed: {}", e);
@@ -171,7 +171,7 @@ async fn restore_database(config: &MinerConfig, backup_path: &str) -> Result<()>
 
 /// Show database statistics
 async fn show_database_stats(config: &MinerConfig) -> Result<()> {
-    println!("📊 Gathering database statistics...");
+    println!("Gathering database statistics...");
 
     let db = RegistrationDb::new(&config.database).await?;
     let stats = collect_database_stats(&db, config).await?;
@@ -238,7 +238,7 @@ async fn show_database_stats(config: &MinerConfig) -> Result<()> {
 /// Clean up old database records
 async fn cleanup_database(config: &MinerConfig, days: u32) -> Result<()> {
     info!("Starting database cleanup (older than {} days)", days);
-    println!("🧹 Cleaning up database records older than {days} days...");
+    println!("Cleaning up database records older than {days} days...");
 
     let db = RegistrationDb::new(&config.database).await?;
 
@@ -252,33 +252,33 @@ async fn cleanup_database(config: &MinerConfig, days: u32) -> Result<()> {
     // Clean up old validator interactions
     let interactions_cleaned = clean_old_validator_interactions(&db, cutoff_date).await?;
     if interactions_cleaned > 0 {
-        println!("✅ Cleaned {interactions_cleaned} old validator interactions");
+        println!("Cleaned {interactions_cleaned} old validator interactions");
     }
 
     // Clean up old SSH grants
     let grants_cleaned = clean_old_ssh_grants(&db, cutoff_date).await?;
     if grants_cleaned > 0 {
-        println!("✅ Cleaned {grants_cleaned} old SSH grants");
+        println!("Cleaned {grants_cleaned} old SSH grants");
     }
 
     // Clean up stale executor health records
     let health_cleaned = clean_stale_executor_health(&db, cutoff_date).await?;
     if health_cleaned > 0 {
-        println!("✅ Cleaned {health_cleaned} stale executor health records");
+        println!("Cleaned {health_cleaned} stale executor health records");
     }
 
     if interactions_cleaned == 0 && grants_cleaned == 0 && health_cleaned == 0 {
-        println!("ℹ️  No old records found to clean up");
+        println!("INFO: No old records found to clean up");
     }
 
-    println!("✅ Database cleanup completed");
+    println!("Database cleanup completed");
     Ok(())
 }
 
 /// Vacuum the database to reclaim space
 async fn vacuum_database(config: &MinerConfig) -> Result<()> {
     info!("Starting database vacuum operation");
-    println!("🗜️  Vacuuming database to reclaim space...");
+    println!("Vacuuming database to reclaim space...");
 
     let db = RegistrationDb::new(&config.database).await?;
 
@@ -297,7 +297,7 @@ async fn vacuum_database(config: &MinerConfig) -> Result<()> {
 
     let space_saved = size_before.saturating_sub(size_after);
 
-    println!("✅ Database vacuum completed");
+    println!("Database vacuum completed");
     println!(
         "   Size before: {:.2} MB",
         size_before as f64 / 1024.0 / 1024.0
@@ -322,7 +322,7 @@ async fn vacuum_database(config: &MinerConfig) -> Result<()> {
 /// Check database integrity
 async fn check_database_integrity(config: &MinerConfig) -> Result<()> {
     info!("Starting database integrity check");
-    println!("🔍 Checking database integrity...");
+    println!("Checking database integrity...");
 
     let db = RegistrationDb::new(&config.database).await?;
 
@@ -333,10 +333,10 @@ async fn check_database_integrity(config: &MinerConfig) -> Result<()> {
         .map_err(|e| anyhow!("Failed to check database integrity: {}", e))?;
 
     if integrity_result {
-        println!("✅ Database integrity check passed");
+        println!("Database integrity check passed");
         info!("Database integrity check passed");
     } else {
-        println!("❌ Database integrity check failed");
+        println!("ERROR: Database integrity check failed");
         error!("Database integrity check failed");
         return Err(anyhow!("Database integrity check failed"));
     }
@@ -344,10 +344,10 @@ async fn check_database_integrity(config: &MinerConfig) -> Result<()> {
     // Additional connection test
     match db.health_check().await {
         Ok(_) => {
-            println!("✅ Database connection test passed");
+            println!("Database connection test passed");
         }
         Err(e) => {
-            println!("❌ Database connection test failed: {e}");
+            println!("ERROR: Database connection test failed: {e}");
             return Err(anyhow!("Database connection test failed: {}", e));
         }
     }

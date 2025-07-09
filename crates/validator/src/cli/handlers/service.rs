@@ -24,42 +24,42 @@ pub async fn handle_start(config_path: Option<PathBuf>, local_test: bool) -> Res
 }
 
 pub async fn handle_stop() -> Result<()> {
-    println!("🛑 Stopping Basilica Validator...");
+    println!("Stopping Basilica Validator...");
 
     let start_time = SystemTime::now();
 
     // 1. Find running validator process(es)
-    println!("\n🔍 Finding validator processes...");
+    println!("\nFinding validator processes...");
     let processes = find_validator_processes()?;
 
     if processes.is_empty() {
-        println!("  ℹ️  No validator processes found");
+        println!("  No validator processes found");
         return Ok(());
     }
 
-    println!("  📋 Found {} validator process(es)", processes.len());
+    println!("  Found {} validator process(es)", processes.len());
     for &pid in &processes {
         println!("    - PID: {pid}");
     }
 
     // 2. Send graceful shutdown signal (SIGTERM)
-    println!("\n✋ Sending graceful shutdown signal (SIGTERM)...");
+    println!("\n  Sending graceful shutdown signal (SIGTERM)...");
     let mut failed_graceful = Vec::new();
 
     for &pid in &processes {
         match send_signal_to_process(pid, Signal::Term) {
             Ok(()) => {
-                println!("  ✅ SIGTERM sent to PID {pid}");
+                println!("    SIGTERM sent to PID {pid}");
             }
             Err(e) => {
-                println!("  ❌ Failed to send SIGTERM to PID {pid}: {e}");
+                println!("    Failed to send SIGTERM to PID {pid}: {e}");
                 failed_graceful.push(pid);
             }
         }
     }
 
     // 3. Wait for clean shutdown with timeout
-    println!("\n⏳ Waiting for graceful shutdown (30 seconds timeout)...");
+    println!("\n  Waiting for graceful shutdown (30 seconds timeout)...");
     let shutdown_timeout = Duration::from_secs(30);
     let shutdown_start = SystemTime::now();
 
@@ -74,11 +74,11 @@ pub async fn handle_stop() -> Result<()> {
             match is_process_running(pid) {
                 Ok(true) => true, // Still running
                 Ok(false) => {
-                    println!("  ✅ Process {pid} shutdown gracefully");
+                    println!("  Process {pid} shutdown gracefully");
                     false // Remove from list
                 }
                 Err(_) => {
-                    println!("  ⚠️  Unable to check status of process {pid}");
+                    println!("  WARNING: Unable to check status of process {pid}");
                     false // Assume it's gone
                 }
             }
@@ -87,50 +87,50 @@ pub async fn handle_stop() -> Result<()> {
 
     // 4. Force kill remaining processes if necessary
     if !remaining_processes.is_empty() {
-        println!("\n💥 Force killing remaining processes (SIGKILL)...");
+        println!("\nForce killing remaining processes (SIGKILL)...");
 
         for &pid in &remaining_processes {
             match send_signal_to_process(pid, Signal::Kill) {
                 Ok(()) => {
-                    println!("  🔥 SIGKILL sent to PID {pid}");
+                    println!("  SIGKILL sent to PID {pid}");
 
                     // Give it a moment to die
                     tokio::time::sleep(Duration::from_millis(500)).await;
 
                     match is_process_running(pid) {
-                        Ok(false) => println!("  ✅ Process {pid} terminated"),
-                        Ok(true) => println!("  ❌ Process {pid} still running after SIGKILL"),
+                        Ok(false) => println!("  Process {pid} terminated"),
+                        Ok(true) => println!("  ERROR: Process {pid} still running after SIGKILL"),
                         Err(e) => {
-                            println!("  ⚠️  Cannot verify termination of process {pid}: {e}")
+                            println!("  WARNING: Cannot verify termination of process {pid}: {e}")
                         }
                     }
                 }
                 Err(e) => {
-                    println!("  ❌ Failed to send SIGKILL to PID {pid}: {e}");
+                    println!("  ERROR: Failed to send SIGKILL to PID {pid}: {e}");
                 }
             }
         }
     }
 
     // 5. Final verification
-    println!("\n🔍 Final verification...");
+    println!("\nFinal verification...");
     let final_processes = find_validator_processes()?;
 
     let elapsed = start_time.elapsed().unwrap_or(Duration::from_secs(0));
 
     if final_processes.is_empty() {
-        println!("  ✅ All validator processes terminated successfully");
-        println!("  🕒 Shutdown completed in {}ms", elapsed.as_millis());
+        println!("  All validator processes terminated successfully");
+        println!("  Shutdown completed in {}ms", elapsed.as_millis());
     } else {
         println!(
-            "  ❌ {} validator process(es) still running:",
+            "  ERROR: {} validator process(es) still running:",
             final_processes.len()
         );
         for &pid in &final_processes {
             println!("    - PID: {pid}");
         }
         println!(
-            "  🕒 Shutdown attempt completed in {}ms (with warnings)",
+            "  Shutdown attempt completed in {}ms (with warnings)",
             elapsed.as_millis()
         );
         return Err(anyhow::anyhow!("Some processes could not be terminated"));
@@ -147,68 +147,68 @@ pub async fn handle_status() -> Result<()> {
     let mut all_healthy = true;
 
     // 1. Check if validator process is running
-    println!("\n🔍 Process Status:");
+    println!("\nProcess Status:");
     match check_validator_process() {
         Ok(Some((pid, memory_mb, cpu_percent))) => {
             println!(
-                "  ✅ Validator process running (PID: {pid}, Memory: {memory_mb}MB, CPU: {cpu_percent:.1}%)"
+                "  Validator process running (PID: {pid}, Memory: {memory_mb}MB, CPU: {cpu_percent:.1}%)"
             );
         }
         Ok(None) => {
-            println!("  ❌ No validator process found");
+            println!("  ERROR: No validator process found");
             all_healthy = false;
         }
         Err(e) => {
-            println!("  ⚠️  Process check failed: {e}");
+            println!("  WARNING: Process check failed: {e}");
             all_healthy = false;
         }
     }
 
     // 2. Test database connectivity
-    println!("\n💾 Database Status:");
+    println!("\nDatabase Status:");
     match test_database_connectivity().await {
         Ok(()) => {
-            println!("  ✅ SQLite database connection successful");
+            println!("  SQLite database connection successful");
         }
         Err(e) => {
-            println!("  ❌ Database connection failed: {e}");
+            println!("  ERROR: Database connection failed: {e}");
             all_healthy = false;
         }
     }
 
     // 3. Check API server health
-    println!("\n🌐 API Server Status:");
+    println!("\nAPI Server Status:");
     match test_api_health().await {
         Ok(response_time_ms) => {
-            println!("  ✅ API server healthy (response time: {response_time_ms}ms)");
+            println!("  API server healthy (response time: {response_time_ms}ms)");
         }
         Err(e) => {
-            println!("  ❌ API server check failed: {e}");
+            println!("  ERROR: API server check failed: {e}");
             all_healthy = false;
         }
     }
 
     // 4. Check Bittensor network connection
-    println!("\n⛓️  Bittensor Network Status:");
+    println!("\nBittensor Network Status:");
     match test_bittensor_connectivity().await {
         Ok(block_number) => {
-            println!("  ✅ Bittensor network connected (block: {block_number})");
+            println!("  Bittensor network connected (block: {block_number})");
         }
         Err(e) => {
-            println!("  ❌ Bittensor network check failed: {e}");
+            println!("  ERROR: Bittensor network check failed: {e}");
             all_healthy = false;
         }
     }
 
     // 5. Display overall health summary
     let elapsed = start_time.elapsed().unwrap_or(Duration::from_secs(0));
-    println!("\n📊 Overall Status:");
+    println!("\nOverall Status:");
     if all_healthy {
-        println!("  ✅ All systems operational");
+        println!("  All systems operational");
     } else {
-        println!("  ❌ Some components have issues");
+        println!("  ERROR: Some components have issues");
     }
-    println!("  🕒 Status check completed in {}ms", elapsed.as_millis());
+    println!("  Status check completed in {}ms", elapsed.as_millis());
 
     if !all_healthy {
         std::process::exit(1);

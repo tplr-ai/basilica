@@ -103,6 +103,9 @@ pub struct VerificationConfig {
     /// gRPC port offset from axon port (if not using default 50061)
     #[serde(default)]
     pub grpc_port_offset: Option<u16>,
+    /// Binary validation configuration
+    #[serde(default)]
+    pub binary_validation: BinaryValidationConfig,
 }
 
 fn default_use_dynamic_discovery() -> bool {
@@ -119,6 +122,39 @@ fn default_fallback_to_static() -> bool {
 
 fn default_cache_miner_info_ttl() -> Duration {
     Duration::from_secs(300) // 5 minutes
+}
+
+/// Configuration for binary validation using validator-binary and executor-binary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryValidationConfig {
+    /// Path to validator-binary executable
+    pub validator_binary_path: PathBuf,
+    /// Path to executor-binary for upload
+    pub executor_binary_path: PathBuf,
+    /// Binary execution timeout in seconds
+    pub execution_timeout_secs: u64,
+    /// Remote executor binary path on miner
+    pub remote_executor_path: String,
+    /// Output format for binary execution
+    pub output_format: String,
+    /// Enable binary validation (fallback to SSH test only)
+    pub enabled: bool,
+    /// Binary validation weight in final score calculation
+    pub score_weight: f64,
+}
+
+impl Default for BinaryValidationConfig {
+    fn default() -> Self {
+        Self {
+            validator_binary_path: PathBuf::from("./validator-binary"),
+            executor_binary_path: PathBuf::from("./executor-binary"),
+            execution_timeout_secs: 30,
+            remote_executor_path: "/tmp/executor-binary".to_string(),
+            output_format: "json".to_string(),
+            enabled: true,
+            score_weight: 0.8,
+        }
+    }
 }
 
 /// Configuration for automatic verification during discovery
@@ -349,6 +385,7 @@ impl Default for ValidatorConfig {
                 fallback_to_static: default_fallback_to_static(),
                 cache_miner_info_ttl: default_cache_miner_info_ttl(),
                 grpc_port_offset: None,
+                binary_validation: BinaryValidationConfig::default(),
             },
             automatic_verification: AutomaticVerificationConfig::default(),
             storage: StorageConfig {

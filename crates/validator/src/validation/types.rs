@@ -422,3 +422,117 @@ pub struct SignatureVerificationResult {
     /// Error message if verification failed
     pub error_message: Option<String>,
 }
+
+// ============================================================================
+// Binary Validation Types
+// ============================================================================
+
+/// GPU executor result from binary validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutorResult {
+    pub gpu_name: String,
+    pub gpu_uuid: String,
+    pub cpu_info: BinaryCpuInfo,
+    pub memory_info: BinaryMemoryInfo,
+    pub network_info: BinaryNetworkInfo,
+    pub matrix_c: CompressedMatrix,
+    pub computation_time_ns: u64,
+    pub checksum: [u8; 32],
+    pub sm_utilization: SmUtilizationStats,
+    pub active_sms: u32,
+    pub total_sms: u32,
+    pub memory_bandwidth_gbps: f64,
+    pub anti_debug_passed: bool,
+    pub timing_fingerprint: u64,
+}
+
+/// CPU information for binary validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryCpuInfo {
+    pub model: String,
+    pub cores: u32,
+    pub threads: u32,
+    pub frequency_mhz: u32,
+}
+
+/// Memory information for binary validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryMemoryInfo {
+    pub total_gb: f64,
+    pub available_gb: f64,
+}
+
+/// Network information for binary validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryNetworkInfo {
+    pub interfaces: Vec<NetworkInterface>,
+}
+
+/// Network interface information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkInterface {
+    pub name: String,
+    pub mac_address: String,
+    pub ip_addresses: Vec<String>,
+}
+
+/// Compressed matrix data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompressedMatrix {
+    pub rows: u32,
+    pub cols: u32,
+    pub data: Vec<f64>,
+}
+
+/// SM (Streaming Multiprocessor) utilization statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmUtilizationStats {
+    pub min_utilization: f64,
+    pub max_utilization: f64,
+    pub avg_utilization: f64,
+    pub per_sm_stats: Vec<SmStat>,
+}
+
+/// Individual SM statistics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmStat {
+    pub sm_id: u32,
+    pub utilization: f64,
+    pub active_warps: u32,
+    pub max_warps: u32,
+}
+
+/// Output from validator binary execution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidatorBinaryOutput {
+    pub success: bool,
+    pub executor_result: Option<ExecutorResult>,
+    pub error_message: Option<String>,
+    pub execution_time_ms: u64,
+    pub validation_score: f64,
+}
+
+/// Enhanced executor verification result
+#[derive(Debug, Clone)]
+pub struct ExecutorVerificationResult {
+    pub executor_id: String,
+    pub verification_score: f64,
+    pub ssh_connection_successful: bool,
+    pub binary_validation_successful: bool,
+    pub executor_result: Option<ExecutorResult>,
+    pub error: Option<String>,
+    pub execution_time: Duration,
+    pub validation_details: ValidationDetails,
+}
+
+/// Detailed validation timing and scoring information
+#[derive(Debug, Clone)]
+pub struct ValidationDetails {
+    pub ssh_test_duration: Duration,
+    pub binary_upload_duration: Duration,
+    pub binary_execution_duration: Duration,
+    pub total_validation_duration: Duration,
+    pub ssh_score: f64,
+    pub binary_score: f64,
+    pub combined_score: f64,
+}
