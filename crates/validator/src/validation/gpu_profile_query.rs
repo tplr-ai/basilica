@@ -357,7 +357,10 @@ mod tests {
 
     #[test]
     fn test_performance_scaling() {
-        let profile = GpuProfile { performance_class: PerformanceClass::DataCenter, ..Default::default() };
+        let profile = GpuProfile {
+            performance_class: PerformanceClass::DataCenter,
+            ..Default::default()
+        };
 
         let query = GpuProfileQuery::new(ValidatorSshClient::new());
 

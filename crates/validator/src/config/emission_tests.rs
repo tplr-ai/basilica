@@ -30,7 +30,10 @@ mod tests {
     #[test]
     fn test_burn_percentage_validation() {
         // Test valid ranges
-        let mut config = EmissionConfig { burn_percentage: 0.0, ..Default::default() };
+        let mut config = EmissionConfig {
+            burn_percentage: 0.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
 
         config.burn_percentage = 50.0;
@@ -100,7 +103,10 @@ mod tests {
     #[test]
     fn test_weight_interval_validation() {
         // Test valid intervals
-        let mut config = EmissionConfig { weight_set_interval_blocks: 1, ..Default::default() };
+        let mut config = EmissionConfig {
+            weight_set_interval_blocks: 1,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
 
         config.weight_set_interval_blocks = 360;
@@ -327,7 +333,10 @@ H200 = 30.0
     #[test]
     fn test_min_miners_per_category_validation() {
         // Test valid values
-        let mut config = EmissionConfig { min_miners_per_category: 1, ..Default::default() };
+        let mut config = EmissionConfig {
+            min_miners_per_category: 1,
+            ..Default::default()
+        };
         assert!(config.validate().is_ok());
 
         config.min_miners_per_category = 10;

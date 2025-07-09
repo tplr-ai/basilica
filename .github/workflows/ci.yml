@@ -198,11 +198,15 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p executor
           ./target/debug/executor --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/executor/build.sh
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/executor/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/executor/build.sh --no-extract
 
   # Build and test validator
   build-validator:
@@ -249,11 +253,15 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p validator
           ./target/debug/validator --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/validator/build.sh
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/validator/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/validator/build.sh --no-extract
 
   # Build and test miner
   build-miner:
@@ -305,10 +313,14 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p miner
           ./target/debug/miner --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/miner/build.sh
-          BITTENSOR_NETWORK=test ./scripts/miner/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/miner/build.sh --no-extract
 
   # Build and test public-api
   build-public-api:
@@ -360,10 +372,14 @@ jobs:
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           cargo build -p public-api
           ./target/debug/public-api --help
+      - name: Clean up space before Docker build
+        run: |
+          docker system prune -af
+          df -h
       - name: Test Docker build script
         run: |
           chmod +x scripts/public-api/build.sh
-          BITTENSOR_NETWORK=test ./scripts/public-api/build.sh --no-extract --debug
+          BITTENSOR_NETWORK=test ./scripts/public-api/build.sh --no-extract
 
   # Final status check
   ci-success:

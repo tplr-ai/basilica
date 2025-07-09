@@ -13,9 +13,12 @@ RUN rustup component add rustfmt
 
 WORKDIR /workspace
 
-# Copy workspace files
+# Copy workspace files for dependency resolution
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
+
+# Pre-build dependencies to cache them
+RUN cargo fetch
 
 # Build arguments
 ARG BUILD_MODE=release
@@ -26,6 +29,11 @@ ARG METADATA_CHAIN_ENDPOINT=""
 # Set environment variables for the build - default to test network if not specified
 ENV BITTENSOR_NETWORK=${BITTENSOR_NETWORK:-test}
 ENV METADATA_CHAIN_ENDPOINT=${METADATA_CHAIN_ENDPOINT}
+
+# Set environment variables to reduce build size and use less disk space
+ENV CARGO_TARGET_DIR=/tmp/target
+ENV CARGO_INCREMENTAL=0
+ENV RUST_BACKTRACE=1
 
 # Build the validator directly (workspace should resolve dependencies)
 # Set explicit endpoint if network is specified but endpoint is not
@@ -48,7 +56,11 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
         else \
             cargo build -p validator; \
         fi; \
-    fi
+    fi && \
+    # Clean up intermediate build artifacts to save space
+    rm -rf /tmp/target/debug/deps && \
+    rm -rf /tmp/target/debug/incremental && \
+    find /tmp/target/debug -name "*.rlib" -delete
 
 # Runtime image
 FROM debian:bookworm-slim
@@ -64,7 +76,7 @@ RUN apt-get update && apt-get install -y \
 
 # Copy the built binary
 ARG BUILD_MODE=release
-COPY --from=builder /workspace/target/${BUILD_MODE}/validator /usr/local/bin/validator
+COPY --from=builder /tmp/target/${BUILD_MODE}/validator /usr/local/bin/validator
 
 # Make binary executable
 RUN chmod +x /usr/local/bin/validator
