@@ -133,8 +133,6 @@ pub struct BinaryValidationConfig {
     pub executor_binary_path: PathBuf,
     /// Binary execution timeout in seconds
     pub execution_timeout_secs: u64,
-    /// Remote executor binary path on miner
-    pub remote_executor_path: String,
     /// Output format for binary execution
     pub output_format: String,
     /// Enable binary validation (fallback to SSH test only)
@@ -149,7 +147,6 @@ impl Default for BinaryValidationConfig {
             validator_binary_path: PathBuf::from("./validator-binary"),
             executor_binary_path: PathBuf::from("./executor-binary"),
             execution_timeout_secs: 30,
-            remote_executor_path: "/tmp/executor-binary".to_string(),
             output_format: "json".to_string(),
             enabled: true,
             score_weight: 0.8,

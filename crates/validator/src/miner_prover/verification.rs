@@ -568,7 +568,8 @@ impl VerificationEngine {
         executor_info: &ExecutorInfoDetailed,
     ) -> Result<ExecutorVerificationResult> {
         // Direct call to enhanced method
-        self.verify_executor_with_ssh_automation_enhanced(miner_endpoint, executor_info).await
+        self.verify_executor_with_ssh_automation_enhanced(miner_endpoint, executor_info)
+            .await
     }
 
     async fn store_verification_result(&self, miner_uid: u16, score: f64) -> Result<()> {
@@ -1357,20 +1358,8 @@ impl VerificationEngine {
         info!("[EVAL_FLOW] Starting binary validation process");
 
         let binary_config = &self.config.binary_validation;
-        let _execution_start = std::time::Instant::now();
 
-        // Step 1: Upload executor-binary to remote machine
-        let upload_start = std::time::Instant::now();
-        self.upload_executor_binary(ssh_details, &binary_config.remote_executor_path)
-            .await?;
-        let upload_duration = upload_start.elapsed();
-
-        info!(
-            "[EVAL_FLOW] Executor binary uploaded in {:?} to {}",
-            upload_duration, binary_config.remote_executor_path
-        );
-
-        // Step 2: Execute validator-binary locally
+        // Execute validator-binary locally (it will handle executor binary upload)
         let execution_start = std::time::Instant::now();
         let binary_output = self
             .execute_validator_binary_locally(ssh_details, binary_config)
@@ -1382,59 +1371,19 @@ impl VerificationEngine {
             execution_duration
         );
 
-        // Step 3: Parse and validate output
+        // Parse and validate output
         let validation_result = self.parse_validator_binary_output(&binary_output)?;
 
-        // Step 4: Calculate validation score
+        // Calculate validation score
         let validation_score = self.calculate_binary_validation_score(&validation_result)?;
-
-        let total_duration = execution_start.elapsed();
 
         Ok(crate::validation::types::ValidatorBinaryOutput {
             success: validation_result.success,
             executor_result: validation_result.executor_result,
             error_message: validation_result.error_message,
-            execution_time_ms: total_duration.as_millis() as u64,
+            execution_time_ms: execution_duration.as_millis() as u64,
             validation_score,
         })
-    }
-
-    /// Upload executor binary to remote machine
-    async fn upload_executor_binary(
-        &self,
-        ssh_details: &SshConnectionDetails,
-        remote_path: &str,
-    ) -> Result<()> {
-        info!("[EVAL_FLOW] Uploading executor binary to {}", remote_path);
-
-        let binary_config = &self.config.binary_validation;
-
-        // Verify local binary exists
-        if !binary_config.executor_binary_path.exists() {
-            return Err(anyhow::anyhow!(
-                "Executor binary not found at path: {}",
-                binary_config.executor_binary_path.display()
-            ));
-        }
-
-        // Upload binary via SSH
-        self.ssh_client
-            .upload_file(
-                ssh_details,
-                &binary_config.executor_binary_path,
-                remote_path,
-            )
-            .await
-            .context("Failed to upload executor binary")?;
-
-        // Set executable permissions
-        self.ssh_client
-            .execute_command(ssh_details, &format!("chmod +x {}", remote_path), false)
-            .await
-            .context("Failed to set executable permissions on executor binary")?;
-
-        info!("[EVAL_FLOW] Executor binary uploaded and made executable");
-        Ok(())
     }
 
     /// Execute validator-binary locally with SSH parameters
@@ -1447,7 +1396,7 @@ impl VerificationEngine {
 
         let mut command = tokio::process::Command::new(&binary_config.validator_binary_path);
 
-        // Configure SSH parameters
+        // Configure SSH parameters and executor binary path
         command
             .arg("--ssh-host")
             .arg(&ssh_details.host)
@@ -1458,7 +1407,7 @@ impl VerificationEngine {
             .arg("--ssh-key")
             .arg(&ssh_details.private_key_path)
             .arg("--executor-path")
-            .arg(&binary_config.remote_executor_path)
+            .arg(&binary_config.executor_binary_path)
             .arg("--output-format")
             .arg(&binary_config.output_format)
             .arg("--timeout")
@@ -1466,6 +1415,12 @@ impl VerificationEngine {
 
         // Set timeout for entire process
         let timeout_duration = Duration::from_secs(binary_config.execution_timeout_secs + 10);
+
+        // Debug: log the complete command being executed
+        debug!("[EVAL_FLOW] Executing command: {:?}", command);
+        info!("[EVAL_FLOW] Command args: validator_binary_path={:?}, ssh_host={}, ssh_port={}, ssh_user={}, ssh_key={:?}, executor_binary_path={:?}, output_format={}, timeout={}",
+              binary_config.validator_binary_path, ssh_details.host, ssh_details.port, ssh_details.username,
+              ssh_details.private_key_path, binary_config.executor_binary_path, binary_config.output_format, binary_config.execution_timeout_secs);
 
         let output = tokio::time::timeout(timeout_duration, command.output())
             .await
@@ -1805,10 +1760,9 @@ impl VerificationEngine {
                     binary_validation_successful = binary_result.success;
                     executor_result = binary_result.executor_result;
                     binary_score = binary_result.validation_score;
-                    validation_details.binary_upload_duration =
-                        Duration::from_millis(binary_result.execution_time_ms / 2);
+                    validation_details.binary_upload_duration = Duration::from_secs(0); // Upload handled by validator binary
                     validation_details.binary_execution_duration =
-                        Duration::from_millis(binary_result.execution_time_ms / 2);
+                        Duration::from_millis(binary_result.execution_time_ms);
 
                     info!(
                         "[EVAL_FLOW] Binary validation completed for executor {} - success: {}, score: {:.2}",
@@ -1884,7 +1838,10 @@ impl std::fmt::Display for SshAutomationStatus {
             self.dynamic_discovery_enabled,
             self.ssh_key_manager_available,
             self.bittensor_service_available,
-            self.fallback_key_path.as_ref().map(|p| p.display().to_string()).unwrap_or("none".to_string())
+            self.fallback_key_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or("none".to_string())
         )
     }
 }

@@ -39,8 +39,7 @@ cache_miner_info_ttl = { secs = 300 }
 enabled = true
 validator_binary_path = "/opt/basilica/bin/validator-binary"
 executor_binary_path = "/opt/basilica/bin/executor-binary"
-execution_timeout_secs = 120
-remote_executor_path = "/tmp/executor-binary"
+execution_timeout_secs = 540
 output_format = "json"
 
 [ssh_validation]

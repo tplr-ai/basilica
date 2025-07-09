@@ -9,7 +9,6 @@ pub mod business_metrics;
 pub mod prometheus_metrics;
 
 pub use api_metrics::*;
-pub use binary_validation_metrics::*;
 pub use business_metrics::*;
 pub use prometheus_metrics::*;
 
