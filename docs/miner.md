@@ -5,6 +5,7 @@ This guide covers running a Basilica miner node with GPU executors to provide co
 ## Overview
 
 The miner component manages a fleet of GPU executor machines, handling:
+
 - Registration on the Bittensor network
 - Executor fleet management via gRPC
 - Task distribution and monitoring
@@ -141,41 +142,92 @@ attestation_dir = "/opt/basilica/attestations"
 level = "info"
 ```
 
-### 4. Build and Start the Miner
+### 4. Production Deployment (Recommended)
+
+The easiest way to run a miner in production is using Docker Compose:
+
+```bash
+# Navigate to miner scripts directory
+cd scripts/miner
+
+# Copy and customize the production config
+cp ../../config/miner.correct.toml ../../config/miner.toml
+# Edit miner.toml with your specific settings:
+# - Update external_ip and advertised_host to your public IP
+# - Set your wallet_name and hotkey_name
+# - Configure your executor fleet with correct IPs and SSH access
+# - Choose network: "finney" for mainnet or "test" for testnet
+
+# Ensure your Bittensor wallet exists
+ls ~/.bittensor/wallets/your_miner_wallet/hotkeys/
+
+# Create required directories
+mkdir -p /var/log/basilica
+
+# Deploy with Docker Compose (includes auto-updates and monitoring)
+docker compose -f compose.prod.yml up -d
+
+# Check status
+docker compose -f compose.prod.yml ps
+docker logs basilica-miner
+```
+
+This production setup includes:
+- **Automatic updates** via Watchtower
+- **Health monitoring** with automatic restarts
+- **Persistent data storage** with named volumes
+- **Proper logging** to `/var/log/basilica`
+- **Network isolation** with dedicated Docker network
+
+### 5. Alternative Deployment Methods
+
+#### Using Build Script and Remote Deployment
+
+```bash
+# Build and deploy to remote server (see BASILICA-DEPLOYMENT-GUIDE.md)
+./scripts/deploy.dev.sh -s miner -m user@your-server:port
+
+# Deploy with wallet sync and health checks
+./scripts/deploy.dev.sh -s miner -m user@your-server:port -w -c
+```
 
 #### Building from Source
 
 ```bash
-# Build the miner
-cargo build -p miner
+# Build the miner using the build script
+./scripts/miner/build.sh
 
-# Or build in release mode for better performance
-cargo build -p miner --release
+# Or build manually
+cargo build --release -p miner
 ```
 
-#### Running the Miner
+#### Running with Docker Directly
 
 ```bash
-# Using the binary
-./target/debug/miner --config config/miner.toml
+# Build Docker image
+docker build -f scripts/miner/Dockerfile -t basilica/miner .
 
-# Or using cargo
-cargo run -p miner -- --config config/miner.toml
-
-# Using Docker
+# Run container
 docker run -d \
-  -v ~/.bittensor:/root/.bittensor \
-  -v ./config/miner.toml:/config/miner.toml \
-  -p 8092:8092 \
+  --name basilica-miner \
+  --restart unless-stopped \
+  -v ~/.bittensor:/home/basilica/.bittensor \
+  -v ./config/miner.toml:/app/miner.toml:ro \
+  -v miner-data:/app/data \
+  -p 50051:50051 \
   -p 8091:8091 \
-  basilica/miner:latest
+  -p 8080:8080 \
+  basilica/miner:latest --config /app/miner.toml
 ```
 
 **Important Notes**:
-- The miner will automatically discover its UID from the Bittensor metagraph based on its hotkey
+
+- The miner automatically discovers its UID from the Bittensor metagraph based on its hotkey
 - UIDs are no longer hardcoded in configuration files
-- The chain endpoint is auto-detected based on the network type if not explicitly specified
-- Ensure the data directory exists and has proper permissions
+- Chain endpoint is auto-detected based on network type if not explicitly specified
+- Ensure proper firewall configuration for ports 50051 (gRPC), 8091 (Axon), and 8080 (metrics)
+- For production, use the compose.prod.yml for automatic updates and monitoring
+- You must have at least one executor configured and accessible
 
 ## Advanced Configuration
 
@@ -186,7 +238,6 @@ The miner supports multiple deployment modes:
 - **SSH Mode**: Direct SSH deployment to executor machines
 - **Manual Mode**: Pre-deployed executors managed externally
 - **Kubernetes Mode**: Kubernetes-based executor orchestration
-
 
 ### Monitoring
 
@@ -225,56 +276,70 @@ curl http://localhost:8080/api/v1/executors
 ### Common Issues
 
 **Executor Connection Failed**
-```
+
+```text
 Error: Failed to connect to executor at gpu-1:50051
 ```
+
 - Verify executor is running and accessible
 - Check firewall rules allow port 50051
 - Ensure gRPC address is correct in config
 
 **Registration Failed**
-```
+
+```text
 Error: Failed to serve axon on network
 ```
+
 - Ensure wallet has sufficient TAO for registration
 - Verify you're connected to the correct network
 - Check if hotkey is already registered
 
 **Wallet Loading Error**
-```
+
+```text
 Error: Failed to load hotkey: Invalid format
 ```
+
 - Ensure wallet file exists at `~/.bittensor/wallets/{wallet_name}/hotkeys/{hotkey_name}`
 - Check if the wallet is in the correct format (JSON with secretPhrase field or raw seed phrase)
 - Verify file permissions allow reading
 
 **Database Connection Error**
-```
+
+```text
 Error: unable to open database file
 ```
+
 - Ensure the data directory exists (e.g., `mkdir -p data`)
 - Check file permissions on the data directory
 - Verify the database URL in config uses proper format: `sqlite:./data/miner.db`
 
 **Executor Configuration Error**
-```
+
+```text
 Error: At least one executor must be configured
 ```
+
 - Ensure at least one executor is defined in the `[[executor_management.executors]]` section
 - Verify the executor configuration syntax is correct
 
 **Hardware Attestation Failed**
-```
+
+```text
 Error: GPU attestation failed: No NVIDIA driver found
 ```
+
 - Install NVIDIA drivers on executor machine
 - Run executor with `--privileged` if using Docker
 - Verify GPU is properly detected with `nvidia-smi`
 
 **GPU PoW Challenge Failed**
-```
+
+```text
 Error: Failed to initialize GPU PRNG kernel - CUDA kernels required
 ```
+
 - Ensure CUDA is properly installed on the executor
 - Verify gpu-attestor binary has access to CUDA libraries
 - Check that PTX files are compiled correctly during build
@@ -291,6 +356,7 @@ format = "json"
 ```
 
 View logs:
+
 ```bash
 # Miner logs
 tail -f ./logs/miner.log
@@ -316,6 +382,7 @@ Miners must prove they possess the GPUs they claim through the GPU Proof-of-Work
    - Fast execution times (typically 50-200ms for H100)
 
 3. **Testing GPU PoW**
+
    ```bash
    # Test GPU detection and challenge execution
    ./scripts/test_gpu_pow.sh

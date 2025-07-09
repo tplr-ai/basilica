@@ -5,6 +5,7 @@ This guide covers running a Basilica validator node to verify and score GPU prov
 ## Overview
 
 The validator component performs critical network functions:
+
 - Verifies miner hardware capabilities through SSH-based challenges
 - Scores miners based on performance and reliability
 - Sets weights on the Bittensor network to reward quality providers
@@ -92,43 +93,91 @@ enabled = true
 port = 9090
 ```
 
-### 3. Build and Start the Validator
+### 3. Production Deployment (Recommended)
+
+The easiest way to run a validator in production is using Docker Compose:
+
+```bash
+# Navigate to validator scripts directory
+cd scripts/validator
+
+# Copy and customize the production config
+cp ../../config/validator.correct.toml ../../config/validator.toml
+# Edit validator.toml with your specific settings:
+# - Update external_ip and advertised_host to your public IP
+# - Set your wallet_name and hotkey_name
+# - Choose network: "finney" for mainnet or "test" for testnet
+
+# Ensure your Bittensor wallet exists
+ls ~/.bittensor/wallets/your_validator_wallet/hotkeys/
+
+# Create required directories
+mkdir -p /var/log/basilica
+
+# Deploy with Docker Compose (includes auto-updates and monitoring)
+docker compose -f compose.prod.yml up -d
+
+# Check status
+docker compose -f compose.prod.yml ps
+docker logs basilica-validator
+```
+
+This production setup includes:
+- **Automatic updates** via Watchtower
+- **Health monitoring** with automatic restarts  
+- **Persistent data storage** with named volumes
+- **Proper logging** to `/var/log/basilica`
+- **Network isolation** with dedicated Docker network
+
+### 4. Alternative Deployment Methods
+
+#### Using Build Script and Remote Deployment
+
+```bash
+# Build and deploy to remote server (see BASILICA-DEPLOYMENT-GUIDE.md)
+./scripts/deploy.dev.sh -s validator -v user@your-server:port
+
+# Deploy with wallet sync and health checks
+./scripts/deploy.dev.sh -s validator -v user@your-server:port -w -c
+```
 
 #### Building from Source
 
 ```bash
-# Build the validator
-cargo build -p validator
+# Build the validator using the build script
+./scripts/validator/build.sh
+
+# Or build manually
+cargo build --release -p validator
 ```
 
-#### Running the Validator
+#### Running with Docker Directly
 
 ```bash
-# Create data directory if it doesn't exist
-mkdir -p data
+# Build Docker image
+docker build -f scripts/validator/Dockerfile -t basilica/validator .
 
-# Using the binary
-./target/debug/validator start --config config/validator.toml
-
-# Or using cargo
-cargo run -p validator -- start --config config/validator.toml
-
-# Using Docker
+# Run container
 docker run -d \
-  -v ~/.bittensor:/root/.bittensor \
-  -v ./config/validator.toml:/config/validator.toml \
-  -v ./data:/data \
+  --name basilica-validator \
+  --restart unless-stopped \
+  -v ~/.bittensor:/home/basilica/.bittensor \
+  -v ./config/validator.toml:/app/validator.toml:ro \
+  -v validator-data:/app/data \
+  -v ~/.ssh:/app/keys:ro \
+  -p 50053:50053 \
+  -p 3000:3000 \
   -p 8080:8080 \
-  -p 9091:9091 \
-  basilica/validator:latest
+  basilica/validator:latest --config /app/validator.toml
 ```
 
 **Important Notes**:
-- The validator will automatically discover its UID from the Bittensor metagraph based on its hotkey
+
+- The validator automatically discovers its UID from the Bittensor metagraph based on its hotkey
 - UIDs are no longer hardcoded in configuration files
-- The chain endpoint is auto-detected based on the network type if not explicitly specified
-- Ensure the data directory exists and has proper permissions
-- The database path in the config should use the format `sqlite:./data/validator.db`
+- Chain endpoint is auto-detected based on network type if not explicitly specified
+- Ensure proper firewall configuration for ports 50053 (gRPC), 3000 (API), and 8080 (metrics)
+- For production, use the compose.prod.yml for automatic updates and monitoring
 
 ## Verification Process
 
@@ -144,11 +193,13 @@ docker run -d \
 ### Verification Types
 
 **Hardware Verification**
+
 - Validates GPU specifications through attestation
 - Checks cryptographic signatures (P256 ECDSA)
 - Verifies hardware capabilities match claims
 
 The hardware attestation process:
+
 ```bash
 # Validators connect to executors via SSH and verify attestations
 # The attestation includes:
@@ -165,11 +216,13 @@ The hardware attestation process:
 ```
 
 **Compute Verification**
+
 - Runs benchmark tasks on miner GPUs
 - Measures performance and accuracy
 - Validates task completion times
 
 **Availability Verification**
+
 - Monitors miner uptime and responsiveness
 - Tracks connection reliability
 - Measures API response times
@@ -264,6 +317,7 @@ curl http://localhost:8080/api/v1/stats
 ### Performance Metrics
 
 Monitor key validator metrics:
+
 - Verification success rate
 - Average verification time
 - Weight setting frequency
@@ -304,25 +358,31 @@ grep "weights set" /opt/basilica/logs/validator.log
 ### Common Issues
 
 **Registration Failed**
+
 ```
 Error: Validator registration failed: insufficient stake
 ```
+
 - Ensure wallet has minimum stake requirement
 - Check network connection to Bittensor
 - Verify correct subnet ID
 
 **Verification Timeout**
+
 ```
 Error: SSH verification timeout for miner UID 123
 ```
+
 - Check network connectivity to miner
 - Verify SSH credentials are correct
 - Increase timeout in configuration
 
 **Database Errors**
+
 ```
 Error: unable to open database file
 ```
+
 - Ensure the data directory exists (e.g., `mkdir -p data`)
 - Check file permissions on the data directory
 - Verify the database URL in config uses proper format: `sqlite:./data/validator.db`
@@ -330,9 +390,11 @@ Error: unable to open database file
 - SQLite connection mode `?mode=rwc` is automatically added for read-write-create
 
 **Wallet Loading Error**
+
 ```
 Error: Failed to load hotkey: Invalid format
 ```
+
 - Ensure wallet file exists at `~/.bittensor/wallets/{wallet_name}/hotkeys/{hotkey_name}`
 - Check if the wallet is in the correct format (JSON with secretPhrase field or raw seed phrase)
 - Verify file permissions allow reading

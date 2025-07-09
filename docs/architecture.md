@@ -49,7 +49,7 @@ The hardware attestation component:
 
 ## System Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                   BITTENSOR NETWORK                     │
 │                   (Subnet 39/387)                       │
@@ -108,6 +108,7 @@ service Executor {
 ### 3. SSH Protocol
 
 Validator verification mechanism:
+
 - Secure remote command execution
 - Hardware verification challenges
 - Computational task validation
@@ -115,6 +116,7 @@ Validator verification mechanism:
 ### 4. REST API
 
 External interfaces for monitoring:
+
 - Health endpoints
 - Metrics collection
 - Administrative APIs
@@ -123,7 +125,7 @@ External interfaces for monitoring:
 
 ### 1. Registration Flow
 
-```
+```text
 Miner → Bittensor Network: Register with stake
 Validator → Bittensor Network: Query metagraph
 Validator → Miner: Discover via metagraph
@@ -131,7 +133,7 @@ Validator → Miner: Discover via metagraph
 
 ### 2. Verification Flow
 
-```
+```text
 Validator → Miner (Axon): Request executor info
 Miner → Validator: Return executor endpoints
 Validator → Executor (SSH): Send verification challenge
@@ -142,7 +144,7 @@ Validator → Bittensor: Set weights
 
 ### 3. Compute Request Flow
 
-```
+```text
 Client → Miner (Axon): Submit compute task
 Miner → Executor (gRPC): Forward task
 Executor → Container: Execute in isolation
@@ -161,7 +163,7 @@ Miner → Client: Forward results
 
 ### 2. Trust Model
 
-```
+```text
 Hardware Trust: GPU-Attestor → Cryptographic Proof
 Execution Trust: Validator → Verification Challenges
 Network Trust: Bittensor → Consensus Mechanism
@@ -214,7 +216,7 @@ gpu_allocation_mode = "exclusive"
 
 ### 1. Single-Node Development
 
-```
+```text
 Local Machine:
 ├── Validator (Port 8081)
 ├── Miner (Port 8080)
@@ -223,7 +225,7 @@ Local Machine:
 
 ### 2. Distributed Production
 
-```
+```text
 Validator Region:
 ├── Multiple Validators (Geographic distribution)
 └── Load Balancer
@@ -243,7 +245,7 @@ Miner Region:
 
 ### 2. Logging Architecture
 
-```
+```text
 Component Logs → Aggregator → Storage → Analysis
                      ↓
                 Alerting System
@@ -262,7 +264,7 @@ GET /api/v1/status   # Detailed status
 
 ### Code Organization
 
-```
+```text
 basilica/
 ├── crates/           # Rust workspace
 │   ├── common/       # Shared utilities
@@ -297,7 +299,6 @@ basilica/
 2. **Advanced Scheduling**: Intelligent task distribution
 3. **Federation**: Cross-subnet resource sharing
 4. **Enhanced Security**: Hardware security modules
-
 
 ## Conclusion
 
