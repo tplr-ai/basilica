@@ -153,7 +153,7 @@ async fn test_dynamic_discovery_config() {
         fallback_to_static: true,
         cache_miner_info_ttl: Duration::from_secs(300),
         grpc_port_offset: Some(42000),
-        binary_validation: Default::default(),
+        binary_validation: crate::config::BinaryValidationConfig::default(),
     };
 
     // Verify configuration

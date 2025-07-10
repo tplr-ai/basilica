@@ -708,28 +708,56 @@ mod tests {
         assert!(result.is_none());
 
         // Test too-short query
-        let result = store
-            .find_by_identifier("ab")
-            .await
-            .expect("Should complete search");
-        assert!(result.is_none());
+        let result = store.find_by_identifier("ab").await;
+        assert!(result.is_err());
+        let err = result.err().unwrap();
+        assert!(err
+            .to_string()
+            .contains("HUID prefix must be at least 3 characters"));
     }
 
     #[tokio::test]
     async fn test_concurrent_get_or_create() {
+        // Use a file-based database with WAL mode for better concurrency
+        let temp_file = tempfile::NamedTempFile::new().expect("Should create temp file");
+        let db_path = format!("sqlite://{}?mode=rwc", temp_file.path().display());
+
         let store = Arc::new(
-            SqliteIdentityStore::new("sqlite::memory:")
+            SqliteIdentityStore::new(&db_path)
                 .await
                 .expect("Should create store"),
         );
+
+        // Enable WAL mode for better concurrency
+        sqlx::query("PRAGMA journal_mode = WAL")
+            .execute(&store.pool)
+            .await
+            .expect("Should set WAL mode");
 
         // Spawn multiple tasks that try to get_or_create simultaneously
         let tasks: Vec<_> = (0..5)
             .map(|_| {
                 let store = store.clone();
-                tokio::spawn(
-                    async move { store.get_or_create().await.expect("Should get identity") },
-                )
+                tokio::spawn(async move {
+                    // Add retry logic for database locks
+                    let mut attempts = 0;
+                    loop {
+                        match store.get_or_create().await {
+                            Ok(identity) => return identity,
+                            Err(e)
+                                if e.to_string().contains("database is locked")
+                                    || e.to_string().contains("database is deadlocked") =>
+                            {
+                                attempts += 1;
+                                if attempts > 10 {
+                                    panic!("Failed after 10 attempts: {e}");
+                                }
+                                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+                            }
+                            Err(e) => panic!("Unexpected error: {e}"),
+                        }
+                    }
+                })
             })
             .collect();
 

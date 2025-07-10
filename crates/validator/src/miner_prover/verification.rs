@@ -1921,7 +1921,7 @@ impl VerificationEngine {
                     ssh_connection_successful: false,
                     binary_validation_successful: false,
                     executor_result: None,
-                    error: Some(format!("SSH session establishment failed: {}", e)),
+                    error: Some(format!("SSH session establishment failed: {e}")),
                     execution_time: total_start.elapsed(),
                     validation_details,
                 });
