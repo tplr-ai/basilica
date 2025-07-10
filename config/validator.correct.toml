@@ -6,7 +6,7 @@ run_migrations = true
 [server]
 host = "0.0.0.0"
 port = 8081
-advertised_host = "135.181.63.194"
+advertised_host = "160.202.129.15"
 advertised_port = 8081
 advertised_tls = false
 max_connections = 1000
@@ -20,7 +20,7 @@ netuid = 387
 chain_endpoint = "wss://test.finney.opentensor.ai:443"
 weight_interval_secs = 300
 axon_port = 8081
-external_ip = "135.181.63.194"
+external_ip = "160.202.129.15"
 
 [verification]
 max_concurrent_verifications = 50

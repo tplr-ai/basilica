@@ -1428,6 +1428,9 @@ impl VerificationEngine {
             .arg("--timeout")
             .arg(binary_config.execution_timeout_secs.to_string());
 
+        // Set environment variable for matrix size
+        command.env("BAS_MATRIX_SIZE", "1024");
+
         // Set timeout for entire process
         let timeout_duration = Duration::from_secs(binary_config.execution_timeout_secs + 10);
 
@@ -1436,6 +1439,7 @@ impl VerificationEngine {
         info!("[EVAL_FLOW] Command args: validator_binary_path={:?}, ssh_host={}, ssh_port={}, ssh_user={}, ssh_key={:?}, executor_binary_path={:?}, output_format={}, timeout={}",
               binary_config.validator_binary_path, ssh_details.host, ssh_details.port, ssh_details.username,
               ssh_details.private_key_path, binary_config.executor_binary_path, binary_config.output_format, binary_config.execution_timeout_secs);
+        info!("[EVAL_FLOW] Environment variables: BAS_MATRIX_SIZE=1024");
 
         info!(
             "[EVAL_FLOW] Starting validator binary execution with timeout {}s",
@@ -1513,6 +1517,11 @@ impl VerificationEngine {
         &self,
         output: &[u8],
     ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
+        if output.is_empty() {
+            error!("[EVAL_FLOW] Validator binary output is empty");
+            return Err(anyhow::anyhow!("Validator binary produced no output"));
+        }
+
         let output_str = String::from_utf8_lossy(output);
 
         info!(
@@ -1521,19 +1530,38 @@ impl VerificationEngine {
         );
         debug!("[EVAL_FLOW] Raw output: {}", output_str);
 
-        // Parse JSON output
-        let parsed_output: crate::validation::types::ValidatorBinaryOutput =
-            serde_json::from_str(&output_str).map_err(|e| {
+        // Validate output contains some expected content
+        if !output_str.contains("validator_binary")
+            && !output_str.contains("success")
+            && !output_str.contains("{")
+        {
+            error!(
+                "[EVAL_FLOW] Validator binary output does not appear to contain expected content"
+            );
+            return Err(anyhow::anyhow!(
+                "Validator binary output does not contain expected validator_binary logs or JSON. Output: {}",
+                output_str.chars().take(500).collect::<String>()
+            ));
+        }
+
+        // Extract JSON from mixed log/JSON output
+        let json_str = match self.extract_json_from_output(&output_str) {
+            Ok(json) => json,
+            Err(e) => {
                 error!(
-                    "[EVAL_FLOW] Failed to parse validator binary JSON output: {}",
+                    "[EVAL_FLOW] Failed to extract JSON from validator output: {}",
                     e
                 );
                 error!(
-                    "[EVAL_FLOW] Raw output that failed to parse: {}",
-                    output_str
+                    "[EVAL_FLOW] Raw output for debugging: {}",
+                    output_str.chars().take(1000).collect::<String>()
                 );
-                anyhow::anyhow!("Failed to parse validator binary JSON output: {}", e)
-            })?;
+                return Err(e.context("Failed to extract JSON from validator binary output"));
+            }
+        };
+
+        // Parse raw JSON and convert to expected format
+        let parsed_output = self.parse_and_convert_validator_output(&json_str)?;
 
         info!("[EVAL_FLOW] Successfully parsed binary output - success: {}, execution_time: {}ms, validation_score: {:.3}",
               parsed_output.success, parsed_output.execution_time_ms, parsed_output.validation_score);
@@ -1575,6 +1603,450 @@ impl VerificationEngine {
         }
 
         Ok(parsed_output)
+    }
+
+    /// Extract JSON object from mixed log/JSON output
+    fn extract_json_from_output(&self, output: &str) -> Result<String> {
+        info!(
+            "[EVAL_FLOW] Extracting JSON from validator binary output ({} bytes)",
+            output.len()
+        );
+
+        if output.trim().is_empty() {
+            error!("[EVAL_FLOW] Validator binary output is empty");
+            return Err(anyhow::anyhow!("Validator binary produced no output"));
+        }
+
+        // Strategy 1: Find the last valid JSON object by scanning backwards for complete JSON blocks
+        // This handles the case where JSON appears after log messages
+        let mut candidates = Vec::new();
+        let mut brace_count = 0;
+        let mut current_start = None;
+        let chars: Vec<char> = output.chars().collect();
+
+        // Scan through entire output to find all potential JSON objects
+        for (i, &ch) in chars.iter().enumerate() {
+            match ch {
+                '{' => {
+                    if brace_count == 0 {
+                        current_start = Some(i);
+                    }
+                    brace_count += 1;
+                }
+                '}' => {
+                    brace_count -= 1;
+                    if brace_count == 0 {
+                        if let Some(start) = current_start {
+                            let json_candidate: String = chars[start..=i].iter().collect();
+                            candidates.push((start, json_candidate));
+                        }
+                        current_start = None;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        debug!(
+            "[EVAL_FLOW] Found {} potential JSON candidates",
+            candidates.len()
+        );
+
+        // Test candidates in reverse order (last one first, as it's most likely the final JSON output)
+        for (start_pos, candidate) in candidates.into_iter().rev() {
+            let trimmed = candidate.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+
+            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Ok(parsed) => {
+                    // Additional validation: ensure this looks like validator output
+                    if self.is_valid_validator_output(&parsed) {
+                        info!("[EVAL_FLOW] Successfully extracted valid JSON object ({} bytes) at position {}",
+                              trimmed.len(), start_pos);
+                        debug!("[EVAL_FLOW] Extracted JSON: {}", trimmed);
+                        return Ok(trimmed.to_string());
+                    } else {
+                        debug!("[EVAL_FLOW] JSON candidate at position {} failed validator output validation", start_pos);
+                    }
+                }
+                Err(e) => {
+                    debug!(
+                        "[EVAL_FLOW] JSON candidate at position {} failed parsing: {}",
+                        start_pos, e
+                    );
+                }
+            }
+        }
+
+        // Strategy 2: Look for JSON on lines that start with '{' (working backwards)
+        let lines: Vec<&str> = output.lines().collect();
+        for (line_num, line) in lines.iter().enumerate().rev() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('{') && trimmed.len() > 10 {
+                // Try parsing just this line first
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                    if self.is_valid_validator_output(&parsed) {
+                        info!(
+                            "[EVAL_FLOW] Found valid JSON on single line {} ({} bytes)",
+                            line_num + 1,
+                            trimmed.len()
+                        );
+                        return Ok(trimmed.to_string());
+                    }
+                }
+
+                // Try parsing from this line to end of output
+                let remaining_lines: Vec<&str> = lines[line_num..].to_vec();
+                let multi_line_candidate = remaining_lines.join("\n");
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&multi_line_candidate)
+                {
+                    if self.is_valid_validator_output(&parsed) {
+                        info!("[EVAL_FLOW] Found valid multi-line JSON starting at line {} ({} bytes)",
+                              line_num + 1, multi_line_candidate.len());
+                        return Ok(multi_line_candidate);
+                    }
+                }
+            }
+        }
+
+        // Strategy 3: Look for JSON at the very end of output (common case)
+        let output_suffix = output.trim_end();
+        if let Some(last_brace) = output_suffix.rfind('}') {
+            if let Some(first_brace) = output_suffix[..=last_brace].rfind('{') {
+                let final_candidate = &output_suffix[first_brace..=last_brace];
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(final_candidate) {
+                    if self.is_valid_validator_output(&parsed) {
+                        info!(
+                            "[EVAL_FLOW] Found valid JSON at end of output ({} bytes)",
+                            final_candidate.len()
+                        );
+                        return Ok(final_candidate.to_string());
+                    }
+                }
+            }
+        }
+
+        // Log detailed failure information for debugging
+        error!("[EVAL_FLOW] Failed to extract valid JSON from validator binary output");
+        error!("[EVAL_FLOW] Output length: {} bytes", output.len());
+        error!("[EVAL_FLOW] Output lines: {}", lines.len());
+        error!(
+            "[EVAL_FLOW] First 200 chars: {:?}",
+            output.chars().take(200).collect::<String>()
+        );
+        error!(
+            "[EVAL_FLOW] Last 200 chars: {:?}",
+            output
+                .chars()
+                .rev()
+                .take(200)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>()
+        );
+
+        Err(anyhow::anyhow!(
+            "Failed to extract valid JSON from validator binary output. Output contains {} lines and {} bytes. \
+             Expected JSON output from validator binary with 'success', 'gpu_results', or 'execution_time_ms' fields.",
+            lines.len(), output.len()
+        ))
+    }
+
+    /// Validate that a parsed JSON object looks like valid validator output
+    fn is_valid_validator_output(&self, parsed: &serde_json::Value) -> bool {
+        // Check for expected top-level fields that indicate this is validator output
+        let has_success = parsed.get("success").is_some();
+        let has_gpu_results = parsed.get("gpu_results").is_some();
+        let has_execution_time = parsed.get("execution_time_ms").is_some();
+        let has_matrix_size = parsed.get("matrix_size").is_some();
+
+        // Must have at least 2 of these key fields to be considered valid validator output
+        let field_count = [
+            has_success,
+            has_gpu_results,
+            has_execution_time,
+            has_matrix_size,
+        ]
+        .iter()
+        .filter(|&&x| x)
+        .count();
+
+        let is_valid = field_count >= 2;
+
+        if !is_valid {
+            debug!("[EVAL_FLOW] JSON validation failed - has_success: {}, has_gpu_results: {}, has_execution_time: {}, has_matrix_size: {}",
+                   has_success, has_gpu_results, has_execution_time, has_matrix_size);
+        }
+
+        is_valid
+    }
+
+    /// Parse and convert raw validator binary JSON to expected format
+    fn parse_and_convert_validator_output(
+        &self,
+        json_str: &str,
+    ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
+        info!("[EVAL_FLOW] Converting raw validator binary JSON to expected format");
+
+        // Parse raw JSON into a generic Value first
+        let raw_json: serde_json::Value = serde_json::from_str(json_str).map_err(|e| {
+            error!("[EVAL_FLOW] Failed to parse raw JSON: {}", e);
+            anyhow::anyhow!("Failed to parse raw JSON: {}", e)
+        })?;
+
+        // Extract basic fields
+        let success = raw_json
+            .get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let execution_time_ms = raw_json
+            .get("execution_time_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        info!(
+            "[EVAL_FLOW] Raw JSON parsing - success: {}, execution_time_ms: {}",
+            success, execution_time_ms
+        );
+
+        // Calculate validation score based on the results
+        let validation_score = if success {
+            self.calculate_validation_score_from_raw_results(&raw_json)?
+        } else {
+            0.0
+        };
+
+        // Convert GPU results to executor result if available
+        let executor_result = if success {
+            self.convert_gpu_results_to_executor_result(&raw_json)?
+        } else {
+            None
+        };
+
+        // Extract error message if present
+        let error_message = raw_json
+            .get("error_message")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        info!("[EVAL_FLOW] Converted to ValidatorBinaryOutput - validation_score: {:.3}, has_executor_result: {}",
+              validation_score, executor_result.is_some());
+
+        Ok(crate::validation::types::ValidatorBinaryOutput {
+            success,
+            executor_result,
+            error_message,
+            execution_time_ms,
+            validation_score,
+        })
+    }
+
+    /// Calculate validation score from raw GPU results
+    fn calculate_validation_score_from_raw_results(
+        &self,
+        raw_json: &serde_json::Value,
+    ) -> Result<f64> {
+        let gpu_results = raw_json
+            .get("gpu_results")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("No gpu_results found in output"))?;
+
+        if gpu_results.is_empty() {
+            return Ok(0.0);
+        }
+
+        let mut total_score = 0.0;
+        let gpu_count = gpu_results.len();
+
+        for gpu_result in gpu_results {
+            let mut gpu_score: f64 = 0.0;
+
+            // Base score for successful execution
+            gpu_score += 0.3;
+
+            // Anti-debug check
+            if gpu_result
+                .get("anti_debug_passed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                gpu_score += 0.2;
+            }
+
+            // SM utilization scoring
+            if let Some(sm_util) = gpu_result.get("sm_utilization") {
+                let avg_utilization = sm_util.get("avg").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let sm_score = if avg_utilization > 0.8 {
+                    0.2
+                } else if avg_utilization > 0.6 {
+                    0.1
+                } else {
+                    0.0
+                };
+                gpu_score += sm_score;
+            }
+
+            // Memory bandwidth scoring
+            let bandwidth = gpu_result
+                .get("memory_bandwidth_gbps")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let bandwidth_score = if bandwidth > 15000.0 {
+                0.15
+            } else if bandwidth > 10000.0 {
+                0.1
+            } else if bandwidth > 5000.0 {
+                0.05
+            } else {
+                0.0
+            };
+            gpu_score += bandwidth_score;
+
+            // Computation timing score
+            let computation_time_ns = gpu_result
+                .get("computation_time_ns")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let computation_time_ms = computation_time_ns / 1_000_000;
+            let timing_score = if computation_time_ms > 10 && computation_time_ms < 5000 {
+                0.05
+            } else {
+                0.0
+            };
+            gpu_score += timing_score;
+
+            total_score += gpu_score.clamp(0.0, 1.0);
+        }
+
+        let average_score = total_score / gpu_count as f64;
+        info!(
+            "[EVAL_FLOW] Calculated validation score from {} GPUs: {:.3}",
+            gpu_count, average_score
+        );
+
+        Ok(average_score)
+    }
+
+    /// Convert GPU results to ExecutorResult format
+    fn convert_gpu_results_to_executor_result(
+        &self,
+        raw_json: &serde_json::Value,
+    ) -> Result<Option<crate::validation::types::ExecutorResult>> {
+        let gpu_results = raw_json
+            .get("gpu_results")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| anyhow::anyhow!("No gpu_results found in output"))?;
+
+        if gpu_results.is_empty() {
+            return Ok(None);
+        }
+
+        // Use the first GPU for primary information
+        let primary_gpu = &gpu_results[0];
+
+        let gpu_name = primary_gpu
+            .get("gpu_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown GPU")
+            .to_string();
+
+        let gpu_uuid = primary_gpu
+            .get("gpu_uuid")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown UUID")
+            .to_string();
+
+        let computation_time_ns = primary_gpu
+            .get("computation_time_ns")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        let memory_bandwidth_gbps = primary_gpu
+            .get("memory_bandwidth_gbps")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+
+        let anti_debug_passed = primary_gpu
+            .get("anti_debug_passed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        // SM utilization
+        let sm_utilization = if let Some(sm_util) = primary_gpu.get("sm_utilization") {
+            let min_util = sm_util.get("min").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let max_util = sm_util.get("max").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let avg_util = sm_util.get("avg").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+            crate::validation::types::SmUtilizationStats {
+                min_utilization: min_util,
+                max_utilization: max_util,
+                avg_utilization: avg_util,
+                per_sm_stats: vec![], // Not available in this format
+            }
+        } else {
+            crate::validation::types::SmUtilizationStats {
+                min_utilization: 0.0,
+                max_utilization: 0.0,
+                avg_utilization: 0.0,
+                per_sm_stats: vec![],
+            }
+        };
+
+        let active_sms = primary_gpu
+            .get("sm_utilization")
+            .and_then(|v| v.get("active_sms"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        let total_sms = primary_gpu
+            .get("sm_utilization")
+            .and_then(|v| v.get("total_sms"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        let timing_fingerprint = raw_json
+            .get("timing_fingerprint")
+            .and_then(|v| v.as_str())
+            .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
+            .unwrap_or(0);
+
+        let executor_result = crate::validation::types::ExecutorResult {
+            gpu_name,
+            gpu_uuid,
+            cpu_info: crate::validation::types::BinaryCpuInfo {
+                model: "Unknown".to_string(),
+                cores: 0,
+                threads: 0,
+                frequency_mhz: 0,
+            },
+            memory_info: crate::validation::types::BinaryMemoryInfo {
+                total_gb: 0.0,
+                available_gb: 0.0,
+            },
+            network_info: crate::validation::types::BinaryNetworkInfo { interfaces: vec![] },
+            matrix_c: crate::validation::types::CompressedMatrix {
+                rows: 0,
+                cols: 0,
+                data: vec![],
+            },
+            computation_time_ns,
+            checksum: [0u8; 32],
+            sm_utilization,
+            active_sms,
+            total_sms,
+            memory_bandwidth_gbps,
+            anti_debug_passed,
+            timing_fingerprint,
+        };
+
+        info!("[EVAL_FLOW] Converted GPU results to ExecutorResult - GPU: {}, bandwidth: {:.1} GB/s, SMs: {}/{}",
+              executor_result.gpu_name, executor_result.memory_bandwidth_gbps,
+              executor_result.active_sms, executor_result.total_sms);
+
+        Ok(Some(executor_result))
     }
 
     /// Calculate binary validation score based on executor result
@@ -2102,6 +2574,248 @@ pub struct VerificationStep {
     pub status: StepStatus,
     pub duration: Duration,
     pub details: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::VerificationConfig;
+
+    #[test]
+    fn test_extract_json_from_mixed_output() {
+        let config = VerificationConfig {
+            verification_interval: Duration::from_secs(300),
+            max_concurrent_verifications: 5,
+            challenge_timeout: Duration::from_secs(30),
+            min_score_threshold: 0.5,
+            max_miners_per_round: 10,
+            min_verification_interval: Duration::from_secs(60),
+            netuid: 7,
+            use_dynamic_discovery: true,
+            discovery_timeout: Duration::from_secs(30),
+            fallback_to_static: true,
+            cache_miner_info_ttl: Duration::from_secs(300),
+            grpc_port_offset: None,
+            binary_validation: crate::config::BinaryValidationConfig {
+                enabled: true,
+                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
+                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
+                output_format: "json".to_string(),
+                execution_timeout_secs: 600,
+                score_weight: 0.3,
+            },
+        };
+        let engine = VerificationEngine::new(config);
+
+        // Test data mimicking the actual validator binary output from the logs
+        let mixed_output = r#"2025-07-10T18:01:09.378038Z  INFO validator_binary: Starting validator
+2025-07-10T18:01:09.378366Z  INFO validator_binary: Executing multi-GPU computation...
+2025-07-10T18:01:09.378373Z  INFO validator_binary::executor_manager_ssh: Creating remote directory: /tmp/bas_exec_1606442439272606208
+2025-07-10T18:01:09.549309Z  INFO validator_binary::executor_manager_ssh: Copying executor binary to remote: /tmp/bas_exec_1606442439272606208/executor-binary
+2025-07-10T18:01:10.012607Z  INFO validator_binary::executor_manager_ssh: Executing remote multi-GPU commitment
+2025-07-10T18:01:41.359353Z  INFO validator_binary::executor_manager_ssh: Cleaning up remote directory: /tmp/bas_exec_1606442439272606208
+2025-07-10T18:01:41.539667Z  INFO validator_binary: Multi-GPU execution completed in 32161 ms
+{
+  "execution_time_ms": 32161,
+  "gpu_count": 8,
+  "gpu_results": [
+    {
+      "anti_debug_passed": true,
+      "computation_time_ns": 1247846984,
+      "gpu_index": 0,
+      "gpu_name": "NVIDIA H100 PCIe",
+      "gpu_uuid": "GPU-a53ef3eeaa5ed784a27b0c49660771ba",
+      "memory_bandwidth_gbps": 20651.41327937048
+    }
+  ],
+  "matrix_size": 1024,
+  "random_seed": "0x164b3ae320f4aa00",
+  "success": true,
+  "timing_fingerprint": "0x49ade102f",
+  "total_execution_time_ns": 6085679392
+}
+2025-07-10T18:01:47.017300Z  INFO validator_binary: Validation successful
+"#;
+
+        let result = engine.extract_json_from_output(mixed_output);
+        assert!(result.is_ok(), "Should extract JSON successfully");
+
+        let json_str = result.unwrap();
+        assert!(
+            json_str.contains("execution_time_ms"),
+            "Should contain execution_time_ms"
+        );
+        assert!(json_str.contains("success"), "Should contain success field");
+        assert!(
+            json_str.contains("gpu_results"),
+            "Should contain gpu_results"
+        );
+
+        // Verify it's valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["execution_time_ms"], 32161);
+        assert!(engine.is_valid_validator_output(&parsed));
+    }
+
+    #[test]
+    fn test_extract_json_single_line() {
+        let config = VerificationConfig {
+            verification_interval: Duration::from_secs(300),
+            max_concurrent_verifications: 5,
+            challenge_timeout: Duration::from_secs(30),
+            min_score_threshold: 0.5,
+            max_miners_per_round: 10,
+            min_verification_interval: Duration::from_secs(60),
+            netuid: 7,
+            use_dynamic_discovery: true,
+            discovery_timeout: Duration::from_secs(30),
+            fallback_to_static: true,
+            cache_miner_info_ttl: Duration::from_secs(300),
+            grpc_port_offset: None,
+            binary_validation: crate::config::BinaryValidationConfig {
+                enabled: true,
+                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
+                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
+                output_format: "json".to_string(),
+                execution_timeout_secs: 600,
+                score_weight: 0.3,
+            },
+        };
+        let engine = VerificationEngine::new(config);
+
+        let single_line_output = r#"Some log message
+{"success": true, "execution_time_ms": 1234, "gpu_results": [], "matrix_size": 512}
+More log messages"#;
+
+        let result = engine.extract_json_from_output(single_line_output);
+        assert!(result.is_ok());
+
+        let json_str = result.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["execution_time_ms"], 1234);
+    }
+
+    #[test]
+    fn test_extract_json_no_valid_json() {
+        let config = VerificationConfig {
+            verification_interval: Duration::from_secs(300),
+            max_concurrent_verifications: 5,
+            challenge_timeout: Duration::from_secs(30),
+            min_score_threshold: 0.5,
+            max_miners_per_round: 10,
+            min_verification_interval: Duration::from_secs(60),
+            netuid: 7,
+            use_dynamic_discovery: true,
+            discovery_timeout: Duration::from_secs(30),
+            fallback_to_static: true,
+            cache_miner_info_ttl: Duration::from_secs(300),
+            grpc_port_offset: None,
+            binary_validation: crate::config::BinaryValidationConfig {
+                enabled: true,
+                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
+                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
+                output_format: "json".to_string(),
+                execution_timeout_secs: 600,
+                score_weight: 0.3,
+            },
+        };
+        let engine = VerificationEngine::new(config);
+
+        let no_json_output = "Just log messages without any JSON content";
+        let result = engine.extract_json_from_output(no_json_output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_json_invalid_json() {
+        let config = VerificationConfig {
+            verification_interval: Duration::from_secs(300),
+            max_concurrent_verifications: 5,
+            challenge_timeout: Duration::from_secs(30),
+            min_score_threshold: 0.5,
+            max_miners_per_round: 10,
+            min_verification_interval: Duration::from_secs(60),
+            netuid: 7,
+            use_dynamic_discovery: true,
+            discovery_timeout: Duration::from_secs(30),
+            fallback_to_static: true,
+            cache_miner_info_ttl: Duration::from_secs(300),
+            grpc_port_offset: None,
+            binary_validation: crate::config::BinaryValidationConfig {
+                enabled: true,
+                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
+                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
+                output_format: "json".to_string(),
+                execution_timeout_secs: 600,
+                score_weight: 0.3,
+            },
+        };
+        let engine = VerificationEngine::new(config);
+
+        let invalid_json_output = r#"Log message
+{ "incomplete": true, "missing_closing_brace"
+More logs"#;
+        let result = engine.extract_json_from_output(invalid_json_output);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_is_valid_validator_output() {
+        let config = VerificationConfig {
+            verification_interval: Duration::from_secs(300),
+            max_concurrent_verifications: 5,
+            challenge_timeout: Duration::from_secs(30),
+            min_score_threshold: 0.5,
+            max_miners_per_round: 10,
+            min_verification_interval: Duration::from_secs(60),
+            netuid: 7,
+            use_dynamic_discovery: true,
+            discovery_timeout: Duration::from_secs(30),
+            fallback_to_static: true,
+            cache_miner_info_ttl: Duration::from_secs(300),
+            grpc_port_offset: None,
+            binary_validation: crate::config::BinaryValidationConfig {
+                enabled: true,
+                validator_binary_path: "/opt/basilica/bin/validator-binary".into(),
+                executor_binary_path: "/opt/basilica/bin/executor-binary".into(),
+                output_format: "json".to_string(),
+                execution_timeout_secs: 600,
+                score_weight: 0.3,
+            },
+        };
+        let engine = VerificationEngine::new(config);
+
+        // Valid validator output
+        let valid_json = serde_json::json!({
+            "success": true,
+            "execution_time_ms": 1000,
+            "gpu_results": [],
+            "matrix_size": 1024
+        });
+        assert!(engine.is_valid_validator_output(&valid_json));
+
+        // Minimal valid output (2 required fields)
+        let minimal_json = serde_json::json!({
+            "success": true,
+            "execution_time_ms": 1000
+        });
+        assert!(engine.is_valid_validator_output(&minimal_json));
+
+        // Invalid output (only 1 field)
+        let invalid_json = serde_json::json!({
+            "success": true
+        });
+        assert!(!engine.is_valid_validator_output(&invalid_json));
+
+        // Invalid output (wrong fields)
+        let wrong_fields_json = serde_json::json!({
+            "random_field": true,
+            "another_field": 123
+        });
+        assert!(!engine.is_valid_validator_output(&wrong_fields_json));
+    }
 }
 
 /// Step status tracking
