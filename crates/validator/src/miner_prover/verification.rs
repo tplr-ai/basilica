@@ -553,10 +553,27 @@ impl VerificationEngine {
     /// Helper function to clean up active SSH session for an executor
     async fn cleanup_active_session(&self, executor_id: &str) {
         let mut active_sessions = self.active_ssh_sessions.lock().await;
-        if active_sessions.remove(executor_id) {
+        let before_count = active_sessions.len();
+        let removed = active_sessions.remove(executor_id);
+        let after_count = active_sessions.len();
+
+        if removed {
             info!(
-                "[EVAL_FLOW] Cleaned up active SSH session for executor {}",
-                executor_id
+                "[EVAL_FLOW] SSH session cleanup successful for executor {} - Active sessions: {} -> {} (removed: {})",
+                executor_id, before_count, after_count, executor_id
+            );
+        } else {
+            warn!(
+                "[EVAL_FLOW] SSH session cleanup attempted for executor {} but no active session found - Active sessions: {} (current: {:?})",
+                executor_id, before_count, active_sessions.iter().collect::<Vec<_>>()
+            );
+        }
+
+        // Log remaining active sessions for transparency
+        if !active_sessions.is_empty() {
+            debug!(
+                "[EVAL_FLOW] Remaining active SSH sessions after cleanup: {:?}",
+                active_sessions.iter().collect::<Vec<_>>()
             );
         }
     }
@@ -700,7 +717,7 @@ impl VerificationEngine {
         let max_retries = 3;
         let mut retry_count = 0;
 
-        while retry_count < max_retries {
+        loop {
             match self.verify_executor_dynamic(executor).await {
                 Ok(score) => return Ok(score),
                 Err(e) if retry_count < max_retries - 1 => {
@@ -721,8 +738,6 @@ impl VerificationEngine {
                 }
             }
         }
-
-        unreachable!()
     }
 
     /// Create with full configuration for dynamic discovery
@@ -787,9 +802,9 @@ impl VerificationEngine {
         bittensor_service: Arc<bittensor::Service>,
         ssh_client: Arc<ValidatorSshClient>,
         ssh_key_path: Option<PathBuf>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let validator_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())
-            .expect("Failed to convert account ID to hotkey");
+            .map_err(|e| anyhow::anyhow!("Failed to convert account ID to hotkey: {}", e))?;
 
         let miner_client_config = MinerClientConfig {
             timeout: config.discovery_timeout,
@@ -801,7 +816,7 @@ impl VerificationEngine {
         // Initialize SSH key manager with validator configuration (will be created later if needed)
         let ssh_key_manager = None;
 
-        Self {
+        Ok(Self {
             config: config.clone(),
             miner_client_config,
             validator_hotkey,
@@ -812,7 +827,7 @@ impl VerificationEngine {
             bittensor_service: Some(bittensor_service),
             ssh_key_manager,
             active_ssh_sessions: Arc::new(Mutex::new(HashSet::new())),
-        }
+        })
     }
 
     /// Verify all executors for a specific miner
@@ -1422,19 +1437,74 @@ impl VerificationEngine {
               binary_config.validator_binary_path, ssh_details.host, ssh_details.port, ssh_details.username,
               ssh_details.private_key_path, binary_config.executor_binary_path, binary_config.output_format, binary_config.execution_timeout_secs);
 
+        info!(
+            "[EVAL_FLOW] Starting validator binary execution with timeout {}s",
+            timeout_duration.as_secs()
+        );
+        let start_time = std::time::Instant::now();
+
         let output = tokio::time::timeout(timeout_duration, command.output())
             .await
-            .context("Validator binary execution timeout")?
-            .context("Failed to execute validator binary")?;
+            .map_err(|_| {
+                error!(
+                    "[EVAL_FLOW] Validator binary execution timed out after {}s",
+                    timeout_duration.as_secs()
+                );
+                anyhow::anyhow!(
+                    "Validator binary execution timeout after {}s",
+                    timeout_duration.as_secs()
+                )
+            })?
+            .map_err(|e| {
+                error!(
+                    "[EVAL_FLOW] Failed to execute validator binary process: {}",
+                    e
+                );
+                anyhow::anyhow!("Failed to execute validator binary: {}", e)
+            })?;
+
+        let execution_time = start_time.elapsed();
+        info!(
+            "[EVAL_FLOW] Validator binary execution completed in {:.2}s",
+            execution_time.as_secs_f64()
+        );
+
+        // Log stdout and stderr regardless of status
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+
+        if !stdout_str.is_empty() {
+            info!("[EVAL_FLOW] Validator binary stdout: {}", stdout_str);
+        }
+
+        if !stderr_str.is_empty() {
+            if output.status.success() {
+                warn!(
+                    "[EVAL_FLOW] Validator binary stderr (non-fatal): {}",
+                    stderr_str
+                );
+            } else {
+                error!("[EVAL_FLOW] Validator binary stderr: {}", stderr_str);
+            }
+        }
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+            let exit_code = output.status.code().unwrap_or(-1);
+            error!(
+                "[EVAL_FLOW] Validator binary execution failed with exit code: {}",
+                exit_code
+            );
             return Err(anyhow::anyhow!(
-                "Validator binary execution failed: {}",
-                stderr
+                "Validator binary execution failed with exit code {}: {}",
+                exit_code,
+                stderr_str
             ));
         }
 
+        info!(
+            "[EVAL_FLOW] Validator binary execution successful, processing output ({} bytes)",
+            output.stdout.len()
+        );
         Ok(output.stdout)
     }
 
@@ -1445,13 +1515,60 @@ impl VerificationEngine {
     ) -> Result<crate::validation::types::ValidatorBinaryOutput> {
         let output_str = String::from_utf8_lossy(output);
 
+        info!(
+            "[EVAL_FLOW] Parsing validator binary output ({} bytes)",
+            output.len()
+        );
+        debug!("[EVAL_FLOW] Raw output: {}", output_str);
+
         // Parse JSON output
         let parsed_output: crate::validation::types::ValidatorBinaryOutput =
-            serde_json::from_str(&output_str)
-                .context("Failed to parse validator binary JSON output")?;
+            serde_json::from_str(&output_str).map_err(|e| {
+                error!(
+                    "[EVAL_FLOW] Failed to parse validator binary JSON output: {}",
+                    e
+                );
+                error!(
+                    "[EVAL_FLOW] Raw output that failed to parse: {}",
+                    output_str
+                );
+                anyhow::anyhow!("Failed to parse validator binary JSON output: {}", e)
+            })?;
+
+        info!("[EVAL_FLOW] Successfully parsed binary output - success: {}, execution_time: {}ms, validation_score: {:.3}",
+              parsed_output.success, parsed_output.execution_time_ms, parsed_output.validation_score);
+
+        if let Some(ref executor_result) = parsed_output.executor_result {
+            info!("[EVAL_FLOW] Executor hardware details - CPU cores: {}, Memory: {:.1}GB, Network interfaces: {}",
+                  executor_result.cpu_info.cores, executor_result.memory_info.total_gb,
+                  executor_result.network_info.interfaces.len());
+
+            if !executor_result.gpu_name.is_empty() {
+                info!(
+                    "[EVAL_FLOW] GPU Details: {} (UUID: {}), SMs: {}/{}, Memory bandwidth: {:.1} GB/s",
+                    executor_result.gpu_name, executor_result.gpu_uuid,
+                    executor_result.active_sms, executor_result.total_sms,
+                    executor_result.memory_bandwidth_gbps
+                );
+            } else {
+                warn!("[EVAL_FLOW] No GPU information found in executor result");
+            }
+
+            info!("[EVAL_FLOW] Binary validation metrics - Matrix computation: {:.2}ms, SM utilization: max={:.1}%, avg={:.1}%",
+                  executor_result.computation_time_ns as f64 / 1_000_000.0,
+                  executor_result.sm_utilization.max_utilization,
+                  executor_result.sm_utilization.avg_utilization);
+        } else {
+            warn!("[EVAL_FLOW] No executor result found in binary output");
+        }
+
+        if let Some(ref error_msg) = parsed_output.error_message {
+            error!("[EVAL_FLOW] Binary validation error message: {}", error_msg);
+        }
 
         // Validate structure
         if parsed_output.success && parsed_output.executor_result.is_none() {
+            error!("[EVAL_FLOW] Validator binary reported success but no executor result provided");
             return Err(anyhow::anyhow!(
                 "Validator binary reported success but no executor result provided"
             ));
@@ -1465,56 +1582,120 @@ impl VerificationEngine {
         &self,
         validation_result: &crate::validation::types::ValidatorBinaryOutput,
     ) -> Result<f64> {
+        info!("[EVAL_FLOW] Starting binary validation score calculation");
+
         if !validation_result.success {
+            error!("[EVAL_FLOW] Binary validation failed, returning score: 0.0");
             return Ok(0.0);
         }
 
-        let executor_result = validation_result
-            .executor_result
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No executor result available for scoring"))?;
+        let executor_result = validation_result.executor_result.as_ref().ok_or_else(|| {
+            error!("[EVAL_FLOW] No executor result available for scoring");
+            anyhow::anyhow!("No executor result available for scoring")
+        })?;
 
         let mut score: f64 = 0.0;
+        let mut score_breakdown = Vec::new();
 
         // Base score for successful execution
         score += 0.3;
+        score_breakdown.push(("base_execution", 0.3));
+        info!(
+            "[EVAL_FLOW] Score component - Base execution: +0.3 (total: {:.3})",
+            score
+        );
 
         // Anti-debug check score
         if executor_result.anti_debug_passed {
             score += 0.2;
+            score_breakdown.push(("anti_debug", 0.2));
+            info!(
+                "[EVAL_FLOW] Score component - Anti-debug passed: +0.2 (total: {:.3})",
+                score
+            );
+        } else {
+            warn!(
+                "[EVAL_FLOW] Score component - Anti-debug failed: +0.0 (total: {:.3})",
+                score
+            );
         }
 
         // SM utilization score (higher utilization = better score)
         let avg_utilization = executor_result.sm_utilization.avg_utilization;
-        if avg_utilization > 0.8 {
-            score += 0.2;
+        let sm_score = if avg_utilization > 0.8 {
+            0.2
         } else if avg_utilization > 0.6 {
-            score += 0.1;
-        }
+            0.1
+        } else {
+            0.0
+        };
+        score += sm_score;
+        score_breakdown.push(("sm_utilization", sm_score));
+        info!(
+            "[EVAL_FLOW] Score component - SM utilization ({:.1}%): +{:.3} (total: {:.3})",
+            avg_utilization * 100.0,
+            sm_score,
+            score
+        );
 
         // GPU resource score
         let gpu_efficiency = executor_result.active_sms as f64 / executor_result.total_sms as f64;
-        if gpu_efficiency > 0.9 {
-            score += 0.15;
+        let gpu_score = if gpu_efficiency > 0.9 {
+            0.15
         } else if gpu_efficiency > 0.7 {
-            score += 0.1;
-        }
+            0.1
+        } else {
+            0.0
+        };
+        score += gpu_score;
+        score_breakdown.push(("gpu_efficiency", gpu_score));
+        info!(
+            "[EVAL_FLOW] Score component - GPU efficiency ({:.1}%, {}/{}): +{:.3} (total: {:.3})",
+            gpu_efficiency * 100.0,
+            executor_result.active_sms,
+            executor_result.total_sms,
+            gpu_score,
+            score
+        );
 
         // Memory bandwidth score
-        if executor_result.memory_bandwidth_gbps > 500.0 {
-            score += 0.1;
+        let bandwidth_score = if executor_result.memory_bandwidth_gbps > 500.0 {
+            0.1
         } else if executor_result.memory_bandwidth_gbps > 200.0 {
-            score += 0.05;
-        }
+            0.05
+        } else {
+            0.0
+        };
+        score += bandwidth_score;
+        score_breakdown.push(("memory_bandwidth", bandwidth_score));
+        info!(
+            "[EVAL_FLOW] Score component - Memory bandwidth ({:.1} GB/s): +{:.3} (total: {:.3})",
+            executor_result.memory_bandwidth_gbps, bandwidth_score, score
+        );
 
         // Computation time score (reasonable timing)
         let computation_time_ms = executor_result.computation_time_ns / 1_000_000;
-        if computation_time_ms > 10 && computation_time_ms < 5000 {
-            score += 0.05;
-        }
+        let timing_score = if computation_time_ms > 10 && computation_time_ms < 5000 {
+            0.05
+        } else {
+            0.0
+        };
+        score += timing_score;
+        score_breakdown.push(("computation_timing", timing_score));
+        info!(
+            "[EVAL_FLOW] Score component - Computation timing ({}ms): +{:.3} (total: {:.3})",
+            computation_time_ms, timing_score, score
+        );
 
-        // Ensure score is within bounds
-        Ok(score.clamp(0.0, 1.0))
+        // Final score clamping and summary
+        let final_score = score.clamp(0.0, 1.0);
+        info!(
+            "[EVAL_FLOW] Binary validation score calculation complete: {:.3}/1.0",
+            final_score
+        );
+        info!("[EVAL_FLOW] Score breakdown: {:?}", score_breakdown);
+
+        Ok(final_score)
     }
 
     /// Calculate combined verification score from SSH and binary validation
@@ -1527,19 +1708,30 @@ impl VerificationEngine {
     ) -> f64 {
         let binary_config = &self.config.binary_validation;
 
+        info!("[EVAL_FLOW] Starting combined score calculation - SSH: {:.3} (success: {}), Binary: {:.3} (success: {})",
+              ssh_score, ssh_successful, binary_score, binary_successful);
+
         // If SSH fails, total score is 0
         if !ssh_successful {
+            error!("[EVAL_FLOW] SSH validation failed, returning combined score: 0.0");
             return 0.0;
         }
 
         // If binary validation is disabled, use SSH score only
         if !binary_config.enabled {
+            info!(
+                "[EVAL_FLOW] Binary validation disabled, using SSH score only: {:.3}",
+                ssh_score
+            );
             return ssh_score;
         }
 
         // If binary validation is enabled but failed, penalize but don't zero
         if !binary_successful {
-            return ssh_score * 0.5; // 50% penalty for binary validation failure
+            let penalized_score = ssh_score * 0.5;
+            warn!("[EVAL_FLOW] Binary validation failed, applying 50% penalty to SSH score: {:.3} -> {:.3}",
+                  ssh_score, penalized_score);
+            return penalized_score;
         }
 
         // Calculate weighted combination
@@ -1547,6 +1739,11 @@ impl VerificationEngine {
         let binary_weight = binary_config.score_weight;
 
         let combined_score = (ssh_score * ssh_weight) + (binary_score * binary_weight);
+
+        info!(
+            "[EVAL_FLOW] Combined score calculation: ({:.3} × {:.3}) + ({:.3} × {:.3}) = {:.3}",
+            ssh_score, ssh_weight, binary_score, binary_weight, combined_score
+        );
 
         // Ensure score is within bounds
         combined_score.clamp(0.0, 1.0)
@@ -1664,13 +1861,19 @@ impl VerificationEngine {
             combined_score: 0.0,
         };
 
-        // Check for active SSH session
+        // Check for active SSH session and register new session
         {
             let mut active_sessions = self.active_ssh_sessions.lock().await;
+            let before_count = active_sessions.len();
+            let all_active: Vec<String> = active_sessions.iter().cloned().collect();
+
+            info!("[EVAL_FLOW] SSH session lifecycle check for executor {} - Current state: {} active sessions {:?}",
+                  executor_info.id, before_count, all_active);
+
             if active_sessions.contains(&executor_info.id) {
-                warn!(
-                    "[EVAL_FLOW] SSH session already active for executor {}, skipping concurrent verification",
-                    executor_info.id
+                error!(
+                    "[EVAL_FLOW] SSH session collision detected for executor {}, rejecting concurrent verification. Active sessions: {:?}",
+                    executor_info.id, all_active
                 );
                 return Ok(ExecutorVerificationResult {
                     executor_id: executor_info.id.clone(),
@@ -1679,13 +1882,29 @@ impl VerificationEngine {
                     binary_validation_successful: false,
                     executor_result: None,
                     error: Some(
-                        "Concurrent SSH session already active for this executor".to_string(),
+                        format!("Concurrent SSH session already active for this executor. Active sessions: {:?}", all_active),
                     ),
                     execution_time: Duration::from_secs(0),
                     validation_details,
                 });
             }
-            active_sessions.insert(executor_info.id.clone());
+
+            // Register new SSH session
+            let inserted = active_sessions.insert(executor_info.id.clone());
+            let after_count = active_sessions.len();
+
+            if inserted {
+                info!("[EVAL_FLOW] SSH session registered successfully for executor {} - Sessions: {} -> {} (added: {})",
+                      executor_info.id, before_count, after_count, executor_info.id);
+            } else {
+                warn!("[EVAL_FLOW] SSH session already existed for executor {} during registration - this should not happen",
+                      executor_info.id);
+            }
+
+            debug!(
+                "[EVAL_FLOW] Current active SSH sessions after registration: {:?}",
+                active_sessions.iter().collect::<Vec<_>>()
+            );
         }
 
         // Establish SSH session (existing implementation)
@@ -1799,13 +2018,19 @@ impl VerificationEngine {
         validation_details.binary_score = binary_score;
         validation_details.total_validation_duration = total_start.elapsed();
 
-        // Phase 4: Cleanup
+        // Phase 4: Session and Resource Cleanup
+        info!(
+            "[EVAL_FLOW] Phase 4: Starting cleanup for executor {} - Duration: {:.2}s",
+            executor_info.id,
+            total_start.elapsed().as_secs_f64()
+        );
+
         self.cleanup_ssh_session(&session_info).await;
         self.cleanup_active_session(&executor_info.id).await;
 
         info!(
-            "[EVAL_FLOW] Enhanced verification completed for executor {} - SSH: {}, Binary: {}, Combined: {:.2}",
-            executor_info.id, ssh_connection_successful, binary_validation_successful, combined_score
+            "[EVAL_FLOW] Enhanced verification completed for executor {} - SSH: {}, Binary: {}, Combined: {:.2}, Duration: {:.2}s",
+            executor_info.id, ssh_connection_successful, binary_validation_successful, combined_score, total_start.elapsed().as_secs_f64()
         );
 
         Ok(ExecutorVerificationResult {

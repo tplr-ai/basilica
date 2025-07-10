@@ -199,7 +199,7 @@ mod tests {
             fallback_to_static: true,
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: Some(1000),
-            binary_validation: BinaryValidationConfig::default(),
+            binary_validation: crate::config::BinaryValidationConfig::default(),
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {
@@ -349,7 +349,7 @@ mod tests {
             fallback_to_static: true,
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: Some(1000),
-            binary_validation: BinaryValidationConfig::default(),
+            binary_validation: crate::config::BinaryValidationConfig::default(),
         };
 
         let miner_client_config = MinerClientConfig::default();
@@ -364,7 +364,7 @@ mod tests {
             ssh_client.clone(),
             true, // dynamic discovery enabled
             None, // no SSH key manager
-            None,
+            None, // no bittensor service
         );
         assert!(result.is_err());
 
@@ -376,7 +376,7 @@ mod tests {
             ssh_client,
             false, // dynamic discovery disabled
             None,  // no SSH key manager
-            None,
+            None,  // no bittensor service
         );
         assert!(result.is_ok());
 

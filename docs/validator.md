@@ -18,6 +18,7 @@ The validator component performs critical network functions:
 - SSH access for remote verification
 - SQLite for verification history storage
 - Validator public key file (for building from source)
+- **CUDA Toolkit 12.8** (required for GPU verification kernels)
 
 ## Quick Start
 
@@ -135,10 +136,10 @@ This production setup includes:
 
 ```bash
 # Build and deploy to remote server (see BASILICA-DEPLOYMENT-GUIDE.md)
-./scripts/deploy.dev.sh -s validator -v user@your-server:port
+./scripts/deploy.sh -s validator -v user@your-server:port
 
 # Deploy with wallet sync and health checks
-./scripts/deploy.dev.sh -s validator -v user@your-server:port -w -c
+./scripts/deploy.sh -s validator -v user@your-server:port -w -c
 ```
 
 #### Building from Source
@@ -214,6 +215,10 @@ The hardware attestation process:
 # 3. Attestation is recent (not expired)
 # 4. GPU is actually accessible and functional
 ```
+
+**⚠️ CUDA Version Requirement**
+
+The validator currently **only supports CUDA Toolkit version 12.8** for GPU verification kernels. Other CUDA versions are not compatible and will cause verification failures.
 
 **Compute Verification**
 
@@ -412,6 +417,22 @@ Enable detailed logging for troubleshooting:
 level = "debug"
 format = "json"
 include_location = true
+```
+
+### CUDA Version Issues
+
+If you encounter GPU verification failures, ensure CUDA 12.8 is installed:
+
+```bash
+# Check CUDA version
+nvcc --version
+
+# Expected output should show: release 12.8
+# If not version 12.8, GPU verification will fail
+
+# Install CUDA 12.8 if needed
+wget https://developer.download.nvidia.com/compute/cuda/12.8.0/local_installers/cuda_12.8.0_550.54.15_linux.run
+sudo sh cuda_12.8.0_550.54.15_linux.run
 ```
 
 ## Best Practices

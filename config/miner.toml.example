@@ -1,93 +1,174 @@
-# Basilica Miner Configuration Example
-# Copy this file to miner.toml and customize for your environment
-
-# Bittensor Network Configuration
 [bittensor]
 wallet_name = "YOUR_WALLET_NAME"
 hotkey_name = "YOUR_HOTKEY_NAME"
-network = "finney"  # Options: finney, test, local
-netuid = 39  # Basilica subnet ID
-chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
+network = "finney"  # Options: "finney", "test", or "local"
+netuid = 39         # Use 387 for test network
+weight_interval_secs = 300
+coldkey_name = "default"
 external_ip = "YOUR_PUBLIC_IP_HERE"
+axon_port = 8080
+max_weight_uids = 256
+skip_registration = false
 
-# Server Configuration
+[database]
+url = "sqlite:///opt/basilica/data/miner.db"
+max_connections = 10
+min_connections = 1
+run_migrations = true
+
+[database.connect_timeout]
+secs = 30
+nanos = 0
+
+[database.idle_timeout]
+secs = 600
+nanos = 0
+
+[database.max_lifetime]
+secs = 3600
+nanos = 0
+
 [server]
 host = "0.0.0.0"
-port = 50051  # gRPC server port
+advertised_host = "YOUR_PUBLIC_IP_HERE"
+advertised_port = 8080
+port = 8080
 max_connections = 1000
-request_timeout = 30
+advertised_tls = false
+tls_enabled = false
 
-# Axon Configuration (Bittensor integration)
-[axon]
-port = 8091
-external_ip = "YOUR_PUBLIC_IP_HERE"
-max_requests_per_second = 100
+[server.request_timeout]
+secs = 30
+nanos = 0
 
-# Database Configuration
-[database]
-url = "postgresql://basilica:YOUR_PASSWORD@localhost:5432/basilica_miner"
-max_connections = 10
-min_connections = 2
-run_migrations = true
-backup_enabled = true
+[server.keep_alive_timeout]
+secs = 60
+nanos = 0
 
-# Logging Configuration
 [logging]
-level = "info"  # Options: debug, info, warn, error
-format = "json"  # Options: json, pretty
-enable_file_logging = true
-log_dir = "/var/log/basilica"
+level = "info"  # Options: "debug", "info", "warn", "error"
+format = "pretty"
+stdout = true
+max_file_size = 104857600
+max_files = 5
 
-# Metrics Configuration
+[logging.targets]
+
 [metrics]
 enabled = true
-port = 8080
-collection_interval = 30
 
-# Prometheus metrics
+[metrics.collection_interval]
+secs = 30
+nanos = 0
+
 [metrics.prometheus]
-enabled = true
+host = "127.0.0.1"
 port = 9090
+path = "/metrics"
 
-# Executor Fleet Management
-[executor_management]
-health_check_interval = "60s"
-health_check_timeout = "10s"
-max_retry_attempts = 3
-auto_recovery = true
+[metrics.default_labels]
 
-# Configure your executor machines
-[[executor_management.executors]]
-id = "executor-1"
-grpc_address = "YOUR_EXECUTOR_IP:50052"
-name = "Primary Executor"
+[metrics.retention_period]
+secs = 604800
+nanos = 0
 
-# Validator Communications
 [validator_comms]
-request_timeout = { secs = 30, nanos = 0 }
 max_concurrent_sessions = 100
 
 [validator_comms.auth]
 enabled = true
 method = "bittensor_signature"
 
+[validator_comms.auth.token_validation]
+validate_issuer = true
+validate_audience = true
+validate_expiration = true
+
+[validator_comms.auth.token_validation.clock_skew_tolerance]
+secs = 60
+nanos = 0
+
+[validator_comms.request_timeout]
+secs = 30
+nanos = 0
+
 [validator_comms.rate_limit]
 enabled = true
 requests_per_second = 10
 burst_capacity = 20
-window_duration = { secs = 60, nanos = 0 }
 
-# Security Configuration
-[security]
-enable_tls = false  # Set to true for production
-verify_signatures = true
-rate_limit_requests_per_minute = 600
-allowed_validators = [
-    "YOUR_VALIDATOR_IP_HERE",
+[validator_comms.rate_limit.window_duration]
+secs = 60
+nanos = 0
+
+[executor_management]
+# Configure your executor fleet here
+# Replace with your actual executor details
+executors = [
+  { id = "YOUR_EXECUTOR_ID", name = "executor-1", grpc_address = "YOUR_EXECUTOR_IP:50051", host = "YOUR_EXECUTOR_IP", port = 50051, ssh_username = "YOUR_SSH_USERNAME", ssh_port = 22, enabled = true },
 ]
+max_retry_attempts = 3
+auto_recovery = true
 
-# Authentication settings
-[auth]
-jwt_secret = ""  # Will be auto-generated if empty
-token_expiry = 3600  # 1 hour
-enable_miner_authentication = true
+[executor_management.health_check_interval]
+secs = 60
+nanos = 0
+
+[executor_management.health_check_timeout]
+secs = 10
+nanos = 0
+
+[security]
+enable_mtls = false
+jwt_secret = "YOUR_SECURE_JWT_SECRET_HERE"
+allowed_validators = []
+verify_signatures = true
+
+[security.token_expiration]
+secs = 3600
+nanos = 0
+
+[ssh_session]
+miner_executor_key_path = "~/.ssh/miner_executor_key"
+default_executor_username = "executor"
+max_sessions_per_validator = 5
+session_rate_limit = 20
+enable_audit_log = true
+audit_log_path = "./data/ssh_audit.log"
+enable_automated_sessions = true
+max_session_duration = 3600
+enable_session_expiration = true
+enable_key_cleanup = true
+ssh_retry_attempts = 3
+
+[ssh_session.session_cleanup_interval]
+secs = 60
+nanos = 0
+
+[ssh_session.ssh_connection_timeout]
+secs = 30
+nanos = 0
+
+[ssh_session.ssh_command_timeout]
+secs = 60
+nanos = 0
+
+[ssh_session.key_cleanup_interval]
+secs = 300
+nanos = 0
+
+[ssh_session.rate_limit_window]
+secs = 3600
+nanos = 0
+
+[ssh_session.ssh_retry_delay]
+secs = 2
+nanos = 0
+
+[validator_assignment]
+strategy = "round_robin"
+
+[advertised_addresses]
+grpc_endpoint = "http://YOUR_PUBLIC_IP_HERE:8080"
+axon_endpoint = "http://YOUR_PUBLIC_IP_HERE:8080"
+metrics_endpoint = "http://YOUR_PUBLIC_IP_HERE:9090"

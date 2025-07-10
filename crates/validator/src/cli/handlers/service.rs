@@ -305,10 +305,10 @@ async fn start_validator_services(
             config.automatic_verification.clone(),
             config.ssh_session.clone(),
             bittensor_service.clone(),
-        ));
+        )?);
 
-        // Initialize weight setter with block-based timing
-        let blocks_per_weight_set = 360; // Set weights every ~1 hour (360 blocks * 12s/block)
+        // Initialize weight setter with block-based timing from emission config
+        let blocks_per_weight_set = config.emission.weight_set_interval_blocks;
 
         // Create GPU profile repository and scoring engine
         let gpu_profile_repo = Arc::new(

@@ -1,0 +1,43 @@
+[Unit]
+Description=Basilica Executor Service
+Documentation=https://github.com/distributedstatemachine/basilica
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/basilica
+Environment=RUST_LOG=debug
+ExecStart=/opt/basilica/executor --server --config /opt/basilica/config/executor.toml
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=basilica-executor
+
+# Security settings - More permissive for executor due to container management needs
+NoNewPrivileges=no
+PrivateTmp=no
+ProtectSystem=no
+ProtectHome=no
+RemoveIPC=no
+
+# Docker and GPU access requirements
+SupplementaryGroups=docker
+DeviceAllow=/dev/nvidia0 rwm
+DeviceAllow=/dev/nvidia-uvm rwm
+DeviceAllow=/dev/nvidia-uvm-tools rwm
+DeviceAllow=/dev/nvidiactl rwm
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=8192
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target

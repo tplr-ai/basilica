@@ -6,7 +6,7 @@ run_migrations = true
 [server]
 host = "0.0.0.0"
 port = 8081
-advertised_host = "64.247.196.98"
+advertised_host = "135.181.63.194"
 advertised_port = 8081
 advertised_tls = false
 max_connections = 1000
@@ -19,8 +19,8 @@ network = "test"
 netuid = 387
 chain_endpoint = "wss://test.finney.opentensor.ai:443"
 weight_interval_secs = 300
-axon_port = 9091
-external_ip = "64.247.196.98"
+axon_port = 8081
+external_ip = "135.181.63.194"
 
 [verification]
 max_concurrent_verifications = 50
@@ -100,3 +100,26 @@ ssh_connection_timeout = { secs = 30, nanos = 0 }
 ssh_command_timeout = { secs = 60, nanos = 0 }
 ssh_retry_attempts = 3
 ssh_retry_delay = { secs = 2, nanos = 0 }
+
+[emission]
+# Percentage of total emissions to burn (0.0-100.0)
+burn_percentage = 5.0
+
+# UID to receive burn allocation
+burn_uid = 204
+
+# Blocks between weight setting operations
+# 360 blocks = ~1 hour on Bittensor (12 seconds per block)
+weight_set_interval_blocks = 360
+
+# Minimum number of miners required
+# per GPU category to receive allocation
+min_miners_per_category = 3
+
+# GPU model allocation percentages
+# These percentages determine how emissions
+# are distributed across GPU categories
+# Must sum to exactly 100.0
+[emission.gpu_allocations]
+"H100" = 60.0
+"H200" = 40.0

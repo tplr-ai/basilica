@@ -6,9 +6,13 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 
+    privileged: true
+
     environment:
       - RUST_LOG=info
       - RUST_BACKTRACE=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
     volumes:
       - ../../config/validator.toml:/app/validator.toml:ro
@@ -33,6 +37,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   watchtower:
     image: containrrr/watchtower
