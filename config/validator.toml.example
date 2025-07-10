@@ -1,155 +1,125 @@
-# Basilica Validator Configuration Example
-# Copy this file to validator.toml and customize for your environment
+[database]
+url = "sqlite:/opt/basilica/data/validator.db?mode=rwc"
+max_connections = 10
+run_migrations = true
 
-# Bittensor Network Configuration
-[bittensor]
-wallet_name = "YOUR_VALIDATOR_WALLET"
-hotkey_name = "YOUR_VALIDATOR_HOTKEY"
-network = "finney"  # Options: finney, test, local
-netuid = 39  # Basilica subnet ID
-chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
-
-# API Server Configuration
 [server]
 host = "0.0.0.0"
-port = 50053
-max_connections = 500
-request_timeout = 30
+port = 8081
+advertised_host = "YOUR_PUBLIC_IP_HERE"
+advertised_port = 8081
+advertised_tls = false
+max_connections = 1000
+request_timeout = { secs = 30 }
 
-# Public API Configuration
-[api]
+[bittensor]
+wallet_name = "YOUR_WALLET_NAME"
+hotkey_name = "YOUR_HOTKEY_NAME"
+network = "finney"  # Options: "finney", "test", or "local"
+netuid = 39         # Use 387 for test network
+chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"  # Auto-detected based on network
+weight_interval_secs = 300
+axon_port = 8081
+external_ip = "YOUR_PUBLIC_IP_HERE"
+
+[verification]
+max_concurrent_verifications = 50
+min_score_threshold = 0.1
+verification_interval = { secs = 600 }
+challenge_timeout = { secs = 120 }
+retry_attempts = 3
+retry_delay = { secs = 5 }
+netuid = 39  # Should match bittensor.netuid
+use_dynamic_discovery = true
+discovery_timeout = { secs = 30 }
+fallback_to_static = true
+cache_miner_info_ttl = { secs = 300 }
+
+[verification.binary_validation]
 enabled = true
-host = "0.0.0.0"
-port = 3000
-enable_cors = true
-cors_origins = ["*"]
-max_request_size = 10485760  # 10MB
+validator_binary_path = "/opt/basilica/bin/validator-binary"
+executor_binary_path = "/opt/basilica/bin/executor-binary"
+execution_timeout_secs = 540
+output_format = "json"
 
-# Database Configuration  
-[database]
-url = "postgresql://basilica:YOUR_PASSWORD@localhost:5432/basilica_validator"
-max_connections = 20
-min_connections = 5
-run_migrations = true
-backup_enabled = true
-backup_interval = 86400  # 24 hours
+[ssh_validation]
+enabled = true
+timeout = { secs = 60 }
+max_file_size = "10MB"
+allowed_commands = ["gpu-attestor", "nvidia-smi"]
+temp_dir = "/tmp/basilica-validation"
 
-# Logging Configuration
-[logging]
-level = "info"  # Options: debug, info, warn, error
-format = "json"  # Options: json, pretty
-enable_file_logging = true
-log_dir = "/var/log/basilica"
+[scoring]
+gpu_weight = 0.4
+cpu_weight = 0.2
+memory_weight = 0.2
+network_weight = 0.1
+reliability_weight = 0.1
 
-# Metrics Configuration
 [metrics]
 enabled = true
-port = 8080
-collection_interval = 30
-
-# Prometheus metrics
-[metrics.prometheus]
-enabled = true
+host = "0.0.0.0"
 port = 9090
+path = "/metrics"
+retention_period = { secs = 604800 }
 
-# Validation Configuration
-[validation]
-max_concurrent_validations = 10
-validation_timeout = 120
-challenge_timeout = 60
-min_score_threshold = 0.1
-verification_interval = 600  # 10 minutes
-min_verification_interval = 1800  # 30 minutes
+[logging]
+level = "info"  # Options: "debug", "info", "warn", "error"
+format = "json"
+output = "./validator.log"
+max_file_size = 104857600
+max_files = 10
 
-# Verification Suite Configuration
-[verification]
+[api]
 enabled = true
-max_concurrent_checks = 5
-verification_timeout = 300
-retry_attempts = 3
+swagger_enabled = true
+cors_enabled = true
+cors_origins = ["*"]
+rate_limit = 100
 
-[verification.gpu_attestation]
-enabled = true
-required_score = 0.8
-timeout = 120
-
-[verification.performance_benchmark]
-enabled = true
-min_tflops = 10.0
-timeout = 180
-
-[verification.network_connectivity]
-enabled = true
-min_bandwidth_mbps = 100
-max_latency_ms = 50
-
-# Scoring Configuration
-[scoring]
-min_stake_threshold = 1000.0
-max_miners_to_validate = 20
-score_decay_factor = 0.95
-weight_update_interval = 300  # 5 minutes
-
-# SSH Validation Configuration
-[ssh_validation]
-max_concurrent_sessions = 5
-session_timeout = 300  # 5 minutes
-connection_timeout = 30
-retry_attempts = 3
-cleanup_temp_files = true
-
-# SSH Keys Configuration
-[ssh_keys]
-private_key_path = "/etc/basilica/keys/validator_ssh"
-public_key_path = "/etc/basilica/keys/validator_ssh.pub"
-key_type = "ed25519"
-
-# Security Configuration
-[security]
-enable_tls = false  # Set to true for production
-require_https = false  # Set to true for production
-rate_limit_requests_per_minute = 1000
-allowed_miners = [
-    "YOUR_MINER_IP_HERE",
-]
-
-# API Authentication
-[api_auth]
-enable_authentication = true
-jwt_secret = ""  # Will be auto-generated if empty
-token_expiry = 3600  # 1 hour
-require_signature_verification = true
-
-# Storage Configuration
 [storage]
 data_dir = "/opt/basilica/data"
-max_storage_gb = 100
-cleanup_interval = 86400  # 24 hours
-retention_days = 30
 
-# Performance Tuning
-[performance]
-worker_threads = 4
-max_blocking_threads = 512
-thread_stack_size = 2097152  # 2MB
+[security]
+enable_authentication = false
+api_key_header = "X-API-Key"
+allowed_api_keys = []
 
-# Health Check Configuration
-[health_checks]
-enabled = true
-interval = 30
-timeout = 10
-max_failures = 3
+[ssh_session]
+ssh_key_directory = "/opt/basilica/data/ssh_keys"
+key_algorithm = "ed25519"
+default_session_duration = 300
+max_session_duration = 3600
+key_cleanup_interval = { secs = 60, nanos = 0 }
+enable_automated_sessions = true
+max_concurrent_sessions = 5
+session_rate_limit = 20
+enable_audit_logging = true
+audit_log_path = "/opt/basilica/data/ssh_audit.log"
+ssh_connection_timeout = { secs = 30, nanos = 0 }
+ssh_command_timeout = { secs = 60, nanos = 0 }
+ssh_retry_attempts = 3
+ssh_retry_delay = { secs = 2, nanos = 0 }
 
-# Backup Configuration
-[backup]
-enabled = true
-retention_days = 30
-backup_dir = "/var/backups/basilica"
-compress_backups = true
+[emission]
+# Percentage of total emissions to burn (0.0-100.0)
+burn_percentage = 5.0
 
-# TLS Configuration (for production)
-[tls]
-enabled = false
-cert_path = "/etc/basilica/certs/validator.crt"
-key_path = "/etc/basilica/certs/validator.key"
-ca_cert_path = "/etc/basilica/certs/ca.crt"
+# UID to receive burn allocation
+burn_uid = 204
+
+# Blocks between weight setting operations
+# 360 blocks = ~1 hour on Bittensor (12 seconds per block)
+weight_set_interval_blocks = 360
+
+# Minimum number of miners required
+# per GPU category to receive allocation
+min_miners_per_category = 3
+
+# GPU model allocation percentages
+# These percentages determine how emissions
+# are distributed across GPU categories
+# Must sum to exactly 100.0
+[emission.gpu_allocations]
+"H100" = 60.0
+"H200" = 40.0

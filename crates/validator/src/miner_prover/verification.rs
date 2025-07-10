@@ -556,7 +556,7 @@ impl VerificationEngine {
         let before_count = active_sessions.len();
         let removed = active_sessions.remove(executor_id);
         let after_count = active_sessions.len();
-        
+
         if removed {
             info!(
                 "[EVAL_FLOW] SSH session cleanup successful for executor {} - Active sessions: {} -> {} (removed: {})",
@@ -568,7 +568,7 @@ impl VerificationEngine {
                 executor_id, before_count, active_sessions.iter().collect::<Vec<_>>()
             );
         }
-        
+
         // Log remaining active sessions for transparency
         if !active_sessions.is_empty() {
             debug!(
@@ -1535,28 +1535,28 @@ impl VerificationEngine {
                 anyhow::anyhow!("Failed to parse validator binary JSON output: {}", e)
             })?;
 
-        info!("[EVAL_FLOW] Successfully parsed binary output - success: {}, execution_time: {}ms, validation_score: {:.3}", 
+        info!("[EVAL_FLOW] Successfully parsed binary output - success: {}, execution_time: {}ms, validation_score: {:.3}",
               parsed_output.success, parsed_output.execution_time_ms, parsed_output.validation_score);
 
         if let Some(ref executor_result) = parsed_output.executor_result {
-            info!("[EVAL_FLOW] Executor hardware details - CPU cores: {}, Memory: {:.1}GB, Network interfaces: {}", 
-                  executor_result.cpu_info.cores, executor_result.memory_info.total_gb, 
+            info!("[EVAL_FLOW] Executor hardware details - CPU cores: {}, Memory: {:.1}GB, Network interfaces: {}",
+                  executor_result.cpu_info.cores, executor_result.memory_info.total_gb,
                   executor_result.network_info.interfaces.len());
 
             if !executor_result.gpu_name.is_empty() {
                 info!(
                     "[EVAL_FLOW] GPU Details: {} (UUID: {}), SMs: {}/{}, Memory bandwidth: {:.1} GB/s",
-                    executor_result.gpu_name, executor_result.gpu_uuid, 
-                    executor_result.active_sms, executor_result.total_sms, 
+                    executor_result.gpu_name, executor_result.gpu_uuid,
+                    executor_result.active_sms, executor_result.total_sms,
                     executor_result.memory_bandwidth_gbps
                 );
             } else {
                 warn!("[EVAL_FLOW] No GPU information found in executor result");
             }
 
-            info!("[EVAL_FLOW] Binary validation metrics - Matrix computation: {:.2}ms, SM utilization: max={:.1}%, avg={:.1}%", 
+            info!("[EVAL_FLOW] Binary validation metrics - Matrix computation: {:.2}ms, SM utilization: max={:.1}%, avg={:.1}%",
                   executor_result.computation_time_ns as f64 / 1_000_000.0,
-                  executor_result.sm_utilization.max_utilization, 
+                  executor_result.sm_utilization.max_utilization,
                   executor_result.sm_utilization.avg_utilization);
         } else {
             warn!("[EVAL_FLOW] No executor result found in binary output");
@@ -1708,7 +1708,7 @@ impl VerificationEngine {
     ) -> f64 {
         let binary_config = &self.config.binary_validation;
 
-        info!("[EVAL_FLOW] Starting combined score calculation - SSH: {:.3} (success: {}), Binary: {:.3} (success: {})", 
+        info!("[EVAL_FLOW] Starting combined score calculation - SSH: {:.3} (success: {}), Binary: {:.3} (success: {})",
               ssh_score, ssh_successful, binary_score, binary_successful);
 
         // If SSH fails, total score is 0
@@ -1729,7 +1729,7 @@ impl VerificationEngine {
         // If binary validation is enabled but failed, penalize but don't zero
         if !binary_successful {
             let penalized_score = ssh_score * 0.5;
-            warn!("[EVAL_FLOW] Binary validation failed, applying 50% penalty to SSH score: {:.3} -> {:.3}", 
+            warn!("[EVAL_FLOW] Binary validation failed, applying 50% penalty to SSH score: {:.3} -> {:.3}",
                   ssh_score, penalized_score);
             return penalized_score;
         }
@@ -1867,7 +1867,7 @@ impl VerificationEngine {
             let before_count = active_sessions.len();
             let all_active: Vec<String> = active_sessions.iter().cloned().collect();
 
-            info!("[EVAL_FLOW] SSH session lifecycle check for executor {} - Current state: {} active sessions {:?}", 
+            info!("[EVAL_FLOW] SSH session lifecycle check for executor {} - Current state: {} active sessions {:?}",
                   executor_info.id, before_count, all_active);
 
             if active_sessions.contains(&executor_info.id) {
@@ -1888,21 +1888,23 @@ impl VerificationEngine {
                     validation_details,
                 });
             }
-            
+
             // Register new SSH session
             let inserted = active_sessions.insert(executor_info.id.clone());
             let after_count = active_sessions.len();
-            
+
             if inserted {
-                info!("[EVAL_FLOW] SSH session registered successfully for executor {} - Sessions: {} -> {} (added: {})", 
+                info!("[EVAL_FLOW] SSH session registered successfully for executor {} - Sessions: {} -> {} (added: {})",
                       executor_info.id, before_count, after_count, executor_info.id);
             } else {
-                warn!("[EVAL_FLOW] SSH session already existed for executor {} during registration - this should not happen", 
+                warn!("[EVAL_FLOW] SSH session already existed for executor {} during registration - this should not happen",
                       executor_info.id);
             }
-            
-            debug!("[EVAL_FLOW] Current active SSH sessions after registration: {:?}", 
-                   active_sessions.iter().collect::<Vec<_>>());
+
+            debug!(
+                "[EVAL_FLOW] Current active SSH sessions after registration: {:?}",
+                active_sessions.iter().collect::<Vec<_>>()
+            );
         }
 
         // Establish SSH session (existing implementation)
@@ -2017,9 +2019,12 @@ impl VerificationEngine {
         validation_details.total_validation_duration = total_start.elapsed();
 
         // Phase 4: Session and Resource Cleanup
-        info!("[EVAL_FLOW] Phase 4: Starting cleanup for executor {} - Duration: {:.2}s", 
-              executor_info.id, total_start.elapsed().as_secs_f64());
-        
+        info!(
+            "[EVAL_FLOW] Phase 4: Starting cleanup for executor {} - Duration: {:.2}s",
+            executor_info.id,
+            total_start.elapsed().as_secs_f64()
+        );
+
         self.cleanup_ssh_session(&session_info).await;
         self.cleanup_active_session(&executor_info.id).await;
 
