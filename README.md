@@ -18,17 +18,21 @@
 
 Basilica creates a trustless marketplace for GPU compute by:
 
-- **Hardware Attestation**: Cryptographically verifiable GPU capabilities using P256 ECDSA signatures
+- **Hardware Verification**: Binary validation system for secure GPU verification and profiling
 - **Remote Validation**: SSH-based verification of computational tasks and hardware specifications
-- **Bittensor Integration**: Native participation in Bittensor's consensus mechanism
-- **Fleet Management**: Efficient orchestration of distributed GPU resources
+- **Bittensor Integration**: Native participation in Bittensor's consensus mechanism with weight allocation
+- **Fleet Management**: Efficient orchestration of distributed GPU resources with assignment management
+- **Public API Gateway**: Smart HTTP gateway providing load-balanced access to the validator network
 
 ## Key Components
 
-- **Miner**: Manages GPU executor machines and serves compute requests
-- **Validator**: Verifies hardware capabilities and scores miner performance
-- **Executor**: GPU machine agent handling secure task execution
-- **GPU-Attestor**: Generates cryptographic proofs of hardware capabilities
+- **Validator**: Verifies hardware capabilities, maintains GPU profiles, and scores miner performance
+- **Miner**: Manages GPU executor fleets, handles assignments, and serves compute requests via Axon
+- **Executor**: GPU machine agent with container management, system monitoring, and secure task execution
+- **Public API**: HTTP gateway with authentication, caching, rate limiting, and request aggregation
+- **Common**: Shared utilities including crypto, SSH management, storage, and configuration
+- **Protocol**: gRPC/protobuf definitions for inter-component communication
+- **Bittensor**: Network integration for registration, discovery, and weight management
 
 ## Network Information
 

@@ -13,10 +13,12 @@ Basilica is a decentralized GPU compute marketplace built on the Bittensor netwo
 The validator is the quality assurance layer of the network:
 
 - **Verification Engine**: Performs SSH-based remote validation of computational tasks
-- **Scoring System**: Maintains performance metrics for all miners
+- **GPU Profile Management**: Maintains GPU performance profiles and benchmarks
+- **Scoring System**: Maintains performance metrics for all miners using GPU categorization
 - **Weight Setter**: Updates Bittensor network weights based on miner performance
 - **REST API**: Provides external access to validation data
-- **SQLite Storage**: Persists verification history and miner scores
+- **SQLite Storage**: Persists verification history, GPU profiles, and miner scores
+- **Binary Validation**: Executes validation binaries for secure GPU verification
 
 ### 2. Miner
 
@@ -24,9 +26,11 @@ The miner acts as a fleet manager for GPU resources:
 
 - **Executor Fleet Manager**: Orchestrates multiple GPU executor machines
 - **Axon Server**: Serves compute requests on the Bittensor network
-- **gRPC Server**: Manages communication with executors
-- **Task Distributor**: Routes computational tasks to appropriate executors
-- **Health Monitor**: Tracks executor status and availability
+- **gRPC Client**: Manages communication with executors
+- **Assignment Manager**: Routes computational tasks to appropriate executors
+- **SSH Session Management**: Handles validator access and session orchestration
+- **Stake Monitor**: Tracks stake levels and maintains service quality
+- **SQLite Storage**: Persists executor assignments and registration data
 
 ### 3. Executor
 
@@ -34,44 +38,48 @@ The executor is the GPU machine agent:
 
 - **gRPC Server**: Receives and processes task requests
 - **Container Manager**: Orchestrates Docker containers for isolated execution
-- **System Monitor**: Reports hardware status and resource utilization
-- **Validation Sessions**: Handles validator verification challenges
-- **Security Layer**: JWT authentication and secure communication
+- **System Monitor**: Reports hardware status and resource utilization (CPU, GPU, memory, disk, network)
+- **Validation Sessions**: Handles validator verification challenges with rate limiting
+- **Security Layer**: Hotkey verification and access control
+- **NVIDIA Integration**: Uses nvml-wrapper for GPU monitoring
 
-### 4. GPU-Attestor
+### 4. Public API
 
-The hardware attestation component:
+The smart HTTP gateway for external access:
 
-- **Hardware Detection**: Identifies GPU specifications and capabilities
-- **GPU PoW Computer**: Executes GPU proof-of-work challenges
-- **Crypto Signer**: Creates P256 ECDSA signatures for hardware proofs
-- **Attestation Generator**: Produces cryptographically verifiable hardware claims
+- **Validator Discovery**: Automatic discovery of validators using Bittensor metagraph
+- **Load Balancing**: Multiple strategies for distributing requests across validators
+- **Request Aggregation**: Combines responses from multiple validators
+- **Authentication**: API key and JWT-based authentication
+- **Rate Limiting**: Configurable rate limits with different tiers
+- **Caching**: Response caching with in-memory (Moka) or Redis backends
+- **OpenAPI Documentation**: Auto-generated API documentation with Swagger UI
 
 ## System Architecture
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
 │                   BITTENSOR NETWORK                     │
-│                   (Subnet 39/387)                       │
+│                       (Subnet)                          │
 └────────────────────────┬───────────────────────────────┘
                          │
         ┌────────────────┼────────────────┐
         │                │                │
 ┌───────▼──────┐ ┌──────▼──────┐ ┌──────▼──────┐
-│  VALIDATOR   │ │    MINER    │ │    CLIENT   │
-│              │ │             │ │   SYSTEMS   │
-│ ┌──────────┐ │ │ ┌─────────┐ │ │             │
-│ │   API    │ │ │ │  Axon   │ │ │             │
-│ │ Server   │ │ │ │ Server  │ │ │             │
-│ └──────────┘ │ │ └─────────┘ │ │             │
-│ ┌──────────┐ │ │ ┌─────────┐ │ │             │
-│ │   SSH    │ │ │ │  Fleet  │ │ │             │
-│ │ Client   │ │ │ │ Manager │ │ │             │
-│ └──────────┘ │ │ └─────────┘ │ │             │
-│ ┌──────────┐ │ │ ┌─────────┐ │ │             │
-│ │ SQLite   │ │ │ │  gRPC   │ │ │             │
-│ │   DB     │ │ │ │ Server  │ │ │             │
-│ └──────────┘ │ │ └─────────┘ │ │             │
+│  VALIDATOR   │ │    MINER    │ │ PUBLIC API  │
+│              │ │             │ │  GATEWAY    │
+│ ┌──────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │
+│ │   API    │ │ │ │  Axon   │ │ │ │  Load   │ │
+│ │ Server   │ │ │ │ Server  │ │ │ │Balancer │ │
+│ └──────────┘ │ │ └─────────┘ │ │ └─────────┘ │
+│ ┌──────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │
+│ │  Binary  │ │ │ │  Fleet  │ │ │ │  Cache  │ │
+│ │Validator │ │ │ │ Manager │ │ │ │  Layer  │ │
+│ └──────────┘ │ │ └─────────┘ │ │ └─────────┘ │
+│ ┌──────────┐ │ │ ┌─────────┐ │ │ ┌─────────┐ │
+│ │ SQLite   │ │ │ │  gRPC   │ │ │ │  Auth   │ │
+│ │   DB     │ │ │ │ Client  │ │ │ │ Manager │ │
+│ └──────────┘ │ │ └─────────┘ │ │ └─────────┘ │
 └──────┬───────┘ └──────┬──────┘ └─────────────┘
        │                │
        │ SSH            │ gRPC
@@ -80,7 +88,7 @@ The hardware attestation component:
 │              EXECUTOR MACHINES                  │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
 │  │ GPU-1   │  │ GPU-2   │  │ GPU-N   │  ...   │
-│  │ + Atts  │  │ + Atts  │  │ + Atts  │        │
+│  │ NVIDIA  │  │ NVIDIA  │  │ NVIDIA  │        │
 │  └─────────┘  └─────────┘  └─────────┘        │
 └────────────────────────────────────────────────┘
 ```
@@ -137,8 +145,10 @@ Validator → Miner: Discover via metagraph
 Validator → Miner (Axon): Request executor info
 Miner → Validator: Return executor endpoints
 Validator → Executor (SSH): Send verification challenge
-Executor → Validator: Return signed results
-Validator → Storage: Update scores
+Executor → Binary Validator: Execute validation binary
+Binary Validator → Executor: Return GPU verification results
+Executor → Validator: Return validation results
+Validator → Storage: Update scores and GPU profiles
 Validator → Bittensor: Set weights
 ```
 
@@ -156,17 +166,20 @@ Miner → Client: Forward results
 
 ### 1. Cryptographic Framework
 
-- **P256 ECDSA**: Hardware attestation signatures
-- **Ed25519**: Bittensor transaction signing
-- **JWT**: Executor authentication tokens
+- **Ed25519**: Bittensor transaction signing and hotkey verification
+- **P256 ECDSA**: Used in protocol for signatures
+- **Blake3**: High-performance hashing
+- **AES-GCM**: Encrypted storage and communication
 - **TLS**: Secure communication channels
+- **Argon2**: Password hashing for authentication
 
 ### 2. Trust Model
 
 ```text
-Hardware Trust: GPU-Attestor → Cryptographic Proof
+Hardware Trust: Binary Validator → GPU Verification
 Execution Trust: Validator → Verification Challenges
 Network Trust: Bittensor → Consensus Mechanism
+Access Control: Hotkey Verification → Authenticated Sessions
 ```
 
 ### 3. Security Layers
@@ -177,9 +190,10 @@ Network Trust: Bittensor → Consensus Mechanism
    - Rate limiting
 
 2. **Application Layer**
-   - JWT authentication
+   - JWT authentication for Public API
    - API key validation
-   - Request signing
+   - Hotkey verification for executor access
+   - Rate limiting per identity
 
 3. **Data Layer**
    - Encrypted storage
@@ -266,16 +280,19 @@ GET /api/v1/status   # Detailed status
 
 ```text
 basilica/
-├── crates/           # Rust workspace
-│   ├── common/       # Shared utilities
-│   ├── protocol/     # Protocol definitions
-│   ├── validator/    # Validator service
-│   ├── miner/        # Miner service
-│   ├── executor/     # Executor service
-│   └── bittensor/    # Network integration
-├── scripts/          # Deployment scripts
-├── docker/           # Container configs
-└── docs/             # Documentation
+├── crates/              # Rust workspace
+│   ├── common/          # Shared utilities (crypto, config, storage, SSH)
+│   ├── protocol/        # Protocol definitions (gRPC/protobuf)
+│   ├── validator/       # Validator service
+│   ├── miner/          # Miner service
+│   ├── executor/        # Executor service
+│   ├── bittensor/       # Network integration
+│   ├── public-api/      # HTTP gateway service
+│   └── integration-tests/ # End-to-end tests
+├── scripts/             # Deployment scripts
+│   └── gpu-attestor/    # GPU attestation Docker setup
+├── bins/                # Precompiled binaries
+└── docs/                # Documentation
 ```
 
 ### Testing Strategy
@@ -295,10 +312,11 @@ basilica/
 
 ### Planned Features
 
-1. **Multi-GPU Support**: Enhanced parallel processing
-2. **Advanced Scheduling**: Intelligent task distribution
+1. **Enhanced GPU Support**: Better GPU profiling and categorization
+2. **Advanced Scheduling**: Intelligent task distribution based on GPU capabilities
 3. **Federation**: Cross-subnet resource sharing
-4. **Enhanced Security**: Hardware security modules
+4. **Enhanced Security**: Improved binary validation and attestation
+5. **Performance Optimization**: Better caching and load balancing strategies
 
 ## Conclusion
 
