@@ -5,8 +5,8 @@ network = "test"
 netuid = 387
 weight_interval_secs = 300
 coldkey_name = "default"
-external_ip = "51.159.160.71"
-axon_port = 55960
+external_ip = "185.216.22.185"
+axon_port = 8080
 max_weight_uids = 256
 skip_registration = false
 
@@ -30,8 +30,8 @@ nanos = 0
 
 [server]
 host = "0.0.0.0"
-advertised_host = "51.159.160.71"
-advertised_port = 55960
+advertised_host = "185.216.22.185"
+advertised_port = 8080
 port = 8080
 max_connections = 1000
 advertised_tls = false
@@ -168,6 +168,6 @@ strategy = "round_robin"
 
 [advertised_addresses]
 
-grpc_endpoint = "http://51.159.160.71:55960"
-axon_endpoint = "http://51.159.160.71:55960"
-metrics_endpoint = "http://51.159.160.71:9090"
+grpc_endpoint = "http://185.216.22.185:8080"
+axon_endpoint = "http://185.216.22.185:8080"
+metrics_endpoint = "http://185.216.22.185:9090"

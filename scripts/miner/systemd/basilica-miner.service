@@ -1,0 +1,37 @@
+[Unit]
+Description=Basilica Miner Service
+Documentation=https://github.com/distributedstatemachine/basilica
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/basilica
+Environment=RUST_LOG=debug
+ExecStart=/opt/basilica/miner --config /opt/basilica/config/miner.toml
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=basilica-miner
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/basilica/data
+ReadWritePaths=/opt/basilica/logs
+ReadWritePaths=/root/.ssh
+ProtectHome=yes
+RemoveIPC=yes
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target
