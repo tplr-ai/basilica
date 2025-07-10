@@ -135,10 +135,10 @@ This production setup includes:
 
 ```bash
 # Build and deploy to remote server (see BASILICA-DEPLOYMENT-GUIDE.md)
-./scripts/deploy.dev.sh -s validator -v user@your-server:port
+./scripts/deploy.sh -s validator -v user@your-server:port
 
 # Deploy with wallet sync and health checks
-./scripts/deploy.dev.sh -s validator -v user@your-server:port -w -c
+./scripts/deploy.sh -s validator -v user@your-server:port -w -c
 ```
 
 #### Building from Source

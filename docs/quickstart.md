@@ -97,14 +97,14 @@ Deploy to remote servers using the automated deployment script:
 
 ```bash
 # Deploy all services to different servers
-./scripts/deploy.dev.sh -s all \
+./scripts/deploy.sh -s all \
   -v user@validator-server:port \
   -m user@miner-server:port \
   -e user@executor-server:port \
   -w -c
 
 # Or deploy individual services
-./scripts/deploy.dev.sh -s validator -v user@server:port -w
+./scripts/deploy.sh -s validator -v user@server:port -w
 ```
 
 See [BASILICA-DEPLOYMENT-GUIDE.md](../BASILICA-DEPLOYMENT-GUIDE.md) for detailed deployment instructions.

@@ -137,10 +137,10 @@ This production setup includes:
 
 ```bash
 # Build and deploy to remote server (see BASILICA-DEPLOYMENT-GUIDE.md)
-./scripts/deploy.dev.sh -s executor -e user@your-server:port
+./scripts/deploy.sh -s executor -e user@your-server:port
 
 # Deploy with health checks
-./scripts/deploy.dev.sh -s executor -e user@your-server:port -c
+./scripts/deploy.sh -s executor -e user@your-server:port -c
 ```
 
 #### Building from Source
