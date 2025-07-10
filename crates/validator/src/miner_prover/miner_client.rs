@@ -107,10 +107,12 @@ impl MinerClient {
             // Use the provided signer
             let signature_bytes = signer
                 .sign(nonce.as_bytes())
-                .unwrap_or_else(|e| panic!("Failed to create validator signature: {e}"));
+                .map_err(|e| anyhow::anyhow!("Failed to create validator signature: {e}"))?;
             Ok(hex::encode(signature_bytes))
         } else {
-            panic!("No signer provided for validator signature creation");
+            Err(anyhow::anyhow!(
+                "No signer provided for validator signature creation"
+            ))
         }
     }
 

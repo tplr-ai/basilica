@@ -657,6 +657,7 @@ mod tests {
             fallback_to_static: true,
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: Some(1000),
+            binary_validation: crate::config::BinaryValidationConfig::default(),
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {

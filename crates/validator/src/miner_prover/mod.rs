@@ -42,12 +42,12 @@ impl MinerProver {
         automatic_config: crate::config::AutomaticVerificationConfig,
         ssh_session_config: crate::config::SshSessionConfig,
         bittensor_service: Arc<BittensorService>,
-    ) -> Self {
+    ) -> Result<Self> {
         let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
 
         // Get validator hotkey from bittensor service
         let validator_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())
-            .expect("Failed to convert account ID to hotkey");
+            .map_err(|e| anyhow::anyhow!("Failed to convert account ID to hotkey: {}", e))?;
 
         // Use VerificationEngineBuilder to properly initialize SSH key manager
         let verification_engine_builder =
@@ -64,16 +64,21 @@ impl MinerProver {
             tokio::runtime::Handle::current()
                 .block_on(async { verification_engine_builder.build().await })
         })
-        .expect("Failed to build verification engine with SSH automation");
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to build verification engine with SSH automation: {}",
+                e
+            )
+        })?;
 
         // Create scheduler with automatic verification configuration
         let scheduler = VerificationScheduler::new(config.clone());
 
-        Self {
+        Ok(Self {
             discovery,
             scheduler,
             verification,
-        }
+        })
     }
 
     /// Start the miner verification loop

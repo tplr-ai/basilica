@@ -10,6 +10,5 @@ pub mod gpu_profile_query;
 pub mod secure_validator;
 pub mod types;
 
-
 #[cfg(test)]
 mod challenge_generator_tests;

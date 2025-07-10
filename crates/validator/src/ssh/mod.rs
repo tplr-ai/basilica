@@ -184,7 +184,13 @@ impl ValidatorSshClient {
     #[allow(dead_code)]
     fn update_connection_pool(&self, details: &SshConnectionDetails, success: bool) {
         let key = self.get_pool_key(details);
-        let mut pool = self.connection_pool.lock().unwrap();
+        let mut pool = match self.connection_pool.lock() {
+            Ok(pool) => pool,
+            Err(e) => {
+                tracing::error!("Connection pool mutex poisoned: {}", e);
+                return;
+            }
+        };
 
         // Clean up expired entries if pool is getting large
         if pool.len() >= self.max_pool_size {
@@ -223,19 +229,35 @@ impl ValidatorSshClient {
 
     /// Get current session statistics
     pub fn get_session_stats(&self) -> SshSessionStats {
-        self.session_stats.lock().unwrap().clone()
+        match self.session_stats.lock() {
+            Ok(stats) => stats.clone(),
+            Err(e) => {
+                tracing::error!("Session stats mutex poisoned: {}", e);
+                SshSessionStats::default()
+            }
+        }
     }
 
     /// Get connection pool information
     pub fn get_pool_info(&self) -> (usize, Vec<String>) {
-        let pool = self.connection_pool.lock().unwrap();
-        let keys: Vec<String> = pool.keys().cloned().collect();
-        (pool.len(), keys)
+        match self.connection_pool.lock() {
+            Ok(pool) => {
+                let keys: Vec<String> = pool.keys().cloned().collect();
+                (pool.len(), keys)
+            }
+            Err(e) => {
+                tracing::error!("Connection pool mutex poisoned: {}", e);
+                (0, Vec::new())
+            }
+        }
     }
 
     /// Clear connection pool
     pub fn clear_pool(&self) {
-        self.connection_pool.lock().unwrap().clear();
+        match self.connection_pool.lock() {
+            Ok(mut pool) => pool.clear(),
+            Err(e) => tracing::error!("Connection pool mutex poisoned: {}", e),
+        }
     }
 
     /// Test SSH connection to executor
@@ -529,7 +551,16 @@ impl ValidatorSshClient {
                 let semaphore = semaphore.clone();
 
                 async move {
-                    let _permit = semaphore.acquire().await.unwrap();
+                    let _permit = match semaphore.acquire().await {
+                        Ok(permit) => permit,
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to acquire semaphore permit for file upload: {}",
+                                e
+                            );
+                            return Err(anyhow::anyhow!("Semaphore acquisition failed: {}", e));
+                        }
+                    };
                     self.upload_file(&details, &local_path, &remote_path).await
                 }
             })
@@ -564,7 +595,16 @@ impl ValidatorSshClient {
                 let semaphore = semaphore.clone();
 
                 async move {
-                    let _permit = semaphore.acquire().await.unwrap();
+                    let _permit = match semaphore.acquire().await {
+                        Ok(permit) => permit,
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to acquire semaphore permit for command execution: {}",
+                                e
+                            );
+                            return Err(anyhow::anyhow!("Semaphore acquisition failed: {}", e));
+                        }
+                    };
                     self.execute_command(&details, &command, capture_output)
                         .await
                 }

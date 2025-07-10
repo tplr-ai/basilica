@@ -150,7 +150,10 @@ async fn show_config(config: &MinerConfig, show_sensitive: bool) -> Result<()> {
     }
 
     if !validation_result.warnings.is_empty() {
-        println!("WARNING: {} warnings found:", validation_result.warnings.len());
+        println!(
+            "WARNING: {} warnings found:",
+            validation_result.warnings.len()
+        );
         for warning in &validation_result.warnings {
             println!("   Warning: {warning}");
         }

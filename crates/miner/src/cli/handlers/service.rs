@@ -158,14 +158,7 @@ async fn show_service_status() -> Result<()> {
     let status = get_service_status().await?;
 
     println!("=== Miner Service Status ===");
-    println!(
-        "Running: {}",
-        if status.is_running {
-            "Yes"
-        } else {
-            "No"
-        }
-    );
+    println!("Running: {}", if status.is_running { "Yes" } else { "No" });
 
     if let Some(pid) = status.pid {
         println!("PID: {pid}");
