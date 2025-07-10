@@ -5,8 +5,6 @@
 
 use super::miner_client::MinerClientConfig;
 use super::verification::VerificationEngine;
-#[cfg(test)]
-use crate::config::BinaryValidationConfig;
 use crate::config::{AutomaticVerificationConfig, SshSessionConfig, VerificationConfig};
 use crate::ssh::{SshAutomationComponents, ValidatorSshClient};
 use anyhow::{Context, Result};
@@ -174,6 +172,7 @@ impl VerificationEngineBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::miner_prover::verification::SshAutomationStatus;
     use std::path::PathBuf;
     use std::time::Duration;

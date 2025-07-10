@@ -1882,7 +1882,7 @@ impl VerificationEngine {
                     binary_validation_successful: false,
                     executor_result: None,
                     error: Some(
-                        format!("Concurrent SSH session already active for this executor. Active sessions: {:?}", all_active),
+                        format!("Concurrent SSH session already active for this executor. Active sessions: {all_active:?}"),
                     ),
                     execution_time: Duration::from_secs(0),
                     validation_details,
