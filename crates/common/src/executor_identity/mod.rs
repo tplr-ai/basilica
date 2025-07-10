@@ -6,9 +6,9 @@
 //!
 //! # Example
 //! ```
-//! use basilica_common::executor_identity::ExecutorId;
+//! use common::executor_identity::{ExecutorId, ExecutorIdentity};
 //!
-//! let id = ExecutorId::new();
+//! let id = ExecutorId::new().unwrap();
 //! println!("UUID: {}", id.uuid());
 //! println!("HUID: {}", id.huid()); // e.g., "swift-falcon-a3f2"
 //! ```

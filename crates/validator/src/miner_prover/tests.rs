@@ -105,6 +105,7 @@ fn test_ssh_credential_parsing() {
         fallback_to_static: true,
         cache_miner_info_ttl: Duration::from_secs(3600),
         grpc_port_offset: None,
+        binary_validation: crate::config::BinaryValidationConfig::default(),
     };
     let engine = VerificationEngine::new(config);
 
@@ -152,6 +153,7 @@ async fn test_dynamic_discovery_config() {
         fallback_to_static: true,
         cache_miner_info_ttl: Duration::from_secs(300),
         grpc_port_offset: Some(42000),
+        binary_validation: crate::config::BinaryValidationConfig::default(),
     };
 
     // Verify configuration

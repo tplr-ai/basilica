@@ -9,13 +9,13 @@ mod tests {
     #[tokio::test]
     async fn test_weight_setter_scoring() {
         // Create a memory storage
-        let storage = MemoryStorage::new();
+        let _storage = MemoryStorage::new();
 
         // Create mock bittensor service
-        let config = common::config::BittensorConfig::default();
+        let _config = common::config::BittensorConfig::default();
 
         // This test verifies the weight setter can update miner scores
-        let miner_uid = MinerUid::new(1);
+        let _miner_uid = MinerUid::new(1);
 
         // Create mock validation results
         let validations = [

@@ -190,9 +190,7 @@ pub async fn handle_assignment_command(
                             "CRITICAL"
                         }
                         crate::services::assignment_manager::AssignmentPriority::High => "HIGH",
-                        crate::services::assignment_manager::AssignmentPriority::Medium => {
-                            "MEDIUM"
-                        }
+                        crate::services::assignment_manager::AssignmentPriority::Medium => "MEDIUM",
                         crate::services::assignment_manager::AssignmentPriority::Low => "LOW",
                     };
 

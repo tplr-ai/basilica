@@ -35,9 +35,7 @@ pub use persistence::entities::{
 };
 pub use persistence::SimplePersistence;
 pub use ssh::{ExecutorSshDetails, ValidatorSshClient};
-pub use validation::{
-    types::{ValidationConfig, ValidationError},
-};
+pub use validation::types::{ValidationConfig, ValidationError};
 
 /// Re-export common error types
 pub use common::error::{BasilcaError, BasilcaResult};

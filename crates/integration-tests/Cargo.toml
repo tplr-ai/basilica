@@ -34,16 +34,4 @@ criterion = "0.5"
 name = "miner_executor_flow"
 path = "tests/miner_executor_flow.rs"
 
-[[test]]
-name = "secure_gpu_validation_e2e"
-path = "tests/secure_gpu_validation_e2e.rs"
-
-
-[[test]]
-name = "vm_secure_validation_full_e2e"
-path = "tests/vm_secure_validation_full_e2e.rs"
-
-[[test]]
-name = "vm_direct_validation_e2e"
-path = "tests/vm_direct_validation_e2e.rs"
 

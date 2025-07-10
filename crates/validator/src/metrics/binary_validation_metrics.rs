@@ -64,7 +64,8 @@ impl BinaryValidationMetrics {
     fn update_average_execution_time(&mut self, execution_time_ms: u64) {
         let count = self.successful_validations as f64;
         let time_ms = execution_time_ms as f64;
-        self.average_execution_time_ms = ((self.average_execution_time_ms * (count - 1.0)) + time_ms) / count;
+        self.average_execution_time_ms =
+            ((self.average_execution_time_ms * (count - 1.0)) + time_ms) / count;
     }
 
     pub fn get_success_rate(&self) -> f64 {

@@ -1620,7 +1620,7 @@ impl VerificationEngine {
             };
 
         // Generate unique session ID
-        let session_id = Uuid::new_v4().to_string();
+        let _session_id = Uuid::new_v4().to_string();
 
         // Create SSH session request
         let ssh_request = protocol::miner_discovery::InitiateSshSessionRequest {
@@ -1702,7 +1702,7 @@ impl VerificationEngine {
                     ssh_connection_successful: false,
                     binary_validation_successful: false,
                     executor_result: None,
-                    error: Some(format!("SSH session establishment failed: {}", e)),
+                    error: Some(format!("SSH session establishment failed: {e}")),
                     execution_time: total_start.elapsed(),
                     validation_details,
                 });

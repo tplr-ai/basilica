@@ -391,7 +391,7 @@ impl WeightSetter {
         verification_log: &VerificationLog,
     ) -> Result<()> {
         // Extract validation details from the verification log
-        let validation_result = self.extract_validation_result(executor_id, verification_log)?;
+        let _validation_result = self.extract_validation_result(executor_id, verification_log)?;
 
         // Get all recent validations for this miner
         let recent_validations = self
