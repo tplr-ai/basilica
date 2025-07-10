@@ -1,0 +1,187 @@
+# Basilica Miner Production Configuration
+# 
+# SETUP INSTRUCTIONS:
+# 1. Replace placeholder IPs with your actual server IPs
+# 2. Update wallet_name to your production wallet name
+# 3. Ensure your production wallet exists in ~/.bittensor/wallets/
+# 4. Verify executor configurations match your GPU servers
+# 5. Update JWT secret for production security
+
+[bittensor]
+wallet_name = "prod_miner"  # Change to your production wallet name
+hotkey_name = "default"
+network = "finney"          # Production network
+netuid = 39                 # Production netuid (mainnet)
+chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"  # Critical: explicit chain endpoint
+weight_interval_secs = 300
+coldkey_name = "default"
+external_ip = "YOUR_EXTERNAL_IP"  # Replace with your server's external IP
+axon_port = 8080
+max_weight_uids = 256
+skip_registration = false
+
+[database]
+url = "sqlite:///opt/basilica/data/miner.db"
+max_connections = 10
+min_connections = 1
+run_migrations = true
+
+[database.connect_timeout]
+secs = 30
+nanos = 0
+
+[database.idle_timeout]
+secs = 600
+nanos = 0
+
+[database.max_lifetime]
+secs = 3600
+nanos = 0
+
+[server]
+host = "0.0.0.0"
+advertised_host = "YOUR_EXTERNAL_IP"  # Replace with your server's external IP
+advertised_port = 8080
+port = 8080
+max_connections = 1000
+advertised_tls = false
+tls_enabled = false
+
+[server.request_timeout]
+secs = 30
+nanos = 0
+
+[server.keep_alive_timeout]
+secs = 60
+nanos = 0
+
+[logging]
+level = "info"              # Production logging level
+format = "pretty"
+stdout = true
+max_file_size = 104857600
+max_files = 5
+
+[logging.targets]
+
+[metrics]
+enabled = true
+
+[metrics.collection_interval]
+secs = 30
+nanos = 0
+
+[metrics.prometheus]
+host = "127.0.0.1"
+port = 9090
+path = "/metrics"
+
+[metrics.default_labels]
+
+[metrics.retention_period]
+secs = 604800
+nanos = 0
+
+[validator_comms]
+max_concurrent_sessions = 100
+
+[validator_comms.auth]
+enabled = true
+method = "bittensor_signature"
+
+[validator_comms.auth.token_validation]
+validate_issuer = true
+validate_audience = true
+validate_expiration = true
+
+[validator_comms.auth.token_validation.clock_skew_tolerance]
+secs = 60
+nanos = 0
+
+[validator_comms.request_timeout]
+secs = 30
+nanos = 0
+
+[validator_comms.rate_limit]
+enabled = true
+requests_per_second = 10
+burst_capacity = 20
+
+[validator_comms.rate_limit.window_duration]
+secs = 60
+nanos = 0
+
+[executor_management]
+# UPDATE THESE EXECUTOR CONFIGURATIONS:
+# Replace with your actual GPU server details
+executors = [
+  { id = "550e8400-e29b-41d4-a716-446655440001", name = "executor-1", grpc_address = "EXECUTOR_IP:50051", host = "EXECUTOR_IP", port = 50051, ssh_username = "your_username", ssh_port = 22, enabled = true },
+  # Add more executors as needed:
+  # { id = "550e8400-e29b-41d4-a716-446655440002", name = "executor-2", grpc_address = "EXECUTOR_IP_2:50051", host = "EXECUTOR_IP_2", port = 50051, ssh_username = "your_username", ssh_port = 22, enabled = true },
+]
+max_retry_attempts = 3
+auto_recovery = true
+
+[executor_management.health_check_interval]
+secs = 60
+nanos = 0
+
+[executor_management.health_check_timeout]
+secs = 10
+nanos = 0
+
+[security]
+enable_mtls = false
+jwt_secret = "GENERATE_NEW_JWT_SECRET_FOR_PRODUCTION"  # Generate new secret: openssl rand -hex 32
+allowed_validators = []
+verify_signatures = true
+
+[security.token_expiration]
+secs = 3600
+nanos = 0
+
+[ssh_session]
+miner_executor_key_path = "~/.ssh/miner_executor_key"
+default_executor_username = "executor"
+max_sessions_per_validator = 5
+session_rate_limit = 20
+enable_audit_log = true
+audit_log_path = "./data/ssh_audit.log"
+enable_automated_sessions = true
+max_session_duration = 3600
+enable_session_expiration = true
+enable_key_cleanup = true
+ssh_retry_attempts = 3
+
+[ssh_session.session_cleanup_interval]
+secs = 60
+nanos = 0
+
+[ssh_session.ssh_connection_timeout]
+secs = 30
+nanos = 0
+
+[ssh_session.ssh_command_timeout]
+secs = 60
+nanos = 0
+
+[ssh_session.key_cleanup_interval]
+secs = 300
+nanos = 0
+
+[ssh_session.rate_limit_window]
+secs = 3600
+nanos = 0
+
+[ssh_session.ssh_retry_delay]
+secs = 2
+nanos = 0
+
+[validator_assignment]
+strategy = "round_robin"
+
+[advertised_addresses]
+# These should match your external IP and ports
+grpc_endpoint = "http://YOUR_EXTERNAL_IP:8080"
+axon_endpoint = "http://YOUR_EXTERNAL_IP:8080"
+metrics_endpoint = "http://YOUR_EXTERNAL_IP:9090"

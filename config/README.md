@@ -93,7 +93,10 @@ vim config/validator.toml
 
 - Use `network = "finney"` and `netuid = 39` for mainnet
 - Use `network = "test"` and `netuid = 387` for testnet
-- Chain endpoints are auto-detected based on network type
+- **Always specify `chain_endpoint`** to avoid metadata compatibility issues:
+  - Finney: `chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"`
+  - Test: `chain_endpoint = "wss://test.finney.opentensor.ai:443"`
+  - Local: `chain_endpoint = "ws://127.0.0.1:9944"`
 
 ## Key Features
 
@@ -110,6 +113,19 @@ vim config/validator.toml
 - **Rate Limiting**: Configurable rate limits for validator/miner communication
 - **Audit Logging**: SSH access audit trails
 - **Binary Validation**: Cryptographic GPU verification
+
+## Metadata Compatibility
+
+**Important**: To avoid metadata compatibility errors, always:
+
+1. **Regenerate metadata** before production deployments:
+   ```bash
+   ./scripts/generate-metadata.sh --network finney
+   ```
+
+2. **Specify chain endpoints** in configuration files to ensure runtime compatibility
+
+3. **Rebuild services** after metadata updates to embed fresh metadata
 
 ## Security Notes
 

@@ -53,7 +53,8 @@ wallet_name = "miner"
 hotkey_name = "default"
 network = "finney"  # Options: "finney", "test", or "local"
 netuid = 39  # Basilica subnet (use 387 for test network)
-# chain_endpoint is auto-detected based on network if not specified
+chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"  # Critical for metadata compatibility
+# Network endpoints:
 # finney: wss://entrypoint-finney.opentensor.ai:443
 # test: wss://test.finney.opentensor.ai:443
 # local: ws://127.0.0.1:9944
@@ -194,6 +195,9 @@ This production setup includes:
 #### Building from Source
 
 ```bash
+# First, ensure metadata is up to date (recommended for production)
+./scripts/generate-metadata.sh --network finney
+
 # Build the miner using the build script
 ./scripts/miner/build.sh
 
@@ -294,6 +298,16 @@ Error: Failed to serve axon on network
 - Ensure wallet has sufficient TAO for registration
 - Verify you're connected to the correct network
 - Check if hotkey is already registered
+
+**Metadata Compatibility Error**
+
+```text
+Error: failed to fetch metadata for netuid 39: RPC method error: get_metagraph - Metadata error: the generated code is not compatible with the node
+```
+
+- Regenerate metadata: `./scripts/generate-metadata.sh --network finney`
+- Ensure `chain_endpoint` is specified in `[bittensor]` section
+- Rebuild the miner after metadata update
 
 **Wallet Loading Error**
 

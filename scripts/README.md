@@ -12,6 +12,27 @@ Each component has its own directory with:
 - `compose.prod.yml` - Production deployment
 - `README.md` - Component-specific documentation
 
+## Metadata Management
+
+**Important**: `generate-metadata.sh` - Regenerates Bittensor metadata for all services
+
+```bash
+# Generate metadata for all networks (test, finney)
+./scripts/generate-metadata.sh
+
+# Generate for specific network
+./scripts/generate-metadata.sh --network finney
+
+# Generate for multiple networks
+./scripts/generate-metadata.sh test finney
+```
+
+**When to regenerate metadata:**
+- Before production deployments
+- When encountering "metadata compatibility" errors
+- After Bittensor network upgrades
+- When switching between networks
+
 ## Components
 
 - **executor/** - GPU machine agent
@@ -24,6 +45,9 @@ Each component has its own directory with:
 
 ### Building
 ```bash
+# For production builds, regenerate metadata first
+./scripts/generate-metadata.sh --network finney
+
 cd scripts/{component}
 ./build.sh
 ```
