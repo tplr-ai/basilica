@@ -350,7 +350,37 @@ impl MinerDiscovery for MinerDiscoveryService {
                 return Err(Status::unauthenticated("Invalid signature"));
             }
         }
-
+        // Verify nonce format and timestamp
+        if auth_request.nonce.contains(':') {
+            let parts: Vec<&str> = auth_request.nonce.splitn(3, ':').collect();
+            if parts.len() != 3 {
+                warn!(
+                    "Signature verification failed"
+                );
+                return Err(Status::invalid_argument("Invalid nonce format"));
+            }
+            let miner_hotkey_in_nonce = parts[0];
+            let timestamp: i64 = parts[1].parse().map_err(|_| Status::invalid_argument("Invalid timestamp"))?;
+            let now = chrono::Utc::now().timestamp();
+    
+            // Check if miner hotkey in nonce matches validator_hotkey
+            if miner_hotkey_in_nonce != self.executor_manager.miner_hotkey {
+                warn!(
+                    "Miner hotkey mismatch in nonce"
+                );
+                return Err(Status::unauthenticated("Miner hotkey mismatch in nonce"));
+            }
+    
+            // Check timestamp within 30 minutes (1800 seconds)
+            if now - timestamp > 1800 {
+                warn!(
+                    "Nonce has expired "
+                );
+                return Err(Status::unauthenticated("Nonce has expired"));
+            }
+            
+        }
+        
         // Check if validator is in allowlist (if configured)
         if !self.security_config.allowed_validators.is_empty() {
             let validator_hotkey = Hotkey::new(auth_request.validator_hotkey.clone())

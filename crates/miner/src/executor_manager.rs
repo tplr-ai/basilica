@@ -105,7 +105,7 @@ pub struct ExecutorManager {
     pub config: ExecutorManagerConfig,
     db: RegistrationDb,
     miner_address: String,
-    miner_hotkey: String,
+    pub miner_hotkey: String,
     state: Arc<RwLock<HashMap<String, ExecutorState>>>,
     deployment_semaphore: Arc<Semaphore>,
     snapshots: Arc<RwLock<HashMap<String, DeploymentSnapshot>>>,
