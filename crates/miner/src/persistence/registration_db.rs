@@ -9,7 +9,9 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
-use tracing::{debug, info};
+use std::path::Path;
+use tokio::fs;
+use tracing::{debug, info, warn};
 
 use common::config::DatabaseConfig;
 
@@ -97,8 +99,20 @@ impl RegistrationDb {
     /// Create a new registration database client
     pub async fn new(config: &DatabaseConfig) -> Result<Self> {
         info!("Creating registration database client");
+        debug!("Database URL: {}", config.url);
 
-        let pool = SqlitePool::connect(&config.url)
+        // Ensure database directory exists
+        Self::ensure_database_directory(&config.url).await?;
+
+        // Add connection mode for read-write-create if not present
+        let final_url = if config.url.contains('?') {
+            config.url.clone()
+        } else {
+            format!("{}?mode=rwc", config.url)
+        };
+        debug!("Final database URL: {}", final_url);
+
+        let pool = SqlitePool::connect(&final_url)
             .await
             .context("Failed to connect to SQLite database")?;
 
@@ -610,6 +624,21 @@ impl RegistrationDb {
         .await?;
 
         Ok(result.rows_affected())
+    }
+
+    /// Ensure database directory exists
+    async fn ensure_database_directory(database_url: &str) -> Result<()> {
+        if let Some(path) = database_url.strip_prefix("sqlite:") {
+            let db_path = path.split('?').next().unwrap_or(path);
+            if let Some(parent_dir) = Path::new(db_path).parent() {
+                if !parent_dir.exists() {
+                    debug!("Creating database directory: {:?}", parent_dir);
+                    fs::create_dir_all(parent_dir).await
+                        .with_context(|| format!("Failed to create database directory: {:?}", parent_dir))?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
