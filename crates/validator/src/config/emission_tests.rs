@@ -322,7 +322,6 @@ H200 = 30.0
         assert!((total - 100.0).abs() < 0.01);
     }
 
-
     #[test]
     fn test_precision_handling() {
         // Test that small floating point differences are handled correctly

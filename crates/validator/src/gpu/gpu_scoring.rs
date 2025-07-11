@@ -69,7 +69,7 @@ impl GpuScoringEngine {
 
         for validation in executor_validations {
             total_count += 1;
-            
+
             // Simple pass/fail scoring: 1.0 if attestation is valid, 0.0 otherwise
             if validation.is_valid && validation.attestation_valid {
                 valid_count += 1;
@@ -844,7 +844,7 @@ mod tests {
         let engine = GpuScoringEngine::new(repo.clone(), 0.3);
 
         let miner_uid = MinerUid::new(100);
-        
+
         // Create initial profile with score 0.2
         let initial_profile = MinerGpuProfile {
             miner_uid,
@@ -887,10 +887,10 @@ mod tests {
 
         // Test various memory sizes all get same score
         let memory_sizes = vec![16, 24, 40, 80, 100];
-        
+
         for memory in memory_sizes {
             let validations = vec![ExecutorValidationResult {
-                executor_id: format!("exec_{}", memory),
+                executor_id: format!("exec_{memory}"),
                 is_valid: true,
                 gpu_model: "H100".to_string(),
                 gpu_count: 1,
@@ -900,7 +900,7 @@ mod tests {
             }];
 
             let score = engine.calculate_verification_score(&validations);
-            assert_eq!(score, 1.0, "Memory {} should give score 1.0", memory);
+            assert_eq!(score, 1.0, "Memory {memory} should give score 1.0");
         }
     }
 

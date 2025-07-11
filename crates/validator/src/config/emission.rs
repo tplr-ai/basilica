@@ -16,7 +16,6 @@ pub struct EmissionConfig {
 
     /// Blocks between weight setting
     pub weight_set_interval_blocks: u64,
-
 }
 
 impl EmissionConfig {
@@ -62,7 +61,6 @@ impl EmissionConfig {
             }
         }
 
-
         Ok(())
     }
 
@@ -91,7 +89,6 @@ impl EmissionConfig {
         if self.weight_set_interval_blocks == 0 {
             self.weight_set_interval_blocks = default_config.weight_set_interval_blocks;
         }
-
 
         self
     }
