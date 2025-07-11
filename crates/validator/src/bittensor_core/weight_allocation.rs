@@ -39,15 +39,34 @@ impl WeightAllocationEngine {
         // Filter miners by minimum score threshold
         let filtered_miners = self.filter_miners_by_score(miners_by_category)?;
 
-        // Calculate category weight pools
-        let category_pools = self.calculate_category_pools(remaining_weight, &filtered_miners)?;
+        // Calculate category weight pools for ALL configured categories
+        let all_category_pools = self.calculate_all_category_pools(remaining_weight)?;
+
+        // Track which categories have miners
+        let mut active_categories = std::collections::HashSet::new();
+        for category in filtered_miners.keys() {
+            active_categories.insert(category.clone());
+        }
+
+        // Calculate additional burn for empty categories
+        let mut empty_category_burn = 0u64;
+        for (category, pool) in &all_category_pools {
+            if !active_categories.contains(category) {
+                empty_category_burn += pool;
+                info!(
+                    category = %category,
+                    weight = pool,
+                    "Burning weight for empty GPU category"
+                );
+            }
+        }
 
         // Distribute weights within each category
         let mut all_weights = Vec::new();
         let mut category_allocations = HashMap::new();
 
         for (category, miners) in filtered_miners {
-            let category_weight_pool = category_pools.get(&category).copied().unwrap_or(0);
+            let category_weight_pool = all_category_pools.get(&category).copied().unwrap_or(0);
 
             if category_weight_pool == 0 || miners.is_empty() {
                 continue;
@@ -75,11 +94,12 @@ impl WeightAllocationEngine {
             all_weights.extend(category_weights);
         }
 
-        // Add burn allocation if configured
-        if let Some(burn_alloc) = &burn_allocation {
+        // Add burn allocation (including empty category burns)
+        let total_burn_weight = burn_weight + empty_category_burn;
+        if total_burn_weight > 0 {
             all_weights.push(NormalizedWeight {
-                uid: burn_alloc.uid,
-                weight: burn_alloc.weight,
+                uid: self.emission_config.burn_uid,
+                weight: total_burn_weight.min(u16::MAX as u64) as u16,
             });
         }
 
@@ -87,11 +107,13 @@ impl WeightAllocationEngine {
         self.validate_allocation(&all_weights)?;
 
         let miners_served =
-            all_weights.len() as u32 - if burn_allocation.is_some() { 1 } else { 0 };
+            all_weights.len() as u32 - if total_burn_weight > 0 { 1 } else { 0 };
 
         info!(
             total_weight = total_weight,
             burn_weight = burn_weight,
+            empty_category_burn = empty_category_burn,
+            total_burn = total_burn_weight,
             categories = category_allocations.len(),
             miners_served = miners_served,
             "Calculated weight distribution"
@@ -99,7 +121,15 @@ impl WeightAllocationEngine {
 
         Ok(WeightDistribution {
             weights: all_weights,
-            burn_allocation,
+            burn_allocation: if total_burn_weight > 0 {
+                Some(BurnAllocation {
+                    uid: self.emission_config.burn_uid,
+                    weight: total_burn_weight.min(u16::MAX as u64) as u16,
+                    percentage: (total_burn_weight as f64 / total_weight as f64) * 100.0,
+                })
+            } else {
+                None
+            },
             category_allocations,
             total_weight,
             miners_served,
@@ -133,20 +163,21 @@ impl WeightAllocationEngine {
     ) -> Result<HashMap<String, Vec<(MinerUid, f64)>>> {
         let mut filtered = HashMap::new();
 
-        for (category, miners) in miners_by_category {
-            let valid_miners: Vec<(MinerUid, f64)> = miners
-                .into_iter()
-                .filter(|(_, score)| *score >= self.min_score_threshold)
-                .collect();
+        // Hardcoded minimum of 1 miner per category
+        const MIN_MINERS_PER_CATEGORY: usize = 1;
 
-            // Only include categories with minimum number of miners
-            if valid_miners.len() >= self.emission_config.min_miners_per_category as usize {
+        for (category, miners) in miners_by_category {
+            // Remove score threshold filtering - include all miners regardless of score
+            let valid_miners: Vec<(MinerUid, f64)> = miners;
+
+            // Only include categories with minimum number of miners (hardcoded to 1)
+            if valid_miners.len() >= MIN_MINERS_PER_CATEGORY {
                 filtered.insert(category, valid_miners);
             } else {
                 debug!(
                     category = %category,
                     miners = valid_miners.len(),
-                    required = self.emission_config.min_miners_per_category,
+                    required = MIN_MINERS_PER_CATEGORY,
                     "Category excluded due to insufficient miners"
                 );
             }
@@ -174,6 +205,23 @@ impl WeightAllocationEngine {
                     "No allocation percentage configured for category"
                 );
             }
+        }
+
+        Ok(category_pools)
+    }
+
+    /// Calculate weight pools for ALL configured categories (including empty ones)
+    fn calculate_all_category_pools(
+        &self,
+        total_remaining_weight: u64,
+    ) -> Result<HashMap<String, u64>> {
+        let mut category_pools = HashMap::new();
+
+        // Get all configured GPU categories from emission config
+        for (category, allocation_percentage) in &self.emission_config.gpu_allocations {
+            let weight_pool =
+                (total_remaining_weight as f64 * allocation_percentage / 100.0) as u64;
+            category_pools.insert(category.clone(), weight_pool);
         }
 
         Ok(category_pools)
@@ -354,7 +402,6 @@ mod tests {
             burn_uid: 999,
             gpu_allocations,
             weight_set_interval_blocks: 360,
-            min_miners_per_category: 1,
         }
     }
 
@@ -452,7 +499,8 @@ mod tests {
         // Should have burn allocation
         assert!(distribution.burn_allocation.is_some());
         let burn = distribution.burn_allocation.unwrap();
-        assert_eq!(burn.percentage, 10.0);
+        // Burn percentage should be approximately 10% (base burn)
+        assert!((burn.percentage - 10.0).abs() < 0.1);
 
         // Should have category allocations
         assert_eq!(distribution.category_allocations.len(), 2);
@@ -476,9 +524,9 @@ mod tests {
         let miners = create_test_miners();
         let distribution = engine.calculate_weight_distribution(miners).unwrap();
 
-        // Only miners with score >= 0.7 should be included
-        // H100: miner 1 (0.8), H200: miner 4 (0.9), miner 5 (0.7)
-        assert_eq!(distribution.miners_served, 3);
+        // With threshold removed, all miners should be included
+        // H100: 3 miners, H200: 2 miners
+        assert_eq!(distribution.miners_served, 5);
     }
 
     #[test]
@@ -524,16 +572,22 @@ mod tests {
         assert_eq!(distribution.miners_served, 0);
         assert_eq!(distribution.weights.len(), 1); // Only burn allocation
 
-        // Test insufficient miners per category
-        let mut config_high_min = create_test_config();
-        config_high_min.min_miners_per_category = 10;
-        let engine_high_min = WeightAllocationEngine::new(config_high_min, 0.5);
-
-        let miners = create_test_miners();
-        let distribution = engine_high_min
-            .calculate_weight_distribution(miners)
-            .unwrap();
-        assert_eq!(distribution.miners_served, 0); // No categories meet minimum
+        // Test with no miners in H200 category - should burn H200 allocation
+        let mut single_category_miners = HashMap::new();
+        single_category_miners.insert(
+            "H100".to_string(),
+            vec![
+                (MinerUid::new(1), 0.8),
+                (MinerUid::new(2), 0.6),
+            ],
+        );
+        
+        let distribution = engine.calculate_weight_distribution(single_category_miners).unwrap();
+        assert_eq!(distribution.miners_served, 2); // Only H100 miners
+        
+        // Check that burn allocation includes H200's 40% allocation
+        let burn_alloc = distribution.burn_allocation.unwrap();
+        assert!(burn_alloc.percentage > 40.0); // Should be base burn + H200's 40%
     }
 
     #[test]
@@ -589,5 +643,107 @@ mod tests {
 
         engine.set_min_score_threshold(-0.5);
         assert_eq!(engine.get_min_score_threshold(), 0.0);
+    }
+
+    #[test]
+    fn test_calculate_all_category_pools() {
+        let config = create_test_config();
+        let engine = WeightAllocationEngine::new(config, 0.0);
+        
+        let total_weight = 10000u64;
+        let pools = engine.calculate_all_category_pools(total_weight).unwrap();
+        
+        // Should have pools for all configured categories
+        assert_eq!(pools.len(), 2);
+        assert!(pools.contains_key("H100"));
+        assert!(pools.contains_key("H200"));
+        
+        // H100 should get 60% of total
+        assert_eq!(pools.get("H100"), Some(&6000));
+        // H200 should get 40% of total
+        assert_eq!(pools.get("H200"), Some(&4000));
+        
+        // Total should equal input
+        let total: u64 = pools.values().sum();
+        assert_eq!(total, total_weight);
+    }
+
+    #[test]
+    fn test_empty_category_burn_both_categories_empty() {
+        let config = create_test_config();
+        let engine = WeightAllocationEngine::new(config, 0.0);
+        
+        // No miners at all
+        let empty_miners = HashMap::new();
+        let distribution = engine.calculate_weight_distribution(empty_miners).unwrap();
+        
+        // Should have only burn allocation
+        assert_eq!(distribution.miners_served, 0);
+        assert_eq!(distribution.weights.len(), 1);
+        
+        // Burn should include base burn (10%) + all category allocations (90%)
+        let burn = distribution.burn_allocation.unwrap();
+        assert!((burn.percentage - 100.0).abs() < 0.1); // Should be ~100%
+    }
+
+    #[test]
+    fn test_empty_category_burn_mixed_categories() {
+        let mut config = create_test_config();
+        // Set up 3 categories for testing
+        config.gpu_allocations.clear();
+        config.gpu_allocations.insert("H100".to_string(), 40.0);
+        config.gpu_allocations.insert("H200".to_string(), 30.0);
+        config.gpu_allocations.insert("A100".to_string(), 30.0);
+        
+        let engine = WeightAllocationEngine::new(config, 0.0);
+        
+        // Only H100 has miners
+        let mut miners = HashMap::new();
+        miners.insert("H100".to_string(), vec![(MinerUid::new(1), 1.0)]);
+        
+        let distribution = engine.calculate_weight_distribution(miners).unwrap();
+        
+        // Should burn H200 and A100 allocations (30% + 30% = 60%) plus base burn (10%)
+        let burn = distribution.burn_allocation.unwrap();
+        // The exact percentage depends on weight calculations and rounding
+        // We expect around 64% (not 70% due to how weights are calculated)
+        assert!(burn.percentage > 60.0 && burn.percentage < 65.0);
+        
+        // Only H100 should have allocation
+        assert_eq!(distribution.category_allocations.len(), 1);
+        assert!(distribution.category_allocations.contains_key("H100"));
+    }
+
+    #[test]
+    fn test_hardcoded_min_miners_per_category() {
+        let config = create_test_config();
+        let engine = WeightAllocationEngine::new(config, 0.0);
+        
+        // Create category with 0 miners (empty list)
+        let mut miners = HashMap::new();
+        miners.insert("H100".to_string(), vec![]);
+        miners.insert("H200".to_string(), vec![(MinerUid::new(1), 0.5)]);
+        
+        let filtered = engine.filter_miners_by_score(miners).unwrap();
+        
+        // H100 should be excluded (0 < 1 minimum)
+        assert!(!filtered.contains_key("H100"));
+        // H200 should be included (1 >= 1 minimum)
+        assert!(filtered.contains_key("H200"));
+    }
+
+    #[test]
+    fn test_burn_weight_overflow_protection() {
+        let mut config = create_test_config();
+        config.burn_percentage = 90.0; // Very high burn
+        let engine = WeightAllocationEngine::new(config, 0.0);
+        
+        // No miners, so everything gets burned
+        let empty_miners = HashMap::new();
+        let distribution = engine.calculate_weight_distribution(empty_miners).unwrap();
+        
+        // Burn weight should be clamped to u16::MAX
+        let burn = distribution.burn_allocation.unwrap();
+        assert!(burn.weight <= u16::MAX);
     }
 }

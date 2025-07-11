@@ -11,7 +11,6 @@ mod tests {
         assert_eq!(config.emission.burn_percentage, 0.0);
         assert_eq!(config.emission.burn_uid, 0);
         assert_eq!(config.emission.weight_set_interval_blocks, 360);
-        assert_eq!(config.emission.min_miners_per_category, 1);
         assert_eq!(config.emission.gpu_allocations.len(), 2);
 
         // Verify the config validates

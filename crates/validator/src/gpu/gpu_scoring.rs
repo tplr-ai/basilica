@@ -64,50 +64,32 @@ impl GpuScoringEngine {
             return 0.0;
         }
 
-        let mut total_score = 0.0;
-        let mut total_weight = 0.0;
+        let mut valid_count = 0;
+        let mut total_count = 0;
 
         for validation in executor_validations {
-            // Only consider valid validations with valid attestations
-            if !validation.is_valid || !validation.attestation_valid {
-                continue;
+            total_count += 1;
+            
+            // Simple pass/fail scoring: 1.0 if attestation is valid, 0.0 otherwise
+            if validation.is_valid && validation.attestation_valid {
+                valid_count += 1;
             }
-
-            // Weight by GPU count (more GPUs = more weight)
-            let weight = validation.gpu_count as f64;
-
-            // Base score from validation success, scaled by memory
-            let executor_score = if validation.gpu_memory_gb >= 80 {
-                0.95 // High score for high-memory GPUs (80GB+)
-            } else if validation.gpu_memory_gb >= 40 {
-                0.85 // Medium score for medium-memory GPUs (40-79GB)
-            } else if validation.gpu_memory_gb >= 20 {
-                0.75 // Lower score for lower-memory GPUs (20-39GB)
-            } else {
-                0.65 // Lowest score for very low memory GPUs (<20GB)
-            };
-
-            total_score += executor_score * weight;
-            total_weight += weight;
         }
 
-        if total_weight > 0.0 {
-            let final_score: f64 = total_score / total_weight;
+        if total_count > 0 {
+            let final_score = valid_count as f64 / total_count as f64;
             debug!(
                 validations = executor_validations.len(),
-                valid_count = executor_validations
-                    .iter()
-                    .filter(|v| v.is_valid && v.attestation_valid)
-                    .count(),
-                total_weight = total_weight,
+                valid_count = valid_count,
+                total_count = total_count,
                 final_score = final_score,
-                "Calculated verification score"
+                "Calculated verification score (pass/fail based)"
             );
-            final_score.min(1.0)
+            final_score
         } else {
             warn!(
                 validations = executor_validations.len(),
-                "No valid validations found for score calculation"
+                "No validations found for score calculation"
             );
             0.0
         }
@@ -117,45 +99,16 @@ impl GpuScoringEngine {
     async fn apply_ema_smoothing(
         &self,
         miner_uid: MinerUid,
-        gpu_model: &str,
+        _gpu_model: &str,
         new_score: f64,
     ) -> Result<f64> {
-        // Get existing profile if it exists
-        if let Some(existing_profile) = self.gpu_profile_repo.get_gpu_profile(miner_uid).await? {
-            // If GPU model changed, don't smooth (fresh start)
-            if existing_profile.primary_gpu_model != gpu_model {
-                debug!(
-                    miner_uid = miner_uid.as_u16(),
-                    old_gpu = %existing_profile.primary_gpu_model,
-                    new_gpu = %gpu_model,
-                    "GPU model changed, not applying EMA smoothing"
-                );
-                return Ok(new_score);
-            }
-
-            // Apply EMA: new_value = alpha * new_score + (1 - alpha) * old_score
-            let smoothed_score =
-                self.ema_alpha * new_score + (1.0 - self.ema_alpha) * existing_profile.total_score;
-
-            debug!(
-                miner_uid = miner_uid.as_u16(),
-                old_score = existing_profile.total_score,
-                new_score = new_score,
-                smoothed_score = smoothed_score,
-                alpha = self.ema_alpha,
-                "Applied EMA smoothing"
-            );
-
-            Ok(smoothed_score)
-        } else {
-            // No existing profile, use new score as-is
-            debug!(
-                miner_uid = miner_uid.as_u16(),
-                new_score = new_score,
-                "No existing profile, using new score"
-            );
-            Ok(new_score)
-        }
+        // EMA smoothing removed - always use the new score directly
+        debug!(
+            miner_uid = miner_uid.as_u16(),
+            new_score = new_score,
+            "Using new score without EMA smoothing"
+        );
+        Ok(new_score)
     }
 
     /// Get all miners grouped by GPU category with multi-category support
@@ -428,7 +381,7 @@ mod tests {
         let score = engine.calculate_verification_score(&empty_validations);
         assert_eq!(score, 0.0);
 
-        // Test hardware score weighting
+        // Test that pass/fail scoring gives 1.0 for valid attestations regardless of memory
         let high_memory_validations = vec![ExecutorValidationResult {
             executor_id: "exec1".to_string(),
             is_valid: true,
@@ -451,7 +404,9 @@ mod tests {
 
         let high_score = engine.calculate_verification_score(&high_memory_validations);
         let low_score = engine.calculate_verification_score(&low_memory_validations);
-        assert!(high_score > low_score);
+        // With pass/fail scoring, both should be 1.0 if attestation is valid
+        assert_eq!(high_score, 1.0);
+        assert_eq!(low_score, 1.0);
     }
 
     #[tokio::test]
@@ -497,8 +452,8 @@ mod tests {
         assert_eq!(updated_profile.miner_uid, miner_uid);
         assert_eq!(updated_profile.primary_gpu_model, "H100");
 
-        // Score should be different due to EMA smoothing
-        assert_ne!(updated_profile.total_score, profile.total_score);
+        // Score should be the same since we removed EMA smoothing
+        assert_eq!(updated_profile.total_score, profile.total_score);
     }
 
     #[tokio::test]
@@ -523,15 +478,14 @@ mod tests {
 
         repo.upsert_gpu_profile(&initial_profile).await.unwrap();
 
-        // Test with same GPU model - should apply EMA
+        // Test that EMA smoothing is disabled - should always return new score
         let smoothed_score = engine
             .apply_ema_smoothing(miner_uid, "H100", 0.8)
             .await
             .unwrap();
-        let expected = 0.3 * 0.8 + 0.7 * 0.5; // alpha * new + (1-alpha) * old
-        assert!((smoothed_score - expected).abs() < 0.001);
+        assert_eq!(smoothed_score, 0.8); // Should return new score without smoothing
 
-        // Test with different GPU model - should not apply EMA
+        // Test with different GPU model - should still return new score
         let new_score = engine
             .apply_ema_smoothing(miner_uid, "H200", 0.9)
             .await
@@ -817,5 +771,171 @@ mod tests {
         let miners_by_category = engine.get_miners_by_gpu_category(24).await.unwrap();
         let h100_miners = miners_by_category.get("H100").unwrap();
         assert_eq!(h100_miners.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_pass_fail_scoring_edge_cases() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let engine = GpuScoringEngine::new(repo, 0.3);
+
+        // Test all invalid validations
+        let all_invalid = vec![
+            ExecutorValidationResult {
+                executor_id: "exec1".to_string(),
+                is_valid: false,
+                gpu_model: "H100".to_string(),
+                gpu_count: 1,
+                gpu_memory_gb: 80,
+                attestation_valid: false,
+                validation_timestamp: Utc::now(),
+            },
+            ExecutorValidationResult {
+                executor_id: "exec2".to_string(),
+                is_valid: true,
+                gpu_model: "H100".to_string(),
+                gpu_count: 1,
+                gpu_memory_gb: 80,
+                attestation_valid: false, // Attestation invalid
+                validation_timestamp: Utc::now(),
+            },
+        ];
+
+        let score = engine.calculate_verification_score(&all_invalid);
+        assert_eq!(score, 0.0); // All failed
+
+        // Test partial success
+        let partial_success = vec![
+            ExecutorValidationResult {
+                executor_id: "exec1".to_string(),
+                is_valid: true,
+                gpu_model: "H100".to_string(),
+                gpu_count: 1,
+                gpu_memory_gb: 80,
+                attestation_valid: true,
+                validation_timestamp: Utc::now(),
+            },
+            ExecutorValidationResult {
+                executor_id: "exec2".to_string(),
+                is_valid: false,
+                gpu_model: "H100".to_string(),
+                gpu_count: 1,
+                gpu_memory_gb: 80,
+                attestation_valid: false,
+                validation_timestamp: Utc::now(),
+            },
+            ExecutorValidationResult {
+                executor_id: "exec3".to_string(),
+                is_valid: true,
+                gpu_model: "H100".to_string(),
+                gpu_count: 1,
+                gpu_memory_gb: 40,
+                attestation_valid: true,
+                validation_timestamp: Utc::now(),
+            },
+        ];
+
+        let score = engine.calculate_verification_score(&partial_success);
+        assert_eq!(score, 2.0 / 3.0); // 2 out of 3 passed
+    }
+
+    #[tokio::test]
+    async fn test_no_ema_smoothing_verification() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let engine = GpuScoringEngine::new(repo.clone(), 0.3);
+
+        let miner_uid = MinerUid::new(100);
+        
+        // Create initial profile with score 0.2
+        let initial_profile = MinerGpuProfile {
+            miner_uid,
+            primary_gpu_model: "H100".to_string(),
+            gpu_counts: {
+                let mut counts = HashMap::new();
+                counts.insert("H100".to_string(), 1);
+                counts
+            },
+            total_score: 0.2,
+            verification_count: 1,
+            last_updated: Utc::now(),
+        };
+        repo.upsert_gpu_profile(&initial_profile).await.unwrap();
+
+        // Update with new validations that would give score 1.0
+        let validations = vec![ExecutorValidationResult {
+            executor_id: "exec1".to_string(),
+            is_valid: true,
+            gpu_model: "H100".to_string(),
+            gpu_count: 1,
+            gpu_memory_gb: 80,
+            attestation_valid: true,
+            validation_timestamp: Utc::now(),
+        }];
+
+        let profile = engine
+            .update_miner_profile_from_validation(miner_uid, validations)
+            .await
+            .unwrap();
+
+        // Score should be exactly 1.0 (no EMA smoothing)
+        assert_eq!(profile.total_score, 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_scoring_ignores_gpu_memory() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let engine = GpuScoringEngine::new(repo, 0.3);
+
+        // Test various memory sizes all get same score
+        let memory_sizes = vec![16, 24, 40, 80, 100];
+        
+        for memory in memory_sizes {
+            let validations = vec![ExecutorValidationResult {
+                executor_id: format!("exec_{}", memory),
+                is_valid: true,
+                gpu_model: "H100".to_string(),
+                gpu_count: 1,
+                gpu_memory_gb: memory,
+                attestation_valid: true,
+                validation_timestamp: Utc::now(),
+            }];
+
+            let score = engine.calculate_verification_score(&validations);
+            assert_eq!(score, 1.0, "Memory {} should give score 1.0", memory);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_apply_ema_smoothing_always_returns_new_score() {
+        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let engine = GpuScoringEngine::new(repo.clone(), 0.3);
+
+        // Test with existing profile
+        let miner_uid = MinerUid::new(1);
+        let existing_profile = MinerGpuProfile {
+            miner_uid,
+            primary_gpu_model: "H100".to_string(),
+            gpu_counts: HashMap::new(),
+            total_score: 0.5,
+            verification_count: 1,
+            last_updated: Utc::now(),
+        };
+        repo.upsert_gpu_profile(&existing_profile).await.unwrap();
+
+        // Apply smoothing with various scores
+        let test_scores = vec![0.1, 0.5, 0.9, 1.0];
+        for new_score in test_scores {
+            let result = engine
+                .apply_ema_smoothing(miner_uid, "H100", new_score)
+                .await
+                .unwrap();
+            assert_eq!(result, new_score, "Should always return new score");
+        }
+
+        // Test with non-existent miner
+        let result = engine
+            .apply_ema_smoothing(MinerUid::new(999), "H100", 0.75)
+            .await
+            .unwrap();
+        assert_eq!(result, 0.75);
     }
 }

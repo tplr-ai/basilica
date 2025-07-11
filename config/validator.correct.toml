@@ -112,9 +112,6 @@ burn_uid = 204
 # 360 blocks = ~1 hour on Bittensor (12 seconds per block)
 weight_set_interval_blocks = 360
 
-# Minimum number of miners required
-# per GPU category to receive allocation
-min_miners_per_category = 3
 
 # GPU model allocation percentages
 # These percentages determine how emissions

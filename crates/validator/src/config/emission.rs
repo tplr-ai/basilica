@@ -17,8 +17,6 @@ pub struct EmissionConfig {
     /// Blocks between weight setting
     pub weight_set_interval_blocks: u64,
 
-    /// Minimum miners required per GPU category to receive allocation
-    pub min_miners_per_category: u32,
 }
 
 impl EmissionConfig {
@@ -64,13 +62,6 @@ impl EmissionConfig {
             }
         }
 
-        // Validate minimum miners per category
-        if self.min_miners_per_category == 0 {
-            return Err(anyhow!(
-                "Minimum miners per category must be at least 1, got: {}",
-                self.min_miners_per_category
-            ));
-        }
 
         Ok(())
     }
@@ -101,9 +92,6 @@ impl EmissionConfig {
             self.weight_set_interval_blocks = default_config.weight_set_interval_blocks;
         }
 
-        if self.min_miners_per_category == 0 {
-            self.min_miners_per_category = default_config.min_miners_per_category;
-        }
 
         self
     }
@@ -119,7 +107,6 @@ impl EmissionConfig {
             burn_uid: 999,
             gpu_allocations,
             weight_set_interval_blocks: 360,
-            min_miners_per_category: 1,
         }
     }
 
@@ -181,7 +168,6 @@ impl Default for EmissionConfig {
             burn_uid: 0,
             gpu_allocations,
             weight_set_interval_blocks: 360,
-            min_miners_per_category: 1,
         }
     }
 }

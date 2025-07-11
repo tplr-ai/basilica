@@ -23,7 +23,6 @@ mod tests {
             burn_uid: 1,
             gpu_allocations,
             weight_set_interval_blocks: 360,
-            min_miners_per_category: 1,
         };
 
         // 2. Create persistence layer
@@ -117,7 +116,6 @@ mod tests {
             burn_uid: 1,
             gpu_allocations: gpu_allocations.clone(),
             weight_set_interval_blocks: 360,
-            min_miners_per_category: 1,
         };
 
         assert!(valid_config.validate().is_ok());
