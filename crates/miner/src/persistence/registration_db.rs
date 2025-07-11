@@ -382,7 +382,7 @@ impl RegistrationDb {
     ) -> Result<Vec<SshAccessGrant>> {
         let grants = sqlx::query_as::<_, SshAccessGrant>(
             r#"
-            SELECT * FROM ssh_access_grants 
+            SELECT * FROM ssh_access_grants
             WHERE validator_hotkey = ? AND is_active = TRUE
             ORDER BY granted_at DESC
             "#,
@@ -433,7 +433,7 @@ impl RegistrationDb {
 
         sqlx::query(
             r#"
-            UPDATE ssh_sessions 
+            UPDATE ssh_sessions
             SET status = 'revoked', revocation_reason = ?, revoked_at = ?
             WHERE session_id = ?
             "#,
@@ -458,7 +458,7 @@ impl RegistrationDb {
     ) -> Result<Vec<SshSessionRecord>> {
         let sessions = sqlx::query_as::<_, SshSessionRecord>(
             r#"
-            SELECT * FROM ssh_sessions 
+            SELECT * FROM ssh_sessions
             WHERE validator_hotkey = ? AND status = 'active' AND expires_at > CURRENT_TIMESTAMP
             ORDER BY created_at DESC
             "#,
@@ -476,7 +476,7 @@ impl RegistrationDb {
 
         let result = sqlx::query(
             r#"
-            UPDATE ssh_sessions 
+            UPDATE ssh_sessions
             SET status = 'expired', revocation_reason = 'expired'
             WHERE status = 'active' AND expires_at < ?
             "#,
@@ -634,7 +634,7 @@ impl RegistrationDb {
                 if !parent_dir.exists() {
                     debug!("Creating database directory: {:?}", parent_dir);
                     fs::create_dir_all(parent_dir).await.with_context(|| {
-                        format!("Failed to create database directory: {:?}", parent_dir)
+                        format!("Failed to create database directory: {parent_dir:?}")
                     })?;
                 }
             }
