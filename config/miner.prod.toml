@@ -1,5 +1,5 @@
 # Basilica Miner Production Configuration
-# 
+#
 # SETUP INSTRUCTIONS:
 # 1. Replace placeholder IPs with your actual server IPs
 # 2. Update wallet_name to your production wallet name
@@ -21,7 +21,7 @@ max_weight_uids = 256
 skip_registration = false
 
 [database]
-url = "sqlite:///opt/basilica/data/miner.db"
+url = "sqlite:/opt/basilica/data/miner.db?mode=rwc"
 max_connections = 10
 min_connections = 1
 run_migrations = true
