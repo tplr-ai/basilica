@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, SqlitePool};
 use std::path::Path;
 use tokio::fs;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use common::config::DatabaseConfig;
 
@@ -633,8 +633,9 @@ impl RegistrationDb {
             if let Some(parent_dir) = Path::new(db_path).parent() {
                 if !parent_dir.exists() {
                     debug!("Creating database directory: {:?}", parent_dir);
-                    fs::create_dir_all(parent_dir).await
-                        .with_context(|| format!("Failed to create database directory: {:?}", parent_dir))?;
+                    fs::create_dir_all(parent_dir).await.with_context(|| {
+                        format!("Failed to create database directory: {:?}", parent_dir)
+                    })?;
                 }
             }
         }
