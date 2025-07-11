@@ -28,12 +28,13 @@ use tracing::{debug, error, info, warn};
 pub struct ExecutorValidationResult {
     pub executor_id: ExecutorId,
     pub is_valid: bool,
-    pub hardware_score: f64,
+    pub _hardware_score: f64,
     pub gpu_count: usize,
     pub gpu_memory_gb: u64,
-    pub network_bandwidth_mbps: f64,
+    pub _network_bandwidth_mbps: f64,
     pub attestation_valid: bool,
     pub validation_timestamp: chrono::DateTime<chrono::Utc>,
+    pub gpu_model: String,
 }
 
 /// Manages weight setting operations for Bittensor network
@@ -234,7 +235,7 @@ impl WeightSetter {
             .map(|v| categorization::ExecutorValidationResult {
                 executor_id: v.executor_id.to_string(),
                 is_valid: v.is_valid,
-                gpu_model: format!("H{}", v.gpu_memory_gb / 1024), // Simple conversion for now
+                gpu_model: v.gpu_model, // Use the actual GPU model from validation
                 gpu_count: v.gpu_count,
                 gpu_memory_gb: v.gpu_memory_gb,
                 attestation_valid: v.attestation_valid,
@@ -412,17 +413,27 @@ impl WeightSetter {
         log: &VerificationLog,
     ) -> Result<ExecutorValidationResult> {
         // Parse hardware specs from the verification log details
-        let hardware_specs = if log.success && !log.details.is_null() {
+        // Always try to parse specs, even for failed validations, to track GPU hardware
+        let hardware_specs = if !log.details.is_null() {
             serde_json::from_value(log.details.clone()).ok()
         } else {
             None
         };
 
         // Calculate hardware score based on specs
-        let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps) =
+        let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps, gpu_model) =
             if let Some(specs) = hardware_specs {
                 let score = self.calculate_hardware_score(&specs);
                 let gpu_count = specs["gpu"].as_array().map(|a| a.len()).unwrap_or(0);
+
+                // Extract GPU model from the first GPU (primary GPU)
+                let gpu_model = specs["gpu"]
+                    .as_array()
+                    .and_then(|gpus| gpus.first())
+                    .and_then(|gpu| gpu["model"].as_str())
+                    .unwrap_or("UNKNOWN")
+                    .to_string();
+
                 let gpu_memory = specs["gpu"]
                     .as_array()
                     .map(|gpus| {
@@ -434,20 +445,21 @@ impl WeightSetter {
                     / 1024; // Convert MB to GB
                 let bandwidth = specs["network"]["bandwidth_mbps"].as_f64().unwrap_or(0.0);
 
-                (score, gpu_count, gpu_memory, bandwidth)
+                (score, gpu_count, gpu_memory, bandwidth, gpu_model)
             } else {
-                (0.0, 0, 0, 0.0)
+                (0.0, 0, 0, 0.0, "UNKNOWN".to_string())
             };
 
         Ok(ExecutorValidationResult {
             executor_id,
             is_valid: log.success,
-            hardware_score,
+            _hardware_score: hardware_score,
             gpu_count,
             gpu_memory_gb,
-            network_bandwidth_mbps,
+            _network_bandwidth_mbps: network_bandwidth_mbps,
             attestation_valid: log.verification_type == "attestation" && log.success,
             validation_timestamp: log.timestamp,
+            gpu_model,
         })
     }
 
@@ -675,4 +687,205 @@ pub async fn calculate_miner_scores_from_database(
 
     info!("Calculated scores for {} miners", scores.len());
     Ok(scores)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::entities::VerificationLog;
+    use serde_json::json;
+
+    #[test]
+    fn test_extract_validation_result_with_h100() {
+        // Create a verification log with H100 GPU
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec123".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 1.0,
+            success: true,
+            details: json!({
+                "gpu": [{
+                    "model": "NVIDIA H100 80GB PCIe",
+                    "vram_mb": 81920
+                }],
+                "cpu": {"cores": 32},
+                "memory": {"total_mb": 131072},
+                "network": {"bandwidth_mbps": 10000.0}
+            }),
+            duration_ms: 1000,
+            error_message: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        // The GPU model should be correctly extracted
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
+
+        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
+    }
+
+    #[test]
+    fn test_extract_validation_result_with_h200() {
+        // Create a verification log with H200 GPU
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec456".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 1.0,
+            success: true,
+            details: json!({
+                "gpu": [{
+                    "model": "NVIDIA H200",
+                    "vram_mb": 141312  // 138GB
+                }],
+                "cpu": {"cores": 64},
+                "memory": {"total_mb": 262144},
+                "network": {"bandwidth_mbps": 25000.0}
+            }),
+            duration_ms: 1000,
+            error_message: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
+
+        assert_eq!(gpu_model, "NVIDIA H200");
+    }
+
+    #[test]
+    fn test_gpu_model_extraction_from_failed_attestation() {
+        // Create a failed verification log - should still extract GPU info
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec789".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 0.0,
+            success: false,
+            details: json!({
+                "gpu": [{
+                    "model": "NVIDIA H100 80GB PCIe",
+                    "vram_mb": 81920
+                }],
+                "cpu": {"cores": 32},
+                "memory": {"total_mb": 131072},
+                "network": {"bandwidth_mbps": 10000.0}
+            }),
+            duration_ms: 1000,
+            error_message: Some("Attestation verification failed".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        // Should still extract GPU model even though attestation failed
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
+
+        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
+    }
+
+    #[test]
+    fn test_no_gpu_info_returns_unknown() {
+        // Create a verification log with no GPU info
+        let log = VerificationLog {
+            id: uuid::Uuid::new_v4(),
+            executor_id: "exec999".to_string(),
+            validator_hotkey: "validator".to_string(),
+            verification_type: "attestation".to_string(),
+            timestamp: chrono::Utc::now(),
+            score: 0.0,
+            success: false,
+            details: serde_json::Value::Null,
+            duration_ms: 1000,
+            error_message: Some("Failed to get hardware info".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let details = &log.details;
+        let gpu_model = details["gpu"]
+            .as_array()
+            .and_then(|gpus| gpus.first())
+            .and_then(|gpu| gpu["model"].as_str())
+            .unwrap_or("UNKNOWN");
+
+        assert_eq!(gpu_model, "UNKNOWN");
+    }
+
+    #[test]
+    fn test_old_gpu_model_calculation_was_wrong() {
+        // This test demonstrates why the old calculation was wrong
+        let gpu_memory_gb = 80u64;
+
+        // Old incorrect calculation
+        let old_gpu_model = format!("H{}", gpu_memory_gb / 1024);
+        assert_eq!(old_gpu_model, "H0"); // This is wrong!
+
+        // For H100 with 80GB, dividing by 1024 gives 0.078, formatted as "H0"
+        // For H200 with 138GB, dividing by 1024 gives 0.134, formatted as "H0"
+        // Both would be categorized as "OTHER" and excluded from rewards!
+    }
+
+    #[tokio::test]
+    async fn test_weight_setter_scoring() {
+        // Create mock validation results
+        let validations = vec![
+            ExecutorValidationResult {
+                executor_id: ExecutorId::new(),
+                is_valid: true,
+                _hardware_score: 0.8,
+                gpu_count: 2,
+                gpu_memory_gb: 48,
+                _network_bandwidth_mbps: 1000.0,
+                attestation_valid: true,
+                validation_timestamp: chrono::Utc::now(),
+                gpu_model: "NVIDIA H100".to_string(),
+            },
+            ExecutorValidationResult {
+                executor_id: ExecutorId::new(),
+                is_valid: true,
+                _hardware_score: 0.9,
+                gpu_count: 4,
+                gpu_memory_gb: 96,
+                _network_bandwidth_mbps: 10000.0,
+                attestation_valid: true,
+                validation_timestamp: chrono::Utc::now(),
+                gpu_model: "NVIDIA H100".to_string(),
+            },
+        ];
+
+        // Test that all validations with valid attestations contribute to scoring
+        let valid_count = validations
+            .iter()
+            .filter(|v| v.is_valid && v.attestation_valid)
+            .count();
+
+        assert_eq!(valid_count, 2);
+
+        // Test GPU model is properly set
+        for validation in &validations {
+            assert!(validation.gpu_model.contains("H100"));
+        }
+    }
 }

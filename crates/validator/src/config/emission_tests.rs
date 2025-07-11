@@ -15,7 +15,6 @@ mod tests {
         assert_eq!(config.burn_percentage, 0.0);
         assert_eq!(config.burn_uid, 0);
         assert_eq!(config.weight_set_interval_blocks, 360);
-        assert_eq!(config.min_miners_per_category, 1);
 
         // Verify default GPU allocations
         assert_eq!(config.gpu_allocations.len(), 2);
@@ -147,7 +146,6 @@ mod tests {
 burn_percentage = 15.0
 burn_uid = 123
 weight_set_interval_blocks = 720
-min_miners_per_category = 2
 
 [gpu_allocations]
 H100 = 25.0
@@ -166,7 +164,6 @@ A100 = 25.0
         assert_eq!(config.burn_percentage, 15.0);
         assert_eq!(config.burn_uid, 123);
         assert_eq!(config.weight_set_interval_blocks, 720);
-        assert_eq!(config.min_miners_per_category, 2);
         assert_eq!(config.gpu_allocations.len(), 3);
         assert_eq!(config.gpu_allocations.get("H100"), Some(&25.0));
         assert_eq!(config.gpu_allocations.get("H200"), Some(&50.0));
@@ -177,7 +174,6 @@ A100 = 25.0
 burn_percentage = 10.0
 burn_uid = 0
 weight_set_interval_blocks = 360
-min_miners_per_category = 1
 
 [gpu_allocations]
 H100 = 30.0
@@ -205,7 +201,6 @@ H200 = 30.0
             burn_uid: 456,
             gpu_allocations: HashMap::new(), // Empty - should use default
             weight_set_interval_blocks: 0,   // Invalid - should use default
-            min_miners_per_category: 0,      // Invalid - should use default
         };
 
         let merged = partial_config.merge_with_defaults();
@@ -213,7 +208,6 @@ H200 = 30.0
         assert_eq!(merged.burn_percentage, 20.0); // Preserved
         assert_eq!(merged.burn_uid, 456); // Preserved
         assert_eq!(merged.weight_set_interval_blocks, 360); // Default
-        assert_eq!(merged.min_miners_per_category, 1); // Default
         assert_eq!(merged.gpu_allocations.len(), 2); // Default GPU allocations
 
         // Test complete config override (no merging needed)
@@ -229,7 +223,6 @@ H200 = 30.0
             burn_percentage: 100.0,
             burn_uid: u16::MAX,
             weight_set_interval_blocks: u64::MAX,
-            min_miners_per_category: u32::MAX,
             ..Default::default()
         };
         assert!(config.validate().is_ok());
@@ -323,31 +316,10 @@ H200 = 30.0
         assert_eq!(config.burn_percentage, 10.0);
         assert_eq!(config.burn_uid, 999);
         assert_eq!(config.weight_set_interval_blocks, 360);
-        assert_eq!(config.min_miners_per_category, 1);
         assert_eq!(config.gpu_allocations.len(), 2);
 
         let total: f64 = config.gpu_allocations.values().sum();
         assert!((total - 100.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_min_miners_per_category_validation() {
-        // Test valid values
-        let mut config = EmissionConfig {
-            min_miners_per_category: 1,
-            ..Default::default()
-        };
-        assert!(config.validate().is_ok());
-
-        config.min_miners_per_category = 10;
-        assert!(config.validate().is_ok());
-
-        config.min_miners_per_category = u32::MAX;
-        assert!(config.validate().is_ok());
-
-        // Test invalid value
-        config.min_miners_per_category = 0;
-        assert!(config.validate().is_err());
     }
 
     #[test]
@@ -363,7 +335,6 @@ H200 = 30.0
             burn_uid: 0,
             gpu_allocations: allocations,
             weight_set_interval_blocks: 360,
-            min_miners_per_category: 1,
         };
 
         // Should be valid because total is very close to 100.0
@@ -380,7 +351,6 @@ H200 = 30.0
             burn_uid: 0,
             gpu_allocations: allocations,
             weight_set_interval_blocks: 360,
-            min_miners_per_category: 1,
         };
 
         // Should be invalid because total is 99.0 (difference > 0.01)
