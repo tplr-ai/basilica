@@ -147,6 +147,11 @@ impl MinerState {
         // Initialize persistence layer
         let registration_db = RegistrationDb::new(&config.database).await?;
 
+        // Initialize assignment database and run migrations
+        let assignment_pool = sqlx::SqlitePool::connect(&config.database.url).await?;
+        let assignment_db = persistence::AssignmentDb::new(assignment_pool);
+        assignment_db.run_migrations().await?;
+
         // Initialize executor manager
         let executor_manager =
             Arc::new(ExecutorManager::new(&config, registration_db.clone()).await?);
