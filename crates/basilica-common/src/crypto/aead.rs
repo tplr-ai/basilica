@@ -15,12 +15,16 @@ use zeroize::Zeroizing;
 ///
 /// # Examples
 /// ```rust
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use basilica_common::crypto::Aead;
 ///
 /// let key_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 /// let aead = Aead::new(key_hex)?;
 /// let encrypted = aead.encrypt("secret data")?;
 /// let decrypted = aead.decrypt(&encrypted)?;
+/// # assert_eq!(decrypted, "secret data");
+/// # Ok(())
+/// # }
 /// ```
 pub struct Aead {
     key: Zeroizing<Vec<u8>>,

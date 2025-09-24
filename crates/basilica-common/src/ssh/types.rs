@@ -9,7 +9,85 @@ pub type SshKeyId = String;
 /// SSH username type
 pub type SshUsername = String;
 
+/// Structured SSH access endpoint
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SshAccessEndpoint {
+    pub username: SshUsername,
+    pub host: String,
+    pub port: u16,
+}
+
+impl std::fmt::Display for SshAccessEndpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}@{}:{}", self.username, self.host, self.port)
+    }
+}
+
+impl std::str::FromStr for SshAccessEndpoint {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Expected formats:
+        //  - username@host:port
+        //  - username@host (defaults to port 22)
+        let (username, rest) = s
+            .split_once('@')
+            .ok_or_else(|| "missing '@' separator".to_string())?;
+        if username.is_empty() { return Err("empty username".to_string()); }
+        if rest.is_empty() { return Err("empty host/port".to_string()); }
+
+        let (host, port) = match rest.split_once(':') {
+            Some((h, p)) => {
+                if h.is_empty() { return Err("empty host".to_string()); }
+                let port: u16 = p.parse().map_err(|_| "invalid port".to_string())?;
+                (h.to_string(), port)
+            }
+            None => (rest.to_string(), 22),
+        };
+
+        Ok(SshAccessEndpoint { username: username.to_string(), host, port })
+    }
+}
+
 /// SSH key information
+#[cfg(test)]
+mod tests {
+    use super::SshAccessEndpoint;
+    use std::str::FromStr;
+
+    #[test]
+    fn ssh_access_endpoint_roundtrip() {
+        let e = SshAccessEndpoint::from_str("root@10.0.0.5:2222").unwrap();
+        assert_eq!(e.username, "root");
+        assert_eq!(e.host, "10.0.0.5");
+        assert_eq!(e.port, 2222);
+        assert_eq!(e.to_string(), "root@10.0.0.5:2222");
+
+        let e2 = SshAccessEndpoint::from_str("admin@host.example").unwrap();
+        assert_eq!(e2.username, "admin");
+        assert_eq!(e2.host, "host.example");
+        assert_eq!(e2.port, 22);
+        assert_eq!(e2.to_string(), "admin@host.example:22");
+    }
+
+    #[test]
+    fn ssh_access_endpoint_parse_errors() {
+        assert!(SshAccessEndpoint::from_str("").is_err());
+        assert!(SshAccessEndpoint::from_str("nouserhost").is_err());
+        assert!(SshAccessEndpoint::from_str("@host:22").is_err());
+        assert!(SshAccessEndpoint::from_str("user@").is_err());
+        assert!(SshAccessEndpoint::from_str("user@:22").is_err());
+        assert!(SshAccessEndpoint::from_str("user@host:abc").is_err());
+    }
+
+    #[test]
+    fn ssh_access_endpoint_serde_roundtrip() {
+        let e = SshAccessEndpoint { username: "user".into(), host: "example.com".into(), port: 2200 };
+        let json = serde_json::to_string(&e).unwrap();
+        let back: SshAccessEndpoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(e, back);
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshKeyInfo {
     /// Unique identifier for the SSH key

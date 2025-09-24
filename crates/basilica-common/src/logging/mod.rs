@@ -19,20 +19,20 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 ///
 /// # Example
 ///
-/// ```no_run
-/// use clap::Parser;
-/// use clap_verbosity_flag::{Verbosity, InfoLevel};
-/// use basilica_common::logging;
-///
-/// #[derive(Parser)]
-/// struct Args {
-///     #[clap(flatten)]
-///     verbosity: Verbosity<InfoLevel>,
-/// }
-///
-/// let args = Args::parse();
-/// let binary_name = env!("CARGO_BIN_NAME").replace("-", "_");
-/// logging::init_logging(&args.verbosity, &binary_name, "basilica_miner=info").unwrap();
+/// ```ignore
+/// // Example usage with clap and clap-verbosity-flag in a binary:
+/// // use clap::Parser;
+/// // use clap_verbosity_flag::{Verbosity, InfoLevel};
+/// // use basilica_common::logging;
+/// //
+/// // #[derive(Parser)]
+/// // struct Args {
+/// //     #[clap(flatten)]
+/// //     verbosity: Verbosity<InfoLevel>,
+/// // }
+/// //
+/// // let args = Args::parse();
+/// // logging::init_logging(&args.verbosity, "basilica_miner", "basilica_miner=info").unwrap();
 /// ```
 pub fn init_logging<L: LogLevel>(
     verbosity: &Verbosity<L>,

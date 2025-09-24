@@ -144,6 +144,56 @@ impl Hotkey {
 // Note: TryFrom<&Hotkey> for crabtensor::AccountId conflicts with blanket TryFrom
 // Use explicit to_account_id() method instead
 
+/// Unique identifier for physical hosts (GPU machines)
+///
+/// Notes:
+/// - Uses UUID v4 for global uniqueness
+/// - Replaces the former ExecutorId across the codebase
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct HostId(Uuid);
+
+impl HostId {
+    /// Generate a new random HostId
+    pub fn new() -> Self {
+        HostId(Uuid::new_v4())
+    }
+
+    /// Create HostId from existing UUID
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        HostId(uuid)
+    }
+
+    /// Get the inner UUID
+    pub fn as_uuid(&self) -> &Uuid {
+        &self.0
+    }
+
+    /// Convert to UUID
+    pub fn into_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl Default for HostId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for HostId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::str::FromStr for HostId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(HostId(Uuid::from_str(s)?))
+    }
+}
+
 /// Unique identifier for executor agents
 ///
 /// # Implementation Notes
@@ -473,6 +523,37 @@ mod tests {
         let uuid = uuid::Uuid::new_v4();
         let id3 = ExecutorId::from_uuid(uuid);
         assert_eq!(id3.as_uuid(), &uuid);
+    }
+
+    #[test]
+    fn test_host_id() {
+        let h1 = HostId::new();
+        let h2 = HostId::new();
+        assert_ne!(h1, h2);
+
+        let uuid = uuid::Uuid::new_v4();
+        let h3 = HostId::from_uuid(uuid);
+        assert_eq!(h3.as_uuid(), &uuid);
+
+        // roundtrip Display/FromStr
+        let s = h3.to_string();
+        let h4: HostId = s.parse().unwrap();
+        assert_eq!(h3, h4);
+    }
+
+    #[test]
+    fn test_host_id_serialization_roundtrip() {
+        let h = HostId::new();
+        let json = serde_json::to_string(&h).unwrap();
+        let back: HostId = serde_json::from_str(&json).unwrap();
+        assert_eq!(h, back);
+    }
+
+    #[test]
+    fn test_host_id_parse_error() {
+        let bad = "not-a-uuid";
+        let parsed = bad.parse::<HostId>();
+        assert!(parsed.is_err());
     }
 
     #[test]

@@ -74,7 +74,7 @@ pub fn generate_sr25519_wallet(ss58_prefix: u16) -> Result<Sr25519Wallet, Crypto
 /// ```rust
 /// use basilica_common::crypto::wallet::generate_sr25519_wallet_from_mnemonic;
 ///
-/// let mnemonic = "..."
+/// let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 /// let wallet = generate_sr25519_wallet_from_mnemonic(mnemonic, 42).unwrap();
 /// assert!(wallet.address.len() > 0);
 /// ```
