@@ -16,25 +16,20 @@ path = "src/main.rs"
 [dependencies]
 # Workspace dependencies
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-figment = { workspace = true }
 sqlx = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
-tonic-health = "0.10.2"
+tonic-health = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 blake3 = { workspace = true }
-base64 = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 alloy = { workspace = true }
@@ -42,9 +37,7 @@ alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 alloy-sol-types = { workspace = true }
 collateral-contract = { path = "../collateral-contract" }
-hex = "0.4"
-# Storage functionality (if needed in future)
-# memmap2 = { workspace = true }
+hex = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common", features = ["sqlite"] }
@@ -53,42 +46,26 @@ bittensor = { path = "../bittensor" }
 
 # Miner-specific dependencies
 # HTTP client for external communications
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
-
-# Task scheduling and job management
-cron = "0.12"
+reqwest = { workspace = true }
 
 # Configuration
-toml = "0.8"
-url = "2.5"
-
-# Connection pooling
-deadpool = "0.10"
-
-# Rate limiting
-governor = "0.6"
+toml = { workspace = true }
+url = { workspace = true }
 
 # JSON Web Tokens for authentication
-jsonwebtoken = "9.2"
+jsonwebtoken = { workspace = true }
 
 # Background job processing
-async-trait = "0.1"
-
-# System and network utilities
-socket2 = "0.5"
+async-trait = { workspace = true }
 
 # Random number generation
-rand = "0.8"
+rand = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.8"
-serial_test = "3.0"
-mockall = "0.11"
-futures = "0.3"
+tempfile = { workspace = true }
+futures = { workspace = true }
 
 [features]
 default = []
 # Enable test utilities for executor communication
 test-utils = []
-# Enable development mode with additional debugging
-dev-mode = ["tracing-subscriber/env-filter"]

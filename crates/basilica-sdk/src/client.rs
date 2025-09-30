@@ -39,7 +39,8 @@ use crate::{
     auth::TokenManager,
     error::{ApiError, ErrorResponse, Result},
     types::{
-        ApiListRentalsResponse, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
+        ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, CreateApiKeyRequest,
+        HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
         RentalStatusWithSshResponse,
     },
     StartRentalApiRequest,
@@ -50,6 +51,7 @@ pub const DEFAULT_API_URL: &str = "https://api.basilica.ai";
 
 /// Default timeout in seconds for API requests
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
+use basilica_common::ApiKeyName;
 use basilica_validator::api::types::ListAvailableExecutorsResponse;
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
@@ -182,6 +184,48 @@ impl BasilicaClient {
         self.get("/health").await
     }
 
+    // ===== API Key Management =====
+
+    /// Create a new API key (requires JWT authentication)
+    /// The API key will inherit scopes from the current JWT token
+    pub async fn create_api_key(&self, name: &str) -> Result<ApiKeyResponse> {
+        // Validate the name early to provide better error messages
+        ApiKeyName::new(name).map_err(|e| ApiError::InvalidRequest {
+            message: format!("Invalid API key name: {}", e),
+        })?;
+
+        let request = CreateApiKeyRequest {
+            name: name.to_string(),
+            scopes: None, // Will inherit from JWT
+        };
+        self.post("/api-keys", &request).await
+    }
+
+    /// Get current API key info (requires JWT authentication)
+    /// Returns the first (and only) key if it exists
+    pub async fn get_api_key(&self) -> Result<Option<ApiKeyInfo>> {
+        let keys: Vec<ApiKeyInfo> = self.get("/api-keys").await?;
+        Ok(keys.into_iter().next())
+    }
+
+    /// List all API keys for the authenticated user (requires JWT authentication)
+    pub async fn list_api_keys(&self) -> Result<Vec<ApiKeyInfo>> {
+        self.get("/api-keys").await
+    }
+
+    /// Delete a specific API key by name (requires JWT authentication)
+    pub async fn revoke_api_key(&self, name: &str) -> Result<()> {
+        let encoded_name = urlencoding::encode(name);
+        let response = self
+            .delete_empty(&format!("/api-keys/{}", encoded_name))
+            .await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            self.handle_error_response(response).await
+        }
+    }
+
     // ===== Private Helper Methods =====
 
     /// Apply authentication to request
@@ -265,6 +309,9 @@ impl BasilicaClient {
                 StatusCode::BAD_REQUEST => Err(ApiError::BadRequest {
                     message: error_response.error.message,
                 }),
+                StatusCode::CONFLICT => Err(ApiError::Conflict {
+                    message: error_response.error.message,
+                }),
                 _ => Err(ApiError::Internal {
                     message: error_response.error.message,
                 }),
@@ -285,6 +332,9 @@ impl BasilicaClient {
                 StatusCode::BAD_REQUEST => Err(ApiError::BadRequest {
                     message: error_text,
                 }),
+                StatusCode::CONFLICT => Err(ApiError::Conflict {
+                    message: error_text,
+                }),
                 _ => Err(ApiError::Internal {
                     message: format!("Request failed with status {status}: {error_text}"),
                 }),
@@ -303,6 +353,7 @@ pub struct ClientBuilder {
     connect_timeout: Option<Duration>,
     pool_max_idle_per_host: Option<usize>,
     use_file_auth: bool,
+    api_key: Option<String>,
 }
 
 impl ClientBuilder {
@@ -355,6 +406,12 @@ impl ClientBuilder {
         self
     }
 
+    /// Use API key for authentication (from provided string)
+    pub fn with_api_key(mut self, api_key: &str) -> Self {
+        self.api_key = Some(api_key.to_string());
+        self
+    }
+
     /// Build the client with automatic authentication detection
     /// This will automatically find and use CLI tokens if available
     pub async fn build_auto(self) -> Result<BasilicaClient> {
@@ -377,7 +434,11 @@ impl ClientBuilder {
         let base_url = self.base_url.unwrap_or_else(|| DEFAULT_API_URL.to_string());
 
         // Create token manager based on auth configuration
-        let token_manager = if self.use_file_auth {
+        let token_manager = if let Some(api_key) = self.api_key {
+            // API key takes precedence
+            TokenManager::new_api_key(api_key)
+        } else if self.use_file_auth {
+            // File-based auth (also checks for BASILICA_API_KEY env var)
             TokenManager::new_file_based().map_err(|e| ApiError::Internal {
                 message: format!("Failed to create file-based token manager: {}", e),
             })?
@@ -387,7 +448,7 @@ impl ClientBuilder {
             TokenManager::new_direct(access_token, refresh_token)
         } else {
             return Err(ApiError::InvalidRequest {
-                message: "Either use with_tokens() with both access and refresh tokens, or with_file_auth()"
+                message: "Either use with_tokens() with both access and refresh tokens, with_file_auth(), or with_api_key()"
                     .into(),
             });
         };

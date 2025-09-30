@@ -7,6 +7,8 @@ use std::time::{Duration, SystemTime};
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
+use crate::miner_prover::types::ValidationType;
+use crate::miner_prover::validation_states::{StateResult, ValidationState};
 use crate::persistence::SimplePersistence;
 
 /// Core Prometheus metrics collector for Validator
@@ -165,6 +167,24 @@ impl ValidatorPrometheusMetrics {
         describe_counter!(
             "basilica_validator_rentals_created_total",
             "Total number of rentals created"
+        );
+
+        // RPC failure metrics
+        describe_counter!(
+            "basilica_validator_rpc_critical_failures_total",
+            "Total RPC failures after all retry attempts exhausted"
+        );
+
+        // Discovered miners metrics
+        describe_gauge!(
+            "basilica_validator_discovered_miners_total",
+            "Total number of miners currently discovered from metagraph"
+        );
+
+        // Validation state tracking metrics
+        describe_gauge!(
+            "basilica_validator_executor_validation_state",
+            "Current validation state of executors (0=not in state, 1=current, 2=failed)"
         );
 
         Ok(Self {
@@ -460,7 +480,7 @@ impl ValidatorPrometheusMetrics {
 
             let executor_gpu_counts = self
                 .persistence
-                .get_miner_gpu_counts_from_assignments(&miner.miner_id)
+                .get_miner_gpu_uuid_assignments(&miner.miner_id)
                 .await
                 .unwrap();
 
@@ -472,12 +492,12 @@ impl ValidatorPrometheusMetrics {
             );
 
             // Only set metrics for executors that have GPU assignments
-            for (executor_id, gpu_count, gpu_model) in &executor_gpu_counts {
+            for (executor_id, gpu_count, gpu_model, gpu_memory_gb) in &executor_gpu_counts {
                 let executor_uuid = executor_id.as_str();
 
                 debug!(
-                    "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}",
-                    miner_uid, executor_uuid, gpu_model, gpu_count
+                    "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}, gpu_memory_gb={}",
+                    miner_uid, executor_uuid, gpu_model, gpu_count, gpu_memory_gb
                 );
 
                 gauge!("basilica_validator_executor_gpu_count",
@@ -506,5 +526,84 @@ impl ValidatorPrometheusMetrics {
         }
 
         info!("Completed GPU metrics collection from database");
+    }
+
+    /// Record RPC critical failure
+    pub fn record_rpc_critical_failure(&self, method: &str, error_type: &str) {
+        counter!("basilica_validator_rpc_critical_failures_total",
+            "method" => method.to_string(),
+            "error_type" => error_type.to_string()
+        )
+        .increment(1);
+
+        error!(
+            "RPC critical failure recorded: method={}, error_type={}",
+            method, error_type
+        );
+    }
+
+    /// Set total discovered miners count
+    pub fn set_discovered_miners_total(&self, count: u64) {
+        gauge!("basilica_validator_discovered_miners_total").set(count as f64);
+    }
+
+    /// Sets executor validation state atomically, clearing all other states for the validation type
+    pub fn set_executor_validation_state(
+        &self,
+        executor_id: &str,
+        miner_uid: u16,
+        validation_type: ValidationType,
+        current_state: ValidationState,
+        result: StateResult,
+    ) {
+        let validation_type_str = match validation_type {
+            ValidationType::Full => "full",
+            ValidationType::Lightweight => "lightweight",
+        };
+
+        // Get all possible states for this validation type
+        let all_states = ValidationState::states_for_type(validation_type);
+
+        // Set metrics for all states
+        for state in all_states {
+            let value = if *state == current_state {
+                result.to_metric_value()
+            } else {
+                0.0
+            };
+
+            gauge!("basilica_validator_executor_validation_state",
+                "executor_id" => executor_id.to_string(),
+                "miner_uid" => miner_uid.to_string(),
+                "validation_type" => validation_type_str.to_string(),
+                "state" => state.as_str().to_string()
+            )
+            .set(value);
+        }
+    }
+
+    /// Clears all validation states for an executor (sets all to 0.0)
+    pub fn clear_executor_validation_states(
+        &self,
+        executor_id: &str,
+        miner_uid: u16,
+        validation_type: ValidationType,
+    ) {
+        let validation_type_str = match validation_type {
+            ValidationType::Full => "full",
+            ValidationType::Lightweight => "lightweight",
+        };
+
+        let all_states = ValidationState::states_for_type(validation_type);
+
+        for state in all_states {
+            gauge!("basilica_validator_executor_validation_state",
+                "executor_id" => executor_id.to_string(),
+                "miner_uid" => miner_uid.to_string(),
+                "validation_type" => validation_type_str.to_string(),
+                "state" => state.as_str().to_string()
+            )
+            .set(0.0);
+        }
     }
 }

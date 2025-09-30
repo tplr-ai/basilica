@@ -1,6 +1,6 @@
 services:
   executor:
-    image: ghcr.io/tplr-ai/basilica/executor:latest
+    image: ghcr.io/one-covenant/basilica/executor:latest
     container_name: basilica-executor
     restart: unless-stopped
     labels:

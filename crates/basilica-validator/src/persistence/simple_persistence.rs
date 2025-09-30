@@ -125,9 +125,6 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 grpc_address TEXT NOT NULL,
                 gpu_count INTEGER NOT NULL,
-                gpu_specs TEXT NOT NULL,
-                cpu_specs TEXT NOT NULL,
-                location TEXT,
                 status TEXT DEFAULT 'unknown',
                 last_health_check TEXT,
                 created_at TEXT NOT NULL,
@@ -225,7 +222,7 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 gpu_model TEXT NOT NULL,
                 gpu_count INTEGER NOT NULL,
-                gpu_memory_gb INTEGER NOT NULL,
+                gpu_memory_gb REAL NOT NULL,
                 attestation_valid INTEGER NOT NULL,
                 verification_timestamp TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -279,6 +276,50 @@ impl SimplePersistence {
                 PRIMARY KEY (miner_uid, executor_id)
             );
 
+            CREATE TABLE IF NOT EXISTS executor_docker_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                service_active BOOLEAN NOT NULL,
+                docker_version TEXT,
+                images_pulled TEXT,
+                dind_supported BOOLEAN DEFAULT 0,
+                validation_error TEXT,
+                full_json TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS executor_nat_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                is_accessible BOOLEAN NOT NULL,
+                test_port INTEGER NOT NULL,
+                test_path TEXT NOT NULL,
+                container_id TEXT,
+                response_content TEXT,
+                test_timestamp TEXT NOT NULL,
+                full_json TEXT NOT NULL,
+                error_message TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS executor_storage_profile (
+                miner_uid INTEGER NOT NULL,
+                executor_id TEXT NOT NULL,
+                total_bytes INTEGER NOT NULL,
+                available_bytes INTEGER NOT NULL,
+                required_bytes INTEGER NOT NULL,
+                filesystem_details TEXT NOT NULL,
+                collection_timestamp TEXT NOT NULL,
+                full_json TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (miner_uid, executor_id)
+            );
+
             CREATE TABLE IF NOT EXISTS weight_allocation_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 miner_uid INTEGER NOT NULL,
@@ -318,6 +359,8 @@ impl SimplePersistence {
             CREATE INDEX IF NOT EXISTS idx_executor_network_miner ON executor_network_profile(miner_uid);
             CREATE INDEX IF NOT EXISTS idx_executor_network_timestamp ON executor_network_profile(test_timestamp);
             CREATE INDEX IF NOT EXISTS idx_executor_network_country ON executor_network_profile(country);
+            CREATE INDEX IF NOT EXISTS idx_executor_docker_miner ON executor_docker_profile(miner_uid);
+            CREATE INDEX IF NOT EXISTS idx_executor_docker_updated ON executor_docker_profile(updated_at);
             "#,
         )
         .execute(&self.pool)
@@ -410,6 +453,7 @@ impl SimplePersistence {
                 executor_id TEXT NOT NULL,
                 miner_id TEXT NOT NULL,
                 gpu_name TEXT,
+                gpu_memory_gb REAL,
                 last_verified TEXT NOT NULL,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -418,6 +462,32 @@ impl SimplePersistence {
         )
         .execute(&self.pool)
         .await?;
+
+        // Check if gpu_memory_gb column exists in gpu_uuid_assignments
+        let gpu_memory_gb_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('gpu_uuid_assignments')
+            WHERE name = 'gpu_memory_gb'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if !gpu_memory_gb_exists {
+            // Migration to add gpu_memory_gb column to gpu_uuid_assignments
+            sqlx::query(
+                r#"
+                ALTER TABLE gpu_uuid_assignments
+                ADD COLUMN gpu_memory_gb REAL DEFAULT NULL;
+                "#,
+            )
+            .execute(&self.pool)
+            .await?;
+
+            info!("Added gpu_memory_gb column to gpu_uuid_assignments table");
+        }
 
         // Create indexes
         sqlx::query(
@@ -461,6 +531,64 @@ impl SimplePersistence {
 
         self.create_collateral_scanned_blocks_table().await?;
         self.add_binary_validation_columns().await?;
+
+        // Migration to remove deprecated columns from miner_executors table
+        // Check if gpu_specs column exists
+        let gpu_specs_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('miner_executors')
+            WHERE name = 'gpu_specs'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if gpu_specs_exists {
+            sqlx::query("ALTER TABLE miner_executors DROP COLUMN gpu_specs")
+                .execute(&self.pool)
+                .await?;
+            info!("Dropped gpu_specs column from miner_executors table");
+        }
+
+        // Check if cpu_specs column exists
+        let cpu_specs_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('miner_executors')
+            WHERE name = 'cpu_specs'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if cpu_specs_exists {
+            sqlx::query("ALTER TABLE miner_executors DROP COLUMN cpu_specs")
+                .execute(&self.pool)
+                .await?;
+            info!("Dropped cpu_specs column from miner_executors table");
+        }
+
+        // Check if location column exists
+        let location_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) > 0
+            FROM pragma_table_info('miner_executors')
+            WHERE name = 'location'
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+
+        if location_exists {
+            sqlx::query("ALTER TABLE miner_executors DROP COLUMN location")
+                .execute(&self.pool)
+                .await?;
+            info!("Dropped location column from miner_executors table");
+        }
 
         Ok(())
     }
@@ -669,30 +797,58 @@ impl SimplePersistence {
         min_gpu_memory: Option<u32>,
         gpu_type: Option<String>,
         min_gpu_count: Option<u32>,
+        location: Option<basilica_common::LocationProfile>,
     ) -> Result<Vec<AvailableExecutorData>, anyhow::Error> {
         // Build the base query with LEFT JOIN to find executors without active rentals
         // Also join with gpu_uuid_assignments to get actual GPU data
+        // And join with hardware profile to get CPU/RAM information
+        // And join with network profile to get location information
+        // And join with speedtest profile to get network speed information
         let mut query_str = String::from(
             "SELECT
                 me.executor_id,
                 me.miner_id,
-                me.gpu_specs,
-                me.cpu_specs,
-                me.location,
                 me.status,
                 me.gpu_count,
                 m.verification_score,
                 m.uptime_percentage,
-                GROUP_CONCAT(gua.gpu_name) as gpu_names
+                GROUP_CONCAT(gua.gpu_name) as gpu_names,
+                ehp.cpu_model,
+                ehp.cpu_cores,
+                ehp.ram_gb,
+                enp.city,
+                enp.region,
+                enp.country,
+                esp.download_mbps,
+                esp.upload_mbps,
+                esp.test_timestamp
             FROM miner_executors me
             JOIN miners m ON me.miner_id = m.id
             LEFT JOIN rentals r ON me.executor_id = r.executor_id
+                AND r.miner_id = me.miner_id
                 AND r.state IN ('Active', 'Provisioning', 'active', 'provisioning')
-            LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
+            LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id AND gua.miner_id = me.miner_id
+            LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id AND me.miner_id = 'miner_' || ehp.miner_uid
+            LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id AND me.miner_id = 'miner_' || enp.miner_uid
+            LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id AND me.miner_id = 'miner_' || esp.miner_uid
             WHERE r.id IS NULL
-                AND (me.status IS NULL OR me.status != 'offline')
-            GROUP BY me.executor_id",
+                AND (me.status IS NULL OR me.status != 'offline')",
         );
+
+        // Add location filters if specified (case-insensitive comparison)
+        if let Some(ref loc) = location {
+            if let Some(ref country) = loc.country {
+                query_str.push_str(&format!(" AND LOWER(enp.country) = LOWER('{}')", country));
+            }
+            if let Some(ref region) = loc.region {
+                query_str.push_str(&format!(" AND LOWER(enp.region) = LOWER('{}')", region));
+            }
+            if let Some(ref city) = loc.city {
+                query_str.push_str(&format!(" AND LOWER(enp.city) = LOWER('{}')", city));
+            }
+        }
+
+        query_str.push_str(" GROUP BY me.executor_id");
 
         // Add GPU count filter if specified (use HAVING since we're grouping)
         if let Some(min_count) = min_gpu_count {
@@ -703,13 +859,10 @@ impl SimplePersistence {
 
         let mut executors = Vec::new();
         for row in rows {
-            let gpu_specs_json: String = row.get("gpu_specs");
-            let cpu_specs_json: String = row.get("cpu_specs");
-
             // Get GPU data from gpu_uuid_assignments join
             let gpu_names: Option<String> = row.get("gpu_names");
 
-            // Parse GPU specs - first try from gpu_uuid_assignments data, then fall back to JSON
+            // Parse GPU specs from gpu_uuid_assignments data only
             let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
 
             if let Some(names) = gpu_names {
@@ -726,17 +879,6 @@ impl SimplePersistence {
                         });
                     }
                 }
-            }
-
-            // If no GPU data from joins, try parsing the JSON
-            if gpu_specs.is_empty() && !gpu_specs_json.is_empty() && gpu_specs_json != "{}" {
-                gpu_specs = match serde_json::from_str(&gpu_specs_json) {
-                    Ok(specs) => specs,
-                    Err(e) => {
-                        tracing::debug!("Failed to parse GPU specs JSON: {}", e);
-                        vec![]
-                    }
-                };
             }
 
             // Apply GPU memory filter if specified
@@ -759,37 +901,49 @@ impl SimplePersistence {
                 }
             }
 
-            // Parse CPU specs if JSON is available
-            let cpu_specs: crate::api::types::CpuSpec =
-                if !cpu_specs_json.is_empty() && cpu_specs_json != "{}" {
-                    match serde_json::from_str(&cpu_specs_json) {
-                        Ok(specs) => specs,
-                        Err(e) => {
-                            tracing::debug!("Failed to parse CPU specs JSON: {}", e);
-                            crate::api::types::CpuSpec {
-                                cores: 0,
-                                model: "Unknown".to_string(),
-                                memory_gb: 0,
-                            }
-                        }
-                    }
-                } else {
-                    crate::api::types::CpuSpec {
-                        cores: 0,
-                        model: "Unknown".to_string(),
-                        memory_gb: 0,
-                    }
-                };
+            // Get hardware profile data if available, otherwise use defaults
+            let cpu_model: Option<String> = row.get("cpu_model");
+            let cpu_cores: Option<i32> = row.get("cpu_cores");
+            let ram_gb: Option<i32> = row.get("ram_gb");
+
+            let cpu_specs = crate::api::types::CpuSpec {
+                cores: cpu_cores.unwrap_or(0) as u32,
+                model: cpu_model.unwrap_or_else(|| "Unknown".to_string()),
+                memory_gb: ram_gb.unwrap_or(0) as u32,
+            };
+
+            // Get network profile data for location
+            let city: Option<String> = row.get("city");
+            let region: Option<String> = row.get("region");
+            let country: Option<String> = row.get("country");
+
+            // Always use LocationProfile for consistent formatting
+            let location_profile = basilica_common::LocationProfile::new(city, region, country);
+            let location = Some(location_profile.to_string());
+
+            // Get speed test data if available
+            let download_mbps: Option<f64> = row.get("download_mbps");
+            let upload_mbps: Option<f64> = row.get("upload_mbps");
+            let test_timestamp_str: Option<String> = row.get("test_timestamp");
+
+            let speed_test_timestamp = test_timestamp_str.and_then(|ts| {
+                chrono::DateTime::parse_from_rfc3339(&ts)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+            });
 
             executors.push(AvailableExecutorData {
                 executor_id: row.get("executor_id"),
                 miner_id: row.get("miner_id"),
                 gpu_specs,
                 cpu_specs,
-                location: row.get("location"),
+                location,
                 verification_score: row.get("verification_score"),
                 uptime_percentage: row.get("uptime_percentage"),
                 status: row.get("status"),
+                download_mbps,
+                upload_mbps,
+                speed_test_timestamp,
             });
         }
 
@@ -926,6 +1080,30 @@ impl SimplePersistence {
         Ok(())
     }
 
+    /// Check if an executor has an active rental
+    pub async fn has_active_rental(
+        &self,
+        executor_id: &str,
+        miner_id: &str,
+    ) -> Result<bool, anyhow::Error> {
+        let query = r#"
+            SELECT COUNT(*) as count
+            FROM rentals
+            WHERE executor_id = ?
+                AND miner_id = ?
+                AND state = 'active'
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(executor_id)
+            .bind(miner_id)
+            .fetch_one(&self.pool)
+            .await?;
+
+        let count: i64 = row.get("count");
+        Ok(count > 0)
+    }
+
     /// Helper function to parse rental state from string
     fn parse_rental_state(state_str: &str, rental_id: &str) -> RentalState {
         match state_str {
@@ -1042,6 +1220,7 @@ impl SimplePersistence {
                             memory_gb: 0,
                         },
                         location: None,
+                        network_speed: None,
                     }
                 }
             };
@@ -1210,20 +1389,16 @@ impl SimplePersistence {
 
         for executor in executors {
             let executor_id = Uuid::new_v4().to_string();
-            let gpu_specs_json = serde_json::to_string(&executor.gpu_specs)?;
-            let cpu_specs_json = serde_json::to_string(&executor.cpu_specs)?;
 
             sqlx::query(
-                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&executor_id)
             .bind(miner_id)
             .bind(&executor.executor_id)
             .bind(&executor.grpc_address)
             .bind(executor.gpu_count as i64)
-            .bind(&gpu_specs_json)
-            .bind(&cpu_specs_json)
             .bind(&now)
             .bind(&now)
             .execute(&mut *tx)
@@ -1343,20 +1518,16 @@ impl SimplePersistence {
             // Insert new executors
             for executor in executors {
                 let executor_id = Uuid::new_v4().to_string();
-                let gpu_specs_json = serde_json::to_string(&executor.gpu_specs)?;
-                let cpu_specs_json = serde_json::to_string(&executor.cpu_specs)?;
 
                 sqlx::query(
-                    "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&executor_id)
                 .bind(miner_id)
                 .bind(&executor.executor_id)
                 .bind(&executor.grpc_address)
                 .bind(executor.gpu_count as i64)
-                .bind(&gpu_specs_json)
-                .bind(&cpu_specs_json)
                 .bind(&now)
                 .bind(&now)
                 .execute(&mut *tx)
@@ -1480,9 +1651,23 @@ impl SimplePersistence {
         miner_id: &str,
     ) -> Result<Vec<ExecutorData>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT executor_id, gpu_specs, cpu_specs, location
-             FROM miner_executors
-             WHERE miner_id = ?",
+            "SELECT
+                me.executor_id,
+                GROUP_CONCAT(gua.gpu_name) as gpu_names,
+                ehp.cpu_model,
+                ehp.cpu_cores,
+                ehp.ram_gb,
+                enp.city,
+                enp.region,
+                enp.country
+             FROM miner_executors me
+             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id AND gua.miner_id = me.miner_id
+             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id AND me.miner_id = 'miner_' || ehp.miner_uid
+             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id AND me.miner_id = 'miner_' || enp.miner_uid
+             WHERE me.miner_id = ?
+             GROUP BY me.executor_id,
+                      ehp.cpu_model, ehp.cpu_cores, ehp.ram_gb,
+                      enp.city, enp.region, enp.country",
         )
         .bind(miner_id)
         .fetch_all(&self.pool)
@@ -1490,17 +1675,53 @@ impl SimplePersistence {
 
         let mut executors = Vec::new();
         for row in rows {
-            let gpu_specs_str: String = row.get("gpu_specs");
-            let cpu_specs_str: String = row.get("cpu_specs");
+            // Get GPU data from gpu_uuid_assignments join
+            let gpu_names: Option<String> = row.get("gpu_names");
 
-            let gpu_specs: Vec<crate::api::types::GpuSpec> = serde_json::from_str(&gpu_specs_str)?;
-            let cpu_specs: crate::api::types::CpuSpec = serde_json::from_str(&cpu_specs_str)?;
+            // Parse GPU specs from gpu_uuid_assignments data
+            let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
+
+            if let Some(names) = gpu_names {
+                if !names.is_empty() {
+                    // Parse GPU names from GROUP_CONCAT result
+                    for gpu_name in names.split(',') {
+                        // Extract memory from GPU name
+                        let memory_gb = extract_gpu_memory_gb(gpu_name);
+
+                        gpu_specs.push(crate::api::types::GpuSpec {
+                            name: gpu_name.to_string(),
+                            memory_gb,
+                            compute_capability: "8.0".to_string(),
+                        });
+                    }
+                }
+            }
+
+            // Get hardware profile data from executor_hardware_profile table
+            let cpu_model: Option<String> = row.get("cpu_model");
+            let cpu_cores: Option<i32> = row.get("cpu_cores");
+            let ram_gb: Option<i32> = row.get("ram_gb");
+
+            let cpu_specs = crate::api::types::CpuSpec {
+                cores: cpu_cores.unwrap_or(0) as u32,
+                model: cpu_model.unwrap_or_else(|| "Unknown".to_string()),
+                memory_gb: ram_gb.unwrap_or(0) as u32,
+            };
+
+            // Get network profile data for location
+            let city: Option<String> = row.get("city");
+            let region: Option<String> = row.get("region");
+            let country: Option<String> = row.get("country");
+
+            // Always use LocationProfile for consistent formatting
+            let location_profile = basilica_common::LocationProfile::new(city, region, country);
+            let location = Some(location_profile.to_string());
 
             executors.push(ExecutorData {
                 executor_id: row.get("executor_id"),
                 gpu_specs,
                 cpu_specs,
-                location: row.get("location"),
+                location,
             });
         }
 
@@ -1531,18 +1752,30 @@ impl SimplePersistence {
         executor_id: &str,
         miner_id: &str,
     ) -> Result<Option<crate::api::types::ExecutorDetails>, anyhow::Error> {
-        // First get the executor basic info with GPU data from gpu_uuid_assignments
+        // Get executor info with GPU data, hardware profile, network profile, and speed test data
         let row = sqlx::query(
             "SELECT
                 me.executor_id,
-                me.gpu_specs,
-                me.cpu_specs,
-                me.location,
-                GROUP_CONCAT(gua.gpu_name) as gpu_names
+                GROUP_CONCAT(gua.gpu_name) as gpu_names,
+                ehp.cpu_model,
+                ehp.cpu_cores,
+                ehp.ram_gb,
+                enp.city,
+                enp.region,
+                enp.country,
+                esp.download_mbps,
+                esp.upload_mbps,
+                esp.test_timestamp
              FROM miner_executors me
-             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id
+             LEFT JOIN gpu_uuid_assignments gua ON me.executor_id = gua.executor_id AND gua.miner_id = me.miner_id
+             LEFT JOIN executor_hardware_profile ehp ON me.executor_id = ehp.executor_id AND me.miner_id = 'miner_' || ehp.miner_uid
+             LEFT JOIN executor_network_profile enp ON me.executor_id = enp.executor_id AND me.miner_id = 'miner_' || enp.miner_uid
+             LEFT JOIN executor_speedtest_profile esp ON me.executor_id = esp.executor_id AND me.miner_id = 'miner_' || esp.miner_uid
              WHERE me.executor_id = ? AND me.miner_id = ?
-             GROUP BY me.executor_id, me.gpu_specs, me.cpu_specs, me.location
+             GROUP BY me.executor_id,
+                      ehp.cpu_model, ehp.cpu_cores, ehp.ram_gb,
+                      enp.city, enp.region, enp.country,
+                      esp.download_mbps, esp.upload_mbps, esp.test_timestamp
              LIMIT 1",
         )
         .bind(executor_id)
@@ -1552,14 +1785,11 @@ impl SimplePersistence {
 
         if let Some(row) = row {
             let executor_id: String = row.get("executor_id");
-            let gpu_specs_json: String = row.get("gpu_specs");
-            let cpu_specs_json: String = row.get("cpu_specs");
-            let location: Option<String> = row.get("location");
 
             // Get GPU data from gpu_uuid_assignments join
             let gpu_names: Option<String> = row.get("gpu_names");
 
-            // Parse GPU specs - first try from gpu_uuid_assignments data, then fall back to JSON
+            // Parse GPU specs from gpu_uuid_assignments data
             let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
 
             if let Some(names) = gpu_names {
@@ -1578,34 +1808,62 @@ impl SimplePersistence {
                 }
             }
 
-            // If no GPU data from joins, try parsing the JSON
-            if gpu_specs.is_empty() && !gpu_specs_json.is_empty() && gpu_specs_json != "{}" {
-                gpu_specs = serde_json::from_str(&gpu_specs_json).unwrap_or_default();
-            }
+            // Get hardware profile data from joined tables
+            let hw_cpu_model: Option<String> = row.get("cpu_model");
+            let hw_cpu_cores: Option<i32> = row.get("cpu_cores");
+            let hw_ram_gb: Option<i32> = row.get("ram_gb");
 
-            // Parse CPU specs if JSON is available
-            let cpu_specs: crate::api::types::CpuSpec =
-                if !cpu_specs_json.is_empty() && cpu_specs_json != "{}" {
-                    serde_json::from_str(&cpu_specs_json).unwrap_or_else(|_| {
-                        crate::api::types::CpuSpec {
-                            cores: 0,
-                            model: "Unknown".to_string(),
-                            memory_gb: 0,
-                        }
-                    })
+            // Get network profile data for location
+            let net_city: Option<String> = row.get("city");
+            let net_region: Option<String> = row.get("region");
+            let net_country: Option<String> = row.get("country");
+
+            // Get speed test data
+            let download_mbps: Option<f64> = row.get("download_mbps");
+            let upload_mbps: Option<f64> = row.get("upload_mbps");
+            let test_timestamp: Option<String> = row.get("test_timestamp");
+
+            // Parse CPU specs from hardware profile data
+            let cpu_specs: crate::api::types::CpuSpec = crate::api::types::CpuSpec {
+                cores: hw_cpu_cores.unwrap_or(0) as u32,
+                model: hw_cpu_model.unwrap_or_else(|| "Unknown".to_string()),
+                memory_gb: hw_ram_gb.unwrap_or(0) as u32,
+            };
+
+            // Build location string from network profile if available
+            let final_location =
+                if net_city.is_some() || net_region.is_some() || net_country.is_some() {
+                    let loc_profile = basilica_common::LocationProfile {
+                        city: net_city,
+                        region: net_region,
+                        country: net_country,
+                    };
+                    Some(loc_profile.to_string())
                 } else {
-                    crate::api::types::CpuSpec {
-                        cores: 0,
-                        model: "Unknown".to_string(),
-                        memory_gb: 0,
-                    }
+                    None
                 };
+
+            // Build network speed info if speed test data is available
+            let network_speed = if download_mbps.is_some() || upload_mbps.is_some() {
+                Some(crate::api::types::NetworkSpeedInfo {
+                    download_mbps,
+                    upload_mbps,
+                    test_timestamp: test_timestamp.and_then(|ts| {
+                        DateTime::parse_from_rfc3339(&ts)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    }),
+                })
+            } else {
+                None
+            };
 
             Ok(Some(crate::api::types::ExecutorDetails {
                 id: executor_id,
                 gpu_specs,
                 cpu_specs,
-                location,
+                location: final_location,
+                network_speed,
             }))
         } else {
             Ok(None)
@@ -1630,13 +1888,94 @@ impl SimplePersistence {
         Ok(count as u32)
     }
 
-    /// Get the actual gpu_count for all ONLINE executors of a miner from gpu_uuid_assignments
-    pub async fn get_miner_gpu_counts_from_assignments(
+    /// Get the actual gpu_memory_gb for a specific GPU index of an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_memory_gb_by_index(
         &self,
         miner_id: &str,
-    ) -> Result<Vec<(String, u32, String)>, anyhow::Error> {
+        executor_id: &str,
+        index: u32,
+    ) -> Result<f64, anyhow::Error> {
+        let memory: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(gpu_memory_gb, 0.0) FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ? AND gpu_index = ?",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .bind(index)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(memory)
+    }
+
+    /// Get the actual gpu_memory_gb for a specific GPU index of an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_memory_gb_by_gpu_uuid(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+        gpu_uuid: &str,
+    ) -> Result<f64, anyhow::Error> {
+        let memory: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(gpu_memory_gb, 0.0) FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ? AND gpu_uuid = ?",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .bind(gpu_uuid)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(memory)
+    }
+
+    /// Get the actual gpu_memory_gb for the first GPU (index 0) of an executor from gpu_uuid_assignments
+    pub async fn get_executor_first_gpu_memory_gb(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+    ) -> Result<f64, anyhow::Error> {
+        let memory: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(gpu_memory_gb, 0.0) FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ? AND gpu_index = 0",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(memory)
+    }
+
+    /// Get the GPU name/model for an executor from gpu_uuid_assignments
+    pub async fn get_executor_gpu_name_from_assignments(
+        &self,
+        miner_id: &str,
+        executor_id: &str,
+    ) -> Result<Option<String>, anyhow::Error> {
+        let gpu_name: Option<String> = sqlx::query_scalar(
+            "SELECT gpu_name FROM gpu_uuid_assignments
+             WHERE miner_id = ? AND executor_id = ?
+             LIMIT 1",
+        )
+        .bind(miner_id)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(gpu_name)
+    }
+
+    /// Get the actual gpu_count for all ONLINE executors of a miner from gpu_uuid_assignments
+    pub async fn get_miner_gpu_uuid_assignments(
+        &self,
+        miner_id: &str,
+    ) -> Result<Vec<(String, u32, String, f64)>, anyhow::Error> {
         let rows = sqlx::query(
-            "SELECT ga.executor_id, COUNT(DISTINCT ga.gpu_uuid) as gpu_count, ga.gpu_name
+            "SELECT
+                ga.executor_id,
+                COUNT(DISTINCT ga.gpu_uuid) as gpu_count,
+                ga.gpu_name,
+                MAX(ga.gpu_memory_gb) as gpu_memory_gb
              FROM gpu_uuid_assignments ga
              JOIN miner_executors me ON ga.executor_id = me.executor_id AND ga.miner_id = me.miner_id
              WHERE ga.miner_id = ?
@@ -1653,7 +1992,9 @@ impl SimplePersistence {
             let executor_id: String = row.get("executor_id");
             let gpu_count: i64 = row.get("gpu_count");
             let gpu_name: String = row.get("gpu_name");
-            results.push((executor_id, gpu_count as u32, gpu_name));
+            let gpu_memory_gb: f64 = row.get("gpu_memory_gb");
+
+            results.push((executor_id, gpu_count as u32, gpu_name, gpu_memory_gb));
         }
 
         Ok(results)
@@ -2071,7 +2412,7 @@ impl SimplePersistence {
         sqlx::query(
             r#"
             INSERT INTO executor_network_profile
-            (miner_uid, executor_id, ip_address, hostname, city, region, country, location, 
+            (miner_uid, executor_id, ip_address, hostname, city, region, country, location,
              organization, postal_code, timezone, test_timestamp, full_result_json, updated_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
@@ -2184,6 +2525,330 @@ impl SimplePersistence {
         } else {
             Ok(None)
         }
+    }
+
+    /// Store executor Docker validation profile information
+    #[allow(clippy::too_many_arguments)]
+    pub async fn store_executor_docker_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        service_active: bool,
+        docker_version: Option<String>,
+        images_pulled: Vec<String>,
+        dind_supported: bool,
+        validation_error: Option<String>,
+        full_json: &str,
+    ) -> Result<(), anyhow::Error> {
+        let images_json = serde_json::to_string(&images_pulled)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO executor_docker_profile
+            (miner_uid, executor_id, service_active, docker_version, images_pulled,
+             dind_supported, validation_error, full_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                service_active = excluded.service_active,
+                docker_version = excluded.docker_version,
+                images_pulled = excluded.images_pulled,
+                dind_supported = excluded.dind_supported,
+                validation_error = excluded.validation_error,
+                full_json = excluded.full_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(service_active)
+        .bind(docker_version)
+        .bind(&images_json)
+        .bind(dind_supported)
+        .bind(validation_error)
+        .bind(full_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get executor Docker validation profile
+    pub async fn get_executor_docker_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<
+        Option<(
+            String,
+            bool,
+            Option<String>,
+            Vec<String>,
+            bool,
+            Option<String>,
+        )>,
+        anyhow::Error,
+    > {
+        let row = sqlx::query(
+            r#"
+            SELECT service_active, docker_version, images_pulled, dind_supported, validation_error, full_json
+            FROM executor_docker_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let full_json: String = row.get("full_json");
+            let service_active: bool = row.get("service_active");
+            let docker_version: Option<String> = row.get("docker_version");
+            let images_pulled_json: String = row.get("images_pulled");
+            let images_pulled: Vec<String> = serde_json::from_str(&images_pulled_json)?;
+            let dind_supported: bool = row.get("dind_supported");
+            let validation_error: Option<String> = row.get("validation_error");
+
+            Ok(Some((
+                full_json,
+                service_active,
+                docker_version,
+                images_pulled,
+                dind_supported,
+                validation_error,
+            )))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor NAT validation profile information
+    pub async fn store_executor_nat_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        profile: &crate::miner_prover::validation_nat::NatProfile,
+    ) -> Result<(), anyhow::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO executor_nat_profile
+            (miner_uid, executor_id, is_accessible, test_port, test_path, container_id,
+             response_content, test_timestamp, full_json, error_message, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                is_accessible = excluded.is_accessible,
+                test_port = excluded.test_port,
+                test_path = excluded.test_path,
+                container_id = excluded.container_id,
+                response_content = excluded.response_content,
+                test_timestamp = excluded.test_timestamp,
+                full_json = excluded.full_json,
+                error_message = excluded.error_message,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(profile.is_accessible)
+        .bind(profile.test_port as i32)
+        .bind(&profile.test_path)
+        .bind(&profile.container_id)
+        .bind(&profile.response_content)
+        .bind(profile.test_timestamp.to_rfc3339())
+        .bind(&profile.full_json)
+        .bind(&profile.error_message)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get executor NAT validation profile
+    pub async fn get_executor_nat_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<Option<crate::miner_prover::validation_nat::NatProfile>, anyhow::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT is_accessible, test_port, test_path, container_id, response_content,
+                   test_timestamp, full_json, error_message
+            FROM executor_nat_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let is_accessible: bool = row.get("is_accessible");
+            let test_port: i32 = row.get("test_port");
+            let test_path: String = row.get("test_path");
+            let container_id: Option<String> = row.get("container_id");
+            let response_content: Option<String> = row.get("response_content");
+            let test_timestamp_str: String = row.get("test_timestamp");
+            let full_json: String = row.get("full_json");
+            let error_message: Option<String> = row.get("error_message");
+
+            let test_timestamp = chrono::DateTime::parse_from_rfc3339(&test_timestamp_str)?
+                .with_timezone(&chrono::Utc);
+
+            Ok(Some(crate::miner_prover::validation_nat::NatProfile {
+                is_accessible,
+                test_port: test_port as u16,
+                test_path,
+                container_id,
+                response_content,
+                test_timestamp,
+                full_json,
+                error_message,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Store executor storage validation profile information
+    pub async fn store_executor_storage_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+        profile: &crate::miner_prover::validation_storage::StorageProfile,
+    ) -> Result<(), anyhow::Error> {
+        let filesystem_details_json = serde_json::to_string(&profile.filesystem_details)?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO executor_storage_profile
+            (miner_uid, executor_id, total_bytes, available_bytes,
+             required_bytes, filesystem_details, collection_timestamp, full_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(miner_uid, executor_id) DO UPDATE SET
+                total_bytes = excluded.total_bytes,
+                available_bytes = excluded.available_bytes,
+                required_bytes = excluded.required_bytes,
+                filesystem_details = excluded.filesystem_details,
+                collection_timestamp = excluded.collection_timestamp,
+                full_json = excluded.full_json,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .bind(profile.total_bytes as i64)
+        .bind(profile.available_bytes as i64)
+        .bind(profile.required_bytes as i64)
+        .bind(&filesystem_details_json)
+        .bind(profile.collection_timestamp.to_rfc3339())
+        .bind(&profile.full_json)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Get executor storage validation profile
+    pub async fn get_executor_storage_profile(
+        &self,
+        miner_uid: u16,
+        executor_id: &str,
+    ) -> Result<Option<crate::miner_prover::validation_storage::StorageProfile>, anyhow::Error>
+    {
+        let row = sqlx::query(
+            r#"
+            SELECT total_bytes, available_bytes, required_bytes,
+                   filesystem_details, collection_timestamp, full_json
+            FROM executor_storage_profile
+            WHERE miner_uid = ? AND executor_id = ?
+            "#,
+        )
+        .bind(miner_uid as i32)
+        .bind(executor_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let total_bytes: i64 = row.get("total_bytes");
+            let available_bytes: i64 = row.get("available_bytes");
+            let required_bytes: i64 = row.get("required_bytes");
+            let filesystem_details_json: String = row.get("filesystem_details");
+            let collection_timestamp_str: String = row.get("collection_timestamp");
+            let full_json: String = row.get("full_json");
+
+            let filesystem_details = serde_json::from_str(&filesystem_details_json)?;
+            let collection_timestamp =
+                chrono::DateTime::parse_from_rfc3339(&collection_timestamp_str)?
+                    .with_timezone(&chrono::Utc);
+
+            Ok(Some(
+                crate::miner_prover::validation_storage::StorageProfile {
+                    total_bytes: total_bytes as u64,
+                    available_bytes: available_bytes as u64,
+                    required_bytes: required_bytes as u64,
+                    filesystem_details,
+                    collection_timestamp,
+                    full_json,
+                },
+            ))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get all executors with their GPU and rental data for metrics initialization
+    /// This eliminates N+1 queries by fetching everything in a single query with joins
+    pub async fn get_all_executors_for_metrics(
+        &self,
+    ) -> Result<Vec<ExecutorMetricData>, anyhow::Error> {
+        let query = r#"
+            SELECT
+                me.executor_id,
+                me.miner_id,
+                gua.gpu_name,
+                CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END as has_active_rental
+            FROM miner_executors me
+            INNER JOIN gpu_uuid_assignments gua
+                ON me.executor_id = gua.executor_id
+                AND me.miner_id = gua.miner_id
+            LEFT JOIN rentals r
+                ON me.executor_id = r.executor_id
+                AND me.miner_id = r.miner_id
+                AND r.state = 'active'
+            WHERE gua.gpu_name IS NOT NULL
+            GROUP BY me.executor_id, me.miner_id
+        "#;
+
+        let rows = sqlx::query(query).fetch_all(&self.pool).await?;
+
+        let mut executor_metrics = Vec::new();
+        for row in rows {
+            let executor_id: String = row.get("executor_id");
+            let miner_id: String = row.get("miner_id");
+            let gpu_name: Option<String> = row.get("gpu_name");
+            let has_active_rental: i32 = row.get("has_active_rental");
+
+            // Extract miner UID from miner_id string (format: "miner_{uid}")
+            let miner_uid = if miner_id.starts_with("miner_") {
+                miner_id
+                    .strip_prefix("miner_")
+                    .and_then(|uid_str| uid_str.parse::<u16>().ok())
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+
+            executor_metrics.push(ExecutorMetricData {
+                executor_id,
+                miner_id,
+                miner_uid,
+                gpu_name,
+                has_active_rental: has_active_rental != 0,
+            });
+        }
+
+        Ok(executor_metrics)
     }
 }
 
@@ -2346,6 +3011,19 @@ pub struct AvailableExecutorData {
     pub verification_score: f64,
     pub uptime_percentage: f64,
     pub status: Option<String>,
+    pub download_mbps: Option<f64>,
+    pub upload_mbps: Option<f64>,
+    pub speed_test_timestamp: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Executor metric data for initializing metrics
+#[derive(Debug, Clone)]
+pub struct ExecutorMetricData {
+    pub executor_id: String,
+    pub miner_id: String,
+    pub miner_uid: u16,
+    pub gpu_name: Option<String>,
+    pub has_active_rental: bool,
 }
 
 #[cfg(test)]
@@ -2595,5 +3273,95 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(gpu_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_hardware_profile_enrichment() {
+        let db_path = ":memory:";
+        let persistence = SimplePersistence::new(db_path, "test_validator".to_string())
+            .await
+            .expect("Failed to create persistence");
+
+        // Register a miner with an executor
+        let executor = ExecutorRegistration {
+            executor_id: "exec1".to_string(),
+            grpc_address: "http://192.168.1.100:50051".to_string(),
+            gpu_count: 2,
+            gpu_specs: vec![],
+            cpu_specs: CpuSpec {
+                cores: 8,
+                model: "Intel i7".to_string(),
+                memory_gb: 32,
+            },
+        };
+
+        persistence
+            .register_miner("miner_1", "hotkey1", "http://miner1.com", &[executor])
+            .await
+            .unwrap();
+
+        // Store hardware profile for the executor
+        persistence
+            .store_executor_hardware_profile(
+                1, // miner_uid
+                "exec1",
+                Some("AMD EPYC 7763".to_string()),
+                Some(64),
+                Some(256),
+                Some(1000),
+                r#"{"cpu": "AMD EPYC 7763", "cores": 64, "ram": 256}"#,
+            )
+            .await
+            .unwrap();
+
+        // Store network profile for the executor
+        persistence
+            .store_executor_network_profile(
+                1, // miner_uid
+                "exec1",
+                Some("192.168.1.100".to_string()),
+                Some("exec1.example.com".to_string()),
+                Some("San Francisco".to_string()),
+                Some("California".to_string()),
+                Some("US".to_string()),
+                Some("37.7749,-122.4194".to_string()),
+                Some("AS12345 Example ISP".to_string()),
+                Some("94102".to_string()),
+                Some("America/Los_Angeles".to_string()),
+                &chrono::Utc::now().to_rfc3339(),
+                r#"{"city": "San Francisco", "region": "California", "country": "US"}"#,
+            )
+            .await
+            .unwrap();
+
+        // Get miner executors and verify hardware profile is used
+        let executors = persistence.get_miner_executors("miner_1").await.unwrap();
+        assert_eq!(executors.len(), 1);
+
+        let executor = &executors[0];
+        assert_eq!(executor.executor_id, "exec1");
+        assert_eq!(executor.cpu_specs.model, "AMD EPYC 7763");
+        assert_eq!(executor.cpu_specs.cores, 64);
+        assert_eq!(executor.cpu_specs.memory_gb, 256);
+        assert_eq!(
+            executor.location,
+            Some("San Francisco/California/US".to_string())
+        );
+
+        // Test get_available_executors with hardware profile
+        let available = persistence
+            .get_available_executors(None, None, None, None)
+            .await
+            .unwrap();
+
+        assert_eq!(available.len(), 1);
+        let available_exec = &available[0];
+        assert_eq!(available_exec.cpu_specs.model, "AMD EPYC 7763");
+        assert_eq!(available_exec.cpu_specs.cores, 64);
+        assert_eq!(available_exec.cpu_specs.memory_gb, 256);
+        assert_eq!(
+            available_exec.location,
+            Some("San Francisco/California/US".to_string())
+        );
     }
 }

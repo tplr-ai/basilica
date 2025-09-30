@@ -206,28 +206,6 @@ pub fn get_auth0_claims(req: &Request) -> Option<&Auth0Claims> {
     req.extensions().get::<Auth0Claims>()
 }
 
-/// Check if a user has a specific scope (supports wildcards)
-pub fn has_scope(claims: &Auth0Claims, required_scope: &str) -> bool {
-    if let Some(scope) = &claims.scope {
-        scope.split_whitespace().any(|s| {
-            // Exact match
-            if s == required_scope {
-                return true;
-            }
-
-            // Wildcard match (e.g., "rentals:*" matches "rentals:view", "rentals:create", etc.)
-            if s.ends_with(":*") {
-                let prefix = &s[..s.len() - 1]; // Remove the "*"
-                return required_scope.starts_with(prefix);
-            }
-
-            false
-        })
-    } else {
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,6 +233,28 @@ mod tests {
         // Test empty headers
         let empty_headers = axum::http::HeaderMap::new();
         assert_eq!(extract_bearer_token(&empty_headers), None);
+    }
+
+    // Helper function for testing scope matching
+    fn has_scope(claims: &Auth0Claims, required_scope: &str) -> bool {
+        if let Some(scope) = &claims.scope {
+            scope.split_whitespace().any(|s| {
+                // Exact match
+                if s == required_scope {
+                    return true;
+                }
+
+                // Wildcard match (e.g., "rentals:*" matches "rentals:view", "rentals:create", etc.)
+                if s.ends_with(":*") {
+                    let prefix = &s[..s.len() - 1]; // Remove the "*"
+                    return required_scope.starts_with(prefix);
+                }
+
+                false
+            })
+        } else {
+            false
+        }
     }
 
     #[test]

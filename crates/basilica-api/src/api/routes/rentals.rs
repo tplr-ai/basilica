@@ -6,8 +6,9 @@ use crate::{
             archive_rental_ownership, get_user_rentals_with_ssh, store_rental_ownership,
             OwnedRental,
         },
-        middleware::Auth0Claims,
+        middleware::AuthContext,
     },
+    country_mapping::normalize_country_code,
     error::Result,
     server::AppState,
 };
@@ -17,6 +18,7 @@ use axum::{
     response::{sse::Event, IntoResponse, Response, Sse},
     Json,
 };
+use basilica_common::utils::validate_docker_image;
 use basilica_sdk::types::{
     ApiListRentalsResponse, ApiRentalListItem, ExecutorSelection, ListRentalsQuery, LogStreamQuery,
     RentalStatusWithSshResponse, StartRentalApiRequest, TerminateRentalRequest,
@@ -30,22 +32,7 @@ use basilica_validator::{
 };
 use futures::stream::Stream;
 use rand::seq::SliceRandom;
-use regex::Regex;
-use std::sync::LazyLock;
 use tracing::{debug, error, info};
-
-/// Regular expression for validating Docker image names according to Docker's naming conventions.
-///
-/// Pattern breakdown:
-/// - `^[a-zA-Z0-9]` - Must start with alphanumeric character
-/// - `([a-zA-Z0-9._:-]*[a-zA-Z0-9])?` - Optional middle part with valid chars, ending alphanumeric
-/// - `(/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?){0,2}` - 0-2 path segments (registry/namespace)
-/// - `(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})?` - Optional tag or SHA256 digest
-///
-/// Valid examples: `nginx`, `ubuntu:22.04`, `registry.io/team/app:v1.2.3`, `image@sha256:abc...`
-static DOCKER_IMAGE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-zA-Z0-9]([a-zA-Z0-9._:-]*[a-zA-Z0-9])?(/[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?){0,2}(:[a-zA-Z0-9._-]+|@sha256:[a-f0-9]{64})?$").unwrap()
-});
 
 /// Get detailed rental status (with ownership validation)
 pub async fn get_rental_status(
@@ -71,11 +58,11 @@ pub async fn get_rental_status(
 /// Start a new rental (validator-compatible endpoint)
 pub async fn start_rental(
     State(state): State<AppState>,
-    axum::Extension(claims): axum::Extension<Auth0Claims>,
+    axum::Extension(auth_context): axum::Extension<AuthContext>,
     Json(request): Json<StartRentalApiRequest>,
 ) -> Result<Json<RentalResponse>> {
-    // Get user ID from auth claims (already extracted via Extension)
-    let user_id = &claims.sub;
+    // Get user ID from auth context (already extracted via Extension)
+    let user_id = &auth_context.user_id;
 
     // Validate SSH public key
     if !is_valid_ssh_public_key(&request.ssh_public_key) {
@@ -85,11 +72,11 @@ pub async fn start_rental(
         });
     }
 
-    // Validate container image
-    if !is_valid_container_image(&request.container_image) {
-        error!("Invalid container image provided");
+    // Validate container image using OCI specification
+    if let Err(e) = validate_docker_image(&request.container_image) {
+        error!("Invalid container image provided: {}", e);
         return Err(crate::error::ApiError::BadRequest {
-            message: "Invalid container image".into(),
+            message: format!("Invalid container image: {}", e),
         });
     }
 
@@ -99,9 +86,9 @@ pub async fn start_rental(
             info!("Starting rental with specified executor: {}", executor_id);
             executor_id.clone()
         }
-        ExecutorSelection::GpuRequirements { gpu_requirements } => {
+        ExecutorSelection::ExactGpuConfiguration { gpu_requirements } => {
             info!(
-                "Selecting executor based on GPU requirements: {:?}",
+                "Selecting executor based on GPU requirements (exact): {:?}",
                 gpu_requirements
             );
 
@@ -111,6 +98,7 @@ pub async fn start_rental(
                 min_gpu_memory: Some(gpu_requirements.min_memory_gb),
                 gpu_type: gpu_requirements.gpu_type.clone(),
                 min_gpu_count: Some(gpu_requirements.gpu_count),
+                location: None,
             };
 
             let executors_response = state
@@ -121,22 +109,34 @@ pub async fn start_rental(
                     message: format!("Failed to query available executors: {}", e),
                 })?;
 
-            if executors_response.available_executors.is_empty() {
-                error!("No executors match the specified GPU requirements");
+            // Filter for exact GPU count
+            let exact_count = gpu_requirements.gpu_count as usize;
+            let executors: Vec<_> = executors_response
+                .available_executors
+                .into_iter()
+                .filter(|exec| exec.executor.gpu_specs.len() == exact_count)
+                .collect();
+
+            if executors.is_empty() {
+                error!("No executors with exactly {} GPU(s) available", exact_count);
                 return Err(crate::error::ApiError::NotFound {
-                    resource: "executor matching GPU requirements".into(),
+                    message: format!(
+                        "No executors with exactly {} GPU(s) matching requirements",
+                        exact_count
+                    ),
                 });
             }
 
-            // Randomly select an executor from those matching GPU requirements
-            let selected_id = select_best_executor(executors_response.available_executors)
-                .ok_or_else(|| crate::error::ApiError::Internal {
+            // Randomly select an executor from the filtered list
+            let selected_id = select_best_executor(executors).ok_or_else(|| {
+                crate::error::ApiError::Internal {
                     message: "Failed to select executor".into(),
-                })?;
+                }
+            })?;
 
             info!(
-                "Randomly selected executor {} from available executors matching GPU requirements",
-                selected_id
+                "Selected executor {} with exactly {} GPU(s)",
+                selected_id, exact_count
             );
             selected_id
         }
@@ -316,13 +316,13 @@ pub async fn stream_rental_logs(
 /// Only returns rentals owned by the authenticated user
 pub async fn list_rentals_validator(
     State(state): State<AppState>,
-    axum::Extension(claims): axum::Extension<Auth0Claims>,
+    axum::Extension(auth_context): axum::Extension<AuthContext>,
     Query(query): Query<ListRentalsQuery>,
 ) -> Result<Json<ApiListRentalsResponse>> {
     info!("Listing rentals with state filter: {:?}", query.status);
 
-    // Get user ID from auth claims (already extracted via Extension)
-    let user_id = &claims.sub;
+    // Get user ID from auth context (already extracted via Extension)
+    let user_id = &auth_context.user_id;
 
     // Get user's rental IDs with SSH status from database
     let user_rentals_with_ssh = get_user_rentals_with_ssh(&state.db, user_id)
@@ -346,7 +346,7 @@ pub async fn list_rentals_validator(
             message: format!("Failed to list rentals: {e}"),
         })?;
 
-    // Filter to only include user's rentals and fetch executor details
+    // Filter to only include user's rentals and use executor details from validator response
     let mut api_rentals = Vec::new();
 
     for rental in all_rentals.rentals {
@@ -356,38 +356,7 @@ pub async fn list_rentals_validator(
             None => continue, // User doesn't own this rental
         };
 
-        // Get rental status to fetch executor details with GPU specs
-        // TODO: fix n+1 api requests. we should get the status while listing rentals.
-        let rental_status = match state
-            .validator_client
-            .get_rental_status(&rental.rental_id)
-            .await
-        {
-            Ok(status) => status,
-            Err(e) => {
-                // Log error but continue with other rentals
-                tracing::warn!(
-                    "Failed to get rental status for {}: {}",
-                    rental.rental_id,
-                    e
-                );
-                // Create rental item without GPU specs
-                api_rentals.push(ApiRentalListItem {
-                    rental_id: rental.rental_id,
-                    executor_id: rental.executor_id,
-                    container_id: rental.container_id,
-                    state: rental.state,
-                    created_at: rental.created_at,
-                    miner_id: rental.miner_id,
-                    container_image: rental.container_image,
-                    gpu_specs: vec![],
-                    has_ssh,
-                });
-                continue;
-            }
-        };
-
-        // Create API rental item with GPU specs from executor details
+        // Create API rental item with executor details from validator response
         api_rentals.push(ApiRentalListItem {
             rental_id: rental.rental_id,
             executor_id: rental.executor_id,
@@ -396,8 +365,11 @@ pub async fn list_rentals_validator(
             created_at: rental.created_at,
             miner_id: rental.miner_id,
             container_image: rental.container_image,
-            gpu_specs: rental_status.executor.gpu_specs,
+            gpu_specs: rental.gpu_specs.unwrap_or_default(),
             has_ssh,
+            cpu_specs: rental.cpu_specs,
+            location: rental.location,
+            network_speed: rental.network_speed,
         });
     }
 
@@ -448,6 +420,13 @@ pub async fn list_available_executors(
         query.available = Some(true);
     }
 
+    // Normalize country code if location is provided
+    if let Some(ref mut location) = query.location {
+        if let Some(ref country) = location.country {
+            location.country = Some(normalize_country_code(country));
+        }
+    }
+
     info!("Listing executors with filters: {:?}", query);
 
     let response = state
@@ -468,186 +447,4 @@ fn select_best_executor(executors: Vec<AvailableExecutor>) -> Option<String> {
     // Randomly select an executor from the available list
     let mut rng = rand::thread_rng();
     executors.choose(&mut rng).map(|e| e.executor.id.clone())
-}
-
-fn is_valid_container_image(image: &str) -> bool {
-    if image.is_empty() || image.len() < 3 || image.len() > 255 {
-        return false;
-    }
-
-    // Check for path traversal
-    if image.contains("..") {
-        return false;
-    }
-
-    // Check for null bytes
-    if image.contains('\0') {
-        return false;
-    }
-
-    // Check for command injection characters
-    if image.contains('\'')
-        || image.contains('`')
-        || image.contains(';')
-        || image.contains('&')
-        || image.contains('|')
-    {
-        return false;
-    }
-
-    DOCKER_IMAGE_REGEX.is_match(image)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_valid_simple_images() {
-        assert!(is_valid_container_image("nginx"));
-        assert!(is_valid_container_image("ubuntu"));
-        assert!(is_valid_container_image("redis"));
-        assert!(is_valid_container_image("postgres"));
-        assert!(is_valid_container_image("node"));
-        assert!(is_valid_container_image("python"));
-        assert!(is_valid_container_image("alpine"));
-    }
-
-    #[test]
-    fn test_valid_tagged_images() {
-        assert!(is_valid_container_image("nginx:latest"));
-        assert!(is_valid_container_image("ubuntu:22.04"));
-        assert!(is_valid_container_image("node:18-alpine"));
-        assert!(is_valid_container_image("postgres:15.2"));
-        assert!(is_valid_container_image("python:3.11-slim"));
-        assert!(is_valid_container_image("redis:7-alpine"));
-        assert!(is_valid_container_image("my-app:v1.2.3"));
-    }
-
-    #[test]
-    fn test_valid_registry_paths() {
-        assert!(is_valid_container_image("docker.io/library/nginx"));
-        assert!(is_valid_container_image("docker.io/nginx"));
-        assert!(is_valid_container_image("gcr.io/project/image"));
-        assert!(is_valid_container_image("registry.example.com/team/app"));
-        assert!(is_valid_container_image("localhost:5000/myapp"));
-        assert!(is_valid_container_image(
-            "my-registry.com/namespace/app:latest"
-        ));
-        assert!(is_valid_container_image("quay.io/prometheus/prometheus"));
-    }
-
-    #[test]
-    fn test_valid_with_underscores_and_hyphens() {
-        assert!(is_valid_container_image("my_app"));
-        assert!(is_valid_container_image("my-app"));
-        assert!(is_valid_container_image("app_with_underscores"));
-        assert!(is_valid_container_image("app-with-hyphens"));
-        assert!(is_valid_container_image("registry.com/my_team/my-app"));
-    }
-
-    #[test]
-    fn test_valid_with_dots() {
-        assert!(is_valid_container_image("app.service"));
-        assert!(is_valid_container_image("my.registry.com/app"));
-        assert!(is_valid_container_image("service.v2"));
-        assert!(is_valid_container_image("app:1.2.3"));
-    }
-
-    #[test]
-    fn test_valid_digests() {
-        assert!(is_valid_container_image(
-            "nginx@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-        ));
-        assert!(is_valid_container_image(
-            "ubuntu@sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
-        ));
-        assert!(is_valid_container_image("registry.com/app@sha256:fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321"));
-    }
-
-    #[test]
-    fn test_invalid_empty_or_too_short() {
-        assert!(!is_valid_container_image(""));
-        assert!(!is_valid_container_image("   "));
-        assert!(!is_valid_container_image("a"));
-        assert!(!is_valid_container_image("ab"));
-    }
-
-    #[test]
-    fn test_invalid_too_long() {
-        let long_name = "a".repeat(1025);
-        assert!(!is_valid_container_image(&long_name));
-    }
-
-    #[test]
-    fn test_invalid_path_traversal() {
-        assert!(!is_valid_container_image("../etc/passwd"));
-        assert!(!is_valid_container_image("app/../config"));
-        assert!(!is_valid_container_image(
-            "registry.com/../../../etc/passwd"
-        ));
-        assert!(!is_valid_container_image("app..evil"));
-    }
-
-    #[test]
-    fn test_invalid_null_bytes() {
-        assert!(!is_valid_container_image("app\0"));
-        assert!(!is_valid_container_image("nginx\0/bin/sh"));
-    }
-
-    #[test]
-    fn test_invalid_command_injection() {
-        assert!(!is_valid_container_image("nginx;rm -rf /"));
-        assert!(!is_valid_container_image("app&&cat /etc/passwd"));
-        assert!(!is_valid_container_image("image|/bin/sh"));
-        assert!(!is_valid_container_image("nginx'"));
-        assert!(!is_valid_container_image("app`whoami`"));
-        assert!(!is_valid_container_image("nginx;echo evil"));
-    }
-
-    #[test]
-    fn test_invalid_too_many_path_segments() {
-        assert!(!is_valid_container_image("a/b/c/d"));
-        assert!(!is_valid_container_image(
-            "registry.com/team/project/subproject"
-        ));
-    }
-
-    #[test]
-    fn test_invalid_special_characters() {
-        assert!(!is_valid_container_image("app with spaces"));
-        assert!(!is_valid_container_image("nginx\n"));
-        assert!(!is_valid_container_image("app\t"));
-        assert!(!is_valid_container_image("image#tag"));
-        assert!(!is_valid_container_image("app$variable"));
-        assert!(!is_valid_container_image("image%encoded"));
-        assert!(!is_valid_container_image("app*wildcard"));
-        assert!(!is_valid_container_image("image?query"));
-        assert!(!is_valid_container_image("app[bracket]"));
-        assert!(!is_valid_container_image("image{brace}"));
-        assert!(!is_valid_container_image("app\\backslash"));
-    }
-
-    #[test]
-    fn test_invalid_malformed_tags_and_digests() {
-        assert!(!is_valid_container_image("nginx:"));
-        assert!(!is_valid_container_image("nginx@"));
-        assert!(!is_valid_container_image("nginx@sha256:"));
-        assert!(!is_valid_container_image("nginx@sha256:invalid"));
-        assert!(!is_valid_container_image("nginx@sha256:abc123")); // too short
-    }
-
-    #[test]
-    fn test_edge_cases() {
-        // Valid edge cases
-        assert!(is_valid_container_image("a1b")); // minimum length
-        assert!(is_valid_container_image("9abc")); // starting with number
-
-        // Invalid edge cases
-        assert!(!is_valid_container_image("-app")); // starting with hyphen
-        assert!(!is_valid_container_image("app-")); // ending with hyphen
-        assert!(!is_valid_container_image(".app")); // starting with dot
-        assert!(!is_valid_container_image("app.")); // ending with dot
-        assert!(!is_valid_container_image("_app")); // starting with underscore
-    }
 }

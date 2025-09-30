@@ -97,6 +97,12 @@ async fn main() -> Result<()> {
         cfg.http.listen_address, cfg.http.port
     );
     info!("Substrate websocket: {}", cfg.blockchain.websocket_url);
+    if !cfg.blockchain.fallback_websocket_urls.is_empty() {
+        info!(
+            "Using {} fallback endpoint(s)",
+            cfg.blockchain.fallback_websocket_urls.len()
+        );
+    }
     info!("Billing gRPC endpoint: {}", cfg.billing.grpc_endpoint);
 
     let db_display = match cfg.database.url.rsplit_once('@') {
@@ -156,7 +162,9 @@ async fn main() -> Result<()> {
         "Connecting to substrate node at: {}",
         cfg.blockchain.websocket_url
     );
-    let monitor = ChainMonitor::new(repos.clone(), &cfg.blockchain.websocket_url)
+    let mut endpoints = vec![cfg.blockchain.websocket_url.clone()];
+    endpoints.extend(cfg.blockchain.fallback_websocket_urls.clone());
+    let monitor = ChainMonitor::new(repos.clone(), endpoints)
         .await
         .context("Failed to initialize blockchain monitor")?;
 

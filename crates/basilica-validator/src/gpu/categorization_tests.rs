@@ -6,92 +6,145 @@ mod tests {
 
     #[test]
     fn test_gpu_model_normalization() {
+        use std::str::FromStr;
+
+        // Test A100 variants
+        assert_eq!(
+            GpuCategory::from_str("NVIDIA A100 PCIe")
+                .unwrap()
+                .to_string(),
+            "A100"
+        );
+        assert_eq!(
+            GpuCategory::from_str("A100 SXM5").unwrap().to_string(),
+            "A100"
+        );
+        assert_eq!(GpuCategory::from_str("a100").unwrap().to_string(), "A100");
+        assert_eq!(
+            GpuCategory::from_str("NVIDIA A100-80GB")
+                .unwrap()
+                .to_string(),
+            "A100"
+        );
+
         // Test H100 variants
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA H100 PCIe"),
+            GpuCategory::from_str("NVIDIA H100").unwrap().to_string(),
             "H100"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("H100 SXM5"), "H100");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("h100"), "H100");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Tesla H100"), "H100");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA H100-80GB"),
+            GpuCategory::from_str("H100 SXM").unwrap().to_string(),
             "H100"
         );
-
-        // Test H200 variants
-        assert_eq!(GpuCategorizer::normalize_gpu_model("NVIDIA H200"), "H200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("H200 SXM"), "H200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("h200"), "H200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Tesla H200"), "H200");
+        assert_eq!(GpuCategory::from_str("h100").unwrap().to_string(), "H100");
+        assert_eq!(
+            GpuCategory::from_str("Tesla H100").unwrap().to_string(),
+            "H100"
+        );
 
         // Test B200 variants
-        assert_eq!(GpuCategorizer::normalize_gpu_model("HGX B200"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("B200 HGX "), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("DGX B200"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("B200 DGX"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("NVIDIA B200"), "B200");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("b200"), "B200");
+        assert_eq!(
+            GpuCategory::from_str("HGX B200").unwrap().to_string(),
+            "B200"
+        );
+        assert_eq!(
+            GpuCategory::from_str("B200 HGX ").unwrap().to_string(),
+            "B200"
+        );
+        assert_eq!(
+            GpuCategory::from_str("DGX B200").unwrap().to_string(),
+            "B200"
+        );
+        assert_eq!(
+            GpuCategory::from_str("B200 DGX").unwrap().to_string(),
+            "B200"
+        );
+        assert_eq!(
+            GpuCategory::from_str("NVIDIA B200").unwrap().to_string(),
+            "B200"
+        );
+        assert_eq!(GpuCategory::from_str("b200").unwrap().to_string(), "B200");
 
         // Test other GPU variants (should all return OTHER)
-        assert_eq!(GpuCategorizer::normalize_gpu_model("A100 80GB"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Tesla A100"), "OTHER");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA A100-SXM4-40GB"),
+            GpuCategory::from_str("GeForce RTX 4090")
+                .unwrap()
+                .to_string(),
             "OTHER"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("a100"), "OTHER");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("GeForce RTX 4090"),
+            GpuCategory::from_str("RTX 4090").unwrap().to_string(),
             "OTHER"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 4090"), "OTHER");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA GeForce RTX 4090"),
+            GpuCategory::from_str("NVIDIA GeForce RTX 4090")
+                .unwrap()
+                .to_string(),
             "OTHER"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("rtx4090"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 3090 Ti"), "OTHER");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("GeForce RTX 3090"),
+            GpuCategory::from_str("rtx4090").unwrap().to_string(),
             "OTHER"
         );
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 3080"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("RTX 4080"), "OTHER");
+        assert_eq!(
+            GpuCategory::from_str("RTX 3090 Ti").unwrap().to_string(),
+            "OTHER"
+        );
+        assert_eq!(
+            GpuCategory::from_str("GeForce RTX 3090")
+                .unwrap()
+                .to_string(),
+            "OTHER"
+        );
+        assert_eq!(
+            GpuCategory::from_str("RTX 3080").unwrap().to_string(),
+            "OTHER"
+        );
+        assert_eq!(
+            GpuCategory::from_str("RTX 4080").unwrap().to_string(),
+            "OTHER"
+        );
 
         // Test unknown models
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Unknown GPU"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model(""), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("V100"), "OTHER");
-        assert_eq!(GpuCategorizer::normalize_gpu_model("GTX 1080"), "OTHER");
+        assert_eq!(
+            GpuCategory::from_str("Unknown GPU").unwrap().to_string(),
+            "OTHER"
+        );
+        assert_eq!(GpuCategory::from_str("").unwrap().to_string(), "OTHER");
+        assert_eq!(GpuCategory::from_str("V100").unwrap().to_string(), "OTHER");
+        assert_eq!(
+            GpuCategory::from_str("GTX 1080").unwrap().to_string(),
+            "OTHER"
+        );
 
         // Test edge cases
-        assert_eq!(GpuCategorizer::normalize_gpu_model("   H100   "), "H100");
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA NVIDIA H100"),
-            "H100"
+            GpuCategory::from_str("   A100   ").unwrap().to_string(),
+            "A100"
+        );
+        assert_eq!(
+            GpuCategory::from_str("NVIDIA NVIDIA A100")
+                .unwrap()
+                .to_string(),
+            "A100"
         );
     }
 
     #[test]
     fn test_model_to_category_conversion() {
         // Test all known categories
+        assert_eq!(GpuCategorizer::model_to_category("A100"), GpuCategory::A100);
         assert_eq!(GpuCategorizer::model_to_category("H100"), GpuCategory::H100);
-        assert_eq!(GpuCategorizer::model_to_category("H200"), GpuCategory::H200);
         assert_eq!(GpuCategorizer::model_to_category("B200"), GpuCategory::B200);
         // These should return Other now
-        match GpuCategorizer::model_to_category("A100") {
-            GpuCategory::Other(model) => assert_eq!(model, "A100"),
-            _ => panic!("Expected Other category"),
-        }
         match GpuCategorizer::model_to_category("RTX4090") {
             GpuCategory::Other(model) => assert_eq!(model, "RTX4090"),
             _ => panic!("Expected Other category"),
         }
 
         // Test case sensitivity
+        assert_eq!(GpuCategorizer::model_to_category("a100"), GpuCategory::A100);
         assert_eq!(GpuCategorizer::model_to_category("h100"), GpuCategory::H100);
-        assert_eq!(GpuCategorizer::model_to_category("h200"), GpuCategory::H200);
         assert_eq!(GpuCategorizer::model_to_category("b200"), GpuCategory::B200);
 
         // Test unknown models
@@ -112,14 +165,14 @@ mod tests {
         let validations = vec![
             ExecutorValidationResult::new_for_testing(
                 "exec1".to_string(),
-                "NVIDIA H100".to_string(),
+                "NVIDIA A100".to_string(),
                 2,
                 true,
                 true,
             ),
             ExecutorValidationResult::new_for_testing(
                 "exec2".to_string(),
-                "H100 SXM".to_string(),
+                "A100 SXM".to_string(),
                 1,
                 true,
                 true,
@@ -127,49 +180,49 @@ mod tests {
         ];
 
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(gpu_counts.get("H100"), Some(&3));
+        assert_eq!(gpu_counts.get("A100"), Some(&3));
 
         // Test multiple GPU types
         let validations = vec![
             ExecutorValidationResult::new_for_testing(
                 "exec1".to_string(),
-                "NVIDIA H100".to_string(),
+                "NVIDIA A100".to_string(),
                 1,
                 true,
                 true,
             ),
             ExecutorValidationResult::new_for_testing(
                 "exec2".to_string(),
-                "H200".to_string(),
-                2,
-                true,
-                true,
-            ),
-            ExecutorValidationResult::new_for_testing(
-                "exec3".to_string(),
-                "NVIDIA H200".to_string(),
-                1,
-                true,
-                true,
-            ),
-        ];
-
-        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(gpu_counts.get("H100"), Some(&1));
-        assert_eq!(gpu_counts.get("H200"), Some(&3));
-
-        // Test tie scenarios
-        let validations = vec![
-            ExecutorValidationResult::new_for_testing(
-                "exec1".to_string(),
                 "H100".to_string(),
                 2,
                 true,
                 true,
             ),
             ExecutorValidationResult::new_for_testing(
+                "exec3".to_string(),
+                "NVIDIA H100".to_string(),
+                1,
+                true,
+                true,
+            ),
+        ];
+
+        let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("A100"), Some(&1));
+        assert_eq!(gpu_counts.get("H100"), Some(&3));
+
+        // Test tie scenarios
+        let validations = vec![
+            ExecutorValidationResult::new_for_testing(
+                "exec1".to_string(),
+                "A100".to_string(),
+                2,
+                true,
+                true,
+            ),
+            ExecutorValidationResult::new_for_testing(
                 "exec2".to_string(),
-                "H200".to_string(),
+                "H100".to_string(),
                 2,
                 true,
                 true,
@@ -177,8 +230,8 @@ mod tests {
         ];
 
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
+        assert_eq!(gpu_counts.get("A100"), Some(&2));
         assert_eq!(gpu_counts.get("H100"), Some(&2));
-        assert_eq!(gpu_counts.get("H200"), Some(&2));
 
         // Test empty validation results
         let validations = vec![];
@@ -189,7 +242,7 @@ mod tests {
         let validations = vec![
             ExecutorValidationResult::new_for_testing(
                 "exec1".to_string(),
-                "H100".to_string(),
+                "A100".to_string(),
                 1,
                 false,
                 false,
@@ -213,14 +266,14 @@ mod tests {
         let validations = vec![
             ExecutorValidationResult::new_for_testing(
                 "exec1".to_string(),
-                "H100".to_string(),
+                "A100".to_string(),
                 2,
                 true,
                 true,
             ),
             ExecutorValidationResult::new_for_testing(
                 "exec2".to_string(),
-                "H200".to_string(),
+                "H100".to_string(),
                 1,
                 true,
                 true,
@@ -233,17 +286,17 @@ mod tests {
         assert_eq!(profile.total_score, 0.85);
         assert_eq!(profile.verification_count, 2);
         assert_eq!(profile.total_gpu_count(), 3);
-        assert_eq!(profile.get_gpu_count("H100"), 2);
-        assert_eq!(profile.get_gpu_count("H200"), 1);
+        assert_eq!(profile.get_gpu_count("A100"), 2);
+        assert_eq!(profile.get_gpu_count("H100"), 1);
+        assert!(profile.has_gpu_model("A100"));
         assert!(profile.has_gpu_model("H100"));
-        assert!(profile.has_gpu_model("H200"));
-        assert!(!profile.has_gpu_model("A100"));
+        assert!(!profile.has_gpu_model("B200"));
 
         // Test profile updates
         let mut profile = profile;
         let new_validations = vec![ExecutorValidationResult::new_for_testing(
             "exec3".to_string(),
-            "H200".to_string(),
+            "H100".to_string(),
             4,
             true,
             true,
@@ -254,8 +307,8 @@ mod tests {
         assert_eq!(profile.total_score, 0.92);
         assert_eq!(profile.verification_count, 1);
         assert_eq!(profile.total_gpu_count(), 4);
-        assert_eq!(profile.get_gpu_count("H200"), 4);
-        assert_eq!(profile.get_gpu_count("H100"), 0); // Replaced
+        assert_eq!(profile.get_gpu_count("H100"), 4);
+        assert_eq!(profile.get_gpu_count("A100"), 0); // Replaced
 
         // Test timestamp handling
         let old_timestamp = profile.last_updated;
@@ -277,7 +330,7 @@ mod tests {
             ),
             ExecutorValidationResult::new_for_testing(
                 "exec2".to_string(),
-                "H100".to_string(),
+                "A100".to_string(),
                 4,
                 true,
                 true,
@@ -296,8 +349,8 @@ mod tests {
 
         // Should be sorted by count descending
         assert_eq!(models_by_count.len(), 2);
-        assert_eq!(models_by_count[0], ("H100".to_string(), 4));
-        assert_eq!(models_by_count[1], ("OTHER".to_string(), 3)); // A100(1) + RTX4090(2) = OTHER(3)
+        assert_eq!(models_by_count[0], ("A100".to_string(), 5)); // A100(1) + A100(4) = 5
+        assert_eq!(models_by_count[1], ("OTHER".to_string(), 2)); // RTX4090(2) = OTHER(2)
     }
 
     #[test]
@@ -305,16 +358,16 @@ mod tests {
         // Test unicode GPU names
         let validations = vec![ExecutorValidationResult::new_for_testing(
             "exec1".to_string(),
-            "NVIDIA H100-新".to_string(),
+            "NVIDIA A100-新".to_string(),
             1,
             true,
             true,
         )];
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(gpu_counts.get("H100"), Some(&1));
+        assert_eq!(gpu_counts.get("A100"), Some(&1));
 
         // Test very long GPU names
-        let long_name = "A".repeat(1000) + " H100";
+        let long_name = "A".repeat(1000) + " A100";
         let validations = vec![ExecutorValidationResult::new_for_testing(
             "exec1".to_string(),
             long_name,
@@ -323,18 +376,18 @@ mod tests {
             true,
         )];
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(gpu_counts.get("H100"), Some(&1));
+        assert_eq!(gpu_counts.get("A100"), Some(&1));
 
         // Test special characters
         let validations = vec![ExecutorValidationResult::new_for_testing(
             "exec1".to_string(),
-            "NVIDIA@@H100##PCIe".to_string(),
+            "NVIDIA@@A100##PCIe".to_string(),
             1,
             true,
             true,
         )];
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(gpu_counts.get("H100"), Some(&1));
+        assert_eq!(gpu_counts.get("A100"), Some(&1));
 
         // Test null/empty strings
         let validations = vec![ExecutorValidationResult::new_for_testing(
@@ -362,13 +415,13 @@ mod tests {
     #[test]
     fn test_gpu_category_enum() {
         // Test enum variants
+        let a100 = GpuCategory::A100;
         let h100 = GpuCategory::H100;
-        let h200 = GpuCategory::H200;
         let b200 = GpuCategory::B200;
         let other = GpuCategory::Other("CustomGPU".to_string());
 
-        assert_eq!(h100, GpuCategory::H100);
-        assert_ne!(h100, h200);
+        assert_eq!(a100, GpuCategory::A100);
+        assert_ne!(h100, a100);
         assert_eq!(b200, GpuCategory::B200);
         assert_ne!(b200, h100);
 
@@ -378,30 +431,30 @@ mod tests {
         }
 
         // Test Debug trait
-        let debug_str = format!("{h100:?}");
-        assert!(debug_str.contains("H100"));
+        let debug_str = format!("{a100:?}");
+        assert!(debug_str.contains("A100"));
 
         // Test Clone trait
-        let h100_clone = h100.clone();
-        assert_eq!(h100, h100_clone);
+        let a100_clone = a100.clone();
+        assert_eq!(a100, a100_clone);
     }
 
     #[test]
     fn test_executor_validation_result() {
         let result = ExecutorValidationResult::new_for_testing(
             "test_executor".to_string(),
-            "H100".to_string(),
+            "A100".to_string(),
             4,
             true,
             true,
         );
 
         assert_eq!(result.executor_id, "test_executor");
-        assert_eq!(result.gpu_model, "H100");
+        assert_eq!(result.gpu_model, "A100");
         assert_eq!(result.gpu_count, 4);
         assert!(result.is_valid);
         assert!(result.attestation_valid);
-        assert_eq!(result.gpu_memory_gb, 80);
+        assert_eq!(result.gpu_memory_gb, 80.0);
 
         // Test validation timestamp is recent
         let now = Utc::now();
@@ -411,27 +464,41 @@ mod tests {
 
     #[test]
     fn test_complex_gpu_normalization_scenarios() {
+        use std::str::FromStr;
+
         // Test multiple NVIDIA prefixes
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("NVIDIA NVIDIA GeForce RTX 4090"),
+            GpuCategory::from_str("NVIDIA NVIDIA GeForce RTX 4090")
+                .unwrap()
+                .to_string(),
             "OTHER"
         );
 
         // Test mixed case with numbers
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("nvidia h100-80gb-pcie"),
-            "H100"
+            GpuCategory::from_str("nvidia a100-80gb-pcie")
+                .unwrap()
+                .to_string(),
+            "A100"
         );
 
         // Test Tesla prefix variations
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Tesla V100"), "OTHER");
+        assert_eq!(
+            GpuCategory::from_str("Tesla V100").unwrap().to_string(),
+            "OTHER"
+        );
 
         // Test partial matches
-        assert_eq!(GpuCategorizer::normalize_gpu_model("Some H100 GPU"), "H100");
+        assert_eq!(
+            GpuCategory::from_str("Some A100 GPU").unwrap().to_string(),
+            "A100"
+        );
 
         // Test RTX variants with spaces
         assert_eq!(
-            GpuCategorizer::normalize_gpu_model("RTX   4090   Ti"),
+            GpuCategory::from_str("RTX   4090   Ti")
+                .unwrap()
+                .to_string(),
             "OTHER"
         );
     }
@@ -441,7 +508,7 @@ mod tests {
         let miner_uid = MinerUid::new(789);
         let validations = vec![ExecutorValidationResult::new_for_testing(
             "exec1".to_string(),
-            "H100".to_string(),
+            "A100".to_string(),
             0, // Zero GPUs
             true,
             true,
@@ -450,8 +517,8 @@ mod tests {
         let profile = MinerGpuProfile::new(miner_uid, &validations, 0.0);
 
         assert_eq!(profile.total_gpu_count(), 0);
-        assert!(profile.has_gpu_model("H100"));
-        assert_eq!(profile.get_gpu_count("H100"), 0);
+        assert!(profile.has_gpu_model("A100"));
+        assert_eq!(profile.get_gpu_count("A100"), 0);
     }
 
     #[test]
@@ -459,7 +526,7 @@ mod tests {
         let miner_uid = MinerUid::new(999);
         let validations = vec![ExecutorValidationResult::new_for_testing(
             "exec1".to_string(),
-            "H100".to_string(),
+            "A100".to_string(),
             u32::MAX as usize,
             true,
             true,
@@ -468,6 +535,6 @@ mod tests {
         let profile = MinerGpuProfile::new(miner_uid, &validations, 1.0);
 
         assert_eq!(profile.total_gpu_count(), u32::MAX);
-        assert_eq!(profile.get_gpu_count("H100"), u32::MAX);
+        assert_eq!(profile.get_gpu_count("A100"), u32::MAX);
     }
 }

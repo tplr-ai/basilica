@@ -10,8 +10,6 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
-use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 /// Create all API routes
 pub fn routes(state: AppState) -> Router<AppState> {
@@ -20,7 +18,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
         // Health endpoint - no authentication required for ALB health checks
         .route("/health", get(routes::health::health_check));
 
-    // Protected routes with Auth0 authentication and scope validation
+    // Protected routes with unified authentication and scope validation
     let protected_routes = Router::new()
         .route("/rentals", get(routes::rentals::list_rentals_validator))
         .route("/rentals", post(routes::rentals::start_rental))
@@ -31,14 +29,20 @@ pub fn routes(state: AppState) -> Router<AppState> {
             get(routes::rentals::stream_rental_logs),
         )
         .route("/executors", get(routes::rentals::list_available_executors))
-        // Apply scope validation AFTER auth0 middleware
+        // API key management endpoints (JWT auth only)
+        .route(
+            "/api-keys",
+            post(routes::api_keys::create_key).get(routes::api_keys::list_keys),
+        )
+        .route("/api-keys/:name", delete(routes::api_keys::revoke_key))
+        // Apply scope validation AFTER auth middleware
         .layer(axum::middleware::from_fn(
             middleware::scope_validation_middleware,
         ))
-        // Apply auth0 authentication first
+        // Apply unified authentication first
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
-            middleware::auth0_middleware,
+            middleware::auth_middleware,
         ));
 
     // Build the router with both public and protected routes
@@ -50,60 +54,3 @@ pub fn routes(state: AppState) -> Router<AppState> {
     // Apply general middleware
     middleware::apply_middleware(router, state)
 }
-
-/// Create OpenAPI documentation routes
-pub fn docs_routes() -> Router<AppState> {
-    Router::new()
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-}
-
-/// OpenAPI documentation
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        // Health and monitoring
-        routes::health::health_check,
-    ),
-    components(schemas(
-        // Rental types
-        basilica_sdk::types::RentalStatusResponse,
-        basilica_sdk::types::LogStreamQuery,
-        basilica_sdk::types::PortMappingRequest,
-        basilica_sdk::types::ResourceRequirementsRequest,
-        basilica_sdk::types::VolumeMountRequest,
-
-        // Common types
-        basilica_sdk::types::GpuSpec,
-        basilica_sdk::types::CpuSpec,
-        basilica_sdk::types::SshAccess,
-        basilica_sdk::types::RentalStatus,
-        basilica_sdk::types::ExecutorDetails,
-
-        // Health types
-        basilica_sdk::types::HealthCheckResponse,
-
-        // Error response
-        crate::error::ErrorResponse,
-    )),
-    tags(
-        (name = "rentals", description = "GPU rental management"),
-        (name = "health", description = "Health and monitoring"),
-    ),
-    info(
-        title = "Basilica API",
-        version = "1.0.0",
-        description = "API service for the Basilica GPU network",
-        contact(
-            name = "Basilica Team",
-            email = "support@tplr.ai",
-        ),
-        license(
-            name = "MIT",
-        ),
-    ),
-    servers(
-        (url = "http://localhost:8080", description = "Local development"),
-        (url = "https://api.basilica.ai", description = "Production"),
-    ),
-)]
-struct ApiDoc;

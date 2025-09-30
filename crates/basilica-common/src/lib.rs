@@ -32,6 +32,7 @@ pub mod network;
 pub mod persistence;
 pub mod ssh;
 pub mod storage;
+pub mod types;
 pub mod utils;
 
 // Re-export commonly used types at the crate root for convenience
@@ -40,6 +41,7 @@ pub use config::*;
 pub use crypto::*;
 pub use error::*;
 pub use identity::*;
+pub use types::{ApiKeyName, ApiKeyNameError, LocationProfile};
 
 // Re-export from specific modules to avoid ambiguity
 pub use metrics::labels;

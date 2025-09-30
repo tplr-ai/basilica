@@ -44,6 +44,11 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
         .map_err(|e| eyre!("Failed to build client: {}", e).into())
 }
 
+/// Alias for create_authenticated_client for backward compatibility
+pub async fn create_client(config: &CliConfig) -> Result<BasilicaClient> {
+    create_authenticated_client(config).await
+}
+
 /// Gets valid JWT tokens with pre-emptive refresh
 ///
 /// This function checks if the stored token needs refresh and refreshes it

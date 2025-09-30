@@ -23,35 +23,29 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-figment = { workspace = true }
 sqlx = { workspace = true }
 tonic = { workspace = true }
-prost = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-blake3 = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 axum = { workspace = true, features = ["macros"] }
-tower = { workspace = true }
 tower-http = { workspace = true, features = ["limit"] }
 
 # Additional dependencies for validator
-futures = "0.3"
-futures-util = { version = "0.3", optional = true }
-bytes = "1.5"
-async-trait = "0.1"
-toml = "0.8"
-url = "2.5"
+futures = { workspace = true }
+futures-util = { workspace = true, optional = true }
+async-trait = { workspace = true }
+toml = { workspace = true }
+url = { workspace = true }
 prost-types = { workspace = true }
-async-stream = "0.3"
-num_cpus = "1.16"
-lru = "0.12"
-eventsource-stream = "0.2"
-regex = "1.10"
+async-stream = { workspace = true }
+num_cpus = { workspace = true }
+lru = { workspace = true }
+eventsource-stream = { workspace = true }
+regex = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
@@ -64,38 +58,25 @@ collateral-contract = { path = "../collateral-contract" }
 # bittensor-rs = "0.1"
 
 # HTTP client for external communications
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+reqwest = { workspace = true }
 
 # Temporary file handling
-tempfile = "3.8"
+tempfile = { workspace = true }
 
 # Challenge implementation dependencies
-nalgebra = { version = "0.32", features = ["serde-serialize"] }
-rand = "0.8"
-rand_chacha = "0.3"
-sha2 = "0.10"
-hex = "0.4"
-fastrand = "2.0"
-base64 = "0.21"
-
-# P256 ECDSA signature verification for attestation
-p256 = { version = "0.13", features = ["ecdsa"] }
-signature = "2.2"
+rand = { workspace = true }
+hex = { workspace = true }
+fastrand = { workspace = true }
 
 # System information and process management
-sysinfo = "0.30"
-libc = "0.2"
+sysinfo = { workspace = true }
+libc = { workspace = true }
 
 # SSH key management
-ssh-key = { version = "0.6", features = ["ed25519", "std"] }
-
-# OpenAPI documentation support (optional)
-utoipa = { version = "4.1", features = ["chrono", "uuid"], optional = true }
+ssh-key = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.8"
-serial_test = "3.0"
-mockall = "0.11"
+tempfile = { workspace = true }
 
 [features]
 default = ["client"]
@@ -103,9 +84,5 @@ default = ["client"]
 client = ["futures-util"]
 # Enable test utilities
 test-utils = []
-# Enable development mode with additional debugging
-dev-mode = ["tracing-subscriber/env-filter"]
-# Enable OpenAPI schema generation support
-openapi = ["utoipa"]
 # Enable CLI support with clap derives
 cli = []

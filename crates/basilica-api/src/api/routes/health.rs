@@ -5,14 +5,6 @@ use axum::{extract::State, Json};
 use basilica_sdk::types::HealthCheckResponse;
 
 /// Health check endpoint
-#[utoipa::path(
-    get,
-    path = "/health",
-    responses(
-        (status = 200, description = "Service is healthy", body = HealthCheckResponse),
-    ),
-    tag = "health",
-)]
 pub async fn health_check(State(_state): State<AppState>) -> Json<HealthCheckResponse> {
     // We always have one configured validator
     // Health status is monitored in background but doesn't affect API availability

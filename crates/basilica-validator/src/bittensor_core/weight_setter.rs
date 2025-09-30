@@ -37,7 +37,7 @@ pub struct ExecutorValidationResult {
     pub is_valid: bool,
     pub _hardware_score: f64,
     pub gpu_count: usize,
-    pub gpu_memory_gb: u64,
+    pub gpu_memory_gb: f64,
     pub _network_bandwidth_mbps: f64,
     pub attestation_valid: bool,
     pub validation_timestamp: chrono::DateTime<chrono::Utc>,
@@ -810,38 +810,37 @@ impl WeightSetter {
         Ok(())
     }
 
-    /// Get current block number from chain with retry logic
+    /// Get current block number from chain
     async fn get_current_block(&self) -> Result<u64> {
-        const MAX_RETRIES: u32 = 3;
-        const BASE_DELAY: Duration = Duration::from_secs(1);
+        match self.bittensor_service.get_current_block().await {
+            Ok(block) => {
+                debug!("Successfully got current block {}", block);
+                Ok(block)
+            }
+            Err(e) => {
+                error!("Failed to get current block: {}", e);
 
-        for attempt in 1..=MAX_RETRIES {
-            match self.bittensor_service.get_current_block().await {
-                Ok(block) => {
-                    debug!(
-                        "Successfully got current block {} on attempt {}",
-                        block, attempt
-                    );
-                    return Ok(block);
+                // Record critical RPC failure metric
+                if let Some(ref metrics) = self.metrics {
+                    let error_type = {
+                        let error_msg = e.to_string().to_lowercase();
+                        if error_msg.contains("timeout") {
+                            "timeout"
+                        } else if error_msg.contains("background") {
+                            "background_terminated"
+                        } else {
+                            "connection"
+                        }
+                    };
+
+                    metrics
+                        .prometheus()
+                        .record_rpc_critical_failure("get_current_block", error_type);
                 }
-                Err(e) => {
-                    error!("Failed to get current block (attempt {}): {}", attempt, e);
-                    if attempt < MAX_RETRIES {
-                        let delay = BASE_DELAY * 2_u32.pow(attempt - 1);
-                        warn!(
-                            "Retrying get_current_block in {} seconds...",
-                            delay.as_secs()
-                        );
-                        tokio::time::sleep(delay).await;
-                    }
-                }
+
+                Err(e.into())
             }
         }
-
-        Err(anyhow::anyhow!(
-            "Failed to get current block after {} attempts",
-            MAX_RETRIES
-        ))
     }
 
     /// Get the last weight set block from storage or initialize to current block
@@ -971,10 +970,47 @@ impl WeightSetter {
         let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps, gpu_model) =
             if let Some(specs) = hardware_specs {
                 // Extract GPU model from executor_result.gpu_name
-                let gpu_model = specs["executor_result"]["gpu_name"]
+                let mut gpu_model = specs["executor_result"]["gpu_name"]
                     .as_str()
-                    .unwrap_or("UNKNOWN")
-                    .to_string();
+                    .map(|s| s.to_string());
+
+                if gpu_model.is_none() || gpu_model.as_ref() == Some(&"UNKNOWN".to_string()) {
+                    debug!(
+                        executor_id = %executor_id,
+                        "GPU name not found in executor_result for executor {}, checking gpu_uuid_assignments",
+                        executor_id
+                    );
+
+                    match self
+                        .persistence
+                        .get_executor_gpu_name_from_assignments(miner_id, &executor_id.to_string())
+                        .await
+                    {
+                        Ok(Some(name)) => {
+                            debug!(
+                                executor_id = %executor_id,
+                                "Retrieved GPU model from assignments for executor {}: {}",
+                                executor_id, name
+                            );
+                            gpu_model = Some(name);
+                        }
+                        Ok(None) => {
+                            warn!(
+                                executor_id = %executor_id,
+                                "No GPU assignments found for executor {}",
+                                executor_id
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to get GPU model from assignments for executor {}: {}",
+                                executor_id, e
+                            );
+                        }
+                    }
+                }
+
+                let gpu_model = gpu_model.unwrap_or_else(|| "UNKNOWN".to_string());
 
                 let gpu_count = match self
                     .persistence
@@ -991,8 +1027,20 @@ impl WeightSetter {
                     }
                 };
 
-                // GPU memory is not available in the stored data, default to 0
-                let gpu_memory = 0u64;
+                let gpu_memory_gb = match self
+                    .persistence
+                    .get_executor_first_gpu_memory_gb(miner_id, &executor_id.to_string())
+                    .await
+                {
+                    Ok(mem) => mem,
+                    Err(e) => {
+                        warn!(
+                            "Failed to get GPU memory from assignments for executor {}: {}, using 0.0",
+                            executor_id, e
+                        );
+                        0.0
+                    }
+                };
 
                 // Extract memory bandwidth from executor_result.memory_bandwidth_gbps
                 let bandwidth = specs["executor_result"]["memory_bandwidth_gbps"]
@@ -1002,17 +1050,53 @@ impl WeightSetter {
                 let score = self.calculate_hardware_score(&specs);
 
                 debug!(
-                    "Executor {}: Extracted GPU info - model: {}, count: {}, validation_success: {}",
-                    executor_id, gpu_model, gpu_count, log.success
+                    "Executor {}: Extracted GPU info - model: {}, count: {}, memory: {}GB, validation_success: {}",
+                    executor_id, gpu_model, gpu_count, gpu_memory_gb, log.success
                 );
 
-                (score, gpu_count, gpu_memory, bandwidth, gpu_model)
+                (score, gpu_count, gpu_memory_gb, bandwidth, gpu_model)
             } else {
                 debug!(
-                    "Executor {}: No hardware specs available, validation_success: {}",
-                    executor_id, log.success
+                    "Executor {}: No hardware specs in verification log, checking gpu_uuid_assignments",
+                    executor_id
                 );
-                (0.0, 0, 0, 0.0, "UNKNOWN".to_string())
+
+                let gpu_model = match self
+                    .persistence
+                    .get_executor_gpu_name_from_assignments(miner_id, &executor_id.to_string())
+                    .await
+                {
+                    Ok(Some(name)) => {
+                        debug!(
+                            "Retrieved GPU model from assignments for executor {} (no specs): {}",
+                            executor_id, name
+                        );
+                        name
+                    }
+                    _ => "UNKNOWN".to_string(),
+                };
+
+                let gpu_count = match self
+                    .persistence
+                    .get_executor_gpu_count_from_assignments(miner_id, &executor_id.to_string())
+                    .await
+                {
+                    Ok(count) => count as usize,
+                    Err(_) => 0,
+                };
+
+                let gpu_memory_gb = (self
+                    .persistence
+                    .get_executor_first_gpu_memory_gb(miner_id, &executor_id.to_string())
+                    .await)
+                    .unwrap_or(0.0);
+
+                debug!(
+                    "Executor {}: From assignments only - model: {}, count: {}, memory: {}GB, validation_success: {}",
+                    executor_id, gpu_model, gpu_count, gpu_memory_gb, log.success
+                );
+
+                (0.0, gpu_count, gpu_memory_gb, 0.0, gpu_model)
             };
 
         Ok(ExecutorValidationResult {
@@ -1031,54 +1115,8 @@ impl WeightSetter {
     }
 
     /// Calculate hardware score from specs
-    fn calculate_hardware_score(&self, specs: &serde_json::Value) -> f64 {
-        let mut score = 0.0;
-
-        // GPU scoring (40% weight)
-        if let Some(gpus) = specs["gpu"].as_array() {
-            let gpu_score: f64 = gpus
-                .iter()
-                .map(|gpu| {
-                    let vram_mb = gpu["vram_mb"].as_u64().unwrap_or(0) as f64;
-                    let vram_score = (vram_mb / 24576.0).min(1.0); // 24GB = max score
-
-                    // Bonus for high-end GPUs
-                    let model = gpu["model"].as_str().unwrap_or("");
-                    let model_bonus = match model {
-                        s if s.contains("H100") => 1.0,
-                        s if s.contains("A100") => 0.9,
-                        s if s.contains("4090") => 0.8,
-                        s if s.contains("3090") => 0.7,
-                        _ => 0.5,
-                    };
-
-                    vram_score * model_bonus
-                })
-                .sum::<f64>()
-                / gpus.len().max(1) as f64;
-
-            score += gpu_score * 0.4;
-        }
-
-        // CPU scoring (20% weight)
-        if let Some(cpu_cores) = specs["cpu"]["cores"].as_u64() {
-            let cpu_score = (cpu_cores as f64 / 64.0).min(1.0); // 64 cores = max score
-            score += cpu_score * 0.2;
-        }
-
-        // Memory scoring (20% weight)
-        if let Some(memory_mb) = specs["memory"]["total_mb"].as_u64() {
-            let memory_score = (memory_mb as f64 / 262144.0).min(1.0); // 256GB = max score
-            score += memory_score * 0.2;
-        }
-
-        // Network scoring (20% weight)
-        if let Some(bandwidth) = specs["network"]["bandwidth_mbps"].as_f64() {
-            let network_score = (bandwidth / 10000.0).min(1.0); // 10Gbps = max score
-            score += network_score * 0.2;
-        }
-
-        score
+    fn calculate_hardware_score(&self, _specs: &serde_json::Value) -> f64 {
+        1.0
     }
 
     /// Get recent validation results for a miner
@@ -1163,8 +1201,8 @@ impl WeightSetter {
             {
                 Ok(validation) => {
                     debug!(
-                        "Successfully extracted validation for executor {}: gpu_model={}, gpu_count={}, success={}",
-                        executor_id, validation.gpu_model, validation.gpu_count, validation.is_valid
+                        "Successfully extracted validation for executor {}: gpu_model={}, gpu_count={}, success={} gpu_memory_gb={}",
+                        executor_id, validation.gpu_model, validation.gpu_count, validation.is_valid, validation.gpu_memory_gb
                     );
                     validations.push(validation);
                 }
@@ -1246,8 +1284,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_extract_validation_result_with_h100() {
-        // Create a verification log with H100 GPU
+    fn test_extract_validation_result_with_a100() {
+        // Create a verification log with A100 GPU
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
             executor_id: "exec123".to_string(),
@@ -1258,7 +1296,7 @@ mod tests {
             success: true,
             details: json!({
                 "gpu": [{
-                    "model": "NVIDIA H100 80GB PCIe",
+                    "model": "NVIDIA A100 80GB PCIe",
                     "vram_mb": 81920
                 }],
                 "cpu": {"cores": 32},
@@ -1279,12 +1317,12 @@ mod tests {
             .and_then(|gpu| gpu["model"].as_str())
             .unwrap_or("UNKNOWN");
 
-        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
+        assert_eq!(gpu_model, "NVIDIA A100 80GB PCIe");
     }
 
     #[test]
-    fn test_extract_validation_result_with_h200() {
-        // Create a verification log with H200 GPU
+    fn test_extract_validation_result_with_h100() {
+        // Create a verification log with H100 GPU
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
             executor_id: "exec456".to_string(),
@@ -1295,7 +1333,7 @@ mod tests {
             success: true,
             details: json!({
                 "gpu": [{
-                    "model": "NVIDIA H200",
+                    "model": "NVIDIA H100",
                     "vram_mb": 141312  // 138GB
                 }],
                 "cpu": {"cores": 64},
@@ -1315,7 +1353,7 @@ mod tests {
             .and_then(|gpu| gpu["model"].as_str())
             .unwrap_or("UNKNOWN");
 
-        assert_eq!(gpu_model, "NVIDIA H200");
+        assert_eq!(gpu_model, "NVIDIA H100");
     }
 
     #[test]
@@ -1331,7 +1369,7 @@ mod tests {
             success: false,
             details: json!({
                 "gpu": [{
-                    "model": "NVIDIA H100 80GB PCIe",
+                    "model": "NVIDIA A100 80GB PCIe",
                     "vram_mb": 81920
                 }],
                 "cpu": {"cores": 32},
@@ -1352,7 +1390,7 @@ mod tests {
             .and_then(|gpu| gpu["model"].as_str())
             .unwrap_or("UNKNOWN");
 
-        assert_eq!(gpu_model, "NVIDIA H100 80GB PCIe");
+        assert_eq!(gpu_model, "NVIDIA A100 80GB PCIe");
     }
 
     #[test]
@@ -1392,8 +1430,8 @@ mod tests {
         let old_gpu_model = format!("H{}", gpu_memory_gb / 1024);
         assert_eq!(old_gpu_model, "H0"); // This is wrong!
 
-        // For H100 with 80GB, dividing by 1024 gives 0.078, formatted as "H0"
-        // For H200 with 138GB, dividing by 1024 gives 0.134, formatted as "H0"
+        // For A100 with 80GB, dividing by 1024 gives 0.078, formatted as "H0"
+        // For H100 with 138GB, dividing by 1024 gives 0.134, formatted as "H0"
         // Both would be categorized as "OTHER" and excluded from rewards!
     }
 
@@ -1411,7 +1449,7 @@ mod tests {
             success: true,
             details: json!({
                 "executor_result": {
-                    "gpu_name": "NVIDIA H100 80GB HBM3",
+                    "gpu_name": "NVIDIA A100 80GB HBM3",
                     "gpu_uuid": "GPU-12345678-1234-1234-1234-123456789012",
                     "memory_bandwidth_gbps": 3.35,
                     "anti_debug_passed": true
@@ -1438,7 +1476,7 @@ mod tests {
         let gpu_count = details["gpu_count"].as_u64().unwrap_or(0) as usize;
 
         // Verify the GPU model is correctly extracted from the new path
-        assert_eq!(gpu_model, "NVIDIA H100 80GB HBM3");
+        assert_eq!(gpu_model, "NVIDIA A100 80GB HBM3");
         assert_eq!(gpu_count, 8);
 
         // Test that the old path would fail (this proves our fix is needed)
@@ -1486,10 +1524,10 @@ mod tests {
 
     #[test]
     fn test_gpu_categorization_with_corrected_extraction() {
-        // Test that H100 and H200 GPUs are now properly identified
-        let h100_log = VerificationLog {
+        // Test that A100 and H100 GPUs are now properly identified
+        let a100_log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_h100".to_string(),
+            executor_id: "executor_a100".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1497,7 +1535,7 @@ mod tests {
             success: true,
             details: json!({
                 "executor_result": {
-                    "gpu_name": "NVIDIA H100 80GB HBM3",
+                    "gpu_name": "NVIDIA A100 80GB HBM3",
                     "memory_bandwidth_gbps": 3.35
                 },
                 "gpu_count": 8
@@ -1508,9 +1546,9 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
 
-        let h200_log = VerificationLog {
+        let h100_log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_h200".to_string(),
+            executor_id: "executor_h100".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1518,7 +1556,7 @@ mod tests {
             success: true,
             details: json!({
                 "executor_result": {
-                    "gpu_name": "NVIDIA H200",
+                    "gpu_name": "NVIDIA H100",
                     "memory_bandwidth_gbps": 4.8
                 },
                 "gpu_count": 4
@@ -1530,22 +1568,22 @@ mod tests {
         };
 
         // Extract GPU models using the corrected path
+        let a100_model = a100_log.details["executor_result"]["gpu_name"]
+            .as_str()
+            .unwrap_or("UNKNOWN");
         let h100_model = h100_log.details["executor_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
-        let h200_model = h200_log.details["executor_result"]["gpu_name"]
-            .as_str()
-            .unwrap_or("UNKNOWN");
 
-        // Verify H100 and H200 are correctly identified
+        // Verify A100 and H100 are correctly identified
+        assert!(a100_model.contains("A100"));
         assert!(h100_model.contains("H100"));
-        assert!(h200_model.contains("H200"));
+        assert_ne!(a100_model, "UNKNOWN");
         assert_ne!(h100_model, "UNKNOWN");
-        assert_ne!(h200_model, "UNKNOWN");
 
         // Test GPU counts are preserved
-        assert_eq!(h100_log.details["gpu_count"].as_u64().unwrap(), 8);
-        assert_eq!(h200_log.details["gpu_count"].as_u64().unwrap(), 4);
+        assert_eq!(a100_log.details["gpu_count"].as_u64().unwrap(), 8);
+        assert_eq!(h100_log.details["gpu_count"].as_u64().unwrap(), 4);
     }
 
     #[tokio::test]
@@ -1557,22 +1595,22 @@ mod tests {
                 is_valid: true,
                 _hardware_score: 0.8,
                 gpu_count: 2,
-                gpu_memory_gb: 48,
+                gpu_memory_gb: 48.0,
                 _network_bandwidth_mbps: 1000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
-                gpu_model: "NVIDIA H100".to_string(),
+                gpu_model: "NVIDIA A100".to_string(),
             },
             ExecutorValidationResult {
                 executor_id: ExecutorId::new(),
                 is_valid: true,
                 _hardware_score: 0.9,
                 gpu_count: 4,
-                gpu_memory_gb: 96,
+                gpu_memory_gb: 96.0,
                 _network_bandwidth_mbps: 10000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
-                gpu_model: "NVIDIA H100".to_string(),
+                gpu_model: "NVIDIA A100".to_string(),
             },
         ];
 
@@ -1586,7 +1624,7 @@ mod tests {
 
         // Test GPU model is properly set
         for validation in &validations {
-            assert!(validation.gpu_model.contains("H100"));
+            assert!(validation.gpu_model.contains("A100"));
         }
     }
 }

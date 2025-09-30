@@ -5,8 +5,12 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
+use std::sync::Arc;
+use std::time::Duration;
 use subxt::{OnlineClient, PolkadotConfig};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
+
+use crate::connect::{ConnectionPool, ConnectionPoolBuilder, ConnectionPoolTrait, HealthChecker};
 
 /// Handler for blockchain events
 ///
@@ -46,42 +50,139 @@ pub trait BlockchainEventHandler: Send + Sync {
 /// Generic blockchain monitor
 ///
 /// Monitors blockchain for events and delegates handling to the provided handler
-pub struct BlockchainMonitor<H: BlockchainEventHandler> {
-    client: OnlineClient<PolkadotConfig>,
+pub struct BlockchainMonitor<H, P>
+where
+    H: BlockchainEventHandler,
+    P: ConnectionPoolTrait + Send + Sync + 'static,
+{
+    pool: Arc<P>,
     handler: H,
+    health_monitor: Option<tokio::task::JoinHandle<()>>,
 }
 
-impl<H: BlockchainEventHandler> BlockchainMonitor<H> {
-    /// Create a new blockchain monitor
+impl<H> BlockchainMonitor<H, ConnectionPool>
+where
+    H: BlockchainEventHandler,
+{
+    /// Create a new blockchain monitor backed by a connection pool and health checks
     ///
     /// # Arguments
-    /// * `ws_url` - WebSocket URL for the blockchain node
+    /// * `endpoints` - One or more WebSocket endpoints for failover
     /// * `handler` - Event handler implementation
-    pub async fn new(ws_url: &str, handler: H) -> Result<Self> {
-        let client = OnlineClient::<PolkadotConfig>::from_url(ws_url).await?;
-        Ok(Self { client, handler })
+    pub async fn new(endpoints: Vec<String>, handler: H) -> Result<Self>
+    where
+        H: BlockchainEventHandler + 'static,
+    {
+        if endpoints.is_empty() {
+            anyhow::bail!("no endpoints provided to BlockchainMonitor::new");
+        }
+
+        let max = endpoints.len().min(3);
+        let pool = Arc::new(
+            ConnectionPoolBuilder::new(endpoints)
+                .max_connections(max)
+                .build(),
+        );
+
+        Self::with_pool(pool, handler).await
+    }
+}
+
+impl<H, P> BlockchainMonitor<H, P>
+where
+    H: BlockchainEventHandler,
+    P: ConnectionPoolTrait + Send + Sync + 'static,
+{
+    /// Construct a monitor from any pool implementing ConnectionPoolTrait
+    pub async fn with_pool(pool: Arc<P>, handler: H) -> Result<Self>
+    where
+        H: BlockchainEventHandler + 'static,
+    {
+        // Initialize connections (best-effort)
+        if let Err(e) = pool.reconnect_with_backoff().await {
+            warn!(
+                "BlockchainMonitor: initial connection attempt failed: {}",
+                e
+            );
+        }
+
+        // Start health monitoring in background
+        let checker = Arc::new(
+            HealthChecker::new()
+                .with_interval(Duration::from_secs(60))
+                .with_timeout(Duration::from_secs(5))
+                .with_failure_threshold(3),
+        );
+        let health_monitor = Some(checker.start_monitoring(Arc::clone(&pool)));
+
+        Ok(Self {
+            pool,
+            handler,
+            health_monitor,
+        })
     }
 
-    /// Run the monitor, subscribing to finalized blocks
+    /// Run the monitor, subscribing to finalized blocks with automatic reconnection
     ///
-    /// This will run indefinitely, processing events from finalized blocks
+    /// This runs indefinitely, re-subscribing on errors or disconnects.
     pub async fn run(self) -> Result<()> {
-        info!("Starting blockchain monitor for finalized blocks");
-        let mut sub = self.client.blocks().subscribe_finalized().await?;
+        info!("Starting blockchain monitor for finalized blocks (with failover)");
 
-        while let Some(block_result) = sub.next().await {
-            let block = match block_result {
-                Ok(b) => b,
+        let mut attempts: u32 = 0;
+        loop {
+            // Get healthy client and subscribe
+            let client = match self.pool.get_healthy_client().await {
+                Ok(c) => c,
                 Err(e) => {
-                    warn!("Block subscription error: {}", e);
+                    attempts = attempts.saturating_add(1);
+                    warn!("No healthy chain client (attempt {}): {}", attempts, e);
+                    tokio::time::sleep(self.retry_delay(attempts)).await;
                     continue;
                 }
             };
 
-            self.process_block(block).await?;
-        }
+            info!("Subscribed to finalized blocks");
+            let subscribe_result = client.blocks().subscribe_finalized().await;
+            let mut sub = match subscribe_result {
+                Ok(s) => s,
+                Err(e) => {
+                    attempts = attempts.saturating_add(1);
+                    warn!(
+                        "Failed to subscribe to finalized blocks (attempt {}): {}",
+                        attempts, e
+                    );
+                    tokio::time::sleep(self.retry_delay(attempts)).await;
+                    continue;
+                }
+            };
 
-        Ok(())
+            // Reset attempts after successful subscribe
+            attempts = 0;
+
+            // Stream loop; break on error to resubscribe
+            while let Some(block_result) = sub.next().await {
+                match block_result {
+                    Ok(block) => {
+                        if let Err(e) = self.process_block(block).await {
+                            warn!("Error processing block: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Block subscription error: {} (will resubscribe)", e);
+                        break; // Break to outer loop to resubscribe
+                    }
+                }
+            }
+
+            debug!("Subscription ended; attempting to resubscribe");
+        }
+    }
+
+    fn retry_delay(&self, attempt: u32) -> Duration {
+        let base = Duration::from_millis(500);
+        let max = Duration::from_secs(10);
+        let exp = base * 2u32.saturating_pow(attempt.min(5).saturating_sub(1));
+        exp.min(max)
     }
 
     /// Process a single block
@@ -104,7 +205,10 @@ impl<H: BlockchainEventHandler> BlockchainMonitor<H> {
         for (idx, ev_result) in events.iter().enumerate() {
             let ev = match ev_result {
                 Ok(e) => e,
-                Err(_) => continue,
+                Err(e) => {
+                    debug!("Skipping event due to error: {}", e);
+                    continue;
+                }
             };
 
             // We're interested in Balance.Transfer events
@@ -169,6 +273,18 @@ impl<H: BlockchainEventHandler> BlockchainMonitor<H> {
         let to = extract_account_hex(&fields[1])?;
         let amount = fields[2].to_string();
         Some((from, to, amount))
+    }
+}
+
+impl<H, P> Drop for BlockchainMonitor<H, P>
+where
+    H: BlockchainEventHandler,
+    P: ConnectionPoolTrait + Send + Sync + 'static,
+{
+    fn drop(&mut self) {
+        if let Some(handle) = self.health_monitor.take() {
+            handle.abort();
+        }
     }
 }
 

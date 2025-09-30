@@ -128,9 +128,6 @@ impl Args {
                 handlers::auth::handle_login(*device_code, config).await?;
             }
             Commands::Logout => handlers::auth::handle_logout(config).await?,
-            Commands::ExportToken { name, format } => {
-                handlers::auth::handle_export_token(name.clone(), format, config).await?
-            }
             #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if *api {
@@ -141,8 +138,14 @@ impl Args {
             }
 
             // GPU rental operations
-            Commands::Ls { filters } => {
-                handlers::gpu_rental::handle_ls(filters.clone(), self.json, config).await?;
+            Commands::Ls { gpu_type, filters } => {
+                handlers::gpu_rental::handle_ls(
+                    gpu_type.clone(),
+                    filters.clone(),
+                    self.json,
+                    config,
+                )
+                .await?;
             }
             Commands::Up { target, options } => {
                 handlers::gpu_rental::handle_up(target.clone(), options.clone(), config).await?;
@@ -156,8 +159,8 @@ impl Args {
             Commands::Logs { target, options } => {
                 handlers::gpu_rental::handle_logs(target.clone(), options.clone(), config).await?;
             }
-            Commands::Down { target } => {
-                handlers::gpu_rental::handle_down(target.clone(), config).await?;
+            Commands::Down { target, all } => {
+                handlers::gpu_rental::handle_down(target.clone(), *all, config).await?;
             }
             Commands::Exec { command, target } => {
                 handlers::gpu_rental::handle_exec(target.clone(), command.clone(), config).await?;
@@ -176,6 +179,27 @@ impl Args {
             Commands::Validator { args } => handlers::external::handle_validator(args.clone())?,
             Commands::Miner { args } => handlers::external::handle_miner(args.clone())?,
             Commands::Executor { args } => handlers::external::handle_executor(args.clone())?,
+
+            // Token management
+            Commands::Tokens { action } => {
+                use crate::cli::commands::TokenAction;
+                use crate::client::create_client;
+
+                // Create client with file-based auth (JWT required for token management)
+                let client = create_client(config).await?;
+
+                match action {
+                    TokenAction::Create { name } => {
+                        handlers::tokens::handle_create_token(&client, name.clone()).await?;
+                    }
+                    TokenAction::List => {
+                        handlers::tokens::handle_list_tokens(&client).await?;
+                    }
+                    TokenAction::Revoke { name, yes } => {
+                        handlers::tokens::handle_revoke_token(&client, name.clone(), *yes).await?;
+                    }
+                }
+            }
         }
         Ok(())
     }

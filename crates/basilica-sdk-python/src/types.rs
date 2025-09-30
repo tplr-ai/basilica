@@ -323,7 +323,7 @@ impl From<GpuRequirements> for SdkGpuRequirements {
 #[derive(Clone)]
 pub enum ExecutorSelection {
     ExecutorId { executor_id: String },
-    GpuRequirements { gpu_requirements: GpuRequirements },
+    ExactGpuConfiguration { gpu_requirements: GpuRequirements },
 }
 
 impl From<ExecutorSelection> for SdkExecutorSelection {
@@ -332,8 +332,8 @@ impl From<ExecutorSelection> for SdkExecutorSelection {
             ExecutorSelection::ExecutorId { executor_id } => {
                 SdkExecutorSelection::ExecutorId { executor_id }
             }
-            ExecutorSelection::GpuRequirements { gpu_requirements } => {
-                SdkExecutorSelection::GpuRequirements {
+            ExecutorSelection::ExactGpuConfiguration { gpu_requirements } => {
+                SdkExecutorSelection::ExactGpuConfiguration {
                     gpu_requirements: gpu_requirements.into(),
                 }
             }
@@ -592,6 +592,7 @@ impl From<ListAvailableExecutorsQuery> for SdkListAvailableExecutorsQuery {
             min_gpu_memory: query.min_gpu_memory,
             gpu_type: query.gpu_type,
             min_gpu_count: query.min_gpu_count,
+            location: None, // Python SDK doesn't support location filtering yet
         }
     }
 }

@@ -6,12 +6,13 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqliteRow, Row, SqlitePool};
-use std::collections::HashMap;
-use tracing::{debug, info};
+use std::collections::{hash_map::Entry as HashMapEntry, HashMap};
+use tracing::{debug, info, warn};
 
-use crate::gpu::{GpuCategorizer, MinerGpuProfile};
+use crate::gpu::{categorization::GpuCategory, MinerGpuProfile};
 use crate::persistence::SimplePersistence;
 use basilica_common::identity::MinerUid;
+use std::str::FromStr;
 
 /// Repository for GPU profile operations
 pub struct GpuProfileRepository {
@@ -52,12 +53,47 @@ impl GpuProfileRepository {
             let gpu_name: String = row.get("gpu_name");
             let count: i64 = row.get("count");
 
-            let normalized_name = GpuCategorizer::normalize_gpu_model(&gpu_name);
+            let category = GpuCategory::from_str(&gpu_name).unwrap();
+            let normalized_name = category.to_string();
 
             *gpu_counts.entry(normalized_name).or_insert(0) += count as u32;
         }
 
         Ok(gpu_counts)
+    }
+
+    pub async fn get_miner_gpu_assignments(
+        &self,
+        miner_uid: MinerUid,
+    ) -> Result<HashMap<String, (u32, String, f64)>, anyhow::Error> {
+        let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
+        let assignments_rows = simple_persistence
+            .get_miner_gpu_uuid_assignments(&format!("miner_{}", miner_uid.as_u16()))
+            .await?;
+        let mut assignments = HashMap::new();
+        for (executor_id, count, name, memory_gb) in assignments_rows {
+            match assignments.entry(executor_id.clone()) {
+                HashMapEntry::Occupied(mut entry) => {
+                    // impossible case, but log a warning if it happens
+                    let (existing_count, existing_name, existing_memory) = entry.get();
+                    let total_count = existing_count + count;
+                    warn!(
+                        "Data inconsistency: executor {} has multiple GPU models ({} and {}). Aggregating counts.",
+                        executor_id, existing_name, name
+                    );
+                    if count > *existing_count {
+                        entry.insert((total_count, name, memory_gb));
+                    } else {
+                        entry.insert((total_count, existing_name.clone(), *existing_memory));
+                    }
+                }
+                HashMapEntry::Vacant(entry) => {
+                    entry.insert((count, name, memory_gb));
+                }
+            }
+        }
+
+        Ok(assignments)
     }
 
     /// Store or update a miner's GPU profile
@@ -186,7 +222,7 @@ impl GpuProfileRepository {
 
             let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
             let gpu_counts_raw = simple_persistence
-                .get_miner_gpu_counts_from_assignments(&miner_id_str)
+                .get_miner_gpu_uuid_assignments(&miner_id_str)
                 .await?;
 
             if gpu_counts_raw.is_empty() {
@@ -194,7 +230,7 @@ impl GpuProfileRepository {
             }
 
             let mut gpu_counts: HashMap<String, u32> = HashMap::new();
-            for (_, count, name) in gpu_counts_raw {
+            for (_, count, name, _) in gpu_counts_raw {
                 *gpu_counts.entry(name).or_insert(0) += count;
             }
 
@@ -311,12 +347,12 @@ impl GpuProfileRepository {
 
             let simple_persistence = SimplePersistence::with_pool(self.pool.clone());
             let gpu_counts = simple_persistence
-                .get_miner_gpu_counts_from_assignments(&miner_id_str)
+                .get_miner_gpu_uuid_assignments(&miner_id_str)
                 .await?;
             let gpu_counts: HashMap<String, u32> = gpu_counts
                 .iter()
-                .filter(|(_, _, name)| name.contains(gpu_model))
-                .map(|(_, count, name)| (name.clone(), *count))
+                .filter(|(_, _, name, _)| name.contains(gpu_model))
+                .map(|(_, count, name, _)| (name.clone(), *count))
                 .collect();
 
             if gpu_counts.is_empty() {
@@ -646,7 +682,6 @@ impl GpuProfileRepository {
     }
 
     /// Get emission metrics history
-    // TODO: Add pagination support with limit/offset parameters
     pub async fn get_emission_metrics_history(&self) -> Result<Vec<EmissionMetrics>> {
         let query = r#"
             SELECT id, timestamp, burn_amount, burn_percentage,
@@ -849,14 +884,15 @@ mod tests {
                     let gpu_uuid =
                         format!("gpu-{}-{}-{}", profile.miner_uid.as_u16(), gpu_model, i);
                     sqlx::query(
-                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
-                         VALUES (?, ?, ?, ?, ?, ?)"
+                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)"
                     )
                     .bind(&gpu_uuid)
                     .bind(i as i32)
                     .bind(&executor_id)
                     .bind(&miner_id)
                     .bind(gpu_model)
+                    .bind(80i64) // Default 80GB for test data
                     .bind(now.to_rfc3339())
                     .execute(persistence.pool())
                     .await?;
@@ -864,19 +900,15 @@ mod tests {
             }
 
             // Seed miner_executors table
-            let gpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
-            let cpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
             sqlx::query(
-                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, status, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&executor_id)
             .bind(&miner_id)
             .bind(&executor_id)
             .bind("127.0.0.1:8080")
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
-            .bind(&gpu_specs)
-            .bind(&cpu_specs)
             .bind("online")
             .bind(now.to_rfc3339())
             .bind(now.to_rfc3339())
@@ -929,7 +961,7 @@ mod tests {
 
         // Create a test profile
         let mut gpu_counts = HashMap::new();
-        gpu_counts.insert("H100".to_string(), 2);
+        gpu_counts.insert("A100".to_string(), 2);
 
         let profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
@@ -959,7 +991,7 @@ mod tests {
             profile.verification_count
         );
         // Check GPU counts are properly normalized and retrieved
-        assert_eq!(retrieved_profile.gpu_counts.get("H100"), Some(&2));
+        assert_eq!(retrieved_profile.gpu_counts.get("A100"), Some(&2));
     }
 
     #[tokio::test]
@@ -970,7 +1002,7 @@ mod tests {
 
         let miner_uid = MinerUid::new(1);
         let mut gpu_counts = HashMap::new();
-        gpu_counts.insert("H100".to_string(), 1);
+        gpu_counts.insert("A100".to_string(), 1);
 
         // Initial profile
         let profile1 = MinerGpuProfile {
@@ -1000,18 +1032,18 @@ mod tests {
             "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
              VALUES (?, ?, ?, ?, ?, ?)"
         )
-        .bind(format!("gpu-{}-H100-1", miner_uid.as_u16()))
+        .bind(format!("gpu-{}-A100-1", miner_uid.as_u16()))
         .bind(1i32)
         .bind(&executor_id)
         .bind(&miner_id)
-        .bind("H100")
+        .bind("A100")
         .bind(Utc::now().to_rfc3339())
         .execute(&pool)
         .await
         .unwrap();
 
         // Update profile with new score
-        gpu_counts.insert("H100".to_string(), 2);
+        gpu_counts.insert("A100".to_string(), 2);
         let profile2 = MinerGpuProfile {
             miner_uid,
             gpu_counts,
@@ -1030,7 +1062,7 @@ mod tests {
         assert_eq!(retrieved.total_score, 0.8);
         assert_eq!(retrieved.verification_count, 2);
         // GPU count should reflect actual assignments (2)
-        assert_eq!(retrieved.gpu_counts.get("H100"), Some(&2));
+        assert_eq!(retrieved.gpu_counts.get("A100"), Some(&2));
     }
 
     #[tokio::test]
@@ -1042,7 +1074,7 @@ mod tests {
         let mut profiles = Vec::new();
         for i in 0..3 {
             let mut gpu_counts = HashMap::new();
-            let model = if i < 2 { "H100" } else { "H200" };
+            let model = if i < 2 { "A100" } else { "H100" };
             gpu_counts.insert(model.to_string(), 1);
 
             let profile = MinerGpuProfile {
@@ -1063,13 +1095,113 @@ mod tests {
             .await
             .unwrap();
 
+        // Query A100 profiles
+        let a100_profiles = repo.get_profiles_by_gpu_model("A100").await.unwrap();
+        assert_eq!(a100_profiles.len(), 2);
+
         // Query H100 profiles
         let h100_profiles = repo.get_profiles_by_gpu_model("H100").await.unwrap();
-        assert_eq!(h100_profiles.len(), 2);
+        assert_eq!(h100_profiles.len(), 1);
+    }
 
-        // Query H200 profiles
-        let h200_profiles = repo.get_profiles_by_gpu_model("H200").await.unwrap();
-        assert_eq!(h200_profiles.len(), 1);
+    #[tokio::test]
+    async fn test_gpu_assignments_with_data_inconsistency() {
+        let (pool, _temp_file) = create_test_pool().await.unwrap();
+        let repo = GpuProfileRepository::new(pool.clone());
+        let _persistence = SimplePersistence::with_pool(pool.clone());
+
+        let miner_uid = MinerUid::new(1);
+        let miner_id = format!("miner_{}", miner_uid.as_u16());
+        let executor_id = "exec_1";
+
+        // Manually insert inconsistent data - same executor with different GPU models
+        // This shouldn't happen in reality but we handle it defensively
+        sqlx::query(
+            "INSERT INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info)
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(&miner_id)
+        .bind("hotkey_1")
+        .bind("127.0.0.1:8080")
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .bind("{}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert executor
+        sqlx::query(
+            "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(format!("{}_{}", miner_id, executor_id))
+        .bind(&miner_id)
+        .bind(executor_id)
+        .bind("127.0.0.1:8080")
+        .bind(5i64) // Total GPUs
+        .bind("online")
+        .bind(Utc::now().to_rfc3339())
+        .bind(Utc::now().to_rfc3339())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Insert inconsistent GPU assignments - same executor, different models
+        // 3 A100s
+        for i in 0..3 {
+            sqlx::query(
+                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            .bind(format!("gpu-a100-{}", i))
+            .bind(i)
+            .bind(executor_id)
+            .bind(&miner_id)
+            .bind("A100")
+            .bind(80.0)
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // 2 H100s (incorrect data - executor can't have mixed models)
+        for i in 0..2 {
+            sqlx::query(
+                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            )
+            .bind(format!("gpu-h100-{}", i))
+            .bind(i + 3)
+            .bind(executor_id)
+            .bind(&miner_id)
+            .bind("H100")
+            .bind(80.0)
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .bind(Utc::now().to_rfc3339())
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        // Get assignments - should aggregate and keep the model with higher count
+        let assignments = repo.get_miner_gpu_assignments(miner_uid).await.unwrap();
+
+        // Should have only one entry per executor
+        assert_eq!(assignments.len(), 1);
+        assert!(assignments.contains_key(executor_id));
+
+        let (count, gpu_model, memory) = assignments.get(executor_id).unwrap();
+        // Should aggregate counts: 3 + 2 = 5
+        assert_eq!(*count, 5);
+        // Should keep A100 (had higher count: 3 > 2)
+        assert_eq!(gpu_model, "A100");
+        assert_eq!(*memory, 80.0);
     }
 
     #[tokio::test]
@@ -1080,18 +1212,18 @@ mod tests {
         // Create test metrics
         let mut distributions = HashMap::new();
         distributions.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             CategoryDistribution {
-                category: "H100".to_string(),
+                category: "A100".to_string(),
                 miner_count: 10,
                 total_weight: 4000,
                 average_score: 0.7,
             },
         );
         distributions.insert(
-            "H200".to_string(),
+            "H100".to_string(),
             CategoryDistribution {
-                category: "H200".to_string(),
+                category: "H100".to_string(),
                 miner_count: 5,
                 total_weight: 6000,
                 average_score: 0.8,
@@ -1113,7 +1245,7 @@ mod tests {
         assert!(metrics_id > 0);
 
         // Store some allocations
-        repo.store_weight_allocation(metrics_id, MinerUid::new(1), "H100", 400, 0.7, 7.0, 12345)
+        repo.store_weight_allocation(metrics_id, MinerUid::new(1), "A100", 400, 0.7, 7.0, 12345)
             .await
             .unwrap();
 
@@ -1134,7 +1266,7 @@ mod tests {
 
         // Create an old profile
         let mut gpu_counts = HashMap::new();
-        gpu_counts.insert("H100".to_string(), 1);
+        gpu_counts.insert("A100".to_string(), 1);
 
         let old_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
@@ -1208,9 +1340,9 @@ mod tests {
         for block in [100, 200, 300, 400, 500] {
             let mut distributions = HashMap::new();
             distributions.insert(
-                "H100".to_string(),
+                "A100".to_string(),
                 CategoryDistribution {
-                    category: "H100".to_string(),
+                    category: "A100".to_string(),
                     miner_count: 10,
                     total_weight: 4000,
                     average_score: 0.7,
@@ -1253,9 +1385,9 @@ mod tests {
         // Add a metric
         let mut distributions = HashMap::new();
         distributions.insert(
-            "H100".to_string(),
+            "A100".to_string(),
             CategoryDistribution {
-                category: "H100".to_string(),
+                category: "A100".to_string(),
                 miner_count: 5,
                 total_weight: 2000,
                 average_score: 0.8,

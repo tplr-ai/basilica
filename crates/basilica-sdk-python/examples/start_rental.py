@@ -12,8 +12,9 @@ from ssh_utils import print_ssh_instructions
 def main():
     print("Starting Basilica GPU rental...")
     print("Initializing client...")
-    
+
     # Initialize client (uses BASILICA_API_URL and BASILICA_API_TOKEN from environment)
+    # Create a token using: basilica tokens create
     client = BasilicaClient()
     
     print("\nConfiguration:")

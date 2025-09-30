@@ -6,7 +6,7 @@ use basilica_validator::bittensor_core::weight_allocation::NormalizedWeight;
 use basilica_validator::bittensor_core::weight_allocation::{
     WeightAllocationEngine, WeightDistribution,
 };
-use basilica_validator::config::emission::EmissionConfig;
+use basilica_validator::config::emission::{EmissionConfig, GpuAllocation};
 use std::collections::HashMap;
 
 struct WeightSetterTester {
@@ -20,10 +20,11 @@ impl WeightSetterTester {
             burn_uid: 999,
             gpu_allocations: {
                 let mut allocations = HashMap::new();
-                allocations.insert("H100".to_string(), 60.0);
-                allocations.insert("H200".to_string(), 40.0);
+                allocations.insert("H100".to_string(), GpuAllocation::new(60.0));
+                allocations.insert("H200".to_string(), GpuAllocation::new(40.0));
                 allocations
             },
+            min_miners_per_category: 1,
             weight_set_interval_blocks: 100,
             weight_version_key: 0,
         };

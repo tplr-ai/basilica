@@ -5,7 +5,7 @@ use basilica_validator::persistence::SimplePersistence;
 use sqlx::SqlitePool;
 use std::str::FromStr;
 
-/// Integration test for executor database fallback functionality  
+/// Integration test for executor database fallback functionality
 /// Tests the complete flow: database query -> data conversion -> executor list combination
 #[tokio::test]
 async fn test_get_known_executors_for_miner_with_test_data() -> Result<()> {
@@ -37,9 +37,9 @@ async fn test_get_known_executors_for_miner_with_test_data() -> Result<()> {
 
     // Insert test data mimicking production structure
     sqlx::query(r#"
-        INSERT INTO miner_executors 
+        INSERT INTO miner_executors
         (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, location, status, last_health_check, created_at, updated_at, gpu_uuids)
-        VALUES 
+        VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     "#)
     .bind("miner_171_test_id")
@@ -59,9 +59,9 @@ async fn test_get_known_executors_for_miner_with_test_data() -> Result<()> {
 
     // Insert more test data for miner_124
     sqlx::query(r#"
-        INSERT INTO miner_executors 
+        INSERT INTO miner_executors
         (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, location, status, last_health_check, created_at, updated_at, gpu_uuids)
-        VALUES 
+        VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?),
         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     "#)
@@ -95,9 +95,9 @@ async fn test_get_known_executors_for_miner_with_test_data() -> Result<()> {
 
     // Insert offline executor that should be filtered out
     sqlx::query(r#"
-        INSERT INTO miner_executors 
+        INSERT INTO miner_executors
         (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, location, status, last_health_check, created_at, updated_at, gpu_uuids)
-        VALUES 
+        VALUES
         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     "#)
     .bind("miner_214_test_id")
@@ -236,8 +236,6 @@ async fn test_executor_data_conversion_pipeline() -> Result<()> {
         // Test ExecutorInfoDetailed creation
         let executor_info = ExecutorInfoDetailed {
             id: executor_id_parsed,
-            host: "from_database".to_string(),
-            port: 22,
             status: status.clone(),
             capabilities: if *gpu_count > 0 {
                 vec!["gpu".to_string()]
@@ -251,8 +249,6 @@ async fn test_executor_data_conversion_pipeline() -> Result<()> {
         assert_eq!(executor_info.status, "verified");
         assert_eq!(executor_info.capabilities, vec!["gpu"]);
         assert_eq!(executor_info.grpc_endpoint, *grpc_address);
-        assert_eq!(executor_info.host, "from_database");
-        assert_eq!(executor_info.port, 22);
 
         converted_executors.push(executor_info);
     }
@@ -275,8 +271,6 @@ fn test_executor_list_combination_deduplication() -> Result<()> {
 
     let discovered_executor = ExecutorInfoDetailed {
         id: executor_id.clone(),
-        host: "discovered_host".to_string(),
-        port: 22,
         status: "online".to_string(),
         capabilities: vec!["gpu".to_string()],
         grpc_endpoint: "192.168.1.1:50051".to_string(),
@@ -284,8 +278,6 @@ fn test_executor_list_combination_deduplication() -> Result<()> {
 
     let known_executor = ExecutorInfoDetailed {
         id: executor_id.clone(),
-        host: "from_database".to_string(),
-        port: 22,
         status: "verified".to_string(),
         capabilities: vec!["gpu".to_string()],
         grpc_endpoint: "192.168.1.2:50051".to_string(),
@@ -314,10 +306,6 @@ fn test_executor_list_combination_deduplication() -> Result<()> {
 
     // Validate deduplication worked
     assert_eq!(combined.len(), 1, "Should have deduplicated to 1 executor");
-    assert_eq!(
-        combined[0].host, "discovered_host",
-        "Should prioritize discovered executor"
-    );
     assert_eq!(
         combined[0].status, "online",
         "Should keep discovered executor status"

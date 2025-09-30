@@ -78,7 +78,7 @@ impl Default for SshSessionConfig {
     fn default() -> Self {
         Self {
             max_sessions_per_validator: 5,
-            session_rate_limit: 20,
+            session_rate_limit: 200,
             cleanup_interval: Duration::from_secs(60),
             max_session_duration: Duration::from_secs(3600),
             enable_audit_log: true,

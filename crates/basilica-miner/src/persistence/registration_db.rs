@@ -1040,15 +1040,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_or_create_executor_id_error_handling() {
-        // Test with invalid database URL (should fail gracefully)
+        // Test with invalid database URL format (should fail gracefully)
         let config = DatabaseConfig {
-            url: "sqlite:/nonexistent/path/db.sqlite".to_string(),
+            url: "invalid://database/url".to_string(),
             run_migrations: true,
             ..Default::default()
         };
 
         let result = RegistrationDb::new(&config).await;
-        assert!(result.is_err(), "Should fail with invalid database path");
+        assert!(
+            result.is_err(),
+            "Should fail with invalid database URL format"
+        );
     }
 
     #[tokio::test]

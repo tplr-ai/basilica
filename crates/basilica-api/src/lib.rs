@@ -14,6 +14,7 @@
 // Server modules (always available for backward compatibility)
 pub mod api;
 pub mod config;
+pub mod country_mapping;
 pub mod error;
 pub mod server;
 

@@ -259,6 +259,7 @@ mod tests {
                     netuid: 999,
                     chain_endpoint: Some("ws://127.0.0.1:9944".to_string()),
                     weight_interval_secs: 300,
+                    ..Default::default()
                 },
                 coldkey_name: "test_coldkey".to_string(),
                 skip_registration: true,

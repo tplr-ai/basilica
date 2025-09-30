@@ -31,6 +31,7 @@ pub async fn list_available_executors(
             query.min_gpu_memory,
             query.gpu_type.clone(),
             query.min_gpu_count,
+            query.location.clone(),
         )
         .await
     {
@@ -39,11 +40,23 @@ pub async fn list_available_executors(
 
             for executor in executor_data {
                 // Convert to API response format
+                let network_speed =
+                    if executor.download_mbps.is_some() || executor.upload_mbps.is_some() {
+                        Some(crate::api::types::NetworkSpeedInfo {
+                            download_mbps: executor.download_mbps,
+                            upload_mbps: executor.upload_mbps,
+                            test_timestamp: executor.speed_test_timestamp,
+                        })
+                    } else {
+                        None
+                    };
+
                 let executor_details = ExecutorDetails {
                     id: executor.executor_id,
                     gpu_specs: executor.gpu_specs,
                     cpu_specs: executor.cpu_specs,
                     location: executor.location,
+                    network_speed,
                 };
 
                 available_executors.push(AvailableExecutor {

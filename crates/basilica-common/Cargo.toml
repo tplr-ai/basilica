@@ -22,11 +22,10 @@ anyhow = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 tokio = { workspace = true }
 figment = { workspace = true }
-toml = "0.8"
-hex = "0.4"
-serde_json = "1.0"
-reqwest = { version = "0.11", features = ["json"] }
-libc = "0.2"
+hex = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+libc = { workspace = true }
 
 # Additional dependencies specific to common_basilca
 # SS58 format validation (adjust version as needed)
@@ -34,30 +33,29 @@ libc = "0.2"
 
 # Bittensor integration via crabtensor
 crabtensor = { workspace = true }
-sp-core = "34.0.0"
-chrono = { workspace = true, features = ["serde"] }
+sp-core = { workspace = true }
+chrono = { workspace = true }
 
 # Cryptographic dependencies
-ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
-p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
-signature = "2.2"
-pbkdf2 = { version = "0.12", features = ["hmac"] }
-argon2 = "0.5"
-ssh-key = { version = "0.6", features = ["ed25519", "rand_core", "std"] }
-zeroize = { version = "1.7", features = ["derive"] }
-base64 = "0.22"
-data-encoding = "2"
-sha2 = "0.10"
-regex = "1.10"
-once_cell = "1.19"
+ed25519-dalek = { workspace = true }
+p256 = { workspace = true }
+pbkdf2 = { workspace = true }
+argon2 = { workspace = true }
+zeroize = { workspace = true }
+base64 = { workspace = true }
+data-encoding = { workspace = true }
+sha2 = { workspace = true }
+regex = { workspace = true }
+once_cell = { workspace = true }
+oci-client = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
 serde_json = { workspace = true }
-tempfile = "3.8"
+tempfile = { workspace = true }
 
 [build-dependencies]
-dotenvy = "0.15"
+dotenvy = { workspace = true }
 
 [features]
 default = []
@@ -68,6 +66,6 @@ sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
 
 [dependencies.sqlx]
-version = "0.7"
+workspace = true
 features = ["runtime-tokio", "tls-rustls", "migrate", "uuid", "chrono"]
 optional = true

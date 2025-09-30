@@ -69,12 +69,12 @@ jobs:
           BITTENSOR_NETWORK: finney
         run: |
           ./scripts/${{ matrix.service }}/build.sh \
-            --image-name ghcr.io/tplr-ai/basilica/${{ matrix.service }} \
+            --image-name ghcr.io/one-covenant/basilica/${{ matrix.service }} \
             --image-tag ${{ github.event.inputs.tag }}
 
       - name: Push Docker image
         run: |
           ./scripts/${{ matrix.service }}/push.sh \
-            --source-image ghcr.io/tplr-ai/basilica/${{ matrix.service }} \
-            --target-image ghcr.io/tplr-ai/basilica/${{ matrix.service }} \
+            --source-image ghcr.io/one-covenant/basilica/${{ matrix.service }} \
+            --target-image ghcr.io/one-covenant/basilica/${{ matrix.service }} \
             --tag ${{ github.event.inputs.tag }}

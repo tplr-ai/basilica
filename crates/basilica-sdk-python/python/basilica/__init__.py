@@ -77,44 +77,34 @@ __all__ = [
 class BasilicaClient:
     """
     Client for interacting with the Basilica API.
-    
+
     Example:
-        >>> client = BasilicaClient("https://api.basilica.ai", token="your-token")
+        >>> # Create token: basilica tokens create
+        >>> client = BasilicaClient("https://api.basilica.ai", api_key="basilica_...")
         >>> health = client.health_check()
         >>> print(health["status"])
     """
-    
+
     def __init__(
         self,
         base_url: Optional[str] = None,
-        token: Optional[str] = None,
-        refresh_token: Optional[str] = None,
-        auto_auth: Optional[bool] = None
+        api_key: Optional[str] = None
     ):
         """
         Initialize a new Basilica client.
-        
+
         Args:
             base_url: The base URL of the Basilica API (default: from BASILICA_API_URL env or DEFAULT_API_URL)
-            token: Optional authentication token (default: from BASILICA_API_TOKEN env)
-            refresh_token: Optional refresh token for automatic token refresh (default: from BASILICA_REFRESH_TOKEN env)
-            auto_auth: Use file-based authentication from CLI (default: True if no tokens provided)
+            api_key: Optional authentication token (default: from BASILICA_API_TOKEN env)
+                Create token using: basilica tokens create
         """
         # Auto-detect base_url if not provided
         if base_url is None:
             base_url = os.environ.get("BASILICA_API_URL", DEFAULT_API_URL)
-        
-        # Auto-detect token if not provided
-        if token is None:
-            token = os.environ.get("BASILICA_API_TOKEN")
-        
-        # Auto-detect refresh token if not provided
-        if refresh_token is None:
-            refresh_token = os.environ.get("BASILICA_REFRESH_TOKEN")
-        
-        # Call the Rust binding with the correct parameters
-        # The Rust binding expects: base_url, access_token, refresh_token, auto_auth
-        self._client = _BasilicaClient(base_url, token, refresh_token, auto_auth)
+
+        # Pass api_key directly to Rust binding
+        # The Rust binding will check BASILICA_API_TOKEN env var if api_key is None
+        self._client = _BasilicaClient(base_url, api_key)
     
     def health_check(self) -> HealthCheckResponse:
         """

@@ -97,6 +97,7 @@ impl NetworkProfile {
 }
 
 /// Network profile collector
+#[derive(Clone)]
 pub struct NetworkProfileCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,
@@ -210,6 +211,7 @@ impl NetworkProfileCollector {
             Ok(profile) => {
                 if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
                     warn!(
+                        miner_uid = miner_uid,
                         executor_id = executor_id,
                         error = %e,
                         "[NETWORK_PROFILE] Failed to store network profile (non-critical)"
@@ -219,6 +221,7 @@ impl NetworkProfileCollector {
             }
             Err(e) => {
                 warn!(
+                    miner_uid = miner_uid,
                     executor_id = executor_id,
                     error = %e,
                     "[NETWORK_PROFILE] Failed to collect network profile (non-critical)"

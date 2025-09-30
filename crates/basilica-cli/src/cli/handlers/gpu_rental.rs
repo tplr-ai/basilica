@@ -12,8 +12,9 @@ use crate::ssh::{parse_ssh_credentials, SshClient};
 use crate::CliError;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_sdk::types::{
-    ExecutorSelection, GpuRequirements, ListAvailableExecutorsQuery, ListRentalsQuery, RentalState,
-    RentalStatusResponse, ResourceRequirementsRequest, SshAccess, StartRentalApiRequest,
+    ExecutorSelection, GpuRequirements, ListAvailableExecutorsQuery, ListRentalsQuery,
+    LocationProfile, RentalState, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
+    StartRentalApiRequest,
 };
 use basilica_sdk::ApiError;
 use basilica_validator::gpu::categorization::GpuCategory;
@@ -69,33 +70,40 @@ impl FromStr for TargetType {
             GpuCategory::from_str(s).expect("GpuCategory::from_str returns Infallible");
 
         match gpu_category {
-            GpuCategory::H100 | GpuCategory::H200 | GpuCategory::B200 => {
-                Ok(TargetType::GpuCategory(gpu_category))
-            }
             GpuCategory::Other(_) => {
                 // Not a valid UUID and not a known GPU type
                 Err(TargetTypeParseError {
                     value: s.to_string(),
                 })
             }
+            _ => Ok(TargetType::GpuCategory(gpu_category)),
         }
     }
 }
 
 /// Handle the `ls` command - list available executors for rental
 pub async fn handle_ls(
+    gpu_category: Option<GpuCategory>,
     filters: ListFilters,
     json: bool,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
+    // Convert GPU category to string if provided
+    let gpu_type = gpu_category.map(|gc| gc.as_str());
+
     // Build query from filters
     let query = ListAvailableExecutorsQuery {
         available: Some(true), // Filter for available executors only
         min_gpu_memory: filters.memory_min,
-        gpu_type: filters.gpu_type,
-        min_gpu_count: Some(filters.gpu_min.unwrap_or(1)),
+        gpu_type,
+        min_gpu_count: Some(filters.gpu_min.unwrap_or(0)),
+        location: filters.country.map(|country| LocationProfile {
+            city: None,
+            region: None,
+            country: Some(country),
+        }),
     };
 
     let spinner = create_spinner("Scanning global GPU availability...");
@@ -118,13 +126,17 @@ pub async fn handle_ls(
         json_output(&response)?;
     } else {
         // Use table_output module for consistent styling
-        if filters.detailed {
+        if filters.compact {
+            // Compact view: grouped by country and GPU type
+            table_output::display_available_executors_compact(&response.available_executors)?;
+        } else {
+            // Default or detailed view: show individual executors
+            // Detailed view includes executor IDs
             table_output::display_available_executors_detailed(
                 &response.available_executors,
+                true,
                 filters.detailed,
             )?;
-        } else {
-            table_output::display_available_executors_compact(&response.available_executors)?;
         }
     }
 
@@ -147,16 +159,16 @@ pub async fn handle_up(
                 ExecutorSelection::ExecutorId { executor_id }
             }
             TargetType::GpuCategory(gpu_category) => {
-                // GPU category specified - use automatic selection
+                // GPU category specified - use automatic selection with exact matching
                 let spinner =
                     create_spinner(&format!("Finding available {} executors...", gpu_category));
                 complete_spinner_and_clear(spinner);
 
-                ExecutorSelection::GpuRequirements {
+                ExecutorSelection::ExactGpuConfiguration {
                     gpu_requirements: GpuRequirements {
                         min_memory_gb: 0, // Default, no minimum memory requirement
                         gpu_type: Some(gpu_category.as_str()),
-                        gpu_count: options.gpu_min.unwrap_or(1),
+                        gpu_count: options.gpu_count.unwrap_or(0),
                     },
                 }
             }
@@ -170,7 +182,12 @@ pub async fn handle_up(
             available: Some(true),
             min_gpu_memory: None,
             gpu_type: None,
-            min_gpu_count: options.gpu_min,
+            min_gpu_count: options.gpu_count,
+            location: options.country.as_ref().map(|country| LocationProfile {
+                city: None,
+                region: None,
+                country: Some(country.clone()),
+            }),
         };
 
         let response = api_client
@@ -184,8 +201,15 @@ pub async fn handle_up(
         complete_spinner_and_clear(spinner);
 
         // Use interactive selector to choose an executor
+        // Compact mode uses grouped selector, otherwise use detailed selector
         let selector = crate::interactive::InteractiveSelector::new();
-        selector.select_executor(&response.available_executors, options.detailed)?
+        let use_detailed = !options.compact;
+        selector.select_executor(
+            &response.available_executors,
+            use_detailed,
+            options.detailed,
+            options.gpu_count,
+        )?
     };
 
     let spinner = create_spinner("Preparing rental request...");
@@ -231,10 +255,10 @@ pub async fn handle_up(
         environment: env_vars,
         ports: port_mappings,
         resources: ResourceRequirementsRequest {
-            cpu_cores: options.cpu_cores.unwrap_or(1.0),
-            memory_mb: options.memory_mb.unwrap_or(1024),
-            storage_mb: 102400,
-            gpu_count: options.gpu_min.unwrap_or(1),
+            cpu_cores: options.cpu_cores.unwrap_or(0.0),
+            memory_mb: options.memory_mb.unwrap_or(0),
+            storage_mb: options.storage_mb.unwrap_or(0),
+            gpu_count: options.gpu_count.unwrap_or(0),
             gpu_types: vec![],
         },
         command,
@@ -369,7 +393,11 @@ pub async fn handle_ps(filters: PsFilters, json: bool, config: &CliConfig) -> Re
     if json {
         json_output(&rentals_list)?;
     } else {
-        table_output::display_rental_items(&rentals_list.rentals[..], filters.detailed)?;
+        table_output::display_rental_items(
+            &rentals_list.rentals[..],
+            !filters.compact,
+            filters.detailed,
+        )?;
         println!("\nTotal: {} active rentals", rentals_list.rentals.len());
 
         display_ps_quick_start_commands();
@@ -531,31 +559,115 @@ pub async fn handle_logs(
 }
 
 /// Handle the `down` command - terminate rental
-pub async fn handle_down(target: Option<String>, config: &CliConfig) -> Result<(), CliError> {
+pub async fn handle_down(
+    target: Option<String>,
+    all: bool,
+    config: &CliConfig,
+) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
-    // Resolve target rental (fetch and prompt if not provided)
-    let rental_id = resolve_target_rental(target, &api_client, false).await?;
+    if all {
+        // Stop all active rentals
+        let spinner = create_spinner("Fetching active rentals...");
 
-    // Single rental - use spinner
-    let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
+        // Fetch all active rentals
+        let query = Some(ListRentalsQuery {
+            status: Some(RentalState::Active),
+            gpu_type: None,
+            min_gpu_count: None,
+        });
 
-    api_client
-        .stop_rental(&rental_id)
-        .await
-        .map_err(|e| -> CliError {
-            complete_spinner_error(spinner.clone(), "Failed to terminate rental");
-            let report = match e {
-                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
-                    .suggestion("Try 'basilica ps' to see your active rentals")
-                    .note("The rental may have already been terminated"),
-                _ => eyre!(e).suggestion("Check your internet connection and try again"),
-            };
-            CliError::Internal(report)
-        })?;
+        let rentals_list = api_client
+            .list_rentals(query)
+            .await
+            .map_err(|e| -> CliError {
+                complete_spinner_error(spinner.clone(), "Failed to fetch rentals");
+                CliError::Internal(eyre!(e).wrap_err("Failed to fetch active rentals"))
+            })?;
 
-    complete_spinner_and_clear(spinner);
-    print_success(&format!("Successfully stopped rental: {}", rental_id));
+        complete_spinner_and_clear(spinner);
+
+        if rentals_list.rentals.is_empty() {
+            println!("No active rentals found.");
+            return Ok(());
+        }
+
+        let total_rentals = rentals_list.rentals.len();
+        println!(
+            "Found {} active rental{} to stop.",
+            total_rentals,
+            if total_rentals == 1 { "" } else { "s" }
+        );
+
+        let mut success_count = 0;
+        let mut failed_rentals = Vec::new();
+
+        // Stop each rental one by one
+        for rental in rentals_list.rentals {
+            let rental_id = &rental.rental_id;
+            let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
+
+            match api_client.stop_rental(rental_id).await {
+                Ok(_) => {
+                    complete_spinner_and_clear(spinner);
+                    print_success(&format!("Successfully stopped rental: {}", rental_id));
+                    success_count += 1;
+                }
+                Err(e) => {
+                    complete_spinner_error(
+                        spinner,
+                        &format!("Failed to terminate rental: {}", rental_id),
+                    );
+                    failed_rentals.push((rental_id.clone(), e));
+                }
+            }
+        }
+
+        // Print summary
+        println!();
+        if failed_rentals.is_empty() {
+            print_success(&format!(
+                "Successfully stopped all {} rental{}.",
+                success_count,
+                if success_count == 1 { "" } else { "s" }
+            ));
+        } else {
+            print_success(&format!(
+                "Successfully stopped {} out of {} rental{}.",
+                success_count,
+                total_rentals,
+                if total_rentals == 1 { "" } else { "s" }
+            ));
+
+            if !failed_rentals.is_empty() {
+                println!("\nFailed to stop the following rentals:");
+                for (rental_id, error) in failed_rentals {
+                    println!("  - {}: {}", rental_id, error);
+                }
+            }
+        }
+    } else {
+        // Single rental termination (existing logic)
+        let rental_id = resolve_target_rental(target, &api_client, false).await?;
+        let spinner = create_spinner(&format!("Terminating rental: {}", rental_id));
+
+        api_client
+            .stop_rental(&rental_id)
+            .await
+            .map_err(|e| -> CliError {
+                complete_spinner_error(spinner.clone(), "Failed to terminate rental");
+                let report = match e {
+                    ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
+                        .suggestion("Try 'basilica ps' to see your active rentals")
+                        .note("The rental may have already been terminated"),
+                    _ => eyre!(e).suggestion("Check your internet connection and try again"),
+                };
+                CliError::Internal(report)
+            })?;
+
+        complete_spinner_and_clear(spinner);
+        print_success(&format!("Successfully stopped rental: {}", rental_id));
+    }
 
     Ok(())
 }

@@ -4,7 +4,7 @@
 //! Provides high-level interface for wallet management, transaction submission,
 //! and chain state queries.
 
-pub mod chain_monitor;
+pub mod connect;
 pub mod discovery;
 pub mod error;
 pub mod registration;
@@ -19,12 +19,17 @@ pub mod api;
 #[cfg(test)]
 mod error_tests;
 
+pub use connect::{
+    ConnectionManager, ConnectionMetricsSnapshot, ConnectionPool, ConnectionPoolBuilder,
+    ConnectionState, HealthCheckMetrics, HealthChecker,
+};
 pub use discovery::NeuronDiscovery;
 pub use error::{BittensorError, ErrorCategory, RetryConfig};
 pub use registration::{
     ChainRegistration, RegistrationConfig, RegistrationConfigBuilder, RegistrationStateSnapshot,
 };
 pub use retry::{retry_operation, retry_operation_with_timeout, CircuitBreaker, RetryExecutor};
+pub use service::ConnectionPoolMetrics;
 pub use service::Service;
 pub use utils::{
     account_id_to_hotkey, create_signature, hotkey_to_account_id, normalize_weights, rao_to_tao,

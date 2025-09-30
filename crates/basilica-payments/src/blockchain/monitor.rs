@@ -2,7 +2,7 @@ use crate::storage::{DepositAccountsRepo, ObservedDepositsRepo, OutboxRepo, PgRe
 use anyhow::Result;
 use async_trait::async_trait;
 use basilica_common::distributed::postgres_lock::{LeaderElection, LockKey};
-use bittensor::chain_monitor::{BlockchainEventHandler, BlockchainMonitor};
+use bittensor::connect::{BlockchainEventHandler, BlockchainMonitor};
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -81,7 +81,7 @@ impl BlockchainEventHandler for PaymentsEventHandler {
     }
 
     async fn on_block_end(&self, block_number: u32) -> Result<()> {
-        if block_number % 128 == 0 {
+        if block_number.is_multiple_of(128) {
             self.refresh_known_accounts().await?;
         }
         Ok(())
@@ -91,16 +91,13 @@ impl BlockchainEventHandler for PaymentsEventHandler {
 /// Monitors blockchain for deposits to payment accounts
 pub struct ChainMonitor {
     repos: PgRepos,
-    ws_url: String,
+    endpoints: Vec<String>,
 }
 
 impl ChainMonitor {
     /// Create a new chain monitor
-    pub async fn new(repos: PgRepos, ws: &str) -> Result<Self> {
-        Ok(Self {
-            repos,
-            ws_url: ws.to_string(),
-        })
+    pub async fn new(repos: PgRepos, endpoints: Vec<String>) -> Result<Self> {
+        Ok(Self { repos, endpoints })
     }
 
     /// Run the monitor with leader election
@@ -112,16 +109,16 @@ impl ChainMonitor {
             .with_retry_interval(3);
 
         let repos = self.repos;
-        let ws_url = self.ws_url;
+        let endpoints = self.endpoints.clone();
 
         election
             .run_as_leader(move || {
                 let repos = repos.clone();
-                let ws_url = ws_url.clone();
+                let endpoints = endpoints.clone();
 
                 async move {
                     let handler = PaymentsEventHandler::new(repos).await?;
-                    let monitor = BlockchainMonitor::new(&ws_url, handler).await?;
+                    let monitor = BlockchainMonitor::new(endpoints, handler).await?;
 
                     monitor.run().await?;
 

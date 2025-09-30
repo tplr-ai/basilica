@@ -341,6 +341,104 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
 
         println!("\nAuthentication is working correctly!");
         info!("Auth0 token validation successful");
+
+        // Test API Key authentication
+        println!("\n──────────────────────────────────");
+        println!("Testing API Key authentication...\n");
+
+        // Create authenticated client with JWT for API key management
+        let client = create_authenticated_client(config).await?;
+
+        // Check if API key exists, handle appropriately
+        let api_key_token = match client.get_api_key().await {
+            Ok(Some(existing)) => {
+                println!("Found existing API key: '{}'", existing.name);
+                println!("Deleting existing key and creating a new one for testing...");
+
+                // Delete the existing key first
+                match client.revoke_api_key(&existing.name).await {
+                    Ok(_) => println!("   ✅ Existing key deleted"),
+                    Err(e) => {
+                        println!("   ⚠️  Failed to delete existing key: {}", e);
+                        // Continue anyway, maybe it's already deleted
+                    }
+                }
+
+                // Now create a new key
+                println!("   Creating new API key...");
+                let response = client
+                    .create_api_key("cli-test-auth")
+                    .await
+                    .map_err(|e| eyre!(format!("Failed to create API key: {}", e)))?;
+                println!("   ✅ New API key created successfully");
+                response.token
+            }
+            Ok(None) => {
+                println!("No existing API key found");
+                println!("Creating new API key for testing...");
+                let response = client
+                    .create_api_key("cli-test-auth")
+                    .await
+                    .map_err(|e| eyre!(format!("Failed to create API key: {}", e)))?;
+                println!("✅ API key created successfully");
+                response.token
+            }
+            Err(e) => {
+                println!("❌ Failed to check for existing API key: {}", e);
+                return Err(eyre!(format!("API key check failed: {}", e)).into());
+            }
+        };
+
+        // Create new client with API key
+        println!("\nCreating client with API key authentication...");
+        let api_key_client = basilica_sdk::ClientBuilder::default()
+            .base_url(config.api.base_url.clone())
+            .with_api_key(&api_key_token)
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| eyre!(format!("Failed to build API key client: {}", e)))?;
+
+        // Test with list_available_executors endpoint
+        println!("Testing API key with list_available_executors endpoint...");
+        match api_key_client.list_available_executors(None).await {
+            Ok(_) => {
+                println!("✅ API key authentication successful!");
+            }
+            Err(e) => {
+                println!("❌ API key authentication test failed");
+                // Check if it's specifically an auth error
+                match &e {
+                    basilica_sdk::ApiError::MissingAuthentication { .. } => {
+                        println!("   The API key was not accepted by the server");
+                        println!("   This indicates the key format may be incorrect");
+                    }
+                    basilica_sdk::ApiError::Authentication { .. } => {
+                        println!("   The API key was rejected - it may be invalid or expired");
+                    }
+                    basilica_sdk::ApiError::Authorization { .. } => {
+                        println!("   The API key lacks required permissions");
+                    }
+                    basilica_sdk::ApiError::Internal { .. } => {
+                        println!("   Server error occurred while processing the request");
+                        println!("   This might be a temporary issue with the API");
+                        println!("   Note: The API key itself was created successfully");
+                    }
+                    _ => {
+                        println!("   Error: {}", e);
+                    }
+                }
+
+                // For internal server errors, we might want to note that auth might still be working
+                if matches!(e, basilica_sdk::ApiError::Internal { .. }) {
+                    println!("\n   ℹ️  The API key was created successfully, but the test endpoint failed.");
+                    println!("   This may not indicate an authentication problem.");
+                }
+
+                return Err(eyre!(format!("API key test failed: {}", e)).into());
+            }
+        }
+
+        println!("\n🎉 All authentication tests passed successfully!");
     } else if status.as_u16() == 401 {
         println!("Token is invalid or expired");
         println!("\nPlease run 'basilica login' to get a new token");

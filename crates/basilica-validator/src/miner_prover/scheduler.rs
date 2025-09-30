@@ -279,6 +279,11 @@ async fn spawn_validation_pipeline(
         miners.len()
     );
 
+    let concurrency = config
+        .max_concurrent_verifications
+        .max(50)
+        .min(miners.len());
+
     let results: Vec<_> = stream::iter(miners)
         .map(|miner| {
             let shared_state = shared_state.clone();
@@ -304,7 +309,7 @@ async fn spawn_validation_pipeline(
                 (miner_uid, intended_strategy, result)
             }
         })
-        .buffer_unordered(config.max_concurrent_verifications)
+        .buffer_unordered(concurrency)
         .collect()
         .await;
 
@@ -543,10 +548,12 @@ mod tests {
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: None,
             binary_validation: crate::config::BinaryValidationConfig::default(),
+            docker_validation: crate::config::DockerValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
             executor_validation_interval: Duration::from_secs(6 * 3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(120 * 60)),
             enable_worker_queue: false,
+            storage_validation: crate::config::StorageValidationConfig::default(),
         }
     }
 

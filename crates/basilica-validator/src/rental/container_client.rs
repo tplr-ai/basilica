@@ -204,12 +204,11 @@ impl ContainerClient {
             resource_strings.push("-m".to_string());
             resource_strings.push(format!("{}m", spec.resources.memory_mb));
         }
-        if spec.resources.gpu_count > 0 {
-            resource_strings.push("--gpus".to_string());
-            resource_strings.push("all".to_string());
-            resource_strings.push("--runtime".to_string());
-            resource_strings.push("nvidia".to_string());
-        }
+
+        resource_strings.push("--gpus".to_string());
+        resource_strings.push("all".to_string());
+        resource_strings.push("--runtime".to_string());
+        resource_strings.push("nvidia".to_string());
 
         // Volumes
         let volume_strings: Vec<String> = spec

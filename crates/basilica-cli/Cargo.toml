@@ -1,11 +1,11 @@
 [package]
 name = "basilica-cli"
-version = "0.2.0"
+version = "0.3.5"
 edition = "2021"
 authors = ["Basilica Team"]
 description = "Unified CLI for Basilica GPU rental and network management"
 license = "MIT"
-repository = "https://github.com/tplr-ai/basilica"
+repository = "https://github.com/one-covenant/basilica"
 
 [[bin]]
 name = "basilica"
@@ -14,67 +14,51 @@ path = "src/main.rs"
 [dependencies]
 # Workspace dependencies
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-async-trait = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
-figment = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 
 # HTTP client for API communication
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
-futures = "0.3"
-futures-util = "0.3"
-bytes = "1.5"
-eventsource-stream = "0.2"
+reqwest = { workspace = true }
+futures = { workspace = true }
+eventsource-stream = { workspace = true }
 
 # Terminal UI and interaction
-dialoguer = "0.11"
-indicatif = "0.17"
-console = "0.15"
-tabled = "0.15"
+dialoguer = { workspace = true }
+indicatif = { workspace = true }
+console = { workspace = true }
+tabled = { workspace = true }
 
 # Shell completions
-clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
-
-# SSH functionality (using external ssh command for now)
-shell-escape = "0.1"
+clap_complete = { workspace = true }
 
 # File operations
-shellexpand = "3.1"
-etcetera = "0.8"
+shellexpand = { workspace = true }
+etcetera = { workspace = true }
 
 # Error handling
-color-eyre = "0.6"
+color-eyre = { workspace = true }
 
 # OAuth dependencies
-oauth2 = "4.4"
+oauth2 = { workspace = true }
 axum = { workspace = true }
-tower = { workspace = true, features = ["util"] }
-tower-http = { workspace = true, features = ["cors"] }
 rand = { workspace = true }
-base64 = "0.21"
-sha2 = "0.10"
-webbrowser = "0.8"
-url = "2.4"
+base64 = { workspace = true }
+sha2 = { workspace = true }
+webbrowser = { workspace = true }
+url = { workspace = true }
 
 
 # Internal crate dependencies
+basilica-api = { path = "../basilica-api" }
 basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
-basilica-validator = { path = "../basilica-validator", features = [
-    "client",
-    "openapi",
-    "cli",
-] }
+basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
 
 [dev-dependencies]
-tempfile = "3.8"

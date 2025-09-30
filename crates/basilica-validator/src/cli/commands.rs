@@ -223,7 +223,7 @@ pub enum RentalAction {
         #[arg(long)]
         memory_min: Option<u32>,
 
-        /// Filter by GPU type (e.g., A100, H100, RTX4090)
+        /// Filter by GPU type (e.g., A100, RTX4090)
         #[arg(long)]
         gpu_type: Option<String>,
 

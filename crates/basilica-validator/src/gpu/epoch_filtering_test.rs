@@ -46,16 +46,14 @@ mod tests {
             // Seed miner_executors table with online status
             let executor_key = format!("{}:{}", &miner_id, &executor_id);
             sqlx::query(
-                "INSERT OR REPLACE INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, status, gpu_uuids, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, gpu_uuids, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&executor_key)
             .bind(&miner_id)
             .bind(&executor_id)
             .bind("http://127.0.0.1:50051")
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
-            .bind("[]") // Empty gpu_specs JSON array
-            .bind("{}") // Empty cpu_specs JSON object
             .bind("online")
             .bind("") // Empty gpu_uuids, we'll use gpu_uuid_assignments instead
             .bind(now.to_rfc3339())
@@ -128,7 +126,7 @@ mod tests {
             // Miner 1: Recent validation (should always be included)
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                gpu_counts: HashMap::from([("H100".to_string(), 2)]),
+                gpu_counts: HashMap::from([("A100".to_string(), 2)]),
                 total_score: 0.9,
                 verification_count: 10,
                 last_updated: now,
@@ -137,7 +135,7 @@ mod tests {
             // Miner 2: Older validation (included only without epoch filtering)
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                gpu_counts: HashMap::from([("H100".to_string(), 1)]),
+                gpu_counts: HashMap::from([("A100".to_string(), 1)]),
                 total_score: 0.8,
                 verification_count: 8,
                 last_updated: now,
@@ -146,7 +144,7 @@ mod tests {
             // Miner 3: Very old validation
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
-                gpu_counts: HashMap::from([("H100".to_string(), 3)]),
+                gpu_counts: HashMap::from([("A100".to_string(), 3)]),
                 total_score: 0.7,
                 verification_count: 5,
                 last_updated: now,
@@ -155,7 +153,7 @@ mod tests {
             // Miner 4: No successful validation ever
             MinerGpuProfile {
                 miner_uid: MinerUid::new(4),
-                gpu_counts: HashMap::from([("H100".to_string(), 1)]),
+                gpu_counts: HashMap::from([("A100".to_string(), 1)]),
                 total_score: 0.5,
                 verification_count: 2,
                 last_updated: now,
@@ -164,7 +162,7 @@ mod tests {
             // Miner 5: Different GPU type with recent validation
             MinerGpuProfile {
                 miner_uid: MinerUid::new(5),
-                gpu_counts: HashMap::from([("H200".to_string(), 2)]),
+                gpu_counts: HashMap::from([("H100".to_string(), 2)]),
                 total_score: 0.95,
                 verification_count: 12,
                 last_updated: now,
@@ -245,17 +243,17 @@ mod tests {
         );
 
         // Test 6: Verify GPU category distribution
+        let a100_count = all_profiles
+            .iter()
+            .filter(|p| p.has_gpu_model("A100"))
+            .count();
         let h100_count = all_profiles
             .iter()
             .filter(|p| p.has_gpu_model("H100"))
             .count();
-        let h200_count = all_profiles
-            .iter()
-            .filter(|p| p.has_gpu_model("H200"))
-            .count();
 
-        assert_eq!(h100_count, 4, "Should have 4 H100 miners");
-        assert_eq!(h200_count, 1, "Should have 1 H200 miner");
+        assert_eq!(a100_count, 4, "Should have 4 A100 miners");
+        assert_eq!(h100_count, 1, "Should have 1 H100 miner");
 
         // Clean up
         std::fs::remove_file(&db_path).ok();
@@ -280,7 +278,7 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(10),
-                gpu_counts: HashMap::from([("H100".to_string(), 4)]),
+                gpu_counts: HashMap::from([("A100".to_string(), 4)]),
                 total_score: 0.9,
                 verification_count: 20,
                 last_updated: now,
@@ -288,7 +286,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(11),
-                gpu_counts: HashMap::from([("H100".to_string(), 2)]),
+                gpu_counts: HashMap::from([("A100".to_string(), 2)]),
                 total_score: 0.8,
                 verification_count: 15,
                 last_updated: now,
@@ -296,7 +294,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(12),
-                gpu_counts: HashMap::from([("H200".to_string(), 1)]),
+                gpu_counts: HashMap::from([("H100".to_string(), 1)]),
                 total_score: 0.85,
                 verification_count: 18,
                 last_updated: now,
@@ -310,16 +308,16 @@ mod tests {
         // Test category statistics
         let stats = scoring_engine.get_category_statistics().await?;
 
-        assert_eq!(stats.len(), 2, "Should have H100 and H200 categories");
+        assert_eq!(stats.len(), 2, "Should have A100 and H100 categories");
+        assert!(stats.contains_key("A100"));
         assert!(stats.contains_key("H100"));
-        assert!(stats.contains_key("H200"));
+
+        let a100_stats = stats.get("A100").unwrap();
+        assert_eq!(a100_stats.miner_count, 2);
+        assert!(a100_stats.average_score > 0.0);
 
         let h100_stats = stats.get("H100").unwrap();
-        assert_eq!(h100_stats.miner_count, 2);
-        assert!(h100_stats.average_score > 0.0);
-
-        let h200_stats = stats.get("H200").unwrap();
-        assert_eq!(h200_stats.miner_count, 1);
+        assert_eq!(h100_stats.miner_count, 1);
 
         // Clean up
         std::fs::remove_file(&db_path).ok();
@@ -341,7 +339,7 @@ mod tests {
         // Create a miner with multiple GPU types
         let multi_gpu_profile = MinerGpuProfile {
             miner_uid: MinerUid::new(100),
-            gpu_counts: HashMap::from([("H100".to_string(), 4), ("H200".to_string(), 2)]),
+            gpu_counts: HashMap::from([("A100".to_string(), 4), ("H100".to_string(), 2)]),
             total_score: 0.92,
             verification_count: 50,
             last_updated: now,
@@ -360,8 +358,8 @@ mod tests {
         let retrieved = gpu_repo.get_gpu_profile(MinerUid::new(100)).await?.unwrap();
 
         assert_eq!(retrieved.gpu_counts.len(), 2, "Should have 2 GPU types");
-        assert_eq!(retrieved.gpu_counts.get("H100"), Some(&4));
-        assert_eq!(retrieved.gpu_counts.get("H200"), Some(&2));
+        assert_eq!(retrieved.gpu_counts.get("A100"), Some(&4));
+        assert_eq!(retrieved.gpu_counts.get("H100"), Some(&2));
         assert_eq!(retrieved.last_successful_validation, Some(recent));
 
         // Clean up

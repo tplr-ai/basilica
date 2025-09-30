@@ -27,8 +27,28 @@ pub struct BittensorConfig {
     /// Optional chain endpoint override
     pub chain_endpoint: Option<String>,
 
+    /// Optional fallback chain endpoints for failover
+    #[serde(default)]
+    pub fallback_endpoints: Vec<String>,
+
     /// Weight setting interval in seconds
     pub weight_interval_secs: u64,
+
+    /// Connection pool size (default: 3)
+    #[serde(default)]
+    pub connection_pool_size: Option<usize>,
+
+    /// Health check interval (default: 60 seconds)
+    #[serde(default)]
+    pub health_check_interval: Option<Duration>,
+
+    /// Circuit breaker failure threshold (default: 5)
+    #[serde(default)]
+    pub circuit_breaker_threshold: Option<u32>,
+
+    /// Circuit breaker recovery timeout (default: 60 seconds)
+    #[serde(default)]
+    pub circuit_breaker_recovery: Option<Duration>,
 }
 
 impl Default for BittensorConfig {
@@ -39,7 +59,12 @@ impl Default for BittensorConfig {
             network: "finney".to_string(),
             netuid: 1,
             chain_endpoint: None,
+            fallback_endpoints: Vec::new(),
             weight_interval_secs: 300, // 5 minutes
+            connection_pool_size: Some(3),
+            health_check_interval: Some(Duration::from_secs(60)),
+            circuit_breaker_threshold: Some(5),
+            circuit_breaker_recovery: Some(Duration::from_secs(60)),
         }
     }
 }
@@ -416,6 +441,35 @@ impl BittensorConfig {
                     self.network
                 ),
             })
+    }
+
+    /// Get all chain endpoints including fallbacks
+    pub fn get_chain_endpoints(&self) -> Vec<String> {
+        let mut endpoints = vec![self.get_chain_endpoint()];
+
+        // Add configured fallback endpoints
+        endpoints.extend(self.fallback_endpoints.clone());
+
+        // Add network-specific default fallbacks if not already configured
+        if self.fallback_endpoints.is_empty() {
+            match self.network.as_str() {
+                "finney" => {
+                    // Add known Finney backup endpoints
+                    endpoints.push("wss://entrypoint-finney.opentensor.ai:443".to_string());
+                }
+                "test" => {
+                    // Add known test network backup endpoints
+                    endpoints.push("wss://test.finney.opentensor.ai:443".to_string());
+                }
+                _ => {}
+            }
+        }
+
+        // Deduplicate endpoints while preserving order
+        let mut seen = std::collections::HashSet::new();
+        endpoints.retain(|endpoint| seen.insert(endpoint.clone()));
+
+        endpoints
     }
 }
 

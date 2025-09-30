@@ -2,16 +2,16 @@
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "openapi")]
-use utoipa::ToSchema;
-
 // Re-export types from basilica-validator that are used by the client
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableExecutor, CpuSpec, ExecutorDetails, GpuRequirements, GpuSpec,
-    ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, RentCapacityRequest,
-    RentCapacityResponse, RentalListItem, RentalStatus,
+    ListAvailableExecutorsQuery, ListAvailableExecutorsResponse, LogQuery, NetworkSpeedInfo,
+    RentCapacityRequest, RentCapacityResponse, RentalListItem, RentalStatus,
     RentalStatusResponse as ValidatorRentalStatusResponse, SshAccess, TerminateRentalRequest,
 };
+
+// Re-export LocationProfile for SDK consumers
+pub use basilica_common::LocationProfile;
 
 // Re-export rental-specific types from validator
 pub use basilica_validator::api::rental_routes::{
@@ -25,7 +25,6 @@ pub use basilica_validator::rental::types::RentalState;
 
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct HealthCheckResponse {
     /// Service status
     pub status: String,
@@ -45,7 +44,6 @@ pub struct HealthCheckResponse {
 
 /// List rentals query
 #[derive(Debug, Deserialize, Serialize, Default)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ListRentalsQuery {
     /// Status filter
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -65,7 +63,6 @@ pub type RentalStatusResponse = ValidatorRentalStatusResponse;
 
 /// API rental list item with GPU information
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ApiRentalListItem {
     pub rental_id: String,
     pub executor_id: String,
@@ -78,11 +75,19 @@ pub struct ApiRentalListItem {
     pub gpu_specs: Vec<GpuSpec>,
     /// Whether SSH credentials are available for this rental
     pub has_ssh: bool,
+    /// Optional CPU specifications for detailed view
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_specs: Option<CpuSpec>,
+    /// Optional location for detailed view
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// Optional network speed information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_speed: Option<NetworkSpeedInfo>,
 }
 
 /// API list rentals response with GPU information
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct ApiListRentalsResponse {
     pub rentals: Vec<ApiRentalListItem>,
     pub total_count: usize,
@@ -90,7 +95,6 @@ pub struct ApiListRentalsResponse {
 
 /// Rental status query parameters
 #[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentalStatusQuery {
     #[allow(dead_code)]
     pub include_resource_usage: Option<bool>,
@@ -98,7 +102,6 @@ pub struct RentalStatusQuery {
 
 /// Log streaming query parameters
 #[derive(Debug, Deserialize, Serialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct LogStreamQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,
@@ -106,18 +109,16 @@ pub struct LogStreamQuery {
 
 /// Executor selection strategy for rental requests
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ExecutorSelection {
     /// Select a specific executor by ID
     ExecutorId { executor_id: String },
-    /// Select best available executor based on GPU requirements
-    GpuRequirements { gpu_requirements: GpuRequirements },
+    /// Select executor with exact GPU configuration (exact count match)
+    ExactGpuConfiguration { gpu_requirements: GpuRequirements },
 }
 
 /// Start rental request with flexible executor selection
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct StartRentalApiRequest {
     /// How to select the executor for this rental
     pub executor_selection: ExecutorSelection,
@@ -155,7 +156,6 @@ pub struct StartRentalApiRequest {
 
 /// Extended rental status response that includes SSH credentials from the database
 #[derive(Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "openapi", derive(ToSchema))]
 pub struct RentalStatusWithSshResponse {
     /// Rental ID
     pub rental_id: String,
@@ -192,4 +192,46 @@ impl RentalStatusWithSshResponse {
             updated_at: response.updated_at,
         }
     }
+}
+
+// API Key Management Types
+
+/// Request to create a new API key
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateApiKeyRequest {
+    /// Name for the API key
+    pub name: String,
+
+    /// Optional scopes for the API key
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scopes: Option<Vec<String>>,
+}
+
+/// Response after creating a new API key
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiKeyResponse {
+    /// Name of the key
+    pub name: String,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// The full API key token (only returned once at creation)
+    pub token: String,
+}
+
+/// API key information (without the secret)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiKeyInfo {
+    /// Key identifier (kid)
+    pub kid: String,
+
+    /// Name of the key
+    pub name: String,
+
+    /// Creation timestamp
+    pub created_at: chrono::DateTime<chrono::Utc>,
+
+    /// Last usage timestamp
+    pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
 }

@@ -73,12 +73,16 @@ pub enum ApiError {
     ServiceUnavailable,
 
     /// Not found
-    #[error("{resource}")]
-    NotFound { resource: String },
+    #[error("{message}")]
+    NotFound { message: String },
 
     /// Bad request with message
     #[error("Bad request: {message}")]
     BadRequest { message: String },
+
+    /// Conflict error
+    #[error("Conflict: {message}")]
+    Conflict { message: String },
 
     /// Serialization error
     #[error("Serialization error: {0}")]
@@ -115,6 +119,7 @@ impl ApiError {
             ApiError::ServiceUnavailable => "BASILICA_API_SERVICE_UNAVAILABLE",
             ApiError::NotFound { .. } => "BASILICA_API_NOT_FOUND",
             ApiError::BadRequest { .. } => "BASILICA_API_BAD_REQUEST",
+            ApiError::Conflict { .. } => "BASILICA_API_CONFLICT",
             ApiError::Serialization(_) => "BASILICA_API_SERIALIZATION_ERROR",
             ApiError::Other(_) => "BASILICA_API_OTHER_ERROR",
         }
@@ -142,6 +147,7 @@ impl ApiError {
                 | ApiError::InvalidRequest { .. }
                 | ApiError::NotFound { .. }
                 | ApiError::BadRequest { .. }
+                | ApiError::Conflict { .. }
         )
     }
 }
@@ -169,6 +175,7 @@ impl IntoResponse for ApiError {
             ApiError::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             ApiError::NotFound { .. } => (StatusCode::NOT_FOUND, self.to_string()),
             ApiError::BadRequest { .. } => (StatusCode::BAD_REQUEST, self.to_string()),
+            ApiError::Conflict { .. } => (StatusCode::CONFLICT, self.to_string()),
             ApiError::Serialization(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
             ApiError::Other(_) => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
@@ -187,14 +194,14 @@ impl IntoResponse for ApiError {
 }
 
 /// Error response structure for API documentation
-#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ErrorResponse {
     /// Error details
     pub error: ErrorDetails,
 }
 
 /// Error details structure
-#[derive(Debug, serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ErrorDetails {
     /// Error code
     pub code: String,

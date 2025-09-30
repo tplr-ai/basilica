@@ -12,5 +12,3 @@ mod epoch_filtering_test;
 
 pub use categorization::*;
 pub use gpu_scoring::*;
-
-// Tests temporarily disabled due to metagraph structure changes

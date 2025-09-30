@@ -1,6 +1,6 @@
 services:
   validator:
-    image: ghcr.io/tplr-ai/basilica/validator:latest
+    image: ghcr.io/one-covenant/basilica/validator:latest
     container_name: basilica-validator
     restart: unless-stopped
     labels:

@@ -4978,7 +4978,7 @@
                   "claimed" : true,
                   "handle" : "PCI:0000:03:00.0",
                   "description" : "3D controller",
-                  "product" : "GH100 [H100 SXM5 80GB]",
+                  "product" : "GA100 [A100 SXM5 80GB]",
                   "vendor" : "NVIDIA Corporation",
                   "physid" : "0",
                   "businfo" : "pci@0000:03:00.0",

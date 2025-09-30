@@ -69,6 +69,9 @@ pub struct HttpConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockchainConfig {
     pub websocket_url: String,
+    /// Optional fallback websocket endpoints for failover
+    #[serde(default)]
+    pub fallback_websocket_urls: Vec<String>,
     pub ss58_prefix: u16,
     pub connection_timeout_seconds: u64,
     pub retry_interval_seconds: u64,
@@ -136,6 +139,7 @@ impl Default for PaymentsConfig {
             },
             blockchain: BlockchainConfig {
                 websocket_url: "ws://localhost:9944".to_string(),
+                fallback_websocket_urls: Vec::new(),
                 ss58_prefix: 42,
                 connection_timeout_seconds: 30,
                 retry_interval_seconds: 5,

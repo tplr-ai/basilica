@@ -1,6 +1,6 @@
 [Unit]
 Description=Basilica Executor Service
-Documentation=https://github.com/tplr-ai/basilica
+Documentation=https://github.com/one-covenant/basilica
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service

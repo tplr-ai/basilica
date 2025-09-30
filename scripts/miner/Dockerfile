@@ -23,7 +23,7 @@ RUN cargo fetch
 # Build arguments
 ARG BUILD_MODE=release
 ARG FEATURES=""
-ARG BITTENSOR_NETWORK="test"
+ARG BITTENSOR_NETWORK="finney"
 ARG METADATA_CHAIN_ENDPOINT=""
 
 # Set environment variables for the build - default to test network if not specified

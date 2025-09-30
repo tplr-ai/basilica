@@ -66,6 +66,12 @@ pub async fn create_rental_manager(
         .await
         .context("Failed to initialize rental metrics")?;
 
+    // Initialize metrics for all executors
+    rental_manager
+        .initialize_executor_metrics()
+        .await
+        .context("Failed to initialize executor metrics")?;
+
     Ok(rental_manager)
 }
 
@@ -181,10 +187,10 @@ async fn handle_start_rental(
         environment,
         ports: port_mappings,
         resources: ResourceRequirementsRequest {
-            cpu_cores: cpu_cores.unwrap_or(1.0),
-            memory_mb: memory_mb.unwrap_or(1024),
-            storage_mb: storage_mb.unwrap_or(102400), // Default to 100GB
-            gpu_count: gpu_count.unwrap_or(1),
+            cpu_cores: cpu_cores.unwrap_or(0.0),
+            memory_mb: memory_mb.unwrap_or(0),
+            storage_mb: storage_mb.unwrap_or(0),
+            gpu_count: gpu_count.unwrap_or(0),
             gpu_types: Vec::new(),
         },
         command,
@@ -325,6 +331,7 @@ async fn handle_ls_executors(
         min_gpu_memory: memory_min,
         gpu_type,
         min_gpu_count: gpu_min,
+        location: None,
     };
 
     // List available executors via API
@@ -352,7 +359,7 @@ async fn handle_ls_executors(
         } else if executor.executor.gpu_specs.len() == 1 {
             // Single GPU
             let gpu = &executor.executor.gpu_specs[0];
-            format!("{} ({}GB)", gpu.name, gpu.memory_gb)
+            gpu.name.clone()
         } else {
             // Multiple GPUs - check if they're all the same model
             let first_gpu = &executor.executor.gpu_specs[0];
@@ -364,19 +371,14 @@ async fn handle_ls_executors(
 
             if all_same {
                 // All GPUs are identical - use count prefix format
-                format!(
-                    "{}x {} ({}GB)",
-                    executor.executor.gpu_specs.len(),
-                    first_gpu.name,
-                    first_gpu.memory_gb
-                )
+                format!("{}x {}", executor.executor.gpu_specs.len(), first_gpu.name)
             } else {
                 // Different GPU models - list them individually
                 let gpu_names: Vec<String> = executor
                     .executor
                     .gpu_specs
                     .iter()
-                    .map(|g| format!("{} ({}GB)", g.name, g.memory_gb))
+                    .map(|g| g.name.clone())
                     .collect();
                 gpu_names.join(", ")
             }

@@ -8,9 +8,13 @@ pub mod miner_client;
 pub mod scheduler;
 pub mod types;
 pub mod validation_binary;
+pub mod validation_docker;
 pub mod validation_hardware;
+pub mod validation_nat;
 pub mod validation_network;
 pub mod validation_speedtest;
+pub mod validation_states;
+pub mod validation_storage;
 pub mod validation_strategy;
 pub mod validation_worker;
 pub mod verification;
@@ -23,7 +27,6 @@ mod tests;
 mod test_discovery;
 
 pub use discovery::MinerDiscovery;
-// pub use crate::gpu::{GpuScoringEngine, CategoryStats};
 pub use scheduler::VerificationScheduler;
 pub use verification::VerificationEngine;
 
@@ -53,7 +56,12 @@ impl MinerProver {
         persistence: Arc<SimplePersistence>,
         metrics: Option<Arc<ValidatorMetrics>>,
     ) -> Result<Self> {
-        let discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
+        let mut discovery = MinerDiscovery::new(bittensor_service.clone(), config.clone());
+
+        // Add metrics if available
+        if let Some(metrics_ref) = &metrics {
+            discovery = discovery.with_metrics(metrics_ref.clone());
+        }
 
         // Get validator hotkey from bittensor service
         let validator_hotkey = bittensor::account_id_to_hotkey(bittensor_service.get_account_id())

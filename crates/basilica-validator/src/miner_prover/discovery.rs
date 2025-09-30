@@ -5,6 +5,7 @@
 
 use super::types::MinerInfo;
 use crate::config::VerificationConfig;
+use crate::metrics::ValidatorMetrics;
 use anyhow::Result;
 use basilica_common::identity::{Hotkey, MinerUid};
 use bittensor::{AccountId, AxonInfo, Service as BittensorService};
@@ -15,6 +16,7 @@ use tracing::{debug, info, warn};
 pub struct MinerDiscovery {
     bittensor_service: Arc<BittensorService>,
     config: VerificationConfig,
+    metrics: Option<Arc<ValidatorMetrics>>,
 }
 
 impl MinerDiscovery {
@@ -22,7 +24,13 @@ impl MinerDiscovery {
         Self {
             bittensor_service,
             config,
+            metrics: None,
         }
+    }
+
+    pub fn with_metrics(mut self, metrics: Arc<ValidatorMetrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Get list of miners that need verification using metagraph
@@ -35,6 +43,11 @@ impl MinerDiscovery {
             .await?;
 
         if metagraph.hotkeys.is_empty() {
+            // Update metrics for zero discovered miners
+            if let Some(metrics) = &self.metrics {
+                metrics.prometheus().set_discovered_miners_total(0);
+            }
+
             info!(
                 "No miners found in metagraph for netuid {}",
                 self.config.netuid
@@ -43,6 +56,13 @@ impl MinerDiscovery {
         }
 
         let miners = self.extract_miners_from_metagraph(&metagraph)?;
+
+        // Update discovered miners metrics
+        if let Some(metrics) = &self.metrics {
+            metrics
+                .prometheus()
+                .set_discovered_miners_total(miners.len() as u64);
+        }
 
         info!(
             "Selected ALL {} miners for verification from {} total neurons",

@@ -15,10 +15,13 @@ The miner component manages a fleet of GPU executor machines, handling:
 
 ## Prerequisites
 
-- Bittensor wallet with TAO tokens
-- Linux system with Docker support
-- One or more GPU machines for executors
-- Network connectivity between miner and executors
+- **Bittensor wallet** with TAO tokens registered on the subnet
+- **Miner server**: Linux system with healthy network (32+ CPU cores, 64GB+ RAM recommended, no GPU required)
+- **Executor machines**: One or more servers with:
+  - NVIDIA GPU: H100, H200, or B200
+  - NVIDIA CUDA drivers version >12.8
+  - Docker support
+- **Network connectivity** between miner and executors
 
 ## Quick Start
 
@@ -32,109 +35,41 @@ btcli wallet new_coldkey --wallet.name miner
 btcli wallet new_hotkey --wallet.name miner --wallet.hotkey default
 ```
 
-**Note**: The wallet file format has changed. The miner now supports both JSON wallet files (new format) and raw seed phrases (old format). The JSON format includes fields like `secretPhrase`, `publicKey`, `accountId`, etc.
-
 ### 2. Configure the Miner
 
-Create a `miner.toml` configuration file:
+Copy and customize the miner configuration:
 
-```toml
-[server]
-host = "0.0.0.0"
-port = 8092
-# connection limits
-max_connections = 100
+```bash
+# Copy the example configuration
+cp config/miner.correct.toml miner.toml
+# For production deployment, you can also use:
+# cp config/miner.prod.toml miner.toml
 
-[ssh_session]
-# Maximum concurrent SSH sessions allowed per validator
-max_sessions_per_validator = 100
-# Allowed SSH session **creations per second** (rate-limit burst handled by validator)
-session_rate_limit = 200   # sessions / second
-
-[database]
-url = "sqlite:./data/miner.db"
-max_connections = 5
-min_connections = 1
-run_migrations = true
-
-[bittensor]
-wallet_name = "miner"
-hotkey_name = "default"
-network = "finney"  # Options: "finney", "test", or "local"
-netuid = 39  # Basilica subnet (use 387 for test network)
-chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"  # Critical for metadata compatibility
-# Network endpoints:
-# own your subtensor node: ws://x.x.x.x:9944
-# finney: wss://entrypoint-finney.opentensor.ai:443
-# test: wss://test.finney.opentensor.ai:443
-# local: ws://127.0.0.1:9944
-coldkey_name = "default"
-axon_port = 8091
-# external_ip = "your.external.ip.here"  # Optional, get your IP via curl ifconfig.me && echo
-
-[executor_management]
-health_check_interval = { secs = 30, nanos = 0 }
-health_check_timeout = { secs = 10, nanos = 0 }
-max_retry_attempts = 3
-auto_recovery = true
-
-# Define your executor machines
-[[executor_management.executors]]
-grpc_address = "x.x.x.x:50051"
-host = "x.x.x.x"
-port = 50051
-ssh_username = "root"
-ssh_port = 22
-enabled = true
-
-[[executor_management.executors]]
-grpc_address = "y.y.y.y:50051"
-host = "y.y.y.y"
-port = 50051
-ssh_username = "root"
-ssh_port = 22
-enabled = true
-
-[validator_comms]
-request_timeout = { secs = 30, nanos = 0 }
-max_concurrent_sessions = 100
-
-[validator_comms.auth]
-enabled = true
-method = "bittensor_signature"
-
-[validator_comms.rate_limit]
-enabled = true
-requests_per_second = 10
-burst_capacity = 20
-window_duration = { secs = 60, nanos = 0 }
-
-[security]
-enable_mtls = false
-jwt_secret = "your-secure-secret-key"
-token_expiration = { secs = 3600, nanos = 0 }
-allowed_validators = []
-verify_signatures = true
-
-[logging]
-level = "info"
-format = "pretty"
-
-[metrics]
-enabled = true
-[metrics.prometheus]
-enabled = true
-port = 9091
-
-[validator_assignment]
-# choose proper strategy for validator assignment
-# strategy = "round_robin" # round-robin between executors
-# strategy = "highest_stake" # highest stake and hardcode hotkey
-enabled = true
-strategy = "highest_stake"  # Options: "highest_stake", "round_robin"
-min_stake_threshold = 6000.0  # Minimum stake in TAO for validator eligibility
-validator_hotkey = "5G3qVaXzKMPDm5AJ3dpzbpUC27kpccBvDwzSWXrq8M6qMmbC" # Optional
+# Edit the configuration with your settings
+vim miner.toml
 ```
+
+Key parameters to customize in your `miner.toml`:
+
+- **[bittensor]**:
+  - `wallet_name` and `hotkey_name`: Your Bittensor wallet credentials
+  - `network`: Choose "finney" for mainnet or "test" for testnet
+  - `netuid`: Use 39 for mainnet, 387 for testnet
+  - `external_ip`: Your public IP address
+
+- **[[executor_management.executors]]**: Configure your executor machines
+  - `grpc_address`: IP and port of each executor (e.g., "192.168.1.10:50051")
+  - `host`, `port`: Individual settings for the executor
+  - `ssh_username`, `ssh_port`: SSH access credentials
+
+- **[validator_assignment]**: Choose your validator assignment strategy
+  - `strategy`: "highest_stake" (recommended) or "round_robin"
+  - `min_stake_threshold`: Minimum stake in TAO (default: 6000)
+  - `validator_hotkey`: Optional - specify a preferred validator
+
+For complete configuration options and documentation, see the example files:
+- `config/miner.correct.toml` - Standard configuration template
+- `config/miner.prod.toml` - Production-ready configuration
 
 ### Validator Assignment Strategy
 
@@ -164,37 +99,46 @@ When validator assignment is disabled (`enabled = false`), all executors are mad
 
 ### 3. Set Up Executors
 
-On each GPU machine, run the executor:
+**IMPORTANT**: Executors must be started BEFORE the miner.
+
+On each GPU machine, run the executor with sudo:
 
 ```bash
-# Download and run executor
-./executor --server --config executor.toml
+# Run executor (requires sudo)
+sudo ./basilica-executor --server --config executor.toml
 ```
 
-Executor configuration (`executor.toml`):
+Copy and customize the executor configuration:
 
-```toml
-[server]
-grpc_port = 50051
-health_port = 8082
+```bash
+# Copy the executor configuration template
+cp config/executor.correct.toml executor.toml
 
-[bittensor]
-enable_auth = true
-jwt_secret = "your-secure-secret-key"
-
-[system]
-container_runtime = "docker"
-gpu_enabled = true
-
-[storage]
-data_dir = "/opt/basilica/data"
-attestation_dir = "/opt/basilica/attestations"
-
-[logging]
-level = "info"
+# Edit with your settings
+vim executor.toml
 ```
 
-### 4. Production Deployment (Recommended)
+Key parameters to customize in `executor.toml`:
+- `jwt_secret`: Must match the miner's JWT secret for authentication
+- `grpc_port`: Port for gRPC communication (default: 50051)
+- Ensure Docker and GPU settings match your hardware setup
+
+See `config/executor.correct.toml` for all configuration options.
+
+### 4. Start the Miner
+
+After executors are running, start the miner with sudo:
+
+```bash
+# Run miner (requires sudo, run AFTER executors are started)
+sudo ./basilica-miner --config miner.toml
+```
+
+You should see the miner sending health heartbeats to your executors. Wait approximately 2 hours for discovery on the network.
+
+Monitor your deployment at: https://basilica-grafana.tplr.ai/
+
+### 5. Production Deployment (Recommended)
 
 The easiest way to run a miner in production is using Docker Compose:
 
@@ -234,30 +178,30 @@ This production setup includes:
 - **Proper logging** to `/var/log/basilica`
 - **Network isolation** with dedicated Docker network
 
-### 5. Alternative Deployment Methods
+### 6. Alternative Deployment Methods
 
-#### Using Build Script and Remote Deployment
+#### Using Deploy Script
+
+The deploy.sh script simplifies deployment to remote servers:
 
 ```bash
-# Build and deploy to remote server
-./scripts/miner/build.sh
-./scripts/miner/deploy.sh -s user@your-server:port
+# Deploy miner with wallet sync
+./scripts/deploy.sh -s miner -m user@host -w
 
-# Deploy with wallet sync and health checks
-./scripts/miner/deploy.sh -s user@your-server:port -w --health-check
+# Deploy executor
+./scripts/deploy.sh -s executor -e user@host
 ```
 
-#### Building from Source
+#### Building from Source (Recommended)
 
 ```bash
-# First, ensure metadata is up to date (recommended for production)
-./scripts/generate-metadata.sh --network finney
-
-# Build the miner using the build script
+# Build miner binary
 ./scripts/miner/build.sh
 
-# Or build manually
-cargo build --release -p miner
+# Build executor binary
+./scripts/executor/build.sh
+
+# Note: The build scripts handle all necessary steps including metadata generation
 ```
 
 #### Running with Docker Directly
@@ -282,9 +226,6 @@ docker run -d \
 
 **Important Notes**:
 
-- The miner automatically discovers its UID from the Bittensor metagraph based on its hotkey
-- UIDs are no longer hardcoded in configuration files
-- Chain endpoint is auto-detected based on network type if not explicitly specified
 - Ensure proper firewall configuration for ports 8080 (server/API) and 9090 (metrics)
 - For production, use the compose.prod.yml for automatic updates and monitoring
 - You must have at least one executor configured and accessible
@@ -297,7 +238,6 @@ The miner supports multiple deployment modes:
 
 - **SSH Mode**: Direct SSH deployment to executor machines
 - **Manual Mode**: Pre-deployed executors managed externally
-- **Kubernetes Mode**: Kubernetes-based executor orchestration
 
 ### Monitoring
 

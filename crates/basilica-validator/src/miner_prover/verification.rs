@@ -6,12 +6,13 @@
 use super::miner_client::{MinerClient, MinerClientConfig};
 use super::types::MinerInfo;
 use super::types::{ExecutorInfoDetailed, ExecutorVerificationResult, GpuInfo, ValidationType};
+use super::validation_states::{StateResult, ValidationState};
 use super::validation_strategy::{
     ValidationExecutor, ValidationStrategy, ValidationStrategySelector,
 };
 use super::validation_worker::{ValidationWorkerQueue, WorkerQueueConfig};
 use crate::config::VerificationConfig;
-use crate::gpu::{categorization::GpuCategorizer, MinerGpuProfile};
+use crate::gpu::{categorization::GpuCategory, MinerGpuProfile};
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::{
     entities::VerificationLog, gpu_profile_repository::GpuProfileRepository, SimplePersistence,
@@ -46,6 +47,8 @@ pub struct VerificationEngine {
     ssh_key_manager: Option<Arc<ValidatorSshKeyManager>>,
     /// SSH session manager for preventing concurrent sessions
     ssh_session_manager: Arc<SshSessionManager>,
+    /// Metrics for tracking rental status and other validator metrics
+    metrics: Option<Arc<ValidatorMetrics>>,
     /// Validation strategy selector for determining validation approach
     validation_strategy_selector: Arc<ValidationStrategySelector>,
     /// Validation executor for running validation strategies
@@ -190,6 +193,18 @@ impl VerificationEngine {
                         intended_strategy = ?intended_strategy,
                         "[EVAL_FLOW] Starting verification for executor"
                     );
+
+                    // Set in-queue state for this specific executor being validated
+                    if let Some(ref metrics) = self_clone.validation_executor.read().await.metrics()
+                    {
+                        metrics.prometheus().set_executor_validation_state(
+                            &executor_info.id.to_string(),
+                            miner_uid,
+                            intended_strategy,
+                            ValidationState::InQueue,
+                            StateResult::Current,
+                        );
+                    }
 
                     let result = self_clone
                         .verify_executor(
@@ -372,8 +387,20 @@ impl VerificationEngine {
         let mut failed_count = 0;
 
         for executor in executors {
-            match worker_queue.publish(executor, task.clone()).await {
-                Ok(_) => published_count += 1,
+            match worker_queue.publish(executor.clone(), task.clone()).await {
+                Ok(_) => {
+                    // Set in-queue state only for executors successfully published to queue
+                    if let Some(ref metrics) = self.validation_executor.read().await.metrics() {
+                        metrics.prometheus().set_executor_validation_state(
+                            &executor.id.to_string(),
+                            task.miner_uid,
+                            task.intended_validation_strategy,
+                            ValidationState::InQueue,
+                            StateResult::Current,
+                        );
+                    }
+                    published_count += 1;
+                }
                 Err(e) => {
                     warn!("Failed to publish executor to queue: {}", e);
                     failed_count += 1;
@@ -507,7 +534,7 @@ impl VerificationEngine {
                     details.len()
                 );
                 for (i, detail) in details.iter().enumerate() {
-                    debug!(
+                    info!(
                         "[EVAL_FLOW] Executor {}: id={}, grpc_endpoint={}",
                         i, detail.executor_id, detail.grpc_endpoint
                     );
@@ -532,8 +559,6 @@ impl VerificationEngine {
                     id: ExecutorId::from_str(&details.executor_id).map_err(|e| {
                         anyhow::anyhow!("Invalid executor ID '{}': {}", details.executor_id, e)
                     })?,
-                    host: "unknown".to_string(), // Will be filled from SSH credentials
-                    port: 22,
                     status: "available".to_string(),
                     capabilities: vec!["gpu".to_string()],
                     grpc_endpoint: details.grpc_endpoint,
@@ -598,6 +623,10 @@ impl VerificationEngine {
         miner_info: &super::types::MinerInfo,
     ) -> Result<()> {
         info!(
+            miner_uid = miner_uid,
+            executor_id = %executor_result.executor_id,
+            verification_score = executor_result.verification_score,
+            validation_type = %executor_result.validation_type,
             "Storing executor verification result to database for miner {}, executor {}: score={:.2}",
             miner_uid, executor_result.executor_id, executor_result.verification_score
         );
@@ -692,16 +721,25 @@ impl VerificationEngine {
         let status = match (success, &executor_result.validation_type) {
             (false, _) => "offline".to_string(),
             (true, ValidationType::Full) => "online".to_string(),
-            (true, ValidationType::Lightweight) => sqlx::query_scalar::<_, String>(
-                "SELECT status FROM miner_executors WHERE miner_id = ? AND executor_id = ?",
-            )
-            .bind(&miner_id)
-            .bind(&verification_log.executor_id)
-            .fetch_optional(self.persistence.pool())
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| "verified".to_string()),
+            (true, ValidationType::Lightweight) => {
+                match self
+                    .persistence
+                    .has_active_rental(&executor_result.executor_id.to_string(), &miner_id)
+                    .await
+                {
+                    Ok(true) => "online".to_string(),
+                    _ => sqlx::query_scalar::<_, String>(
+                        "SELECT status FROM miner_executors WHERE miner_id = ? AND executor_id = ?",
+                    )
+                    .bind(&miner_id)
+                    .bind(&verification_log.executor_id)
+                    .fetch_optional(self.persistence.pool())
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_else(|| "verified".to_string()),
+                }
+            }
         };
 
         info!(
@@ -788,11 +826,12 @@ impl VerificationEngine {
                 let miner_id = format!("miner_{}", miner_uid);
                 let gpu_counts = self
                     .persistence
-                    .get_miner_gpu_counts_from_assignments(&miner_id)
+                    .get_miner_gpu_uuid_assignments(&miner_id)
                     .await?;
                 let mut gpu_map: HashMap<String, u32> = HashMap::new();
-                for (_, count, gpu_name) in gpu_counts {
-                    let model = GpuCategorizer::normalize_gpu_model(&gpu_name);
+                for (_, count, gpu_name, _) in gpu_counts {
+                    let category = GpuCategory::from_str(&gpu_name).unwrap();
+                    let model = category.to_string();
                     *gpu_map.entry(model).or_insert(0) += count;
                 }
 
@@ -823,6 +862,33 @@ impl VerificationEngine {
                         profile.gpu_counts.values().sum::<u32>()
                     );
                 }
+
+                // Set rental metrics for successfully validated executors
+                // Marking them as available (not rented)
+                if success {
+                    if let Some(ref metrics) = self.metrics {
+                        // Extract GPU type from the first GPU found
+                        let gpu_type = gpu_infos
+                            .first()
+                            .map(|gpu| {
+                                let category = GpuCategory::from_str(&gpu.gpu_name).unwrap();
+                                category.to_string()
+                            })
+                            .unwrap_or_else(|| "unknown".to_string());
+
+                        metrics.prometheus().record_executor_rental_status(
+                            &executor_result.executor_id.to_string(),
+                            miner_uid,
+                            &gpu_type,
+                            false, // is_rented = false (available for rental)
+                        );
+
+                        debug!(
+                            "Set rental metric for validated executor {} (miner_uid: {}, gpu_type: {}, rented: false)",
+                            executor_result.executor_id, miner_uid, gpu_type
+                        );
+                    }
+                }
             }
             ValidationType::Lightweight => {
                 info!(
@@ -846,6 +912,10 @@ impl VerificationEngine {
         }
 
         info!(
+            miner_uid = miner_uid,
+            executor_id = %executor_result.executor_id,
+            verification_score = executor_result.verification_score,
+            validation_type = %executor_result.validation_type,
             "Executor verification result successfully stored to database for miner {}, executor {}: score={:.2}",
             miner_uid, executor_result.executor_id, executor_result.verification_score
         );
@@ -948,9 +1018,9 @@ impl VerificationEngine {
             // Insert new relationship with required fields
             let insert_query = r#"
                 INSERT OR IGNORE INTO miner_executors (
-                    id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs,
-                    location, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+                    id, miner_id, executor_id, grpc_address, gpu_count,
+                    status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
             "#;
 
             let relationship_id = format!("{miner_id}_{executor_id}");
@@ -962,10 +1032,7 @@ impl VerificationEngine {
                 .bind(executor_grpc_endpoint)
                 // -- these will be updated from verification details
                 .bind(0) // gpu_count
-                .bind("{}") // gpu_specs
-                .bind("{}") // cpu_specs
                 //---------
-                .bind("discovered") // location
                 .bind("online") // status - online until verification completes
                 .execute(self.persistence.pool())
                 .await
@@ -1155,6 +1222,7 @@ impl VerificationEngine {
                             previous_executor_id = %existing_executor_id,
                             new_miner_id = %miner_id,
                             new_executor_id = %executor_id,
+                            gpu_memory_gb = %gpu_info.gpu_memory_gb,
                             action = "gpu_assignment_reassigned",
                             reassignment_reason = "previous_executor_inactive",
                             "GPU {} reassigned from {}/{} to {}/{} (previous executor inactive)",
@@ -1168,13 +1236,14 @@ impl VerificationEngine {
                         sqlx::query(
                             "UPDATE gpu_uuid_assignments
                              SET miner_id = ?, executor_id = ?, gpu_index = ?, gpu_name = ?,
-                                 last_verified = ?, updated_at = ?
+                                 gpu_memory_gb = ?, last_verified = ?, updated_at = ?
                              WHERE gpu_uuid = ?",
                         )
                         .bind(&miner_id)
                         .bind(executor_id)
                         .bind(gpu_info.index as i32)
                         .bind(&gpu_info.gpu_name)
+                        .bind(gpu_info.gpu_memory_gb)
                         .bind(&now)
                         .bind(&now)
                         .bind(&gpu_info.gpu_uuid)
@@ -1205,9 +1274,10 @@ impl VerificationEngine {
                     // Same owner - just update last_verified
                     sqlx::query(
                         "UPDATE gpu_uuid_assignments
-                         SET last_verified = ?, updated_at = ?
+                         SET gpu_memory_gb = ?, last_verified = ?, updated_at = ?
                          WHERE gpu_uuid = ?",
                     )
+                    .bind(gpu_info.gpu_memory_gb)
                     .bind(&now)
                     .bind(&now)
                     .bind(&gpu_info.gpu_uuid)
@@ -1218,14 +1288,15 @@ impl VerificationEngine {
                 // New GPU UUID - insert
                 sqlx::query(
                     "INSERT INTO gpu_uuid_assignments
-                     (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified, created_at, updated_at)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                     (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&gpu_info.gpu_uuid)
                 .bind(gpu_info.index as i32)
                 .bind(executor_id)
                 .bind(&miner_id)
                 .bind(&gpu_info.gpu_name)
+                .bind(gpu_info.gpu_memory_gb)
                 .bind(&now)
                 .bind(&now)
                 .bind(&now)
@@ -1239,6 +1310,7 @@ impl VerificationEngine {
                     executor_id = %executor_id,
                     miner_id = %miner_id,
                     gpu_name = %gpu_info.gpu_name,
+                    gpu_memory_gb = %gpu_info.gpu_memory_gb,
                     action = "gpu_assignment_created",
                     "Registered new GPU {} (index {}) for {}/{}",
                     gpu_info.gpu_uuid, gpu_info.index, miner_id, executor_id
@@ -1397,11 +1469,32 @@ impl VerificationEngine {
             );
         } else {
             debug!(
+                security = true,
+                miner_uid = miner_uid,
+                executor_id = %executor_id,
+                validation_type = "lightweight",
                 "No GPU assignments found to update for {}/{} with {} reported UUIDs",
                 miner_id,
                 executor_id,
                 reported_gpu_uuids.len()
             );
+            if self
+                .persistence
+                .has_active_rental(executor_id, &miner_id)
+                .await
+                .unwrap_or(false)
+            {
+                self.store_gpu_uuid_assignments(miner_uid, executor_id, gpu_infos)
+                    .await?;
+            } else {
+                debug!(
+                    security = true,
+                    miner_uid = miner_uid,
+                    executor_id = %executor_id,
+                    validation_type = "lightweight",
+                    "Skipping GPU assignment creation in lightweight (no active rental)"
+                );
+            }
         }
 
         Ok(())
@@ -1752,9 +1845,6 @@ impl VerificationEngine {
             let executor_id: String = executor_row.get("executor_id");
             let grpc_address: String = executor_row.get("grpc_address");
             let gpu_count: i32 = executor_row.get("gpu_count");
-            let gpu_specs: String = executor_row.get("gpu_specs");
-            let cpu_specs: String = executor_row.get("cpu_specs");
-            let location: Option<String> = executor_row.try_get("location").ok();
             let status: String = executor_row
                 .try_get("status")
                 .unwrap_or_else(|_| "unknown".to_string());
@@ -1781,9 +1871,9 @@ impl VerificationEngine {
             let insert_executor = r#"
                 INSERT INTO miner_executors (
                     id, miner_id, executor_id, grpc_address, gpu_count,
-                    gpu_specs, cpu_specs, location, status, last_health_check,
+                    status, last_health_check,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, datetime('now'), datetime('now'))
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL, datetime('now'), datetime('now'))
             "#;
 
             sqlx::query(insert_executor)
@@ -1792,9 +1882,6 @@ impl VerificationEngine {
                 .bind(&executor_id)
                 .bind(&grpc_address)
                 .bind(gpu_count)
-                .bind(&gpu_specs)
-                .bind(&cpu_specs)
-                .bind(location)
                 .bind(&status)
                 .execute(&mut *tx)
                 .await
@@ -1937,11 +2024,13 @@ impl VerificationEngine {
             bittensor_service,
             ssh_key_manager,
             ssh_session_manager: Arc::new(SshSessionManager::new()),
+            metrics: metrics.clone(),
             validation_strategy_selector: Arc::new(ValidationStrategySelector::new(
-                config,
+                config.clone(),
                 persistence.clone(),
             )),
             validation_executor: Arc::new(tokio::sync::RwLock::new(ValidationExecutor::new(
+                config.clone(),
                 ssh_client.clone(),
                 metrics,
                 persistence.clone(),
@@ -1996,6 +2085,11 @@ impl VerificationEngine {
             self.bittensor_service().is_some(),
             self.worker_queue.is_some()
         )
+    }
+
+    /// Get access to validation metrics
+    pub async fn get_metrics(&self) -> Option<Arc<ValidatorMetrics>> {
+        self.validation_executor.read().await.metrics().clone()
     }
 
     /// Set worker queue for decoupled execution
@@ -2346,14 +2440,15 @@ impl VerificationEngine {
 
             let gpu_counts = self
                 .persistence
-                .get_miner_gpu_counts_from_assignments(&miner_id)
+                .get_miner_gpu_uuid_assignments(&miner_id)
                 .await?;
 
             let mut gpu_map: std::collections::HashMap<String, u32> =
                 std::collections::HashMap::new();
-            for (_, count, gpu_name) in gpu_counts {
-                let model =
-                    crate::gpu::categorization::GpuCategorizer::normalize_gpu_model(&gpu_name);
+            for (_, count, gpu_name, _) in gpu_counts {
+                let category =
+                    crate::gpu::categorization::GpuCategory::from_str(&gpu_name).unwrap();
+                let model = category.to_string();
                 *gpu_map.entry(model).or_insert(0) += count;
             }
 
@@ -2474,7 +2569,13 @@ impl VerificationEngine {
             ));
         }
 
-        // Step 2: Acquire session lock
+        // Step 2: Establish miner connection first
+        let client = self.create_authenticated_client()?;
+        let mut connection = client
+            .connect_and_authenticate(miner_endpoint, miner_hotkey)
+            .await?;
+
+        // Step 3: Acquire session lock
         self.ssh_session_manager
             .acquire_session(&executor_info.id.to_string())
             .await
@@ -2486,22 +2587,26 @@ impl VerificationEngine {
                 )
             })?;
 
-        // Step 3: Establish connection and SSH session
-        let client = self.create_authenticated_client()?;
-        let mut connection = client
-            .connect_and_authenticate(miner_endpoint, miner_hotkey)
-            .await?;
-
         let (ssh_details, session_info) = if let Some(ref key_manager) = self.ssh_key_manager {
             let key_provider = crate::ssh::session::ValidatorSshKeyProvider::new(key_manager);
-            crate::ssh::session::SshSessionHelper::establish_ssh_session(
+            let ssh_session = crate::ssh::session::SshSessionHelper::establish_ssh_session(
                 &mut connection,
                 &executor_info.id.to_string(),
                 &self.validator_hotkey,
                 &key_provider,
                 None,
             )
-            .await?
+            .await;
+            match ssh_session {
+                Ok(v) => v,
+                Err(e) => {
+                    // Release the session lock on failure to prevent deadlocks for this executor
+                    self.ssh_session_manager
+                        .release_session(&executor_info.id.to_string())
+                        .await;
+                    return Err(e);
+                }
+            }
         } else {
             self.ssh_session_manager
                 .release_session(&executor_info.id.to_string())
@@ -2521,6 +2626,7 @@ impl VerificationEngine {
                     .read()
                     .await
                     .execute_lightweight_validation(
+                        miner_uid,
                         executor_info,
                         &ssh_details,
                         &session_info,
@@ -2580,8 +2686,6 @@ impl VerificationEngine {
 
             executors.push(ExecutorInfoDetailed {
                 id: executor_id_parsed,
-                host: "from_database".to_string(),
-                port: 22,
                 status,
                 capabilities: if gpu_count > 0 {
                     vec!["gpu".to_string()]

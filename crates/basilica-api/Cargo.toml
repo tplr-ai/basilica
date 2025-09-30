@@ -10,28 +10,20 @@ license = "MIT OR Apache-2.0"
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
 bittensor = { path = "../bittensor" }
-basilica-protocol = { path = "../basilica-protocol" }
-basilica-validator = { path = "../basilica-validator", features = [
-  "client",
-  "openapi",
-] }
-basilica-sdk = { path = "../basilica-sdk", features = ["openapi"] }
+basilica-validator = { path = "../basilica-validator", features = ["client"] }
+basilica-sdk = { path = "../basilica-sdk" }
 
 # Async runtime
 tokio = { workspace = true }
-tokio-util = { workspace = true }
-tokio-stream = "0.1"
-async-trait = { workspace = true }
-async-stream = "0.3"
+async-stream = { workspace = true }
 
 # Web framework
 axum = { workspace = true, features = ["ws"] }
 tower = { workspace = true }
 tower-http = { workspace = true, features = ["cors", "timeout", "trace"] }
-hyper = { version = "0.14", features = ["full"] }
 
 # HTTP client
-reqwest = { version = "0.11", features = ["json", "rustls-tls", "stream"] }
+reqwest = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -44,68 +36,47 @@ anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 
 # Configuration
 figment = { workspace = true }
 
 # Authentication
-jsonwebtoken = "9.2"
-argon2 = "0.5"
-base64 = "0.21"
+jsonwebtoken = { workspace = true }
+argon2 = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
 
 # Rate limiting
-governor = "0.6"
-nonzero_ext = "0.3"
+governor = { workspace = true }
+
 
 # Caching
-moka = { version = "0.12", features = ["future"] }
-redis = { version = "0.24", features = [
-  "tokio-comp",
-  "connection-manager",
-], optional = true }
+moka = { workspace = true }
 
-# OpenAPI documentation
-utoipa = { version = "4.1", features = ["axum_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "6.0", features = ["axum"] }
 
 # Concurrent collections
-dashmap = "5.5"
-parking_lot = "0.12"
+dashmap = { workspace = true }
 
 # Database
-sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "migrate"] }
-
-# Utilities
-uuid = { workspace = true }
+sqlx = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
-futures = "0.3"
-pin-project = "1.1"
-once_cell = "1.19"
-url = "2.5"
-sha2 = "0.10"
-hex = "0.4"
-bs58 = "0.5"
-regex = "1.10"
+futures = { workspace = true }
+once_cell = { workspace = true }
 
 # Load balancing algorithms
-weighted-rs = "0.1"
 rand = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
-mockall = "0.12"
-wiremock = "0.6"
+wiremock = { workspace = true }
 
 [features]
-default = ["server", "redis-cache", "utoipa"]
+default = ["server", "utoipa"]
 server = []
 client = []
-redis-cache = ["redis"]
 utoipa = []
-full = ["server", "client", "redis-cache", "utoipa"]
+full = ["server", "client", "utoipa"]
 
 [[bin]]
 name = "basilica-api"

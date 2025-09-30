@@ -471,7 +471,7 @@ impl Default for ExecutorSshConfig {
             default_executor_username: "executor".to_string(),
             session_cleanup_interval: Duration::from_secs(60),
             max_sessions_per_validator: 5,
-            session_rate_limit: 20, // 20 sessions per hour
+            session_rate_limit: 200, // 200 sessions per hour
             enable_audit_log: true,
             audit_log_path: Some(PathBuf::from("./data/ssh_audit.log")),
             enable_automated_sessions: default_enable_automated_ssh_sessions(),
@@ -498,6 +498,7 @@ impl Default for MinerBittensorConfig {
                 netuid: 39,                // Basilca subnet ID
                 chain_endpoint: None,      // Will be auto-detected based on network
                 weight_interval_secs: 300, // 5 minutes
+                ..Default::default()
             },
             coldkey_name: "default".to_string(),
             axon_port: 8091,

@@ -6,7 +6,7 @@ Thanks for your interest in contributing to Basilica. We welcome contributions f
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/basilica.git`
-3. Add upstream remote: `git remote add upstream https://github.com/tplr-ai/basilica.git`
+3. Add upstream remote: `git remote add upstream https://github.com/one-covenant/basilica.git`
 4. Create a feature branch: `git checkout -b feature/your-feature-name`
 
 ## Development Setup

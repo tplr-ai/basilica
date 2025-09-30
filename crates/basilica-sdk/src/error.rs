@@ -38,6 +38,10 @@ pub enum ApiError {
     #[error("Bad request: {message}")]
     BadRequest { message: String },
 
+    /// Conflict error (e.g., duplicate resource)
+    #[error("Conflict: {message}")]
+    Conflict { message: String },
+
     /// Internal server error
     #[error("Internal server error: {message}")]
     Internal { message: String },
@@ -70,6 +74,7 @@ impl ApiError {
             ApiError::InvalidRequest { .. } => "BASILICA_API_INVALID_REQUEST",
             ApiError::NotFound { .. } => "BASILICA_API_NOT_FOUND",
             ApiError::BadRequest { .. } => "BASILICA_API_BAD_REQUEST",
+            ApiError::Conflict { .. } => "BASILICA_API_CONFLICT",
             ApiError::Internal { .. } => "BASILICA_API_INTERNAL_ERROR",
             ApiError::ServiceUnavailable => "BASILICA_API_SERVICE_UNAVAILABLE",
             ApiError::Timeout => "BASILICA_API_TIMEOUT",
@@ -99,6 +104,7 @@ impl ApiError {
                 | ApiError::InvalidRequest { .. }
                 | ApiError::NotFound { .. }
                 | ApiError::BadRequest { .. }
+                | ApiError::Conflict { .. }
         )
     }
 }

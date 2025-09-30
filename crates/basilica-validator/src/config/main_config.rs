@@ -113,6 +113,12 @@ pub struct VerificationConfig {
     /// Binary validation configuration
     #[serde(default)]
     pub binary_validation: BinaryValidationConfig,
+    /// Docker validation configuration
+    #[serde(default)]
+    pub docker_validation: DockerValidationConfig,
+    /// Storage validation configuration
+    #[serde(default)]
+    pub storage_validation: StorageValidationConfig,
     /// Collateral event scan interval
     #[serde(default = "default_collateral_event_scan_interval")]
     pub collateral_event_scan_interval: Duration,
@@ -181,10 +187,12 @@ impl VerificationConfig {
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: None,
             binary_validation: BinaryValidationConfig::default(),
+            docker_validation: DockerValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
             executor_validation_interval: Duration::from_secs(3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(7200)),
             enable_worker_queue: false,
+            storage_validation: StorageValidationConfig::default(),
         }
     }
 }
@@ -258,6 +266,53 @@ impl Default for ValidationServerConfig {
             server_ready_check_interval_ms: default_server_ready_check_interval_ms(),
         }
     }
+}
+/// Configuration for Docker validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DockerValidationConfig {
+    /// Docker image to pull during validation
+    #[serde(default = "default_docker_image")]
+    pub docker_image: String,
+    /// Timeout for pulling Docker image in seconds
+    #[serde(default = "default_docker_pull_timeout")]
+    pub pull_timeout_secs: u64,
+}
+
+impl Default for DockerValidationConfig {
+    fn default() -> Self {
+        Self {
+            docker_image: default_docker_image(),
+            pull_timeout_secs: default_docker_pull_timeout(),
+        }
+    }
+}
+
+/// Configuration for storage validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageValidationConfig {
+    /// Minimum required storage in bytes (default: 1TB)
+    #[serde(default = "default_min_required_storage_bytes")]
+    pub min_required_storage_bytes: u64,
+}
+
+impl Default for StorageValidationConfig {
+    fn default() -> Self {
+        Self {
+            min_required_storage_bytes: default_min_required_storage_bytes(),
+        }
+    }
+}
+
+fn default_min_required_storage_bytes() -> u64 {
+    1_099_511_627_776 // 1TB in bytes
+}
+
+fn default_docker_image() -> String {
+    "nvidia/cuda:12.8.0-runtime-ubuntu22.04".to_string()
+}
+
+fn default_docker_pull_timeout() -> u64 {
+    1800 // 30 minutes
 }
 
 fn default_server_bind_address() -> String {
@@ -579,6 +634,7 @@ impl Default for ValidatorConfig {
                     netuid: 1,
                     chain_endpoint: Some("wss://entrypoint-finney.opentensor.ai:443".to_string()),
                     weight_interval_secs: 300,
+                    ..Default::default()
                 },
                 axon_port: 9090,
                 external_ip: None,
@@ -600,6 +656,8 @@ impl Default for ValidatorConfig {
                 cache_miner_info_ttl: default_cache_miner_info_ttl(),
                 grpc_port_offset: None,
                 binary_validation: BinaryValidationConfig::default(),
+                docker_validation: DockerValidationConfig::default(),
+                storage_validation: StorageValidationConfig::default(),
                 collateral_event_scan_interval: default_collateral_event_scan_interval(),
                 executor_validation_interval: default_executor_validation_interval(),
                 gpu_assignment_cleanup_ttl: default_gpu_assignment_cleanup_ttl(),

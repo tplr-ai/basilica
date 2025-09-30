@@ -361,6 +361,7 @@ pub async fn list_miner_executors(
                     gpu_specs: exec.gpu_specs,
                     cpu_specs: exec.cpu_specs,
                     location: exec.location,
+                    network_speed: None,
                 })
                 .collect();
 

@@ -1,6 +1,6 @@
 services:
   miner:
-    image: ghcr.io/tplr-ai/basilica/miner:latest
+    image: ghcr.io/one-covenant/basilica/miner:latest
     container_name: basilica-miner
     restart: unless-stopped
     labels:

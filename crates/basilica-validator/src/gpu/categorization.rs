@@ -66,8 +66,8 @@ impl sqlx::FromRow<'_, SqliteRow> for MinerGpuProfile {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Hash, Eq)]
 pub enum GpuCategory {
+    A100,
     H100,
-    H200,
     B200,
     Other(String),
 }
@@ -76,20 +76,20 @@ impl GpuCategory {
     /// Get the use case description for this GPU category
     pub fn description(&self) -> &'static str {
         match self {
-            GpuCategory::H100 => "High-end training & inference",
-            GpuCategory::H200 => "Flagship AI training & inference",
+            GpuCategory::A100 => "High-end training & inference",
+            GpuCategory::H100 => "Flagship AI training & inference",
             GpuCategory::B200 => "Next-gen AI acceleration",
             GpuCategory::Other(_) => "General GPU compute",
         }
     }
 
-    /// Get the display string for this GPU category (e.g., "H100", "H200", "OTHER")
+    /// Get the display string for this GPU category (e.g., "A100", "H100", "OTHER")
     pub fn as_str(&self) -> String {
         match self {
+            GpuCategory::A100 => "A100".to_string(),
             GpuCategory::H100 => "H100".to_string(),
-            GpuCategory::H200 => "H200".to_string(),
             GpuCategory::B200 => "B200".to_string(),
-            GpuCategory::Other(o) => o.clone(),
+            GpuCategory::Other(_) => "OTHER".to_string(),
         }
     }
 }
@@ -115,10 +115,10 @@ impl FromStr for GpuCategory {
             .to_string();
 
         // Check for known GPU models
-        if cleaned.contains("H100") {
+        if cleaned.contains("A100") {
+            Ok(GpuCategory::A100)
+        } else if cleaned.contains("H100") {
             Ok(GpuCategory::H100)
-        } else if cleaned.contains("H200") {
-            Ok(GpuCategory::H200)
         } else if cleaned.contains("B200") {
             Ok(GpuCategory::B200)
         } else {
@@ -130,32 +130,6 @@ impl FromStr for GpuCategory {
 pub struct GpuCategorizer;
 
 impl GpuCategorizer {
-    /// Normalize GPU model string to standard category
-    /// TODO: Consider deprecating this in favor of using GpuCategory::from_str directly
-    ///       which returns the enum and avoids string parsing roundtrips
-    pub fn normalize_gpu_model(gpu_model: &str) -> String {
-        let model = gpu_model.to_uppercase();
-
-        // Remove common prefixes and clean up
-        let cleaned = model
-            .replace("NVIDIA", "")
-            .replace("GEFORCE", "")
-            .replace("TESLA", "")
-            .trim()
-            .to_string();
-
-        // Match against known patterns - H100, H200, and B200
-        if cleaned.contains("H100") {
-            "H100".to_string()
-        } else if cleaned.contains("H200") {
-            "H200".to_string()
-        } else if cleaned.contains("B200") {
-            "B200".to_string()
-        } else {
-            "OTHER".to_string()
-        }
-    }
-
     /// Convert model string to category enum
     pub fn model_to_category(model: &str) -> GpuCategory {
         // Use the FromStr implementation for consistency
@@ -177,7 +151,8 @@ impl GpuCategorizer {
         {
             // Only count each executor once
             if seen_executors.insert(&validation.executor_id) {
-                let normalized = Self::normalize_gpu_model(&validation.gpu_model);
+                let category = GpuCategory::from_str(&validation.gpu_model).unwrap();
+                let normalized = category.to_string();
                 *gpu_counts.entry(normalized).or_insert(0) += validation.gpu_count as u32;
             }
         }
@@ -254,7 +229,7 @@ pub struct ExecutorValidationResult {
     pub is_valid: bool,
     pub gpu_model: String,
     pub gpu_count: usize,
-    pub gpu_memory_gb: u64,
+    pub gpu_memory_gb: f64,
     pub attestation_valid: bool,
     pub validation_timestamp: DateTime<Utc>,
 }
@@ -273,7 +248,7 @@ impl ExecutorValidationResult {
             is_valid,
             gpu_model,
             gpu_count,
-            gpu_memory_gb: 80, // Default 80GB
+            gpu_memory_gb: 80.0, // Default 80GB
             attestation_valid,
             validation_timestamp: Utc::now(),
         }

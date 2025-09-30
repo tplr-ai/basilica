@@ -11,7 +11,7 @@ use axum::{
 use sqlx::{FromRow, PgPool};
 use tracing::{debug, warn};
 
-use crate::{api::middleware::Auth0Claims, server::AppState};
+use crate::{api::middleware::AuthContext, server::AppState};
 
 /// Database row structure for user_rentals table
 #[derive(Debug, FromRow)]
@@ -47,10 +47,10 @@ impl FromRequestParts<AppState> for OwnedRental {
             .await
             .map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        // Get the authenticated user's claims
-        let claims = get_auth0_claims_from_parts(parts).ok_or(StatusCode::UNAUTHORIZED)?;
+        // Get the authenticated user's context
+        let auth_context = get_auth_context_from_parts(parts).ok_or(StatusCode::UNAUTHORIZED)?;
 
-        let user_id = claims.sub.clone();
+        let user_id = auth_context.user_id.clone();
 
         // Get rental ownership details from the database
         let rental_row = get_rental_ownership(&state.db, &rental_id, &user_id)
@@ -105,9 +105,9 @@ async fn get_rental_ownership(
     Ok(row)
 }
 
-/// Helper function to extract Auth0 claims from request parts
-fn get_auth0_claims_from_parts(parts: &Parts) -> Option<&Auth0Claims> {
-    parts.extensions.get::<Auth0Claims>()
+/// Helper function to extract authentication context from request parts
+fn get_auth_context_from_parts(parts: &Parts) -> Option<&AuthContext> {
+    parts.extensions.get::<AuthContext>()
 }
 
 /// Store a new rental ownership record with optional SSH credentials

@@ -19,11 +19,11 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Extract version
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-        
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
@@ -80,7 +80,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: |
           choco install protoc
-          
+
       # Copy veritas binaries for validator
       - name: Copy veritas binaries
         if: matrix.service == 'validator'
@@ -165,12 +165,12 @@ jobs:
           BITTENSOR_NETWORK: finney
         run: |
           ./scripts/${{ matrix.service }}/build.sh \
-            --image-name ghcr.io/tplr-ai/basilica/${{ matrix.service }} \
+            --image-name ghcr.io/one-covenant/basilica/${{ matrix.service }} \
             --image-tag ${{ steps.version.outputs.tag }}
 
       - name: Push Docker image
         run: |
           ./scripts/${{ matrix.service }}/push.sh \
-            --source-image ghcr.io/tplr-ai/basilica/${{ matrix.service }} \
-            --target-image ghcr.io/tplr-ai/basilica/${{ matrix.service }} \
+            --source-image ghcr.io/one-covenant/basilica/${{ matrix.service }} \
+            --target-image ghcr.io/one-covenant/basilica/${{ matrix.service }} \
             --tag ${{ steps.version.outputs.tag }}

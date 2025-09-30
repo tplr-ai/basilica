@@ -35,7 +35,7 @@ use_dynamic_discovery = true
 discovery_timeout = { secs = 30 }
 fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
-enable_worker_queue = false  # Enable for decoupled async validation execution
+enable_worker_queue = false            # Enable for decoupled async validation execution
 
 [verification.binary_validation]
 enabled = true
@@ -95,7 +95,7 @@ rental_session_duration = 3600
 key_cleanup_interval = { secs = 60, nanos = 0 }
 enable_automated_sessions = true
 max_concurrent_sessions = 5
-session_rate_limit = 20
+session_rate_limit = 200
 enable_audit_logging = true
 audit_log_path = "/opt/basilica/data/ssh_audit.log"
 ssh_connection_timeout = { secs = 30, nanos = 0 }
@@ -127,6 +127,6 @@ weight_version_key = 0
 # are distributed across GPU categories
 # Must sum to exactly 100.0
 [emission.gpu_allocations]
-"H100" = 8.0
-"H200" = 12.0
-"B200" = 80.0
+A100 = { weight = 8.0, min_gpu_count = 1, min_gpu_vram = 1 }
+H100 = { weight = 12.0, min_gpu_count = 1, min_gpu_vram = 1 }
+B200 = { weight = 80.0, min_gpu_count = 8, min_gpu_vram = 1 }

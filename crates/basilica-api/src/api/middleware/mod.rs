@@ -1,9 +1,11 @@
 //! API middleware stack
 
+mod auth;
 mod auth0;
 mod rate_limit;
 mod scope;
 
+pub use auth::{auth_middleware, get_auth_context, AuthContext, AuthDetails};
 pub use auth0::{auth0_middleware, get_auth0_claims, Auth0Claims};
 pub use rate_limit::RateLimitMiddleware;
 pub use scope::scope_validation_middleware;

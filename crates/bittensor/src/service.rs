@@ -2,8 +2,9 @@
 //!
 //! Central service for all Bittensor chain interactions using crabtensor.
 
+use crate::connect::{CircuitBreaker, HealthChecker, RetryConfig, RetryExecutor};
+use crate::connect::{ConnectionManager, ConnectionPool, ConnectionPoolBuilder};
 use crate::error::BittensorError;
-use crate::retry::{CircuitBreaker, RetryExecutor};
 use anyhow::Result;
 use basilica_common::config::BittensorConfig;
 // Import our own utilities
@@ -16,16 +17,14 @@ use std::path::PathBuf;
 // Always use our own generated API module
 use crate::api::api;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
 // Use subxt directly with our generated API
-use subxt::OnlineClient;
 use subxt::PolkadotConfig;
 
-// Type alias for our chain client
-type ChainClient = OnlineClient<PolkadotConfig>;
+// Type alias for our chain client removed; Service uses pooled clients via connect::pool
 
 // Type alias for Signer
 type Signer = subxt::tx::PairSigner<PolkadotConfig, subxt::ext::sp_core::sr25519::Pair>;
@@ -84,13 +83,15 @@ fn signer_from_seed(seed: &str) -> Result<Signer, Box<dyn std::error::Error>> {
 // Import the metagraph types
 use crate::{Metagraph, SelectiveMetagraph};
 
-/// Central service for Bittensor chain interactions with retry mechanisms
+/// Central service for Bittensor chain interactions with connection pooling and retry mechanisms
 pub struct Service {
     config: BittensorConfig,
-    client: ChainClient,
+    connection_pool: Arc<ConnectionPool>,
+    connection_manager: Arc<ConnectionManager>,
     signer: Signer,
     retry_executor: RetryExecutor,
-    circuit_breaker: Arc<Mutex<CircuitBreaker>>,
+    circuit_breaker: Arc<tokio::sync::Mutex<CircuitBreaker>>,
+    health_monitor_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Service {
@@ -110,46 +111,55 @@ impl Service {
     /// * `WalletError` - If wallet key loading or signer creation fails
     pub async fn new(config: BittensorConfig) -> Result<Self, BittensorError> {
         info!(
-            "Initializing Bittensor service for network: {}",
+            "Initializing enhanced Bittensor service for network: {}",
             config.network
         );
 
-        // Create client connection using the config's endpoint resolution
-        let chain_url = config.get_chain_endpoint();
+        // Build connection pool with configuration
+        let pool = Arc::new(
+            ConnectionPoolBuilder::new(config.get_chain_endpoints())
+                .max_connections(config.connection_pool_size.unwrap_or(3))
+                .retry_config(RetryConfig::network())
+                .build(),
+        );
 
-        info!("Chain URL: {}", chain_url);
+        // Initialize pool with retry logic
+        let retry_executor = RetryExecutor::new().with_timeout(Duration::from_secs(120));
 
-        // Create our own client using our generated metadata
-        let client = if chain_url.starts_with("ws://") && !chain_url.starts_with("wss://") {
-            warn!(
-                "Using insecure WebSocket connection for local development: {}",
-                chain_url
-            );
+        retry_executor
+            .execute_with_config(
+                || async {
+                    pool.initialize()
+                        .await
+                        .map_err(|e| BittensorError::NetworkError {
+                            message: format!("Pool initialization failed: {}", e),
+                        })
+                },
+                RetryConfig::network(),
+            )
+            .await?;
 
-            // For subxt 0.38, we need to create an RpcClient that allows insecure URLs
-            use subxt::backend::legacy::LegacyBackend;
-            use subxt::backend::rpc::RpcClient;
+        info!(
+            "Connection pool initialized with {} healthy connections",
+            pool.healthy_connection_count().await
+        );
 
-            let rpc_client = RpcClient::from_insecure_url(&chain_url)
-                .await
-                .map_err(|e| BittensorError::NetworkError {
-                    message: format!("Failed to create RPC client: {e}"),
-                })?;
+        // Create connection manager for state tracking
+        let connection_manager = Arc::new(ConnectionManager::new(config.clone()));
 
-            let backend = LegacyBackend::builder().build(rpc_client);
-            OnlineClient::<PolkadotConfig>::from_backend(Arc::new(backend))
-                .await
-                .map_err(|e| BittensorError::NetworkError {
-                    message: format!("Failed to create client from backend: {e}"),
-                })?
-        } else {
-            info!("Using secure connection for: {}", chain_url);
-            OnlineClient::<PolkadotConfig>::from_url(&chain_url)
-                .await
-                .map_err(|e| BittensorError::NetworkError {
-                    message: format!("Failed to connect to chain: {e}"),
-                })?
-        };
+        // Start health monitoring
+        let health_checker = Arc::new(
+            HealthChecker::new()
+                .with_interval(
+                    config
+                        .health_check_interval
+                        .unwrap_or(Duration::from_secs(60)),
+                )
+                .with_timeout(Duration::from_secs(5))
+                .with_failure_threshold(3),
+        );
+
+        let monitor_handle = health_checker.start_monitoring(Arc::clone(&pool));
 
         // Load wallet signer
         let hotkey_path = home_hotkey_location(&config.wallet_name, &config.hotkey_name)
@@ -170,18 +180,25 @@ impl Service {
             message: format!("Failed to create signer from seed: {e}"),
         })?;
 
+        // Initialize circuit breaker for cascade failure prevention
+        let circuit_breaker = Arc::new(tokio::sync::Mutex::new(CircuitBreaker::new(
+            config.circuit_breaker_threshold.unwrap_or(5),
+            config
+                .circuit_breaker_recovery
+                .unwrap_or(Duration::from_secs(60)),
+        )));
+
         let service = Self {
             config,
-            client,
+            connection_pool: pool,
+            connection_manager,
             signer,
-            retry_executor: RetryExecutor::new().with_timeout(Duration::from_secs(300)),
-            circuit_breaker: Arc::new(Mutex::new(CircuitBreaker::new(
-                5,                       // failure threshold
-                Duration::from_secs(60), // recovery timeout
-            ))),
+            retry_executor,
+            circuit_breaker,
+            health_monitor_handle: Some(monitor_handle),
         };
 
-        info!("Bittensor service initialized successfully with retry mechanisms");
+        info!("Enhanced Bittensor service initialized with connection pooling");
         Ok(service)
     }
 
@@ -225,10 +242,18 @@ impl Service {
                 0, // placeholder2
             );
 
-            let client = &self.client;
             let signer = &self.signer;
 
             async move {
+                // Get a healthy client from the pool
+                let client = self
+                    .connection_pool
+                    .get_healthy_client()
+                    .await
+                    .map_err(|e| BittensorError::NetworkError {
+                        message: format!("Failed to get healthy client: {}", e),
+                    })?;
+
                 client
                     .tx()
                     .sign_and_submit_then_watch_default(&payload, signer)
@@ -323,10 +348,18 @@ impl Service {
 
             // Create set_weights payload with version_key = 0
             let payload = set_weights_payload(netuid, normalized_weights, 0);
-            let client = &self.client;
             let signer = &self.signer;
 
             async move {
+                // Get a healthy client from the pool
+                let client = self
+                    .connection_pool
+                    .get_healthy_client()
+                    .await
+                    .map_err(|e| BittensorError::NetworkError {
+                        message: format!("Failed to get healthy client: {}", e),
+                    })?;
+
                 client
                     .tx()
                     .sign_and_submit_then_watch_default(&payload, signer)
@@ -394,8 +427,17 @@ impl Service {
     > {
         debug!("Getting neuron info for UID: {} on netuid: {}", uid, netuid);
 
+        // Get a healthy client from the pool
+        let client = self
+            .connection_pool
+            .get_healthy_client()
+            .await
+            .map_err(|e| BittensorError::NetworkError {
+                message: format!("Failed to get healthy client: {}", e),
+            })?;
+
         let runtime_api =
-            self.client
+            client
                 .runtime_api()
                 .at_latest()
                 .await
@@ -438,8 +480,16 @@ impl Service {
         );
 
         let operation = || {
-            let client = &self.client;
             async move {
+                // Get a healthy client from the pool
+                let client = self
+                    .connection_pool
+                    .get_healthy_client()
+                    .await
+                    .map_err(|e| BittensorError::NetworkError {
+                        message: format!("Failed to get healthy client: {}", e),
+                    })?;
+
                 let runtime_api = client.runtime_api().at_latest().await.map_err(|e| {
                     let err_msg = e.to_string();
                     let err_lower = err_msg.to_lowercase();
@@ -490,14 +540,14 @@ impl Service {
         // Use circuit breaker for RPC calls
         // Clone the circuit breaker to avoid holding the lock across await
         let mut circuit_breaker = {
-            let cb = self.circuit_breaker.lock().unwrap();
+            let cb = self.circuit_breaker.lock().await;
             cb.clone()
         };
         let result = circuit_breaker.execute(operation).await;
 
         // Update the original circuit breaker with the new state
         {
-            let mut original_cb = self.circuit_breaker.lock().unwrap();
+            let mut original_cb = self.circuit_breaker.lock().await;
             *original_cb = circuit_breaker;
         }
 
@@ -551,8 +601,17 @@ impl Service {
             fields.len()
         );
 
+        // Get a healthy client from the pool
+        let client = self
+            .connection_pool
+            .get_healthy_client()
+            .await
+            .map_err(|e| BittensorError::NetworkError {
+                message: format!("Failed to get healthy client: {}", e),
+            })?;
+
         let runtime_api =
-            self.client
+            client
                 .runtime_api()
                 .at_latest()
                 .await
@@ -601,8 +660,17 @@ impl Service {
     /// # }
     /// ```
     pub async fn get_block_number(&self) -> Result<u64, BittensorError> {
+        // Get a healthy client from the pool
+        let client = self
+            .connection_pool
+            .get_healthy_client()
+            .await
+            .map_err(|e| BittensorError::NetworkError {
+                message: format!("Failed to get healthy client: {}", e),
+            })?;
+
         let latest_block =
-            self.client
+            client
                 .blocks()
                 .at_latest()
                 .await
@@ -647,8 +715,16 @@ impl Service {
     where
         T: subxt::tx::Payload,
     {
-        let tx_result = self
-            .client
+        // Get a healthy client from the pool
+        let client = self
+            .connection_pool
+            .get_healthy_client()
+            .await
+            .map_err(|e| BittensorError::NetworkError {
+                message: format!("Failed to get healthy client: {}", e),
+            })?;
+
+        let tx_result = client
             .tx()
             .sign_and_submit_default(&payload, &self.signer)
             .await
@@ -755,20 +831,50 @@ impl Service {
 
 impl Service {
     /// Gets retry statistics for monitoring
-    pub fn get_retry_stats(&self) -> RetryStats {
+    pub async fn get_retry_stats(&self) -> RetryStats {
         RetryStats {
             circuit_breaker_state: {
-                let cb = self.circuit_breaker.lock().unwrap();
+                let cb = self.circuit_breaker.lock().await;
                 format!("{cb:?}")
             },
         }
     }
 
     /// Resets the circuit breaker state (for recovery operations)
-    pub fn reset_circuit_breaker(&self) {
-        let mut cb = self.circuit_breaker.lock().unwrap();
+    pub async fn reset_circuit_breaker(&self) {
+        let mut cb = self.circuit_breaker.lock().await;
         *cb = CircuitBreaker::new(5, Duration::from_secs(60));
         info!("Circuit breaker reset");
+    }
+
+    /// Get connection pool metrics for monitoring
+    pub async fn connection_metrics(&self) -> ConnectionPoolMetrics {
+        ConnectionPoolMetrics {
+            total_connections: self.connection_pool.total_connections().await,
+            healthy_connections: self.connection_pool.healthy_connection_count().await,
+            connection_state: self.connection_manager.get_state().await.status_message(),
+            metrics: self.connection_manager.metrics(),
+        }
+    }
+
+    /// Force reconnection of all connections
+    pub async fn force_reconnect(&self) -> Result<(), BittensorError> {
+        warn!("Forcing reconnection of all connections");
+        self.connection_pool.refresh_connections().await?;
+        self.connection_manager.force_reconnect().await?;
+        Ok(())
+    }
+
+    /// Gracefully shutdown the service
+    pub async fn shutdown(mut self) {
+        info!("Shutting down enhanced Bittensor service");
+
+        // Stop health monitoring
+        if let Some(handle) = self.health_monitor_handle.take() {
+            handle.abort();
+        }
+
+        // Connection pool will be dropped automatically
     }
 }
 
@@ -776,4 +882,22 @@ impl Service {
 #[derive(Debug, Clone)]
 pub struct RetryStats {
     pub circuit_breaker_state: String,
+}
+
+/// Connection pool metrics for monitoring
+#[derive(Debug, Clone)]
+pub struct ConnectionPoolMetrics {
+    pub total_connections: usize,
+    pub healthy_connections: usize,
+    pub connection_state: String,
+    pub metrics: crate::connect::ConnectionMetricsSnapshot,
+}
+
+// Implement Drop to ensure cleanup
+impl Drop for Service {
+    fn drop(&mut self) {
+        if let Some(handle) = self.health_monitor_handle.take() {
+            handle.abort();
+        }
+    }
 }

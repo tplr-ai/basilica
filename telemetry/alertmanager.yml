@@ -14,6 +14,10 @@ route:
   receiver: 'default'
   routes:
     - match:
+        alertname: ValidatorRPCCriticalFailure
+      receiver: 'critical-alerts'
+      repeat_interval: 5m
+    - match:
         severity: critical
       receiver: 'critical-alerts'
     - match:

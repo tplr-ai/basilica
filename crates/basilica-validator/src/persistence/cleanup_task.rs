@@ -175,7 +175,7 @@ mod tests {
 
         // Create old and new profiles
         let mut gpu_counts = HashMap::new();
-        gpu_counts.insert("H100".to_string(), 1);
+        gpu_counts.insert("A100".to_string(), 1);
 
         // Old profile (40 days old)
         let old_profile = MinerGpuProfile {

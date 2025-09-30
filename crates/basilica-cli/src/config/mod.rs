@@ -161,6 +161,9 @@ pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig
             "offline_access".to_string(), // Required for refresh tokens
             "rentals:*".to_string(),      // All rental operations
             "executors:list".to_string(), // List available executors
+            "keys:create".to_string(),    // Create API keys
+            "keys:list".to_string(),      // List API keys
+            "keys:revoke".to_string(),    // Revoke API keys
         ],
         additional_params: std::collections::HashMap::new(),
     }

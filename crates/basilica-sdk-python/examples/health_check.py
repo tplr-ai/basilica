@@ -10,11 +10,11 @@ def main():
     # Initialize client using environment variables
     # BASILICA_API_URL and BASILICA_API_TOKEN
     client = BasilicaClient()
-    
+
     # Or initialize with explicit configuration
     # client = BasilicaClient(
     #     base_url="https://api.basilica.ai",
-    #     token="your-api-token"  # Optional
+    #     api_key="basilica_..."  # Your token from 'basilica tokens create'
     # )
     
     # Perform health check

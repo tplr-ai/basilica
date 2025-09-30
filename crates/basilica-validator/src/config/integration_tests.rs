@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
-    use crate::config::{emission::DEFAULT_BURN_UID, ValidatorConfig};
+    use crate::config::{
+        emission::{GpuAllocation, DEFAULT_BURN_UID},
+        ValidatorConfig,
+    };
     use basilica_common::config::ConfigValidation;
 
     #[test]
@@ -32,11 +35,11 @@ mod tests {
         config
             .emission
             .gpu_allocations
-            .insert("H100".to_string(), 50.0);
+            .insert("A100".to_string(), GpuAllocation::new(50.0));
         config
             .emission
             .gpu_allocations
-            .insert("H200".to_string(), 50.0);
+            .insert("H100".to_string(), GpuAllocation::new(50.0));
         assert!(config.validate().is_ok());
     }
 
@@ -49,21 +52,22 @@ mod tests {
         config
             .emission
             .gpu_allocations
-            .insert("H100".to_string(), 8.0);
+            .insert("A100".to_string(), GpuAllocation::new(8.0));
         config
             .emission
             .gpu_allocations
-            .insert("H200".to_string(), 12.0);
+            .insert("H100".to_string(), GpuAllocation::new(12.0));
         config
             .emission
             .gpu_allocations
-            .insert("B200".to_string(), 80.0);
+            .insert("B200".to_string(), GpuAllocation::new(80.0));
 
         // Test TOML serialization includes emission config
         let toml_str = toml::to_string(&config).expect("Failed to serialize to TOML");
         assert!(toml_str.contains("[emission]"));
         assert!(toml_str.contains("burn_percentage"));
-        assert!(toml_str.contains("[emission.gpu_allocations]"));
+        // Check that GPU allocations are present in the TOML
+        assert!(toml_str.contains("gpu_allocations"));
 
         // Test deserialization
         let deserialized: ValidatorConfig =

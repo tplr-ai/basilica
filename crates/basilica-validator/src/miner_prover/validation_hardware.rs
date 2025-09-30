@@ -166,6 +166,7 @@ fn find_nodes_by_class<'a>(
 }
 
 /// Hardware collector for gathering hardware profiles from executors
+#[derive(Clone)]
 pub struct HardwareCollector {
     ssh_client: Arc<ValidatorSshClient>,
     persistence: Arc<SimplePersistence>,
@@ -283,6 +284,7 @@ impl HardwareCollector {
                 // Try to store but don't fail if storage fails
                 if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
                     warn!(
+                        miner_uid = miner_uid,
                         executor_id = executor_id,
                         error = %e,
                         "[HARDWARE_PROFILE] Failed to store hardware profile (non-critical)"
@@ -292,6 +294,7 @@ impl HardwareCollector {
             }
             Err(e) => {
                 warn!(
+                    miner_uid = miner_uid,
                     executor_id = executor_id,
                     error = %e,
                     "[HARDWARE_PROFILE] Failed to collect hardware profile (non-critical)"
@@ -404,8 +407,8 @@ mod tests {
         // Define test cases for different hardware configurations
         let test_cases = vec![
             TestCase {
-                name: "H100 SXM5 with 30 vCPUs",
-                file_name: "h100_sxm5_30vcpu.json",
+                name: "A100 SXM5 with 30 vCPUs",
+                file_name: "a100_sxm5_30vcpu.json",
                 expected_cpu_model: Some("Intel(R) Xeon(R) Platinum 8462Y+"),
                 expected_cpu_cores: Some(30),
                 expected_ram_gb: Some(120),

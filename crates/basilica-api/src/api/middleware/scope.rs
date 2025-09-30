@@ -11,7 +11,7 @@ use axum::{
 };
 use tracing::{debug, warn};
 
-use super::auth0::{get_auth0_claims, has_scope};
+use super::auth::get_auth_context;
 
 /// Scope validation middleware
 ///
@@ -41,31 +41,31 @@ pub async fn scope_validation_middleware(req: Request, next: Next) -> Result<Res
         return Ok(next.run(req).await);
     }
 
-    // Get the user's claims from the request extensions
-    let claims = match get_auth0_claims(&req) {
-        Some(claims) => claims,
+    // Get the user's auth context from the request extensions
+    let auth_context = match get_auth_context(&req) {
+        Some(context) => context,
         None => {
-            warn!("No Auth0 claims found in request for scope validation");
+            warn!("No authentication context found in request for scope validation");
             return Err(StatusCode::UNAUTHORIZED);
         }
     };
 
     // Check if the user has the required scope
-    if !has_scope(claims, &required_scope) {
+    if !auth_context.has_scope(&required_scope) {
         warn!(
             "User {} lacks required scope '{}' for {} {}. User's scopes: {:?}",
-            claims.sub,
+            auth_context.user_id,
             required_scope,
             req.method(),
             req.uri().path(),
-            claims.scope
+            auth_context.scopes
         );
         return Err(StatusCode::FORBIDDEN);
     }
 
     debug!(
         "User {} authorized with scope '{}' for {} {}",
-        claims.sub,
+        auth_context.user_id,
         required_scope,
         req.method(),
         req.uri().path()
@@ -97,6 +97,11 @@ fn get_required_scope(req: &Request) -> Option<String> {
 
         // Executor endpoints
         (&Method::GET, "/executors") => Some("executors:list".to_string()),
+
+        // API Key management endpoints
+        (&Method::POST, "/api-keys") => Some("keys:create".to_string()),
+        (&Method::GET, "/api-keys") => Some("keys:list".to_string()),
+        (&Method::DELETE, p) if p.starts_with("/api-keys/") => Some("keys:revoke".to_string()),
 
         // Health check requires authentication but no specific scope
         // We use an empty string to indicate "authenticated but no specific scope required"

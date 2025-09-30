@@ -273,10 +273,9 @@ impl ValidationServerManager {
         // Configure for process group isolation
         ProcessGroup::configure_command(&mut command);
 
-        // Capture output for debugging
         command
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit());
 
         command
             .spawn()
@@ -586,6 +585,17 @@ impl BinaryValidator {
         &mut self,
         binary_config: &crate::config::BinaryValidationConfig,
     ) -> Result<()> {
+        if self.server_manager.is_some() && self.server_client.is_some() {
+            info!("Validation server already initialized");
+            return Ok(());
+        }
+
+        if let Some(manager) = &self.server_manager {
+            let _ = manager.stop().await;
+            self.server_manager = None;
+        }
+        self.server_client = None;
+
         info!("Initializing validation server");
 
         // Create server manager
@@ -715,14 +725,23 @@ impl BinaryValidator {
     }
 
     /// Parse validator binary output
-    pub fn parse_validator_binary_output(&self, output: &[u8]) -> Result<ValidatorBinaryOutput> {
+    pub fn parse_validator_binary_output(
+        &self,
+        executor_id: &str,
+        miner_uid: u16,
+        output: &[u8],
+    ) -> Result<ValidatorBinaryOutput> {
         info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
             "[EVAL_FLOW] Parsing validator binary output ({} bytes)",
             output.len()
         );
 
         if output.is_empty() {
             error!(
+                miner_uid = miner_uid,
+                executor_id = executor_id,
                 "[EVAL_FLOW] Validator binary output is empty - this indicates a capture problem"
             );
             return Err(anyhow::anyhow!(
@@ -733,10 +752,17 @@ impl BinaryValidator {
         let output_str = String::from_utf8_lossy(output);
 
         info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
             "[EVAL_FLOW] Parsing validator binary output ({} bytes)",
             output.len()
         );
-        debug!("[EVAL_FLOW] Raw output: {}", output_str);
+        debug!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
+            "[EVAL_FLOW] Raw output: {}",
+            output_str
+        );
 
         // Validate output contains some expected content
         if !output_str.contains("validator_binary")
@@ -744,6 +770,8 @@ impl BinaryValidator {
             && !output_str.contains("{")
         {
             error!(
+                miner_uid = miner_uid,
+                executor_id = executor_id,
                 "[EVAL_FLOW] Validator binary output does not appear to contain expected content"
             );
             return Err(anyhow::anyhow!(
@@ -757,10 +785,14 @@ impl BinaryValidator {
             Ok(json) => json,
             Err(e) => {
                 error!(
+                    miner_uid = miner_uid,
+                    executor_id = executor_id,
                     "[EVAL_FLOW] Failed to extract JSON from validator output: {}",
                     e
                 );
                 error!(
+                    miner_uid = miner_uid,
+                    executor_id = executor_id,
                     "[EVAL_FLOW] Raw output for debugging: {}",
                     output_str.chars().take(1000).collect::<String>()
                 );
@@ -771,40 +803,61 @@ impl BinaryValidator {
         // Parse raw JSON and convert to expected format
         let parsed_output = self.parse_and_convert_validator_output(&json_str)?;
 
-        info!("[EVAL_FLOW] Successfully parsed binary output - success: {}, execution_time: {}ms, validation_score: {:.3}",
-              parsed_output.success, parsed_output.execution_time_ms, parsed_output.validation_score);
+        debug!(miner_uid = miner_uid, executor_id = executor_id,
+            "[EVAL_FLOW] Successfully parsed binary output - success: {}, execution_time: {}ms, validation_score: {:.3}",
+            parsed_output.success, parsed_output.execution_time_ms, parsed_output.validation_score);
 
         if let Some(ref executor_result) = parsed_output.executor_result {
-            info!("[EVAL_FLOW] Executor hardware details - CPU cores: {}, Memory: {:.1}GB, Network interfaces: {}",
-                  executor_result.cpu_info.cores, executor_result.memory_info.total_gb,
+            debug!(miner_uid = miner_uid, executor_id = executor_id,
+                "[EVAL_FLOW] Executor hardware details - CPU cores: {}, Memory: {:.1}GB, Network interfaces: {}",
+                executor_result.cpu_info.cores, executor_result.memory_info.total_gb,
                   executor_result.network_info.interfaces.len());
 
             if !executor_result.gpu_name.is_empty() {
-                info!(
-                    "[EVAL_FLOW] GPU Details: {} (UUID: {}), SMs: {}/{}, Memory bandwidth: {:.1} GB/s",
+                info!(miner_uid = miner_uid, executor_id = executor_id,
+                    "[EVAL_FLOW] GPU Details: {} (UUID: {}), SMs: {}/{}, Memory bandwidth: {:.1} GB/s Memory: {:.1} GB",
                     executor_result.gpu_name, executor_result.gpu_uuid,
                     executor_result.active_sms, executor_result.total_sms,
-                    executor_result.memory_bandwidth_gbps
+                    executor_result.memory_bandwidth_gbps,
+                    executor_result.gpu_infos.iter().map(|g| g.gpu_memory_gb).sum::<f64>()
                 );
             } else {
-                warn!("[EVAL_FLOW] No GPU information found in executor result");
+                warn!(
+                    miner_uid = miner_uid,
+                    executor_id = executor_id,
+                    "[EVAL_FLOW] No GPU information found in executor result"
+                );
             }
 
-            info!("[EVAL_FLOW] Binary validation metrics - Matrix computation: {:.2}ms, SM utilization: max={:.1}%, avg={:.1}%",
-                  executor_result.computation_time_ns as f64 / 1_000_000.0,
+            info!(miner_uid = miner_uid, executor_id = executor_id,
+                "[EVAL_FLOW] Binary validation metrics - Matrix computation: {:.2}ms, SM utilization: max={:.1}%, avg={:.1}%",
+                executor_result.computation_time_ns as f64 / 1_000_000.0,
                   executor_result.sm_utilization.max_utilization,
                   executor_result.sm_utilization.avg_utilization);
         } else {
-            warn!("[EVAL_FLOW] No executor result found in binary output");
+            warn!(
+                miner_uid = miner_uid,
+                executor_id = executor_id,
+                "[EVAL_FLOW] No executor result found in binary output"
+            );
         }
 
         if let Some(ref error_msg) = parsed_output.error_message {
-            error!("[EVAL_FLOW] Binary validation error message: {}", error_msg);
+            error!(
+                miner_uid = miner_uid,
+                executor_id = executor_id,
+                "[EVAL_FLOW] Binary validation error message: {}",
+                error_msg
+            );
         }
 
         // Validate structure
         if parsed_output.success && parsed_output.executor_result.is_none() {
-            error!("[EVAL_FLOW] Validator binary reported success but no executor result provided");
+            error!(
+                miner_uid = miner_uid,
+                executor_id = executor_id,
+                "[EVAL_FLOW] Validator binary reported success but no executor result provided"
+            );
             return Err(anyhow::anyhow!(
                 "Validator binary reported success but no executor result provided"
             ));
@@ -1191,6 +1244,11 @@ impl BinaryValidator {
                 .unwrap_or("Unknown UUID")
                 .to_string();
 
+            let gpu_memory_gb = gpu_result
+                .get("gpu_memory_gb")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+
             let computation_time_ns = gpu_result
                 .get("computation_time_ns")
                 .and_then(|v| v.as_u64())
@@ -1247,6 +1305,7 @@ impl BinaryValidator {
                 index: index as u32,
                 gpu_name,
                 gpu_uuid,
+                gpu_memory_gb,
                 computation_time_ns,
                 memory_bandwidth_gbps,
                 sm_utilization,
@@ -1460,11 +1519,15 @@ impl BinaryValidator {
     /// Execute binary validation using validator-binary
     pub async fn execute_binary_validation(
         &self,
+        executor_id: &str,
+        miner_uid: u16,
         ssh_details: &SshConnectionDetails,
         _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         binary_config: &crate::config::BinaryValidationConfig,
     ) -> Result<ValidatorBinaryOutput> {
         info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
             ssh_host = %ssh_details.host,
             ssh_port = ssh_details.port,
             "[EVAL_FLOW] Starting binary validation process"
@@ -1476,6 +1539,8 @@ impl BinaryValidator {
         let execution_duration = execution_start.elapsed();
 
         info!(
+            miner_uid = miner_uid,
+            executor_id = executor_id,
             ssh_host = %ssh_details.host,
             ssh_port = ssh_details.port,
             execution_duration = ?execution_duration,
@@ -1483,7 +1548,8 @@ impl BinaryValidator {
         );
 
         // Parse and validate output
-        let validation_result = self.parse_validator_binary_output(&binary_output)?;
+        let validation_result =
+            self.parse_validator_binary_output(executor_id, miner_uid, &binary_output)?;
 
         // Calculate validation score
         let validation_score = self.calculate_binary_validation_score(&validation_result)?;
@@ -1531,6 +1597,7 @@ mod tests {
       "gpu_index": 0,
       "gpu_name": "NVIDIA B200",
       "gpu_uuid": "GPU-12345678901234567890123456789abc",
+      "gpu_memory_gb": 80.0,
       "merkle_root": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
       "metrics": {
         "anti_debug_passed": true,
@@ -1552,7 +1619,7 @@ mod tests {
   "total_execution_time_ns": 676971022243
 }"#;
 
-        let result = validator.parse_validator_binary_output(real_output.as_bytes());
+        let result = validator.parse_validator_binary_output("", 0, real_output.as_bytes());
         assert!(
             result.is_ok(),
             "Failed to parse real validator output: {:?}",

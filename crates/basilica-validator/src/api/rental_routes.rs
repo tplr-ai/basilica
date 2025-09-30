@@ -9,6 +9,7 @@ use axum::{
     response::{sse::Event, IntoResponse, Sse},
     Json,
 };
+use basilica_common::utils::validate_docker_image;
 use futures::stream::Stream;
 use serde::Deserialize;
 use tracing::{error, info};
@@ -65,7 +66,6 @@ impl Default for StartRentalRequest {
 
 /// Port mapping request
 #[derive(Debug, Deserialize, serde::Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PortMappingRequest {
     pub container_port: u32,
     pub host_port: u32,
@@ -109,7 +109,6 @@ impl From<PortMappingRequest> for crate::rental::PortMapping {
 
 /// Resource requirements request
 #[derive(Debug, Deserialize, serde::Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResourceRequirementsRequest {
     pub cpu_cores: f64,
     pub memory_mb: i64,
@@ -125,7 +124,7 @@ impl Default for ResourceRequirementsRequest {
             cpu_cores: 0.0,
             memory_mb: 0,
             storage_mb: 0,
-            gpu_count: 1,
+            gpu_count: 0,
             gpu_types: Vec::new(),
         }
     }
@@ -145,7 +144,6 @@ impl From<ResourceRequirementsRequest> for crate::rental::ResourceRequirements {
 
 /// Volume mount request
 #[derive(Debug, Deserialize, serde::Serialize)]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VolumeMountRequest {
     pub host_path: String,
     pub container_path: String,
@@ -210,46 +208,6 @@ fn is_valid_ssh_public_key(key: &str) -> bool {
     true
 }
 
-/// Validate container image
-fn is_valid_container_image(image: &str) -> bool {
-    if image.trim().is_empty() || image.trim().len() < 3 || image.trim().len() > 1024 {
-        return false;
-    }
-
-    if image.contains("..") || image.contains('\0') {
-        return false;
-    }
-
-    if image.contains('\'')
-        || image.contains('`')
-        || image.contains(';')
-        || image.contains('&')
-        || image.contains('|')
-    {
-        return false;
-    }
-
-    let parts: Vec<&str> = image.split('/').collect();
-    if parts.len() > 3 {
-        return false;
-    }
-
-    for ch in image.chars() {
-        if !ch.is_alphanumeric()
-            && ch != '.'
-            && ch != '-'
-            && ch != '_'
-            && ch != ':'
-            && ch != '/'
-            && ch != '@'
-        {
-            return false;
-        }
-    }
-
-    true
-}
-
 /// Start a new rental
 pub async fn start_rental(
     State(state): State<ApiState>,
@@ -290,8 +248,8 @@ pub async fn start_rental(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    if !is_valid_container_image(&request.container_image) {
-        error!("Invalid container image provided");
+    if let Err(e) = validate_docker_image(&request.container_image) {
+        error!("Invalid container image provided: {}", e);
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -537,6 +495,14 @@ pub async fn list_rentals(
             created_at: r.created_at.to_rfc3339(),
             miner_id: r.miner_id.clone(),
             container_image: r.container_spec.image.clone(),
+            gpu_specs: if r.executor_details.gpu_specs.is_empty() {
+                None
+            } else {
+                Some(r.executor_details.gpu_specs.clone())
+            },
+            cpu_specs: Some(r.executor_details.cpu_specs.clone()),
+            location: r.executor_details.location.clone(),
+            network_speed: r.executor_details.network_speed.clone(),
         })
         .collect();
 

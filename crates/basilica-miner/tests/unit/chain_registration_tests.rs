@@ -32,6 +32,7 @@ mod chain_registration_tests {
                 netuid: 1,
                 chain_endpoint: Some("ws://localhost:9944".to_string()),
                 weight_interval_secs: 300,
+                ..Default::default()
             },
             uid: MinerUid::from(1),
             coldkey_name: "test-coldkey".to_string(),

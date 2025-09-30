@@ -5,7 +5,7 @@ set -e
 # Usage: curl -sSL https://basilica.ai/install.sh | bash
 
 BINARY_NAME="basilica"
-GITHUB_REPO="tplr-ai/basilica"
+GITHUB_REPO="one-covenant/basilica"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -92,18 +92,18 @@ detect_shell_type() {
     # Prefer the currently running shell over SHELL environment variable
     local shell_path
     local shell_name
-    
+
     # Try to detect the current running shell first
     shell_path="$(ps -p $$ -o comm= 2>/dev/null || echo "")"
-    
+
     # If ps command fails or returns empty, fall back to SHELL env var
     if [ -z "$shell_path" ]; then
         shell_path="${SHELL:-/bin/bash}"
     fi
-    
+
     # Extract just the shell name
     shell_name="$(basename "$shell_path")"
-    
+
     case "$shell_name" in
         bash) echo "bash" ;;
         zsh) echo "zsh" ;;
@@ -117,7 +117,7 @@ detect_shell_type() {
 detect_shell_profile() {
     local shell_type
     shell_type="$(detect_shell_type)"
-    
+
     case "$shell_type" in
         zsh)
             echo "$HOME/.zshrc"
@@ -209,9 +209,9 @@ command_exists() {
 # Get latest basilica-cli release tag from GitHub
 get_latest_cli_release() {
     local releases_json
-    
+
     print_step "Fetching latest release information from GitHub..." >&2
-    
+
     # Fetch releases from GitHub API
     if command_exists curl; then
         releases_json=$(curl -fsSL "https://api.github.com/repos/$GITHUB_REPO/releases" 2>/dev/null)
@@ -221,14 +221,14 @@ get_latest_cli_release() {
         print_error "Neither curl nor wget found" >&2
         return 1
     fi
-    
+
     # Check if API call was successful
     if [ -z "$releases_json" ]; then
         print_error "Failed to fetch releases from GitHub" >&2
         print_info "Please check your internet connection or try again later" >&2
         return 1
     fi
-    
+
     # Check for rate limiting
     if echo "$releases_json" | grep -q "API rate limit exceeded"; then
         print_error "GitHub API rate limit exceeded" >&2
@@ -236,7 +236,7 @@ get_latest_cli_release() {
         print_info "  https://github.com/$GITHUB_REPO/releases" >&2
         return 1
     fi
-    
+
     # Parse JSON to find latest non-prerelease basilica-cli-v* tag
     # Pipeline explanation:
     # 1. grep -E '"tag_name"|"prerelease"' - Extract only tag_name and prerelease lines
@@ -253,13 +253,13 @@ get_latest_cli_release() {
         grep 'basilica-cli-v' | \
         head -1 | \
         cut -d '"' -f 4)
-    
+
     if [ -z "$latest_tag" ]; then
         print_error "No stable basilica-cli releases found" >&2
         print_info "Please check https://github.com/$GITHUB_REPO/releases" >&2
         return 1
     fi
-    
+
     echo "$latest_tag"
     return 0
 }
@@ -277,19 +277,19 @@ download_binary() {
     local arch
     local os
     local latest_tag
-    
+
     # Get latest release tag first (this will print "Fetching latest release information...")
     latest_tag=$(get_latest_cli_release 2>/dev/null || true)
     if [ -z "$latest_tag" ]; then
         print_error "Unable to fetch latest version (rate limited). Try again in a few minutes."
         exit 1
     fi
-    
+
     # Extract version number for display
     local version
     version=$(echo "$latest_tag" | sed 's/basilica-cli-v//')
     print_info "Found latest version: v$version"
-    
+
     # Detect platform
     arch=$(detect_arch)
     os=$(detect_os)
@@ -297,7 +297,7 @@ download_binary() {
     local download_url="https://github.com/${GITHUB_REPO}/releases/download/${latest_tag}/${binary_name}"
 
     print_step "Checking availability for ${os}-${arch}..."
-    
+
     # Check if the binary exists on GitHub first
     local http_status
     if command_exists curl; then
@@ -387,10 +387,10 @@ check_existing_installation() {
         local latest_tag
         local latest_version_clean
         print_step "Checking for latest version..."
-        
+
         # Suppress the "Fetching latest release information..." message from get_latest_cli_release
         latest_tag=$(get_latest_cli_release 2>/dev/null || true)
-        
+
         if [ -n "$latest_tag" ]; then
             # Extract version from tag (e.g., "basilica-cli-v0.2.0" -> "0.2.0")
             latest_version_clean=$(echo "$latest_tag" | sed 's/basilica-cli-v//')
@@ -406,12 +406,13 @@ check_existing_installation() {
             else
                 print_info "Current version: unable to determine"
             fi
-            
+
             print_info "Latest version:  v$latest_version_clean"
-            
+
             # Check if versions match
             if [ "$current_version_clean" = "$latest_version_clean" ]; then
                 print_info "You already have the latest version!"
+                exit 0
             elif [ "$current_version_clean" != "unknown" ]; then
                 print_warning "Update available!"
             fi
@@ -430,13 +431,9 @@ check_existing_installation() {
             return 0
         fi
 
-        # Adjust prompt based on version comparison
-        if [ "$current_version_clean" = "$latest_version_clean" ] && [ "$latest_version_clean" != "unable to fetch" ]; then
-            printf "Do you want to reinstall? [y/N]: "
-        else
-            printf "Do you want to update? [y/N]: "
-        fi
-        
+        # Prompt for update
+        printf "Do you want to update? [y/N]: "
+
         if read -r response < /dev/tty 2>/dev/null; then
             case "$response" in
                 [yY][eE][sS]|[yY])
@@ -464,7 +461,7 @@ cleanup_old_backups() {
             rm -f "$backup" 2>/dev/null
         fi
     done
-    
+
     # Clean up old config backups silently
     local config_dir="$HOME/.config/basilica"
     for config_backup in "$config_dir/config.toml.bak."*; do
@@ -492,26 +489,26 @@ setup_shell_completions() {
     shell_type="$(detect_shell_type)"
     profile_file="$(detect_shell_profile)"
     local completion_marker="# Basilica CLI completions"
-    
+
     print_step "Setting up shell completions for $shell_type..."
-    
+
     # Check if completions are already configured
     if [ -f "$profile_file" ] && grep -q "$completion_marker" "$profile_file" 2>/dev/null; then
         print_info "Shell completions already configured"
         return 0
     fi
-    
+
     # Ensure profile file and its directory exist
     profile_dir="$(dirname "$profile_file")"
     if [ ! -d "$profile_dir" ]; then
         mkdir -p "$profile_dir" 2>/dev/null || true
     fi
-    
+
     # Touch the profile file to ensure it exists
     if [ ! -f "$profile_file" ]; then
         touch "$profile_file" 2>/dev/null || true
     fi
-    
+
     # Add completion based on shell type
     local completion_cmd=""
     case "$shell_type" in
@@ -530,7 +527,7 @@ setup_shell_completions() {
             return 1
             ;;
     esac
-    
+
     # Add completion to profile using direct conditional (fixes SC2320)
     if {
         echo ""
@@ -563,17 +560,17 @@ setup_path() {
 # Show completion message
 show_completion() {
     local profile_file="$(detect_shell_profile)"
-    
+
     echo
     print_info "Basilica CLI installed successfully!"
     echo
-    
+
     # Inform about shell completions
     print_info "Shell completions have been configured for tab support"
     print_info "Please restart your terminal or run:"
     echo -e "  ${CYAN}source $profile_file${NC}"
     echo
-    
+
     # Show manual completion setup instructions
     print_info "For other shells, add the appropriate completion command to your shell config:"
     echo "  Bash:  eval \"\$(COMPLETE=bash basilica)\""

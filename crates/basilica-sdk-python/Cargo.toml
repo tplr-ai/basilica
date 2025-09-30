@@ -20,18 +20,12 @@ stub-gen = ["dep:pyo3-stub-gen", "dep:pyo3-stub-gen-derive"]
 
 [dependencies]
 basilica-sdk = { path = "../basilica-sdk" }
-basilica-validator = { path = "../basilica-validator", features = [
-    "client",
-    "openapi",
-] }
-pyo3 = { version = "0.26", features = ["abi3-py310"] }
-pyo3-stub-gen = { version = "0.13.1", optional = true }
-pyo3-stub-gen-derive = { version = "0.13.1", optional = true }
+basilica-validator = { path = "../basilica-validator", features = ["client"] }
+pyo3 = { workspace = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+pyo3-stub-gen-derive = { workspace = true, optional = true }
 tokio = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
-pythonize = "0.26"
-futures = "0.3"
+pythonize = { workspace = true }
 
 [build-dependencies]
-pyo3-build-config = "0.26"

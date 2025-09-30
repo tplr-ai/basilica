@@ -2,11 +2,12 @@
 
 use crate::{
     api,
+    api::extractors::ownership::archive_rental_ownership,
     config::Config,
     error::{ApiError, Result},
 };
 use axum::Router;
-use basilica_validator::ValidatorClient;
+use basilica_validator::{api::types::RentalStatus, ValidatorClient};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::sync::Arc;
 use tokio::signal;
@@ -47,6 +48,64 @@ pub struct AppState {
 
     /// Database pool for user rental tracking
     pub db: PgPool,
+}
+
+/// Process health check for a single rental
+async fn process_rental_health_check(
+    rental_id: &str,
+    validator_client: &ValidatorClient,
+    db: &PgPool,
+) {
+    match validator_client.get_rental_status(rental_id).await {
+        Ok(status_response) => {
+            // Check if rental is in a terminated state
+            if matches!(
+                status_response.status,
+                RentalStatus::Terminated | RentalStatus::Failed
+            ) {
+                // Archive the rental to terminated_user_rentals table
+                if let Err(e) = archive_rental_ownership(
+                    db,
+                    rental_id,
+                    Some("Health check: rental no longer accessible"),
+                )
+                .await
+                {
+                    tracing::error!("Failed to archive stopped rental {}: {}", rental_id, e);
+                } else {
+                    tracing::info!(
+                        "Health check: Archived {:?} rental {}",
+                        status_response.status,
+                        rental_id
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            // Check if error indicates rental doesn't exist (404)
+            if e.to_string().contains("404") || e.to_string().contains("NOT_FOUND") {
+                // Rental not found on validator, archive it
+                if let Err(archive_err) = archive_rental_ownership(
+                    db,
+                    rental_id,
+                    Some("Health check: rental not found on validator"),
+                )
+                .await
+                {
+                    tracing::error!(
+                        "Failed to archive missing rental {}: {}",
+                        rental_id,
+                        archive_err
+                    );
+                } else {
+                    tracing::info!("Health check: Archived missing rental {}", rental_id);
+                }
+            } else {
+                // Log other errors at debug level to avoid spam
+                tracing::debug!("Health check failed for rental {}: {}", rental_id, e);
+            }
+        }
+    }
 }
 
 impl Server {
@@ -187,6 +246,53 @@ impl Server {
             }
         });
 
+        // Start rental health check task
+        let rental_health_client = validator_client.clone();
+        let rental_health_db = state.db.clone();
+        let rental_health_interval = config.rental_health_check_interval();
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(rental_health_interval);
+            loop {
+                interval.tick().await;
+
+                // Query all active rentals from the database
+                match sqlx::query_as::<_, (String,)>("SELECT rental_id FROM user_rentals")
+                    .fetch_all(&rental_health_db)
+                    .await
+                {
+                    Ok(rental_records) => {
+                        // TODO: Consider batching these API calls for better performance
+                        // Currently making individual API calls for each rental
+                        for record in &rental_records {
+                            let rental_id = &record.0;
+                            process_rental_health_check(
+                                rental_id,
+                                &rental_health_client,
+                                &rental_health_db,
+                            )
+                            .await;
+                        }
+
+                        if !rental_records.is_empty() {
+                            tracing::debug!(
+                                "Rental health check completed for {} rentals",
+                                rental_records.len()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to query active rentals for health check: {}", e);
+                    }
+                }
+            }
+        });
+
+        tracing::info!(
+            "Started rental health check task (interval: {} seconds)",
+            rental_health_interval.as_secs()
+        );
+
         // Build the application router
         let app = Self::build_router(state)?;
 
@@ -207,7 +313,6 @@ impl Server {
 
         let app = Router::new()
             .merge(api::routes(state.clone()))
-            .merge(api::docs_routes())
             .layer(middleware)
             .with_state(state);
 

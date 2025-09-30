@@ -49,14 +49,15 @@ mod tests {
                     let gpu_uuid =
                         format!("gpu-{}-{}-{}", profile.miner_uid.as_u16(), gpu_model, i);
                     sqlx::query(
-                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
-                         VALUES (?, ?, ?, ?, ?, ?)"
+                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)"
                     )
                     .bind(&gpu_uuid)
                     .bind(i as i32)
                     .bind(&executor_id)
                     .bind(&miner_id)
                     .bind(gpu_model)
+                    .bind(80i64) // Default 80GB for test data
                     .bind(now.to_rfc3339())
                     .execute(persistence.pool())
                     .await?;
@@ -64,19 +65,15 @@ mod tests {
             }
 
             // Seed miner_executors table
-            let gpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
-            let cpu_specs = serde_json::to_string(&HashMap::<String, String>::new())?;
             sqlx::query(
-                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, gpu_specs, cpu_specs, status, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&executor_id)
             .bind(&miner_id)
             .bind(&executor_id)
             .bind("127.0.0.1:8080")
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
-            .bind(&gpu_specs)
-            .bind(&cpu_specs)
             .bind("verified") // Set status to 'verified' for tests
             .bind(now.to_rfc3339())
             .bind(now.to_rfc3339())
@@ -123,7 +120,7 @@ mod tests {
 
         let profile = MinerGpuProfile {
             miner_uid: MinerUid::new(1),
-            gpu_counts: HashMap::from([("H100".to_string(), 2)]),
+            gpu_counts: HashMap::from([("A100".to_string(), 2)]),
             total_score: 0.8,
             verification_count: 5,
             last_updated: now,
@@ -173,7 +170,7 @@ mod tests {
         let profiles = vec![
             MinerGpuProfile {
                 miner_uid: MinerUid::new(1),
-                gpu_counts: std::collections::HashMap::from([("H100".to_string(), 2)]),
+                gpu_counts: std::collections::HashMap::from([("A100".to_string(), 2)]),
                 total_score: 0.8,
                 verification_count: 5,
                 last_updated: now,
@@ -181,7 +178,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(2),
-                gpu_counts: std::collections::HashMap::from([("H100".to_string(), 1)]),
+                gpu_counts: std::collections::HashMap::from([("A100".to_string(), 1)]),
                 total_score: 0.7,
                 verification_count: 3,
                 last_updated: now,
@@ -189,7 +186,7 @@ mod tests {
             },
             MinerGpuProfile {
                 miner_uid: MinerUid::new(3),
-                gpu_counts: std::collections::HashMap::from([("H200".to_string(), 1)]),
+                gpu_counts: std::collections::HashMap::from([("H100".to_string(), 1)]),
                 total_score: 0.6,
                 verification_count: 2,
                 last_updated: now,

@@ -667,10 +667,12 @@ mod tests {
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: Some(1000),
             binary_validation: crate::config::BinaryValidationConfig::default(),
+            docker_validation: crate::config::DockerValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
             executor_validation_interval: Duration::from_secs(12 * 3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(30 * 60)),
             enable_worker_queue: false,
+            storage_validation: crate::config::StorageValidationConfig::default(),
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {

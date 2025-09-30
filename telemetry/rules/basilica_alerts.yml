@@ -90,3 +90,14 @@ groups:
         annotations:
           summary: "Slow validation operations detected"
           description: "95th percentile validation duration is {{ $value }}s over the last 5 minutes"
+
+      - alert: ValidatorRPCCriticalFailure
+        expr: increase(basilica_validator_rpc_critical_failures_total[5m]) > 0
+        for: 30s
+        labels:
+          severity: critical
+          component: validator
+          action: restart_required
+        annotations:
+          summary: "Validator RPC connection failed - restart required"
+          description: "Validator has RPC failures after max retries. Method: {{ $labels.method }}, Error type: {{ $labels.error_type }}"

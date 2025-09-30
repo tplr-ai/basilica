@@ -54,7 +54,7 @@ compression_enabled = true     # Enable compression for telemetry data
 evaluation_interval_seconds = 60
 cache_ttl_seconds = 300
 max_rules_per_package = 100
-default_package_id = "h100"    # Default billing package
+default_package_id = "a100"    # Default billing package
 
 [aws]
 # AWS configuration for secrets management (optional)

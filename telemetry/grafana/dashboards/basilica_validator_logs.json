@@ -54,7 +54,7 @@
       "title": "github",
       "tooltip": "github",
       "type": "link",
-      "url": "https://github.com/tplr-ai/basilica/"
+      "url": "https://github.com/one-covenant/basilica/"
     }
   ],
   "liveNow": true,
@@ -74,7 +74,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "# <img width=50 class=\"logo\" alt=\"BASILICA logo\" src=\"https://www.synapz.org/assets/basilica/basilica_logo200x200.png\"> Basilica - Sacred Compute\n\n<p align=\"center\">\n  <a href=\"https://github.com/tplr-ai/basilica/tree/main/docs\">Docs</a> • \n  <a href=\"https://github.com/tplr-ai/basilica/blob/main/docs/quickstart.md\">Quick Start</a> • \n  <a href=\"https://github.com/tplr-ai/basilica/blob/main/docs/architecture.md\">Architecture</a>\n</p>\n\n---\n\n```bash\n$ curl -sSL https://basilica.ai/install.sh | bash\n```\n",
+        "content": "# <img width=50 class=\"logo\" alt=\"BASILICA logo\" src=\"https://www.synapz.org/assets/basilica/basilica_logo200x200.png\"> Basilica - Sacred Compute\n\n<p align=\"center\">\n  <a href=\"https://github.com/one-covenant/basilica/tree/main/docs\">Docs</a> • \n  <a href=\"https://github.com/one-covenant/basilica/blob/main/docs/quickstart.md\">Quick Start</a> • \n  <a href=\"https://github.com/one-covenant/basilica/blob/main/docs/architecture.md\">Architecture</a>\n</p>\n\n---\n\n```bash\n$ curl -sSL https://basilica.ai/install.sh | bash\n```\n",
         "mode": "markdown"
       },
       "pluginVersion": "10.2.0",
@@ -107,8 +107,72 @@
       },
       "gridPos": {
         "h": 6,
-        "w": 12,
+        "w": 4,
         "x": 0,
+        "y": 5
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {},
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "sum(basilica_validator_executor_rental_status)",
+          "legendFormat": "Total GPUs",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Total Rented Servers",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
         "y": 5
       },
       "id": 5,
@@ -136,13 +200,77 @@
             "uid": "PBFA97CFB590B2093"
           },
           "editorMode": "code",
-          "expr": "count(count by (executor_id, gpu_model) (basilica_validator_executor_gpu_count > 0))",
+          "expr": "count(increase(basilica_validator_miner_successful_validations[1h]) > 0) - sum(basilica_validator_executor_rental_status)",
           "legendFormat": "Total GPUs",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Total Validated GPU Servers in the Network",
+      "title": "Total Available Servers",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 5
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "text": {},
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "count(increase(basilica_validator_miner_successful_validations[1h]) > 0)",
+          "legendFormat": "Total GPUs",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Total Validated Servers",
       "type": "stat"
     },
     {
@@ -243,6 +371,163 @@
             ]
           }
         },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "id": 8,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "{__name__=\"basilica_validator_executor_validation_state\", component=\"validator\", deployment=\"validator-prod\", environment=\"production\", executor_id=\"016d4e7e-e017-4bd2-b9ff-3459ba9da10f\", instance=\"31.22.104.135\", job=\"validator\", miner_uid=\"63\", netuid=\"39\", node_type=\"validator\", project=\"basilica\", state=\"binary_validating\", validation_type=\"full\", validator_uid=\"204\"}"
+          }
+        ]
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "max by (executor_id, gpu_model, miner_uid) (basilica_validator_executor_gpu_count > 0)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "max by (executor_id, miner_uid, state) (basilica_validator_executor_validation_state{validation_type=\"full\"} > 0)",
+          "format": "table",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "max by (executor_id, miner_uid, state) (basilica_validator_executor_validation_state{validation_type=\"lightweight\"} > 0)",
+          "format": "table",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          },
+          "editorMode": "code",
+          "expr": "max by (executor_id, miner_uid) (basilica_validator_executor_rental_status)",
+          "format": "table",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "__auto",
+          "range": true,
+          "refId": "D"
+        }
+      ],
+      "title": "GPUs per Executor (with Miner)",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "executor_id",
+            "mode": "inner"
+          }
+        },
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "miner_uid",
+            "mode": "inner"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Time 1": true,
+              "Time 2": true,
+              "Time 3": true,
+              "Time 4": true,
+              "Value #A": false,
+              "Value #B": true,
+              "Value #C": true,
+              "executor_id": false,
+              "miner_uid 2": true,
+              "miner_uid 3": true,
+              "miner_uid 4": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "Value #A": "gpu_count",
+              "Value #D": "is_rented",
+              "state": "full_validation_state",
+              "state 1": "full_state",
+              "state 2": "lightweight_state"
+            }
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
         "overrides": [
           {
             "matcher": {
@@ -271,10 +556,10 @@
         ]
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
+        "h": 7,
+        "w": 24,
         "x": 0,
-        "y": 11
+        "y": 21
       },
       "id": 7,
       "options": {
@@ -314,8 +599,11 @@
             "excludeByName": {
               "Time": true
             },
+            "indexByName": {},
             "renameByName": {
-              "Value": "GPU Count",
+              "Time": "",
+              "Value": "Number of Executors",
+              "gpu_model": "GPU Model",
               "gpu_profile": "GPU Model",
               "miner_uid": "Miner UID"
             }
@@ -329,103 +617,6 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 11
-      },
-      "id": 8,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "GPU Count"
-          }
-        ]
-      },
-      "pluginVersion": "10.2.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PBFA97CFB590B2093"
-          },
-          "editorMode": "code",
-          "expr": "max by (executor_id, gpu_model, miner_uid) (basilica_validator_executor_gpu_count > 0)",
-          "format": "table",
-          "instant": true,
-          "refId": "A"
-        }
-      ],
-      "title": "GPUs per Executor (with Miner)",
-      "transformations": [
-        {
-          "id": "organize",
-          "options": {
-            "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "cluster": true,
-              "component": true,
-              "deployment": true,
-              "environment": true,
-              "instance": true,
-              "job": true,
-              "netuid": true,
-              "node_type": true,
-              "project": true,
-              "replica": true,
-              "validator_uid": true
-            },
-            "renameByName": {
-              "Value": "GPU Count",
-              "executor_id": "Executor ID",
-              "gpu_model": "GPU Model",
-              "miner_uid": "Miner UID"
-            }
-          }
-        }
-      ],
-      "type": "table"
-    },
-    {
-      "datasource": {},
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -516,7 +707,7 @@
         "h": 24,
         "w": 12,
         "x": 0,
-        "y": 19
+        "y": 28
       },
       "id": 11,
       "options": {
@@ -534,7 +725,7 @@
         "sortBy": [
           {
             "desc": true,
-            "displayName": "Total Evals (24h)"
+            "displayName": "Evals per hour"
           }
         ]
       },
@@ -644,6 +835,24 @@
               }
             }
           }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                },
+                "fieldName": "Current Rate (max)"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
         }
       ],
       "type": "table"
@@ -743,7 +952,7 @@
         "h": 14,
         "w": 12,
         "x": 12,
-        "y": 19
+        "y": 28
       },
       "id": 12,
       "options": {
@@ -871,6 +1080,24 @@
               }
             }
           }
+        },
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "greater",
+                  "options": {
+                    "value": 0
+                  }
+                },
+                "fieldName": "Current Rate (max)"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
         }
       ],
       "type": "table"
@@ -904,7 +1131,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 42
       },
       "id": 10,
       "options": {
@@ -990,8 +1217,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "red",
@@ -1007,7 +1233,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 52
       },
       "id": 1,
       "options": {
@@ -1046,7 +1272,7 @@
         "h": 49,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 60
       },
       "id": 4,
       "options": {
@@ -1078,11 +1304,7 @@
   ],
   "refresh": "1m",
   "schemaVersion": 38,
-  "tags": [
-    "basilica",
-    "validator",
-    "logs"
-  ],
+  "tags": [],
   "templating": {
     "list": [
       {
@@ -1130,27 +1352,27 @@
       {
         "current": {
           "selected": false,
-          "text": "rental",
-          "value": "rental"
+          "text": "",
+          "value": ""
         },
         "description": "Free text search (supports regex)",
         "hide": 0,
-        "label": "Search Text",
+        "label": "Search The Logs",
         "name": "search_text",
         "options": [
           {
-            "selected": false,
+            "selected": true,
             "text": "",
             "value": ""
           }
         ],
-        "query": "rental",
+        "query": ".+",
         "skipUrlSync": false,
         "type": "textbox"
       },
       {
         "current": {
-          "selected": false,
+          "selected": true,
           "text": [
             "debug",
             "info",
@@ -1218,6 +1440,6 @@
   "timezone": "",
   "title": "Basilica Validator Logs",
   "uid": "basilica_validator_logs",
-  "version": 35,
+  "version": 45,
   "weekStart": ""
 }

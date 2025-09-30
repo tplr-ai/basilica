@@ -15,6 +15,7 @@ use tracing::{debug, info};
 #[derive(Debug)]
 pub struct TokenManager {
     auth_method: Arc<Mutex<AuthMethod>>,
+    api_key: Option<String>,
 }
 
 impl TokenManager {
@@ -28,23 +29,44 @@ impl TokenManager {
 
         Self {
             auth_method: Arc::new(Mutex::new(auth_method)),
+            api_key: None,
         }
     }
 
     /// Create a new token manager with file-based authentication
     pub fn new_file_based() -> AuthResult<Self> {
+        // Check for API key in environment variable first
+        let api_key = std::env::var("BASILICA_API_TOKEN").ok();
+
         let data_dir = get_sdk_data_dir()?;
         let store = TokenStore::new(data_dir)?;
         let auth_method = AuthMethod::FileBased { store };
 
         Ok(Self {
             auth_method: Arc::new(Mutex::new(auth_method)),
+            api_key,
         })
+    }
+
+    /// Create a new token manager with API key authentication
+    pub fn new_api_key(api_key: String) -> Self {
+        Self {
+            auth_method: Arc::new(Mutex::new(AuthMethod::Direct {
+                tokens: TokenSet::new(String::new(), String::new()),
+            })),
+            api_key: Some(api_key),
+        }
     }
 
     /// Get valid access token (handles refresh automatically)
     pub async fn get_access_token(&self) -> AuthResult<String> {
         debug!("Getting access token from TokenManager");
+
+        // If API key is set, return it directly
+        if let Some(api_key) = &self.api_key {
+            debug!("Using API key authentication");
+            return Ok(api_key.clone());
+        }
 
         let mut auth_method = self.auth_method.lock().await;
 

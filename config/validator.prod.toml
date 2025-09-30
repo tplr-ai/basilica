@@ -35,7 +35,7 @@ use_dynamic_discovery = true
 discovery_timeout = { secs = 30 }
 fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
-enable_worker_queue = false  # Enable for decoupled async validation execution
+enable_worker_queue = false            # Enable for decoupled async validation execution
 
 [verification.binary_validation]
 enabled = true
@@ -43,6 +43,27 @@ validator_binary_path = "/opt/basilica/bin/validator-binary"
 executor_binary_path = "/opt/basilica/bin/executor-binary"
 execution_timeout_secs = 1200
 output_format = "json"
+
+[verification.docker_validation]
+docker_image = "nvidia/cuda:12.8.0-runtime-ubuntu22.04"
+pull_timeout_secs = 2400
+
+[verification.storage_validation]
+min_required_storage_bytes = 1099511627776 # 1TB in bytes
+
+[ssh_validation]
+enabled = true
+timeout = { secs = 60 }
+max_file_size = "10MB"
+allowed_commands = ["gpu-attestor", "nvidia-smi"]
+temp_dir = "/tmp/basilica-validation"
+
+[scoring]
+gpu_weight = 0.4
+cpu_weight = 0.2
+memory_weight = 0.2
+network_weight = 0.1
+reliability_weight = 0.1
 
 [metrics]
 enabled = true
@@ -57,7 +78,7 @@ path = "/metrics"
 [logging]
 level = "debug"
 format = "json"
-output = "./validator.log"
+output = "/opt/basilica/data/validator.log"
 max_file_size = 104857600
 max_files = 10
 
@@ -112,6 +133,6 @@ weight_version_key = 0
 # are distributed across GPU categories
 # Must sum to exactly 100.0
 [emission.gpu_allocations]
-"H100" = 8.0
-"H200" = 12.0
-"B200" = 80.0
+A100 = { weight = 8.0, min_gpu_count = 1, min_gpu_vram = 1 }
+H100 = { weight = 12.0, min_gpu_count = 1, min_gpu_vram = 1 }
+B200 = { weight = 80.0, min_gpu_count = 8, min_gpu_vram = 1 }
