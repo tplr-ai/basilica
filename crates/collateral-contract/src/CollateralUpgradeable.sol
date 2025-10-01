@@ -6,6 +6,28 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
+interface IStaking {
+    function transferStake(
+        bytes32 coldkey,
+        bytes32 hotkey,
+        uint256 netuid1,
+        uint256 netuid2,
+        uint256 amount
+    ) external;
+    function moveStake(
+        bytes32 hotkey1,
+        bytes32 hotkey2,
+        uint256 netuid1,
+        uint256 netuid2,
+        uint256 amount
+    ) external;
+    function getStake(
+        bytes32 hotkey,
+        bytes32 coldkey,
+        uint256 netuid
+    ) external view returns (uint256);
+}
+
 contract CollateralUpgradeable is
     Initializable,
     UUPSUpgradeable,
@@ -24,18 +46,26 @@ contract CollateralUpgradeable is
     // Role for upgrading the contract
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
+    address public constant ISTAKING_V2_ADDRESS =
+        0x0000000000000000000000000000000000000805;
+
     // State variables
     uint16 public NETUID;
     address public TRUSTEE;
     uint64 public DECISION_TIMEOUT;
     uint256 public MIN_COLLATERAL_INCREASE;
+    bytes32 public CONTRACT_COLDKEY;
+    bytes32 public CONTRACT_HOTKEY;
 
     mapping(bytes32 => mapping(bytes16 => address)) public executorToMiner;
     mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
+    mapping(bytes32 => mapping(bytes16 => uint256)) internal alphaCollaterals;
     mapping(uint256 => Reclaim) public reclaims;
 
     mapping(bytes32 => mapping(bytes16 => uint256))
         private collateralUnderPendingReclaims;
+    mapping(bytes32 => mapping(bytes16 => uint256))
+        private alphaCollateralUnderPendingReclaims;
     uint256 private nextReclaimId;
 
     struct Reclaim {
@@ -43,6 +73,8 @@ contract CollateralUpgradeable is
         bytes16 executorId;
         address miner;
         uint256 amount;
+        bytes32 alphaColdkey;
+        uint256 alphaAmount;
         uint64 denyTimeout;
     }
 
@@ -51,7 +83,9 @@ contract CollateralUpgradeable is
         bytes32 indexed hotkey,
         bytes16 indexed executorId,
         address indexed miner,
-        uint256 amount
+        uint256 amount,
+        bytes32 alphaHotkey,
+        uint256 alphaAmount
     );
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
@@ -59,6 +93,8 @@ contract CollateralUpgradeable is
         bytes16 indexed executorId,
         address miner,
         uint256 amount,
+        bytes32 alphaColdkey,
+        uint256 alphaAmount,
         uint64 expirationTime,
         string url,
         bytes16 urlContentMd5Checksum
@@ -68,7 +104,9 @@ contract CollateralUpgradeable is
         bytes32 indexed hotkey,
         bytes16 indexed executorId,
         address miner,
-        uint256 amount
+        uint256 amount,
+        bytes32 alphaColdkey,
+        uint256 alphaAmount
     );
     event Denied(
         uint256 indexed reclaimRequestId,
@@ -80,6 +118,7 @@ contract CollateralUpgradeable is
         bytes16 indexed executorId,
         address indexed miner,
         uint256 slashAmount,
+        uint256 slashAlphaAmount,
         string url,
         bytes16 urlContentMd5Checksum
     );
@@ -102,6 +141,7 @@ contract CollateralUpgradeable is
     error TransferFailed();
     error InsufficientCollateralForReclaim();
     error InsufficientCollateralForSlash();
+    error InvalidAlphaColdkey();
 
     /// @notice Initializes the upgradeable collateral contract
     /// @param netuid The netuid of the subnet
@@ -114,10 +154,12 @@ contract CollateralUpgradeable is
         address trustee,
         uint256 minCollateralIncrease,
         uint64 decisionTimeout,
-        address admin
+        address admin,
+        bytes32 alphaHotkey
     ) public initializer {
         require(trustee != address(0), "Trustee address must be non-zero");
         require(admin != address(0), "Admin address must be non-zero");
+        require(alphaHotkey != bytes32(0), "Alpha hotkey must be non-zero");
         require(
             minCollateralIncrease > 0,
             "Min collateral increase must be greater than 0"
@@ -131,6 +173,7 @@ contract CollateralUpgradeable is
         TRUSTEE = trustee;
         MIN_COLLATERAL_INCREASE = minCollateralIncrease;
         DECISION_TIMEOUT = decisionTimeout;
+        CONTRACT_HOTKEY = alphaHotkey;
 
         // Set up roles
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -142,6 +185,11 @@ contract CollateralUpgradeable is
             revert NotTrustee();
         }
         _;
+    }
+
+    function setContractColdkey(bytes32 alphaColdkey) external onlyTrustee {
+        require(alphaColdkey != bytes32(0), "Alpha coldkey must be non-zero");
+        CONTRACT_COLDKEY = alphaColdkey;
     }
 
     // Allow deposits only via deposit() function
@@ -162,9 +210,11 @@ contract CollateralUpgradeable is
     /// @dev Emits a Deposit event with the hotkey, executorId, sender's address and deposited amount
     function deposit(
         bytes32 hotkey,
-        bytes16 executorId
+        bytes16 executorId,
+        bytes32 alphaHotkey,
+        uint256 alphaAmount
     ) external payable virtual {
-        if (msg.value < MIN_COLLATERAL_INCREASE) {
+        if (msg.value != 0 && msg.value < MIN_COLLATERAL_INCREASE) {
             revert InsufficientAmount();
         }
 
@@ -175,8 +225,19 @@ contract CollateralUpgradeable is
             revert ExecutorNotOwned();
         }
 
+        uint256 actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
+
         collaterals[hotkey][executorId] += msg.value;
-        emit Deposit(hotkey, executorId, msg.sender, msg.value);
+        alphaCollaterals[hotkey][executorId] += actualAlphaAmount;
+
+        emit Deposit(
+            hotkey,
+            executorId,
+            msg.sender,
+            msg.value,
+            alphaHotkey,
+            actualAlphaAmount
+        );
     }
 
     /// @notice Initiates a process to reclaim all available collateral from a specific executor
@@ -191,6 +252,7 @@ contract CollateralUpgradeable is
     function reclaimCollateral(
         bytes32 hotkey,
         bytes16 executorId,
+        bytes32 alphaColdkey,
         string calldata url,
         bytes16 urlContentMd5Checksum
     ) external {
@@ -204,8 +266,18 @@ contract CollateralUpgradeable is
         ];
         uint256 availableAmount = totalCollateral - pendingCollateral;
 
-        if (availableAmount == 0) {
+        uint256 alphaCollateral = alphaCollaterals[hotkey][executorId];
+        uint256 pendingAlphaCollateral = alphaCollateralUnderPendingReclaims[
+            hotkey
+        ][executorId];
+        uint256 availableAlphaAmount = alphaCollateral - pendingAlphaCollateral;
+
+        if (availableAmount == 0 && availableAlphaAmount == 0) {
             revert AmountZero();
+        }
+
+        if (availableAlphaAmount > 0 && alphaColdkey == bytes32(0)) {
+            revert InvalidAlphaColdkey();
         }
 
         uint64 denyTimeout = uint64(block.timestamp) + DECISION_TIMEOUT;
@@ -215,10 +287,15 @@ contract CollateralUpgradeable is
             executorId: executorId,
             miner: msg.sender,
             amount: availableAmount,
+            alphaColdkey: alphaColdkey,
+            alphaAmount: availableAlphaAmount,
             denyTimeout: denyTimeout
         });
 
         collateralUnderPendingReclaims[hotkey][executorId] += availableAmount;
+        alphaCollateralUnderPendingReclaims[hotkey][
+            executorId
+        ] += availableAlphaAmount;
 
         emit ReclaimProcessStarted(
             nextReclaimId,
@@ -226,6 +303,8 @@ contract CollateralUpgradeable is
             executorId,
             msg.sender,
             availableAmount,
+            alphaColdkey,
+            availableAlphaAmount,
             denyTimeout,
             url,
             urlContentMd5Checksum
@@ -267,17 +346,29 @@ contract CollateralUpgradeable is
 
         collaterals[hotkey][executorId] -= amount;
 
-        emit Reclaimed(reclaimRequestId, hotkey, executorId, miner, amount);
-
         // check-effect-interact pattern used to prevent reentrancy attacks
         (bool success, ) = payable(miner).call{value: amount}("");
         if (!success) {
             revert TransferFailed();
         }
 
-        if (collaterals[hotkey][executorId] == 0) {
+        if (reclaim.alphaAmount > 0) {
+            withdrawAlpha(reclaim.alphaColdkey, reclaim.alphaAmount);
+        }
+
+        if (collaterals[hotkey][executorId] == 0 && reclaim.alphaAmount == 0) {
             executorToMiner[hotkey][executorId] = address(0);
         }
+
+        emit Reclaimed(
+            reclaimRequestId,
+            hotkey,
+            executorId,
+            miner,
+            amount,
+            reclaim.alphaColdkey,
+            reclaim.alphaAmount
+        );
     }
 
     /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires
@@ -307,6 +398,9 @@ contract CollateralUpgradeable is
         collateralUnderPendingReclaims[reclaim.hotkey][
             reclaim.executorId
         ] -= reclaim.amount;
+        alphaCollateralUnderPendingReclaims[reclaim.hotkey][
+            reclaim.executorId
+        ] -= reclaim.alphaAmount;
         emit Denied(reclaimRequestId, url, urlContentMd5Checksum);
 
         delete reclaims[reclaimRequestId];
@@ -326,28 +420,31 @@ contract CollateralUpgradeable is
         bytes32 hotkey,
         bytes16 executorId,
         uint256 slashAmount,
+        uint256 slashAlphaAmount,
         string calldata url,
         bytes16 urlContentMd5Checksum
     ) external onlyTrustee {
         uint256 amount = collaterals[hotkey][executorId];
+        uint256 alphaAmount = alphaCollaterals[hotkey][executorId];
 
-        if (amount == 0) {
+        if (amount == 0 && alphaAmount == 0) {
             revert AmountZero();
         }
 
-        if (slashAmount > amount) {
+        if (slashAmount > amount && slashAlphaAmount > alphaAmount) {
             revert InsufficientCollateralForSlash();
         }
 
         collaterals[hotkey][executorId] = amount - slashAmount;
+        alphaCollaterals[hotkey][executorId] = alphaAmount - slashAlphaAmount;
         address miner = executorToMiner[hotkey][executorId];
 
-        // burn the collateral
+        // burn the collateral, alpha locked in the contract
         (bool success, ) = payable(address(0)).call{value: slashAmount}("");
         if (!success) {
             revert TransferFailed();
         }
-        if (amount == slashAmount) {
+        if (amount == slashAmount && alphaAmount == slashAlphaAmount) {
             executorToMiner[hotkey][executorId] = address(0);
         }
         emit Slashed(
@@ -355,6 +452,7 @@ contract CollateralUpgradeable is
             executorId,
             miner,
             slashAmount,
+            slashAlphaAmount,
             url,
             urlContentMd5Checksum
         );
@@ -422,4 +520,82 @@ contract CollateralUpgradeable is
         uint256 oldMinIncrease,
         uint256 newMinIncrease
     );
+
+    function getContractStake() public view returns (uint256) {
+        return
+            IStaking(ISTAKING_V2_ADDRESS).getStake(
+                CONTRACT_HOTKEY,
+                CONTRACT_COLDKEY,
+                NETUID
+            );
+    }
+
+    function transferAlpha(
+        bytes32 alphaHotkey,
+        uint256 alphaAmount
+    ) internal returns (uint256) {
+        uint256 contractStake = getContractStake();
+
+        bytes memory data = abi.encodeWithSelector(
+            IStaking.transferStake.selector,
+            CONTRACT_COLDKEY,
+            alphaHotkey,
+            NETUID,
+            NETUID,
+            alphaAmount
+        );
+        (bool success, ) = address(ISTAKING_V2_ADDRESS).delegatecall{
+            gas: gasleft()
+        }(data);
+        require(success, "user deposit alpha call failed");
+
+        uint256 newContractStake = getContractStake();
+
+        require(
+            newContractStake > contractStake,
+            "contract stake decreased after deposit"
+        );
+
+        // use the increased stake as the actual alpha amount, for the swap fee in the move stake call
+        // the contract will take it and get compensated by laster emission of alpha
+        uint256 actualAlphaAmount = newContractStake - contractStake;
+
+        if (alphaHotkey != CONTRACT_HOTKEY) {
+            data = abi.encodeWithSelector(
+                IStaking.moveStake.selector,
+                alphaHotkey,
+                CONTRACT_HOTKEY,
+                NETUID,
+                NETUID,
+                actualAlphaAmount
+            );
+            (success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
+                data
+            );
+            require(success, "user deposit, move stake call failed");
+        }
+
+        return actualAlphaAmount;
+    }
+
+    function withdrawAlpha(bytes32 alphaColdkey, uint256 alphaAmount) internal {
+        uint256 contractStake = getContractStake();
+        require(
+            contractStake >= alphaAmount,
+            "contract stake is less than withdraw alpha amount"
+        );
+
+        bytes memory data = abi.encodeWithSelector(
+            IStaking.transferStake.selector,
+            alphaColdkey,
+            CONTRACT_HOTKEY,
+            NETUID,
+            NETUID,
+            alphaAmount
+        );
+        (bool success, ) = address(ISTAKING_V2_ADDRESS).delegatecall{
+            gas: gasleft()
+        }(data);
+        require(success, "user withdraw alpha call failed");
+    }
 }
