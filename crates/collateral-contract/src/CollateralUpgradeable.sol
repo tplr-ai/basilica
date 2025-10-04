@@ -43,6 +43,9 @@ contract CollateralUpgradeable is
         return 1;
     }
 
+    mapping(bytes32 => mapping(bytes32 => mapping(uint256 => uint256)))
+        public stakes;
+
     // Role for upgrading the contract
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
@@ -122,6 +125,10 @@ contract CollateralUpgradeable is
         string url,
         bytes16 urlContentMd5Checksum
     );
+    event AlphaColdkeyUpdated(
+        bytes32 indexed oldAlphaColdkey,
+        bytes32 indexed newAlphaColdkey
+    );
 
     // Upgrade event
     event ContractUpgraded(
@@ -189,7 +196,9 @@ contract CollateralUpgradeable is
 
     function setContractColdkey(bytes32 alphaColdkey) external onlyTrustee {
         require(alphaColdkey != bytes32(0), "Alpha coldkey must be non-zero");
+        bytes32 oldAlphaColdkey = CONTRACT_COLDKEY;
         CONTRACT_COLDKEY = alphaColdkey;
+        emit AlphaColdkeyUpdated(oldAlphaColdkey, alphaColdkey);
     }
 
     // Allow deposits only via deposit() function
@@ -225,10 +234,13 @@ contract CollateralUpgradeable is
             revert ExecutorNotOwned();
         }
 
-        uint256 actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
+        uint256 actualAlphaAmount = 0;
+        if (alphaAmount > 0) {
+            actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
+            alphaCollaterals[hotkey][executorId] += actualAlphaAmount;
+        }
 
         collaterals[hotkey][executorId] += msg.value;
-        alphaCollaterals[hotkey][executorId] += actualAlphaAmount;
 
         emit Deposit(
             hotkey,
@@ -260,17 +272,11 @@ contract CollateralUpgradeable is
             revert ExecutorNotOwned();
         }
 
-        uint256 totalCollateral = collaterals[hotkey][executorId];
-        uint256 pendingCollateral = collateralUnderPendingReclaims[hotkey][
-            executorId
-        ];
-        uint256 availableAmount = totalCollateral - pendingCollateral;
+        uint256 availableAmount = collaterals[hotkey][executorId] -
+            collateralUnderPendingReclaims[hotkey][executorId];
 
-        uint256 alphaCollateral = alphaCollaterals[hotkey][executorId];
-        uint256 pendingAlphaCollateral = alphaCollateralUnderPendingReclaims[
-            hotkey
-        ][executorId];
-        uint256 availableAlphaAmount = alphaCollateral - pendingAlphaCollateral;
+        uint256 availableAlphaAmount = alphaCollaterals[hotkey][executorId] -
+            alphaCollateralUnderPendingReclaims[hotkey][executorId];
 
         if (availableAmount == 0 && availableAlphaAmount == 0) {
             revert AmountZero();

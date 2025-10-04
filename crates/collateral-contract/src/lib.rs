@@ -280,7 +280,6 @@ pub async fn slash_collateral(
     private_key: &str,
     hotkey: [u8; 32],
     executor_id: [u8; 16],
-    slash_amount: U256,
     url: &str,
     url_content_md5_checksum: u128,
     network_config: &CollateralNetworkConfig,
@@ -290,7 +289,6 @@ pub async fn slash_collateral(
     let tx = contract.slashCollateral(
         FixedBytes::from_slice(&hotkey),
         FixedBytes::from_slice(&executor_id),
-        slash_amount,
         url.to_string(),
         FixedBytes::from_slice(&url_content_md5_checksum.to_be_bytes()),
     );
