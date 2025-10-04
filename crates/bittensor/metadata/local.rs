@@ -36,7 +36,7 @@ pub mod api {
         "Crowdloan",
         "Swap",
     ];
-    pub static RUNTIME_APIS: [&str; 20usize] = [
+    pub static RUNTIME_APIS: [&str; 21usize] = [
         "Core",
         "Metadata",
         "BlockBuilder",
@@ -56,6 +56,7 @@ pub mod api {
         "SubnetInfoRuntimeApi",
         "StakeInfoRuntimeApi",
         "SubnetRegistrationRuntimeApi",
+        "BabeApi",
         "SwapRuntimeApi",
     ];
     #[doc = r" The error type that is returned when there is a runtime issue."]
@@ -155,6 +156,9 @@ pub mod api {
             ) -> subnet_registration_runtime_api::SubnetRegistrationRuntimeApi {
                 subnet_registration_runtime_api::SubnetRegistrationRuntimeApi
             }
+            pub fn babe_api(&self) -> babe_api::BabeApi {
+                babe_api::BabeApi
+            }
             pub fn swap_runtime_api(&self) -> swap_runtime_api::SwapRuntimeApi {
                 swap_runtime_api::SwapRuntimeApi
             }
@@ -250,7 +254,7 @@ pub mod api {
                 pub struct Version {}
                 pub mod execute_block {
                     use super::runtime_types;
-                    pub type Block = runtime_types :: sp_runtime :: generic :: block :: Block < runtime_types :: sp_runtime :: generic :: header :: Header < :: core :: primitive :: u32 > , runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
+                    pub type Block = runtime_types :: sp_runtime :: generic :: block :: Block < runtime_types :: sp_runtime :: generic :: header :: Header < :: core :: primitive :: u32 > , runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
                     pub mod output {
                         use super::runtime_types;
                         pub type Output = ();
@@ -546,7 +550,7 @@ pub mod api {
                 use super::runtime_types;
                 pub mod apply_extrinsic {
                     use super::runtime_types;
-                    pub type Extrinsic = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
+                    pub type Extrinsic = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
                     pub mod output {
                         use super::runtime_types;
                         pub type Output = :: core :: result :: Result < :: core :: result :: Result < () , runtime_types :: sp_runtime :: DispatchError > , runtime_types :: sp_runtime :: transaction_validity :: TransactionValidityError > ;
@@ -602,7 +606,7 @@ pub mod api {
                     pub type Inherent = runtime_types::sp_inherents::InherentData;
                     pub mod output {
                         use super::runtime_types;
-                        pub type Output = :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
+                        pub type Output = :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
                     }
                 }
                 #[derive(
@@ -626,7 +630,7 @@ pub mod api {
                 }
                 pub mod check_inherents {
                     use super::runtime_types;
-                    pub type Block = runtime_types :: sp_runtime :: generic :: block :: Block < runtime_types :: sp_runtime :: generic :: header :: Header < :: core :: primitive :: u32 > , runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
+                    pub type Block = runtime_types :: sp_runtime :: generic :: block :: Block < runtime_types :: sp_runtime :: generic :: header :: Header < :: core :: primitive :: u32 > , runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
                     pub type Data = runtime_types::sp_inherents::InherentData;
                     pub mod output {
                         use super::runtime_types;
@@ -883,7 +887,7 @@ pub mod api {
                     use super::runtime_types;
                     pub type Source =
                         runtime_types::sp_runtime::transaction_validity::TransactionSource;
-                    pub type Tx = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
+                    pub type Tx = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
                     pub type BlockHash = ::subxt::ext::subxt_core::utils::H256;
                     pub mod output {
                         use super::runtime_types;
@@ -1576,7 +1580,7 @@ pub mod api {
                 use super::runtime_types;
                 pub mod query_info {
                     use super::runtime_types;
-                    pub type Uxt = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
+                    pub type Uxt = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
                     pub type Len = ::core::primitive::u32;
                     pub mod output {
                         use super::runtime_types;
@@ -1609,7 +1613,7 @@ pub mod api {
                 }
                 pub mod query_fee_details {
                     use super::runtime_types;
-                    pub type Uxt = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
+                    pub type Uxt = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
                     pub type Len = ::core::primitive::u32;
                     pub mod output {
                         use super::runtime_types;
@@ -1714,9 +1718,9 @@ pub mod api {
                         "query_call_info",
                         types::QueryCallInfo { call, len },
                         [
-                            58u8, 48u8, 167u8, 37u8, 144u8, 4u8, 81u8, 241u8, 126u8, 213u8, 84u8,
-                            71u8, 169u8, 104u8, 213u8, 52u8, 89u8, 31u8, 255u8, 175u8, 67u8, 222u8,
-                            74u8, 67u8, 193u8, 22u8, 173u8, 117u8, 19u8, 81u8, 36u8, 140u8,
+                            137u8, 50u8, 38u8, 208u8, 113u8, 36u8, 174u8, 227u8, 48u8, 172u8, 83u8,
+                            208u8, 11u8, 180u8, 130u8, 174u8, 62u8, 253u8, 120u8, 26u8, 86u8, 58u8,
+                            150u8, 36u8, 236u8, 45u8, 24u8, 197u8, 134u8, 48u8, 230u8, 95u8,
                         ],
                     )
                 }
@@ -1734,9 +1738,9 @@ pub mod api {
                         "query_call_fee_details",
                         types::QueryCallFeeDetails { call, len },
                         [
-                            69u8, 150u8, 171u8, 7u8, 222u8, 74u8, 95u8, 123u8, 145u8, 250u8, 232u8,
-                            222u8, 113u8, 93u8, 8u8, 178u8, 158u8, 184u8, 151u8, 168u8, 58u8, 49u8,
-                            178u8, 118u8, 242u8, 58u8, 77u8, 67u8, 63u8, 109u8, 248u8, 247u8,
+                            135u8, 204u8, 74u8, 76u8, 55u8, 169u8, 149u8, 176u8, 128u8, 252u8,
+                            90u8, 74u8, 12u8, 93u8, 121u8, 124u8, 204u8, 108u8, 133u8, 74u8, 102u8,
+                            105u8, 53u8, 69u8, 251u8, 35u8, 94u8, 243u8, 139u8, 76u8, 167u8, 132u8,
                         ],
                     )
                 }
@@ -2679,7 +2683,7 @@ pub mod api {
                 pub struct CurrentAll {}
                 pub mod extrinsic_filter {
                     use super::runtime_types;
-                    pub type Xts = :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
+                    pub type Xts = :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
                     pub mod output {
                         use super::runtime_types;
                         pub type Output = ::subxt::ext::subxt_core::alloc::vec::Vec<
@@ -2758,7 +2762,7 @@ pub mod api {
                 pub struct GasLimitMultiplierSupport {}
                 pub mod pending_block {
                     use super::runtime_types;
-                    pub type Xts = :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
+                    pub type Xts = :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > > ;
                     pub mod output {
                         use super::runtime_types;
                         pub type Output = (
@@ -2855,7 +2859,7 @@ pub mod api {
                     pub type Transaction = runtime_types::ethereum::transaction::TransactionV2;
                     pub mod output {
                         use super::runtime_types;
-                        pub type Output = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: pallet_transaction_payment :: ChargeTransactionPayment , runtime_types :: pallet_subtensor :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
+                        pub type Output = runtime_types :: fp_self_contained :: unchecked_extrinsic :: UncheckedExtrinsic < :: subxt :: ext :: subxt_core :: utils :: MultiAddress < :: subxt :: ext :: subxt_core :: utils :: AccountId32 , () > , runtime_types :: node_subtensor_runtime :: RuntimeCall , runtime_types :: sp_runtime :: MultiSignature , (runtime_types :: frame_system :: extensions :: check_non_zero_sender :: CheckNonZeroSender , runtime_types :: frame_system :: extensions :: check_spec_version :: CheckSpecVersion , runtime_types :: frame_system :: extensions :: check_tx_version :: CheckTxVersion , runtime_types :: frame_system :: extensions :: check_genesis :: CheckGenesis , runtime_types :: frame_system :: extensions :: check_mortality :: CheckMortality , runtime_types :: node_subtensor_runtime :: check_nonce :: CheckNonce , runtime_types :: frame_system :: extensions :: check_weight :: CheckWeight , runtime_types :: node_subtensor_runtime :: transaction_payment_wrapper :: ChargeTransactionPaymentWrapper , runtime_types :: pallet_subtensor :: transaction_extension :: SubtensorTransactionExtension < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: pallet_drand :: drand_priority :: DrandPriority < runtime_types :: node_subtensor_runtime :: Runtime > , runtime_types :: frame_metadata_hash_extension :: CheckMetadataHash ,) > ;
                     }
                 }
                 #[derive(
@@ -3418,6 +3422,42 @@ pub mod api {
                         ],
                     )
                 }
+                pub fn get_all_mechagraphs(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::GetAllMechagraphs,
+                    types::get_all_mechagraphs::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "SubnetInfoRuntimeApi",
+                        "get_all_mechagraphs",
+                        types::GetAllMechagraphs {},
+                        [
+                            53u8, 137u8, 190u8, 46u8, 78u8, 14u8, 179u8, 75u8, 18u8, 22u8, 117u8,
+                            50u8, 36u8, 137u8, 206u8, 135u8, 101u8, 62u8, 182u8, 32u8, 212u8,
+                            249u8, 80u8, 169u8, 78u8, 131u8, 83u8, 228u8, 25u8, 69u8, 232u8, 246u8,
+                        ],
+                    )
+                }
+                pub fn get_mechagraph(
+                    &self,
+                    netuid: types::get_mechagraph::Netuid,
+                    mecid: types::get_mechagraph::Mecid,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::GetMechagraph,
+                    types::get_mechagraph::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "SubnetInfoRuntimeApi",
+                        "get_mechagraph",
+                        types::GetMechagraph { netuid, mecid },
+                        [
+                            155u8, 74u8, 145u8, 49u8, 26u8, 134u8, 122u8, 2u8, 25u8, 44u8, 6u8,
+                            130u8, 138u8, 228u8, 35u8, 180u8, 130u8, 98u8, 171u8, 9u8, 177u8, 30u8,
+                            101u8, 109u8, 149u8, 217u8, 74u8, 219u8, 77u8, 130u8, 247u8, 93u8,
+                        ],
+                    )
+                }
                 pub fn get_dynamic_info(
                     &self,
                     netuid: types::get_dynamic_info::Netuid,
@@ -3471,10 +3511,51 @@ pub mod api {
                             metagraph_indexes,
                         },
                         [
-                            126u8, 221u8, 115u8, 215u8, 91u8, 207u8, 177u8, 57u8, 216u8, 150u8,
-                            83u8, 173u8, 146u8, 142u8, 159u8, 102u8, 73u8, 108u8, 142u8, 112u8,
-                            125u8, 143u8, 44u8, 43u8, 12u8, 91u8, 128u8, 32u8, 252u8, 21u8, 102u8,
-                            141u8,
+                            229u8, 144u8, 177u8, 9u8, 212u8, 157u8, 223u8, 245u8, 136u8, 93u8,
+                            11u8, 108u8, 141u8, 172u8, 206u8, 225u8, 152u8, 184u8, 170u8, 52u8,
+                            214u8, 81u8, 184u8, 116u8, 205u8, 70u8, 204u8, 181u8, 162u8, 11u8,
+                            175u8, 236u8,
+                        ],
+                    )
+                }
+                pub fn get_selective_mechagraph(
+                    &self,
+                    netuid: types::get_selective_mechagraph::Netuid,
+                    subid: types::get_selective_mechagraph::Subid,
+                    metagraph_indexes: types::get_selective_mechagraph::MetagraphIndexes,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::GetSelectiveMechagraph,
+                    types::get_selective_mechagraph::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "SubnetInfoRuntimeApi",
+                        "get_selective_mechagraph",
+                        types::GetSelectiveMechagraph {
+                            netuid,
+                            subid,
+                            metagraph_indexes,
+                        },
+                        [
+                            243u8, 61u8, 89u8, 140u8, 158u8, 223u8, 184u8, 232u8, 141u8, 107u8,
+                            33u8, 179u8, 110u8, 131u8, 222u8, 39u8, 194u8, 249u8, 2u8, 44u8, 4u8,
+                            58u8, 50u8, 247u8, 11u8, 8u8, 63u8, 171u8, 218u8, 145u8, 131u8, 156u8,
+                        ],
+                    )
+                }
+                pub fn get_subnet_to_prune(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::GetSubnetToPrune,
+                    types::get_subnet_to_prune::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "SubnetInfoRuntimeApi",
+                        "get_subnet_to_prune",
+                        types::GetSubnetToPrune {},
+                        [
+                            183u8, 139u8, 194u8, 87u8, 222u8, 32u8, 229u8, 247u8, 154u8, 61u8,
+                            62u8, 119u8, 86u8, 52u8, 24u8, 6u8, 77u8, 20u8, 218u8, 118u8, 229u8,
+                            243u8, 142u8, 0u8, 2u8, 80u8, 245u8, 198u8, 21u8, 221u8, 68u8, 227u8,
                         ],
                     )
                 }
@@ -3736,6 +3817,69 @@ pub mod api {
                 pub struct GetMetagraph {
                     pub netuid: get_metagraph::Netuid,
                 }
+                pub mod get_all_mechagraphs {
+                    use super::runtime_types;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = ::subxt::ext::subxt_core::alloc::vec::Vec<
+                            ::core::option::Option<
+                                runtime_types::pallet_subtensor::rpc_info::metagraph::Metagraph<
+                                    ::subxt::ext::subxt_core::utils::AccountId32,
+                                >,
+                            >,
+                        >;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct GetAllMechagraphs {}
+                pub mod get_mechagraph {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Mecid = ::core::primitive::u8;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = ::core::option::Option<
+                            runtime_types::pallet_subtensor::rpc_info::metagraph::Metagraph<
+                                ::subxt::ext::subxt_core::utils::AccountId32,
+                            >,
+                        >;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct GetMechagraph {
+                    pub netuid: get_mechagraph::Netuid,
+                    pub mecid: get_mechagraph::Mecid,
+                }
                 pub mod get_dynamic_info {
                     use super::runtime_types;
                     pub type Netuid = ::core::primitive::u16;
@@ -3828,6 +3972,62 @@ pub mod api {
                     pub netuid: get_selective_metagraph::Netuid,
                     pub metagraph_indexes: get_selective_metagraph::MetagraphIndexes,
                 }
+                pub mod get_selective_mechagraph {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Subid = ::core::primitive::u8;
+                    pub type MetagraphIndexes =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = :: core :: option :: Option < runtime_types :: pallet_subtensor :: rpc_info :: metagraph :: SelectiveMetagraph < :: subxt :: ext :: subxt_core :: utils :: AccountId32 > > ;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct GetSelectiveMechagraph {
+                    pub netuid: get_selective_mechagraph::Netuid,
+                    pub subid: get_selective_mechagraph::Subid,
+                    pub metagraph_indexes: get_selective_mechagraph::MetagraphIndexes,
+                }
+                pub mod get_subnet_to_prune {
+                    use super::runtime_types;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = ::core::option::Option<::core::primitive::u16>;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct GetSubnetToPrune {}
             }
         }
         pub mod stake_info_runtime_api {
@@ -4126,6 +4326,318 @@ pub mod api {
                 pub struct GetNetworkRegistrationCost {}
             }
         }
+        pub mod babe_api {
+            use super::root_mod;
+            use super::runtime_types;
+            #[doc = " API necessary for block authorship with BABE."]
+            pub struct BabeApi;
+            impl BabeApi {
+                #[doc = " Return the configuration for BABE."]
+                pub fn configuration(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::Configuration,
+                    types::configuration::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "BabeApi",
+                        "configuration",
+                        types::Configuration {},
+                        [
+                            50u8, 198u8, 27u8, 26u8, 92u8, 199u8, 8u8, 181u8, 12u8, 199u8, 116u8,
+                            247u8, 95u8, 70u8, 241u8, 24u8, 14u8, 250u8, 179u8, 77u8, 251u8, 55u8,
+                            133u8, 8u8, 142u8, 107u8, 6u8, 214u8, 228u8, 38u8, 134u8, 153u8,
+                        ],
+                    )
+                }
+                #[doc = " Returns the slot that started the current epoch."]
+                pub fn current_epoch_start(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::CurrentEpochStart,
+                    types::current_epoch_start::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "BabeApi",
+                        "current_epoch_start",
+                        types::CurrentEpochStart {},
+                        [
+                            122u8, 125u8, 246u8, 170u8, 27u8, 50u8, 128u8, 137u8, 228u8, 62u8,
+                            145u8, 64u8, 65u8, 119u8, 166u8, 237u8, 115u8, 92u8, 125u8, 124u8,
+                            11u8, 33u8, 96u8, 88u8, 88u8, 122u8, 141u8, 137u8, 58u8, 182u8, 148u8,
+                            170u8,
+                        ],
+                    )
+                }
+                #[doc = " Returns information regarding the current epoch."]
+                pub fn current_epoch(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::CurrentEpoch,
+                    types::current_epoch::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "BabeApi",
+                        "current_epoch",
+                        types::CurrentEpoch {},
+                        [
+                            70u8, 68u8, 222u8, 110u8, 96u8, 143u8, 126u8, 136u8, 182u8, 163u8,
+                            104u8, 122u8, 21u8, 156u8, 6u8, 26u8, 86u8, 145u8, 153u8, 133u8, 251u8,
+                            137u8, 238u8, 218u8, 132u8, 218u8, 222u8, 140u8, 190u8, 232u8, 197u8,
+                            86u8,
+                        ],
+                    )
+                }
+                #[doc = " Returns information regarding the next epoch (which was already"]
+                #[doc = " previously announced)."]
+                pub fn next_epoch(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::NextEpoch,
+                    types::next_epoch::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "BabeApi",
+                        "next_epoch",
+                        types::NextEpoch {},
+                        [
+                            141u8, 86u8, 122u8, 185u8, 215u8, 255u8, 142u8, 131u8, 8u8, 178u8,
+                            143u8, 200u8, 148u8, 84u8, 174u8, 215u8, 91u8, 251u8, 243u8, 155u8,
+                            92u8, 13u8, 44u8, 53u8, 128u8, 26u8, 165u8, 172u8, 49u8, 33u8, 130u8,
+                            148u8,
+                        ],
+                    )
+                }
+                #[doc = " Generates a proof of key ownership for the given authority in the"]
+                #[doc = " current epoch. An example usage of this module is coupled with the"]
+                #[doc = " session historical module to prove that a given authority key is"]
+                #[doc = " tied to a given staking identity during a specific session. Proofs"]
+                #[doc = " of key ownership are necessary for submitting equivocation reports."]
+                #[doc = " NOTE: even though the API takes a `slot` as parameter the current"]
+                #[doc = " implementations ignores this parameter and instead relies on this"]
+                #[doc = " method being called at the correct block height, i.e. any point at"]
+                #[doc = " which the epoch for the given slot is live on-chain. Future"]
+                #[doc = " implementations will instead use indexed data through an offchain"]
+                #[doc = " worker, not requiring older states to be available."]
+                pub fn generate_key_ownership_proof(
+                    &self,
+                    slot: types::generate_key_ownership_proof::Slot,
+                    authority_id: types::generate_key_ownership_proof::AuthorityId,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::GenerateKeyOwnershipProof,
+                    types::generate_key_ownership_proof::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "BabeApi",
+                        "generate_key_ownership_proof",
+                        types::GenerateKeyOwnershipProof { slot, authority_id },
+                        [
+                            13u8, 228u8, 75u8, 150u8, 203u8, 132u8, 82u8, 188u8, 17u8, 70u8, 169u8,
+                            19u8, 102u8, 96u8, 217u8, 209u8, 215u8, 196u8, 78u8, 141u8, 12u8, 14u8,
+                            151u8, 65u8, 173u8, 2u8, 100u8, 150u8, 18u8, 99u8, 19u8, 196u8,
+                        ],
+                    )
+                }
+                #[doc = " Submits an unsigned extrinsic to report an equivocation. The caller"]
+                #[doc = " must provide the equivocation proof and a key ownership proof"]
+                #[doc = " (should be obtained using `generate_key_ownership_proof`). The"]
+                #[doc = " extrinsic will be unsigned and should only be accepted for local"]
+                #[doc = " authorship (not to be broadcast to the network). This method returns"]
+                #[doc = " `None` when creation of the extrinsic fails, e.g. if equivocation"]
+                #[doc = " reporting is disabled for the given runtime (i.e. this method is"]
+                #[doc = " hardcoded to return `None`). Only useful in an offchain context."]
+                pub fn submit_report_equivocation_unsigned_extrinsic(
+                    &self,
+                    equivocation_proof : types :: submit_report_equivocation_unsigned_extrinsic :: EquivocationProof,
+                    key_owner_proof : types :: submit_report_equivocation_unsigned_extrinsic :: KeyOwnerProof,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::SubmitReportEquivocationUnsignedExtrinsic,
+                    types::submit_report_equivocation_unsigned_extrinsic::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "BabeApi",
+                        "submit_report_equivocation_unsigned_extrinsic",
+                        types::SubmitReportEquivocationUnsignedExtrinsic {
+                            equivocation_proof,
+                            key_owner_proof,
+                        },
+                        [
+                            99u8, 80u8, 38u8, 173u8, 235u8, 48u8, 229u8, 88u8, 250u8, 165u8, 57u8,
+                            245u8, 85u8, 156u8, 114u8, 190u8, 144u8, 78u8, 37u8, 22u8, 36u8, 36u8,
+                            53u8, 174u8, 118u8, 222u8, 16u8, 159u8, 201u8, 254u8, 233u8, 82u8,
+                        ],
+                    )
+                }
+            }
+            pub mod types {
+                use super::runtime_types;
+                pub mod configuration {
+                    use super::runtime_types;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = runtime_types::sp_consensus_babe::BabeConfiguration;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct Configuration {}
+                pub mod current_epoch_start {
+                    use super::runtime_types;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = runtime_types::sp_consensus_slots::Slot;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct CurrentEpochStart {}
+                pub mod current_epoch {
+                    use super::runtime_types;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = runtime_types::sp_consensus_babe::Epoch;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct CurrentEpoch {}
+                pub mod next_epoch {
+                    use super::runtime_types;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = runtime_types::sp_consensus_babe::Epoch;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct NextEpoch {}
+                pub mod generate_key_ownership_proof {
+                    use super::runtime_types;
+                    pub type Slot = runtime_types::sp_consensus_slots::Slot;
+                    pub type AuthorityId = runtime_types::sp_consensus_babe::app::Public;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = ::core::option::Option<
+                            runtime_types::sp_consensus_babe::OpaqueKeyOwnershipProof,
+                        >;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct GenerateKeyOwnershipProof {
+                    pub slot: generate_key_ownership_proof::Slot,
+                    pub authority_id: generate_key_ownership_proof::AuthorityId,
+                }
+                pub mod submit_report_equivocation_unsigned_extrinsic {
+                    use super::runtime_types;
+                    pub type EquivocationProof =
+                        runtime_types::sp_consensus_slots::EquivocationProof<
+                            runtime_types::sp_runtime::generic::header::Header<
+                                ::core::primitive::u32,
+                            >,
+                            runtime_types::sp_consensus_babe::app::Public,
+                        >;
+                    pub type KeyOwnerProof =
+                        runtime_types::sp_consensus_babe::OpaqueKeyOwnershipProof;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output = ::core::option::Option<()>;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct SubmitReportEquivocationUnsignedExtrinsic {
+                    pub equivocation_proof:
+                        submit_report_equivocation_unsigned_extrinsic::EquivocationProof,
+                    pub key_owner_proof:
+                        submit_report_equivocation_unsigned_extrinsic::KeyOwnerProof,
+                }
+            }
+        }
         pub mod swap_runtime_api {
             use super::root_mod;
             use super::runtime_types;
@@ -4147,6 +4659,45 @@ pub mod api {
                             110u8, 45u8, 207u8, 243u8, 137u8, 75u8, 164u8, 95u8, 95u8, 168u8,
                             192u8, 97u8, 155u8, 169u8, 242u8, 215u8, 135u8, 202u8, 236u8, 133u8,
                             147u8, 32u8,
+                        ],
+                    )
+                }
+                pub fn sim_swap_tao_for_alpha(
+                    &self,
+                    netuid: types::sim_swap_tao_for_alpha::Netuid,
+                    tao: types::sim_swap_tao_for_alpha::Tao,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::SimSwapTaoForAlpha,
+                    types::sim_swap_tao_for_alpha::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "SwapRuntimeApi",
+                        "sim_swap_tao_for_alpha",
+                        types::SimSwapTaoForAlpha { netuid, tao },
+                        [
+                            35u8, 188u8, 23u8, 31u8, 145u8, 29u8, 139u8, 70u8, 5u8, 23u8, 186u8,
+                            94u8, 19u8, 183u8, 174u8, 190u8, 193u8, 89u8, 168u8, 169u8, 107u8,
+                            128u8, 174u8, 212u8, 94u8, 144u8, 26u8, 200u8, 90u8, 74u8, 40u8, 203u8,
+                        ],
+                    )
+                }
+                pub fn sim_swap_alpha_for_tao(
+                    &self,
+                    netuid: types::sim_swap_alpha_for_tao::Netuid,
+                    alpha: types::sim_swap_alpha_for_tao::Alpha,
+                ) -> ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload<
+                    types::SimSwapAlphaForTao,
+                    types::sim_swap_alpha_for_tao::output::Output,
+                > {
+                    ::subxt::ext::subxt_core::runtime_api::payload::StaticPayload::new_static(
+                        "SwapRuntimeApi",
+                        "sim_swap_alpha_for_tao",
+                        types::SimSwapAlphaForTao { netuid, alpha },
+                        [
+                            26u8, 83u8, 187u8, 158u8, 202u8, 176u8, 211u8, 12u8, 1u8, 105u8, 149u8,
+                            223u8, 114u8, 126u8, 55u8, 169u8, 145u8, 12u8, 141u8, 128u8, 220u8,
+                            255u8, 121u8, 100u8, 118u8, 81u8, 16u8, 179u8, 246u8, 141u8, 134u8,
+                            231u8,
                         ],
                     )
                 }
@@ -4179,6 +4730,66 @@ pub mod api {
                 )]
                 pub struct CurrentAlphaPrice {
                     pub netuid: current_alpha_price::Netuid,
+                }
+                pub mod sim_swap_tao_for_alpha {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Tao = ::core::primitive::u64;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output =
+                            runtime_types::pallet_subtensor_swap_runtime_api::SimSwapResult;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct SimSwapTaoForAlpha {
+                    pub netuid: sim_swap_tao_for_alpha::Netuid,
+                    pub tao: sim_swap_tao_for_alpha::Tao,
+                }
+                pub mod sim_swap_alpha_for_tao {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Alpha = ::core::primitive::u64;
+                    pub mod output {
+                        use super::runtime_types;
+                        pub type Output =
+                            runtime_types::pallet_subtensor_swap_runtime_api::SimSwapResult;
+                    }
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct SimSwapAlphaForTao {
+                    pub netuid: sim_swap_alpha_for_tao::Netuid,
+                    pub alpha: sim_swap_alpha_for_tao::Alpha,
                 }
             }
         }
@@ -4412,9 +5023,9 @@ pub mod api {
             .hash();
         runtime_metadata_hash
             == [
-                86u8, 114u8, 75u8, 114u8, 61u8, 188u8, 111u8, 68u8, 50u8, 141u8, 190u8, 192u8,
-                72u8, 155u8, 222u8, 132u8, 176u8, 73u8, 52u8, 125u8, 207u8, 8u8, 50u8, 183u8, 96u8,
-                35u8, 178u8, 136u8, 120u8, 211u8, 192u8, 155u8,
+                196u8, 205u8, 58u8, 203u8, 67u8, 88u8, 179u8, 197u8, 102u8, 218u8, 59u8, 95u8,
+                190u8, 212u8, 100u8, 136u8, 147u8, 231u8, 73u8, 160u8, 83u8, 98u8, 44u8, 63u8,
+                126u8, 205u8, 207u8, 48u8, 102u8, 81u8, 52u8, 87u8,
             ]
     }
     pub mod system {
@@ -5178,6 +5789,32 @@ pub mod api {
                 const PALLET: &'static str = "System";
                 const EVENT: &'static str = "UpgradeAuthorized";
             }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "An invalid authorized upgrade was rejected while trying to apply it."]
+            pub struct RejectedInvalidAuthorizedUpgrade {
+                pub code_hash: rejected_invalid_authorized_upgrade::CodeHash,
+                pub error: rejected_invalid_authorized_upgrade::Error,
+            }
+            pub mod rejected_invalid_authorized_upgrade {
+                use super::runtime_types;
+                pub type CodeHash = ::subxt::ext::subxt_core::utils::H256;
+                pub type Error = runtime_types::sp_runtime::DispatchError;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for RejectedInvalidAuthorizedUpgrade {
+                const PALLET: &'static str = "System";
+                const EVENT: &'static str = "RejectedInvalidAuthorizedUpgrade";
+            }
         }
         pub mod storage {
             use super::runtime_types;
@@ -5274,6 +5911,11 @@ pub mod api {
                     use super::runtime_types;
                     pub type AuthorizedUpgrade =
                         runtime_types::frame_system::CodeUpgradeAuthorization;
+                }
+                pub mod extrinsic_weight_reclaimed {
+                    use super::runtime_types;
+                    pub type ExtrinsicWeightReclaimed =
+                        runtime_types::sp_weights::weight_v2::Weight;
                 }
             }
             pub struct StorageApi;
@@ -5593,10 +6235,9 @@ pub mod api {
                         "Events",
                         (),
                         [
-                            178u8, 192u8, 189u8, 235u8, 67u8, 111u8, 53u8, 254u8, 54u8, 179u8,
-                            27u8, 57u8, 134u8, 161u8, 238u8, 9u8, 57u8, 242u8, 167u8, 215u8, 88u8,
-                            231u8, 177u8, 104u8, 58u8, 107u8, 240u8, 164u8, 117u8, 96u8, 105u8,
-                            182u8,
+                            222u8, 72u8, 163u8, 143u8, 244u8, 170u8, 2u8, 79u8, 169u8, 12u8, 202u8,
+                            157u8, 148u8, 209u8, 9u8, 245u8, 216u8, 62u8, 215u8, 58u8, 167u8, 2u8,
+                            98u8, 141u8, 140u8, 239u8, 160u8, 9u8, 10u8, 248u8, 204u8, 78u8,
                         ],
                     )
                 }
@@ -5792,6 +6433,34 @@ pub mod api {
                             165u8, 97u8, 27u8, 138u8, 2u8, 28u8, 55u8, 92u8, 96u8, 96u8, 168u8,
                             169u8, 55u8, 178u8, 44u8, 127u8, 58u8, 140u8, 206u8, 178u8, 1u8, 37u8,
                             214u8, 213u8, 251u8, 123u8, 5u8, 111u8, 90u8, 148u8, 217u8, 135u8,
+                        ],
+                    )
+                }
+                #[doc = " The weight reclaimed for the extrinsic."]
+                #[doc = ""]
+                #[doc = " This information is available until the end of the extrinsic execution."]
+                #[doc = " More precisely this information is removed in `note_applied_extrinsic`."]
+                #[doc = ""]
+                #[doc = " Logic doing some post dispatch weight reduction must update this storage to avoid duplicate"]
+                #[doc = " reduction."]
+                pub fn extrinsic_weight_reclaimed(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::extrinsic_weight_reclaimed::ExtrinsicWeightReclaimed,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "System",
+                        "ExtrinsicWeightReclaimed",
+                        (),
+                        [
+                            195u8, 143u8, 164u8, 84u8, 225u8, 194u8, 227u8, 128u8, 196u8, 241u8,
+                            188u8, 159u8, 59u8, 197u8, 11u8, 12u8, 119u8, 164u8, 46u8, 229u8, 92u8,
+                            212u8, 236u8, 255u8, 238u8, 54u8, 105u8, 200u8, 229u8, 191u8, 221u8,
+                            202u8,
                         ],
                     )
                 }
@@ -8697,7 +9366,7 @@ pub mod api {
                 #[doc = "\t- On successfully setting the weights on chain."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to set weights on a non-existent network."]
                 #[doc = ""]
                 #[doc = "* 'NotRegistered':"]
@@ -8738,6 +9407,104 @@ pub mod api {
                 impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SetWeights {
                     const PALLET: &'static str = "SubtensorModule";
                     const CALL: &'static str = "set_weights";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "--- Sets the caller weights for the incentive mechanism for mechanisms. The call"]
+                #[doc = "can be made from the hotkey account so is potentially insecure, however, the damage"]
+                #[doc = "of changing weights is minimal if caught early. This function includes all the"]
+                #[doc = "checks that the passed weights meet the requirements. Stored as u16s they represent"]
+                #[doc = "rational values in the range [0,1] which sum to 1 and can be interpreted as"]
+                #[doc = "probabilities. The specific weights determine how inflation propagates outward"]
+                #[doc = "from this peer."]
+                #[doc = ""]
+                #[doc = "Note: The 16 bit integers weights should represent 1.0 as the max u16."]
+                #[doc = "However, the function normalizes all integers to u16_max anyway. This means that if the sum of all"]
+                #[doc = "elements is larger or smaller than the amount of elements * u16_max, all elements"]
+                #[doc = "will be corrected for this deviation."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (<T as frame_system::Config>Origin):"]
+                #[doc = "    - The caller, a hotkey who wishes to set their weights."]
+                #[doc = ""]
+                #[doc = "* `netuid` (u16):"]
+                #[doc = "\t- The network uid we are setting these weights on."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechnism identifier."]
+                #[doc = ""]
+                #[doc = "* `dests` (Vec<u16>):"]
+                #[doc = "\t- The edge endpoint for the weight, i.e. j for w_ij."]
+                #[doc = ""]
+                #[doc = "* 'weights' (Vec<u16>):"]
+                #[doc = "\t- The u16 integer encoded weights. Interpreted as rational"]
+                #[doc = "\t\tvalues in the range [0,1]. They must sum to in32::MAX."]
+                #[doc = ""]
+                #[doc = "* 'version_key' ( u64 ):"]
+                #[doc = "\t- The network version key to check if the validator is up to date."]
+                #[doc = ""]
+                #[doc = "# Event:"]
+                #[doc = "* WeightsSet;"]
+                #[doc = "\t- On successfully setting the weights on chain."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* 'MechanismDoesNotExist':"]
+                #[doc = "\t- Attempting to set weights on a non-existent network."]
+                #[doc = ""]
+                #[doc = "* 'NotRegistered':"]
+                #[doc = "\t- Attempting to set weights from a non registered account."]
+                #[doc = ""]
+                #[doc = "* 'WeightVecNotEqualSize':"]
+                #[doc = "\t- Attempting to set weights with uids not of same length."]
+                #[doc = ""]
+                #[doc = "* 'DuplicateUids':"]
+                #[doc = "\t- Attempting to set weights with duplicate uids."]
+                #[doc = ""]
+                #[doc = "    * 'UidsLengthExceedUidsInSubNet':"]
+                #[doc = "\t- Attempting to set weights above the max allowed uids."]
+                #[doc = ""]
+                #[doc = "* 'UidVecContainInvalidOne':"]
+                #[doc = "\t- Attempting to set weights with invalid uids."]
+                #[doc = ""]
+                #[doc = "* 'WeightVecLengthIsLow':"]
+                #[doc = "\t- Attempting to set weights with fewer weights than min."]
+                #[doc = ""]
+                #[doc = "* 'MaxWeightExceeded':"]
+                #[doc = "\t- Attempting to set weights with max value exceeding limit."]
+                pub struct SetMechanismWeights {
+                    pub netuid: set_mechanism_weights::Netuid,
+                    pub mecid: set_mechanism_weights::Mecid,
+                    pub dests: set_mechanism_weights::Dests,
+                    pub weights: set_mechanism_weights::Weights,
+                    pub version_key: set_mechanism_weights::VersionKey,
+                }
+                pub mod set_mechanism_weights {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Mecid = ::core::primitive::u8;
+                    pub type Dests =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
+                    pub type Weights =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
+                    pub type VersionKey = ::core::primitive::u64;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SetMechanismWeights {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "set_mechanism_weights";
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -8851,6 +9618,59 @@ pub mod api {
                 impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for CommitWeights {
                     const PALLET: &'static str = "SubtensorModule";
                     const CALL: &'static str = "commit_weights";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "---- Used to commit a hash of your weight values to later be revealed for mechanisms."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The signature of the committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `commit_hash` (`H256`):"]
+                #[doc = "  - The hash representing the committed weights."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* `CommitRevealDisabled`:"]
+                #[doc = "  - Attempting to commit when the commit-reveal mechanism is disabled."]
+                #[doc = ""]
+                #[doc = "* `TooManyUnrevealedCommits`:"]
+                #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
+                #[doc = ""]
+                pub struct CommitMechanismWeights {
+                    pub netuid: commit_mechanism_weights::Netuid,
+                    pub mecid: commit_mechanism_weights::Mecid,
+                    pub commit_hash: commit_mechanism_weights::CommitHash,
+                }
+                pub mod commit_mechanism_weights {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Mecid = ::core::primitive::u8;
+                    pub type CommitHash = ::subxt::ext::subxt_core::utils::H256;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for CommitMechanismWeights {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "commit_mechanism_weights";
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -8998,6 +9818,86 @@ pub mod api {
                 #[encode_as_type(
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
+                #[doc = "---- Used to reveal the weights for a previously committed hash for mechanisms."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The signature of the revealing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `uids` (`Vec<u16>`):"]
+                #[doc = "  - The uids for the weights being revealed."]
+                #[doc = ""]
+                #[doc = "* `values` (`Vec<u16>`):"]
+                #[doc = "  - The values of the weights being revealed."]
+                #[doc = ""]
+                #[doc = "* `salt` (`Vec<u16>`):"]
+                #[doc = "  - The salt used to generate the commit hash."]
+                #[doc = ""]
+                #[doc = "* `version_key` (`u64`):"]
+                #[doc = "  - The network version key."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* `CommitRevealDisabled`:"]
+                #[doc = "  - Attempting to reveal weights when the commit-reveal mechanism is disabled."]
+                #[doc = ""]
+                #[doc = "* `NoWeightsCommitFound`:"]
+                #[doc = "  - Attempting to reveal weights without an existing commit."]
+                #[doc = ""]
+                #[doc = "* `ExpiredWeightCommit`:"]
+                #[doc = "  - Attempting to reveal a weight commit that has expired."]
+                #[doc = ""]
+                #[doc = "* `RevealTooEarly`:"]
+                #[doc = "  - Attempting to reveal weights outside the valid reveal period."]
+                #[doc = ""]
+                #[doc = "* `InvalidRevealCommitHashNotMatch`:"]
+                #[doc = "  - The revealed hash does not match any committed hash."]
+                #[doc = ""]
+                pub struct RevealMechanismWeights {
+                    pub netuid: reveal_mechanism_weights::Netuid,
+                    pub mecid: reveal_mechanism_weights::Mecid,
+                    pub uids: reveal_mechanism_weights::Uids,
+                    pub values: reveal_mechanism_weights::Values,
+                    pub salt: reveal_mechanism_weights::Salt,
+                    pub version_key: reveal_mechanism_weights::VersionKey,
+                }
+                pub mod reveal_mechanism_weights {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Mecid = ::core::primitive::u8;
+                    pub type Uids =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
+                    pub type Values =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
+                    pub type Salt =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
+                    pub type VersionKey = ::core::primitive::u64;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for RevealMechanismWeights {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "reveal_mechanism_weights";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
                 #[doc = "---- Used to commit encrypted commit-reveal v3 weight values to later be revealed."]
                 #[doc = ""]
                 #[doc = "# Args:"]
@@ -9027,22 +9927,56 @@ pub mod api {
                 #[doc = "* `TooManyUnrevealedCommits`:"]
                 #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
                 #[doc = ""]
-                pub struct CommitCrv3Weights {
-                    pub netuid: commit_crv3_weights::Netuid,
-                    pub commit: commit_crv3_weights::Commit,
-                    pub reveal_round: commit_crv3_weights::RevealRound,
+                #[doc = "---- Used to commit encrypted commit-reveal v3 weight values to later be revealed for mechanisms."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `commit` (`Vec<u8>`):"]
+                #[doc = "  - The encrypted compressed commit."]
+                #[doc = "    The steps for this are:"]
+                #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                #[doc = ""]
+                #[doc = "* reveal_round (`u64`):"]
+                #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                #[doc = "     epoch."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* `CommitRevealV3Disabled`:"]
+                #[doc = "  - Attempting to commit when the commit-reveal mechanism is disabled."]
+                #[doc = ""]
+                #[doc = "* `TooManyUnrevealedCommits`:"]
+                #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
+                #[doc = ""]
+                pub struct CommitCrv3MechanismWeights {
+                    pub netuid: commit_crv3_mechanism_weights::Netuid,
+                    pub mecid: commit_crv3_mechanism_weights::Mecid,
+                    pub commit: commit_crv3_mechanism_weights::Commit,
+                    pub reveal_round: commit_crv3_mechanism_weights::RevealRound,
                 }
-                pub mod commit_crv3_weights {
+                pub mod commit_crv3_mechanism_weights {
                     use super::runtime_types;
                     pub type Netuid = ::core::primitive::u16;
+                    pub type Mecid = ::core::primitive::u8;
                     pub type Commit = runtime_types::bounded_collections::bounded_vec::BoundedVec<
                         ::core::primitive::u8,
                     >;
                     pub type RevealRound = ::core::primitive::u64;
                 }
-                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for CommitCrv3Weights {
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for CommitCrv3MechanismWeights {
                     const PALLET: &'static str = "SubtensorModule";
-                    const CALL: &'static str = "commit_crv3_weights";
+                    const CALL: &'static str = "commit_crv3_mechanism_weights";
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -9124,153 +10058,6 @@ pub mod api {
                 impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for BatchRevealWeights {
                     const PALLET: &'static str = "SubtensorModule";
                     const CALL: &'static str = "batch_reveal_weights";
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "# Args:"]
-                #[doc = "* `origin`: (<T as frame_system::Config>Origin):"]
-                #[doc = "\t- The caller, a hotkey who wishes to set their weights."]
-                #[doc = ""]
-                #[doc = "* `netuid` (u16):"]
-                #[doc = "\t- The network uid we are setting these weights on."]
-                #[doc = ""]
-                #[doc = "* `hotkey` (T::AccountId):"]
-                #[doc = "\t- The hotkey associated with the operation and the calling coldkey."]
-                #[doc = ""]
-                #[doc = "* `dests` (Vec<u16>):"]
-                #[doc = "\t- The edge endpoint for the weight, i.e. j for w_ij."]
-                #[doc = ""]
-                #[doc = "* 'weights' (Vec<u16>):"]
-                #[doc = "\t- The u16 integer encoded weights. Interpreted as rational"]
-                #[doc = "\t\tvalues in the range [0,1]. They must sum to in32::MAX."]
-                #[doc = ""]
-                #[doc = "* 'version_key' ( u64 ):"]
-                #[doc = "\t- The network version key to check if the validator is up to date."]
-                #[doc = ""]
-                #[doc = "# Event:"]
-                #[doc = ""]
-                #[doc = "* WeightsSet;"]
-                #[doc = "\t- On successfully setting the weights on chain."]
-                #[doc = ""]
-                #[doc = "# Raises:"]
-                #[doc = ""]
-                #[doc = "* NonAssociatedColdKey;"]
-                #[doc = "\t- Attempting to set weights on a non-associated cold key."]
-                #[doc = ""]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
-                #[doc = "\t- Attempting to set weights on a non-existent network."]
-                #[doc = ""]
-                #[doc = "* 'NotRootSubnet':"]
-                #[doc = "\t- Attempting to set weights on a subnet that is not the root network."]
-                #[doc = ""]
-                #[doc = "* 'WeightVecNotEqualSize':"]
-                #[doc = "\t- Attempting to set weights with uids not of same length."]
-                #[doc = ""]
-                #[doc = "* 'UidVecContainInvalidOne':"]
-                #[doc = "\t- Attempting to set weights with invalid uids."]
-                #[doc = ""]
-                #[doc = "* 'NotRegistered':"]
-                #[doc = "\t- Attempting to set weights from a non registered account."]
-                #[doc = ""]
-                #[doc = "* 'WeightVecLengthIsLow':"]
-                #[doc = "\t- Attempting to set weights with fewer weights than min."]
-                #[doc = ""]
-                #[doc = " * 'IncorrectWeightVersionKey':"]
-                #[doc = "     - Attempting to set weights with the incorrect network version key."]
-                #[doc = ""]
-                #[doc = " * 'SettingWeightsTooFast':"]
-                #[doc = "     - Attempting to set weights too fast."]
-                #[doc = ""]
-                #[doc = "* 'WeightVecLengthIsLow':"]
-                #[doc = "\t- Attempting to set weights with fewer weights than min."]
-                #[doc = ""]
-                #[doc = "* 'MaxWeightExceeded':"]
-                #[doc = "\t- Attempting to set weights with max value exceeding limit."]
-                #[doc = ""]
-                pub struct SetTaoWeights {
-                    pub netuid: set_tao_weights::Netuid,
-                    pub hotkey: set_tao_weights::Hotkey,
-                    pub dests: set_tao_weights::Dests,
-                    pub weights: set_tao_weights::Weights,
-                    pub version_key: set_tao_weights::VersionKey,
-                }
-                pub mod set_tao_weights {
-                    use super::runtime_types;
-                    pub type Netuid = ::core::primitive::u16;
-                    pub type Hotkey = ::subxt::ext::subxt_core::utils::AccountId32;
-                    pub type Dests =
-                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
-                    pub type Weights =
-                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
-                    pub type VersionKey = ::core::primitive::u64;
-                }
-                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SetTaoWeights {
-                    const PALLET: &'static str = "SubtensorModule";
-                    const CALL: &'static str = "set_tao_weights";
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "--- Sets the key as a delegate."]
-                #[doc = ""]
-                #[doc = "# Args:"]
-                #[doc = "* 'origin': (<T as frame_system::Config>Origin):"]
-                #[doc = "\t- The signature of the caller's coldkey."]
-                #[doc = ""]
-                #[doc = "* 'hotkey' (T::AccountId):"]
-                #[doc = "\t- The hotkey we are delegating (must be owned by the coldkey.)"]
-                #[doc = ""]
-                #[doc = "* 'take' (u64):"]
-                #[doc = "\t- The stake proportion that this hotkey takes from delegations."]
-                #[doc = ""]
-                #[doc = "# Event:"]
-                #[doc = "* DelegateAdded;"]
-                #[doc = "\t- On successfully setting a hotkey as a delegate."]
-                #[doc = ""]
-                #[doc = "# Raises:"]
-                #[doc = "* 'NotRegistered':"]
-                #[doc = "\t- The hotkey we are delegating is not registered on the network."]
-                #[doc = ""]
-                #[doc = "* 'NonAssociatedColdKey':"]
-                #[doc = "\t- The hotkey we are delegating is not owned by the calling coldket."]
-                #[doc = ""]
-                pub struct BecomeDelegate {
-                    pub hotkey: become_delegate::Hotkey,
-                }
-                pub mod become_delegate {
-                    use super::runtime_types;
-                    pub type Hotkey = ::subxt::ext::subxt_core::utils::AccountId32;
-                }
-                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for BecomeDelegate {
-                    const PALLET: &'static str = "SubtensorModule";
-                    const CALL: &'static str = "become_delegate";
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -9571,7 +10358,7 @@ pub mod api {
                 #[doc = "\t- On successfully serving the axon info."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to set weights on a non-existent network."]
                 #[doc = ""]
                 #[doc = "* 'NotRegistered':"]
@@ -9667,7 +10454,7 @@ pub mod api {
                 #[doc = "\t- On successfully serving the axon info."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to set weights on a non-existent network."]
                 #[doc = ""]
                 #[doc = "* 'NotRegistered':"]
@@ -9810,7 +10597,7 @@ pub mod api {
                 #[doc = "\t- On successfully registering a uid to a neuron slot on a subnetwork."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to register to a non existent network."]
                 #[doc = ""]
                 #[doc = "* 'TooManyRegistrationsThisBlock':"]
@@ -10430,7 +11217,7 @@ pub mod api {
                 #[doc = "    - On successfully registering a child to a hotkey."]
                 #[doc = ""]
                 #[doc = "# Errors:"]
-                #[doc = "* `SubNetworkDoesNotExist`:"]
+                #[doc = "* `MechanismDoesNotExist`:"]
                 #[doc = "    - Attempting to register to a non-existent network."]
                 #[doc = "* `RegistrationNotPermittedOnRootSubnet`:"]
                 #[doc = "    - Attempting to register a child on the root network."]
@@ -10524,47 +11311,6 @@ pub mod api {
                 impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for ScheduleSwapColdkey {
                     const PALLET: &'static str = "SubtensorModule";
                     const CALL: &'static str = "schedule_swap_coldkey";
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "Schedule the dissolution of a network at a specified block number."]
-                #[doc = ""]
-                #[doc = "# Arguments"]
-                #[doc = ""]
-                #[doc = "* `origin` - The origin of the call, must be signed by the sender."]
-                #[doc = "* `netuid` - The u16 network identifier to be dissolved."]
-                #[doc = ""]
-                #[doc = "# Returns"]
-                #[doc = ""]
-                #[doc = "Returns a `DispatchResultWithPostInfo` indicating success or failure of the operation."]
-                #[doc = ""]
-                #[doc = "# Weight"]
-                #[doc = ""]
-                #[doc = "Weight is calculated based on the number of database reads and writes."]
-                pub struct ScheduleDissolveNetwork {
-                    pub netuid: schedule_dissolve_network::Netuid,
-                }
-                pub mod schedule_dissolve_network {
-                    use super::runtime_types;
-                    pub type Netuid = ::core::primitive::u16;
-                }
-                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for ScheduleDissolveNetwork {
-                    const PALLET: &'static str = "SubtensorModule";
-                    const CALL: &'static str = "schedule_dissolve_network";
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -11306,9 +12052,8 @@ pub mod api {
                 #[doc = "```"]
                 #[doc = ""]
                 #[doc = "# Arguments"]
-                #[doc = "* `origin` - The origin of the transaction, which must be signed by the coldkey that owns the `hotkey`."]
+                #[doc = "* `origin` - The origin of the transaction, which must be signed by the `hotkey`."]
                 #[doc = "* `netuid` - The netuid that the `hotkey` belongs to."]
-                #[doc = "* `hotkey` - The hotkey associated with the `origin`."]
                 #[doc = "* `evm_key` - The EVM key to associate with the `hotkey`."]
                 #[doc = "* `block_number` - The block number used in the `signature`."]
                 #[doc = "* `signature` - A signed message by the `evm_key` containing the `hotkey` and the hashed `block_number`."]
@@ -11316,7 +12061,6 @@ pub mod api {
                 #[doc = "# Errors"]
                 #[doc = "Returns an error if:"]
                 #[doc = "* The transaction is not signed."]
-                #[doc = "* The hotkey is not owned by the origin coldkey."]
                 #[doc = "* The hotkey does not belong to the subnet identified by the netuid."]
                 #[doc = "* The EVM key cannot be recovered from the signature."]
                 #[doc = "* The EVM key recovered from the signature does not match the given EVM key."]
@@ -11575,6 +12319,243 @@ pub mod api {
                     const PALLET: &'static str = "SubtensorModule";
                     const CALL: &'static str = "terminate_lease";
                 }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Updates the symbol for a subnet."]
+                #[doc = ""]
+                #[doc = "# Arguments"]
+                #[doc = "* `origin` - The origin of the call, which must be the subnet owner or root."]
+                #[doc = "* `netuid` - The unique identifier of the subnet on which the symbol is being set."]
+                #[doc = "* `symbol` - The symbol to set for the subnet."]
+                #[doc = ""]
+                #[doc = "# Errors"]
+                #[doc = "Returns an error if:"]
+                #[doc = "* The transaction is not signed by the subnet owner."]
+                #[doc = "* The symbol does not exist."]
+                #[doc = "* The symbol is already in use by another subnet."]
+                #[doc = ""]
+                #[doc = "# Events"]
+                #[doc = "Emits a `SymbolUpdated` event on success."]
+                pub struct UpdateSymbol {
+                    pub netuid: update_symbol::Netuid,
+                    pub symbol: update_symbol::Symbol,
+                }
+                pub mod update_symbol {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Symbol =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u8>;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for UpdateSymbol {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "update_symbol";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "---- Used to commit timelock encrypted commit-reveal weight values to later be revealed."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `commit` (`Vec<u8>`):"]
+                #[doc = "  - The encrypted compressed commit."]
+                #[doc = "    The steps for this are:"]
+                #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                #[doc = ""]
+                #[doc = "* reveal_round (`u64`):"]
+                #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                #[doc = "     epoch."]
+                #[doc = ""]
+                #[doc = "* commit_reveal_version (`u16`):"]
+                #[doc = "    - The client (bittensor-drand) version"]
+                pub struct CommitTimelockedWeights {
+                    pub netuid: commit_timelocked_weights::Netuid,
+                    pub commit: commit_timelocked_weights::Commit,
+                    pub reveal_round: commit_timelocked_weights::RevealRound,
+                    pub commit_reveal_version: commit_timelocked_weights::CommitRevealVersion,
+                }
+                pub mod commit_timelocked_weights {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Commit = runtime_types::bounded_collections::bounded_vec::BoundedVec<
+                        ::core::primitive::u8,
+                    >;
+                    pub type RevealRound = ::core::primitive::u64;
+                    pub type CommitRevealVersion = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for CommitTimelockedWeights {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "commit_timelocked_weights";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Set the autostake destination hotkey for a coldkey."]
+                #[doc = ""]
+                #[doc = "The caller selects a hotkey where all future rewards"]
+                #[doc = "will be automatically staked."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin` - (<T as frame_system::Config>::Origin):"]
+                #[doc = "    - The signature of the caller's coldkey."]
+                #[doc = ""]
+                #[doc = "* `hotkey` (T::AccountId):"]
+                #[doc = "    - The hotkey account to designate as the autostake destination."]
+                pub struct SetColdkeyAutoStakeHotkey {
+                    pub hotkey: set_coldkey_auto_stake_hotkey::Hotkey,
+                }
+                pub mod set_coldkey_auto_stake_hotkey {
+                    use super::runtime_types;
+                    pub type Hotkey = ::subxt::ext::subxt_core::utils::AccountId32;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SetColdkeyAutoStakeHotkey {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "set_coldkey_auto_stake_hotkey";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "---- Used to commit timelock encrypted commit-reveal weight values to later be revealed for"]
+                #[doc = "a mechanism."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `commit` (`Vec<u8>`):"]
+                #[doc = "  - The encrypted compressed commit."]
+                #[doc = "    The steps for this are:"]
+                #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                #[doc = ""]
+                #[doc = "* reveal_round (`u64`):"]
+                #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                #[doc = "     epoch."]
+                #[doc = ""]
+                #[doc = "* commit_reveal_version (`u16`):"]
+                #[doc = "    - The client (bittensor-drand) version"]
+                pub struct CommitTimelockedMechanismWeights {
+                    pub netuid: commit_timelocked_mechanism_weights::Netuid,
+                    pub mecid: commit_timelocked_mechanism_weights::Mecid,
+                    pub commit: commit_timelocked_mechanism_weights::Commit,
+                    pub reveal_round: commit_timelocked_mechanism_weights::RevealRound,
+                    pub commit_reveal_version:
+                        commit_timelocked_mechanism_weights::CommitRevealVersion,
+                }
+                pub mod commit_timelocked_mechanism_weights {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type Mecid = ::core::primitive::u8;
+                    pub type Commit = runtime_types::bounded_collections::bounded_vec::BoundedVec<
+                        ::core::primitive::u8,
+                    >;
+                    pub type RevealRound = ::core::primitive::u64;
+                    pub type CommitRevealVersion = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for CommitTimelockedMechanismWeights {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "commit_timelocked_mechanism_weights";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Remove a subnetwork"]
+                #[doc = "The caller must be root"]
+                pub struct RootDissolveNetwork {
+                    pub netuid: root_dissolve_network::Netuid,
+                }
+                pub mod root_dissolve_network {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for RootDissolveNetwork {
+                    const PALLET: &'static str = "SubtensorModule";
+                    const CALL: &'static str = "root_dissolve_network";
+                }
             }
             pub struct TransactionApi;
             impl TransactionApi {
@@ -11613,7 +12594,7 @@ pub mod api {
                 #[doc = "\t- On successfully setting the weights on chain."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to set weights on a non-existent network."]
                 #[doc = ""]
                 #[doc = "* 'NotRegistered':"]
@@ -11658,6 +12639,94 @@ pub mod api {
                             148u8, 10u8, 248u8, 38u8, 32u8, 13u8, 141u8, 199u8, 11u8, 40u8, 238u8,
                             233u8, 56u8, 125u8, 156u8, 213u8, 224u8, 244u8, 72u8, 93u8, 195u8,
                             62u8,
+                        ],
+                    )
+                }
+                #[doc = "--- Sets the caller weights for the incentive mechanism for mechanisms. The call"]
+                #[doc = "can be made from the hotkey account so is potentially insecure, however, the damage"]
+                #[doc = "of changing weights is minimal if caught early. This function includes all the"]
+                #[doc = "checks that the passed weights meet the requirements. Stored as u16s they represent"]
+                #[doc = "rational values in the range [0,1] which sum to 1 and can be interpreted as"]
+                #[doc = "probabilities. The specific weights determine how inflation propagates outward"]
+                #[doc = "from this peer."]
+                #[doc = ""]
+                #[doc = "Note: The 16 bit integers weights should represent 1.0 as the max u16."]
+                #[doc = "However, the function normalizes all integers to u16_max anyway. This means that if the sum of all"]
+                #[doc = "elements is larger or smaller than the amount of elements * u16_max, all elements"]
+                #[doc = "will be corrected for this deviation."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (<T as frame_system::Config>Origin):"]
+                #[doc = "    - The caller, a hotkey who wishes to set their weights."]
+                #[doc = ""]
+                #[doc = "* `netuid` (u16):"]
+                #[doc = "\t- The network uid we are setting these weights on."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechnism identifier."]
+                #[doc = ""]
+                #[doc = "* `dests` (Vec<u16>):"]
+                #[doc = "\t- The edge endpoint for the weight, i.e. j for w_ij."]
+                #[doc = ""]
+                #[doc = "* 'weights' (Vec<u16>):"]
+                #[doc = "\t- The u16 integer encoded weights. Interpreted as rational"]
+                #[doc = "\t\tvalues in the range [0,1]. They must sum to in32::MAX."]
+                #[doc = ""]
+                #[doc = "* 'version_key' ( u64 ):"]
+                #[doc = "\t- The network version key to check if the validator is up to date."]
+                #[doc = ""]
+                #[doc = "# Event:"]
+                #[doc = "* WeightsSet;"]
+                #[doc = "\t- On successfully setting the weights on chain."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* 'MechanismDoesNotExist':"]
+                #[doc = "\t- Attempting to set weights on a non-existent network."]
+                #[doc = ""]
+                #[doc = "* 'NotRegistered':"]
+                #[doc = "\t- Attempting to set weights from a non registered account."]
+                #[doc = ""]
+                #[doc = "* 'WeightVecNotEqualSize':"]
+                #[doc = "\t- Attempting to set weights with uids not of same length."]
+                #[doc = ""]
+                #[doc = "* 'DuplicateUids':"]
+                #[doc = "\t- Attempting to set weights with duplicate uids."]
+                #[doc = ""]
+                #[doc = "    * 'UidsLengthExceedUidsInSubNet':"]
+                #[doc = "\t- Attempting to set weights above the max allowed uids."]
+                #[doc = ""]
+                #[doc = "* 'UidVecContainInvalidOne':"]
+                #[doc = "\t- Attempting to set weights with invalid uids."]
+                #[doc = ""]
+                #[doc = "* 'WeightVecLengthIsLow':"]
+                #[doc = "\t- Attempting to set weights with fewer weights than min."]
+                #[doc = ""]
+                #[doc = "* 'MaxWeightExceeded':"]
+                #[doc = "\t- Attempting to set weights with max value exceeding limit."]
+                pub fn set_mechanism_weights(
+                    &self,
+                    netuid: types::set_mechanism_weights::Netuid,
+                    mecid: types::set_mechanism_weights::Mecid,
+                    dests: types::set_mechanism_weights::Dests,
+                    weights: types::set_mechanism_weights::Weights,
+                    version_key: types::set_mechanism_weights::VersionKey,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::SetMechanismWeights>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "set_mechanism_weights",
+                        types::SetMechanismWeights {
+                            netuid,
+                            mecid,
+                            dests,
+                            weights,
+                            version_key,
+                        },
+                        [
+                            188u8, 13u8, 95u8, 76u8, 186u8, 188u8, 155u8, 109u8, 105u8, 231u8,
+                            17u8, 67u8, 114u8, 51u8, 225u8, 67u8, 128u8, 190u8, 18u8, 130u8, 24u8,
+                            239u8, 114u8, 66u8, 251u8, 220u8, 141u8, 169u8, 205u8, 46u8, 56u8,
+                            145u8,
                         ],
                     )
                 }
@@ -11745,6 +12814,51 @@ pub mod api {
                             38u8, 39u8, 238u8, 250u8, 79u8, 152u8, 145u8, 158u8, 183u8, 40u8,
                             242u8, 211u8, 236u8, 69u8, 77u8, 47u8, 193u8, 140u8, 230u8, 240u8,
                             65u8,
+                        ],
+                    )
+                }
+                #[doc = "---- Used to commit a hash of your weight values to later be revealed for mechanisms."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The signature of the committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `commit_hash` (`H256`):"]
+                #[doc = "  - The hash representing the committed weights."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* `CommitRevealDisabled`:"]
+                #[doc = "  - Attempting to commit when the commit-reveal mechanism is disabled."]
+                #[doc = ""]
+                #[doc = "* `TooManyUnrevealedCommits`:"]
+                #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
+                #[doc = ""]
+                pub fn commit_mechanism_weights(
+                    &self,
+                    netuid: types::commit_mechanism_weights::Netuid,
+                    mecid: types::commit_mechanism_weights::Mecid,
+                    commit_hash: types::commit_mechanism_weights::CommitHash,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::CommitMechanismWeights,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "commit_mechanism_weights",
+                        types::CommitMechanismWeights {
+                            netuid,
+                            mecid,
+                            commit_hash,
+                        },
+                        [
+                            124u8, 75u8, 106u8, 201u8, 2u8, 158u8, 196u8, 1u8, 16u8, 54u8, 206u8,
+                            17u8, 39u8, 212u8, 249u8, 255u8, 219u8, 186u8, 95u8, 122u8, 58u8, 66u8,
+                            65u8, 253u8, 187u8, 220u8, 48u8, 106u8, 112u8, 191u8, 84u8, 151u8,
                         ],
                     )
                 }
@@ -11854,6 +12968,75 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = "---- Used to reveal the weights for a previously committed hash for mechanisms."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The signature of the revealing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `uids` (`Vec<u16>`):"]
+                #[doc = "  - The uids for the weights being revealed."]
+                #[doc = ""]
+                #[doc = "* `values` (`Vec<u16>`):"]
+                #[doc = "  - The values of the weights being revealed."]
+                #[doc = ""]
+                #[doc = "* `salt` (`Vec<u16>`):"]
+                #[doc = "  - The salt used to generate the commit hash."]
+                #[doc = ""]
+                #[doc = "* `version_key` (`u64`):"]
+                #[doc = "  - The network version key."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* `CommitRevealDisabled`:"]
+                #[doc = "  - Attempting to reveal weights when the commit-reveal mechanism is disabled."]
+                #[doc = ""]
+                #[doc = "* `NoWeightsCommitFound`:"]
+                #[doc = "  - Attempting to reveal weights without an existing commit."]
+                #[doc = ""]
+                #[doc = "* `ExpiredWeightCommit`:"]
+                #[doc = "  - Attempting to reveal a weight commit that has expired."]
+                #[doc = ""]
+                #[doc = "* `RevealTooEarly`:"]
+                #[doc = "  - Attempting to reveal weights outside the valid reveal period."]
+                #[doc = ""]
+                #[doc = "* `InvalidRevealCommitHashNotMatch`:"]
+                #[doc = "  - The revealed hash does not match any committed hash."]
+                #[doc = ""]
+                pub fn reveal_mechanism_weights(
+                    &self,
+                    netuid: types::reveal_mechanism_weights::Netuid,
+                    mecid: types::reveal_mechanism_weights::Mecid,
+                    uids: types::reveal_mechanism_weights::Uids,
+                    values: types::reveal_mechanism_weights::Values,
+                    salt: types::reveal_mechanism_weights::Salt,
+                    version_key: types::reveal_mechanism_weights::VersionKey,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::RevealMechanismWeights,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "reveal_mechanism_weights",
+                        types::RevealMechanismWeights {
+                            netuid,
+                            mecid,
+                            uids,
+                            values,
+                            salt,
+                            version_key,
+                        },
+                        [
+                            135u8, 46u8, 118u8, 4u8, 84u8, 229u8, 142u8, 219u8, 182u8, 122u8, 68u8,
+                            150u8, 14u8, 66u8, 197u8, 25u8, 104u8, 90u8, 97u8, 14u8, 95u8, 208u8,
+                            90u8, 223u8, 12u8, 7u8, 154u8, 166u8, 122u8, 3u8, 210u8, 51u8,
+                        ],
+                    )
+                }
                 #[doc = "---- Used to commit encrypted commit-reveal v3 weight values to later be revealed."]
                 #[doc = ""]
                 #[doc = "# Args:"]
@@ -11883,25 +13066,61 @@ pub mod api {
                 #[doc = "* `TooManyUnrevealedCommits`:"]
                 #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
                 #[doc = ""]
-                pub fn commit_crv3_weights(
+                #[doc = "---- Used to commit encrypted commit-reveal v3 weight values to later be revealed for mechanisms."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `commit` (`Vec<u8>`):"]
+                #[doc = "  - The encrypted compressed commit."]
+                #[doc = "    The steps for this are:"]
+                #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                #[doc = ""]
+                #[doc = "* reveal_round (`u64`):"]
+                #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                #[doc = "     epoch."]
+                #[doc = ""]
+                #[doc = "# Raises:"]
+                #[doc = "* `CommitRevealV3Disabled`:"]
+                #[doc = "  - Attempting to commit when the commit-reveal mechanism is disabled."]
+                #[doc = ""]
+                #[doc = "* `TooManyUnrevealedCommits`:"]
+                #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
+                #[doc = ""]
+                pub fn commit_crv3_mechanism_weights(
                     &self,
-                    netuid: types::commit_crv3_weights::Netuid,
-                    commit: types::commit_crv3_weights::Commit,
-                    reveal_round: types::commit_crv3_weights::RevealRound,
-                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::CommitCrv3Weights>
-                {
+                    netuid: types::commit_crv3_mechanism_weights::Netuid,
+                    mecid: types::commit_crv3_mechanism_weights::Mecid,
+                    commit: types::commit_crv3_mechanism_weights::Commit,
+                    reveal_round: types::commit_crv3_mechanism_weights::RevealRound,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::CommitCrv3MechanismWeights,
+                > {
                     ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
                         "SubtensorModule",
-                        "commit_crv3_weights",
-                        types::CommitCrv3Weights {
+                        "commit_crv3_mechanism_weights",
+                        types::CommitCrv3MechanismWeights {
                             netuid,
+                            mecid,
                             commit,
                             reveal_round,
                         },
                         [
-                            218u8, 155u8, 132u8, 104u8, 4u8, 126u8, 28u8, 171u8, 49u8, 113u8, 91u8,
-                            67u8, 167u8, 49u8, 18u8, 101u8, 28u8, 87u8, 191u8, 49u8, 137u8, 96u8,
-                            194u8, 112u8, 70u8, 194u8, 71u8, 49u8, 107u8, 149u8, 151u8, 63u8,
+                            1u8, 245u8, 231u8, 228u8, 134u8, 21u8, 166u8, 6u8, 88u8, 35u8, 227u8,
+                            157u8, 132u8, 153u8, 253u8, 221u8, 184u8, 154u8, 174u8, 20u8, 140u8,
+                            164u8, 74u8, 160u8, 106u8, 170u8, 95u8, 116u8, 141u8, 198u8, 160u8,
+                            196u8,
                         ],
                     )
                 }
@@ -11967,133 +13186,6 @@ pub mod api {
                             34u8, 35u8, 127u8, 148u8, 176u8, 70u8, 79u8, 195u8, 205u8, 11u8, 184u8,
                             14u8, 132u8, 198u8, 4u8, 117u8, 131u8, 180u8, 86u8, 132u8, 222u8,
                             152u8, 13u8, 214u8, 24u8, 38u8, 67u8, 198u8, 196u8, 172u8, 7u8, 60u8,
-                        ],
-                    )
-                }
-                #[doc = "# Args:"]
-                #[doc = "* `origin`: (<T as frame_system::Config>Origin):"]
-                #[doc = "\t- The caller, a hotkey who wishes to set their weights."]
-                #[doc = ""]
-                #[doc = "* `netuid` (u16):"]
-                #[doc = "\t- The network uid we are setting these weights on."]
-                #[doc = ""]
-                #[doc = "* `hotkey` (T::AccountId):"]
-                #[doc = "\t- The hotkey associated with the operation and the calling coldkey."]
-                #[doc = ""]
-                #[doc = "* `dests` (Vec<u16>):"]
-                #[doc = "\t- The edge endpoint for the weight, i.e. j for w_ij."]
-                #[doc = ""]
-                #[doc = "* 'weights' (Vec<u16>):"]
-                #[doc = "\t- The u16 integer encoded weights. Interpreted as rational"]
-                #[doc = "\t\tvalues in the range [0,1]. They must sum to in32::MAX."]
-                #[doc = ""]
-                #[doc = "* 'version_key' ( u64 ):"]
-                #[doc = "\t- The network version key to check if the validator is up to date."]
-                #[doc = ""]
-                #[doc = "# Event:"]
-                #[doc = ""]
-                #[doc = "* WeightsSet;"]
-                #[doc = "\t- On successfully setting the weights on chain."]
-                #[doc = ""]
-                #[doc = "# Raises:"]
-                #[doc = ""]
-                #[doc = "* NonAssociatedColdKey;"]
-                #[doc = "\t- Attempting to set weights on a non-associated cold key."]
-                #[doc = ""]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
-                #[doc = "\t- Attempting to set weights on a non-existent network."]
-                #[doc = ""]
-                #[doc = "* 'NotRootSubnet':"]
-                #[doc = "\t- Attempting to set weights on a subnet that is not the root network."]
-                #[doc = ""]
-                #[doc = "* 'WeightVecNotEqualSize':"]
-                #[doc = "\t- Attempting to set weights with uids not of same length."]
-                #[doc = ""]
-                #[doc = "* 'UidVecContainInvalidOne':"]
-                #[doc = "\t- Attempting to set weights with invalid uids."]
-                #[doc = ""]
-                #[doc = "* 'NotRegistered':"]
-                #[doc = "\t- Attempting to set weights from a non registered account."]
-                #[doc = ""]
-                #[doc = "* 'WeightVecLengthIsLow':"]
-                #[doc = "\t- Attempting to set weights with fewer weights than min."]
-                #[doc = ""]
-                #[doc = " * 'IncorrectWeightVersionKey':"]
-                #[doc = "     - Attempting to set weights with the incorrect network version key."]
-                #[doc = ""]
-                #[doc = " * 'SettingWeightsTooFast':"]
-                #[doc = "     - Attempting to set weights too fast."]
-                #[doc = ""]
-                #[doc = "* 'WeightVecLengthIsLow':"]
-                #[doc = "\t- Attempting to set weights with fewer weights than min."]
-                #[doc = ""]
-                #[doc = "* 'MaxWeightExceeded':"]
-                #[doc = "\t- Attempting to set weights with max value exceeding limit."]
-                #[doc = ""]
-                pub fn set_tao_weights(
-                    &self,
-                    netuid: types::set_tao_weights::Netuid,
-                    hotkey: types::set_tao_weights::Hotkey,
-                    dests: types::set_tao_weights::Dests,
-                    weights: types::set_tao_weights::Weights,
-                    version_key: types::set_tao_weights::VersionKey,
-                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::SetTaoWeights>
-                {
-                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
-                        "SubtensorModule",
-                        "set_tao_weights",
-                        types::SetTaoWeights {
-                            netuid,
-                            hotkey,
-                            dests,
-                            weights,
-                            version_key,
-                        },
-                        [
-                            53u8, 245u8, 134u8, 15u8, 172u8, 149u8, 178u8, 47u8, 77u8, 244u8,
-                            158u8, 201u8, 44u8, 126u8, 147u8, 140u8, 176u8, 120u8, 160u8, 49u8,
-                            242u8, 205u8, 138u8, 154u8, 195u8, 165u8, 54u8, 124u8, 243u8, 220u8,
-                            205u8, 113u8,
-                        ],
-                    )
-                }
-                #[doc = "--- Sets the key as a delegate."]
-                #[doc = ""]
-                #[doc = "# Args:"]
-                #[doc = "* 'origin': (<T as frame_system::Config>Origin):"]
-                #[doc = "\t- The signature of the caller's coldkey."]
-                #[doc = ""]
-                #[doc = "* 'hotkey' (T::AccountId):"]
-                #[doc = "\t- The hotkey we are delegating (must be owned by the coldkey.)"]
-                #[doc = ""]
-                #[doc = "* 'take' (u64):"]
-                #[doc = "\t- The stake proportion that this hotkey takes from delegations."]
-                #[doc = ""]
-                #[doc = "# Event:"]
-                #[doc = "* DelegateAdded;"]
-                #[doc = "\t- On successfully setting a hotkey as a delegate."]
-                #[doc = ""]
-                #[doc = "# Raises:"]
-                #[doc = "* 'NotRegistered':"]
-                #[doc = "\t- The hotkey we are delegating is not registered on the network."]
-                #[doc = ""]
-                #[doc = "* 'NonAssociatedColdKey':"]
-                #[doc = "\t- The hotkey we are delegating is not owned by the calling coldket."]
-                #[doc = ""]
-                pub fn become_delegate(
-                    &self,
-                    hotkey: types::become_delegate::Hotkey,
-                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::BecomeDelegate>
-                {
-                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
-                        "SubtensorModule",
-                        "become_delegate",
-                        types::BecomeDelegate { hotkey },
-                        [
-                            203u8, 35u8, 56u8, 221u8, 32u8, 244u8, 108u8, 117u8, 57u8, 16u8, 244u8,
-                            226u8, 201u8, 173u8, 128u8, 134u8, 26u8, 169u8, 5u8, 132u8, 98u8,
-                            220u8, 214u8, 207u8, 250u8, 232u8, 234u8, 42u8, 212u8, 81u8, 98u8,
-                            57u8,
                         ],
                     )
                 }
@@ -12340,7 +13432,7 @@ pub mod api {
                 #[doc = "\t- On successfully serving the axon info."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to set weights on a non-existent network."]
                 #[doc = ""]
                 #[doc = "* 'NotRegistered':"]
@@ -12428,7 +13520,7 @@ pub mod api {
                 #[doc = "\t- On successfully serving the axon info."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to set weights on a non-existent network."]
                 #[doc = ""]
                 #[doc = "* 'NotRegistered':"]
@@ -12553,7 +13645,7 @@ pub mod api {
                 #[doc = "\t- On successfully registering a uid to a neuron slot on a subnetwork."]
                 #[doc = ""]
                 #[doc = "# Raises:"]
-                #[doc = "* 'SubNetworkDoesNotExist':"]
+                #[doc = "* 'MechanismDoesNotExist':"]
                 #[doc = "\t- Attempting to register to a non existent network."]
                 #[doc = ""]
                 #[doc = "* 'TooManyRegistrationsThisBlock':"]
@@ -12868,10 +13960,10 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            35u8, 171u8, 146u8, 222u8, 204u8, 161u8, 241u8, 13u8, 4u8, 151u8,
-                            196u8, 151u8, 43u8, 152u8, 156u8, 239u8, 74u8, 92u8, 74u8, 26u8, 206u8,
-                            104u8, 159u8, 190u8, 230u8, 189u8, 211u8, 92u8, 252u8, 24u8, 55u8,
-                            232u8,
+                            243u8, 171u8, 194u8, 111u8, 29u8, 115u8, 253u8, 217u8, 35u8, 70u8,
+                            250u8, 81u8, 160u8, 17u8, 47u8, 62u8, 6u8, 34u8, 148u8, 132u8, 20u8,
+                            104u8, 138u8, 73u8, 128u8, 93u8, 53u8, 21u8, 136u8, 191u8, 219u8,
+                            132u8,
                         ],
                     )
                 }
@@ -12897,10 +13989,9 @@ pub mod api {
                             weight,
                         },
                         [
-                            202u8, 183u8, 12u8, 26u8, 86u8, 25u8, 69u8, 9u8, 153u8, 194u8, 35u8,
-                            91u8, 144u8, 155u8, 74u8, 164u8, 55u8, 184u8, 94u8, 143u8, 235u8,
-                            223u8, 144u8, 147u8, 243u8, 120u8, 92u8, 226u8, 147u8, 132u8, 231u8,
-                            68u8,
+                            187u8, 21u8, 157u8, 117u8, 20u8, 14u8, 216u8, 245u8, 128u8, 165u8,
+                            100u8, 35u8, 17u8, 254u8, 188u8, 152u8, 126u8, 174u8, 122u8, 8u8, 77u8,
+                            167u8, 199u8, 242u8, 43u8, 96u8, 59u8, 6u8, 79u8, 3u8, 229u8, 45u8,
                         ],
                     )
                 }
@@ -13017,7 +14108,7 @@ pub mod api {
                 #[doc = "    - On successfully registering a child to a hotkey."]
                 #[doc = ""]
                 #[doc = "# Errors:"]
-                #[doc = "* `SubNetworkDoesNotExist`:"]
+                #[doc = "* `MechanismDoesNotExist`:"]
                 #[doc = "    - Attempting to register to a non-existent network."]
                 #[doc = "* `RegistrationNotPermittedOnRootSubnet`:"]
                 #[doc = "    - Attempting to register a child on the root network."]
@@ -13102,38 +14193,6 @@ pub mod api {
                             66u8, 101u8, 41u8, 48u8, 176u8, 72u8, 84u8, 50u8, 72u8, 60u8, 8u8,
                             241u8, 164u8, 96u8, 160u8, 55u8, 31u8, 204u8, 167u8, 233u8, 184u8, 5u8,
                             106u8, 178u8, 49u8, 38u8, 199u8, 171u8, 125u8, 2u8, 163u8, 98u8,
-                        ],
-                    )
-                }
-                #[doc = "Schedule the dissolution of a network at a specified block number."]
-                #[doc = ""]
-                #[doc = "# Arguments"]
-                #[doc = ""]
-                #[doc = "* `origin` - The origin of the call, must be signed by the sender."]
-                #[doc = "* `netuid` - The u16 network identifier to be dissolved."]
-                #[doc = ""]
-                #[doc = "# Returns"]
-                #[doc = ""]
-                #[doc = "Returns a `DispatchResultWithPostInfo` indicating success or failure of the operation."]
-                #[doc = ""]
-                #[doc = "# Weight"]
-                #[doc = ""]
-                #[doc = "Weight is calculated based on the number of database reads and writes."]
-                pub fn schedule_dissolve_network(
-                    &self,
-                    netuid: types::schedule_dissolve_network::Netuid,
-                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
-                    types::ScheduleDissolveNetwork,
-                > {
-                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
-                        "SubtensorModule",
-                        "schedule_dissolve_network",
-                        types::ScheduleDissolveNetwork { netuid },
-                        [
-                            226u8, 8u8, 148u8, 200u8, 65u8, 242u8, 123u8, 255u8, 171u8, 207u8,
-                            68u8, 87u8, 122u8, 55u8, 61u8, 194u8, 198u8, 222u8, 33u8, 139u8, 0u8,
-                            166u8, 153u8, 210u8, 172u8, 58u8, 116u8, 235u8, 191u8, 95u8, 116u8,
-                            229u8,
                         ],
                     )
                 }
@@ -13724,9 +14783,8 @@ pub mod api {
                 #[doc = "```"]
                 #[doc = ""]
                 #[doc = "# Arguments"]
-                #[doc = "* `origin` - The origin of the transaction, which must be signed by the coldkey that owns the `hotkey`."]
+                #[doc = "* `origin` - The origin of the transaction, which must be signed by the `hotkey`."]
                 #[doc = "* `netuid` - The netuid that the `hotkey` belongs to."]
-                #[doc = "* `hotkey` - The hotkey associated with the `origin`."]
                 #[doc = "* `evm_key` - The EVM key to associate with the `hotkey`."]
                 #[doc = "* `block_number` - The block number used in the `signature`."]
                 #[doc = "* `signature` - A signed message by the `evm_key` containing the `hotkey` and the hashed `block_number`."]
@@ -13734,7 +14792,6 @@ pub mod api {
                 #[doc = "# Errors"]
                 #[doc = "Returns an error if:"]
                 #[doc = "* The transaction is not signed."]
-                #[doc = "* The hotkey is not owned by the origin coldkey."]
                 #[doc = "* The hotkey does not belong to the subnet identified by the netuid."]
                 #[doc = "* The EVM key cannot be recovered from the signature."]
                 #[doc = "* The EVM key recovered from the signature does not match the given EVM key."]
@@ -13943,6 +15000,190 @@ pub mod api {
                             149u8, 204u8, 206u8, 225u8, 159u8, 169u8, 210u8, 133u8, 232u8, 112u8,
                             162u8, 240u8, 188u8, 10u8, 147u8, 66u8, 224u8, 149u8, 176u8, 170u8,
                             132u8,
+                        ],
+                    )
+                }
+                #[doc = "Updates the symbol for a subnet."]
+                #[doc = ""]
+                #[doc = "# Arguments"]
+                #[doc = "* `origin` - The origin of the call, which must be the subnet owner or root."]
+                #[doc = "* `netuid` - The unique identifier of the subnet on which the symbol is being set."]
+                #[doc = "* `symbol` - The symbol to set for the subnet."]
+                #[doc = ""]
+                #[doc = "# Errors"]
+                #[doc = "Returns an error if:"]
+                #[doc = "* The transaction is not signed by the subnet owner."]
+                #[doc = "* The symbol does not exist."]
+                #[doc = "* The symbol is already in use by another subnet."]
+                #[doc = ""]
+                #[doc = "# Events"]
+                #[doc = "Emits a `SymbolUpdated` event on success."]
+                pub fn update_symbol(
+                    &self,
+                    netuid: types::update_symbol::Netuid,
+                    symbol: types::update_symbol::Symbol,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::UpdateSymbol>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "update_symbol",
+                        types::UpdateSymbol { netuid, symbol },
+                        [
+                            134u8, 241u8, 164u8, 150u8, 185u8, 169u8, 235u8, 10u8, 34u8, 210u8,
+                            193u8, 65u8, 223u8, 161u8, 156u8, 231u8, 11u8, 14u8, 158u8, 114u8,
+                            218u8, 255u8, 145u8, 212u8, 152u8, 80u8, 107u8, 250u8, 218u8, 212u8,
+                            138u8, 194u8,
+                        ],
+                    )
+                }
+                #[doc = "---- Used to commit timelock encrypted commit-reveal weight values to later be revealed."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `commit` (`Vec<u8>`):"]
+                #[doc = "  - The encrypted compressed commit."]
+                #[doc = "    The steps for this are:"]
+                #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                #[doc = ""]
+                #[doc = "* reveal_round (`u64`):"]
+                #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                #[doc = "     epoch."]
+                #[doc = ""]
+                #[doc = "* commit_reveal_version (`u16`):"]
+                #[doc = "    - The client (bittensor-drand) version"]
+                pub fn commit_timelocked_weights(
+                    &self,
+                    netuid: types::commit_timelocked_weights::Netuid,
+                    commit: types::commit_timelocked_weights::Commit,
+                    reveal_round: types::commit_timelocked_weights::RevealRound,
+                    commit_reveal_version: types::commit_timelocked_weights::CommitRevealVersion,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::CommitTimelockedWeights,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "commit_timelocked_weights",
+                        types::CommitTimelockedWeights {
+                            netuid,
+                            commit,
+                            reveal_round,
+                            commit_reveal_version,
+                        },
+                        [
+                            182u8, 151u8, 45u8, 217u8, 127u8, 97u8, 136u8, 2u8, 99u8, 44u8, 228u8,
+                            222u8, 59u8, 250u8, 52u8, 231u8, 124u8, 147u8, 111u8, 204u8, 249u8,
+                            139u8, 94u8, 98u8, 230u8, 75u8, 165u8, 185u8, 101u8, 88u8, 53u8, 168u8,
+                        ],
+                    )
+                }
+                #[doc = "Set the autostake destination hotkey for a coldkey."]
+                #[doc = ""]
+                #[doc = "The caller selects a hotkey where all future rewards"]
+                #[doc = "will be automatically staked."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin` - (<T as frame_system::Config>::Origin):"]
+                #[doc = "    - The signature of the caller's coldkey."]
+                #[doc = ""]
+                #[doc = "* `hotkey` (T::AccountId):"]
+                #[doc = "    - The hotkey account to designate as the autostake destination."]
+                pub fn set_coldkey_auto_stake_hotkey(
+                    &self,
+                    hotkey: types::set_coldkey_auto_stake_hotkey::Hotkey,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SetColdkeyAutoStakeHotkey,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "set_coldkey_auto_stake_hotkey",
+                        types::SetColdkeyAutoStakeHotkey { hotkey },
+                        [
+                            96u8, 53u8, 1u8, 219u8, 22u8, 95u8, 16u8, 109u8, 35u8, 142u8, 187u8,
+                            251u8, 122u8, 3u8, 109u8, 65u8, 199u8, 208u8, 139u8, 133u8, 111u8,
+                            35u8, 91u8, 116u8, 116u8, 61u8, 104u8, 161u8, 15u8, 58u8, 45u8, 190u8,
+                        ],
+                    )
+                }
+                #[doc = "---- Used to commit timelock encrypted commit-reveal weight values to later be revealed for"]
+                #[doc = "a mechanism."]
+                #[doc = ""]
+                #[doc = "# Args:"]
+                #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                #[doc = "  - The committing hotkey."]
+                #[doc = ""]
+                #[doc = "* `netuid` (`u16`):"]
+                #[doc = "  - The u16 network identifier."]
+                #[doc = ""]
+                #[doc = "* `mecid` (`u8`):"]
+                #[doc = "  - The u8 mechanism identifier."]
+                #[doc = ""]
+                #[doc = "* `commit` (`Vec<u8>`):"]
+                #[doc = "  - The encrypted compressed commit."]
+                #[doc = "    The steps for this are:"]
+                #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                #[doc = ""]
+                #[doc = "* reveal_round (`u64`):"]
+                #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                #[doc = "     epoch."]
+                #[doc = ""]
+                #[doc = "* commit_reveal_version (`u16`):"]
+                #[doc = "    - The client (bittensor-drand) version"]
+                pub fn commit_timelocked_mechanism_weights(
+                    &self,
+                    netuid: types::commit_timelocked_mechanism_weights::Netuid,
+                    mecid: types::commit_timelocked_mechanism_weights::Mecid,
+                    commit: types::commit_timelocked_mechanism_weights::Commit,
+                    reveal_round: types::commit_timelocked_mechanism_weights::RevealRound,
+                    commit_reveal_version : types :: commit_timelocked_mechanism_weights :: CommitRevealVersion,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::CommitTimelockedMechanismWeights,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "commit_timelocked_mechanism_weights",
+                        types::CommitTimelockedMechanismWeights {
+                            netuid,
+                            mecid,
+                            commit,
+                            reveal_round,
+                            commit_reveal_version,
+                        },
+                        [
+                            144u8, 191u8, 179u8, 136u8, 110u8, 213u8, 24u8, 166u8, 65u8, 179u8,
+                            162u8, 60u8, 120u8, 85u8, 107u8, 255u8, 99u8, 9u8, 203u8, 211u8, 203u8,
+                            244u8, 28u8, 77u8, 207u8, 57u8, 212u8, 107u8, 251u8, 169u8, 186u8, 3u8,
+                        ],
+                    )
+                }
+                #[doc = "Remove a subnetwork"]
+                #[doc = "The caller must be root"]
+                pub fn root_dissolve_network(
+                    &self,
+                    netuid: types::root_dissolve_network::Netuid,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::RootDissolveNetwork>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "SubtensorModule",
+                        "root_dissolve_network",
+                        types::RootDissolveNetwork { netuid },
+                        [
+                            252u8, 248u8, 148u8, 168u8, 24u8, 188u8, 102u8, 192u8, 83u8, 64u8,
+                            204u8, 222u8, 252u8, 193u8, 98u8, 135u8, 180u8, 105u8, 120u8, 70u8,
+                            100u8, 126u8, 198u8, 196u8, 45u8, 81u8, 254u8, 21u8, 242u8, 123u8,
+                            206u8, 200u8,
                         ],
                     )
                 }
@@ -15037,6 +16278,50 @@ pub mod api {
             #[codec(dumb_trait_bound)]
             #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
             #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "setting the admin freeze window length (last N blocks of tempo)"]
+            pub struct AdminFreezeWindowSet(pub admin_freeze_window_set::Field0);
+            pub mod admin_freeze_window_set {
+                use super::runtime_types;
+                pub type Field0 = ::core::primitive::u16;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for AdminFreezeWindowSet {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "AdminFreezeWindowSet";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "setting the owner hyperparameter rate limit in epochs"]
+            pub struct OwnerHyperparamRateLimitSet(pub owner_hyperparam_rate_limit_set::Field0);
+            pub mod owner_hyperparam_rate_limit_set {
+                use super::runtime_types;
+                pub type Field0 = ::core::primitive::u16;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for OwnerHyperparamRateLimitSet {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "OwnerHyperparamRateLimitSet";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
             #[doc = "minimum childkey take set"]
             pub struct MinChildKeyTakeSet(pub min_child_key_take_set::Field0);
             pub mod min_child_key_take_set {
@@ -15413,6 +16698,27 @@ pub mod api {
             #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
             #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
             #[doc = "the maximum number of subnets is set"]
+            pub struct SubnetLimitSet(pub subnet_limit_set::Field0);
+            pub mod subnet_limit_set {
+                use super::runtime_types;
+                pub type Field0 = ::core::primitive::u16;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for SubnetLimitSet {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "SubnetLimitSet";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
             #[doc = "the lock cost reduction is set"]
             pub struct NetworkLockCostReductionIntervalSet(
                 pub network_lock_cost_reduction_interval_set::Field0,
@@ -16528,6 +17834,205 @@ pub mod api {
                 const PALLET: &'static str = "SubtensorModule";
                 const EVENT: &'static str = "SubnetLeaseTerminated";
             }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "The symbol for a subnet has been updated."]
+            pub struct SymbolUpdated {
+                pub netuid: symbol_updated::Netuid,
+                pub symbol: symbol_updated::Symbol,
+            }
+            pub mod symbol_updated {
+                use super::runtime_types;
+                pub type Netuid = ::core::primitive::u16;
+                pub type Symbol = ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u8>;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for SymbolUpdated {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "SymbolUpdated";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Commit Reveal Weights version has been updated."]
+            #[doc = ""]
+            #[doc = "- **version**: The required version."]
+            pub struct CommitRevealVersionSet(pub commit_reveal_version_set::Field0);
+            pub mod commit_reveal_version_set {
+                use super::runtime_types;
+                pub type Field0 = ::core::primitive::u16;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for CommitRevealVersionSet {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "CommitRevealVersionSet";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Timelocked weights have been successfully committed."]
+            #[doc = ""]
+            #[doc = "- **who**: The account ID of the user committing the weights."]
+            #[doc = "- **netuid**: The network identifier."]
+            #[doc = "- **commit_hash**: The hash representing the committed weights."]
+            #[doc = "- **reveal_round**: The round at which weights can be revealed."]
+            pub struct TimelockedWeightsCommitted(
+                pub timelocked_weights_committed::Field0,
+                pub timelocked_weights_committed::Field1,
+                pub timelocked_weights_committed::Field2,
+                pub timelocked_weights_committed::Field3,
+            );
+            pub mod timelocked_weights_committed {
+                use super::runtime_types;
+                pub type Field0 = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type Field1 = ::core::primitive::u16;
+                pub type Field2 = ::subxt::ext::subxt_core::utils::H256;
+                pub type Field3 = ::core::primitive::u64;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for TimelockedWeightsCommitted {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "TimelockedWeightsCommitted";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Timelocked Weights have been successfully revealed."]
+            #[doc = ""]
+            #[doc = "- **netuid**: The network identifier."]
+            #[doc = "- **who**: The account ID of the user revealing the weights."]
+            pub struct TimelockedWeightsRevealed(
+                pub timelocked_weights_revealed::Field0,
+                pub timelocked_weights_revealed::Field1,
+            );
+            pub mod timelocked_weights_revealed {
+                use super::runtime_types;
+                pub type Field0 = ::core::primitive::u16;
+                pub type Field1 = ::subxt::ext::subxt_core::utils::AccountId32;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for TimelockedWeightsRevealed {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "TimelockedWeightsRevealed";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Auto-staking hotkey received stake"]
+            pub struct AutoStakeAdded {
+                pub netuid: auto_stake_added::Netuid,
+                pub destination: auto_stake_added::Destination,
+                pub hotkey: auto_stake_added::Hotkey,
+                pub owner: auto_stake_added::Owner,
+                pub incentive: auto_stake_added::Incentive,
+            }
+            pub mod auto_stake_added {
+                use super::runtime_types;
+                pub type Netuid = ::core::primitive::u16;
+                pub type Destination = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type Hotkey = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type Owner = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type Incentive = ::core::primitive::u64;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for AutoStakeAdded {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "AutoStakeAdded";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "End-of-epoch miner incentive alpha by UID"]
+            pub struct IncentiveAlphaEmittedToMiners {
+                pub netuid: incentive_alpha_emitted_to_miners::Netuid,
+                pub emissions: incentive_alpha_emitted_to_miners::Emissions,
+            }
+            pub mod incentive_alpha_emitted_to_miners {
+                use super::runtime_types;
+                pub type Netuid = ::core::primitive::u16;
+                pub type Emissions =
+                    ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u64>;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for IncentiveAlphaEmittedToMiners {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "IncentiveAlphaEmittedToMiners";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "The minimum allowed UIDs for a subnet have been set."]
+            pub struct MinAllowedUidsSet(
+                pub min_allowed_uids_set::Field0,
+                pub min_allowed_uids_set::Field1,
+            );
+            pub mod min_allowed_uids_set {
+                use super::runtime_types;
+                pub type Field0 = ::core::primitive::u16;
+                pub type Field1 = ::core::primitive::u16;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for MinAllowedUidsSet {
+                const PALLET: &'static str = "SubtensorModule";
+                const EVENT: &'static str = "MinAllowedUidsSet";
+            }
         }
         pub mod storage {
             use super::runtime_types;
@@ -16536,6 +18041,14 @@ pub mod api {
                 pub mod min_activity_cutoff {
                     use super::runtime_types;
                     pub type MinActivityCutoff = ::core::primitive::u16;
+                }
+                pub mod admin_freeze_window {
+                    use super::runtime_types;
+                    pub type AdminFreezeWindow = ::core::primitive::u16;
+                }
+                pub mod owner_hyperparam_rate_limit {
+                    use super::runtime_types;
+                    pub type OwnerHyperparamRateLimit = ::core::primitive::u16;
                 }
                 pub mod coldkey_swap_schedule_duration {
                     use super::runtime_types;
@@ -16566,6 +18079,10 @@ pub mod api {
                 pub mod tao_weight {
                     use super::runtime_types;
                     pub type TaoWeight = ::core::primitive::u64;
+                }
+                pub mod ck_burn {
+                    use super::runtime_types;
+                    pub type CkBurn = ::core::primitive::u64;
                 }
                 pub mod max_delegate_take {
                     use super::runtime_types;
@@ -16651,6 +18168,10 @@ pub mod api {
                     pub type Param0 = ::subxt::ext::subxt_core::utils::AccountId32;
                     pub type Param1 = ::core::primitive::u16;
                 }
+                pub mod subnet_limit {
+                    use super::runtime_types;
+                    pub type SubnetLimit = ::core::primitive::u16;
+                }
                 pub mod total_issuance {
                     use super::runtime_types;
                     pub type TotalIssuance = ::core::primitive::u64;
@@ -16662,48 +18183,48 @@ pub mod api {
                 pub mod subnet_moving_alpha {
                     use super::runtime_types;
                     pub type SubnetMovingAlpha = runtime_types::substrate_fixed::FixedI128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UTerm,
-                                                runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UTerm,
+                                                runtime_types::substrate_typenum::bit::B1,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                 }
                 pub mod subnet_moving_price {
                     use super::runtime_types;
                     pub type SubnetMovingPrice = runtime_types::substrate_fixed::FixedI128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UTerm,
-                                                runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UTerm,
+                                                runtime_types::substrate_typenum::bit::B1,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                     pub type Param0 = ::core::primitive::u16;
@@ -16767,6 +18288,11 @@ pub mod api {
                     >;
                     pub type Param0 = ::subxt::ext::subxt_core::utils::AccountId32;
                 }
+                pub mod auto_stake_destination {
+                    use super::runtime_types;
+                    pub type AutoStakeDestination = ::subxt::ext::subxt_core::utils::AccountId32;
+                    pub type Param0 = ::subxt::ext::subxt_core::utils::AccountId32;
+                }
                 pub mod coldkey_swap_scheduled {
                     use super::runtime_types;
                     pub type ColdkeySwapScheduled = (
@@ -16790,27 +18316,27 @@ pub mod api {
                 pub mod total_hotkey_shares {
                     use super::runtime_types;
                     pub type TotalHotkeyShares = runtime_types::substrate_fixed::FixedU128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                     pub type Param0 = ::subxt::ext::subxt_core::utils::AccountId32;
@@ -16819,27 +18345,27 @@ pub mod api {
                 pub mod alpha {
                     use super::runtime_types;
                     pub type Alpha = runtime_types::substrate_fixed::FixedU128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                     pub type Param0 = ::subxt::ext::subxt_core::utils::AccountId32;
@@ -16869,10 +18395,6 @@ pub mod api {
                 pub mod network_immunity_period {
                     use super::runtime_types;
                     pub type NetworkImmunityPeriod = ::core::primitive::u64;
-                }
-                pub mod network_last_registered {
-                    use super::runtime_types;
-                    pub type NetworkLastRegistered = ::core::primitive::u64;
                 }
                 pub mod network_min_lock_cost {
                     use super::runtime_types;
@@ -16905,7 +18427,9 @@ pub mod api {
                 pub mod last_rate_limited_block {
                     use super::runtime_types;
                     pub type LastRateLimitedBlock = ::core::primitive::u64;
-                    pub type Param0 = runtime_types::pallet_subtensor::RateLimitKey;
+                    pub type Param0 = runtime_types::pallet_subtensor::RateLimitKey<
+                        ::subxt::ext::subxt_core::utils::AccountId32,
+                    >;
                 }
                 pub mod transfer_toggle {
                     use super::runtime_types;
@@ -16940,11 +18464,6 @@ pub mod api {
                 pub mod subnetwork_n {
                     use super::runtime_types;
                     pub type SubnetworkN = ::core::primitive::u16;
-                    pub type Param0 = ::core::primitive::u16;
-                }
-                pub mod network_modality {
-                    use super::runtime_types;
-                    pub type NetworkModality = ::core::primitive::u16;
                     pub type Param0 = ::core::primitive::u16;
                 }
                 pub mod networks_added {
@@ -17013,6 +18532,12 @@ pub mod api {
                     pub type SubnetOwnerHotkey = ::subxt::ext::subxt_core::utils::AccountId32;
                     pub type Param0 = ::core::primitive::u16;
                 }
+                pub mod recycle_or_burn {
+                    use super::runtime_types;
+                    pub type RecycleOrBurn =
+                        runtime_types::pallet_subtensor::pallet::RecycleOrBurnEnum;
+                    pub type Param0 = ::core::primitive::u16;
+                }
                 pub mod serving_rate_limit {
                     use super::runtime_types;
                     pub type ServingRateLimit = ::core::primitive::u64;
@@ -17046,6 +18571,11 @@ pub mod api {
                 pub mod burn_registrations_this_interval {
                     use super::runtime_types;
                     pub type BurnRegistrationsThisInterval = ::core::primitive::u16;
+                    pub type Param0 = ::core::primitive::u16;
+                }
+                pub mod min_allowed_uids {
+                    use super::runtime_types;
+                    pub type MinAllowedUids = ::core::primitive::u16;
                     pub type Param0 = ::core::primitive::u16;
                 }
                 pub mod max_allowed_uids {
@@ -17213,6 +18743,11 @@ pub mod api {
                 pub mod subtoken_enabled {
                     use super::runtime_types;
                     pub type SubtokenEnabled = ::core::primitive::bool;
+                    pub type Param0 = ::core::primitive::u16;
+                }
+                pub mod immune_owner_uids_limit {
+                    use super::runtime_types;
+                    pub type ImmuneOwnerUidsLimit = ::core::primitive::u16;
                     pub type Param0 = ::core::primitive::u16;
                 }
                 pub mod stake_weight {
@@ -17417,10 +18952,36 @@ pub mod api {
                     pub type Param0 = ::core::primitive::u16;
                     pub type Param1 = ::subxt::ext::subxt_core::utils::AccountId32;
                 }
+                pub mod timelocked_weight_commits {
+                    use super::runtime_types;
+                    pub type TimelockedWeightCommits = ::subxt::ext::subxt_core::alloc::vec::Vec<(
+                        ::subxt::ext::subxt_core::utils::AccountId32,
+                        ::core::primitive::u64,
+                        runtime_types::bounded_collections::bounded_vec::BoundedVec<
+                            ::core::primitive::u8,
+                        >,
+                        ::core::primitive::u64,
+                    )>;
+                    pub type Param0 = ::core::primitive::u16;
+                    pub type Param1 = ::core::primitive::u64;
+                }
                 pub mod crv3_weight_commits {
                     use super::runtime_types;
                     pub type Crv3WeightCommits = ::subxt::ext::subxt_core::alloc::vec::Vec<(
                         ::subxt::ext::subxt_core::utils::AccountId32,
+                        runtime_types::bounded_collections::bounded_vec::BoundedVec<
+                            ::core::primitive::u8,
+                        >,
+                        ::core::primitive::u64,
+                    )>;
+                    pub type Param0 = ::core::primitive::u16;
+                    pub type Param1 = ::core::primitive::u64;
+                }
+                pub mod crv3_weight_commits_v2 {
+                    use super::runtime_types;
+                    pub type Crv3WeightCommitsV2 = ::subxt::ext::subxt_core::alloc::vec::Vec<(
+                        ::subxt::ext::subxt_core::utils::AccountId32,
+                        ::core::primitive::u64,
                         runtime_types::bounded_collections::bounded_vec::BoundedVec<
                             ::core::primitive::u8,
                         >,
@@ -17469,27 +19030,27 @@ pub mod api {
                 pub mod subnet_lease_shares {
                     use super::runtime_types;
                     pub type SubnetLeaseShares = runtime_types::substrate_fixed::FixedU128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                     pub type Param0 = ::core::primitive::u32;
@@ -17508,6 +19069,25 @@ pub mod api {
                     use super::runtime_types;
                     pub type AccumulatedLeaseDividends = ::core::primitive::u64;
                     pub type Param0 = ::core::primitive::u32;
+                }
+                pub mod commit_reveal_weights_version {
+                    use super::runtime_types;
+                    pub type CommitRevealWeightsVersion = ::core::primitive::u16;
+                }
+                pub mod network_registration_start_block {
+                    use super::runtime_types;
+                    pub type NetworkRegistrationStartBlock = ::core::primitive::u64;
+                }
+                pub mod mechanism_count_current {
+                    use super::runtime_types;
+                    pub type MechanismCountCurrent = ::core::primitive::u8;
+                    pub type Param0 = ::core::primitive::u16;
+                }
+                pub mod mechanism_emission_split {
+                    use super::runtime_types;
+                    pub type MechanismEmissionSplit =
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>;
+                    pub type Param0 = ::core::primitive::u16;
                 }
                 pub mod has_migration_run {
                     use super::runtime_types;
@@ -17538,6 +19118,49 @@ pub mod api {
                             21u8, 123u8, 162u8, 205u8, 232u8, 171u8, 55u8, 152u8, 86u8, 37u8, 65u8,
                             186u8, 63u8, 248u8, 155u8, 234u8, 244u8, 180u8, 236u8, 101u8, 64u8,
                             232u8, 43u8, 181u8, 36u8, 18u8, 30u8, 120u8, 210u8, 183u8, 4u8, 82u8,
+                        ],
+                    )
+                }
+                #[doc = " Global window (in blocks) at the end of each tempo where admin ops are disallowed"]
+                pub fn admin_freeze_window(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::admin_freeze_window::AdminFreezeWindow,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "AdminFreezeWindow",
+                        (),
+                        [
+                            151u8, 97u8, 132u8, 224u8, 168u8, 58u8, 155u8, 55u8, 253u8, 209u8,
+                            114u8, 83u8, 132u8, 130u8, 22u8, 28u8, 84u8, 157u8, 133u8, 238u8, 70u8,
+                            240u8, 4u8, 61u8, 115u8, 55u8, 141u8, 8u8, 14u8, 77u8, 18u8, 25u8,
+                        ],
+                    )
+                }
+                #[doc = " Global number of epochs used to rate limit subnet owner hyperparameter updates"]
+                pub fn owner_hyperparam_rate_limit(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::owner_hyperparam_rate_limit::OwnerHyperparamRateLimit,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "OwnerHyperparamRateLimit",
+                        (),
+                        [
+                            248u8, 49u8, 158u8, 212u8, 44u8, 238u8, 239u8, 34u8, 176u8, 110u8,
+                            65u8, 49u8, 63u8, 249u8, 37u8, 255u8, 163u8, 176u8, 170u8, 84u8, 31u8,
+                            200u8, 247u8, 152u8, 32u8, 178u8, 152u8, 96u8, 80u8, 21u8, 137u8,
+                            220u8,
                         ],
                     )
                 }
@@ -17760,6 +19383,27 @@ pub mod api {
                             35u8, 220u8, 52u8, 52u8, 197u8, 121u8, 156u8, 186u8, 251u8, 209u8,
                             84u8, 217u8, 107u8, 239u8, 100u8, 188u8, 234u8, 22u8, 119u8, 226u8,
                             47u8,
+                        ],
+                    )
+                }
+                #[doc = " --- ITEM --> CK burn"]
+                pub fn ck_burn(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::ck_burn::CkBurn,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "CKBurn",
+                        (),
+                        [
+                            193u8, 71u8, 203u8, 37u8, 183u8, 175u8, 55u8, 94u8, 76u8, 64u8, 158u8,
+                            64u8, 26u8, 31u8, 179u8, 64u8, 238u8, 35u8, 244u8, 50u8, 107u8, 105u8,
+                            98u8, 33u8, 247u8, 148u8, 119u8, 34u8, 215u8, 48u8, 50u8, 114u8,
                         ],
                     )
                 }
@@ -18583,6 +20227,26 @@ pub mod api {
                 #[doc = ""]
                 #[doc = " Eventually, Bittensor should migrate to using Holds afterwhich time we will not require this"]
                 #[doc = " separate accounting."]
+                pub fn subnet_limit(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::subnet_limit::SubnetLimit,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "SubnetLimit",
+                        (),
+                        [
+                            22u8, 164u8, 10u8, 77u8, 181u8, 52u8, 200u8, 11u8, 157u8, 77u8, 240u8,
+                            211u8, 205u8, 0u8, 64u8, 7u8, 208u8, 135u8, 210u8, 184u8, 50u8, 1u8,
+                            32u8, 58u8, 134u8, 44u8, 51u8, 123u8, 173u8, 156u8, 170u8, 208u8,
+                        ],
+                    )
+                }
                 pub fn total_issuance(
                     &self,
                 ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
@@ -19200,6 +20864,53 @@ pub mod api {
                         ],
                     )
                 }
+                pub fn auto_stake_destination_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::auto_stake_destination::AutoStakeDestination,
+                    (),
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "AutoStakeDestination",
+                        (),
+                        [
+                            33u8, 182u8, 48u8, 52u8, 108u8, 253u8, 183u8, 199u8, 121u8, 59u8,
+                            147u8, 182u8, 233u8, 41u8, 153u8, 150u8, 18u8, 126u8, 1u8, 204u8, 65u8,
+                            211u8, 146u8, 138u8, 106u8, 119u8, 8u8, 247u8, 124u8, 156u8, 116u8,
+                            144u8,
+                        ],
+                    )
+                }
+                pub fn auto_stake_destination(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::auto_stake_destination::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::auto_stake_destination::Param0,
+                    >,
+                    types::auto_stake_destination::AutoStakeDestination,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "AutoStakeDestination",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            33u8, 182u8, 48u8, 52u8, 108u8, 253u8, 183u8, 199u8, 121u8, 59u8,
+                            147u8, 182u8, 233u8, 41u8, 153u8, 150u8, 18u8, 126u8, 1u8, 204u8, 65u8,
+                            211u8, 146u8, 138u8, 106u8, 119u8, 8u8, 247u8, 124u8, 156u8, 116u8,
+                            144u8,
+                        ],
+                    )
+                }
                 pub fn coldkey_swap_scheduled_iter(
                     &self,
                 ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
@@ -19809,32 +21520,10 @@ pub mod api {
                         "NetworkImmunityPeriod",
                         (),
                         [
-                            165u8, 72u8, 132u8, 22u8, 239u8, 25u8, 191u8, 35u8, 164u8, 140u8,
-                            171u8, 36u8, 81u8, 166u8, 171u8, 238u8, 127u8, 143u8, 162u8, 92u8,
-                            36u8, 203u8, 229u8, 10u8, 162u8, 91u8, 121u8, 97u8, 13u8, 105u8, 18u8,
-                            91u8,
-                        ],
-                    )
-                }
-                #[doc = " ITEM( network_last_registered_block )"]
-                pub fn network_last_registered(
-                    &self,
-                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
-                    (),
-                    types::network_last_registered::NetworkLastRegistered,
-                    ::subxt::ext::subxt_core::utils::Yes,
-                    ::subxt::ext::subxt_core::utils::Yes,
-                    (),
-                > {
-                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
-                        "SubtensorModule",
-                        "NetworkLastRegistered",
-                        (),
-                        [
-                            111u8, 106u8, 0u8, 115u8, 27u8, 161u8, 40u8, 182u8, 197u8, 217u8,
-                            167u8, 183u8, 43u8, 157u8, 42u8, 107u8, 108u8, 100u8, 42u8, 67u8,
-                            174u8, 138u8, 109u8, 98u8, 242u8, 15u8, 54u8, 32u8, 201u8, 169u8, 39u8,
-                            40u8,
+                            148u8, 253u8, 144u8, 188u8, 122u8, 21u8, 208u8, 145u8, 44u8, 150u8,
+                            156u8, 160u8, 102u8, 86u8, 53u8, 181u8, 250u8, 70u8, 226u8, 33u8, 63u8,
+                            74u8, 84u8, 231u8, 131u8, 107u8, 225u8, 208u8, 71u8, 137u8, 208u8,
+                            232u8,
                         ],
                     )
                 }
@@ -19937,12 +21626,13 @@ pub mod api {
                         "NetworkRateLimit",
                         (),
                         [
-                            61u8, 107u8, 0u8, 71u8, 139u8, 133u8, 10u8, 238u8, 249u8, 102u8, 121u8,
-                            59u8, 74u8, 155u8, 129u8, 16u8, 44u8, 90u8, 163u8, 19u8, 15u8, 22u8,
-                            6u8, 44u8, 254u8, 120u8, 15u8, 117u8, 73u8, 85u8, 73u8, 74u8,
+                            107u8, 26u8, 74u8, 67u8, 178u8, 6u8, 161u8, 42u8, 247u8, 0u8, 68u8,
+                            179u8, 144u8, 24u8, 210u8, 178u8, 16u8, 185u8, 125u8, 181u8, 152u8,
+                            209u8, 81u8, 10u8, 228u8, 243u8, 101u8, 244u8, 217u8, 80u8, 61u8, 38u8,
                         ],
                     )
                 }
+                #[doc = " --- ITEM( nominator_min_required_stake ) --- Factor of DefaultMinStake in per-mill format."]
                 pub fn nominator_min_required_stake(
                     &self,
                 ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
@@ -20002,9 +21692,9 @@ pub mod api {
                         "LastRateLimitedBlock",
                         (),
                         [
-                            37u8, 28u8, 255u8, 193u8, 174u8, 198u8, 86u8, 226u8, 45u8, 190u8, 1u8,
-                            142u8, 1u8, 95u8, 43u8, 146u8, 24u8, 111u8, 57u8, 124u8, 80u8, 244u8,
-                            91u8, 250u8, 235u8, 171u8, 6u8, 130u8, 108u8, 245u8, 204u8, 13u8,
+                            243u8, 96u8, 234u8, 19u8, 142u8, 145u8, 48u8, 197u8, 89u8, 164u8, 25u8,
+                            3u8, 249u8, 210u8, 173u8, 118u8, 81u8, 245u8, 182u8, 164u8, 201u8,
+                            79u8, 11u8, 146u8, 214u8, 154u8, 83u8, 118u8, 133u8, 84u8, 36u8, 237u8,
                         ],
                     )
                 }
@@ -20031,9 +21721,9 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            37u8, 28u8, 255u8, 193u8, 174u8, 198u8, 86u8, 226u8, 45u8, 190u8, 1u8,
-                            142u8, 1u8, 95u8, 43u8, 146u8, 24u8, 111u8, 57u8, 124u8, 80u8, 244u8,
-                            91u8, 250u8, 235u8, 171u8, 6u8, 130u8, 108u8, 245u8, 204u8, 13u8,
+                            243u8, 96u8, 234u8, 19u8, 142u8, 145u8, 48u8, 197u8, 89u8, 164u8, 25u8,
+                            3u8, 249u8, 210u8, 173u8, 118u8, 81u8, 245u8, 182u8, 164u8, 201u8,
+                            79u8, 11u8, 146u8, 214u8, 154u8, 83u8, 118u8, 133u8, 84u8, 36u8, 237u8,
                         ],
                     )
                 }
@@ -20199,10 +21889,10 @@ pub mod api {
                         "Tempo",
                         (),
                         [
-                            104u8, 78u8, 96u8, 198u8, 177u8, 63u8, 191u8, 130u8, 193u8, 42u8,
-                            248u8, 107u8, 189u8, 131u8, 255u8, 124u8, 11u8, 182u8, 25u8, 38u8,
-                            42u8, 96u8, 26u8, 67u8, 57u8, 108u8, 68u8, 231u8, 202u8, 170u8, 202u8,
-                            180u8,
+                            245u8, 18u8, 127u8, 146u8, 189u8, 239u8, 152u8, 42u8, 29u8, 211u8,
+                            153u8, 132u8, 216u8, 21u8, 244u8, 138u8, 171u8, 26u8, 238u8, 74u8, 1u8,
+                            199u8, 219u8, 217u8, 246u8, 28u8, 200u8, 212u8, 22u8, 219u8, 212u8,
+                            99u8,
                         ],
                     )
                 }
@@ -20228,10 +21918,10 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            104u8, 78u8, 96u8, 198u8, 177u8, 63u8, 191u8, 130u8, 193u8, 42u8,
-                            248u8, 107u8, 189u8, 131u8, 255u8, 124u8, 11u8, 182u8, 25u8, 38u8,
-                            42u8, 96u8, 26u8, 67u8, 57u8, 108u8, 68u8, 231u8, 202u8, 170u8, 202u8,
-                            180u8,
+                            245u8, 18u8, 127u8, 146u8, 189u8, 239u8, 152u8, 42u8, 29u8, 211u8,
+                            153u8, 132u8, 216u8, 21u8, 244u8, 138u8, 171u8, 26u8, 238u8, 74u8, 1u8,
+                            199u8, 219u8, 217u8, 246u8, 28u8, 200u8, 212u8, 22u8, 219u8, 212u8,
+                            99u8,
                         ],
                     )
                 }
@@ -20386,53 +22076,6 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = " --- MAP ( netuid ) --> modality   TEXT: 0, IMAGE: 1, TENSOR: 2"]
-                pub fn network_modality_iter(
-                    &self,
-                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
-                    (),
-                    types::network_modality::NetworkModality,
-                    (),
-                    ::subxt::ext::subxt_core::utils::Yes,
-                    ::subxt::ext::subxt_core::utils::Yes,
-                > {
-                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
-                        "SubtensorModule",
-                        "NetworkModality",
-                        (),
-                        [
-                            18u8, 56u8, 222u8, 196u8, 139u8, 52u8, 181u8, 222u8, 180u8, 3u8, 236u8,
-                            9u8, 175u8, 221u8, 244u8, 75u8, 245u8, 170u8, 5u8, 44u8, 36u8, 185u8,
-                            83u8, 81u8, 117u8, 164u8, 90u8, 195u8, 229u8, 128u8, 90u8, 3u8,
-                        ],
-                    )
-                }
-                #[doc = " --- MAP ( netuid ) --> modality   TEXT: 0, IMAGE: 1, TENSOR: 2"]
-                pub fn network_modality(
-                    &self,
-                    _0: impl ::core::borrow::Borrow<types::network_modality::Param0>,
-                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
-                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
-                        types::network_modality::Param0,
-                    >,
-                    types::network_modality::NetworkModality,
-                    ::subxt::ext::subxt_core::utils::Yes,
-                    ::subxt::ext::subxt_core::utils::Yes,
-                    (),
-                > {
-                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
-                        "SubtensorModule",
-                        "NetworkModality",
-                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
-                            _0.borrow(),
-                        ),
-                        [
-                            18u8, 56u8, 222u8, 196u8, 139u8, 52u8, 181u8, 222u8, 180u8, 3u8, 236u8,
-                            9u8, 175u8, 221u8, 244u8, 75u8, 245u8, 170u8, 5u8, 44u8, 36u8, 185u8,
-                            83u8, 81u8, 117u8, 164u8, 90u8, 195u8, 229u8, 128u8, 90u8, 3u8,
-                        ],
-                    )
-                }
                 #[doc = " --- MAP ( netuid ) --> network_is_added"]
                 pub fn networks_added_iter(
                     &self,
@@ -20584,10 +22227,10 @@ pub mod api {
                         "NetworkRegistrationAllowed",
                         (),
                         [
-                            42u8, 61u8, 247u8, 161u8, 77u8, 218u8, 186u8, 247u8, 253u8, 75u8,
-                            228u8, 175u8, 18u8, 122u8, 150u8, 110u8, 10u8, 166u8, 209u8, 232u8,
-                            74u8, 8u8, 85u8, 234u8, 69u8, 92u8, 14u8, 101u8, 212u8, 207u8, 47u8,
-                            235u8,
+                            224u8, 105u8, 165u8, 248u8, 234u8, 83u8, 131u8, 157u8, 108u8, 19u8,
+                            162u8, 135u8, 9u8, 122u8, 220u8, 112u8, 178u8, 220u8, 131u8, 75u8,
+                            227u8, 112u8, 213u8, 135u8, 164u8, 28u8, 169u8, 122u8, 218u8, 122u8,
+                            0u8, 175u8,
                         ],
                     )
                 }
@@ -20611,10 +22254,10 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            42u8, 61u8, 247u8, 161u8, 77u8, 218u8, 186u8, 247u8, 253u8, 75u8,
-                            228u8, 175u8, 18u8, 122u8, 150u8, 110u8, 10u8, 166u8, 209u8, 232u8,
-                            74u8, 8u8, 85u8, 234u8, 69u8, 92u8, 14u8, 101u8, 212u8, 207u8, 47u8,
-                            235u8,
+                            224u8, 105u8, 165u8, 248u8, 234u8, 83u8, 131u8, 157u8, 108u8, 19u8,
+                            162u8, 135u8, 9u8, 122u8, 220u8, 112u8, 178u8, 220u8, 131u8, 75u8,
+                            227u8, 112u8, 213u8, 135u8, 164u8, 28u8, 169u8, 122u8, 218u8, 122u8,
+                            0u8, 175u8,
                         ],
                     )
                 }
@@ -20633,10 +22276,10 @@ pub mod api {
                         "NetworkPowRegistrationAllowed",
                         (),
                         [
-                            206u8, 57u8, 101u8, 211u8, 195u8, 185u8, 134u8, 48u8, 225u8, 124u8,
-                            27u8, 217u8, 135u8, 116u8, 15u8, 223u8, 193u8, 45u8, 39u8, 232u8,
-                            103u8, 182u8, 251u8, 0u8, 179u8, 9u8, 1u8, 35u8, 186u8, 90u8, 221u8,
-                            217u8,
+                            198u8, 138u8, 159u8, 113u8, 220u8, 211u8, 97u8, 81u8, 188u8, 209u8,
+                            130u8, 28u8, 59u8, 226u8, 39u8, 166u8, 237u8, 173u8, 82u8, 61u8, 47u8,
+                            203u8, 117u8, 218u8, 249u8, 39u8, 79u8, 127u8, 156u8, 117u8, 201u8,
+                            103u8,
                         ],
                     )
                 }
@@ -20660,10 +22303,10 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            206u8, 57u8, 101u8, 211u8, 195u8, 185u8, 134u8, 48u8, 225u8, 124u8,
-                            27u8, 217u8, 135u8, 116u8, 15u8, 223u8, 193u8, 45u8, 39u8, 232u8,
-                            103u8, 182u8, 251u8, 0u8, 179u8, 9u8, 1u8, 35u8, 186u8, 90u8, 221u8,
-                            217u8,
+                            198u8, 138u8, 159u8, 113u8, 220u8, 211u8, 97u8, 81u8, 188u8, 209u8,
+                            130u8, 28u8, 59u8, 226u8, 39u8, 166u8, 237u8, 173u8, 82u8, 61u8, 47u8,
+                            203u8, 117u8, 218u8, 249u8, 39u8, 79u8, 127u8, 156u8, 117u8, 201u8,
+                            103u8,
                         ],
                     )
                 }
@@ -21100,6 +22743,55 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = " --- MAP ( netuid ) --> recycle_or_burn"]
+                pub fn recycle_or_burn_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::recycle_or_burn::RecycleOrBurn,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "RecycleOrBurn",
+                        (),
+                        [
+                            214u8, 214u8, 109u8, 134u8, 169u8, 40u8, 170u8, 53u8, 44u8, 34u8, 17u8,
+                            242u8, 83u8, 223u8, 108u8, 213u8, 92u8, 208u8, 176u8, 205u8, 107u8,
+                            170u8, 222u8, 194u8, 118u8, 35u8, 146u8, 99u8, 134u8, 62u8, 181u8,
+                            152u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> recycle_or_burn"]
+                pub fn recycle_or_burn(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::recycle_or_burn::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::recycle_or_burn::Param0,
+                    >,
+                    types::recycle_or_burn::RecycleOrBurn,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "RecycleOrBurn",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            214u8, 214u8, 109u8, 134u8, 169u8, 40u8, 170u8, 53u8, 44u8, 34u8, 17u8,
+                            242u8, 83u8, 223u8, 108u8, 213u8, 92u8, 208u8, 176u8, 205u8, 107u8,
+                            170u8, 222u8, 194u8, 118u8, 35u8, 146u8, 99u8, 134u8, 62u8, 181u8,
+                            152u8,
+                        ],
+                    )
+                }
                 #[doc = " --- MAP ( netuid ) --> serving_rate_limit"]
                 pub fn serving_rate_limit_iter(
                     &self,
@@ -21430,6 +23122,53 @@ pub mod api {
                             41u8, 170u8, 250u8, 166u8, 41u8, 18u8, 190u8, 42u8, 45u8, 103u8, 105u8,
                             137u8, 86u8, 241u8, 101u8, 43u8, 205u8, 174u8, 251u8, 227u8, 82u8,
                             119u8, 19u8, 94u8, 41u8, 10u8, 132u8, 0u8, 171u8, 248u8, 147u8, 114u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> min_allowed_uids"]
+                pub fn min_allowed_uids_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::min_allowed_uids::MinAllowedUids,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MinAllowedUids",
+                        (),
+                        [
+                            22u8, 167u8, 24u8, 40u8, 166u8, 199u8, 192u8, 241u8, 126u8, 68u8, 90u8,
+                            103u8, 92u8, 227u8, 250u8, 22u8, 216u8, 214u8, 26u8, 238u8, 248u8,
+                            51u8, 29u8, 165u8, 146u8, 131u8, 199u8, 102u8, 9u8, 161u8, 75u8, 246u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> min_allowed_uids"]
+                pub fn min_allowed_uids(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::min_allowed_uids::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::min_allowed_uids::Param0,
+                    >,
+                    types::min_allowed_uids::MinAllowedUids,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MinAllowedUids",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            22u8, 167u8, 24u8, 40u8, 166u8, 199u8, 192u8, 241u8, 126u8, 68u8, 90u8,
+                            103u8, 92u8, 227u8, 250u8, 22u8, 216u8, 214u8, 26u8, 238u8, 248u8,
+                            51u8, 29u8, 165u8, 146u8, 131u8, 199u8, 102u8, 9u8, 161u8, 75u8, 246u8,
                         ],
                     )
                 }
@@ -22214,9 +23953,9 @@ pub mod api {
                         "CommitRevealWeightsEnabled",
                         (),
                         [
-                            216u8, 167u8, 84u8, 74u8, 22u8, 47u8, 162u8, 28u8, 190u8, 63u8, 128u8,
-                            98u8, 46u8, 14u8, 16u8, 23u8, 87u8, 105u8, 39u8, 26u8, 193u8, 133u8,
-                            104u8, 14u8, 236u8, 4u8, 99u8, 48u8, 147u8, 217u8, 122u8, 12u8,
+                            115u8, 71u8, 75u8, 243u8, 16u8, 98u8, 64u8, 197u8, 211u8, 75u8, 38u8,
+                            221u8, 145u8, 3u8, 99u8, 1u8, 153u8, 209u8, 140u8, 159u8, 169u8, 102u8,
+                            242u8, 134u8, 107u8, 117u8, 115u8, 43u8, 200u8, 74u8, 192u8, 76u8,
                         ],
                     )
                 }
@@ -22240,9 +23979,9 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            216u8, 167u8, 84u8, 74u8, 22u8, 47u8, 162u8, 28u8, 190u8, 63u8, 128u8,
-                            98u8, 46u8, 14u8, 16u8, 23u8, 87u8, 105u8, 39u8, 26u8, 193u8, 133u8,
-                            104u8, 14u8, 236u8, 4u8, 99u8, 48u8, 147u8, 217u8, 122u8, 12u8,
+                            115u8, 71u8, 75u8, 243u8, 16u8, 98u8, 64u8, 197u8, 211u8, 75u8, 38u8,
+                            221u8, 145u8, 3u8, 99u8, 1u8, 153u8, 209u8, 140u8, 159u8, 169u8, 102u8,
+                            242u8, 134u8, 107u8, 117u8, 115u8, 43u8, 200u8, 74u8, 192u8, 76u8,
                         ],
                     )
                 }
@@ -22783,9 +24522,9 @@ pub mod api {
                         "TxChildkeyTakeRateLimit",
                         (),
                         [
-                            188u8, 114u8, 147u8, 189u8, 187u8, 221u8, 224u8, 253u8, 34u8, 109u8,
-                            225u8, 43u8, 82u8, 71u8, 184u8, 132u8, 51u8, 219u8, 237u8, 255u8, 85u8,
-                            23u8, 215u8, 128u8, 81u8, 57u8, 11u8, 188u8, 40u8, 53u8, 163u8, 5u8,
+                            40u8, 179u8, 178u8, 214u8, 24u8, 165u8, 23u8, 58u8, 217u8, 223u8,
+                            131u8, 32u8, 173u8, 230u8, 61u8, 240u8, 33u8, 78u8, 159u8, 91u8, 68u8,
+                            129u8, 177u8, 4u8, 146u8, 122u8, 225u8, 97u8, 102u8, 226u8, 28u8, 47u8,
                         ],
                     )
                 }
@@ -22982,6 +24721,53 @@ pub mod api {
                             48u8, 23u8, 254u8, 25u8, 173u8, 149u8, 118u8, 22u8, 196u8, 18u8, 35u8,
                             82u8, 109u8, 75u8, 126u8, 150u8, 50u8, 214u8, 181u8, 16u8, 234u8,
                             132u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> Burn key limit"]
+                pub fn immune_owner_uids_limit_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::immune_owner_uids_limit::ImmuneOwnerUidsLimit,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "ImmuneOwnerUidsLimit",
+                        (),
+                        [
+                            18u8, 85u8, 53u8, 145u8, 109u8, 130u8, 114u8, 89u8, 118u8, 49u8, 15u8,
+                            12u8, 89u8, 93u8, 177u8, 216u8, 180u8, 68u8, 219u8, 215u8, 195u8, 32u8,
+                            176u8, 82u8, 227u8, 200u8, 191u8, 65u8, 80u8, 241u8, 39u8, 92u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> Burn key limit"]
+                pub fn immune_owner_uids_limit(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::immune_owner_uids_limit::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::immune_owner_uids_limit::Param0,
+                    >,
+                    types::immune_owner_uids_limit::ImmuneOwnerUidsLimit,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "ImmuneOwnerUidsLimit",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            18u8, 85u8, 53u8, 145u8, 109u8, 130u8, 114u8, 89u8, 118u8, 49u8, 15u8,
+                            12u8, 89u8, 93u8, 177u8, 216u8, 180u8, 68u8, 219u8, 215u8, 195u8, 32u8,
+                            176u8, 82u8, 227u8, 200u8, 191u8, 65u8, 80u8, 241u8, 39u8, 92u8,
                         ],
                     )
                 }
@@ -24917,7 +26703,98 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = " --- MAP (netuid, commit_epoch) --> VecDeque<(who, serialized_compressed_commit, reveal_round)> | Stores a queue of v3 commits for an account on a given netuid."]
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, commit_block, ciphertext, reveal_round)>"]
+                #[doc = " Stores a queue of weight commits for an account on a given subnet."]
+                pub fn timelocked_weight_commits_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::timelocked_weight_commits::TimelockedWeightCommits,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "TimelockedWeightCommits",
+                        (),
+                        [
+                            142u8, 95u8, 3u8, 128u8, 158u8, 142u8, 161u8, 150u8, 157u8, 172u8,
+                            161u8, 78u8, 128u8, 69u8, 202u8, 119u8, 157u8, 118u8, 18u8, 67u8, 8u8,
+                            250u8, 222u8, 56u8, 107u8, 216u8, 168u8, 44u8, 197u8, 144u8, 52u8,
+                            217u8,
+                        ],
+                    )
+                }
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, commit_block, ciphertext, reveal_round)>"]
+                #[doc = " Stores a queue of weight commits for an account on a given subnet."]
+                pub fn timelocked_weight_commits_iter1(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::timelocked_weight_commits::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::timelocked_weight_commits::Param0,
+                    >,
+                    types::timelocked_weight_commits::TimelockedWeightCommits,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "TimelockedWeightCommits",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            142u8, 95u8, 3u8, 128u8, 158u8, 142u8, 161u8, 150u8, 157u8, 172u8,
+                            161u8, 78u8, 128u8, 69u8, 202u8, 119u8, 157u8, 118u8, 18u8, 67u8, 8u8,
+                            250u8, 222u8, 56u8, 107u8, 216u8, 168u8, 44u8, 197u8, 144u8, 52u8,
+                            217u8,
+                        ],
+                    )
+                }
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, commit_block, ciphertext, reveal_round)>"]
+                #[doc = " Stores a queue of weight commits for an account on a given subnet."]
+                pub fn timelocked_weight_commits(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::timelocked_weight_commits::Param0>,
+                    _1: impl ::core::borrow::Borrow<types::timelocked_weight_commits::Param1>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                            types::timelocked_weight_commits::Param0,
+                        >,
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                            types::timelocked_weight_commits::Param1,
+                        >,
+                    ),
+                    types::timelocked_weight_commits::TimelockedWeightCommits,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "TimelockedWeightCommits",
+                        (
+                            ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                                _0.borrow(),
+                            ),
+                            ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                                _1.borrow(),
+                            ),
+                        ),
+                        [
+                            142u8, 95u8, 3u8, 128u8, 158u8, 142u8, 161u8, 150u8, 157u8, 172u8,
+                            161u8, 78u8, 128u8, 69u8, 202u8, 119u8, 157u8, 118u8, 18u8, 67u8, 8u8,
+                            250u8, 222u8, 56u8, 107u8, 216u8, 168u8, 44u8, 197u8, 144u8, 52u8,
+                            217u8,
+                        ],
+                    )
+                }
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, ciphertext, reveal_round)>"]
+                #[doc = " DEPRECATED for CRV3WeightCommitsV2"]
                 pub fn crv3_weight_commits_iter(
                     &self,
                 ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
@@ -24938,7 +26815,8 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = " --- MAP (netuid, commit_epoch) --> VecDeque<(who, serialized_compressed_commit, reveal_round)> | Stores a queue of v3 commits for an account on a given netuid."]
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, ciphertext, reveal_round)>"]
+                #[doc = " DEPRECATED for CRV3WeightCommitsV2"]
                 pub fn crv3_weight_commits_iter1(
                     &self,
                     _0: impl ::core::borrow::Borrow<types::crv3_weight_commits::Param0>,
@@ -24964,7 +26842,8 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = " --- MAP (netuid, commit_epoch) --> VecDeque<(who, serialized_compressed_commit, reveal_round)> | Stores a queue of v3 commits for an account on a given netuid."]
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, ciphertext, reveal_round)>"]
+                #[doc = " DEPRECATED for CRV3WeightCommitsV2"]
                 pub fn crv3_weight_commits(
                     &self,
                     _0: impl ::core::borrow::Borrow<types::crv3_weight_commits::Param0>,
@@ -24998,6 +26877,93 @@ pub mod api {
                             202u8, 4u8, 164u8, 156u8, 73u8, 244u8, 226u8, 70u8, 35u8, 55u8, 201u8,
                             224u8, 127u8, 234u8, 93u8, 11u8, 172u8, 66u8, 180u8, 62u8, 70u8, 225u8,
                             59u8, 75u8, 37u8, 244u8, 48u8, 151u8, 43u8, 5u8, 42u8, 140u8,
+                        ],
+                    )
+                }
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, commit_block, ciphertext, reveal_round)>"]
+                #[doc = " DEPRECATED for TimelockedWeightCommits"]
+                pub fn crv3_weight_commits_v2_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::crv3_weight_commits_v2::Crv3WeightCommitsV2,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "CRV3WeightCommitsV2",
+                        (),
+                        [
+                            63u8, 34u8, 149u8, 244u8, 110u8, 80u8, 77u8, 51u8, 73u8, 135u8, 43u8,
+                            60u8, 66u8, 2u8, 176u8, 96u8, 72u8, 33u8, 53u8, 81u8, 232u8, 195u8,
+                            85u8, 93u8, 99u8, 211u8, 249u8, 50u8, 68u8, 35u8, 134u8, 175u8,
+                        ],
+                    )
+                }
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, commit_block, ciphertext, reveal_round)>"]
+                #[doc = " DEPRECATED for TimelockedWeightCommits"]
+                pub fn crv3_weight_commits_v2_iter1(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::crv3_weight_commits_v2::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::crv3_weight_commits_v2::Param0,
+                    >,
+                    types::crv3_weight_commits_v2::Crv3WeightCommitsV2,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "CRV3WeightCommitsV2",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            63u8, 34u8, 149u8, 244u8, 110u8, 80u8, 77u8, 51u8, 73u8, 135u8, 43u8,
+                            60u8, 66u8, 2u8, 176u8, 96u8, 72u8, 33u8, 53u8, 81u8, 232u8, 195u8,
+                            85u8, 93u8, 99u8, 211u8, 249u8, 50u8, 68u8, 35u8, 134u8, 175u8,
+                        ],
+                    )
+                }
+                #[doc = " MAP (netuid, epoch) → VecDeque<(who, commit_block, ciphertext, reveal_round)>"]
+                #[doc = " DEPRECATED for TimelockedWeightCommits"]
+                pub fn crv3_weight_commits_v2(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::crv3_weight_commits_v2::Param0>,
+                    _1: impl ::core::borrow::Borrow<types::crv3_weight_commits_v2::Param1>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                            types::crv3_weight_commits_v2::Param0,
+                        >,
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                            types::crv3_weight_commits_v2::Param1,
+                        >,
+                    ),
+                    types::crv3_weight_commits_v2::Crv3WeightCommitsV2,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "CRV3WeightCommitsV2",
+                        (
+                            ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                                _0.borrow(),
+                            ),
+                            ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                                _1.borrow(),
+                            ),
+                        ),
+                        [
+                            63u8, 34u8, 149u8, 244u8, 110u8, 80u8, 77u8, 51u8, 73u8, 135u8, 43u8,
+                            60u8, 66u8, 2u8, 176u8, 96u8, 72u8, 33u8, 53u8, 81u8, 232u8, 195u8,
+                            85u8, 93u8, 99u8, 211u8, 249u8, 50u8, 68u8, 35u8, 134u8, 175u8,
                         ],
                     )
                 }
@@ -25615,6 +27581,145 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = " --- ITEM ( CommitRevealWeightsVersion )"]
+                pub fn commit_reveal_weights_version(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::commit_reveal_weights_version::CommitRevealWeightsVersion,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "CommitRevealWeightsVersion",
+                        (),
+                        [
+                            55u8, 62u8, 124u8, 80u8, 145u8, 16u8, 153u8, 11u8, 71u8, 218u8, 244u8,
+                            6u8, 229u8, 67u8, 237u8, 198u8, 26u8, 49u8, 170u8, 185u8, 61u8, 107u8,
+                            117u8, 81u8, 36u8, 167u8, 47u8, 50u8, 14u8, 1u8, 124u8, 56u8,
+                        ],
+                    )
+                }
+                #[doc = " ITEM( NetworkRegistrationStartBlock )"]
+                pub fn network_registration_start_block(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::network_registration_start_block::NetworkRegistrationStartBlock,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "NetworkRegistrationStartBlock",
+                        (),
+                        [
+                            39u8, 146u8, 100u8, 110u8, 245u8, 168u8, 166u8, 143u8, 255u8, 141u8,
+                            122u8, 87u8, 139u8, 185u8, 182u8, 204u8, 157u8, 151u8, 254u8, 185u8,
+                            5u8, 25u8, 173u8, 108u8, 152u8, 203u8, 53u8, 203u8, 71u8, 30u8, 237u8,
+                            248u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> Current number of subnet mechanisms"]
+                pub fn mechanism_count_current_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::mechanism_count_current::MechanismCountCurrent,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MechanismCountCurrent",
+                        (),
+                        [
+                            249u8, 248u8, 63u8, 149u8, 75u8, 146u8, 125u8, 161u8, 164u8, 78u8,
+                            239u8, 175u8, 41u8, 112u8, 97u8, 201u8, 60u8, 213u8, 144u8, 227u8,
+                            166u8, 147u8, 246u8, 184u8, 248u8, 30u8, 241u8, 110u8, 184u8, 194u8,
+                            98u8, 169u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> Current number of subnet mechanisms"]
+                pub fn mechanism_count_current(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::mechanism_count_current::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::mechanism_count_current::Param0,
+                    >,
+                    types::mechanism_count_current::MechanismCountCurrent,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MechanismCountCurrent",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            249u8, 248u8, 63u8, 149u8, 75u8, 146u8, 125u8, 161u8, 164u8, 78u8,
+                            239u8, 175u8, 41u8, 112u8, 97u8, 201u8, 60u8, 213u8, 144u8, 227u8,
+                            166u8, 147u8, 246u8, 184u8, 248u8, 30u8, 241u8, 110u8, 184u8, 194u8,
+                            98u8, 169u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> Normalized vector of emission split proportion between subnet mechanisms"]
+                pub fn mechanism_emission_split_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::mechanism_emission_split::MechanismEmissionSplit,
+                    (),
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MechanismEmissionSplit",
+                        (),
+                        [
+                            75u8, 195u8, 126u8, 83u8, 159u8, 202u8, 75u8, 131u8, 33u8, 142u8, 0u8,
+                            190u8, 213u8, 87u8, 0u8, 171u8, 80u8, 13u8, 143u8, 202u8, 30u8, 240u8,
+                            6u8, 157u8, 189u8, 111u8, 119u8, 196u8, 59u8, 86u8, 204u8, 102u8,
+                        ],
+                    )
+                }
+                #[doc = " --- MAP ( netuid ) --> Normalized vector of emission split proportion between subnet mechanisms"]
+                pub fn mechanism_emission_split(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::mechanism_emission_split::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::mechanism_emission_split::Param0,
+                    >,
+                    types::mechanism_emission_split::MechanismEmissionSplit,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MechanismEmissionSplit",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            75u8, 195u8, 126u8, 83u8, 159u8, 202u8, 75u8, 131u8, 33u8, 142u8, 0u8,
+                            190u8, 213u8, 87u8, 0u8, 171u8, 80u8, 13u8, 143u8, 202u8, 30u8, 240u8,
+                            6u8, 157u8, 189u8, 111u8, 119u8, 196u8, 59u8, 86u8, 204u8, 102u8,
+                        ],
+                    )
+                }
                 #[doc = " =================="]
                 #[doc = " ==== Genesis ====="]
                 #[doc = " =================="]
@@ -25898,6 +28003,40 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = " Min  burn upper bound."]
+                pub fn min_burn_upper_bound(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::constants::address::StaticAddress<
+                    ::core::primitive::u64,
+                > {
+                    ::subxt::ext::subxt_core::constants::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MinBurnUpperBound",
+                        [
+                            128u8, 214u8, 205u8, 242u8, 181u8, 142u8, 124u8, 231u8, 190u8, 146u8,
+                            59u8, 226u8, 157u8, 101u8, 103u8, 117u8, 249u8, 65u8, 18u8, 191u8,
+                            103u8, 119u8, 53u8, 85u8, 81u8, 96u8, 220u8, 42u8, 184u8, 239u8, 42u8,
+                            246u8,
+                        ],
+                    )
+                }
+                #[doc = " Max burn lower bound."]
+                pub fn max_burn_lower_bound(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::constants::address::StaticAddress<
+                    ::core::primitive::u64,
+                > {
+                    ::subxt::ext::subxt_core::constants::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MaxBurnLowerBound",
+                        [
+                            128u8, 214u8, 205u8, 242u8, 181u8, 142u8, 124u8, 231u8, 190u8, 146u8,
+                            59u8, 226u8, 157u8, 101u8, 103u8, 117u8, 249u8, 65u8, 18u8, 191u8,
+                            103u8, 119u8, 53u8, 85u8, 81u8, 96u8, 220u8, 42u8, 184u8, 239u8, 42u8,
+                            246u8,
+                        ],
+                    )
+                }
                 #[doc = " Initial adjustment interval."]
                 pub fn initial_adjustment_interval(
                     &self,
@@ -26028,7 +28167,23 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = " Max UID constant."]
+                #[doc = " Initial minimum allowed network UIDs"]
+                pub fn initial_min_allowed_uids(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::constants::address::StaticAddress<
+                    ::core::primitive::u16,
+                > {
+                    ::subxt::ext::subxt_core::constants::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "InitialMinAllowedUids",
+                        [
+                            116u8, 33u8, 2u8, 170u8, 181u8, 147u8, 171u8, 169u8, 167u8, 227u8,
+                            41u8, 144u8, 11u8, 236u8, 82u8, 100u8, 74u8, 60u8, 184u8, 72u8, 169u8,
+                            90u8, 208u8, 135u8, 15u8, 117u8, 10u8, 123u8, 128u8, 193u8, 29u8, 70u8,
+                        ],
+                    )
+                }
+                #[doc = " Initial maximum allowed network UIDs"]
                 pub fn initial_max_allowed_uids(
                     &self,
                 ) -> ::subxt::ext::subxt_core::constants::address::StaticAddress<
@@ -26373,22 +28528,6 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = " Initial minimum allowed network UIDs"]
-                pub fn initial_network_min_allowed_uids(
-                    &self,
-                ) -> ::subxt::ext::subxt_core::constants::address::StaticAddress<
-                    ::core::primitive::u16,
-                > {
-                    ::subxt::ext::subxt_core::constants::address::StaticAddress::new_static(
-                        "SubtensorModule",
-                        "InitialNetworkMinAllowedUids",
-                        [
-                            116u8, 33u8, 2u8, 170u8, 181u8, 147u8, 171u8, 169u8, 167u8, 227u8,
-                            41u8, 144u8, 11u8, 236u8, 82u8, 100u8, 74u8, 60u8, 184u8, 72u8, 169u8,
-                            90u8, 208u8, 135u8, 15u8, 117u8, 10u8, 123u8, 128u8, 193u8, 29u8, 70u8,
-                        ],
-                    )
-                }
                 #[doc = " Initial network minimum burn cost"]
                 pub fn initial_network_min_lock_cost(
                     &self,
@@ -26674,6 +28813,23 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = " Maximum percentage of immune UIDs."]
+                pub fn max_immune_uids_percentage(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::constants::address::StaticAddress<
+                    runtime_types::sp_arithmetic::per_things::Percent,
+                > {
+                    ::subxt::ext::subxt_core::constants::address::StaticAddress::new_static(
+                        "SubtensorModule",
+                        "MaxImmuneUidsPercentage",
+                        [
+                            40u8, 171u8, 69u8, 196u8, 34u8, 184u8, 50u8, 128u8, 139u8, 192u8, 63u8,
+                            231u8, 249u8, 200u8, 252u8, 73u8, 244u8, 170u8, 51u8, 177u8, 106u8,
+                            47u8, 114u8, 234u8, 84u8, 104u8, 62u8, 118u8, 227u8, 50u8, 225u8,
+                            122u8,
+                        ],
+                    )
+                }
             }
         }
     }
@@ -26681,9 +28837,9 @@ pub mod api {
         use super::root_mod;
         use super::runtime_types;
         #[doc = "The `Error` enum of this pallet."]
-        pub type Error = runtime_types::pallet_collective::pallet::Error;
+        pub type Error = runtime_types::pallet_subtensor_collective::pallet::Error;
         #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
-        pub type Call = runtime_types::pallet_collective::pallet::Call;
+        pub type Call = runtime_types::pallet_subtensor_collective::pallet::Call;
         pub mod calls {
             use super::root_mod;
             use super::runtime_types;
@@ -27043,10 +29199,10 @@ pub mod api {
                             length_bound,
                         },
                         [
-                            65u8, 154u8, 162u8, 99u8, 58u8, 139u8, 210u8, 171u8, 16u8, 156u8,
-                            208u8, 157u8, 247u8, 210u8, 60u8, 108u8, 191u8, 217u8, 221u8, 15u8,
-                            10u8, 30u8, 104u8, 240u8, 72u8, 166u8, 89u8, 166u8, 252u8, 69u8, 62u8,
-                            242u8,
+                            218u8, 206u8, 35u8, 121u8, 149u8, 95u8, 113u8, 208u8, 49u8, 195u8,
+                            107u8, 161u8, 224u8, 36u8, 188u8, 194u8, 193u8, 189u8, 158u8, 176u8,
+                            247u8, 208u8, 186u8, 67u8, 207u8, 161u8, 228u8, 115u8, 67u8, 33u8,
+                            164u8, 75u8,
                         ],
                     )
                 }
@@ -27080,9 +29236,10 @@ pub mod api {
                             duration,
                         },
                         [
-                            20u8, 77u8, 23u8, 144u8, 115u8, 177u8, 122u8, 184u8, 85u8, 90u8, 208u8,
-                            138u8, 94u8, 105u8, 31u8, 226u8, 226u8, 163u8, 250u8, 180u8, 30u8,
-                            191u8, 244u8, 28u8, 33u8, 127u8, 200u8, 9u8, 67u8, 8u8, 34u8, 213u8,
+                            27u8, 67u8, 127u8, 89u8, 19u8, 57u8, 250u8, 207u8, 69u8, 171u8, 116u8,
+                            113u8, 98u8, 240u8, 163u8, 158u8, 63u8, 227u8, 27u8, 181u8, 109u8,
+                            164u8, 196u8, 194u8, 61u8, 184u8, 197u8, 182u8, 64u8, 171u8, 75u8,
+                            141u8,
                         ],
                     )
                 }
@@ -27195,7 +29352,7 @@ pub mod api {
             }
         }
         #[doc = "The `Event` enum of this pallet"]
-        pub type Event = runtime_types::pallet_collective::pallet::Event;
+        pub type Event = runtime_types::pallet_subtensor_collective::pallet::Event;
         pub mod events {
             use super::runtime_types;
             #[derive(
@@ -27411,7 +29568,7 @@ pub mod api {
                 }
                 pub mod voting {
                     use super::runtime_types;
-                    pub type Voting = runtime_types::pallet_collective::Votes<
+                    pub type Voting = runtime_types::pallet_subtensor_collective::Votes<
                         ::subxt::ext::subxt_core::utils::AccountId32,
                         ::core::primitive::u32,
                     >;
@@ -27470,9 +29627,9 @@ pub mod api {
                         "ProposalOf",
                         (),
                         [
-                            191u8, 12u8, 174u8, 227u8, 115u8, 4u8, 206u8, 7u8, 85u8, 180u8, 37u8,
-                            214u8, 189u8, 151u8, 167u8, 56u8, 146u8, 47u8, 20u8, 36u8, 13u8, 0u8,
-                            243u8, 112u8, 175u8, 132u8, 19u8, 26u8, 246u8, 75u8, 0u8, 216u8,
+                            176u8, 21u8, 163u8, 85u8, 234u8, 47u8, 124u8, 171u8, 193u8, 57u8,
+                            146u8, 24u8, 131u8, 221u8, 236u8, 32u8, 88u8, 8u8, 186u8, 141u8, 2u8,
+                            4u8, 56u8, 232u8, 91u8, 237u8, 130u8, 233u8, 95u8, 44u8, 85u8, 35u8,
                         ],
                     )
                 }
@@ -27496,9 +29653,9 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            191u8, 12u8, 174u8, 227u8, 115u8, 4u8, 206u8, 7u8, 85u8, 180u8, 37u8,
-                            214u8, 189u8, 151u8, 167u8, 56u8, 146u8, 47u8, 20u8, 36u8, 13u8, 0u8,
-                            243u8, 112u8, 175u8, 132u8, 19u8, 26u8, 246u8, 75u8, 0u8, 216u8,
+                            176u8, 21u8, 163u8, 85u8, 234u8, 47u8, 124u8, 171u8, 193u8, 57u8,
+                            146u8, 24u8, 131u8, 221u8, 236u8, 32u8, 88u8, 8u8, 186u8, 141u8, 2u8,
+                            4u8, 56u8, 232u8, 91u8, 237u8, 130u8, 233u8, 95u8, 44u8, 85u8, 35u8,
                         ],
                     )
                 }
@@ -28755,9 +30912,9 @@ pub mod api {
         use super::root_mod;
         use super::runtime_types;
         #[doc = "The `Error` enum of this pallet."]
-        pub type Error = runtime_types::pallet_utility::pallet::Error;
+        pub type Error = runtime_types::pallet_subtensor_utility::pallet::Error;
         #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
-        pub type Call = runtime_types::pallet_utility::pallet::Call;
+        pub type Call = runtime_types::pallet_subtensor_utility::pallet::Call;
         pub mod calls {
             use super::root_mod;
             use super::runtime_types;
@@ -29008,6 +31165,94 @@ pub mod api {
                     const PALLET: &'static str = "Utility";
                     const CALL: &'static str = "with_weight";
                 }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Dispatch a fallback call in the event the main call fails to execute."]
+                #[doc = "May be called from any origin except `None`."]
+                #[doc = ""]
+                #[doc = "This function first attempts to dispatch the `main` call."]
+                #[doc = "If the `main` call fails, the `fallback` is attemted."]
+                #[doc = "if the fallback is successfully dispatched, the weights of both calls"]
+                #[doc = "are accumulated and an event containing the main call error is deposited."]
+                #[doc = ""]
+                #[doc = "In the event of a fallback failure the whole call fails"]
+                #[doc = "with the weights returned."]
+                #[doc = ""]
+                #[doc = "- `main`: The main call to be dispatched. This is the primary action to execute."]
+                #[doc = "- `fallback`: The fallback call to be dispatched in case the `main` call fails."]
+                #[doc = ""]
+                #[doc = "## Dispatch Logic"]
+                #[doc = "- If the origin is `root`, both the main and fallback calls are executed without"]
+                #[doc = "  applying any origin filters."]
+                #[doc = "- If the origin is not `root`, the origin filter is applied to both the `main` and"]
+                #[doc = "  `fallback` calls."]
+                #[doc = ""]
+                #[doc = "## Use Case"]
+                #[doc = "- Some use cases might involve submitting a `batch` type call in either main, fallback"]
+                #[doc = "  or both."]
+                pub struct IfElse {
+                    pub main: ::subxt::ext::subxt_core::alloc::boxed::Box<if_else::Main>,
+                    pub fallback: ::subxt::ext::subxt_core::alloc::boxed::Box<if_else::Fallback>,
+                }
+                pub mod if_else {
+                    use super::runtime_types;
+                    pub type Main = runtime_types::node_subtensor_runtime::RuntimeCall;
+                    pub type Fallback = runtime_types::node_subtensor_runtime::RuntimeCall;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for IfElse {
+                    const PALLET: &'static str = "Utility";
+                    const CALL: &'static str = "if_else";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Dispatches a function call with a provided origin."]
+                #[doc = ""]
+                #[doc = "Almost the same as [`Pallet::dispatch_as`] but forwards any error of the inner call."]
+                #[doc = ""]
+                #[doc = "The dispatch origin for this call must be _Root_."]
+                pub struct DispatchAsFallible {
+                    pub as_origin:
+                        ::subxt::ext::subxt_core::alloc::boxed::Box<dispatch_as_fallible::AsOrigin>,
+                    pub call:
+                        ::subxt::ext::subxt_core::alloc::boxed::Box<dispatch_as_fallible::Call>,
+                }
+                pub mod dispatch_as_fallible {
+                    use super::runtime_types;
+                    pub type AsOrigin = runtime_types::node_subtensor_runtime::OriginCaller;
+                    pub type Call = runtime_types::node_subtensor_runtime::RuntimeCall;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for DispatchAsFallible {
+                    const PALLET: &'static str = "Utility";
+                    const CALL: &'static str = "dispatch_as_fallible";
+                }
             }
             pub struct TransactionApi;
             impl TransactionApi {
@@ -29039,9 +31284,9 @@ pub mod api {
                         "batch",
                         types::Batch { calls },
                         [
-                            151u8, 77u8, 70u8, 198u8, 73u8, 55u8, 223u8, 13u8, 218u8, 169u8, 230u8,
-                            115u8, 65u8, 121u8, 79u8, 212u8, 215u8, 100u8, 89u8, 36u8, 92u8, 98u8,
-                            198u8, 48u8, 52u8, 213u8, 27u8, 43u8, 24u8, 58u8, 198u8, 208u8,
+                            216u8, 12u8, 246u8, 140u8, 225u8, 35u8, 19u8, 56u8, 75u8, 116u8, 7u8,
+                            172u8, 43u8, 251u8, 155u8, 171u8, 92u8, 57u8, 212u8, 110u8, 143u8,
+                            233u8, 33u8, 40u8, 240u8, 185u8, 67u8, 249u8, 24u8, 123u8, 56u8, 41u8,
                         ],
                     )
                 }
@@ -29072,9 +31317,9 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            83u8, 182u8, 161u8, 135u8, 59u8, 34u8, 239u8, 88u8, 97u8, 240u8, 10u8,
-                            205u8, 99u8, 86u8, 80u8, 35u8, 131u8, 14u8, 223u8, 92u8, 46u8, 193u8,
-                            141u8, 103u8, 187u8, 18u8, 115u8, 88u8, 175u8, 42u8, 47u8, 66u8,
+                            169u8, 66u8, 89u8, 126u8, 57u8, 167u8, 158u8, 16u8, 145u8, 10u8, 133u8,
+                            36u8, 121u8, 251u8, 116u8, 178u8, 42u8, 151u8, 159u8, 236u8, 225u8,
+                            25u8, 210u8, 9u8, 88u8, 60u8, 146u8, 192u8, 225u8, 57u8, 18u8, 60u8,
                         ],
                     )
                 }
@@ -29101,9 +31346,10 @@ pub mod api {
                         "batch_all",
                         types::BatchAll { calls },
                         [
-                            134u8, 88u8, 142u8, 22u8, 166u8, 120u8, 93u8, 80u8, 113u8, 166u8, 84u8,
-                            8u8, 102u8, 17u8, 165u8, 59u8, 186u8, 225u8, 28u8, 61u8, 221u8, 220u8,
-                            75u8, 123u8, 33u8, 12u8, 48u8, 75u8, 198u8, 227u8, 106u8, 249u8,
+                            131u8, 248u8, 165u8, 206u8, 34u8, 182u8, 103u8, 113u8, 60u8, 229u8,
+                            201u8, 89u8, 170u8, 254u8, 14u8, 161u8, 234u8, 192u8, 184u8, 236u8,
+                            119u8, 166u8, 153u8, 45u8, 106u8, 11u8, 30u8, 228u8, 201u8, 242u8,
+                            102u8, 179u8,
                         ],
                     )
                 }
@@ -29127,10 +31373,10 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            7u8, 221u8, 193u8, 161u8, 237u8, 68u8, 59u8, 6u8, 139u8, 210u8, 198u8,
-                            82u8, 175u8, 180u8, 229u8, 114u8, 52u8, 152u8, 94u8, 83u8, 231u8,
-                            245u8, 161u8, 149u8, 147u8, 214u8, 209u8, 117u8, 69u8, 45u8, 49u8,
-                            19u8,
+                            181u8, 147u8, 135u8, 237u8, 183u8, 25u8, 177u8, 2u8, 20u8, 222u8,
+                            223u8, 72u8, 189u8, 120u8, 18u8, 119u8, 191u8, 233u8, 149u8, 226u8,
+                            122u8, 43u8, 241u8, 170u8, 232u8, 68u8, 4u8, 94u8, 123u8, 161u8, 190u8,
+                            135u8,
                         ],
                     )
                 }
@@ -29157,9 +31403,10 @@ pub mod api {
                         "force_batch",
                         types::ForceBatch { calls },
                         [
-                            7u8, 134u8, 131u8, 201u8, 193u8, 193u8, 192u8, 29u8, 121u8, 5u8, 194u8,
-                            138u8, 56u8, 170u8, 228u8, 13u8, 156u8, 100u8, 138u8, 33u8, 52u8, 64u8,
-                            70u8, 16u8, 188u8, 152u8, 213u8, 229u8, 204u8, 132u8, 173u8, 2u8,
+                            45u8, 54u8, 191u8, 36u8, 34u8, 52u8, 182u8, 181u8, 146u8, 167u8, 150u8,
+                            189u8, 111u8, 182u8, 170u8, 53u8, 176u8, 156u8, 181u8, 211u8, 73u8,
+                            151u8, 244u8, 184u8, 95u8, 118u8, 238u8, 53u8, 240u8, 187u8, 187u8,
+                            179u8,
                         ],
                     )
                 }
@@ -29183,17 +31430,86 @@ pub mod api {
                             weight,
                         },
                         [
-                            229u8, 189u8, 95u8, 60u8, 193u8, 100u8, 41u8, 237u8, 129u8, 131u8,
-                            191u8, 20u8, 122u8, 231u8, 221u8, 114u8, 110u8, 207u8, 169u8, 197u8,
-                            124u8, 238u8, 74u8, 58u8, 247u8, 128u8, 245u8, 104u8, 20u8, 25u8,
-                            146u8, 87u8,
+                            147u8, 208u8, 130u8, 118u8, 204u8, 126u8, 226u8, 149u8, 68u8, 247u8,
+                            143u8, 106u8, 27u8, 112u8, 67u8, 35u8, 11u8, 90u8, 228u8, 220u8, 208u8,
+                            192u8, 84u8, 31u8, 42u8, 135u8, 50u8, 241u8, 216u8, 158u8, 224u8,
+                            199u8,
+                        ],
+                    )
+                }
+                #[doc = "Dispatch a fallback call in the event the main call fails to execute."]
+                #[doc = "May be called from any origin except `None`."]
+                #[doc = ""]
+                #[doc = "This function first attempts to dispatch the `main` call."]
+                #[doc = "If the `main` call fails, the `fallback` is attemted."]
+                #[doc = "if the fallback is successfully dispatched, the weights of both calls"]
+                #[doc = "are accumulated and an event containing the main call error is deposited."]
+                #[doc = ""]
+                #[doc = "In the event of a fallback failure the whole call fails"]
+                #[doc = "with the weights returned."]
+                #[doc = ""]
+                #[doc = "- `main`: The main call to be dispatched. This is the primary action to execute."]
+                #[doc = "- `fallback`: The fallback call to be dispatched in case the `main` call fails."]
+                #[doc = ""]
+                #[doc = "## Dispatch Logic"]
+                #[doc = "- If the origin is `root`, both the main and fallback calls are executed without"]
+                #[doc = "  applying any origin filters."]
+                #[doc = "- If the origin is not `root`, the origin filter is applied to both the `main` and"]
+                #[doc = "  `fallback` calls."]
+                #[doc = ""]
+                #[doc = "## Use Case"]
+                #[doc = "- Some use cases might involve submitting a `batch` type call in either main, fallback"]
+                #[doc = "  or both."]
+                pub fn if_else(
+                    &self,
+                    main: types::if_else::Main,
+                    fallback: types::if_else::Fallback,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::IfElse>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "Utility",
+                        "if_else",
+                        types::IfElse {
+                            main: ::subxt::ext::subxt_core::alloc::boxed::Box::new(main),
+                            fallback: ::subxt::ext::subxt_core::alloc::boxed::Box::new(fallback),
+                        },
+                        [
+                            138u8, 152u8, 89u8, 173u8, 93u8, 134u8, 131u8, 157u8, 67u8, 185u8,
+                            132u8, 229u8, 95u8, 97u8, 219u8, 214u8, 166u8, 160u8, 130u8, 17u8,
+                            165u8, 211u8, 253u8, 220u8, 39u8, 180u8, 83u8, 63u8, 73u8, 86u8, 61u8,
+                            251u8,
+                        ],
+                    )
+                }
+                #[doc = "Dispatches a function call with a provided origin."]
+                #[doc = ""]
+                #[doc = "Almost the same as [`Pallet::dispatch_as`] but forwards any error of the inner call."]
+                #[doc = ""]
+                #[doc = "The dispatch origin for this call must be _Root_."]
+                pub fn dispatch_as_fallible(
+                    &self,
+                    as_origin: types::dispatch_as_fallible::AsOrigin,
+                    call: types::dispatch_as_fallible::Call,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::DispatchAsFallible>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "Utility",
+                        "dispatch_as_fallible",
+                        types::DispatchAsFallible {
+                            as_origin: ::subxt::ext::subxt_core::alloc::boxed::Box::new(as_origin),
+                            call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
+                        },
+                        [
+                            2u8, 209u8, 39u8, 247u8, 173u8, 222u8, 15u8, 69u8, 167u8, 172u8, 56u8,
+                            82u8, 55u8, 95u8, 101u8, 204u8, 61u8, 242u8, 10u8, 239u8, 23u8, 140u8,
+                            55u8, 145u8, 51u8, 69u8, 179u8, 203u8, 189u8, 63u8, 235u8, 54u8,
                         ],
                     )
                 }
             }
         }
         #[doc = "The `Event` enum of this pallet"]
-        pub type Event = runtime_types::pallet_utility::pallet::Event;
+        pub type Event = runtime_types::pallet_subtensor_utility::pallet::Event;
         pub mod events {
             use super::runtime_types;
             #[derive(
@@ -29325,6 +31641,48 @@ pub mod api {
             impl ::subxt::ext::subxt_core::events::StaticEvent for DispatchedAs {
                 const PALLET: &'static str = "Utility";
                 const EVENT: &'static str = "DispatchedAs";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Main call was dispatched."]
+            pub struct IfElseMainSuccess;
+            impl ::subxt::ext::subxt_core::events::StaticEvent for IfElseMainSuccess {
+                const PALLET: &'static str = "Utility";
+                const EVENT: &'static str = "IfElseMainSuccess";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "The fallback call was dispatched."]
+            pub struct IfElseFallbackCalled {
+                pub main_error: if_else_fallback_called::MainError,
+            }
+            pub mod if_else_fallback_called {
+                use super::runtime_types;
+                pub type MainError = runtime_types::sp_runtime::DispatchError;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for IfElseFallbackCalled {
+                const PALLET: &'static str = "Utility";
+                const EVENT: &'static str = "IfElseFallbackCalled";
             }
         }
         pub mod constants {
@@ -29535,10 +31893,10 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            35u8, 171u8, 146u8, 222u8, 204u8, 161u8, 241u8, 13u8, 4u8, 151u8,
-                            196u8, 151u8, 43u8, 152u8, 156u8, 239u8, 74u8, 92u8, 74u8, 26u8, 206u8,
-                            104u8, 159u8, 190u8, 230u8, 189u8, 211u8, 92u8, 252u8, 24u8, 55u8,
-                            232u8,
+                            243u8, 171u8, 194u8, 111u8, 29u8, 115u8, 253u8, 217u8, 35u8, 70u8,
+                            250u8, 81u8, 160u8, 17u8, 47u8, 62u8, 6u8, 34u8, 148u8, 132u8, 20u8,
+                            104u8, 138u8, 73u8, 128u8, 93u8, 53u8, 21u8, 136u8, 191u8, 219u8,
+                            132u8,
                         ],
                     )
                 }
@@ -29561,10 +31919,9 @@ pub mod api {
                             weight,
                         },
                         [
-                            202u8, 183u8, 12u8, 26u8, 86u8, 25u8, 69u8, 9u8, 153u8, 194u8, 35u8,
-                            91u8, 144u8, 155u8, 74u8, 164u8, 55u8, 184u8, 94u8, 143u8, 235u8,
-                            223u8, 144u8, 147u8, 243u8, 120u8, 92u8, 226u8, 147u8, 132u8, 231u8,
-                            68u8,
+                            187u8, 21u8, 157u8, 117u8, 20u8, 14u8, 216u8, 245u8, 128u8, 165u8,
+                            100u8, 35u8, 17u8, 254u8, 188u8, 152u8, 126u8, 174u8, 122u8, 8u8, 77u8,
+                            167u8, 199u8, 242u8, 43u8, 96u8, 59u8, 6u8, 79u8, 3u8, 229u8, 45u8,
                         ],
                     )
                 }
@@ -29604,10 +31961,9 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            81u8, 244u8, 22u8, 81u8, 141u8, 210u8, 61u8, 241u8, 143u8, 230u8,
-                            230u8, 162u8, 219u8, 203u8, 142u8, 205u8, 48u8, 225u8, 104u8, 58u8,
-                            191u8, 200u8, 169u8, 29u8, 180u8, 174u8, 7u8, 55u8, 28u8, 4u8, 215u8,
-                            131u8,
+                            180u8, 33u8, 120u8, 168u8, 203u8, 80u8, 140u8, 16u8, 21u8, 107u8, 51u8,
+                            206u8, 13u8, 19u8, 24u8, 231u8, 91u8, 181u8, 6u8, 131u8, 59u8, 173u8,
+                            71u8, 167u8, 139u8, 255u8, 42u8, 137u8, 7u8, 68u8, 20u8, 23u8,
                         ],
                     )
                 }
@@ -30027,6 +32383,52 @@ pub mod api {
                     const PALLET: &'static str = "Multisig";
                     const CALL: &'static str = "cancel_as_multi";
                 }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Poke the deposit reserved for an existing multisig operation."]
+                #[doc = ""]
+                #[doc = "The dispatch origin for this call must be _Signed_ and must be the original depositor of"]
+                #[doc = "the multisig operation."]
+                #[doc = ""]
+                #[doc = "The transaction fee is waived if the deposit amount has changed."]
+                #[doc = ""]
+                #[doc = "- `threshold`: The total number of approvals needed for this multisig."]
+                #[doc = "- `other_signatories`: The accounts (other than the sender) who are part of the"]
+                #[doc = "  multisig."]
+                #[doc = "- `call_hash`: The hash of the call this deposit is reserved for."]
+                #[doc = ""]
+                #[doc = "Emits `DepositPoked` if successful."]
+                pub struct PokeDeposit {
+                    pub threshold: poke_deposit::Threshold,
+                    pub other_signatories: poke_deposit::OtherSignatories,
+                    pub call_hash: poke_deposit::CallHash,
+                }
+                pub mod poke_deposit {
+                    use super::runtime_types;
+                    pub type Threshold = ::core::primitive::u16;
+                    pub type OtherSignatories = ::subxt::ext::subxt_core::alloc::vec::Vec<
+                        ::subxt::ext::subxt_core::utils::AccountId32,
+                    >;
+                    pub type CallHash = [::core::primitive::u8; 32usize];
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for PokeDeposit {
+                    const PALLET: &'static str = "Multisig";
+                    const CALL: &'static str = "poke_deposit";
+                }
             }
             pub struct TransactionApi;
             impl TransactionApi {
@@ -30056,9 +32458,9 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            189u8, 255u8, 219u8, 84u8, 219u8, 74u8, 146u8, 71u8, 34u8, 91u8, 159u8,
-                            48u8, 233u8, 231u8, 188u8, 45u8, 135u8, 253u8, 249u8, 0u8, 181u8,
-                            173u8, 68u8, 251u8, 0u8, 64u8, 62u8, 30u8, 178u8, 51u8, 248u8, 124u8,
+                            8u8, 87u8, 58u8, 136u8, 223u8, 1u8, 172u8, 169u8, 238u8, 236u8, 56u8,
+                            97u8, 59u8, 125u8, 128u8, 187u8, 245u8, 28u8, 142u8, 151u8, 192u8,
+                            81u8, 184u8, 252u8, 191u8, 52u8, 23u8, 181u8, 35u8, 25u8, 23u8, 9u8,
                         ],
                     )
                 }
@@ -30121,9 +32523,10 @@ pub mod api {
                             max_weight,
                         },
                         [
-                            162u8, 23u8, 92u8, 72u8, 212u8, 220u8, 230u8, 88u8, 229u8, 230u8, 98u8,
-                            83u8, 163u8, 15u8, 57u8, 14u8, 0u8, 226u8, 52u8, 73u8, 97u8, 11u8,
-                            42u8, 37u8, 181u8, 134u8, 19u8, 165u8, 167u8, 96u8, 102u8, 92u8,
+                            198u8, 76u8, 251u8, 121u8, 203u8, 75u8, 235u8, 41u8, 173u8, 22u8,
+                            115u8, 203u8, 158u8, 195u8, 219u8, 175u8, 80u8, 71u8, 101u8, 30u8,
+                            210u8, 95u8, 181u8, 36u8, 180u8, 217u8, 155u8, 74u8, 234u8, 93u8,
+                            100u8, 65u8,
                         ],
                     )
                 }
@@ -30225,6 +32628,42 @@ pub mod api {
                             212u8, 179u8, 123u8, 40u8, 209u8, 228u8, 181u8, 0u8, 109u8, 28u8, 27u8,
                             48u8, 15u8, 47u8, 203u8, 54u8, 106u8, 114u8, 28u8, 118u8, 101u8, 201u8,
                             95u8, 187u8, 46u8, 182u8, 4u8, 30u8, 227u8, 105u8, 14u8, 81u8,
+                        ],
+                    )
+                }
+                #[doc = "Poke the deposit reserved for an existing multisig operation."]
+                #[doc = ""]
+                #[doc = "The dispatch origin for this call must be _Signed_ and must be the original depositor of"]
+                #[doc = "the multisig operation."]
+                #[doc = ""]
+                #[doc = "The transaction fee is waived if the deposit amount has changed."]
+                #[doc = ""]
+                #[doc = "- `threshold`: The total number of approvals needed for this multisig."]
+                #[doc = "- `other_signatories`: The accounts (other than the sender) who are part of the"]
+                #[doc = "  multisig."]
+                #[doc = "- `call_hash`: The hash of the call this deposit is reserved for."]
+                #[doc = ""]
+                #[doc = "Emits `DepositPoked` if successful."]
+                pub fn poke_deposit(
+                    &self,
+                    threshold: types::poke_deposit::Threshold,
+                    other_signatories: types::poke_deposit::OtherSignatories,
+                    call_hash: types::poke_deposit::CallHash,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::PokeDeposit>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "Multisig",
+                        "poke_deposit",
+                        types::PokeDeposit {
+                            threshold,
+                            other_signatories,
+                            call_hash,
+                        },
+                        [
+                            246u8, 199u8, 149u8, 204u8, 29u8, 162u8, 169u8, 44u8, 250u8, 24u8,
+                            64u8, 191u8, 18u8, 238u8, 140u8, 153u8, 139u8, 208u8, 157u8, 245u8,
+                            145u8, 205u8, 56u8, 130u8, 119u8, 246u8, 174u8, 111u8, 83u8, 221u8,
+                            85u8, 84u8,
                         ],
                     )
                 }
@@ -30357,6 +32796,36 @@ pub mod api {
             impl ::subxt::ext::subxt_core::events::StaticEvent for MultisigCancelled {
                 const PALLET: &'static str = "Multisig";
                 const EVENT: &'static str = "MultisigCancelled";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "The deposit for a multisig operation has been updated/poked."]
+            pub struct DepositPoked {
+                pub who: deposit_poked::Who,
+                pub call_hash: deposit_poked::CallHash,
+                pub old_deposit: deposit_poked::OldDeposit,
+                pub new_deposit: deposit_poked::NewDeposit,
+            }
+            pub mod deposit_poked {
+                use super::runtime_types;
+                pub type Who = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type CallHash = [::core::primitive::u8; 32usize];
+                pub type OldDeposit = ::core::primitive::u64;
+                pub type NewDeposit = ::core::primitive::u64;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for DepositPoked {
+                const PALLET: &'static str = "Multisig";
+                const EVENT: &'static str = "DepositPoked";
             }
         }
         pub mod storage {
@@ -30682,7 +33151,7 @@ pub mod api {
                 #[encode_as_type(
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
-                #[doc = "Ensure that the a bulk of pre-images is upgraded."]
+                #[doc = "Ensure that the bulk of pre-images is upgraded."]
                 #[doc = ""]
                 #[doc = "The caller pays no fee if at least 90% of pre-images were successfully updated."]
                 pub struct EnsureUpdated {
@@ -30784,7 +33253,7 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = "Ensure that the a bulk of pre-images is upgraded."]
+                #[doc = "Ensure that the bulk of pre-images is upgraded."]
                 #[doc = ""]
                 #[doc = "The caller pays no fee if at least 90% of pre-images were successfully updated."]
                 pub fn ensure_updated(
@@ -31476,10 +33945,9 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            187u8, 189u8, 153u8, 43u8, 226u8, 14u8, 237u8, 224u8, 59u8, 170u8,
-                            241u8, 254u8, 38u8, 224u8, 140u8, 87u8, 136u8, 192u8, 160u8, 137u8,
-                            50u8, 19u8, 121u8, 189u8, 55u8, 173u8, 211u8, 123u8, 70u8, 22u8, 0u8,
-                            168u8,
+                            98u8, 220u8, 48u8, 117u8, 163u8, 122u8, 134u8, 9u8, 109u8, 85u8, 65u8,
+                            161u8, 138u8, 55u8, 58u8, 62u8, 222u8, 248u8, 254u8, 105u8, 235u8,
+                            22u8, 232u8, 63u8, 71u8, 87u8, 162u8, 166u8, 61u8, 171u8, 102u8, 146u8,
                         ],
                     )
                 }
@@ -31523,10 +33991,9 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            251u8, 233u8, 126u8, 243u8, 218u8, 219u8, 13u8, 120u8, 165u8, 122u8,
-                            165u8, 246u8, 47u8, 221u8, 181u8, 228u8, 209u8, 111u8, 67u8, 116u8,
-                            123u8, 2u8, 78u8, 93u8, 224u8, 84u8, 53u8, 204u8, 22u8, 99u8, 138u8,
-                            151u8,
+                            87u8, 172u8, 191u8, 188u8, 86u8, 185u8, 92u8, 65u8, 11u8, 196u8, 26u8,
+                            22u8, 213u8, 31u8, 204u8, 59u8, 20u8, 15u8, 72u8, 250u8, 63u8, 51u8,
+                            202u8, 11u8, 245u8, 68u8, 65u8, 58u8, 58u8, 182u8, 172u8, 204u8,
                         ],
                     )
                 }
@@ -31566,10 +34033,10 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            187u8, 21u8, 18u8, 108u8, 234u8, 137u8, 234u8, 27u8, 26u8, 163u8,
-                            198u8, 185u8, 38u8, 165u8, 106u8, 218u8, 84u8, 44u8, 45u8, 91u8, 197u8,
-                            163u8, 246u8, 104u8, 34u8, 135u8, 144u8, 135u8, 144u8, 12u8, 52u8,
-                            215u8,
+                            89u8, 84u8, 75u8, 134u8, 137u8, 205u8, 222u8, 194u8, 149u8, 112u8,
+                            19u8, 210u8, 146u8, 125u8, 138u8, 83u8, 118u8, 138u8, 51u8, 179u8,
+                            111u8, 73u8, 230u8, 42u8, 120u8, 119u8, 247u8, 103u8, 128u8, 150u8,
+                            182u8, 212u8,
                         ],
                     )
                 }
@@ -31594,10 +34061,9 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            157u8, 38u8, 209u8, 54u8, 242u8, 150u8, 214u8, 89u8, 123u8, 61u8,
-                            232u8, 128u8, 61u8, 134u8, 232u8, 68u8, 140u8, 86u8, 144u8, 58u8,
-                            240u8, 114u8, 157u8, 230u8, 169u8, 60u8, 191u8, 18u8, 242u8, 67u8,
-                            232u8, 174u8,
+                            116u8, 3u8, 54u8, 192u8, 195u8, 222u8, 178u8, 163u8, 67u8, 116u8, 35u8,
+                            60u8, 252u8, 119u8, 52u8, 23u8, 28u8, 147u8, 43u8, 238u8, 11u8, 28u8,
+                            174u8, 226u8, 11u8, 8u8, 12u8, 239u8, 13u8, 182u8, 66u8, 141u8,
                         ],
                     )
                 }
@@ -31953,6 +34419,30 @@ pub mod api {
                 const PALLET: &'static str = "Scheduler";
                 const EVENT: &'static str = "PermanentlyOverweight";
             }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Agenda is incomplete from `when`."]
+            pub struct AgendaIncomplete {
+                pub when: agenda_incomplete::When,
+            }
+            pub mod agenda_incomplete {
+                use super::runtime_types;
+                pub type When = ::core::primitive::u32;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for AgendaIncomplete {
+                const PALLET: &'static str = "Scheduler";
+                const EVENT: &'static str = "AgendaIncomplete";
+            }
         }
         pub mod storage {
             use super::runtime_types;
@@ -31995,6 +34485,7 @@ pub mod api {
             }
             pub struct StorageApi;
             impl StorageApi {
+                #[doc = " Block number at which the agenda began incomplete execution."]
                 pub fn incomplete_since(
                     &self,
                 ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
@@ -32255,9 +34746,9 @@ pub mod api {
         use super::root_mod;
         use super::runtime_types;
         #[doc = "The `Error` enum of this pallet."]
-        pub type Error = runtime_types::pallet_proxy::pallet::Error;
+        pub type Error = runtime_types::pallet_subtensor_proxy::pallet::Error;
         #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
-        pub type Call = runtime_types::pallet_proxy::pallet::Call;
+        pub type Call = runtime_types::pallet_subtensor_proxy::pallet::Call;
         pub mod calls {
             use super::root_mod;
             use super::runtime_types;
@@ -32412,7 +34903,7 @@ pub mod api {
                 #[doc = ""]
                 #[doc = "The dispatch origin for this call must be _Signed_."]
                 #[doc = ""]
-                #[doc = "WARNING: This may be called on accounts created by `pure`, however if done, then"]
+                #[doc = "WARNING: This may be called on accounts created by `create_pure`, however if done, then"]
                 #[doc = "the unreserved fees will be inaccessible. **All access to this account will be lost.**"]
                 pub struct RemoveProxies;
                 impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for RemoveProxies {
@@ -32442,12 +34933,12 @@ pub mod api {
                 #[doc = ""]
                 #[doc = "- `proxy_type`: The type of the proxy that the sender will be registered as over the"]
                 #[doc = "new account. This will almost always be the most permissive `ProxyType` possible to"]
-                #[doc = "  allow for maximum flexibility."]
+                #[doc = "allow for maximum flexibility."]
                 #[doc = "- `index`: A disambiguation index, in case this is called multiple times in the same"]
-                #[doc = "  transaction (e.g. with `utility::batch`). Unless you're using `batch` you probably just"]
-                #[doc = "  want to use `0`."]
+                #[doc = "transaction (e.g. with `utility::batch`). Unless you're using `batch` you probably just"]
+                #[doc = "want to use `0`."]
                 #[doc = "- `delay`: The announcement period required of the initial proxy. Will generally be"]
-                #[doc = "  zero."]
+                #[doc = "zero."]
                 #[doc = ""]
                 #[doc = "Fails with `Duplicate` if this has already been called in this transaction, from the"]
                 #[doc = "same sender, with the same parameters."]
@@ -32490,16 +34981,16 @@ pub mod api {
                 #[doc = "inaccessible."]
                 #[doc = ""]
                 #[doc = "Requires a `Signed` origin, and the sender account must have been created by a call to"]
-                #[doc = "`pure` with corresponding parameters."]
+                #[doc = "`create_pure` with corresponding parameters."]
                 #[doc = ""]
-                #[doc = "- `spawner`: The account that originally called `pure` to create this account."]
-                #[doc = "- `index`: The disambiguation index originally passed to `pure`. Probably `0`."]
-                #[doc = "- `proxy_type`: The proxy type originally passed to `pure`."]
-                #[doc = "- `height`: The height of the chain when the call to `pure` was processed."]
-                #[doc = "- `ext_index`: The extrinsic index in which the call to `pure` was processed."]
+                #[doc = "- `spawner`: The account that originally called `create_pure` to create this account."]
+                #[doc = "- `index`: The disambiguation index originally passed to `create_pure`. Probably `0`."]
+                #[doc = "- `proxy_type`: The proxy type originally passed to `create_pure`."]
+                #[doc = "- `height`: The height of the chain when the call to `create_pure` was processed."]
+                #[doc = "- `ext_index`: The extrinsic index in which the call to `create_pure` was processed."]
                 #[doc = ""]
                 #[doc = "Fails with `NoPermission` in case the caller is not a previously created pure"]
-                #[doc = "account whose `pure` call has corresponding parameters."]
+                #[doc = "account whose `create_pure` call has corresponding parameters."]
                 pub struct KillPure {
                     pub spawner: kill_pure::Spawner,
                     pub proxy_type: kill_pure::ProxyType,
@@ -32706,6 +35197,35 @@ pub mod api {
                     const PALLET: &'static str = "Proxy";
                     const CALL: &'static str = "proxy_announced";
                 }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Poke / Adjust deposits made for proxies and announcements based on current values."]
+                #[doc = "This can be used by accounts to possibly lower their locked amount."]
+                #[doc = ""]
+                #[doc = "The dispatch origin for this call must be _Signed_."]
+                #[doc = ""]
+                #[doc = "The transaction fee is waived if the deposit amount has changed."]
+                #[doc = ""]
+                #[doc = "Emits `DepositPoked` if successful."]
+                pub struct PokeDeposit;
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for PokeDeposit {
+                    const PALLET: &'static str = "Proxy";
+                    const CALL: &'static str = "poke_deposit";
+                }
             }
             pub struct TransactionApi;
             impl TransactionApi {
@@ -32734,9 +35254,9 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            23u8, 225u8, 60u8, 59u8, 31u8, 99u8, 20u8, 199u8, 180u8, 178u8, 184u8,
-                            146u8, 214u8, 154u8, 255u8, 158u8, 58u8, 38u8, 115u8, 103u8, 118u8,
-                            14u8, 142u8, 84u8, 65u8, 233u8, 167u8, 252u8, 149u8, 115u8, 10u8, 1u8,
+                            61u8, 71u8, 177u8, 47u8, 226u8, 184u8, 155u8, 16u8, 50u8, 167u8, 158u8,
+                            73u8, 177u8, 84u8, 99u8, 88u8, 71u8, 21u8, 25u8, 233u8, 58u8, 106u8,
+                            80u8, 226u8, 45u8, 148u8, 187u8, 2u8, 23u8, 120u8, 190u8, 75u8,
                         ],
                     )
                 }
@@ -32805,7 +35325,7 @@ pub mod api {
                 #[doc = ""]
                 #[doc = "The dispatch origin for this call must be _Signed_."]
                 #[doc = ""]
-                #[doc = "WARNING: This may be called on accounts created by `pure`, however if done, then"]
+                #[doc = "WARNING: This may be called on accounts created by `create_pure`, however if done, then"]
                 #[doc = "the unreserved fees will be inaccessible. **All access to this account will be lost.**"]
                 pub fn remove_proxies(
                     &self,
@@ -32830,12 +35350,12 @@ pub mod api {
                 #[doc = ""]
                 #[doc = "- `proxy_type`: The type of the proxy that the sender will be registered as over the"]
                 #[doc = "new account. This will almost always be the most permissive `ProxyType` possible to"]
-                #[doc = "  allow for maximum flexibility."]
+                #[doc = "allow for maximum flexibility."]
                 #[doc = "- `index`: A disambiguation index, in case this is called multiple times in the same"]
-                #[doc = "  transaction (e.g. with `utility::batch`). Unless you're using `batch` you probably just"]
-                #[doc = "  want to use `0`."]
+                #[doc = "transaction (e.g. with `utility::batch`). Unless you're using `batch` you probably just"]
+                #[doc = "want to use `0`."]
                 #[doc = "- `delay`: The announcement period required of the initial proxy. Will generally be"]
-                #[doc = "  zero."]
+                #[doc = "zero."]
                 #[doc = ""]
                 #[doc = "Fails with `Duplicate` if this has already been called in this transaction, from the"]
                 #[doc = "same sender, with the same parameters."]
@@ -32869,16 +35389,16 @@ pub mod api {
                 #[doc = "inaccessible."]
                 #[doc = ""]
                 #[doc = "Requires a `Signed` origin, and the sender account must have been created by a call to"]
-                #[doc = "`pure` with corresponding parameters."]
+                #[doc = "`create_pure` with corresponding parameters."]
                 #[doc = ""]
-                #[doc = "- `spawner`: The account that originally called `pure` to create this account."]
-                #[doc = "- `index`: The disambiguation index originally passed to `pure`. Probably `0`."]
-                #[doc = "- `proxy_type`: The proxy type originally passed to `pure`."]
-                #[doc = "- `height`: The height of the chain when the call to `pure` was processed."]
-                #[doc = "- `ext_index`: The extrinsic index in which the call to `pure` was processed."]
+                #[doc = "- `spawner`: The account that originally called `create_pure` to create this account."]
+                #[doc = "- `index`: The disambiguation index originally passed to `create_pure`. Probably `0`."]
+                #[doc = "- `proxy_type`: The proxy type originally passed to `create_pure`."]
+                #[doc = "- `height`: The height of the chain when the call to `create_pure` was processed."]
+                #[doc = "- `ext_index`: The extrinsic index in which the call to `create_pure` was processed."]
                 #[doc = ""]
                 #[doc = "Fails with `NoPermission` in case the caller is not a previously created pure"]
-                #[doc = "account whose `pure` call has corresponding parameters."]
+                #[doc = "account whose `create_pure` call has corresponding parameters."]
                 pub fn kill_pure(
                     &self,
                     spawner: types::kill_pure::Spawner,
@@ -33025,16 +35545,40 @@ pub mod api {
                             call: ::subxt::ext::subxt_core::alloc::boxed::Box::new(call),
                         },
                         [
-                            65u8, 208u8, 199u8, 199u8, 24u8, 166u8, 94u8, 34u8, 198u8, 14u8, 99u8,
-                            53u8, 88u8, 207u8, 227u8, 127u8, 61u8, 173u8, 71u8, 210u8, 127u8, 75u8,
-                            113u8, 206u8, 214u8, 47u8, 26u8, 190u8, 59u8, 90u8, 142u8, 41u8,
+                            244u8, 38u8, 238u8, 191u8, 99u8, 213u8, 255u8, 157u8, 69u8, 55u8,
+                            235u8, 28u8, 169u8, 113u8, 235u8, 154u8, 98u8, 175u8, 214u8, 97u8,
+                            255u8, 205u8, 200u8, 75u8, 147u8, 167u8, 116u8, 111u8, 87u8, 129u8,
+                            185u8, 207u8,
+                        ],
+                    )
+                }
+                #[doc = "Poke / Adjust deposits made for proxies and announcements based on current values."]
+                #[doc = "This can be used by accounts to possibly lower their locked amount."]
+                #[doc = ""]
+                #[doc = "The dispatch origin for this call must be _Signed_."]
+                #[doc = ""]
+                #[doc = "The transaction fee is waived if the deposit amount has changed."]
+                #[doc = ""]
+                #[doc = "Emits `DepositPoked` if successful."]
+                pub fn poke_deposit(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::PokeDeposit>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "Proxy",
+                        "poke_deposit",
+                        types::PokeDeposit {},
+                        [
+                            127u8, 254u8, 187u8, 13u8, 51u8, 85u8, 145u8, 82u8, 61u8, 152u8, 218u8,
+                            135u8, 191u8, 67u8, 53u8, 140u8, 42u8, 68u8, 7u8, 14u8, 95u8, 60u8,
+                            41u8, 135u8, 32u8, 99u8, 40u8, 111u8, 10u8, 21u8, 103u8, 107u8,
                         ],
                     )
                 }
             }
         }
         #[doc = "The `Event` enum of this pallet"]
-        pub type Event = runtime_types::pallet_proxy::pallet::Event;
+        pub type Event = runtime_types::pallet_subtensor_proxy::pallet::Event;
         pub mod events {
             use super::runtime_types;
             #[derive(
@@ -33181,6 +35725,66 @@ pub mod api {
                 const PALLET: &'static str = "Proxy";
                 const EVENT: &'static str = "ProxyRemoved";
             }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "A pure proxy was killed by its spawner."]
+            pub struct PureKilled {
+                pub pure: pure_killed::Pure,
+                pub spawner: pure_killed::Spawner,
+                pub proxy_type: pure_killed::ProxyType,
+                pub disambiguation_index: pure_killed::DisambiguationIndex,
+            }
+            pub mod pure_killed {
+                use super::runtime_types;
+                pub type Pure = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type Spawner = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type ProxyType = runtime_types::subtensor_runtime_common::ProxyType;
+                pub type DisambiguationIndex = ::core::primitive::u16;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for PureKilled {
+                const PALLET: &'static str = "Proxy";
+                const EVENT: &'static str = "PureKilled";
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "A deposit stored for proxies or announcements was poked / updated."]
+            pub struct DepositPoked {
+                pub who: deposit_poked::Who,
+                pub kind: deposit_poked::Kind,
+                pub old_deposit: deposit_poked::OldDeposit,
+                pub new_deposit: deposit_poked::NewDeposit,
+            }
+            pub mod deposit_poked {
+                use super::runtime_types;
+                pub type Who = ::subxt::ext::subxt_core::utils::AccountId32;
+                pub type Kind = runtime_types::pallet_subtensor_proxy::DepositKind;
+                pub type OldDeposit = ::core::primitive::u64;
+                pub type NewDeposit = ::core::primitive::u64;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for DepositPoked {
+                const PALLET: &'static str = "Proxy";
+                const EVENT: &'static str = "DepositPoked";
+            }
         }
         pub mod storage {
             use super::runtime_types;
@@ -33190,7 +35794,7 @@ pub mod api {
                     use super::runtime_types;
                     pub type Proxies = (
                         runtime_types::bounded_collections::bounded_vec::BoundedVec<
-                            runtime_types::pallet_proxy::ProxyDefinition<
+                            runtime_types::pallet_subtensor_proxy::ProxyDefinition<
                                 ::subxt::ext::subxt_core::utils::AccountId32,
                                 runtime_types::subtensor_runtime_common::ProxyType,
                                 ::core::primitive::u32,
@@ -33204,7 +35808,7 @@ pub mod api {
                     use super::runtime_types;
                     pub type Announcements = (
                         runtime_types::bounded_collections::bounded_vec::BoundedVec<
-                            runtime_types::pallet_proxy::Announcement<
+                            runtime_types::pallet_subtensor_proxy::Announcement<
                                 ::subxt::ext::subxt_core::utils::AccountId32,
                                 ::subxt::ext::subxt_core::utils::H256,
                                 ::core::primitive::u32,
@@ -33789,34 +36393,6 @@ pub mod api {
                 #[encode_as_type(
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
-                #[doc = "*DEPRECATED* Sudo-set the commitment rate limit"]
-                pub struct SetRateLimit {
-                    pub rate_limit_blocks: set_rate_limit::RateLimitBlocks,
-                }
-                pub mod set_rate_limit {
-                    use super::runtime_types;
-                    pub type RateLimitBlocks = ::core::primitive::u32;
-                }
-                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SetRateLimit {
-                    const PALLET: &'static str = "Commitments";
-                    const CALL: &'static str = "set_rate_limit";
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
                 #[doc = "Sudo-set MaxSpace"]
                 pub struct SetMaxSpace {
                     pub new_limit: set_max_space::NewLimit,
@@ -33850,23 +36426,6 @@ pub mod api {
                             188u8, 98u8, 69u8, 166u8, 54u8, 104u8, 38u8, 160u8, 19u8, 24u8, 227u8,
                             201u8, 149u8, 229u8, 86u8, 51u8, 182u8, 132u8, 65u8, 200u8, 88u8, 6u8,
                             164u8, 35u8, 240u8, 227u8, 136u8, 114u8, 194u8, 118u8, 70u8, 122u8,
-                        ],
-                    )
-                }
-                #[doc = "*DEPRECATED* Sudo-set the commitment rate limit"]
-                pub fn set_rate_limit(
-                    &self,
-                    rate_limit_blocks: types::set_rate_limit::RateLimitBlocks,
-                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::SetRateLimit>
-                {
-                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
-                        "Commitments",
-                        "set_rate_limit",
-                        types::SetRateLimit { rate_limit_blocks },
-                        [
-                            36u8, 151u8, 111u8, 230u8, 187u8, 128u8, 193u8, 231u8, 208u8, 237u8,
-                            182u8, 52u8, 133u8, 54u8, 205u8, 22u8, 61u8, 216u8, 84u8, 134u8, 36u8,
-                            88u8, 33u8, 41u8, 156u8, 19u8, 251u8, 217u8, 83u8, 69u8, 59u8, 42u8,
                         ],
                     )
                 }
@@ -35216,7 +37775,7 @@ pub mod api {
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
                 #[doc = "The extrinsic sets the minimum burn for a subnet."]
-                #[doc = "It is only callable by the root account."]
+                #[doc = "It is only callable by root and subnet owner."]
                 #[doc = "The extrinsic will call the Subtensor pallet to set the minimum burn."]
                 pub struct SudoSetMinBurn {
                     pub netuid: sudo_set_min_burn::Netuid,
@@ -35248,7 +37807,7 @@ pub mod api {
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
                 #[doc = "The extrinsic sets the maximum burn for a subnet."]
-                #[doc = "It is only callable by the root account or subnet owner."]
+                #[doc = "It is only callable by root and subnet owner."]
                 #[doc = "The extrinsic will call the Subtensor pallet to set the maximum burn."]
                 pub struct SudoSetMaxBurn {
                     pub netuid: sudo_set_max_burn::Netuid,
@@ -35937,60 +38496,6 @@ pub mod api {
                 #[encode_as_type(
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
-                #[doc = "Sets the maximum stake allowed for a specific network."]
-                #[doc = ""]
-                #[doc = "This function allows the root account to set the maximum stake for a given network."]
-                #[doc = "It updates the network's maximum stake value and logs the change."]
-                #[doc = ""]
-                #[doc = "# Arguments"]
-                #[doc = ""]
-                #[doc = "* `origin` - The origin of the call, which must be the root account."]
-                #[doc = "* `netuid` - The unique identifier of the network."]
-                #[doc = "* `max_stake` - The new maximum stake value to set."]
-                #[doc = ""]
-                #[doc = "# Returns"]
-                #[doc = ""]
-                #[doc = "Returns `Ok(())` if the operation is successful, or an error if it fails."]
-                #[doc = ""]
-                #[doc = "# Example"]
-                #[doc = ""]
-                #[doc = ""]
-                #[doc = "# Notes"]
-                #[doc = ""]
-                #[doc = "- This function can only be called by the root account."]
-                #[doc = "- The `netuid` should correspond to an existing network."]
-                #[doc = ""]
-                #[doc = "# TODO"]
-                #[doc = ""]
-                pub struct SudoSetNetworkMaxStake {
-                    pub netuid: sudo_set_network_max_stake::Netuid,
-                    pub max_stake: sudo_set_network_max_stake::MaxStake,
-                }
-                pub mod sudo_set_network_max_stake {
-                    use super::runtime_types;
-                    pub type Netuid = ::core::primitive::u16;
-                    pub type MaxStake = ::core::primitive::u64;
-                }
-                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetNetworkMaxStake {
-                    const PALLET: &'static str = "AdminUtils";
-                    const CALL: &'static str = "sudo_set_network_max_stake";
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
                 #[doc = "Sets the duration of the coldkey swap schedule."]
                 #[doc = ""]
                 #[doc = "This extrinsic allows the root account to set the duration for the coldkey swap schedule."]
@@ -36243,6 +38748,45 @@ pub mod api {
                 #[encode_as_type(
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
+                #[doc = "Set the behaviour of the \"burn\" UID(s) for a given subnet."]
+                #[doc = "If set to `Burn`, the miner emission sent to the burn UID(s) will be burned."]
+                #[doc = "If set to `Recycle`, the miner emission sent to the burn UID(s) will be recycled."]
+                #[doc = ""]
+                #[doc = "# Parameters"]
+                #[doc = "- `origin`: The origin of the call, which must be the root account or subnet owner."]
+                #[doc = "- `netuid`: The unique identifier for the subnet."]
+                #[doc = "- `recycle_or_burn`: The desired behaviour of the \"burn\" UID(s) for the subnet."]
+                #[doc = ""]
+                pub struct SudoSetRecycleOrBurn {
+                    pub netuid: sudo_set_recycle_or_burn::Netuid,
+                    pub recycle_or_burn: sudo_set_recycle_or_burn::RecycleOrBurn,
+                }
+                pub mod sudo_set_recycle_or_burn {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type RecycleOrBurn =
+                        runtime_types::pallet_subtensor::pallet::RecycleOrBurnEnum;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetRecycleOrBurn {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_recycle_or_burn";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
                 #[doc = "Toggles the enablement of an EVM precompile."]
                 #[doc = ""]
                 #[doc = "# Arguments"]
@@ -36302,24 +38846,24 @@ pub mod api {
                 pub mod sudo_set_subnet_moving_alpha {
                     use super::runtime_types;
                     pub type Alpha = runtime_types::substrate_fixed::FixedI128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UTerm,
-                                                runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UTerm,
+                                                runtime_types::substrate_typenum::bit::B1,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                 }
@@ -36627,6 +39171,279 @@ pub mod api {
                 impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetSubtokenEnabled {
                     const PALLET: &'static str = "AdminUtils";
                     const CALL: &'static str = "sudo_set_subtoken_enabled";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Sets the commit-reveal weights version for all subnets"]
+                pub struct SudoSetCommitRevealVersion {
+                    pub version: sudo_set_commit_reveal_version::Version,
+                }
+                pub mod sudo_set_commit_reveal_version {
+                    use super::runtime_types;
+                    pub type Version = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetCommitRevealVersion {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_commit_reveal_version";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Sets the number of immune owner neurons"]
+                pub struct SudoSetOwnerImmuneNeuronLimit {
+                    pub netuid: sudo_set_owner_immune_neuron_limit::Netuid,
+                    pub immune_neurons: sudo_set_owner_immune_neuron_limit::ImmuneNeurons,
+                }
+                pub mod sudo_set_owner_immune_neuron_limit {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type ImmuneNeurons = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetOwnerImmuneNeuronLimit {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_owner_immune_neuron_limit";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Sets the childkey burn for a subnet."]
+                #[doc = "It is only callable by the root account."]
+                #[doc = "The extrinsic will call the Subtensor pallet to set the childkey burn."]
+                pub struct SudoSetCkBurn {
+                    pub burn: sudo_set_ck_burn::Burn,
+                }
+                pub mod sudo_set_ck_burn {
+                    use super::runtime_types;
+                    pub type Burn = ::core::primitive::u64;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetCkBurn {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_ck_burn";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Sets the admin freeze window length (in blocks) at the end of a tempo."]
+                #[doc = "Only callable by root."]
+                pub struct SudoSetAdminFreezeWindow {
+                    pub window: sudo_set_admin_freeze_window::Window,
+                }
+                pub mod sudo_set_admin_freeze_window {
+                    use super::runtime_types;
+                    pub type Window = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetAdminFreezeWindow {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_admin_freeze_window";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Sets the owner hyperparameter rate limit in epochs (global multiplier)."]
+                #[doc = "Only callable by root."]
+                pub struct SudoSetOwnerHparamRateLimit {
+                    pub epochs: sudo_set_owner_hparam_rate_limit::Epochs,
+                }
+                pub mod sudo_set_owner_hparam_rate_limit {
+                    use super::runtime_types;
+                    pub type Epochs = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetOwnerHparamRateLimit {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_owner_hparam_rate_limit";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Sets the desired number of mechanisms in a subnet"]
+                pub struct SudoSetMechanismCount {
+                    pub netuid: sudo_set_mechanism_count::Netuid,
+                    pub mechanism_count: sudo_set_mechanism_count::MechanismCount,
+                }
+                pub mod sudo_set_mechanism_count {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type MechanismCount = ::core::primitive::u8;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetMechanismCount {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_mechanism_count";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Sets the emission split between mechanisms in a subnet"]
+                pub struct SudoSetMechanismEmissionSplit {
+                    pub netuid: sudo_set_mechanism_emission_split::Netuid,
+                    pub maybe_split: sudo_set_mechanism_emission_split::MaybeSplit,
+                }
+                pub mod sudo_set_mechanism_emission_split {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type MaybeSplit = ::core::option::Option<
+                        ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
+                    >;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetMechanismEmissionSplit {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_mechanism_emission_split";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Trims the maximum number of UIDs for a subnet."]
+                #[doc = ""]
+                #[doc = "The trimming is done by sorting the UIDs by emission descending and then trimming"]
+                #[doc = "the lowest emitters while preserving temporally and owner immune UIDs. The UIDs are"]
+                #[doc = "then compressed to the left and storage is migrated to the new compressed UIDs."]
+                pub struct SudoTrimToMaxAllowedUids {
+                    pub netuid: sudo_trim_to_max_allowed_uids::Netuid,
+                    pub max_n: sudo_trim_to_max_allowed_uids::MaxN,
+                }
+                pub mod sudo_trim_to_max_allowed_uids {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type MaxN = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoTrimToMaxAllowedUids {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_trim_to_max_allowed_uids";
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "The extrinsic sets the minimum allowed UIDs for a subnet."]
+                #[doc = "It is only callable by the root account."]
+                pub struct SudoSetMinAllowedUids {
+                    pub netuid: sudo_set_min_allowed_uids::Netuid,
+                    pub min_allowed_uids: sudo_set_min_allowed_uids::MinAllowedUids,
+                }
+                pub mod sudo_set_min_allowed_uids {
+                    use super::runtime_types;
+                    pub type Netuid = ::core::primitive::u16;
+                    pub type MinAllowedUids = ::core::primitive::u16;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SudoSetMinAllowedUids {
+                    const PALLET: &'static str = "AdminUtils";
+                    const CALL: &'static str = "sudo_set_min_allowed_uids";
                 }
             }
             pub struct TransactionApi;
@@ -37094,7 +39911,7 @@ pub mod api {
                     )
                 }
                 #[doc = "The extrinsic sets the minimum burn for a subnet."]
-                #[doc = "It is only callable by the root account."]
+                #[doc = "It is only callable by root and subnet owner."]
                 #[doc = "The extrinsic will call the Subtensor pallet to set the minimum burn."]
                 pub fn sudo_set_min_burn(
                     &self,
@@ -37115,7 +39932,7 @@ pub mod api {
                     )
                 }
                 #[doc = "The extrinsic sets the maximum burn for a subnet."]
-                #[doc = "It is only callable by the root account or subnet owner."]
+                #[doc = "It is only callable by root and subnet owner."]
                 #[doc = "The extrinsic will call the Subtensor pallet to set the maximum burn."]
                 pub fn sudo_set_max_burn(
                     &self,
@@ -37592,49 +40409,6 @@ pub mod api {
                         ],
                     )
                 }
-                #[doc = "Sets the maximum stake allowed for a specific network."]
-                #[doc = ""]
-                #[doc = "This function allows the root account to set the maximum stake for a given network."]
-                #[doc = "It updates the network's maximum stake value and logs the change."]
-                #[doc = ""]
-                #[doc = "# Arguments"]
-                #[doc = ""]
-                #[doc = "* `origin` - The origin of the call, which must be the root account."]
-                #[doc = "* `netuid` - The unique identifier of the network."]
-                #[doc = "* `max_stake` - The new maximum stake value to set."]
-                #[doc = ""]
-                #[doc = "# Returns"]
-                #[doc = ""]
-                #[doc = "Returns `Ok(())` if the operation is successful, or an error if it fails."]
-                #[doc = ""]
-                #[doc = "# Example"]
-                #[doc = ""]
-                #[doc = ""]
-                #[doc = "# Notes"]
-                #[doc = ""]
-                #[doc = "- This function can only be called by the root account."]
-                #[doc = "- The `netuid` should correspond to an existing network."]
-                #[doc = ""]
-                #[doc = "# TODO"]
-                #[doc = ""]
-                pub fn sudo_set_network_max_stake(
-                    &self,
-                    netuid: types::sudo_set_network_max_stake::Netuid,
-                    max_stake: types::sudo_set_network_max_stake::MaxStake,
-                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
-                    types::SudoSetNetworkMaxStake,
-                > {
-                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
-                        "AdminUtils",
-                        "sudo_set_network_max_stake",
-                        types::SudoSetNetworkMaxStake { netuid, max_stake },
-                        [
-                            69u8, 67u8, 125u8, 102u8, 98u8, 128u8, 26u8, 151u8, 122u8, 88u8, 203u8,
-                            76u8, 34u8, 22u8, 250u8, 176u8, 175u8, 209u8, 38u8, 230u8, 95u8, 180u8,
-                            61u8, 201u8, 108u8, 14u8, 91u8, 188u8, 107u8, 3u8, 43u8, 54u8,
-                        ],
-                    )
-                }
                 #[doc = "Sets the duration of the coldkey swap schedule."]
                 #[doc = ""]
                 #[doc = "This extrinsic allows the root account to set the duration for the coldkey swap schedule."]
@@ -37827,6 +40601,35 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = "Set the behaviour of the \"burn\" UID(s) for a given subnet."]
+                #[doc = "If set to `Burn`, the miner emission sent to the burn UID(s) will be burned."]
+                #[doc = "If set to `Recycle`, the miner emission sent to the burn UID(s) will be recycled."]
+                #[doc = ""]
+                #[doc = "# Parameters"]
+                #[doc = "- `origin`: The origin of the call, which must be the root account or subnet owner."]
+                #[doc = "- `netuid`: The unique identifier for the subnet."]
+                #[doc = "- `recycle_or_burn`: The desired behaviour of the \"burn\" UID(s) for the subnet."]
+                #[doc = ""]
+                pub fn sudo_set_recycle_or_burn(
+                    &self,
+                    netuid: types::sudo_set_recycle_or_burn::Netuid,
+                    recycle_or_burn: types::sudo_set_recycle_or_burn::RecycleOrBurn,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::SudoSetRecycleOrBurn>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_recycle_or_burn",
+                        types::SudoSetRecycleOrBurn {
+                            netuid,
+                            recycle_or_burn,
+                        },
+                        [
+                            181u8, 198u8, 235u8, 143u8, 146u8, 204u8, 199u8, 27u8, 235u8, 80u8,
+                            24u8, 60u8, 50u8, 181u8, 76u8, 155u8, 21u8, 235u8, 30u8, 194u8, 117u8,
+                            194u8, 99u8, 225u8, 77u8, 43u8, 254u8, 234u8, 12u8, 137u8, 218u8, 1u8,
+                        ],
+                    )
+                }
                 #[doc = "Toggles the enablement of an EVM precompile."]
                 #[doc = ""]
                 #[doc = "# Arguments"]
@@ -37854,9 +40657,10 @@ pub mod api {
                             enabled,
                         },
                         [
-                            238u8, 178u8, 136u8, 135u8, 147u8, 82u8, 126u8, 75u8, 187u8, 68u8,
-                            167u8, 97u8, 109u8, 225u8, 38u8, 8u8, 102u8, 16u8, 252u8, 151u8, 187u8,
-                            180u8, 18u8, 116u8, 46u8, 137u8, 62u8, 154u8, 31u8, 164u8, 241u8, 47u8,
+                            198u8, 107u8, 157u8, 115u8, 21u8, 177u8, 213u8, 47u8, 80u8, 186u8,
+                            226u8, 126u8, 214u8, 36u8, 34u8, 209u8, 177u8, 210u8, 60u8, 98u8,
+                            193u8, 69u8, 166u8, 213u8, 107u8, 87u8, 88u8, 149u8, 55u8, 164u8,
+                            151u8, 56u8,
                         ],
                     )
                 }
@@ -38119,6 +40923,196 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = "Sets the commit-reveal weights version for all subnets"]
+                pub fn sudo_set_commit_reveal_version(
+                    &self,
+                    version: types::sudo_set_commit_reveal_version::Version,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoSetCommitRevealVersion,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_commit_reveal_version",
+                        types::SudoSetCommitRevealVersion { version },
+                        [
+                            253u8, 215u8, 2u8, 66u8, 243u8, 69u8, 118u8, 66u8, 239u8, 161u8, 75u8,
+                            209u8, 162u8, 157u8, 79u8, 8u8, 42u8, 45u8, 20u8, 32u8, 156u8, 107u8,
+                            168u8, 15u8, 182u8, 178u8, 42u8, 228u8, 88u8, 64u8, 61u8, 168u8,
+                        ],
+                    )
+                }
+                #[doc = "Sets the number of immune owner neurons"]
+                pub fn sudo_set_owner_immune_neuron_limit(
+                    &self,
+                    netuid: types::sudo_set_owner_immune_neuron_limit::Netuid,
+                    immune_neurons: types::sudo_set_owner_immune_neuron_limit::ImmuneNeurons,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoSetOwnerImmuneNeuronLimit,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_owner_immune_neuron_limit",
+                        types::SudoSetOwnerImmuneNeuronLimit {
+                            netuid,
+                            immune_neurons,
+                        },
+                        [
+                            80u8, 212u8, 242u8, 91u8, 142u8, 99u8, 27u8, 55u8, 13u8, 204u8, 149u8,
+                            7u8, 26u8, 106u8, 69u8, 166u8, 186u8, 238u8, 45u8, 26u8, 244u8, 87u8,
+                            123u8, 136u8, 35u8, 197u8, 63u8, 9u8, 232u8, 102u8, 22u8, 230u8,
+                        ],
+                    )
+                }
+                #[doc = "Sets the childkey burn for a subnet."]
+                #[doc = "It is only callable by the root account."]
+                #[doc = "The extrinsic will call the Subtensor pallet to set the childkey burn."]
+                pub fn sudo_set_ck_burn(
+                    &self,
+                    burn: types::sudo_set_ck_burn::Burn,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::SudoSetCkBurn>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_ck_burn",
+                        types::SudoSetCkBurn { burn },
+                        [
+                            73u8, 95u8, 96u8, 80u8, 79u8, 198u8, 82u8, 121u8, 87u8, 150u8, 229u8,
+                            34u8, 163u8, 144u8, 71u8, 42u8, 154u8, 162u8, 111u8, 180u8, 251u8,
+                            230u8, 48u8, 104u8, 81u8, 195u8, 164u8, 70u8, 146u8, 212u8, 24u8,
+                            127u8,
+                        ],
+                    )
+                }
+                #[doc = "Sets the admin freeze window length (in blocks) at the end of a tempo."]
+                #[doc = "Only callable by root."]
+                pub fn sudo_set_admin_freeze_window(
+                    &self,
+                    window: types::sudo_set_admin_freeze_window::Window,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoSetAdminFreezeWindow,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_admin_freeze_window",
+                        types::SudoSetAdminFreezeWindow { window },
+                        [
+                            165u8, 212u8, 248u8, 14u8, 47u8, 198u8, 127u8, 115u8, 149u8, 126u8,
+                            222u8, 34u8, 100u8, 182u8, 170u8, 96u8, 243u8, 106u8, 89u8, 8u8, 206u8,
+                            149u8, 104u8, 60u8, 122u8, 165u8, 66u8, 254u8, 140u8, 75u8, 121u8,
+                            47u8,
+                        ],
+                    )
+                }
+                #[doc = "Sets the owner hyperparameter rate limit in epochs (global multiplier)."]
+                #[doc = "Only callable by root."]
+                pub fn sudo_set_owner_hparam_rate_limit(
+                    &self,
+                    epochs: types::sudo_set_owner_hparam_rate_limit::Epochs,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoSetOwnerHparamRateLimit,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_owner_hparam_rate_limit",
+                        types::SudoSetOwnerHparamRateLimit { epochs },
+                        [
+                            7u8, 216u8, 14u8, 222u8, 157u8, 84u8, 234u8, 157u8, 207u8, 216u8,
+                            212u8, 42u8, 207u8, 146u8, 192u8, 10u8, 252u8, 198u8, 180u8, 231u8,
+                            43u8, 149u8, 78u8, 215u8, 202u8, 102u8, 113u8, 130u8, 53u8, 254u8,
+                            59u8, 18u8,
+                        ],
+                    )
+                }
+                #[doc = "Sets the desired number of mechanisms in a subnet"]
+                pub fn sudo_set_mechanism_count(
+                    &self,
+                    netuid: types::sudo_set_mechanism_count::Netuid,
+                    mechanism_count: types::sudo_set_mechanism_count::MechanismCount,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoSetMechanismCount,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_mechanism_count",
+                        types::SudoSetMechanismCount {
+                            netuid,
+                            mechanism_count,
+                        },
+                        [
+                            109u8, 216u8, 122u8, 67u8, 128u8, 190u8, 10u8, 86u8, 47u8, 149u8, 19u8,
+                            210u8, 16u8, 68u8, 193u8, 217u8, 215u8, 239u8, 160u8, 121u8, 254u8,
+                            18u8, 193u8, 110u8, 143u8, 34u8, 35u8, 57u8, 119u8, 114u8, 46u8, 79u8,
+                        ],
+                    )
+                }
+                #[doc = "Sets the emission split between mechanisms in a subnet"]
+                pub fn sudo_set_mechanism_emission_split(
+                    &self,
+                    netuid: types::sudo_set_mechanism_emission_split::Netuid,
+                    maybe_split: types::sudo_set_mechanism_emission_split::MaybeSplit,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoSetMechanismEmissionSplit,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_mechanism_emission_split",
+                        types::SudoSetMechanismEmissionSplit {
+                            netuid,
+                            maybe_split,
+                        },
+                        [
+                            87u8, 172u8, 168u8, 64u8, 28u8, 2u8, 77u8, 92u8, 155u8, 6u8, 116u8,
+                            121u8, 13u8, 114u8, 242u8, 19u8, 231u8, 132u8, 17u8, 68u8, 32u8, 7u8,
+                            41u8, 60u8, 147u8, 23u8, 212u8, 86u8, 189u8, 154u8, 64u8, 36u8,
+                        ],
+                    )
+                }
+                #[doc = "Trims the maximum number of UIDs for a subnet."]
+                #[doc = ""]
+                #[doc = "The trimming is done by sorting the UIDs by emission descending and then trimming"]
+                #[doc = "the lowest emitters while preserving temporally and owner immune UIDs. The UIDs are"]
+                #[doc = "then compressed to the left and storage is migrated to the new compressed UIDs."]
+                pub fn sudo_trim_to_max_allowed_uids(
+                    &self,
+                    netuid: types::sudo_trim_to_max_allowed_uids::Netuid,
+                    max_n: types::sudo_trim_to_max_allowed_uids::MaxN,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoTrimToMaxAllowedUids,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_trim_to_max_allowed_uids",
+                        types::SudoTrimToMaxAllowedUids { netuid, max_n },
+                        [
+                            28u8, 159u8, 47u8, 204u8, 21u8, 11u8, 131u8, 126u8, 200u8, 93u8, 29u8,
+                            207u8, 194u8, 174u8, 105u8, 224u8, 84u8, 206u8, 85u8, 168u8, 216u8,
+                            195u8, 130u8, 52u8, 155u8, 12u8, 151u8, 149u8, 6u8, 174u8, 6u8, 130u8,
+                        ],
+                    )
+                }
+                #[doc = "The extrinsic sets the minimum allowed UIDs for a subnet."]
+                #[doc = "It is only callable by the root account."]
+                pub fn sudo_set_min_allowed_uids(
+                    &self,
+                    netuid: types::sudo_set_min_allowed_uids::Netuid,
+                    min_allowed_uids: types::sudo_set_min_allowed_uids::MinAllowedUids,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<
+                    types::SudoSetMinAllowedUids,
+                > {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "AdminUtils",
+                        "sudo_set_min_allowed_uids",
+                        types::SudoSetMinAllowedUids {
+                            netuid,
+                            min_allowed_uids,
+                        },
+                        [
+                            224u8, 172u8, 89u8, 28u8, 135u8, 86u8, 244u8, 53u8, 240u8, 56u8, 111u8,
+                            201u8, 150u8, 65u8, 185u8, 79u8, 32u8, 188u8, 179u8, 39u8, 79u8, 98u8,
+                            21u8, 60u8, 134u8, 191u8, 75u8, 164u8, 25u8, 159u8, 75u8, 20u8,
+                        ],
+                    )
+                }
             }
         }
         #[doc = "The `Event` enum of this pallet"]
@@ -38231,10 +41225,9 @@ pub mod api {
                         "PrecompileEnable",
                         (),
                         [
-                            174u8, 240u8, 35u8, 205u8, 152u8, 117u8, 49u8, 233u8, 99u8, 133u8,
-                            162u8, 192u8, 246u8, 157u8, 178u8, 50u8, 52u8, 115u8, 1u8, 161u8,
-                            125u8, 122u8, 40u8, 58u8, 30u8, 118u8, 231u8, 25u8, 19u8, 93u8, 39u8,
-                            12u8,
+                            172u8, 63u8, 91u8, 204u8, 255u8, 204u8, 16u8, 108u8, 252u8, 255u8,
+                            159u8, 144u8, 114u8, 61u8, 6u8, 124u8, 7u8, 109u8, 15u8, 246u8, 157u8,
+                            194u8, 87u8, 100u8, 192u8, 89u8, 203u8, 94u8, 132u8, 207u8, 51u8, 51u8,
                         ],
                     )
                 }
@@ -38258,10 +41251,9 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            174u8, 240u8, 35u8, 205u8, 152u8, 117u8, 49u8, 233u8, 99u8, 133u8,
-                            162u8, 192u8, 246u8, 157u8, 178u8, 50u8, 52u8, 115u8, 1u8, 161u8,
-                            125u8, 122u8, 40u8, 58u8, 30u8, 118u8, 231u8, 25u8, 19u8, 93u8, 39u8,
-                            12u8,
+                            172u8, 63u8, 91u8, 204u8, 255u8, 204u8, 16u8, 108u8, 252u8, 255u8,
+                            159u8, 144u8, 114u8, 61u8, 6u8, 124u8, 7u8, 109u8, 15u8, 246u8, 157u8,
+                            194u8, 87u8, 100u8, 192u8, 89u8, 203u8, 94u8, 132u8, 207u8, 51u8, 51u8,
                         ],
                     )
                 }
@@ -40658,6 +43650,34 @@ pub mod api {
                     const PALLET: &'static str = "Drand";
                     const CALL: &'static str = "set_beacon_config";
                 }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "allows the root user to set the oldest stored round"]
+                pub struct SetOldestStoredRound {
+                    pub oldest_round: set_oldest_stored_round::OldestRound,
+                }
+                pub mod set_oldest_stored_round {
+                    use super::runtime_types;
+                    pub type OldestRound = ::core::primitive::u64;
+                }
+                impl ::subxt::ext::subxt_core::blocks::StaticExtrinsic for SetOldestStoredRound {
+                    const PALLET: &'static str = "Drand";
+                    const CALL: &'static str = "set_oldest_stored_round";
+                }
             }
             pub struct TransactionApi;
             impl TransactionApi {
@@ -40710,6 +43730,23 @@ pub mod api {
                         ],
                     )
                 }
+                #[doc = "allows the root user to set the oldest stored round"]
+                pub fn set_oldest_stored_round(
+                    &self,
+                    oldest_round: types::set_oldest_stored_round::OldestRound,
+                ) -> ::subxt::ext::subxt_core::tx::payload::StaticPayload<types::SetOldestStoredRound>
+                {
+                    ::subxt::ext::subxt_core::tx::payload::StaticPayload::new_static(
+                        "Drand",
+                        "set_oldest_stored_round",
+                        types::SetOldestStoredRound { oldest_round },
+                        [
+                            73u8, 193u8, 136u8, 48u8, 145u8, 157u8, 215u8, 8u8, 246u8, 115u8, 44u8,
+                            66u8, 104u8, 79u8, 62u8, 12u8, 92u8, 192u8, 202u8, 69u8, 42u8, 219u8,
+                            57u8, 173u8, 112u8, 174u8, 249u8, 29u8, 171u8, 251u8, 36u8, 84u8,
+                        ],
+                    )
+                }
             }
         }
         #[doc = "The `Event` enum of this pallet"]
@@ -40728,6 +43765,7 @@ pub mod api {
             #[codec(dumb_trait_bound)]
             #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
             #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Beacon Configuration has changed."]
             pub struct BeaconConfigChanged;
             impl ::subxt::ext::subxt_core::events::StaticEvent for BeaconConfigChanged {
                 const PALLET: &'static str = "Drand";
@@ -40757,6 +43795,28 @@ pub mod api {
                 const PALLET: &'static str = "Drand";
                 const EVENT: &'static str = "NewPulse";
             }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            #[doc = "Oldest Stored Round has been set."]
+            pub struct SetOldestStoredRound(pub set_oldest_stored_round::Field0);
+            pub mod set_oldest_stored_round {
+                use super::runtime_types;
+                pub type Field0 = ::core::primitive::u64;
+            }
+            impl ::subxt::ext::subxt_core::events::StaticEvent for SetOldestStoredRound {
+                const PALLET: &'static str = "Drand";
+                const EVENT: &'static str = "SetOldestStoredRound";
+            }
         }
         pub mod storage {
             use super::runtime_types;
@@ -40766,6 +43826,13 @@ pub mod api {
                     use super::runtime_types;
                     pub type BeaconConfig = runtime_types::pallet_drand::types::BeaconConfiguration;
                 }
+                pub mod has_migration_run {
+                    use super::runtime_types;
+                    pub type HasMigrationRun = ::core::primitive::bool;
+                    pub type Param0 = runtime_types::bounded_collections::bounded_vec::BoundedVec<
+                        ::core::primitive::u8,
+                    >;
+                }
                 pub mod pulses {
                     use super::runtime_types;
                     pub type Pulses = runtime_types::pallet_drand::types::Pulse;
@@ -40774,6 +43841,10 @@ pub mod api {
                 pub mod last_stored_round {
                     use super::runtime_types;
                     pub type LastStoredRound = ::core::primitive::u64;
+                }
+                pub mod oldest_stored_round {
+                    use super::runtime_types;
+                    pub type OldestStoredRound = ::core::primitive::u64;
                 }
                 pub mod next_unsigned_at {
                     use super::runtime_types;
@@ -40800,6 +43871,53 @@ pub mod api {
                             18u8, 47u8, 206u8, 15u8, 177u8, 6u8, 99u8, 97u8, 203u8, 190u8, 194u8,
                             210u8, 188u8, 82u8, 149u8, 252u8, 130u8, 250u8, 99u8, 79u8, 144u8,
                             65u8, 9u8, 3u8, 12u8, 14u8, 236u8, 109u8, 114u8, 240u8, 215u8, 231u8,
+                        ],
+                    )
+                }
+                #[doc = " Storage for migration run status"]
+                pub fn has_migration_run_iter(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::has_migration_run::HasMigrationRun,
+                    (),
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "Drand",
+                        "HasMigrationRun",
+                        (),
+                        [
+                            136u8, 249u8, 238u8, 25u8, 98u8, 133u8, 200u8, 15u8, 17u8, 89u8, 154u8,
+                            4u8, 233u8, 103u8, 58u8, 217u8, 175u8, 118u8, 195u8, 242u8, 84u8, 56u8,
+                            128u8, 198u8, 252u8, 160u8, 185u8, 22u8, 19u8, 240u8, 98u8, 7u8,
+                        ],
+                    )
+                }
+                #[doc = " Storage for migration run status"]
+                pub fn has_migration_run(
+                    &self,
+                    _0: impl ::core::borrow::Borrow<types::has_migration_run::Param0>,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    ::subxt::ext::subxt_core::storage::address::StaticStorageKey<
+                        types::has_migration_run::Param0,
+                    >,
+                    types::has_migration_run::HasMigrationRun,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "Drand",
+                        "HasMigrationRun",
+                        ::subxt::ext::subxt_core::storage::address::StaticStorageKey::new(
+                            _0.borrow(),
+                        ),
+                        [
+                            136u8, 249u8, 238u8, 25u8, 98u8, 133u8, 200u8, 15u8, 17u8, 89u8, 154u8,
+                            4u8, 233u8, 103u8, 58u8, 217u8, 175u8, 118u8, 195u8, 242u8, 84u8, 56u8,
+                            128u8, 198u8, 252u8, 160u8, 185u8, 22u8, 19u8, 240u8, 98u8, 7u8,
                         ],
                     )
                 }
@@ -40870,6 +43988,27 @@ pub mod api {
                             179u8, 116u8, 206u8, 208u8, 187u8, 14u8, 228u8, 163u8, 29u8, 187u8,
                             145u8, 151u8, 25u8, 209u8, 148u8, 30u8, 248u8, 251u8, 238u8, 206u8,
                             249u8,
+                        ],
+                    )
+                }
+                #[doc = " oldest stored round"]
+                pub fn oldest_stored_round(
+                    &self,
+                ) -> ::subxt::ext::subxt_core::storage::address::StaticAddress<
+                    (),
+                    types::oldest_stored_round::OldestStoredRound,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    ::subxt::ext::subxt_core::utils::Yes,
+                    (),
+                > {
+                    ::subxt::ext::subxt_core::storage::address::StaticAddress::new_static(
+                        "Drand",
+                        "OldestStoredRound",
+                        (),
+                        [
+                            213u8, 254u8, 95u8, 243u8, 105u8, 135u8, 206u8, 169u8, 141u8, 95u8,
+                            34u8, 61u8, 195u8, 8u8, 177u8, 127u8, 172u8, 12u8, 82u8, 54u8, 10u8,
+                            40u8, 44u8, 173u8, 24u8, 30u8, 43u8, 94u8, 114u8, 63u8, 156u8, 68u8,
                         ],
                     )
                 }
@@ -41366,9 +44505,9 @@ pub mod api {
                             target_address,
                         },
                         [
-                            142u8, 40u8, 19u8, 191u8, 36u8, 247u8, 165u8, 9u8, 98u8, 165u8, 71u8,
-                            80u8, 80u8, 4u8, 52u8, 180u8, 147u8, 86u8, 40u8, 227u8, 208u8, 92u8,
-                            219u8, 186u8, 166u8, 201u8, 35u8, 125u8, 82u8, 156u8, 102u8, 99u8,
+                            206u8, 15u8, 6u8, 95u8, 77u8, 156u8, 69u8, 237u8, 14u8, 100u8, 95u8,
+                            165u8, 189u8, 149u8, 248u8, 130u8, 188u8, 240u8, 121u8, 203u8, 157u8,
+                            52u8, 246u8, 196u8, 33u8, 23u8, 25u8, 16u8, 38u8, 120u8, 228u8, 20u8,
                         ],
                     )
                 }
@@ -42691,6 +45830,8 @@ pub mod api {
                 pub liquidity: liquidity_added::Liquidity,
                 pub tao: liquidity_added::Tao,
                 pub alpha: liquidity_added::Alpha,
+                pub tick_low: liquidity_added::TickLow,
+                pub tick_high: liquidity_added::TickHigh,
             }
             pub mod liquidity_added {
                 use super::runtime_types;
@@ -42701,6 +45842,8 @@ pub mod api {
                 pub type Liquidity = ::core::primitive::u64;
                 pub type Tao = ::core::primitive::u64;
                 pub type Alpha = ::core::primitive::u64;
+                pub type TickLow = runtime_types::pallet_subtensor_swap::tick::TickIndex;
+                pub type TickHigh = runtime_types::pallet_subtensor_swap::tick::TickIndex;
             }
             impl ::subxt::ext::subxt_core::events::StaticEvent for LiquidityAdded {
                 const PALLET: &'static str = "Swap";
@@ -42724,10 +45867,13 @@ pub mod api {
                 pub hotkey: liquidity_removed::Hotkey,
                 pub netuid: liquidity_removed::Netuid,
                 pub position_id: liquidity_removed::PositionId,
+                pub liquidity: liquidity_removed::Liquidity,
                 pub tao: liquidity_removed::Tao,
                 pub alpha: liquidity_removed::Alpha,
                 pub fee_tao: liquidity_removed::FeeTao,
                 pub fee_alpha: liquidity_removed::FeeAlpha,
+                pub tick_low: liquidity_removed::TickLow,
+                pub tick_high: liquidity_removed::TickHigh,
             }
             pub mod liquidity_removed {
                 use super::runtime_types;
@@ -42735,10 +45881,13 @@ pub mod api {
                 pub type Hotkey = ::subxt::ext::subxt_core::utils::AccountId32;
                 pub type Netuid = ::core::primitive::u16;
                 pub type PositionId = runtime_types::pallet_subtensor_swap::position::PositionId;
+                pub type Liquidity = ::core::primitive::u64;
                 pub type Tao = ::core::primitive::u64;
                 pub type Alpha = ::core::primitive::u64;
                 pub type FeeTao = ::core::primitive::u64;
                 pub type FeeAlpha = ::core::primitive::u64;
+                pub type TickLow = runtime_types::pallet_subtensor_swap::tick::TickIndex;
+                pub type TickHigh = runtime_types::pallet_subtensor_swap::tick::TickIndex;
             }
             impl ::subxt::ext::subxt_core::events::StaticEvent for LiquidityRemoved {
                 const PALLET: &'static str = "Swap";
@@ -42768,6 +45917,8 @@ pub mod api {
                 pub alpha: liquidity_modified::Alpha,
                 pub fee_tao: liquidity_modified::FeeTao,
                 pub fee_alpha: liquidity_modified::FeeAlpha,
+                pub tick_low: liquidity_modified::TickLow,
+                pub tick_high: liquidity_modified::TickHigh,
             }
             pub mod liquidity_modified {
                 use super::runtime_types;
@@ -42780,6 +45931,8 @@ pub mod api {
                 pub type Alpha = ::core::primitive::i64;
                 pub type FeeTao = ::core::primitive::u64;
                 pub type FeeAlpha = ::core::primitive::u64;
+                pub type TickLow = runtime_types::pallet_subtensor_swap::tick::TickIndex;
+                pub type TickHigh = runtime_types::pallet_subtensor_swap::tick::TickIndex;
             }
             impl ::subxt::ext::subxt_core::events::StaticEvent for LiquidityModified {
                 const PALLET: &'static str = "Swap";
@@ -42798,27 +45951,27 @@ pub mod api {
                 pub mod fee_global_tao {
                     use super::runtime_types;
                     pub type FeeGlobalTao = runtime_types::substrate_fixed::FixedU128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                     pub type Param0 = ::core::primitive::u16;
@@ -42826,27 +45979,27 @@ pub mod api {
                 pub mod fee_global_alpha {
                     use super::runtime_types;
                     pub type FeeGlobalAlpha = runtime_types::substrate_fixed::FixedU128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                     pub type Param0 = ::core::primitive::u16;
@@ -42865,27 +46018,27 @@ pub mod api {
                 pub mod alpha_sqrt_price {
                     use super::runtime_types;
                     pub type AlphaSqrtPrice = runtime_types::substrate_fixed::FixedU128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >;
                     pub type Param0 = ::core::primitive::u16;
@@ -42941,10 +46094,9 @@ pub mod api {
                         "FeeRate",
                         (),
                         [
-                            206u8, 113u8, 202u8, 69u8, 191u8, 191u8, 62u8, 174u8, 253u8, 153u8,
-                            52u8, 17u8, 135u8, 130u8, 180u8, 49u8, 192u8, 229u8, 23u8, 78u8, 66u8,
-                            254u8, 95u8, 218u8, 151u8, 103u8, 27u8, 136u8, 223u8, 139u8, 106u8,
-                            165u8,
+                            93u8, 14u8, 74u8, 135u8, 73u8, 123u8, 94u8, 47u8, 217u8, 66u8, 181u8,
+                            9u8, 8u8, 75u8, 236u8, 92u8, 62u8, 233u8, 11u8, 42u8, 77u8, 96u8, 3u8,
+                            49u8, 82u8, 168u8, 229u8, 228u8, 7u8, 23u8, 27u8, 125u8,
                         ],
                     )
                 }
@@ -42968,10 +46120,9 @@ pub mod api {
                             _0.borrow(),
                         ),
                         [
-                            206u8, 113u8, 202u8, 69u8, 191u8, 191u8, 62u8, 174u8, 253u8, 153u8,
-                            52u8, 17u8, 135u8, 130u8, 180u8, 49u8, 192u8, 229u8, 23u8, 78u8, 66u8,
-                            254u8, 95u8, 218u8, 151u8, 103u8, 27u8, 136u8, 223u8, 139u8, 106u8,
-                            165u8,
+                            93u8, 14u8, 74u8, 135u8, 73u8, 123u8, 94u8, 47u8, 217u8, 66u8, 181u8,
+                            9u8, 8u8, 75u8, 236u8, 92u8, 62u8, 233u8, 11u8, 42u8, 77u8, 96u8, 3u8,
+                            49u8, 82u8, 168u8, 229u8, 228u8, 7u8, 23u8, 27u8, 125u8,
                         ],
                     )
                 }
@@ -45231,6 +48382,12 @@ pub mod api {
                         code_hash: ::subxt::ext::subxt_core::utils::H256,
                         check_version: ::core::primitive::bool,
                     },
+                    #[codec(index = 7)]
+                    #[doc = "An invalid authorized upgrade was rejected while trying to apply it."]
+                    RejectedInvalidAuthorizedUpgrade {
+                        code_hash: ::subxt::ext::subxt_core::utils::H256,
+                        error: runtime_types::sp_runtime::DispatchError,
+                    },
                 }
             }
             #[derive(
@@ -45362,6 +48519,29 @@ pub mod api {
                 )]
                 pub struct CheckNonce(#[codec(compact)] pub ::core::primitive::u32);
             }
+            pub mod transaction_payment_wrapper {
+                use super::runtime_types;
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct ChargeTransactionPaymentWrapper {
+                    pub charge_transaction_payment:
+                        runtime_types::pallet_transaction_payment::ChargeTransactionPayment,
+                }
+            }
             #[derive(
                 :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
                 :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
@@ -45383,7 +48563,7 @@ pub mod api {
                 ),
                 #[codec(index = 8)]
                 Triumvirate(
-                    runtime_types::pallet_collective::RawOrigin<
+                    runtime_types::pallet_subtensor_collective::RawOrigin<
                         ::subxt::ext::subxt_core::utils::AccountId32,
                     >,
                 ),
@@ -45427,13 +48607,13 @@ pub mod api {
                 #[codec(index = 7)]
                 SubtensorModule(runtime_types::pallet_subtensor::pallet::Call),
                 #[codec(index = 8)]
-                Triumvirate(runtime_types::pallet_collective::pallet::Call),
+                Triumvirate(runtime_types::pallet_subtensor_collective::pallet::Call),
                 #[codec(index = 9)]
                 TriumvirateMembers(runtime_types::pallet_membership::pallet::Call),
                 #[codec(index = 10)]
                 SenateMembers(runtime_types::pallet_membership::pallet::Call),
                 #[codec(index = 11)]
-                Utility(runtime_types::pallet_utility::pallet::Call),
+                Utility(runtime_types::pallet_subtensor_utility::pallet::Call),
                 #[codec(index = 12)]
                 Sudo(runtime_types::pallet_sudo::pallet::Call),
                 #[codec(index = 13)]
@@ -45443,7 +48623,7 @@ pub mod api {
                 #[codec(index = 15)]
                 Scheduler(runtime_types::pallet_scheduler::pallet::Call),
                 #[codec(index = 16)]
-                Proxy(runtime_types::pallet_proxy::pallet::Call),
+                Proxy(runtime_types::pallet_subtensor_proxy::pallet::Call),
                 #[codec(index = 17)]
                 Registry(runtime_types::pallet_registry::pallet::Call),
                 #[codec(index = 18)]
@@ -45487,13 +48667,13 @@ pub mod api {
                 #[codec(index = 7)]
                 SubtensorModule(runtime_types::pallet_subtensor::pallet::Error),
                 #[codec(index = 8)]
-                Triumvirate(runtime_types::pallet_collective::pallet::Error),
+                Triumvirate(runtime_types::pallet_subtensor_collective::pallet::Error),
                 #[codec(index = 9)]
                 TriumvirateMembers(runtime_types::pallet_membership::pallet::Error),
                 #[codec(index = 10)]
                 SenateMembers(runtime_types::pallet_membership::pallet::Error),
                 #[codec(index = 11)]
-                Utility(runtime_types::pallet_utility::pallet::Error),
+                Utility(runtime_types::pallet_subtensor_utility::pallet::Error),
                 #[codec(index = 12)]
                 Sudo(runtime_types::pallet_sudo::pallet::Error),
                 #[codec(index = 13)]
@@ -45503,7 +48683,7 @@ pub mod api {
                 #[codec(index = 15)]
                 Scheduler(runtime_types::pallet_scheduler::pallet::Error),
                 #[codec(index = 16)]
-                Proxy(runtime_types::pallet_proxy::pallet::Error),
+                Proxy(runtime_types::pallet_subtensor_proxy::pallet::Error),
                 #[codec(index = 17)]
                 Registry(runtime_types::pallet_registry::pallet::Error),
                 #[codec(index = 18)]
@@ -45547,13 +48727,13 @@ pub mod api {
                 #[codec(index = 7)]
                 SubtensorModule(runtime_types::pallet_subtensor::pallet::Event),
                 #[codec(index = 8)]
-                Triumvirate(runtime_types::pallet_collective::pallet::Event),
+                Triumvirate(runtime_types::pallet_subtensor_collective::pallet::Event),
                 #[codec(index = 9)]
                 TriumvirateMembers(runtime_types::pallet_membership::pallet::Event),
                 #[codec(index = 10)]
                 SenateMembers(runtime_types::pallet_membership::pallet::Event),
                 #[codec(index = 11)]
-                Utility(runtime_types::pallet_utility::pallet::Event),
+                Utility(runtime_types::pallet_subtensor_utility::pallet::Event),
                 #[codec(index = 12)]
                 Sudo(runtime_types::pallet_sudo::pallet::Event),
                 #[codec(index = 13)]
@@ -45563,7 +48743,7 @@ pub mod api {
                 #[codec(index = 15)]
                 Scheduler(runtime_types::pallet_scheduler::pallet::Event),
                 #[codec(index = 16)]
-                Proxy(runtime_types::pallet_proxy::pallet::Event),
+                Proxy(runtime_types::pallet_subtensor_proxy::pallet::Event),
                 #[codec(index = 17)]
                 Registry(runtime_types::pallet_registry::pallet::Event),
                 #[codec(index = 18)]
@@ -45803,7 +48983,7 @@ pub mod api {
                     },
                     #[codec(index = 22)]
                     #[doc = "The extrinsic sets the minimum burn for a subnet."]
-                    #[doc = "It is only callable by the root account."]
+                    #[doc = "It is only callable by root and subnet owner."]
                     #[doc = "The extrinsic will call the Subtensor pallet to set the minimum burn."]
                     sudo_set_min_burn {
                         netuid: ::core::primitive::u16,
@@ -45811,7 +48991,7 @@ pub mod api {
                     },
                     #[codec(index = 23)]
                     #[doc = "The extrinsic sets the maximum burn for a subnet."]
-                    #[doc = "It is only callable by the root account or subnet owner."]
+                    #[doc = "It is only callable by root and subnet owner."]
                     #[doc = "The extrinsic will call the Subtensor pallet to set the maximum burn."]
                     sudo_set_max_burn {
                         netuid: ::core::primitive::u16,
@@ -45965,36 +49145,6 @@ pub mod api {
                         alpha_low: ::core::primitive::u16,
                         alpha_high: ::core::primitive::u16,
                     },
-                    #[codec(index = 53)]
-                    #[doc = "Sets the maximum stake allowed for a specific network."]
-                    #[doc = ""]
-                    #[doc = "This function allows the root account to set the maximum stake for a given network."]
-                    #[doc = "It updates the network's maximum stake value and logs the change."]
-                    #[doc = ""]
-                    #[doc = "# Arguments"]
-                    #[doc = ""]
-                    #[doc = "* `origin` - The origin of the call, which must be the root account."]
-                    #[doc = "* `netuid` - The unique identifier of the network."]
-                    #[doc = "* `max_stake` - The new maximum stake value to set."]
-                    #[doc = ""]
-                    #[doc = "# Returns"]
-                    #[doc = ""]
-                    #[doc = "Returns `Ok(())` if the operation is successful, or an error if it fails."]
-                    #[doc = ""]
-                    #[doc = "# Example"]
-                    #[doc = ""]
-                    #[doc = ""]
-                    #[doc = "# Notes"]
-                    #[doc = ""]
-                    #[doc = "- This function can only be called by the root account."]
-                    #[doc = "- The `netuid` should correspond to an existing network."]
-                    #[doc = ""]
-                    #[doc = "# TODO"]
-                    #[doc = ""]
-                    sudo_set_network_max_stake {
-                        netuid: ::core::primitive::u16,
-                        max_stake: ::core::primitive::u64,
-                    },
                     #[codec(index = 54)]
                     #[doc = "Sets the duration of the coldkey swap schedule."]
                     #[doc = ""]
@@ -46099,6 +49249,20 @@ pub mod api {
                         netuid: ::core::primitive::u16,
                         toggle: ::core::primitive::bool,
                     },
+                    #[codec(index = 80)]
+                    #[doc = "Set the behaviour of the \"burn\" UID(s) for a given subnet."]
+                    #[doc = "If set to `Burn`, the miner emission sent to the burn UID(s) will be burned."]
+                    #[doc = "If set to `Recycle`, the miner emission sent to the burn UID(s) will be recycled."]
+                    #[doc = ""]
+                    #[doc = "# Parameters"]
+                    #[doc = "- `origin`: The origin of the call, which must be the root account or subnet owner."]
+                    #[doc = "- `netuid`: The unique identifier for the subnet."]
+                    #[doc = "- `recycle_or_burn`: The desired behaviour of the \"burn\" UID(s) for the subnet."]
+                    #[doc = ""]
+                    sudo_set_recycle_or_burn {
+                        netuid: ::core::primitive::u16,
+                        recycle_or_burn: runtime_types::pallet_subtensor::pallet::RecycleOrBurnEnum,
+                    },
                     #[codec(index = 62)]
                     #[doc = "Toggles the enablement of an EVM precompile."]
                     #[doc = ""]
@@ -46130,24 +49294,24 @@ pub mod api {
                     #[doc = "Weight is handled by the `#[pallet::weight]` attribute."]
                     sudo_set_subnet_moving_alpha {
                         alpha: runtime_types::substrate_fixed::FixedI128<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
                         >,
                     },
@@ -46284,6 +49448,59 @@ pub mod api {
                         netuid: ::core::primitive::u16,
                         subtoken_enabled: ::core::primitive::bool,
                     },
+                    #[codec(index = 71)]
+                    #[doc = "Sets the commit-reveal weights version for all subnets"]
+                    sudo_set_commit_reveal_version { version: ::core::primitive::u16 },
+                    #[codec(index = 72)]
+                    #[doc = "Sets the number of immune owner neurons"]
+                    sudo_set_owner_immune_neuron_limit {
+                        netuid: ::core::primitive::u16,
+                        immune_neurons: ::core::primitive::u16,
+                    },
+                    #[codec(index = 73)]
+                    #[doc = "Sets the childkey burn for a subnet."]
+                    #[doc = "It is only callable by the root account."]
+                    #[doc = "The extrinsic will call the Subtensor pallet to set the childkey burn."]
+                    sudo_set_ck_burn { burn: ::core::primitive::u64 },
+                    #[codec(index = 74)]
+                    #[doc = "Sets the admin freeze window length (in blocks) at the end of a tempo."]
+                    #[doc = "Only callable by root."]
+                    sudo_set_admin_freeze_window { window: ::core::primitive::u16 },
+                    #[codec(index = 75)]
+                    #[doc = "Sets the owner hyperparameter rate limit in epochs (global multiplier)."]
+                    #[doc = "Only callable by root."]
+                    sudo_set_owner_hparam_rate_limit { epochs: ::core::primitive::u16 },
+                    #[codec(index = 76)]
+                    #[doc = "Sets the desired number of mechanisms in a subnet"]
+                    sudo_set_mechanism_count {
+                        netuid: ::core::primitive::u16,
+                        mechanism_count: ::core::primitive::u8,
+                    },
+                    #[codec(index = 77)]
+                    #[doc = "Sets the emission split between mechanisms in a subnet"]
+                    sudo_set_mechanism_emission_split {
+                        netuid: ::core::primitive::u16,
+                        maybe_split: ::core::option::Option<
+                            ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
+                        >,
+                    },
+                    #[codec(index = 78)]
+                    #[doc = "Trims the maximum number of UIDs for a subnet."]
+                    #[doc = ""]
+                    #[doc = "The trimming is done by sorting the UIDs by emission descending and then trimming"]
+                    #[doc = "the lowest emitters while preserving temporally and owner immune UIDs. The UIDs are"]
+                    #[doc = "then compressed to the left and storage is migrated to the new compressed UIDs."]
+                    sudo_trim_to_max_allowed_uids {
+                        netuid: ::core::primitive::u16,
+                        max_n: ::core::primitive::u16,
+                    },
+                    #[codec(index = 79)]
+                    #[doc = "The extrinsic sets the minimum allowed UIDs for a subnet."]
+                    #[doc = "It is only callable by the root account."]
+                    sudo_set_min_allowed_uids {
+                        netuid: ::core::primitive::u16,
+                        min_allowed_uids: ::core::primitive::u16,
+                    },
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -46318,6 +49535,15 @@ pub mod api {
                     #[codec(index = 4)]
                     #[doc = "Only root can set negative sigmoid steepness values"]
                     NegativeSigmoidSteepness,
+                    #[codec(index = 5)]
+                    #[doc = "Value not in allowed bounds."]
+                    ValueNotInBounds,
+                    #[codec(index = 6)]
+                    #[doc = "The minimum allowed UIDs must be less than the current number of UIDs in the subnet."]
+                    MinAllowedUidsGreaterThanCurrentUids,
+                    #[codec(index = 7)]
+                    #[doc = "The minimum allowed UIDs must be less than the maximum allowed UIDs."]
+                    MinAllowedUidsGreaterThanMaxAllowedUids,
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -46387,6 +49613,12 @@ pub mod api {
                     UidLookup,
                     #[codec(index = 6)]
                     Alpha,
+                    #[codec(index = 7)]
+                    Crowdloan,
+                    #[codec(index = 8)]
+                    PureProxy,
+                    #[codec(index = 9)]
+                    Leasing,
                 }
             }
         }
@@ -46942,323 +50174,6 @@ pub mod api {
                 }
             }
         }
-        pub mod pallet_collective {
-            use super::runtime_types;
-            pub mod pallet {
-                use super::runtime_types;
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
-                pub enum Call {
-                    #[codec(index = 0)]
-                    #[doc = "Set the collective's membership."]
-                    #[doc = ""]
-                    #[doc = "- `new_members`: The new member list. Be nice to the chain and provide it sorted."]
-                    #[doc = "- `prime`: The prime member whose vote sets the default."]
-                    #[doc = "- `old_count`: The upper bound for the previous number of members in storage. Used for"]
-                    #[doc = "  weight estimation."]
-                    #[doc = ""]
-                    #[doc = "The dispatch of this call must be `SetMembersOrigin`."]
-                    #[doc = ""]
-                    #[doc = "NOTE: Does not enforce the expected `MaxMembers` limit on the amount of members, but"]
-                    #[doc = "      the weight estimations rely on it to estimate dispatchable weight."]
-                    #[doc = ""]
-                    #[doc = "# WARNING:"]
-                    #[doc = ""]
-                    #[doc = "The `pallet-collective` can also be managed by logic outside of the pallet through the"]
-                    #[doc = "implementation of the trait [`ChangeMembers`]."]
-                    #[doc = "Any call to `set_members` must be careful that the member set doesn't get out of sync"]
-                    #[doc = "with other logic managing the member set."]
-                    #[doc = ""]
-                    #[doc = "## Complexity:"]
-                    #[doc = "- `O(MP + N)` where:"]
-                    #[doc = "  - `M` old-members-count (code- and governance-bounded)"]
-                    #[doc = "  - `N` new-members-count (code- and governance-bounded)"]
-                    #[doc = "  - `P` proposals-count (code-bounded)"]
-                    set_members {
-                        new_members: ::subxt::ext::subxt_core::alloc::vec::Vec<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                        >,
-                        prime: ::core::option::Option<::subxt::ext::subxt_core::utils::AccountId32>,
-                        old_count: ::core::primitive::u32,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "Dispatch a proposal from a member using the `Member` origin."]
-                    #[doc = ""]
-                    #[doc = "Origin must be a member of the collective."]
-                    #[doc = ""]
-                    #[doc = "## Complexity:"]
-                    #[doc = "- `O(B + M + P)` where:"]
-                    #[doc = "- `B` is `proposal` size in bytes (length-fee-bounded)"]
-                    #[doc = "- `M` members-count (code-bounded)"]
-                    #[doc = "- `P` complexity of dispatching `proposal`"]
-                    execute {
-                        proposal: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                        #[codec(compact)]
-                        length_bound: ::core::primitive::u32,
-                    },
-                    #[codec(index = 2)]
-                    #[doc = "Add a new proposal to either be voted on or executed directly."]
-                    #[doc = ""]
-                    #[doc = "Requires the sender to be member."]
-                    #[doc = ""]
-                    #[doc = "`threshold` determines whether `proposal` is executed directly (`threshold < 2`)"]
-                    #[doc = "or put up for voting."]
-                    #[doc = ""]
-                    #[doc = "## Complexity"]
-                    #[doc = "- `O(B + M + P1)` or `O(B + M + P2)` where:"]
-                    #[doc = "  - `B` is `proposal` size in bytes (length-fee-bounded)"]
-                    #[doc = "  - `M` is members-count (code- and governance-bounded)"]
-                    #[doc = "  - branching is influenced by `threshold` where:"]
-                    #[doc = "    - `P1` is proposal execution complexity (`threshold < 2`)"]
-                    #[doc = "    - `P2` is proposals-count (code-bounded) (`threshold >= 2`)"]
-                    propose {
-                        proposal: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                        #[codec(compact)]
-                        length_bound: ::core::primitive::u32,
-                        duration: ::core::primitive::u32,
-                    },
-                    #[codec(index = 3)]
-                    #[doc = "Add an aye or nay vote for the sender to the given proposal."]
-                    #[doc = ""]
-                    #[doc = "Requires the sender to be a member."]
-                    #[doc = ""]
-                    #[doc = "Transaction fees will be waived if the member is voting on any particular proposal"]
-                    #[doc = "for the first time and the call is successful. Subsequent vote changes will charge a"]
-                    #[doc = "fee."]
-                    #[doc = "## Complexity"]
-                    #[doc = "- `O(M)` where `M` is members-count (code- and governance-bounded)"]
-                    vote {
-                        proposal: ::subxt::ext::subxt_core::utils::H256,
-                        #[codec(compact)]
-                        index: ::core::primitive::u32,
-                        approve: ::core::primitive::bool,
-                    },
-                    #[codec(index = 5)]
-                    #[doc = "Disapprove a proposal, close, and remove it from the system, regardless of its current"]
-                    #[doc = "state."]
-                    #[doc = ""]
-                    #[doc = "Must be called by the Root origin."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "* `proposal_hash`: The hash of the proposal that should be disapproved."]
-                    #[doc = ""]
-                    #[doc = "## Complexity"]
-                    #[doc = "O(P) where P is the number of max proposals"]
-                    disapprove_proposal {
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                    },
-                    #[codec(index = 6)]
-                    #[doc = "Close a vote that is either approved, disapproved or whose voting period has ended."]
-                    #[doc = ""]
-                    #[doc = "May be called by any signed account in order to finish voting and close the proposal."]
-                    #[doc = ""]
-                    #[doc = "If called before the end of the voting period it will only close the vote if it is"]
-                    #[doc = "has enough votes to be approved or disapproved."]
-                    #[doc = ""]
-                    #[doc = "If called after the end of the voting period abstentions are counted as rejections"]
-                    #[doc = "unless there is a prime member set and the prime member cast an approval."]
-                    #[doc = ""]
-                    #[doc = "If the close operation completes successfully with disapproval, the transaction fee will"]
-                    #[doc = "be waived. Otherwise execution of the approved operation will be charged to the caller."]
-                    #[doc = ""]
-                    #[doc = "+ `proposal_weight_bound`: The maximum amount of weight consumed by executing the closed"]
-                    #[doc = "proposal."]
-                    #[doc = "+ `length_bound`: The upper bound for the length of the proposal in storage. Checked via"]
-                    #[doc = "`storage::read` so it is `size_of::<u32>() == 4` larger than the pure length."]
-                    #[doc = ""]
-                    #[doc = "## Complexity"]
-                    #[doc = "- `O(B + M + P1 + P2)` where:"]
-                    #[doc = "  - `B` is `proposal` size in bytes (length-fee-bounded)"]
-                    #[doc = "  - `M` is members-count (code- and governance-bounded)"]
-                    #[doc = "  - `P1` is the complexity of `proposal` preimage."]
-                    #[doc = "  - `P2` is proposal-count (code-bounded)"]
-                    close {
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                        #[codec(compact)]
-                        index: ::core::primitive::u32,
-                        proposal_weight_bound: runtime_types::sp_weights::weight_v2::Weight,
-                        #[codec(compact)]
-                        length_bound: ::core::primitive::u32,
-                    },
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "The `Error` enum of this pallet."]
-                pub enum Error {
-                    #[codec(index = 0)]
-                    #[doc = "Account is not a member of collective"]
-                    NotMember,
-                    #[codec(index = 1)]
-                    #[doc = "Duplicate proposals not allowed"]
-                    DuplicateProposal,
-                    #[codec(index = 2)]
-                    #[doc = "Proposal must exist"]
-                    ProposalNotExists,
-                    #[codec(index = 3)]
-                    #[doc = "Index mismatched the proposal hash"]
-                    IndexMismatchProposalHash,
-                    #[codec(index = 4)]
-                    #[doc = "Duplicate vote ignored"]
-                    DuplicateVote,
-                    #[codec(index = 5)]
-                    #[doc = "The call to close the proposal was made too early, before the end of the voting"]
-                    TooEarlyToCloseProposal,
-                    #[codec(index = 6)]
-                    #[doc = "There can only be a maximum of `MaxProposals` active proposals."]
-                    TooManyActiveProposals,
-                    #[codec(index = 7)]
-                    #[doc = "The given weight-bound for the proposal was too low."]
-                    ProposalWeightLessThanDispatchCallWeight,
-                    #[codec(index = 8)]
-                    #[doc = "The given length-bound for the proposal was too low."]
-                    ProposalLengthBoundLessThanProposalLength,
-                    #[codec(index = 9)]
-                    #[doc = "The given motion duration for the proposal was too low."]
-                    DurationLowerThanConfiguredMotionDuration,
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "The `Event` enum of this pallet"]
-                pub enum Event {
-                    #[codec(index = 0)]
-                    #[doc = "A motion (given hash) has been proposed (by given account) with a threshold (given"]
-                    #[doc = "`MemberCount`)."]
-                    Proposed {
-                        account: ::subxt::ext::subxt_core::utils::AccountId32,
-                        proposal_index: ::core::primitive::u32,
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                        threshold: ::core::primitive::u32,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "A motion (given hash) has been voted on by given account, leaving"]
-                    #[doc = "a tally (yes votes and no votes given respectively as `MemberCount`)."]
-                    Voted {
-                        account: ::subxt::ext::subxt_core::utils::AccountId32,
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                        voted: ::core::primitive::bool,
-                        yes: ::core::primitive::u32,
-                        no: ::core::primitive::u32,
-                    },
-                    #[codec(index = 2)]
-                    #[doc = "A motion was approved by the required threshold."]
-                    Approved {
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                    },
-                    #[codec(index = 3)]
-                    #[doc = "A motion was not approved by the required threshold."]
-                    Disapproved {
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                    },
-                    #[codec(index = 4)]
-                    #[doc = "A motion was executed; result will be `Ok` if it returned without error."]
-                    Executed {
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                        result:
-                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
-                    },
-                    #[codec(index = 5)]
-                    #[doc = "A single member did some action; result will be `Ok` if it returned without error."]
-                    MemberExecuted {
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                        result:
-                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
-                    },
-                    #[codec(index = 6)]
-                    #[doc = "A proposal was closed because its threshold was reached or after its duration was up."]
-                    Closed {
-                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
-                        yes: ::core::primitive::u32,
-                        no: ::core::primitive::u32,
-                    },
-                }
-            }
-            #[derive(
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                Clone,
-                Debug,
-            )]
-            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-            #[codec(dumb_trait_bound)]
-            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
-            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
-            pub enum RawOrigin<_0> {
-                #[codec(index = 0)]
-                Members(::core::primitive::u32, ::core::primitive::u32),
-                #[codec(index = 1)]
-                Member(_0),
-                #[codec(index = 2)]
-                _Phantom,
-            }
-            #[derive(
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                Clone,
-                Debug,
-            )]
-            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-            #[codec(dumb_trait_bound)]
-            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
-            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
-            pub struct Votes<_0, _1> {
-                pub index: ::core::primitive::u32,
-                pub threshold: ::core::primitive::u32,
-                pub ayes: ::subxt::ext::subxt_core::alloc::vec::Vec<_0>,
-                pub nays: ::subxt::ext::subxt_core::alloc::vec::Vec<_0>,
-                pub end: _1,
-            }
-        }
         pub mod pallet_commitments {
             use super::runtime_types;
             pub mod pallet {
@@ -47288,11 +50203,6 @@ pub mod api {
                         info: ::subxt::ext::subxt_core::alloc::boxed::Box<
                             runtime_types::pallet_commitments::types::CommitmentInfo,
                         >,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "*DEPRECATED* Sudo-set the commitment rate limit"]
-                    set_rate_limit {
-                        rate_limit_blocks: ::core::primitive::u32,
                     },
                     #[codec(index = 2)]
                     #[doc = "Sudo-set MaxSpace"]
@@ -48104,6 +51014,26 @@ pub mod api {
         }
         pub mod pallet_drand {
             use super::runtime_types;
+            pub mod drand_priority {
+                use super::runtime_types;
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct DrandPriority<_0>(pub ::core::marker::PhantomData<_0>);
+            }
             pub mod pallet {
                 use super::runtime_types;
                 #[derive(
@@ -48149,6 +51079,11 @@ pub mod api {
                             >,
                         signature:
                             ::core::option::Option<runtime_types::sp_runtime::MultiSignature>,
+                    },
+                    #[codec(index = 2)]
+                    #[doc = "allows the root user to set the oldest stored round"]
+                    set_oldest_stored_round {
+                        oldest_round: ::core::primitive::u64,
                     },
                 }
                 #[derive(
@@ -48207,12 +51142,16 @@ pub mod api {
                 #[doc = "The `Event` enum of this pallet"]
                 pub enum Event {
                     #[codec(index = 0)]
+                    #[doc = "Beacon Configuration has changed."]
                     BeaconConfigChanged,
                     #[codec(index = 1)]
                     #[doc = "Successfully set a new pulse(s)."]
                     NewPulse {
                         rounds: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u64>,
                     },
+                    #[codec(index = 2)]
+                    #[doc = "Oldest Stored Round has been set."]
+                    SetOldestStoredRound(::core::primitive::u64),
                 }
             }
             pub mod types {
@@ -48596,6 +51535,9 @@ pub mod api {
                     #[codec(index = 13)]
                     #[doc = "Origin is not allowed to perform the operation."]
                     NotAllowed,
+                    #[codec(index = 14)]
+                    #[doc = "Address not allowed to deploy contracts either via CREATE or CALL(CREATE)."]
+                    CreateOriginNotAllowed,
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -49185,6 +52127,27 @@ pub mod api {
                             runtime_types::pallet_multisig::Timepoint<::core::primitive::u32>,
                         call_hash: [::core::primitive::u8; 32usize],
                     },
+                    #[codec(index = 4)]
+                    #[doc = "Poke the deposit reserved for an existing multisig operation."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_ and must be the original depositor of"]
+                    #[doc = "the multisig operation."]
+                    #[doc = ""]
+                    #[doc = "The transaction fee is waived if the deposit amount has changed."]
+                    #[doc = ""]
+                    #[doc = "- `threshold`: The total number of approvals needed for this multisig."]
+                    #[doc = "- `other_signatories`: The accounts (other than the sender) who are part of the"]
+                    #[doc = "  multisig."]
+                    #[doc = "- `call_hash`: The hash of the call this deposit is reserved for."]
+                    #[doc = ""]
+                    #[doc = "Emits `DepositPoked` if successful."]
+                    poke_deposit {
+                        threshold: ::core::primitive::u16,
+                        other_signatories: ::subxt::ext::subxt_core::alloc::vec::Vec<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                        >,
+                        call_hash: [::core::primitive::u8; 32usize],
+                    },
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -49226,10 +52189,11 @@ pub mod api {
                     #[doc = "The sender was contained in the other signatories; it shouldn't be."]
                     SenderInSignatories,
                     #[codec(index = 7)]
-                    #[doc = "Multisig operation not found when attempting to cancel."]
+                    #[doc = "Multisig operation not found in storage."]
                     NotFound,
                     #[codec(index = 8)]
-                    #[doc = "Only the account that originally created the multisig is able to cancel it."]
+                    #[doc = "Only the account that originally created the multisig is able to cancel it or update"]
+                    #[doc = "its deposits."]
                     NotOwner,
                     #[codec(index = 9)]
                     #[doc = "No timepoint was given, yet the multisig operation is already underway."]
@@ -49300,6 +52264,14 @@ pub mod api {
                             runtime_types::pallet_multisig::Timepoint<::core::primitive::u32>,
                         multisig: ::subxt::ext::subxt_core::utils::AccountId32,
                         call_hash: [::core::primitive::u8; 32usize],
+                    },
+                    #[codec(index = 4)]
+                    #[doc = "The deposit for a multisig operation has been updated/poked."]
+                    DepositPoked {
+                        who: ::subxt::ext::subxt_core::utils::AccountId32,
+                        call_hash: [::core::primitive::u8; 32usize],
+                        old_deposit: ::core::primitive::u64,
+                        new_deposit: ::core::primitive::u64,
                     },
                 }
             }
@@ -49394,7 +52366,7 @@ pub mod api {
                         hash: ::subxt::ext::subxt_core::utils::H256,
                     },
                     #[codec(index = 4)]
-                    #[doc = "Ensure that the a bulk of pre-images is upgraded."]
+                    #[doc = "Ensure that the bulk of pre-images is upgraded."]
                     #[doc = ""]
                     #[doc = "The caller pays no fee if at least 90% of pre-images were successfully updated."]
                     ensure_updated {
@@ -49550,369 +52522,6 @@ pub mod api {
                     count: ::core::primitive::u32,
                     maybe_len: ::core::option::Option<::core::primitive::u32>,
                 },
-            }
-        }
-        pub mod pallet_proxy {
-            use super::runtime_types;
-            pub mod pallet {
-                use super::runtime_types;
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
-                pub enum Call {
-                    #[codec(index = 0)]
-                    #[doc = "Dispatch the given `call` from an account that the sender is authorised for through"]
-                    #[doc = "`add_proxy`."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
-                    #[doc = "- `force_proxy_type`: Specify the exact proxy type to be used and checked for this call."]
-                    #[doc = "- `call`: The call to be made by the `real` account."]
-                    proxy {
-                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        force_proxy_type: ::core::option::Option<
-                            runtime_types::subtensor_runtime_common::ProxyType,
-                        >,
-                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "Register a proxy account for the sender that is able to make calls on its behalf."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "- `proxy`: The account that the `caller` would like to make a proxy."]
-                    #[doc = "- `proxy_type`: The permissions allowed for this proxy account."]
-                    #[doc = "- `delay`: The announcement period required of the initial proxy. Will generally be"]
-                    #[doc = "zero."]
-                    add_proxy {
-                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
-                        delay: ::core::primitive::u32,
-                    },
-                    #[codec(index = 2)]
-                    #[doc = "Unregister a proxy account for the sender."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "- `proxy`: The account that the `caller` would like to remove as a proxy."]
-                    #[doc = "- `proxy_type`: The permissions currently enabled for the removed proxy account."]
-                    remove_proxy {
-                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
-                        delay: ::core::primitive::u32,
-                    },
-                    #[codec(index = 3)]
-                    #[doc = "Unregister all proxy accounts for the sender."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    #[doc = ""]
-                    #[doc = "WARNING: This may be called on accounts created by `pure`, however if done, then"]
-                    #[doc = "the unreserved fees will be inaccessible. **All access to this account will be lost.**"]
-                    remove_proxies,
-                    #[codec(index = 4)]
-                    #[doc = "Spawn a fresh new account that is guaranteed to be otherwise inaccessible, and"]
-                    #[doc = "initialize it with a proxy of `proxy_type` for `origin` sender."]
-                    #[doc = ""]
-                    #[doc = "Requires a `Signed` origin."]
-                    #[doc = ""]
-                    #[doc = "- `proxy_type`: The type of the proxy that the sender will be registered as over the"]
-                    #[doc = "new account. This will almost always be the most permissive `ProxyType` possible to"]
-                    #[doc = "  allow for maximum flexibility."]
-                    #[doc = "- `index`: A disambiguation index, in case this is called multiple times in the same"]
-                    #[doc = "  transaction (e.g. with `utility::batch`). Unless you're using `batch` you probably just"]
-                    #[doc = "  want to use `0`."]
-                    #[doc = "- `delay`: The announcement period required of the initial proxy. Will generally be"]
-                    #[doc = "  zero."]
-                    #[doc = ""]
-                    #[doc = "Fails with `Duplicate` if this has already been called in this transaction, from the"]
-                    #[doc = "same sender, with the same parameters."]
-                    #[doc = ""]
-                    #[doc = "Fails if there are insufficient funds to pay for deposit."]
-                    create_pure {
-                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
-                        delay: ::core::primitive::u32,
-                        index: ::core::primitive::u16,
-                    },
-                    #[codec(index = 5)]
-                    #[doc = "Removes a previously spawned pure proxy."]
-                    #[doc = ""]
-                    #[doc = "WARNING: **All access to this account will be lost.** Any funds held in it will be"]
-                    #[doc = "inaccessible."]
-                    #[doc = ""]
-                    #[doc = "Requires a `Signed` origin, and the sender account must have been created by a call to"]
-                    #[doc = "`pure` with corresponding parameters."]
-                    #[doc = ""]
-                    #[doc = "- `spawner`: The account that originally called `pure` to create this account."]
-                    #[doc = "- `index`: The disambiguation index originally passed to `pure`. Probably `0`."]
-                    #[doc = "- `proxy_type`: The proxy type originally passed to `pure`."]
-                    #[doc = "- `height`: The height of the chain when the call to `pure` was processed."]
-                    #[doc = "- `ext_index`: The extrinsic index in which the call to `pure` was processed."]
-                    #[doc = ""]
-                    #[doc = "Fails with `NoPermission` in case the caller is not a previously created pure"]
-                    #[doc = "account whose `pure` call has corresponding parameters."]
-                    kill_pure {
-                        spawner: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
-                        index: ::core::primitive::u16,
-                        #[codec(compact)]
-                        height: ::core::primitive::u32,
-                        #[codec(compact)]
-                        ext_index: ::core::primitive::u32,
-                    },
-                    #[codec(index = 6)]
-                    #[doc = "Publish the hash of a proxy-call that will be made in the future."]
-                    #[doc = ""]
-                    #[doc = "This must be called some number of blocks before the corresponding `proxy` is attempted"]
-                    #[doc = "if the delay associated with the proxy relationship is greater than zero."]
-                    #[doc = ""]
-                    #[doc = "No more than `MaxPending` announcements may be made at any one time."]
-                    #[doc = ""]
-                    #[doc = "This will take a deposit of `AnnouncementDepositFactor` as well as"]
-                    #[doc = "`AnnouncementDepositBase` if there are no other pending announcements."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_ and a proxy of `real`."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
-                    #[doc = "- `call_hash`: The hash of the call to be made by the `real` account."]
-                    announce {
-                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        call_hash: ::subxt::ext::subxt_core::utils::H256,
-                    },
-                    #[codec(index = 7)]
-                    #[doc = "Remove a given announcement."]
-                    #[doc = ""]
-                    #[doc = "May be called by a proxy account to remove a call they previously announced and return"]
-                    #[doc = "the deposit."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
-                    #[doc = "- `call_hash`: The hash of the call to be made by the `real` account."]
-                    remove_announcement {
-                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        call_hash: ::subxt::ext::subxt_core::utils::H256,
-                    },
-                    #[codec(index = 8)]
-                    #[doc = "Remove the given announcement of a delegate."]
-                    #[doc = ""]
-                    #[doc = "May be called by a target (proxied) account to remove a call that one of their delegates"]
-                    #[doc = "(`delegate`) has announced they want to execute. The deposit is returned."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "- `delegate`: The account that previously announced the call."]
-                    #[doc = "- `call_hash`: The hash of the call to be made."]
-                    reject_announcement {
-                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        call_hash: ::subxt::ext::subxt_core::utils::H256,
-                    },
-                    #[codec(index = 9)]
-                    #[doc = "Dispatch the given `call` from an account that the sender is authorized for through"]
-                    #[doc = "`add_proxy`."]
-                    #[doc = ""]
-                    #[doc = "Removes any corresponding announcement(s)."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    #[doc = ""]
-                    #[doc = "Parameters:"]
-                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
-                    #[doc = "- `force_proxy_type`: Specify the exact proxy type to be used and checked for this call."]
-                    #[doc = "- `call`: The call to be made by the `real` account."]
-                    proxy_announced {
-                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
-                            ::subxt::ext::subxt_core::utils::AccountId32,
-                            (),
-                        >,
-                        force_proxy_type: ::core::option::Option<
-                            runtime_types::subtensor_runtime_common::ProxyType,
-                        >,
-                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                    },
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "The `Error` enum of this pallet."]
-                pub enum Error {
-                    #[codec(index = 0)]
-                    #[doc = "There are too many proxies registered or too many announcements pending."]
-                    TooMany,
-                    #[codec(index = 1)]
-                    #[doc = "Proxy registration not found."]
-                    NotFound,
-                    #[codec(index = 2)]
-                    #[doc = "Sender is not a proxy of the account to be proxied."]
-                    NotProxy,
-                    #[codec(index = 3)]
-                    #[doc = "A call which is incompatible with the proxy type's filter was attempted."]
-                    Unproxyable,
-                    #[codec(index = 4)]
-                    #[doc = "Account is already a proxy."]
-                    Duplicate,
-                    #[codec(index = 5)]
-                    #[doc = "Call may not be made by proxy because it may escalate its privileges."]
-                    NoPermission,
-                    #[codec(index = 6)]
-                    #[doc = "Announcement, if made at all, was made too recently."]
-                    Unannounced,
-                    #[codec(index = 7)]
-                    #[doc = "Cannot add self as proxy."]
-                    NoSelfProxy,
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "The `Event` enum of this pallet"]
-                pub enum Event {
-                    #[codec(index = 0)]
-                    #[doc = "A proxy was executed correctly, with the given."]
-                    ProxyExecuted {
-                        result:
-                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "A pure account has been created by new proxy with given"]
-                    #[doc = "disambiguation index and proxy type."]
-                    PureCreated {
-                        pure: ::subxt::ext::subxt_core::utils::AccountId32,
-                        who: ::subxt::ext::subxt_core::utils::AccountId32,
-                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
-                        disambiguation_index: ::core::primitive::u16,
-                    },
-                    #[codec(index = 2)]
-                    #[doc = "An announcement was placed to make a call in the future."]
-                    Announced {
-                        real: ::subxt::ext::subxt_core::utils::AccountId32,
-                        proxy: ::subxt::ext::subxt_core::utils::AccountId32,
-                        call_hash: ::subxt::ext::subxt_core::utils::H256,
-                    },
-                    #[codec(index = 3)]
-                    #[doc = "A proxy was added."]
-                    ProxyAdded {
-                        delegator: ::subxt::ext::subxt_core::utils::AccountId32,
-                        delegatee: ::subxt::ext::subxt_core::utils::AccountId32,
-                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
-                        delay: ::core::primitive::u32,
-                    },
-                    #[codec(index = 4)]
-                    #[doc = "A proxy was removed."]
-                    ProxyRemoved {
-                        delegator: ::subxt::ext::subxt_core::utils::AccountId32,
-                        delegatee: ::subxt::ext::subxt_core::utils::AccountId32,
-                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
-                        delay: ::core::primitive::u32,
-                    },
-                }
-            }
-            #[derive(
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                Clone,
-                Debug,
-            )]
-            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-            #[codec(dumb_trait_bound)]
-            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
-            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
-            pub struct Announcement<_0, _1, _2> {
-                pub real: _0,
-                pub call_hash: _1,
-                pub height: _2,
-            }
-            #[derive(
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                Clone,
-                Debug,
-            )]
-            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-            #[codec(dumb_trait_bound)]
-            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
-            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
-            pub struct ProxyDefinition<_0, _1, _2> {
-                pub delegate: _0,
-                pub proxy_type: _1,
-                pub delay: _2,
             }
         }
         pub mod pallet_registry {
@@ -50746,6 +53355,9 @@ pub mod api {
                         task: (::core::primitive::u32, ::core::primitive::u32),
                         id: ::core::option::Option<[::core::primitive::u8; 32usize]>,
                     },
+                    #[codec(index = 9)]
+                    #[doc = "Agenda is incomplete from `when`."]
+                    AgendaIncomplete { when: ::core::primitive::u32 },
                 }
             }
             #[derive(
@@ -50875,7 +53487,7 @@ pub mod api {
                     #[doc = "\t- On successfully setting the weights on chain."]
                     #[doc = ""]
                     #[doc = "# Raises:"]
-                    #[doc = "* 'SubNetworkDoesNotExist':"]
+                    #[doc = "* 'MechanismDoesNotExist':"]
                     #[doc = "\t- Attempting to set weights on a non-existent network."]
                     #[doc = ""]
                     #[doc = "* 'NotRegistered':"]
@@ -50900,6 +53512,75 @@ pub mod api {
                     #[doc = "\t- Attempting to set weights with max value exceeding limit."]
                     set_weights {
                         netuid: ::core::primitive::u16,
+                        dests: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
+                        weights: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
+                        version_key: ::core::primitive::u64,
+                    },
+                    #[codec(index = 119)]
+                    #[doc = "--- Sets the caller weights for the incentive mechanism for mechanisms. The call"]
+                    #[doc = "can be made from the hotkey account so is potentially insecure, however, the damage"]
+                    #[doc = "of changing weights is minimal if caught early. This function includes all the"]
+                    #[doc = "checks that the passed weights meet the requirements. Stored as u16s they represent"]
+                    #[doc = "rational values in the range [0,1] which sum to 1 and can be interpreted as"]
+                    #[doc = "probabilities. The specific weights determine how inflation propagates outward"]
+                    #[doc = "from this peer."]
+                    #[doc = ""]
+                    #[doc = "Note: The 16 bit integers weights should represent 1.0 as the max u16."]
+                    #[doc = "However, the function normalizes all integers to u16_max anyway. This means that if the sum of all"]
+                    #[doc = "elements is larger or smaller than the amount of elements * u16_max, all elements"]
+                    #[doc = "will be corrected for this deviation."]
+                    #[doc = ""]
+                    #[doc = "# Args:"]
+                    #[doc = "* `origin`: (<T as frame_system::Config>Origin):"]
+                    #[doc = "    - The caller, a hotkey who wishes to set their weights."]
+                    #[doc = ""]
+                    #[doc = "* `netuid` (u16):"]
+                    #[doc = "\t- The network uid we are setting these weights on."]
+                    #[doc = ""]
+                    #[doc = "* `mecid` (`u8`):"]
+                    #[doc = "  - The u8 mechnism identifier."]
+                    #[doc = ""]
+                    #[doc = "* `dests` (Vec<u16>):"]
+                    #[doc = "\t- The edge endpoint for the weight, i.e. j for w_ij."]
+                    #[doc = ""]
+                    #[doc = "* 'weights' (Vec<u16>):"]
+                    #[doc = "\t- The u16 integer encoded weights. Interpreted as rational"]
+                    #[doc = "\t\tvalues in the range [0,1]. They must sum to in32::MAX."]
+                    #[doc = ""]
+                    #[doc = "* 'version_key' ( u64 ):"]
+                    #[doc = "\t- The network version key to check if the validator is up to date."]
+                    #[doc = ""]
+                    #[doc = "# Event:"]
+                    #[doc = "* WeightsSet;"]
+                    #[doc = "\t- On successfully setting the weights on chain."]
+                    #[doc = ""]
+                    #[doc = "# Raises:"]
+                    #[doc = "* 'MechanismDoesNotExist':"]
+                    #[doc = "\t- Attempting to set weights on a non-existent network."]
+                    #[doc = ""]
+                    #[doc = "* 'NotRegistered':"]
+                    #[doc = "\t- Attempting to set weights from a non registered account."]
+                    #[doc = ""]
+                    #[doc = "* 'WeightVecNotEqualSize':"]
+                    #[doc = "\t- Attempting to set weights with uids not of same length."]
+                    #[doc = ""]
+                    #[doc = "* 'DuplicateUids':"]
+                    #[doc = "\t- Attempting to set weights with duplicate uids."]
+                    #[doc = ""]
+                    #[doc = "    * 'UidsLengthExceedUidsInSubNet':"]
+                    #[doc = "\t- Attempting to set weights above the max allowed uids."]
+                    #[doc = ""]
+                    #[doc = "* 'UidVecContainInvalidOne':"]
+                    #[doc = "\t- Attempting to set weights with invalid uids."]
+                    #[doc = ""]
+                    #[doc = "* 'WeightVecLengthIsLow':"]
+                    #[doc = "\t- Attempting to set weights with fewer weights than min."]
+                    #[doc = ""]
+                    #[doc = "* 'MaxWeightExceeded':"]
+                    #[doc = "\t- Attempting to set weights with max value exceeding limit."]
+                    set_mechanism_weights {
+                        netuid: ::core::primitive::u16,
+                        mecid: ::core::primitive::u8,
                         dests: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
                         weights: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
                         version_key: ::core::primitive::u64,
@@ -50970,6 +53651,34 @@ pub mod api {
                     #[doc = ""]
                     commit_weights {
                         netuid: ::core::primitive::u16,
+                        commit_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 115)]
+                    #[doc = "---- Used to commit a hash of your weight values to later be revealed for mechanisms."]
+                    #[doc = ""]
+                    #[doc = "# Args:"]
+                    #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                    #[doc = "  - The signature of the committing hotkey."]
+                    #[doc = ""]
+                    #[doc = "* `netuid` (`u16`):"]
+                    #[doc = "  - The u16 network identifier."]
+                    #[doc = ""]
+                    #[doc = "* `mecid` (`u8`):"]
+                    #[doc = "  - The u8 mechanism identifier."]
+                    #[doc = ""]
+                    #[doc = "* `commit_hash` (`H256`):"]
+                    #[doc = "  - The hash representing the committed weights."]
+                    #[doc = ""]
+                    #[doc = "# Raises:"]
+                    #[doc = "* `CommitRevealDisabled`:"]
+                    #[doc = "  - Attempting to commit when the commit-reveal mechanism is disabled."]
+                    #[doc = ""]
+                    #[doc = "* `TooManyUnrevealedCommits`:"]
+                    #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
+                    #[doc = ""]
+                    commit_mechanism_weights {
+                        netuid: ::core::primitive::u16,
+                        mecid: ::core::primitive::u8,
                         commit_hash: ::subxt::ext::subxt_core::utils::H256,
                     },
                     #[codec(index = 100)]
@@ -51048,7 +53757,56 @@ pub mod api {
                         salt: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
                         version_key: ::core::primitive::u64,
                     },
-                    #[codec(index = 99)]
+                    #[codec(index = 116)]
+                    #[doc = "---- Used to reveal the weights for a previously committed hash for mechanisms."]
+                    #[doc = ""]
+                    #[doc = "# Args:"]
+                    #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                    #[doc = "  - The signature of the revealing hotkey."]
+                    #[doc = ""]
+                    #[doc = "* `netuid` (`u16`):"]
+                    #[doc = "  - The u16 network identifier."]
+                    #[doc = ""]
+                    #[doc = "* `mecid` (`u8`):"]
+                    #[doc = "  - The u8 mechanism identifier."]
+                    #[doc = ""]
+                    #[doc = "* `uids` (`Vec<u16>`):"]
+                    #[doc = "  - The uids for the weights being revealed."]
+                    #[doc = ""]
+                    #[doc = "* `values` (`Vec<u16>`):"]
+                    #[doc = "  - The values of the weights being revealed."]
+                    #[doc = ""]
+                    #[doc = "* `salt` (`Vec<u16>`):"]
+                    #[doc = "  - The salt used to generate the commit hash."]
+                    #[doc = ""]
+                    #[doc = "* `version_key` (`u64`):"]
+                    #[doc = "  - The network version key."]
+                    #[doc = ""]
+                    #[doc = "# Raises:"]
+                    #[doc = "* `CommitRevealDisabled`:"]
+                    #[doc = "  - Attempting to reveal weights when the commit-reveal mechanism is disabled."]
+                    #[doc = ""]
+                    #[doc = "* `NoWeightsCommitFound`:"]
+                    #[doc = "  - Attempting to reveal weights without an existing commit."]
+                    #[doc = ""]
+                    #[doc = "* `ExpiredWeightCommit`:"]
+                    #[doc = "  - Attempting to reveal a weight commit that has expired."]
+                    #[doc = ""]
+                    #[doc = "* `RevealTooEarly`:"]
+                    #[doc = "  - Attempting to reveal weights outside the valid reveal period."]
+                    #[doc = ""]
+                    #[doc = "* `InvalidRevealCommitHashNotMatch`:"]
+                    #[doc = "  - The revealed hash does not match any committed hash."]
+                    #[doc = ""]
+                    reveal_mechanism_weights {
+                        netuid: ::core::primitive::u16,
+                        mecid: ::core::primitive::u8,
+                        uids: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
+                        values: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
+                        salt: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
+                        version_key: ::core::primitive::u64,
+                    },
+                    #[codec(index = 117)]
                     #[doc = "---- Used to commit encrypted commit-reveal v3 weight values to later be revealed."]
                     #[doc = ""]
                     #[doc = "# Args:"]
@@ -51078,8 +53836,41 @@ pub mod api {
                     #[doc = "* `TooManyUnrevealedCommits`:"]
                     #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
                     #[doc = ""]
-                    commit_crv3_weights {
+                    #[doc = "---- Used to commit encrypted commit-reveal v3 weight values to later be revealed for mechanisms."]
+                    #[doc = ""]
+                    #[doc = "# Args:"]
+                    #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                    #[doc = "  - The committing hotkey."]
+                    #[doc = ""]
+                    #[doc = "* `netuid` (`u16`):"]
+                    #[doc = "  - The u16 network identifier."]
+                    #[doc = ""]
+                    #[doc = "* `mecid` (`u8`):"]
+                    #[doc = "  - The u8 mechanism identifier."]
+                    #[doc = ""]
+                    #[doc = "* `commit` (`Vec<u8>`):"]
+                    #[doc = "  - The encrypted compressed commit."]
+                    #[doc = "    The steps for this are:"]
+                    #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                    #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                    #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                    #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                    #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                    #[doc = ""]
+                    #[doc = "* reveal_round (`u64`):"]
+                    #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                    #[doc = "     epoch."]
+                    #[doc = ""]
+                    #[doc = "# Raises:"]
+                    #[doc = "* `CommitRevealV3Disabled`:"]
+                    #[doc = "  - Attempting to commit when the commit-reveal mechanism is disabled."]
+                    #[doc = ""]
+                    #[doc = "* `TooManyUnrevealedCommits`:"]
+                    #[doc = "  - Attempting to commit when the user has more than the allowed limit of unrevealed commits."]
+                    #[doc = ""]
+                    commit_crv3_mechanism_weights {
                         netuid: ::core::primitive::u16,
+                        mecid: ::core::primitive::u8,
                         commit: runtime_types::bounded_collections::bounded_vec::BoundedVec<
                             ::core::primitive::u8,
                         >,
@@ -51138,101 +53929,6 @@ pub mod api {
                         >,
                         version_keys:
                             ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u64>,
-                    },
-                    #[codec(index = 8)]
-                    #[doc = "# Args:"]
-                    #[doc = "* `origin`: (<T as frame_system::Config>Origin):"]
-                    #[doc = "\t- The caller, a hotkey who wishes to set their weights."]
-                    #[doc = ""]
-                    #[doc = "* `netuid` (u16):"]
-                    #[doc = "\t- The network uid we are setting these weights on."]
-                    #[doc = ""]
-                    #[doc = "* `hotkey` (T::AccountId):"]
-                    #[doc = "\t- The hotkey associated with the operation and the calling coldkey."]
-                    #[doc = ""]
-                    #[doc = "* `dests` (Vec<u16>):"]
-                    #[doc = "\t- The edge endpoint for the weight, i.e. j for w_ij."]
-                    #[doc = ""]
-                    #[doc = "* 'weights' (Vec<u16>):"]
-                    #[doc = "\t- The u16 integer encoded weights. Interpreted as rational"]
-                    #[doc = "\t\tvalues in the range [0,1]. They must sum to in32::MAX."]
-                    #[doc = ""]
-                    #[doc = "* 'version_key' ( u64 ):"]
-                    #[doc = "\t- The network version key to check if the validator is up to date."]
-                    #[doc = ""]
-                    #[doc = "# Event:"]
-                    #[doc = ""]
-                    #[doc = "* WeightsSet;"]
-                    #[doc = "\t- On successfully setting the weights on chain."]
-                    #[doc = ""]
-                    #[doc = "# Raises:"]
-                    #[doc = ""]
-                    #[doc = "* NonAssociatedColdKey;"]
-                    #[doc = "\t- Attempting to set weights on a non-associated cold key."]
-                    #[doc = ""]
-                    #[doc = "* 'SubNetworkDoesNotExist':"]
-                    #[doc = "\t- Attempting to set weights on a non-existent network."]
-                    #[doc = ""]
-                    #[doc = "* 'NotRootSubnet':"]
-                    #[doc = "\t- Attempting to set weights on a subnet that is not the root network."]
-                    #[doc = ""]
-                    #[doc = "* 'WeightVecNotEqualSize':"]
-                    #[doc = "\t- Attempting to set weights with uids not of same length."]
-                    #[doc = ""]
-                    #[doc = "* 'UidVecContainInvalidOne':"]
-                    #[doc = "\t- Attempting to set weights with invalid uids."]
-                    #[doc = ""]
-                    #[doc = "* 'NotRegistered':"]
-                    #[doc = "\t- Attempting to set weights from a non registered account."]
-                    #[doc = ""]
-                    #[doc = "* 'WeightVecLengthIsLow':"]
-                    #[doc = "\t- Attempting to set weights with fewer weights than min."]
-                    #[doc = ""]
-                    #[doc = " * 'IncorrectWeightVersionKey':"]
-                    #[doc = "     - Attempting to set weights with the incorrect network version key."]
-                    #[doc = ""]
-                    #[doc = " * 'SettingWeightsTooFast':"]
-                    #[doc = "     - Attempting to set weights too fast."]
-                    #[doc = ""]
-                    #[doc = "* 'WeightVecLengthIsLow':"]
-                    #[doc = "\t- Attempting to set weights with fewer weights than min."]
-                    #[doc = ""]
-                    #[doc = "* 'MaxWeightExceeded':"]
-                    #[doc = "\t- Attempting to set weights with max value exceeding limit."]
-                    #[doc = ""]
-                    set_tao_weights {
-                        netuid: ::core::primitive::u16,
-                        hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
-                        dests: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
-                        weights: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u16>,
-                        version_key: ::core::primitive::u64,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "--- Sets the key as a delegate."]
-                    #[doc = ""]
-                    #[doc = "# Args:"]
-                    #[doc = "* 'origin': (<T as frame_system::Config>Origin):"]
-                    #[doc = "\t- The signature of the caller's coldkey."]
-                    #[doc = ""]
-                    #[doc = "* 'hotkey' (T::AccountId):"]
-                    #[doc = "\t- The hotkey we are delegating (must be owned by the coldkey.)"]
-                    #[doc = ""]
-                    #[doc = "* 'take' (u64):"]
-                    #[doc = "\t- The stake proportion that this hotkey takes from delegations."]
-                    #[doc = ""]
-                    #[doc = "# Event:"]
-                    #[doc = "* DelegateAdded;"]
-                    #[doc = "\t- On successfully setting a hotkey as a delegate."]
-                    #[doc = ""]
-                    #[doc = "# Raises:"]
-                    #[doc = "* 'NotRegistered':"]
-                    #[doc = "\t- The hotkey we are delegating is not registered on the network."]
-                    #[doc = ""]
-                    #[doc = "* 'NonAssociatedColdKey':"]
-                    #[doc = "\t- The hotkey we are delegating is not owned by the calling coldket."]
-                    #[doc = ""]
-                    become_delegate {
-                        hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
                     },
                     #[codec(index = 65)]
                     #[doc = "--- Allows delegates to decrease its take value."]
@@ -51420,7 +54116,7 @@ pub mod api {
                     #[doc = "\t- On successfully serving the axon info."]
                     #[doc = ""]
                     #[doc = "# Raises:"]
-                    #[doc = "* 'SubNetworkDoesNotExist':"]
+                    #[doc = "* 'MechanismDoesNotExist':"]
                     #[doc = "\t- Attempting to set weights on a non-existent network."]
                     #[doc = ""]
                     #[doc = "* 'NotRegistered':"]
@@ -51486,7 +54182,7 @@ pub mod api {
                     #[doc = "\t- On successfully serving the axon info."]
                     #[doc = ""]
                     #[doc = "# Raises:"]
-                    #[doc = "* 'SubNetworkDoesNotExist':"]
+                    #[doc = "* 'MechanismDoesNotExist':"]
                     #[doc = "\t- Attempting to set weights on a non-existent network."]
                     #[doc = ""]
                     #[doc = "* 'NotRegistered':"]
@@ -51571,7 +54267,7 @@ pub mod api {
                     #[doc = "\t- On successfully registering a uid to a neuron slot on a subnetwork."]
                     #[doc = ""]
                     #[doc = "# Raises:"]
-                    #[doc = "* 'SubNetworkDoesNotExist':"]
+                    #[doc = "* 'MechanismDoesNotExist':"]
                     #[doc = "\t- Attempting to register to a non existent network."]
                     #[doc = ""]
                     #[doc = "* 'TooManyRegistrationsThisBlock':"]
@@ -51801,7 +54497,7 @@ pub mod api {
                     #[doc = "    - On successfully registering a child to a hotkey."]
                     #[doc = ""]
                     #[doc = "# Errors:"]
-                    #[doc = "* `SubNetworkDoesNotExist`:"]
+                    #[doc = "* `MechanismDoesNotExist`:"]
                     #[doc = "    - Attempting to register to a non-existent network."]
                     #[doc = "* `RegistrationNotPermittedOnRootSubnet`:"]
                     #[doc = "    - Attempting to register a child on the root network."]
@@ -51863,22 +54559,6 @@ pub mod api {
                     schedule_swap_coldkey {
                         new_coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
                     },
-                    #[codec(index = 74)]
-                    #[doc = "Schedule the dissolution of a network at a specified block number."]
-                    #[doc = ""]
-                    #[doc = "# Arguments"]
-                    #[doc = ""]
-                    #[doc = "* `origin` - The origin of the call, must be signed by the sender."]
-                    #[doc = "* `netuid` - The u16 network identifier to be dissolved."]
-                    #[doc = ""]
-                    #[doc = "# Returns"]
-                    #[doc = ""]
-                    #[doc = "Returns a `DispatchResultWithPostInfo` indicating success or failure of the operation."]
-                    #[doc = ""]
-                    #[doc = "# Weight"]
-                    #[doc = ""]
-                    #[doc = "Weight is calculated based on the number of database reads and writes."]
-                    schedule_dissolve_network { netuid: ::core::primitive::u16 },
                     #[codec(index = 68)]
                     #[doc = "---- Set prometheus information for the neuron."]
                     #[doc = "# Args:"]
@@ -52259,9 +54939,8 @@ pub mod api {
                     #[doc = "```"]
                     #[doc = ""]
                     #[doc = "# Arguments"]
-                    #[doc = "* `origin` - The origin of the transaction, which must be signed by the coldkey that owns the `hotkey`."]
+                    #[doc = "* `origin` - The origin of the transaction, which must be signed by the `hotkey`."]
                     #[doc = "* `netuid` - The netuid that the `hotkey` belongs to."]
-                    #[doc = "* `hotkey` - The hotkey associated with the `origin`."]
                     #[doc = "* `evm_key` - The EVM key to associate with the `hotkey`."]
                     #[doc = "* `block_number` - The block number used in the `signature`."]
                     #[doc = "* `signature` - A signed message by the `evm_key` containing the `hotkey` and the hashed `block_number`."]
@@ -52269,7 +54948,6 @@ pub mod api {
                     #[doc = "# Errors"]
                     #[doc = "Returns an error if:"]
                     #[doc = "* The transaction is not signed."]
-                    #[doc = "* The hotkey is not owned by the origin coldkey."]
                     #[doc = "* The hotkey does not belong to the subnet identified by the netuid."]
                     #[doc = "* The EVM key cannot be recovered from the signature."]
                     #[doc = "* The EVM key recovered from the signature does not match the given EVM key."]
@@ -52369,6 +55047,116 @@ pub mod api {
                         lease_id: ::core::primitive::u32,
                         hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
                     },
+                    #[codec(index = 112)]
+                    #[doc = "Updates the symbol for a subnet."]
+                    #[doc = ""]
+                    #[doc = "# Arguments"]
+                    #[doc = "* `origin` - The origin of the call, which must be the subnet owner or root."]
+                    #[doc = "* `netuid` - The unique identifier of the subnet on which the symbol is being set."]
+                    #[doc = "* `symbol` - The symbol to set for the subnet."]
+                    #[doc = ""]
+                    #[doc = "# Errors"]
+                    #[doc = "Returns an error if:"]
+                    #[doc = "* The transaction is not signed by the subnet owner."]
+                    #[doc = "* The symbol does not exist."]
+                    #[doc = "* The symbol is already in use by another subnet."]
+                    #[doc = ""]
+                    #[doc = "# Events"]
+                    #[doc = "Emits a `SymbolUpdated` event on success."]
+                    update_symbol {
+                        netuid: ::core::primitive::u16,
+                        symbol: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u8>,
+                    },
+                    #[codec(index = 113)]
+                    #[doc = "---- Used to commit timelock encrypted commit-reveal weight values to later be revealed."]
+                    #[doc = ""]
+                    #[doc = "# Args:"]
+                    #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                    #[doc = "  - The committing hotkey."]
+                    #[doc = ""]
+                    #[doc = "* `netuid` (`u16`):"]
+                    #[doc = "  - The u16 network identifier."]
+                    #[doc = ""]
+                    #[doc = "* `commit` (`Vec<u8>`):"]
+                    #[doc = "  - The encrypted compressed commit."]
+                    #[doc = "    The steps for this are:"]
+                    #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                    #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                    #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                    #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                    #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                    #[doc = ""]
+                    #[doc = "* reveal_round (`u64`):"]
+                    #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                    #[doc = "     epoch."]
+                    #[doc = ""]
+                    #[doc = "* commit_reveal_version (`u16`):"]
+                    #[doc = "    - The client (bittensor-drand) version"]
+                    commit_timelocked_weights {
+                        netuid: ::core::primitive::u16,
+                        commit: runtime_types::bounded_collections::bounded_vec::BoundedVec<
+                            ::core::primitive::u8,
+                        >,
+                        reveal_round: ::core::primitive::u64,
+                        commit_reveal_version: ::core::primitive::u16,
+                    },
+                    #[codec(index = 114)]
+                    #[doc = "Set the autostake destination hotkey for a coldkey."]
+                    #[doc = ""]
+                    #[doc = "The caller selects a hotkey where all future rewards"]
+                    #[doc = "will be automatically staked."]
+                    #[doc = ""]
+                    #[doc = "# Args:"]
+                    #[doc = "* `origin` - (<T as frame_system::Config>::Origin):"]
+                    #[doc = "    - The signature of the caller's coldkey."]
+                    #[doc = ""]
+                    #[doc = "* `hotkey` (T::AccountId):"]
+                    #[doc = "    - The hotkey account to designate as the autostake destination."]
+                    set_coldkey_auto_stake_hotkey {
+                        hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
+                    },
+                    #[codec(index = 118)]
+                    #[doc = "---- Used to commit timelock encrypted commit-reveal weight values to later be revealed for"]
+                    #[doc = "a mechanism."]
+                    #[doc = ""]
+                    #[doc = "# Args:"]
+                    #[doc = "* `origin`: (`<T as frame_system::Config>::RuntimeOrigin`):"]
+                    #[doc = "  - The committing hotkey."]
+                    #[doc = ""]
+                    #[doc = "* `netuid` (`u16`):"]
+                    #[doc = "  - The u16 network identifier."]
+                    #[doc = ""]
+                    #[doc = "* `mecid` (`u8`):"]
+                    #[doc = "  - The u8 mechanism identifier."]
+                    #[doc = ""]
+                    #[doc = "* `commit` (`Vec<u8>`):"]
+                    #[doc = "  - The encrypted compressed commit."]
+                    #[doc = "    The steps for this are:"]
+                    #[doc = "    1. Instantiate [`WeightsTlockPayload`]"]
+                    #[doc = "    2. Serialize it using the `parity_scale_codec::Encode` trait"]
+                    #[doc = "    3. Encrypt it following the steps (here)[https://github.com/ideal-lab5/tle/blob/f8e6019f0fb02c380ebfa6b30efb61786dede07b/timelock/src/tlock.rs#L283-L336]"]
+                    #[doc = "       to produce a [`TLECiphertext<TinyBLS381>`] type."]
+                    #[doc = "    4. Serialize and compress using the `ark-serialize` `CanonicalSerialize` trait."]
+                    #[doc = ""]
+                    #[doc = "* reveal_round (`u64`):"]
+                    #[doc = "   - The drand reveal round which will be avaliable during epoch `n+1` from the current"]
+                    #[doc = "     epoch."]
+                    #[doc = ""]
+                    #[doc = "* commit_reveal_version (`u16`):"]
+                    #[doc = "    - The client (bittensor-drand) version"]
+                    commit_timelocked_mechanism_weights {
+                        netuid: ::core::primitive::u16,
+                        mecid: ::core::primitive::u8,
+                        commit: runtime_types::bounded_collections::bounded_vec::BoundedVec<
+                            ::core::primitive::u8,
+                        >,
+                        reveal_round: ::core::primitive::u64,
+                        commit_reveal_version: ::core::primitive::u16,
+                    },
+                    #[codec(index = 120)]
+                    #[doc = "Remove a subnetwork"]
+                    #[doc = "The caller must be root"]
+                    root_dissolve_network { netuid: ::core::primitive::u16 },
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -52443,344 +55231,377 @@ pub mod api {
                 #[doc = "The `Error` enum of this pallet."]
                 pub enum Error {
                     #[codec(index = 0)]
-                    #[doc = "The subnet does not exist."]
-                    SubNetworkDoesNotExist,
-                    #[codec(index = 1)]
                     #[doc = "The root network does not exist."]
                     RootNetworkDoesNotExist,
-                    #[codec(index = 2)]
+                    #[codec(index = 1)]
                     #[doc = "The user is trying to serve an axon which is not of type 4 (IPv4) or 6 (IPv6)."]
                     InvalidIpType,
-                    #[codec(index = 3)]
+                    #[codec(index = 2)]
                     #[doc = "An invalid IP address is passed to the serve function."]
                     InvalidIpAddress,
-                    #[codec(index = 4)]
+                    #[codec(index = 3)]
                     #[doc = "An invalid port is passed to the serve function."]
                     InvalidPort,
-                    #[codec(index = 5)]
+                    #[codec(index = 4)]
                     #[doc = "The hotkey is not registered in subnet"]
                     HotKeyNotRegisteredInSubNet,
-                    #[codec(index = 6)]
+                    #[codec(index = 5)]
                     #[doc = "The hotkey does not exists"]
                     HotKeyAccountNotExists,
-                    #[codec(index = 7)]
+                    #[codec(index = 6)]
                     #[doc = "The hotkey is not registered in any subnet."]
                     HotKeyNotRegisteredInNetwork,
-                    #[codec(index = 8)]
+                    #[codec(index = 7)]
                     #[doc = "Request to stake, unstake or subscribe is made by a coldkey that is not associated with"]
                     #[doc = "the hotkey account."]
                     NonAssociatedColdKey,
-                    #[codec(index = 9)]
+                    #[codec(index = 8)]
                     #[doc = "DEPRECATED: Stake amount to withdraw is zero."]
                     #[doc = "The caller does not have enought stake to perform this action."]
                     NotEnoughStake,
-                    #[codec(index = 10)]
+                    #[codec(index = 9)]
                     #[doc = "The caller is requesting removing more stake than there exists in the staking account."]
                     #[doc = "See: \"[remove_stake()]\"."]
                     NotEnoughStakeToWithdraw,
-                    #[codec(index = 11)]
+                    #[codec(index = 10)]
                     #[doc = "The caller is requesting to set weights but the caller has less than minimum stake"]
                     #[doc = "required to set weights (less than WeightsMinStake)."]
                     NotEnoughStakeToSetWeights,
-                    #[codec(index = 12)]
+                    #[codec(index = 11)]
                     #[doc = "The parent hotkey doesn't have enough own stake to set childkeys."]
                     NotEnoughStakeToSetChildkeys,
-                    #[codec(index = 13)]
+                    #[codec(index = 12)]
                     #[doc = "The caller is requesting adding more stake than there exists in the coldkey account."]
                     #[doc = "See: \"[add_stake()]\""]
                     NotEnoughBalanceToStake,
-                    #[codec(index = 14)]
+                    #[codec(index = 13)]
                     #[doc = "The caller is trying to add stake, but for some reason the requested amount could not be"]
                     #[doc = "withdrawn from the coldkey account."]
                     BalanceWithdrawalError,
-                    #[codec(index = 15)]
+                    #[codec(index = 14)]
                     #[doc = "Unsuccessfully withdraw, balance could be zero (can not make account exist) after"]
                     #[doc = "withdrawal."]
                     ZeroBalanceAfterWithdrawn,
-                    #[codec(index = 16)]
+                    #[codec(index = 15)]
                     #[doc = "The caller is attempting to set non-self weights without being a permitted validator."]
                     NeuronNoValidatorPermit,
-                    #[codec(index = 17)]
+                    #[codec(index = 16)]
                     #[doc = "The caller is attempting to set the weight keys and values but these vectors have"]
                     #[doc = "different size."]
                     WeightVecNotEqualSize,
-                    #[codec(index = 18)]
+                    #[codec(index = 17)]
                     #[doc = "The caller is attempting to set weights with duplicate UIDs in the weight matrix."]
                     DuplicateUids,
-                    #[codec(index = 19)]
+                    #[codec(index = 18)]
                     #[doc = "The caller is attempting to set weight to at least one UID that does not exist in the"]
                     #[doc = "metagraph."]
                     UidVecContainInvalidOne,
-                    #[codec(index = 20)]
+                    #[codec(index = 19)]
                     #[doc = "The dispatch is attempting to set weights on chain with fewer elements than are allowed."]
                     WeightVecLengthIsLow,
-                    #[codec(index = 21)]
+                    #[codec(index = 20)]
                     #[doc = "Number of registrations in this block exceeds the allowed number (i.e., exceeds the"]
                     #[doc = "subnet hyperparameter \"max_regs_per_block\")."]
                     TooManyRegistrationsThisBlock,
-                    #[codec(index = 22)]
+                    #[codec(index = 21)]
                     #[doc = "The caller is requesting registering a neuron which already exists in the active set."]
                     HotKeyAlreadyRegisteredInSubNet,
-                    #[codec(index = 23)]
+                    #[codec(index = 22)]
                     #[doc = "The new hotkey is the same as old one"]
                     NewHotKeyIsSameWithOld,
-                    #[codec(index = 24)]
+                    #[codec(index = 23)]
                     #[doc = "The supplied PoW hash block is in the future or negative."]
                     InvalidWorkBlock,
-                    #[codec(index = 25)]
+                    #[codec(index = 24)]
                     #[doc = "The supplied PoW hash block does not meet the network difficulty."]
                     InvalidDifficulty,
-                    #[codec(index = 26)]
+                    #[codec(index = 25)]
                     #[doc = "The supplied PoW hash seal does not match the supplied work."]
                     InvalidSeal,
-                    #[codec(index = 27)]
+                    #[codec(index = 26)]
                     #[doc = "The dispatch is attempting to set weights on chain with weight value exceeding the"]
                     #[doc = "MaxWeightLimit (max_weight_limit subnet hyperparameter)."]
                     MaxWeightExceeded,
-                    #[codec(index = 28)]
+                    #[codec(index = 27)]
                     #[doc = "The hotkey is attempting to become a delegate when the hotkey is already a delegate."]
                     HotKeyAlreadyDelegate,
-                    #[codec(index = 29)]
+                    #[codec(index = 28)]
                     #[doc = "A transactor exceeded the rate limit for setting weights."]
                     SettingWeightsTooFast,
-                    #[codec(index = 30)]
+                    #[codec(index = 29)]
                     #[doc = "A validator is attempting to set weights from a validator with incorrect weight version."]
                     IncorrectWeightVersionKey,
-                    #[codec(index = 31)]
+                    #[codec(index = 30)]
                     #[doc = "An axon or prometheus serving exceeded the rate limit for a registered neuron."]
                     ServingRateLimitExceeded,
-                    #[codec(index = 32)]
+                    #[codec(index = 31)]
                     #[doc = "The caller is attempting to set weights with more UIDs than allowed."]
                     UidsLengthExceedUidsInSubNet,
-                    #[codec(index = 33)]
+                    #[codec(index = 32)]
                     #[doc = "A transactor exceeded the rate limit for add network transaction."]
                     NetworkTxRateLimitExceeded,
-                    #[codec(index = 34)]
+                    #[codec(index = 33)]
                     #[doc = "A transactor exceeded the rate limit for delegate transaction."]
                     DelegateTxRateLimitExceeded,
-                    #[codec(index = 35)]
+                    #[codec(index = 34)]
                     #[doc = "A transactor exceeded the rate limit for setting or swapping hotkey."]
                     HotKeySetTxRateLimitExceeded,
-                    #[codec(index = 36)]
+                    #[codec(index = 35)]
                     #[doc = "A transactor exceeded the rate limit for staking."]
                     StakingRateLimitExceeded,
-                    #[codec(index = 37)]
+                    #[codec(index = 36)]
                     #[doc = "Registration is disabled."]
                     SubNetRegistrationDisabled,
-                    #[codec(index = 38)]
+                    #[codec(index = 37)]
                     #[doc = "The number of registration attempts exceeded the allowed number in the interval."]
                     TooManyRegistrationsThisInterval,
-                    #[codec(index = 39)]
+                    #[codec(index = 38)]
                     #[doc = "The hotkey is required to be the origin."]
                     TransactorAccountShouldBeHotKey,
-                    #[codec(index = 40)]
+                    #[codec(index = 39)]
                     #[doc = "A hotkey is attempting to do something only senate members can do."]
                     NotSenateMember,
-                    #[codec(index = 41)]
+                    #[codec(index = 40)]
                     #[doc = "Faucet is disabled."]
                     FaucetDisabled,
-                    #[codec(index = 42)]
+                    #[codec(index = 41)]
                     #[doc = "Not a subnet owner."]
                     NotSubnetOwner,
-                    #[codec(index = 43)]
+                    #[codec(index = 42)]
                     #[doc = "Operation is not permitted on the root subnet."]
                     RegistrationNotPermittedOnRootSubnet,
-                    #[codec(index = 44)]
+                    #[codec(index = 43)]
                     #[doc = "A hotkey with too little stake is attempting to join the root subnet."]
                     StakeTooLowForRoot,
-                    #[codec(index = 45)]
+                    #[codec(index = 44)]
                     #[doc = "All subnets are in the immunity period."]
                     AllNetworksInImmunity,
-                    #[codec(index = 46)]
+                    #[codec(index = 45)]
                     #[doc = "Not enough balance to pay swapping hotkey."]
                     NotEnoughBalanceToPaySwapHotKey,
-                    #[codec(index = 47)]
+                    #[codec(index = 46)]
                     #[doc = "Netuid does not match for setting root network weights."]
                     NotRootSubnet,
-                    #[codec(index = 48)]
+                    #[codec(index = 47)]
                     #[doc = "Can not set weights for the root network."]
                     CanNotSetRootNetworkWeights,
-                    #[codec(index = 49)]
+                    #[codec(index = 48)]
                     #[doc = "No neuron ID is available."]
                     NoNeuronIdAvailable,
-                    #[codec(index = 50)]
+                    #[codec(index = 49)]
                     #[doc = "Delegate take is too low."]
                     DelegateTakeTooLow,
-                    #[codec(index = 51)]
+                    #[codec(index = 50)]
                     #[doc = "Delegate take is too high."]
                     DelegateTakeTooHigh,
-                    #[codec(index = 52)]
+                    #[codec(index = 51)]
                     #[doc = "No commit found for the provided hotkey+netuid combination when attempting to reveal the"]
                     #[doc = "weights."]
                     NoWeightsCommitFound,
-                    #[codec(index = 53)]
+                    #[codec(index = 52)]
                     #[doc = "Committed hash does not equal the hashed reveal data."]
                     InvalidRevealCommitHashNotMatch,
-                    #[codec(index = 54)]
+                    #[codec(index = 53)]
                     #[doc = "Attempting to call set_weights when commit/reveal is enabled"]
                     CommitRevealEnabled,
-                    #[codec(index = 55)]
+                    #[codec(index = 54)]
                     #[doc = "Attemtping to commit/reveal weights when disabled."]
                     CommitRevealDisabled,
-                    #[codec(index = 56)]
+                    #[codec(index = 55)]
                     #[doc = "Not able to join the senate."]
                     CouldNotJoinSenate,
-                    #[codec(index = 57)]
+                    #[codec(index = 56)]
                     #[doc = "Attempting to set alpha high/low while disabled"]
                     LiquidAlphaDisabled,
-                    #[codec(index = 58)]
+                    #[codec(index = 57)]
                     #[doc = "Alpha high is too low: alpha_high > 0.8"]
                     AlphaHighTooLow,
-                    #[codec(index = 59)]
+                    #[codec(index = 58)]
                     #[doc = "Alpha low is out of range: alpha_low > 0 && alpha_low < 0.8"]
                     AlphaLowOutOfRange,
-                    #[codec(index = 60)]
+                    #[codec(index = 59)]
                     #[doc = "The coldkey has already been swapped"]
                     ColdKeyAlreadyAssociated,
-                    #[codec(index = 61)]
+                    #[codec(index = 60)]
                     #[doc = "The coldkey balance is not enough to pay for the swap"]
                     NotEnoughBalanceToPaySwapColdKey,
-                    #[codec(index = 62)]
+                    #[codec(index = 61)]
                     #[doc = "The coldkey is in arbitration"]
                     ColdkeyIsInArbitration,
-                    #[codec(index = 63)]
+                    #[codec(index = 62)]
                     #[doc = "Attempting to set an invalid child for a hotkey on a network."]
                     InvalidChild,
-                    #[codec(index = 64)]
+                    #[codec(index = 63)]
                     #[doc = "Duplicate child when setting children."]
                     DuplicateChild,
-                    #[codec(index = 65)]
+                    #[codec(index = 64)]
                     #[doc = "Proportion overflow when setting children."]
                     ProportionOverflow,
-                    #[codec(index = 66)]
+                    #[codec(index = 65)]
                     #[doc = "Too many children MAX 5."]
                     TooManyChildren,
-                    #[codec(index = 67)]
+                    #[codec(index = 66)]
                     #[doc = "Default transaction rate limit exceeded."]
                     TxRateLimitExceeded,
-                    #[codec(index = 68)]
+                    #[codec(index = 67)]
                     #[doc = "Swap already scheduled."]
                     SwapAlreadyScheduled,
-                    #[codec(index = 69)]
+                    #[codec(index = 68)]
                     #[doc = "failed to swap coldkey"]
                     FailedToSchedule,
-                    #[codec(index = 70)]
+                    #[codec(index = 69)]
                     #[doc = "New coldkey is hotkey"]
                     NewColdKeyIsHotkey,
-                    #[codec(index = 71)]
+                    #[codec(index = 70)]
                     #[doc = "Childkey take is invalid."]
                     InvalidChildkeyTake,
-                    #[codec(index = 72)]
+                    #[codec(index = 71)]
                     #[doc = "Childkey take rate limit exceeded."]
                     TxChildkeyTakeRateLimitExceeded,
-                    #[codec(index = 73)]
+                    #[codec(index = 72)]
                     #[doc = "Invalid identity."]
                     InvalidIdentity,
-                    #[codec(index = 74)]
-                    #[doc = "Trying to register a subnet into a mechanism that does not exist."]
+                    #[codec(index = 73)]
+                    #[doc = "Subnet mechanism does not exist."]
                     MechanismDoesNotExist,
-                    #[codec(index = 75)]
+                    #[codec(index = 74)]
                     #[doc = "Trying to unstake your lock amount."]
                     CannotUnstakeLock,
-                    #[codec(index = 76)]
+                    #[codec(index = 75)]
                     #[doc = "Trying to perform action on non-existent subnet."]
                     SubnetNotExists,
-                    #[codec(index = 77)]
+                    #[codec(index = 76)]
                     #[doc = "Maximum commit limit reached"]
                     TooManyUnrevealedCommits,
-                    #[codec(index = 78)]
+                    #[codec(index = 77)]
                     #[doc = "Attempted to reveal weights that are expired."]
                     ExpiredWeightCommit,
-                    #[codec(index = 79)]
+                    #[codec(index = 78)]
                     #[doc = "Attempted to reveal weights too early."]
                     RevealTooEarly,
-                    #[codec(index = 80)]
+                    #[codec(index = 79)]
                     #[doc = "Attempted to batch reveal weights with mismatched vector input lenghts."]
                     InputLengthsUnequal,
-                    #[codec(index = 81)]
+                    #[codec(index = 80)]
                     #[doc = "A transactor exceeded the rate limit for setting weights."]
                     CommittingWeightsTooFast,
-                    #[codec(index = 82)]
+                    #[codec(index = 81)]
                     #[doc = "Stake amount is too low."]
                     AmountTooLow,
-                    #[codec(index = 83)]
+                    #[codec(index = 82)]
                     #[doc = "Not enough liquidity."]
                     InsufficientLiquidity,
-                    #[codec(index = 84)]
+                    #[codec(index = 83)]
                     #[doc = "Slippage is too high for the transaction."]
                     SlippageTooHigh,
-                    #[codec(index = 85)]
+                    #[codec(index = 84)]
                     #[doc = "Subnet disallows transfer."]
                     TransferDisallowed,
-                    #[codec(index = 86)]
+                    #[codec(index = 85)]
                     #[doc = "Activity cutoff is being set too low."]
                     ActivityCutoffTooLow,
-                    #[codec(index = 87)]
+                    #[codec(index = 86)]
                     #[doc = "Call is disabled"]
                     CallDisabled,
-                    #[codec(index = 88)]
+                    #[codec(index = 87)]
                     #[doc = "FirstEmissionBlockNumber is already set."]
                     FirstEmissionBlockNumberAlreadySet,
-                    #[codec(index = 89)]
+                    #[codec(index = 88)]
                     #[doc = "need wait for more blocks to accept the start call extrinsic."]
                     NeedWaitingMoreBlocksToStarCall,
-                    #[codec(index = 90)]
+                    #[codec(index = 89)]
                     #[doc = "Not enough AlphaOut on the subnet to recycle"]
                     NotEnoughAlphaOutToRecycle,
-                    #[codec(index = 91)]
+                    #[codec(index = 90)]
                     #[doc = "Cannot burn or recycle TAO from root subnet"]
                     CannotBurnOrRecycleOnRootSubnet,
-                    #[codec(index = 92)]
+                    #[codec(index = 91)]
                     #[doc = "Public key cannot be recovered."]
                     UnableToRecoverPublicKey,
-                    #[codec(index = 93)]
+                    #[codec(index = 92)]
                     #[doc = "Recovered public key is invalid."]
                     InvalidRecoveredPublicKey,
-                    #[codec(index = 94)]
+                    #[codec(index = 93)]
                     #[doc = "SubToken disabled now"]
                     SubtokenDisabled,
-                    #[codec(index = 95)]
+                    #[codec(index = 94)]
                     #[doc = "Too frequent hotkey swap on subnet"]
                     HotKeySwapOnSubnetIntervalNotPassed,
-                    #[codec(index = 96)]
+                    #[codec(index = 95)]
                     #[doc = "Zero max stake amount"]
                     ZeroMaxStakeAmount,
-                    #[codec(index = 97)]
+                    #[codec(index = 96)]
                     #[doc = "Invalid netuid duplication"]
                     SameNetuid,
-                    #[codec(index = 98)]
+                    #[codec(index = 97)]
                     #[doc = "The caller does not have enough balance for the operation."]
                     InsufficientBalance,
-                    #[codec(index = 99)]
+                    #[codec(index = 98)]
                     #[doc = "Too frequent staking operations"]
                     StakingOperationRateLimitExceeded,
-                    #[codec(index = 100)]
+                    #[codec(index = 99)]
                     #[doc = "Invalid lease beneficiary to register the leased network."]
                     InvalidLeaseBeneficiary,
-                    #[codec(index = 101)]
+                    #[codec(index = 100)]
                     #[doc = "Lease cannot end in the past."]
                     LeaseCannotEndInThePast,
-                    #[codec(index = 102)]
+                    #[codec(index = 101)]
                     #[doc = "Couldn't find the lease netuid."]
                     LeaseNetuidNotFound,
-                    #[codec(index = 103)]
+                    #[codec(index = 102)]
                     #[doc = "Lease does not exist."]
                     LeaseDoesNotExist,
-                    #[codec(index = 104)]
+                    #[codec(index = 103)]
                     #[doc = "Lease has no end block."]
                     LeaseHasNoEndBlock,
-                    #[codec(index = 105)]
+                    #[codec(index = 104)]
                     #[doc = "Lease has not ended."]
                     LeaseHasNotEnded,
-                    #[codec(index = 106)]
+                    #[codec(index = 105)]
                     #[doc = "An overflow occurred."]
                     Overflow,
-                    #[codec(index = 107)]
+                    #[codec(index = 106)]
                     #[doc = "Beneficiary does not own hotkey."]
                     BeneficiaryDoesNotOwnHotkey,
-                    #[codec(index = 108)]
+                    #[codec(index = 107)]
                     #[doc = "Expected beneficiary origin."]
                     ExpectedBeneficiaryOrigin,
+                    #[codec(index = 108)]
+                    #[doc = "Admin operation is prohibited during the protected weights window"]
+                    AdminActionProhibitedDuringWeightsWindow,
+                    #[codec(index = 109)]
+                    #[doc = "Symbol does not exist."]
+                    SymbolDoesNotExist,
+                    #[codec(index = 110)]
+                    #[doc = "Symbol already in use."]
+                    SymbolAlreadyInUse,
+                    #[codec(index = 111)]
+                    #[doc = "Incorrect commit-reveal version."]
+                    IncorrectCommitRevealVersion,
+                    #[codec(index = 112)]
+                    #[doc = "Reveal period is too large."]
+                    RevealPeriodTooLarge,
+                    #[codec(index = 113)]
+                    #[doc = "Reveal period is too small."]
+                    RevealPeriodTooSmall,
+                    #[codec(index = 114)]
+                    #[doc = "Generic error for out-of-range parameter value"]
+                    InvalidValue,
+                    #[codec(index = 115)]
+                    #[doc = "Subnet limit reached & there is no eligible subnet to prune"]
+                    SubnetLimitReached,
+                    #[codec(index = 116)]
+                    #[doc = "Insufficient funds to meet the subnet lock cost"]
+                    CannotAffordLockCost,
+                    #[codec(index = 117)]
+                    #[doc = "exceeded the rate limit for associating an EVM key."]
+                    EvmKeyAssociateRateLimitExceeded,
+                    #[codec(index = 118)]
+                    #[doc = "The UID map for the subnet could not be cleared"]
+                    UidMapCouldNotBeCleared,
+                    #[codec(index = 119)]
+                    #[doc = "Trimming would exceed the max immune neurons percentage"]
+                    TrimmingWouldExceedMaxImmunePercentage,
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -52962,112 +55783,120 @@ pub mod api {
                     #[doc = "setting the childkey take transaction rate limit."]
                     TxChildKeyTakeRateLimitSet(::core::primitive::u64),
                     #[codec(index = 42)]
+                    #[doc = "setting the admin freeze window length (last N blocks of tempo)"]
+                    AdminFreezeWindowSet(::core::primitive::u16),
+                    #[codec(index = 43)]
+                    #[doc = "setting the owner hyperparameter rate limit in epochs"]
+                    OwnerHyperparamRateLimitSet(::core::primitive::u16),
+                    #[codec(index = 44)]
                     #[doc = "minimum childkey take set"]
                     MinChildKeyTakeSet(::core::primitive::u16),
-                    #[codec(index = 43)]
+                    #[codec(index = 45)]
                     #[doc = "maximum childkey take set"]
                     MaxChildKeyTakeSet(::core::primitive::u16),
-                    #[codec(index = 44)]
+                    #[codec(index = 46)]
                     #[doc = "childkey take set"]
                     ChildKeyTakeSet(
                         ::subxt::ext::subxt_core::utils::AccountId32,
                         ::core::primitive::u16,
                     ),
-                    #[codec(index = 45)]
+                    #[codec(index = 47)]
                     #[doc = "a sudo call is done."]
                     Sudid(::core::result::Result<(), runtime_types::sp_runtime::DispatchError>),
-                    #[codec(index = 46)]
+                    #[codec(index = 48)]
                     #[doc = "registration is allowed/disallowed for a subnet."]
                     RegistrationAllowed(::core::primitive::u16, ::core::primitive::bool),
-                    #[codec(index = 47)]
+                    #[codec(index = 49)]
                     #[doc = "POW registration is allowed/disallowed for a subnet."]
                     PowRegistrationAllowed(::core::primitive::u16, ::core::primitive::bool),
-                    #[codec(index = 48)]
+                    #[codec(index = 50)]
                     #[doc = "setting tempo on a network"]
                     TempoSet(::core::primitive::u16, ::core::primitive::u16),
-                    #[codec(index = 49)]
+                    #[codec(index = 51)]
                     #[doc = "setting the RAO recycled for registration."]
                     RAORecycledForRegistrationSet(::core::primitive::u16, ::core::primitive::u64),
-                    #[codec(index = 50)]
+                    #[codec(index = 52)]
                     #[doc = "min stake is set for validators to set weights."]
                     StakeThresholdSet(::core::primitive::u64),
-                    #[codec(index = 51)]
+                    #[codec(index = 53)]
                     #[doc = "setting the minimum required stake amount for senate registration."]
                     SenateRequiredStakePercentSet(::core::primitive::u64),
-                    #[codec(index = 52)]
+                    #[codec(index = 54)]
                     #[doc = "setting the adjustment alpha on a subnet."]
                     AdjustmentAlphaSet(::core::primitive::u16, ::core::primitive::u64),
-                    #[codec(index = 53)]
+                    #[codec(index = 55)]
                     #[doc = "the faucet it called on the test net."]
                     Faucet(
                         ::subxt::ext::subxt_core::utils::AccountId32,
                         ::core::primitive::u64,
                     ),
-                    #[codec(index = 54)]
+                    #[codec(index = 56)]
                     #[doc = "the subnet owner cut is set."]
                     SubnetOwnerCutSet(::core::primitive::u16),
-                    #[codec(index = 55)]
+                    #[codec(index = 57)]
                     #[doc = "the network creation rate limit is set."]
                     NetworkRateLimitSet(::core::primitive::u64),
-                    #[codec(index = 56)]
+                    #[codec(index = 58)]
                     #[doc = "the network immunity period is set."]
                     NetworkImmunityPeriodSet(::core::primitive::u64),
-                    #[codec(index = 57)]
+                    #[codec(index = 59)]
                     #[doc = "the network minimum locking cost is set."]
                     NetworkMinLockCostSet(::core::primitive::u64),
-                    #[codec(index = 58)]
+                    #[codec(index = 60)]
                     #[doc = "the maximum number of subnets is set"]
+                    SubnetLimitSet(::core::primitive::u16),
+                    #[codec(index = 61)]
                     #[doc = "the lock cost reduction is set"]
                     NetworkLockCostReductionIntervalSet(::core::primitive::u64),
-                    #[codec(index = 59)]
+                    #[codec(index = 62)]
                     #[doc = "the take for a delegate is decreased."]
                     TakeDecreased(
                         ::subxt::ext::subxt_core::utils::AccountId32,
                         ::subxt::ext::subxt_core::utils::AccountId32,
                         ::core::primitive::u16,
                     ),
-                    #[codec(index = 60)]
+                    #[codec(index = 63)]
                     #[doc = "the take for a delegate is increased."]
                     TakeIncreased(
                         ::subxt::ext::subxt_core::utils::AccountId32,
                         ::subxt::ext::subxt_core::utils::AccountId32,
                         ::core::primitive::u16,
                     ),
-                    #[codec(index = 61)]
+                    #[codec(index = 64)]
                     #[doc = "the hotkey is swapped"]
                     HotkeySwapped {
                         coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
                         old_hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
                         new_hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
                     },
-                    #[codec(index = 62)]
+                    #[codec(index = 65)]
                     #[doc = "maximum delegate take is set by sudo/admin transaction"]
                     MaxDelegateTakeSet(::core::primitive::u16),
-                    #[codec(index = 63)]
+                    #[codec(index = 66)]
                     #[doc = "minimum delegate take is set by sudo/admin transaction"]
                     MinDelegateTakeSet(::core::primitive::u16),
-                    #[codec(index = 64)]
+                    #[codec(index = 67)]
                     #[doc = "a member of the senate is adjusted"]
                     SenateAdjusted {
                         old_member:
                             ::core::option::Option<::subxt::ext::subxt_core::utils::AccountId32>,
                         new_member: ::subxt::ext::subxt_core::utils::AccountId32,
                     },
-                    #[codec(index = 65)]
+                    #[codec(index = 68)]
                     #[doc = "A coldkey has been swapped"]
                     ColdkeySwapped {
                         old_coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
                         new_coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
                         swap_cost: ::core::primitive::u64,
                     },
-                    #[codec(index = 66)]
+                    #[codec(index = 69)]
                     #[doc = "All balance of a hotkey has been unstaked and transferred to a new coldkey"]
                     AllBalanceUnstakedAndTransferredToNewColdkey {
                         current_coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
                         new_coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
                         total_balance: ::core::primitive::u64,
                     },
-                    #[codec(index = 67)]
+                    #[codec(index = 70)]
                     #[doc = "A coldkey swap has been scheduled"]
                     ColdkeySwapScheduled {
                         old_coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
@@ -53075,12 +55904,12 @@ pub mod api {
                         execution_block: ::core::primitive::u32,
                         swap_cost: ::core::primitive::u64,
                     },
-                    #[codec(index = 68)]
+                    #[codec(index = 71)]
                     #[doc = "The arbitration period has been extended"]
                     ArbitrationPeriodExtended {
                         coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
                     },
-                    #[codec(index = 69)]
+                    #[codec(index = 72)]
                     #[doc = "Setting of children of a hotkey have been scheduled"]
                     SetChildrenScheduled(
                         ::subxt::ext::subxt_core::utils::AccountId32,
@@ -53091,7 +55920,7 @@ pub mod api {
                             ::subxt::ext::subxt_core::utils::AccountId32,
                         )>,
                     ),
-                    #[codec(index = 70)]
+                    #[codec(index = 73)]
                     #[doc = "The children of a hotkey have been set"]
                     SetChildren(
                         ::subxt::ext::subxt_core::utils::AccountId32,
@@ -53101,29 +55930,29 @@ pub mod api {
                             ::subxt::ext::subxt_core::utils::AccountId32,
                         )>,
                     ),
-                    #[codec(index = 71)]
+                    #[codec(index = 74)]
                     #[doc = "The identity of a coldkey has been set"]
                     ChainIdentitySet(::subxt::ext::subxt_core::utils::AccountId32),
-                    #[codec(index = 72)]
+                    #[codec(index = 75)]
                     #[doc = "The identity of a subnet has been set"]
                     SubnetIdentitySet(::core::primitive::u16),
-                    #[codec(index = 73)]
+                    #[codec(index = 76)]
                     #[doc = "The identity of a subnet has been removed"]
                     SubnetIdentityRemoved(::core::primitive::u16),
-                    #[codec(index = 74)]
+                    #[codec(index = 77)]
                     #[doc = "A dissolve network extrinsic scheduled."]
                     DissolveNetworkScheduled {
                         account: ::subxt::ext::subxt_core::utils::AccountId32,
                         netuid: ::core::primitive::u16,
                         execution_block: ::core::primitive::u32,
                     },
-                    #[codec(index = 75)]
+                    #[codec(index = 78)]
                     #[doc = "The duration of schedule coldkey swap has been set"]
                     ColdkeySwapScheduleDurationSet(::core::primitive::u32),
-                    #[codec(index = 76)]
+                    #[codec(index = 79)]
                     #[doc = "The duration of dissolve network has been set"]
                     DissolveNetworkScheduleDurationSet(::core::primitive::u32),
-                    #[codec(index = 77)]
+                    #[codec(index = 80)]
                     #[doc = "Commit-reveal v3 weights have been successfully committed."]
                     #[doc = ""]
                     #[doc = "- **who**: The account ID of the user committing the weights."]
@@ -53134,7 +55963,7 @@ pub mod api {
                         ::core::primitive::u16,
                         ::subxt::ext::subxt_core::utils::H256,
                     ),
-                    #[codec(index = 78)]
+                    #[codec(index = 81)]
                     #[doc = "Weights have been successfully committed."]
                     #[doc = ""]
                     #[doc = "- **who**: The account ID of the user committing the weights."]
@@ -53145,7 +55974,7 @@ pub mod api {
                         ::core::primitive::u16,
                         ::subxt::ext::subxt_core::utils::H256,
                     ),
-                    #[codec(index = 79)]
+                    #[codec(index = 82)]
                     #[doc = "Weights have been successfully revealed."]
                     #[doc = ""]
                     #[doc = "- **who**: The account ID of the user revealing the weights."]
@@ -53156,7 +55985,7 @@ pub mod api {
                         ::core::primitive::u16,
                         ::subxt::ext::subxt_core::utils::H256,
                     ),
-                    #[codec(index = 80)]
+                    #[codec(index = 83)]
                     #[doc = "Weights have been successfully batch revealed."]
                     #[doc = ""]
                     #[doc = "- **who**: The account ID of the user revealing the weights."]
@@ -53169,7 +55998,7 @@ pub mod api {
                             ::subxt::ext::subxt_core::utils::H256,
                         >,
                     ),
-                    #[codec(index = 81)]
+                    #[codec(index = 84)]
                     #[doc = "A batch of weights (or commits) have been force-set."]
                     #[doc = ""]
                     #[doc = "- **netuids**: The netuids these weights were successfully set/committed for."]
@@ -53180,15 +56009,15 @@ pub mod api {
                         >,
                         ::subxt::ext::subxt_core::utils::AccountId32,
                     ),
-                    #[codec(index = 82)]
+                    #[codec(index = 85)]
                     #[doc = "A batch extrinsic completed but with some errors."]
                     BatchCompletedWithErrors,
-                    #[codec(index = 83)]
+                    #[codec(index = 86)]
                     #[doc = "A weight set among a batch of weights failed."]
                     #[doc = ""]
                     #[doc = "- **error**: The dispatch error emitted by the failed item."]
                     BatchWeightItemFailed(runtime_types::sp_runtime::DispatchError),
-                    #[codec(index = 84)]
+                    #[codec(index = 87)]
                     #[doc = "Stake has been transferred from one coldkey to another on the same subnet."]
                     #[doc = "Parameters:"]
                     #[doc = "(origin_coldkey, destination_coldkey, hotkey, origin_netuid, destination_netuid, amount)"]
@@ -53200,7 +56029,7 @@ pub mod api {
                         ::core::primitive::u16,
                         ::core::primitive::u64,
                     ),
-                    #[codec(index = 85)]
+                    #[codec(index = 88)]
                     #[doc = "Stake has been swapped from one subnet to another for the same coldkey-hotkey pair."]
                     #[doc = ""]
                     #[doc = "Parameters:"]
@@ -53212,13 +56041,13 @@ pub mod api {
                         ::core::primitive::u16,
                         ::core::primitive::u64,
                     ),
-                    #[codec(index = 86)]
+                    #[codec(index = 89)]
                     #[doc = "Event called when transfer is toggled on a subnet."]
                     #[doc = ""]
                     #[doc = "Parameters:"]
                     #[doc = "(netuid, bool)"]
                     TransferToggle(::core::primitive::u16, ::core::primitive::bool),
-                    #[codec(index = 87)]
+                    #[codec(index = 90)]
                     #[doc = "The owner hotkey for a subnet has been set."]
                     #[doc = ""]
                     #[doc = "Parameters:"]
@@ -53227,14 +56056,14 @@ pub mod api {
                         ::core::primitive::u16,
                         ::subxt::ext::subxt_core::utils::AccountId32,
                     ),
-                    #[codec(index = 88)]
+                    #[codec(index = 91)]
                     #[doc = "FirstEmissionBlockNumber is set via start call extrinsic"]
                     #[doc = ""]
                     #[doc = "Parameters:"]
                     #[doc = "netuid"]
                     #[doc = "block number"]
                     FirstEmissionBlockNumberSet(::core::primitive::u16, ::core::primitive::u64),
-                    #[codec(index = 89)]
+                    #[codec(index = 92)]
                     #[doc = "Alpha has been recycled, reducing AlphaOut on a subnet."]
                     #[doc = ""]
                     #[doc = "Parameters:"]
@@ -53245,7 +56074,7 @@ pub mod api {
                         ::core::primitive::u64,
                         ::core::primitive::u16,
                     ),
-                    #[codec(index = 90)]
+                    #[codec(index = 93)]
                     #[doc = "Alpha have been burned without reducing AlphaOut."]
                     #[doc = ""]
                     #[doc = "Parameters:"]
@@ -53256,7 +56085,7 @@ pub mod api {
                         ::core::primitive::u64,
                         ::core::primitive::u16,
                     ),
-                    #[codec(index = 91)]
+                    #[codec(index = 94)]
                     #[doc = "An EVM key has been associated with a hotkey."]
                     EvmKeyAssociated {
                         netuid: ::core::primitive::u16,
@@ -53264,7 +56093,7 @@ pub mod api {
                         evm_key: ::subxt::ext::subxt_core::utils::H160,
                         block_associated: ::core::primitive::u64,
                     },
-                    #[codec(index = 92)]
+                    #[codec(index = 95)]
                     #[doc = "CRV3 Weights have been successfully revealed."]
                     #[doc = ""]
                     #[doc = "- **netuid**: The network identifier."]
@@ -53273,19 +56102,19 @@ pub mod api {
                         ::core::primitive::u16,
                         ::subxt::ext::subxt_core::utils::AccountId32,
                     ),
-                    #[codec(index = 93)]
+                    #[codec(index = 96)]
                     #[doc = "Commit-Reveal periods has been successfully set."]
                     #[doc = ""]
                     #[doc = "- **netuid**: The network identifier."]
                     #[doc = "- **periods**: The number of epochs before the reveal."]
                     CommitRevealPeriodsSet(::core::primitive::u16, ::core::primitive::u64),
-                    #[codec(index = 94)]
+                    #[codec(index = 97)]
                     #[doc = "Commit-Reveal has been successfully toggled."]
                     #[doc = ""]
                     #[doc = "- **netuid**: The network identifier."]
                     #[doc = "- **Enabled**: Is Commit-Reveal enabled."]
                     CommitRevealEnabled(::core::primitive::u16, ::core::primitive::bool),
-                    #[codec(index = 95)]
+                    #[codec(index = 98)]
                     #[doc = "the hotkey is swapped"]
                     HotkeySwappedOnSubnet {
                         coldkey: ::subxt::ext::subxt_core::utils::AccountId32,
@@ -53293,7 +56122,7 @@ pub mod api {
                         new_hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
                         netuid: ::core::primitive::u16,
                     },
-                    #[codec(index = 96)]
+                    #[codec(index = 99)]
                     #[doc = "A subnet lease has been created."]
                     SubnetLeaseCreated {
                         beneficiary: ::subxt::ext::subxt_core::utils::AccountId32,
@@ -53301,12 +56130,64 @@ pub mod api {
                         netuid: ::core::primitive::u16,
                         end_block: ::core::option::Option<::core::primitive::u32>,
                     },
-                    #[codec(index = 97)]
+                    #[codec(index = 100)]
                     #[doc = "A subnet lease has been terminated."]
                     SubnetLeaseTerminated {
                         beneficiary: ::subxt::ext::subxt_core::utils::AccountId32,
                         netuid: ::core::primitive::u16,
                     },
+                    #[codec(index = 101)]
+                    #[doc = "The symbol for a subnet has been updated."]
+                    SymbolUpdated {
+                        netuid: ::core::primitive::u16,
+                        symbol: ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u8>,
+                    },
+                    #[codec(index = 102)]
+                    #[doc = "Commit Reveal Weights version has been updated."]
+                    #[doc = ""]
+                    #[doc = "- **version**: The required version."]
+                    CommitRevealVersionSet(::core::primitive::u16),
+                    #[codec(index = 103)]
+                    #[doc = "Timelocked weights have been successfully committed."]
+                    #[doc = ""]
+                    #[doc = "- **who**: The account ID of the user committing the weights."]
+                    #[doc = "- **netuid**: The network identifier."]
+                    #[doc = "- **commit_hash**: The hash representing the committed weights."]
+                    #[doc = "- **reveal_round**: The round at which weights can be revealed."]
+                    TimelockedWeightsCommitted(
+                        ::subxt::ext::subxt_core::utils::AccountId32,
+                        ::core::primitive::u16,
+                        ::subxt::ext::subxt_core::utils::H256,
+                        ::core::primitive::u64,
+                    ),
+                    #[codec(index = 104)]
+                    #[doc = "Timelocked Weights have been successfully revealed."]
+                    #[doc = ""]
+                    #[doc = "- **netuid**: The network identifier."]
+                    #[doc = "- **who**: The account ID of the user revealing the weights."]
+                    TimelockedWeightsRevealed(
+                        ::core::primitive::u16,
+                        ::subxt::ext::subxt_core::utils::AccountId32,
+                    ),
+                    #[codec(index = 105)]
+                    #[doc = "Auto-staking hotkey received stake"]
+                    AutoStakeAdded {
+                        netuid: ::core::primitive::u16,
+                        destination: ::subxt::ext::subxt_core::utils::AccountId32,
+                        hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
+                        owner: ::subxt::ext::subxt_core::utils::AccountId32,
+                        incentive: ::core::primitive::u64,
+                    },
+                    #[codec(index = 106)]
+                    #[doc = "End-of-epoch miner incentive alpha by UID"]
+                    IncentiveAlphaEmittedToMiners {
+                        netuid: ::core::primitive::u16,
+                        emissions:
+                            ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u64>,
+                    },
+                    #[codec(index = 107)]
+                    #[doc = "The minimum allowed UIDs for a subnet have been set."]
+                    MinAllowedUidsSet(::core::primitive::u16, ::core::primitive::u16),
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -53354,6 +56235,28 @@ pub mod api {
                     pub ip: ::core::primitive::u128,
                     pub port: ::core::primitive::u16,
                     pub ip_type: ::core::primitive::u8,
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub enum RecycleOrBurnEnum {
+                    #[codec(index = 0)]
+                    Burn,
+                    #[codec(index = 1)]
+                    Recycle,
                 }
                 #[derive(
                     :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -53552,24 +56455,24 @@ pub mod api {
                             runtime_types::pallet_subtensor::pallet::SubnetIdentityV3,
                         >,
                         pub moving_price: runtime_types::substrate_fixed::FixedI128<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
                         >,
                     }
@@ -53637,24 +56540,24 @@ pub mod api {
                         #[codec(compact)]
                         pub subnet_volume: ::core::primitive::u128,
                         pub moving_price: runtime_types::substrate_fixed::FixedI128<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
                         >,
                         #[codec(compact)]
@@ -53791,312 +56694,7 @@ pub mod api {
                     #[encode_as_type(
                         crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                     )]
-                    pub struct SelectiveMetagraph<_0> {
-                        #[codec(compact)]
-                        pub netuid: ::core::primitive::u16,
-                        pub name: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u8,
-                                >,
-                            >,
-                        >,
-                        pub symbol: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u8,
-                                >,
-                            >,
-                        >,
-                        pub identity: ::core::option::Option<
-                            ::core::option::Option<
-                                runtime_types::pallet_subtensor::pallet::SubnetIdentityV3,
-                            >,
-                        >,
-                        pub network_registered_at: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub owner_hotkey: ::core::option::Option<_0>,
-                        pub owner_coldkey: ::core::option::Option<_0>,
-                        pub block: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub tempo: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub last_step: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub blocks_since_last_step: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub subnet_emission: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub alpha_in: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub alpha_out: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub tao_in: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub alpha_out_emission: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub alpha_in_emission: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub tao_in_emission: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub pending_alpha_emission: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub pending_root_emission: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub subnet_volume: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u128>,
-                        >,
-                        pub moving_price: ::core::option::Option<
-                            runtime_types::substrate_fixed::FixedI128<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UInt<
-                                                        runtime_types::typenum::uint::UTerm,
-                                                        runtime_types::typenum::bit::B1,
-                                                    >,
-                                                    runtime_types::typenum::bit::B0,
-                                                >,
-                                                runtime_types::typenum::bit::B0,
-                                            >,
-                                            runtime_types::typenum::bit::B0,
-                                        >,
-                                        runtime_types::typenum::bit::B0,
-                                    >,
-                                    runtime_types::typenum::bit::B0,
-                                >,
-                            >,
-                        >,
-                        pub rho: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub kappa: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub min_allowed_weights: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub max_weights_limit: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub weights_version: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub weights_rate_limit: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub activity_cutoff: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub max_validators: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub num_uids: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub max_uids: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub burn: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub difficulty: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub registration_allowed: ::core::option::Option<::core::primitive::bool>,
-                        pub pow_registration_allowed:
-                            ::core::option::Option<::core::primitive::bool>,
-                        pub immunity_period: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub min_difficulty: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub max_difficulty: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub min_burn: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub max_burn: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub adjustment_alpha: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub adjustment_interval: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub target_regs_per_interval: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub max_regs_per_block: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub serving_rate_limit: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub commit_reveal_weights_enabled:
-                            ::core::option::Option<::core::primitive::bool>,
-                        pub commit_reveal_period: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub liquid_alpha_enabled: ::core::option::Option<::core::primitive::bool>,
-                        pub alpha_high: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub alpha_low: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u16>,
-                        >,
-                        pub bonds_moving_avg: ::core::option::Option<
-                            ::subxt::ext::subxt_core::ext::codec::Compact<::core::primitive::u64>,
-                        >,
-                        pub hotkeys:
-                            ::core::option::Option<::subxt::ext::subxt_core::alloc::vec::Vec<_0>>,
-                        pub coldkeys:
-                            ::core::option::Option<::subxt::ext::subxt_core::alloc::vec::Vec<_0>>,
-                        pub identities: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::core::option::Option<
-                                    runtime_types::pallet_subtensor::pallet::ChainIdentityV2,
-                                >,
-                            >,
-                        >,
-                        pub axons: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                runtime_types::pallet_subtensor::pallet::AxonInfo,
-                            >,
-                        >,
-                        pub active: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::bool>,
-                        >,
-                        pub validator_permit: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::bool>,
-                        >,
-                        pub pruning_score: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u16,
-                                >,
-                            >,
-                        >,
-                        pub last_update: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            >,
-                        >,
-                        pub emission: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            >,
-                        >,
-                        pub dividends: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u16,
-                                >,
-                            >,
-                        >,
-                        pub incentives: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u16,
-                                >,
-                            >,
-                        >,
-                        pub consensus: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u16,
-                                >,
-                            >,
-                        >,
-                        pub trust: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u16,
-                                >,
-                            >,
-                        >,
-                        pub rank: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u16,
-                                >,
-                            >,
-                        >,
-                        pub block_at_registration: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            >,
-                        >,
-                        pub alpha_stake: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            >,
-                        >,
-                        pub tao_stake: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            >,
-                        >,
-                        pub total_stake: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            >,
-                        >,
-                        pub tao_dividends_per_hotkey: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<(
-                                _0,
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            )>,
-                        >,
-                        pub alpha_dividends_per_hotkey: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<(
-                                _0,
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u64,
-                                >,
-                            )>,
-                        >,
-                        pub validators: ::core::option::Option<
-                            ::subxt::ext::subxt_core::alloc::vec::Vec<
-                                ::subxt::ext::subxt_core::ext::codec::Compact<
-                                    ::core::primitive::u16,
-                                >,
-                            >,
-                        >,
-                    }
+                    pub struct SelectiveMetagraph < _0 > { # [codec (compact)] pub netuid : :: core :: primitive :: u16 , pub name : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u8 > > > , pub symbol : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u8 > > > , pub identity : :: core :: option :: Option < :: core :: option :: Option < runtime_types :: pallet_subtensor :: pallet :: SubnetIdentityV3 > > , pub network_registered_at : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub owner_hotkey : :: core :: option :: Option < _0 > , pub owner_coldkey : :: core :: option :: Option < _0 > , pub block : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub tempo : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub last_step : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub blocks_since_last_step : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub subnet_emission : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub alpha_in : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub alpha_out : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub tao_in : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub alpha_out_emission : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub alpha_in_emission : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub tao_in_emission : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub pending_alpha_emission : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub pending_root_emission : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub subnet_volume : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u128 > > , pub moving_price : :: core :: option :: Option < runtime_types :: substrate_fixed :: FixedI128 < runtime_types :: substrate_typenum :: uint :: UInt < runtime_types :: substrate_typenum :: uint :: UInt < runtime_types :: substrate_typenum :: uint :: UInt < runtime_types :: substrate_typenum :: uint :: UInt < runtime_types :: substrate_typenum :: uint :: UInt < runtime_types :: substrate_typenum :: uint :: UInt < runtime_types :: substrate_typenum :: uint :: UTerm , runtime_types :: substrate_typenum :: bit :: B1 > , runtime_types :: substrate_typenum :: bit :: B0 > , runtime_types :: substrate_typenum :: bit :: B0 > , runtime_types :: substrate_typenum :: bit :: B0 > , runtime_types :: substrate_typenum :: bit :: B0 > , runtime_types :: substrate_typenum :: bit :: B0 > > > , pub rho : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub kappa : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub min_allowed_weights : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub max_weights_limit : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub weights_version : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub weights_rate_limit : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub activity_cutoff : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub max_validators : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub num_uids : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub max_uids : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub burn : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub difficulty : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub registration_allowed : :: core :: option :: Option < :: core :: primitive :: bool > , pub pow_registration_allowed : :: core :: option :: Option < :: core :: primitive :: bool > , pub immunity_period : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub min_difficulty : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub max_difficulty : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub min_burn : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub max_burn : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub adjustment_alpha : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub adjustment_interval : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub target_regs_per_interval : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub max_regs_per_block : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub serving_rate_limit : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub commit_reveal_weights_enabled : :: core :: option :: Option < :: core :: primitive :: bool > , pub commit_reveal_period : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub liquid_alpha_enabled : :: core :: option :: Option < :: core :: primitive :: bool > , pub alpha_high : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub alpha_low : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > , pub bonds_moving_avg : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > , pub hotkeys : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < _0 > > , pub coldkeys : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < _0 > > , pub identities : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: core :: option :: Option < runtime_types :: pallet_subtensor :: pallet :: ChainIdentityV2 > > > , pub axons : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < runtime_types :: pallet_subtensor :: pallet :: AxonInfo > > , pub active : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: core :: primitive :: bool > > , pub validator_permit : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: core :: primitive :: bool > > , pub pruning_score : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > > , pub last_update : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > > , pub emission : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > > , pub dividends : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > > , pub incentives : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > > , pub consensus : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > > , pub trust : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > > , pub rank : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > > , pub block_at_registration : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > > , pub alpha_stake : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > > , pub tao_stake : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > > , pub total_stake : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > > > , pub tao_dividends_per_hotkey : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < (_0 , :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > ,) > > , pub alpha_dividends_per_hotkey : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < (_0 , :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u64 > ,) > > , pub validators : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u16 > > > , pub commitments : :: core :: option :: Option < :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < (_0 , :: subxt :: ext :: subxt_core :: alloc :: vec :: Vec < :: subxt :: ext :: subxt_core :: ext :: codec :: Compact < :: core :: primitive :: u8 > > ,) > > , }
                 }
                 pub mod neuron_info {
                     use super::runtime_types;
@@ -54461,24 +57059,24 @@ pub mod api {
                         pub alpha_low: ::core::primitive::u16,
                         pub liquid_alpha_enabled: ::core::primitive::bool,
                         pub alpha_sigmoid_steepness: runtime_types::substrate_fixed::FixedI64<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
                         >,
                         #[codec(compact)]
@@ -54632,21 +57230,99 @@ pub mod api {
                     }
                 }
             }
-            #[derive(
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                Clone,
-                Debug,
-            )]
-            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-            #[codec(dumb_trait_bound)]
-            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
-            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
-            pub enum RateLimitKey {
-                #[codec(index = 0)]
-                SetSNOwnerHotkey(::core::primitive::u16),
+            pub mod transaction_extension {
+                use super::runtime_types;
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct SubtensorTransactionExtension<_0>(pub ::core::marker::PhantomData<_0>);
+            }
+            pub mod utils {
+                use super::runtime_types;
+                pub mod rate_limiting {
+                    use super::runtime_types;
+                    #[derive(
+                        :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                        :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                        :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                        :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                        Clone,
+                        Debug,
+                    )]
+                    # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                    #[codec(dumb_trait_bound)]
+                    #[decode_as_type(
+                        crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                    )]
+                    #[encode_as_type(
+                        crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                    )]
+                    pub enum Hyperparameter {
+                        #[codec(index = 0)]
+                        Unknown,
+                        #[codec(index = 1)]
+                        ServingRateLimit,
+                        #[codec(index = 2)]
+                        MaxDifficulty,
+                        #[codec(index = 3)]
+                        AdjustmentAlpha,
+                        #[codec(index = 4)]
+                        MaxWeightLimit,
+                        #[codec(index = 5)]
+                        ImmunityPeriod,
+                        #[codec(index = 6)]
+                        MinAllowedWeights,
+                        #[codec(index = 7)]
+                        Kappa,
+                        #[codec(index = 8)]
+                        Rho,
+                        #[codec(index = 9)]
+                        ActivityCutoff,
+                        #[codec(index = 10)]
+                        PowRegistrationAllowed,
+                        #[codec(index = 11)]
+                        MinBurn,
+                        #[codec(index = 12)]
+                        MaxBurn,
+                        #[codec(index = 13)]
+                        BondsMovingAverage,
+                        #[codec(index = 14)]
+                        BondsPenalty,
+                        #[codec(index = 15)]
+                        CommitRevealEnabled,
+                        #[codec(index = 16)]
+                        LiquidAlphaEnabled,
+                        #[codec(index = 17)]
+                        AlphaValues,
+                        #[codec(index = 18)]
+                        WeightCommitInterval,
+                        #[codec(index = 19)]
+                        TransferEnabled,
+                        #[codec(index = 20)]
+                        AlphaSigmoidSteepness,
+                        #[codec(index = 21)]
+                        Yuma3Enabled,
+                        #[codec(index = 22)]
+                        BondsResetEnabled,
+                        #[codec(index = 23)]
+                        ImmuneNeuronLimit,
+                        #[codec(index = 24)]
+                        RecycleOrBurn,
+                    }
+                }
             }
             #[derive(
                 :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -54660,7 +57336,747 @@ pub mod api {
             #[codec(dumb_trait_bound)]
             #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
             #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
-            pub struct SubtensorTransactionExtension<_0>(pub ::core::marker::PhantomData<_0>);
+            pub enum RateLimitKey<_0> {
+                #[codec(index = 0)]
+                SetSNOwnerHotkey(::core::primitive::u16),
+                #[codec(index = 1)]
+                OwnerHyperparamUpdate(
+                    ::core::primitive::u16,
+                    runtime_types::pallet_subtensor::utils::rate_limiting::Hyperparameter,
+                ),
+                #[codec(index = 2)]
+                NetworkLastRegistered,
+                #[codec(index = 3)]
+                LastTxBlock(_0),
+                #[codec(index = 4)]
+                LastTxBlockChildKeyTake(_0),
+                #[codec(index = 5)]
+                LastTxBlockDelegateTake(_0),
+            }
+        }
+        pub mod pallet_subtensor_collective {
+            use super::runtime_types;
+            pub mod pallet {
+                use super::runtime_types;
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
+                pub enum Call {
+                    #[codec(index = 0)]
+                    #[doc = "Set the collective's membership."]
+                    #[doc = ""]
+                    #[doc = "- `new_members`: The new member list. Be nice to the chain and provide it sorted."]
+                    #[doc = "- `prime`: The prime member whose vote sets the default."]
+                    #[doc = "- `old_count`: The upper bound for the previous number of members in storage. Used for"]
+                    #[doc = "  weight estimation."]
+                    #[doc = ""]
+                    #[doc = "The dispatch of this call must be `SetMembersOrigin`."]
+                    #[doc = ""]
+                    #[doc = "NOTE: Does not enforce the expected `MaxMembers` limit on the amount of members, but"]
+                    #[doc = "      the weight estimations rely on it to estimate dispatchable weight."]
+                    #[doc = ""]
+                    #[doc = "# WARNING:"]
+                    #[doc = ""]
+                    #[doc = "The `pallet-collective` can also be managed by logic outside of the pallet through the"]
+                    #[doc = "implementation of the trait [`ChangeMembers`]."]
+                    #[doc = "Any call to `set_members` must be careful that the member set doesn't get out of sync"]
+                    #[doc = "with other logic managing the member set."]
+                    #[doc = ""]
+                    #[doc = "## Complexity:"]
+                    #[doc = "- `O(MP + N)` where:"]
+                    #[doc = "  - `M` old-members-count (code- and governance-bounded)"]
+                    #[doc = "  - `N` new-members-count (code- and governance-bounded)"]
+                    #[doc = "  - `P` proposals-count (code-bounded)"]
+                    set_members {
+                        new_members: ::subxt::ext::subxt_core::alloc::vec::Vec<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                        >,
+                        prime: ::core::option::Option<::subxt::ext::subxt_core::utils::AccountId32>,
+                        old_count: ::core::primitive::u32,
+                    },
+                    #[codec(index = 1)]
+                    #[doc = "Dispatch a proposal from a member using the `Member` origin."]
+                    #[doc = ""]
+                    #[doc = "Origin must be a member of the collective."]
+                    #[doc = ""]
+                    #[doc = "## Complexity:"]
+                    #[doc = "- `O(B + M + P)` where:"]
+                    #[doc = "- `B` is `proposal` size in bytes (length-fee-bounded)"]
+                    #[doc = "- `M` members-count (code-bounded)"]
+                    #[doc = "- `P` complexity of dispatching `proposal`"]
+                    execute {
+                        proposal: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                        #[codec(compact)]
+                        length_bound: ::core::primitive::u32,
+                    },
+                    #[codec(index = 2)]
+                    #[doc = "Add a new proposal to either be voted on or executed directly."]
+                    #[doc = ""]
+                    #[doc = "Requires the sender to be member."]
+                    #[doc = ""]
+                    #[doc = "`threshold` determines whether `proposal` is executed directly (`threshold < 2`)"]
+                    #[doc = "or put up for voting."]
+                    #[doc = ""]
+                    #[doc = "## Complexity"]
+                    #[doc = "- `O(B + M + P1)` or `O(B + M + P2)` where:"]
+                    #[doc = "  - `B` is `proposal` size in bytes (length-fee-bounded)"]
+                    #[doc = "  - `M` is members-count (code- and governance-bounded)"]
+                    #[doc = "  - branching is influenced by `threshold` where:"]
+                    #[doc = "    - `P1` is proposal execution complexity (`threshold < 2`)"]
+                    #[doc = "    - `P2` is proposals-count (code-bounded) (`threshold >= 2`)"]
+                    propose {
+                        proposal: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                        #[codec(compact)]
+                        length_bound: ::core::primitive::u32,
+                        duration: ::core::primitive::u32,
+                    },
+                    #[codec(index = 3)]
+                    #[doc = "Add an aye or nay vote for the sender to the given proposal."]
+                    #[doc = ""]
+                    #[doc = "Requires the sender to be a member."]
+                    #[doc = ""]
+                    #[doc = "Transaction fees will be waived if the member is voting on any particular proposal"]
+                    #[doc = "for the first time and the call is successful. Subsequent vote changes will charge a"]
+                    #[doc = "fee."]
+                    #[doc = "## Complexity"]
+                    #[doc = "- `O(M)` where `M` is members-count (code- and governance-bounded)"]
+                    vote {
+                        proposal: ::subxt::ext::subxt_core::utils::H256,
+                        #[codec(compact)]
+                        index: ::core::primitive::u32,
+                        approve: ::core::primitive::bool,
+                    },
+                    #[codec(index = 5)]
+                    #[doc = "Disapprove a proposal, close, and remove it from the system, regardless of its current"]
+                    #[doc = "state."]
+                    #[doc = ""]
+                    #[doc = "Must be called by the Root origin."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "* `proposal_hash`: The hash of the proposal that should be disapproved."]
+                    #[doc = ""]
+                    #[doc = "## Complexity"]
+                    #[doc = "O(P) where P is the number of max proposals"]
+                    disapprove_proposal {
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 6)]
+                    #[doc = "Close a vote that is either approved, disapproved or whose voting period has ended."]
+                    #[doc = ""]
+                    #[doc = "May be called by any signed account in order to finish voting and close the proposal."]
+                    #[doc = ""]
+                    #[doc = "If called before the end of the voting period it will only close the vote if it is"]
+                    #[doc = "has enough votes to be approved or disapproved."]
+                    #[doc = ""]
+                    #[doc = "If called after the end of the voting period abstentions are counted as rejections"]
+                    #[doc = "unless there is a prime member set and the prime member cast an approval."]
+                    #[doc = ""]
+                    #[doc = "If the close operation completes successfully with disapproval, the transaction fee will"]
+                    #[doc = "be waived. Otherwise execution of the approved operation will be charged to the caller."]
+                    #[doc = ""]
+                    #[doc = "+ `proposal_weight_bound`: The maximum amount of weight consumed by executing the closed"]
+                    #[doc = "proposal."]
+                    #[doc = "+ `length_bound`: The upper bound for the length of the proposal in storage. Checked via"]
+                    #[doc = "`storage::read` so it is `size_of::<u32>() == 4` larger than the pure length."]
+                    #[doc = ""]
+                    #[doc = "## Complexity"]
+                    #[doc = "- `O(B + M + P1 + P2)` where:"]
+                    #[doc = "  - `B` is `proposal` size in bytes (length-fee-bounded)"]
+                    #[doc = "  - `M` is members-count (code- and governance-bounded)"]
+                    #[doc = "  - `P1` is the complexity of `proposal` preimage."]
+                    #[doc = "  - `P2` is proposal-count (code-bounded)"]
+                    close {
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                        #[codec(compact)]
+                        index: ::core::primitive::u32,
+                        proposal_weight_bound: runtime_types::sp_weights::weight_v2::Weight,
+                        #[codec(compact)]
+                        length_bound: ::core::primitive::u32,
+                    },
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "The `Error` enum of this pallet."]
+                pub enum Error {
+                    #[codec(index = 0)]
+                    #[doc = "Account is not a member of collective"]
+                    NotMember,
+                    #[codec(index = 1)]
+                    #[doc = "Duplicate proposals not allowed"]
+                    DuplicateProposal,
+                    #[codec(index = 2)]
+                    #[doc = "Proposal must exist"]
+                    ProposalNotExists,
+                    #[codec(index = 3)]
+                    #[doc = "Index mismatched the proposal hash"]
+                    IndexMismatchProposalHash,
+                    #[codec(index = 4)]
+                    #[doc = "Duplicate vote ignored"]
+                    DuplicateVote,
+                    #[codec(index = 5)]
+                    #[doc = "The call to close the proposal was made too early, before the end of the voting"]
+                    TooEarlyToCloseProposal,
+                    #[codec(index = 6)]
+                    #[doc = "There can only be a maximum of `MaxProposals` active proposals."]
+                    TooManyActiveProposals,
+                    #[codec(index = 7)]
+                    #[doc = "The given weight-bound for the proposal was too low."]
+                    ProposalWeightLessThanDispatchCallWeight,
+                    #[codec(index = 8)]
+                    #[doc = "The given length-bound for the proposal was too low."]
+                    ProposalLengthBoundLessThanProposalLength,
+                    #[codec(index = 9)]
+                    #[doc = "The given motion duration for the proposal was too low."]
+                    DurationLowerThanConfiguredMotionDuration,
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "The `Event` enum of this pallet"]
+                pub enum Event {
+                    #[codec(index = 0)]
+                    #[doc = "A motion (given hash) has been proposed (by given account) with a threshold (given"]
+                    #[doc = "`MemberCount`)."]
+                    Proposed {
+                        account: ::subxt::ext::subxt_core::utils::AccountId32,
+                        proposal_index: ::core::primitive::u32,
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                        threshold: ::core::primitive::u32,
+                    },
+                    #[codec(index = 1)]
+                    #[doc = "A motion (given hash) has been voted on by given account, leaving"]
+                    #[doc = "a tally (yes votes and no votes given respectively as `MemberCount`)."]
+                    Voted {
+                        account: ::subxt::ext::subxt_core::utils::AccountId32,
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                        voted: ::core::primitive::bool,
+                        yes: ::core::primitive::u32,
+                        no: ::core::primitive::u32,
+                    },
+                    #[codec(index = 2)]
+                    #[doc = "A motion was approved by the required threshold."]
+                    Approved {
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 3)]
+                    #[doc = "A motion was not approved by the required threshold."]
+                    Disapproved {
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 4)]
+                    #[doc = "A motion was executed; result will be `Ok` if it returned without error."]
+                    Executed {
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                        result:
+                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
+                    },
+                    #[codec(index = 5)]
+                    #[doc = "A single member did some action; result will be `Ok` if it returned without error."]
+                    MemberExecuted {
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                        result:
+                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
+                    },
+                    #[codec(index = 6)]
+                    #[doc = "A proposal was closed because its threshold was reached or after its duration was up."]
+                    Closed {
+                        proposal_hash: ::subxt::ext::subxt_core::utils::H256,
+                        yes: ::core::primitive::u32,
+                        no: ::core::primitive::u32,
+                    },
+                }
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub enum RawOrigin<_0> {
+                #[codec(index = 0)]
+                Members(::core::primitive::u32, ::core::primitive::u32),
+                #[codec(index = 1)]
+                Member(_0),
+                #[codec(index = 2)]
+                _Phantom,
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct Votes<_0, _1> {
+                pub index: ::core::primitive::u32,
+                pub threshold: ::core::primitive::u32,
+                pub ayes: ::subxt::ext::subxt_core::alloc::vec::Vec<_0>,
+                pub nays: ::subxt::ext::subxt_core::alloc::vec::Vec<_0>,
+                pub end: _1,
+            }
+        }
+        pub mod pallet_subtensor_proxy {
+            use super::runtime_types;
+            pub mod pallet {
+                use super::runtime_types;
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
+                pub enum Call {
+                    #[codec(index = 0)]
+                    #[doc = "Dispatch the given `call` from an account that the sender is authorised for through"]
+                    #[doc = "`add_proxy`."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
+                    #[doc = "- `force_proxy_type`: Specify the exact proxy type to be used and checked for this call."]
+                    #[doc = "- `call`: The call to be made by the `real` account."]
+                    proxy {
+                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        force_proxy_type: ::core::option::Option<
+                            runtime_types::subtensor_runtime_common::ProxyType,
+                        >,
+                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 1)]
+                    #[doc = "Register a proxy account for the sender that is able to make calls on its behalf."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "- `proxy`: The account that the `caller` would like to make a proxy."]
+                    #[doc = "- `proxy_type`: The permissions allowed for this proxy account."]
+                    #[doc = "- `delay`: The announcement period required of the initial proxy. Will generally be"]
+                    #[doc = "zero."]
+                    add_proxy {
+                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        delay: ::core::primitive::u32,
+                    },
+                    #[codec(index = 2)]
+                    #[doc = "Unregister a proxy account for the sender."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "- `proxy`: The account that the `caller` would like to remove as a proxy."]
+                    #[doc = "- `proxy_type`: The permissions currently enabled for the removed proxy account."]
+                    remove_proxy {
+                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        delay: ::core::primitive::u32,
+                    },
+                    #[codec(index = 3)]
+                    #[doc = "Unregister all proxy accounts for the sender."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "WARNING: This may be called on accounts created by `create_pure`, however if done, then"]
+                    #[doc = "the unreserved fees will be inaccessible. **All access to this account will be lost.**"]
+                    remove_proxies,
+                    #[codec(index = 4)]
+                    #[doc = "Spawn a fresh new account that is guaranteed to be otherwise inaccessible, and"]
+                    #[doc = "initialize it with a proxy of `proxy_type` for `origin` sender."]
+                    #[doc = ""]
+                    #[doc = "Requires a `Signed` origin."]
+                    #[doc = ""]
+                    #[doc = "- `proxy_type`: The type of the proxy that the sender will be registered as over the"]
+                    #[doc = "new account. This will almost always be the most permissive `ProxyType` possible to"]
+                    #[doc = "allow for maximum flexibility."]
+                    #[doc = "- `index`: A disambiguation index, in case this is called multiple times in the same"]
+                    #[doc = "transaction (e.g. with `utility::batch`). Unless you're using `batch` you probably just"]
+                    #[doc = "want to use `0`."]
+                    #[doc = "- `delay`: The announcement period required of the initial proxy. Will generally be"]
+                    #[doc = "zero."]
+                    #[doc = ""]
+                    #[doc = "Fails with `Duplicate` if this has already been called in this transaction, from the"]
+                    #[doc = "same sender, with the same parameters."]
+                    #[doc = ""]
+                    #[doc = "Fails if there are insufficient funds to pay for deposit."]
+                    create_pure {
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        delay: ::core::primitive::u32,
+                        index: ::core::primitive::u16,
+                    },
+                    #[codec(index = 5)]
+                    #[doc = "Removes a previously spawned pure proxy."]
+                    #[doc = ""]
+                    #[doc = "WARNING: **All access to this account will be lost.** Any funds held in it will be"]
+                    #[doc = "inaccessible."]
+                    #[doc = ""]
+                    #[doc = "Requires a `Signed` origin, and the sender account must have been created by a call to"]
+                    #[doc = "`create_pure` with corresponding parameters."]
+                    #[doc = ""]
+                    #[doc = "- `spawner`: The account that originally called `create_pure` to create this account."]
+                    #[doc = "- `index`: The disambiguation index originally passed to `create_pure`. Probably `0`."]
+                    #[doc = "- `proxy_type`: The proxy type originally passed to `create_pure`."]
+                    #[doc = "- `height`: The height of the chain when the call to `create_pure` was processed."]
+                    #[doc = "- `ext_index`: The extrinsic index in which the call to `create_pure` was processed."]
+                    #[doc = ""]
+                    #[doc = "Fails with `NoPermission` in case the caller is not a previously created pure"]
+                    #[doc = "account whose `create_pure` call has corresponding parameters."]
+                    kill_pure {
+                        spawner: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        index: ::core::primitive::u16,
+                        #[codec(compact)]
+                        height: ::core::primitive::u32,
+                        #[codec(compact)]
+                        ext_index: ::core::primitive::u32,
+                    },
+                    #[codec(index = 6)]
+                    #[doc = "Publish the hash of a proxy-call that will be made in the future."]
+                    #[doc = ""]
+                    #[doc = "This must be called some number of blocks before the corresponding `proxy` is attempted"]
+                    #[doc = "if the delay associated with the proxy relationship is greater than zero."]
+                    #[doc = ""]
+                    #[doc = "No more than `MaxPending` announcements may be made at any one time."]
+                    #[doc = ""]
+                    #[doc = "This will take a deposit of `AnnouncementDepositFactor` as well as"]
+                    #[doc = "`AnnouncementDepositBase` if there are no other pending announcements."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_ and a proxy of `real`."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
+                    #[doc = "- `call_hash`: The hash of the call to be made by the `real` account."]
+                    announce {
+                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        call_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 7)]
+                    #[doc = "Remove a given announcement."]
+                    #[doc = ""]
+                    #[doc = "May be called by a proxy account to remove a call they previously announced and return"]
+                    #[doc = "the deposit."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
+                    #[doc = "- `call_hash`: The hash of the call to be made by the `real` account."]
+                    remove_announcement {
+                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        call_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 8)]
+                    #[doc = "Remove the given announcement of a delegate."]
+                    #[doc = ""]
+                    #[doc = "May be called by a target (proxied) account to remove a call that one of their delegates"]
+                    #[doc = "(`delegate`) has announced they want to execute. The deposit is returned."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "- `delegate`: The account that previously announced the call."]
+                    #[doc = "- `call_hash`: The hash of the call to be made."]
+                    reject_announcement {
+                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        call_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 9)]
+                    #[doc = "Dispatch the given `call` from an account that the sender is authorized for through"]
+                    #[doc = "`add_proxy`."]
+                    #[doc = ""]
+                    #[doc = "Removes any corresponding announcement(s)."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "Parameters:"]
+                    #[doc = "- `real`: The account that the proxy will make a call on behalf of."]
+                    #[doc = "- `force_proxy_type`: Specify the exact proxy type to be used and checked for this call."]
+                    #[doc = "- `call`: The call to be made by the `real` account."]
+                    proxy_announced {
+                        delegate: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        real: ::subxt::ext::subxt_core::utils::MultiAddress<
+                            ::subxt::ext::subxt_core::utils::AccountId32,
+                            (),
+                        >,
+                        force_proxy_type: ::core::option::Option<
+                            runtime_types::subtensor_runtime_common::ProxyType,
+                        >,
+                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 10)]
+                    #[doc = "Poke / Adjust deposits made for proxies and announcements based on current values."]
+                    #[doc = "This can be used by accounts to possibly lower their locked amount."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    #[doc = ""]
+                    #[doc = "The transaction fee is waived if the deposit amount has changed."]
+                    #[doc = ""]
+                    #[doc = "Emits `DepositPoked` if successful."]
+                    poke_deposit,
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "The `Error` enum of this pallet."]
+                pub enum Error {
+                    #[codec(index = 0)]
+                    #[doc = "There are too many proxies registered or too many announcements pending."]
+                    TooMany,
+                    #[codec(index = 1)]
+                    #[doc = "Proxy registration not found."]
+                    NotFound,
+                    #[codec(index = 2)]
+                    #[doc = "Sender is not a proxy of the account to be proxied."]
+                    NotProxy,
+                    #[codec(index = 3)]
+                    #[doc = "A call which is incompatible with the proxy type's filter was attempted."]
+                    Unproxyable,
+                    #[codec(index = 4)]
+                    #[doc = "Account is already a proxy."]
+                    Duplicate,
+                    #[codec(index = 5)]
+                    #[doc = "Call may not be made by proxy because it may escalate its privileges."]
+                    NoPermission,
+                    #[codec(index = 6)]
+                    #[doc = "Announcement, if made at all, was made too recently."]
+                    Unannounced,
+                    #[codec(index = 7)]
+                    #[doc = "Cannot add self as proxy."]
+                    NoSelfProxy,
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "The `Event` enum of this pallet"]
+                pub enum Event {
+                    #[codec(index = 0)]
+                    #[doc = "A proxy was executed correctly, with the given."]
+                    ProxyExecuted {
+                        result:
+                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
+                    },
+                    #[codec(index = 1)]
+                    #[doc = "A pure account has been created by new proxy with given"]
+                    #[doc = "disambiguation index and proxy type."]
+                    PureCreated {
+                        pure: ::subxt::ext::subxt_core::utils::AccountId32,
+                        who: ::subxt::ext::subxt_core::utils::AccountId32,
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        disambiguation_index: ::core::primitive::u16,
+                    },
+                    #[codec(index = 2)]
+                    #[doc = "An announcement was placed to make a call in the future."]
+                    Announced {
+                        real: ::subxt::ext::subxt_core::utils::AccountId32,
+                        proxy: ::subxt::ext::subxt_core::utils::AccountId32,
+                        call_hash: ::subxt::ext::subxt_core::utils::H256,
+                    },
+                    #[codec(index = 3)]
+                    #[doc = "A proxy was added."]
+                    ProxyAdded {
+                        delegator: ::subxt::ext::subxt_core::utils::AccountId32,
+                        delegatee: ::subxt::ext::subxt_core::utils::AccountId32,
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        delay: ::core::primitive::u32,
+                    },
+                    #[codec(index = 4)]
+                    #[doc = "A proxy was removed."]
+                    ProxyRemoved {
+                        delegator: ::subxt::ext::subxt_core::utils::AccountId32,
+                        delegatee: ::subxt::ext::subxt_core::utils::AccountId32,
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        delay: ::core::primitive::u32,
+                    },
+                    #[codec(index = 5)]
+                    #[doc = "A pure proxy was killed by its spawner."]
+                    PureKilled {
+                        pure: ::subxt::ext::subxt_core::utils::AccountId32,
+                        spawner: ::subxt::ext::subxt_core::utils::AccountId32,
+                        proxy_type: runtime_types::subtensor_runtime_common::ProxyType,
+                        disambiguation_index: ::core::primitive::u16,
+                    },
+                    #[codec(index = 6)]
+                    #[doc = "A deposit stored for proxies or announcements was poked / updated."]
+                    DepositPoked {
+                        who: ::subxt::ext::subxt_core::utils::AccountId32,
+                        kind: runtime_types::pallet_subtensor_proxy::DepositKind,
+                        old_deposit: ::core::primitive::u64,
+                        new_deposit: ::core::primitive::u64,
+                    },
+                }
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct Announcement<_0, _1, _2> {
+                pub real: _0,
+                pub call_hash: _1,
+                pub height: _2,
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub enum DepositKind {
+                #[codec(index = 0)]
+                Proxies,
+                #[codec(index = 1)]
+                Announcements,
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct ProxyDefinition<_0, _1, _2> {
+                pub delegate: _0,
+                pub proxy_type: _1,
+                pub delay: _2,
+            }
         }
         pub mod pallet_subtensor_swap {
             use super::runtime_types;
@@ -54809,10 +58225,13 @@ pub mod api {
                         ReservesTooLow,
                         #[codec(index = 11)]
                         #[doc = "The subnet does not exist."]
-                        SubNetworkDoesNotExist,
+                        MechanismDoesNotExist,
                         #[codec(index = 12)]
                         #[doc = "User liquidity operations are disabled for this subnet"]
                         UserLiquidityDisabled,
+                        #[codec(index = 13)]
+                        #[doc = "The subnet does not have subtoken enabled"]
+                        SubtokenDisabled,
                     }
                     #[derive(
                         :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -54855,6 +58274,8 @@ pub mod api {
                             liquidity: ::core::primitive::u64,
                             tao: ::core::primitive::u64,
                             alpha: ::core::primitive::u64,
+                            tick_low: runtime_types::pallet_subtensor_swap::tick::TickIndex,
+                            tick_high: runtime_types::pallet_subtensor_swap::tick::TickIndex,
                         },
                         #[codec(index = 3)]
                         #[doc = "Event emitted when a liquidity position is removed from a subnet's liquidity pool."]
@@ -54863,10 +58284,13 @@ pub mod api {
                             hotkey: ::subxt::ext::subxt_core::utils::AccountId32,
                             netuid: ::core::primitive::u16,
                             position_id: runtime_types::pallet_subtensor_swap::position::PositionId,
+                            liquidity: ::core::primitive::u64,
                             tao: ::core::primitive::u64,
                             alpha: ::core::primitive::u64,
                             fee_tao: ::core::primitive::u64,
                             fee_alpha: ::core::primitive::u64,
+                            tick_low: runtime_types::pallet_subtensor_swap::tick::TickIndex,
+                            tick_high: runtime_types::pallet_subtensor_swap::tick::TickIndex,
                         },
                         #[codec(index = 4)]
                         #[doc = "Event emitted when a liquidity position is modified in a subnet's liquidity pool."]
@@ -54881,6 +58305,8 @@ pub mod api {
                             alpha: ::core::primitive::i64,
                             fee_tao: ::core::primitive::u64,
                             fee_alpha: ::core::primitive::u64,
+                            tick_low: runtime_types::pallet_subtensor_swap::tick::TickIndex,
+                            tick_high: runtime_types::pallet_subtensor_swap::tick::TickIndex,
                         },
                     }
                 }
@@ -54910,51 +58336,51 @@ pub mod api {
                     pub tick_high: runtime_types::pallet_subtensor_swap::tick::TickIndex,
                     pub liquidity: ::core::primitive::u64,
                     pub fees_tao: runtime_types::substrate_fixed::FixedI128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >,
                     pub fees_alpha: runtime_types::substrate_fixed::FixedI128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >,
                 }
@@ -55023,51 +58449,51 @@ pub mod api {
                     pub liquidity_net: ::core::primitive::i128,
                     pub liquidity_gross: ::core::primitive::u64,
                     pub fees_out_tao: runtime_types::substrate_fixed::FixedI128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >,
                     pub fees_out_alpha: runtime_types::substrate_fixed::FixedI128<
-                        runtime_types::typenum::uint::UInt<
-                            runtime_types::typenum::uint::UInt<
-                                runtime_types::typenum::uint::UInt<
-                                    runtime_types::typenum::uint::UInt<
-                                        runtime_types::typenum::uint::UInt<
-                                            runtime_types::typenum::uint::UInt<
-                                                runtime_types::typenum::uint::UInt<
-                                                    runtime_types::typenum::uint::UTerm,
-                                                    runtime_types::typenum::bit::B1,
+                        runtime_types::substrate_typenum::uint::UInt<
+                            runtime_types::substrate_typenum::uint::UInt<
+                                runtime_types::substrate_typenum::uint::UInt<
+                                    runtime_types::substrate_typenum::uint::UInt<
+                                        runtime_types::substrate_typenum::uint::UInt<
+                                            runtime_types::substrate_typenum::uint::UInt<
+                                                runtime_types::substrate_typenum::uint::UInt<
+                                                    runtime_types::substrate_typenum::uint::UTerm,
+                                                    runtime_types::substrate_typenum::bit::B1,
                                                 >,
-                                                runtime_types::typenum::bit::B0,
+                                                runtime_types::substrate_typenum::bit::B0,
                                             >,
-                                            runtime_types::typenum::bit::B0,
+                                            runtime_types::substrate_typenum::bit::B0,
                                         >,
-                                        runtime_types::typenum::bit::B0,
+                                        runtime_types::substrate_typenum::bit::B0,
                                     >,
-                                    runtime_types::typenum::bit::B0,
+                                    runtime_types::substrate_typenum::bit::B0,
                                 >,
-                                runtime_types::typenum::bit::B0,
+                                runtime_types::substrate_typenum::bit::B0,
                             >,
-                            runtime_types::typenum::bit::B0,
+                            runtime_types::substrate_typenum::bit::B0,
                         >,
                     >,
                 }
@@ -55088,6 +58514,284 @@ pub mod api {
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
                 pub struct TickIndex(pub ::core::primitive::i32);
+            }
+        }
+        pub mod pallet_subtensor_swap_runtime_api {
+            use super::runtime_types;
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct SimSwapResult {
+                pub tao_amount: ::core::primitive::u64,
+                pub alpha_amount: ::core::primitive::u64,
+                pub tao_fee: ::core::primitive::u64,
+                pub alpha_fee: ::core::primitive::u64,
+            }
+        }
+        pub mod pallet_subtensor_utility {
+            use super::runtime_types;
+            pub mod pallet {
+                use super::runtime_types;
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
+                pub enum Call {
+                    #[codec(index = 0)]
+                    #[doc = "Send a batch of dispatch calls."]
+                    #[doc = ""]
+                    #[doc = "May be called from any origin except `None`."]
+                    #[doc = ""]
+                    #[doc = "- `calls`: The calls to be dispatched from the same origin. The number of call must not"]
+                    #[doc = "  exceed the constant: `batched_calls_limit` (available in constant metadata)."]
+                    #[doc = ""]
+                    #[doc = "If origin is root then the calls are dispatched without checking origin filter. (This"]
+                    #[doc = "includes bypassing `frame_system::Config::BaseCallFilter`)."]
+                    #[doc = ""]
+                    #[doc = "## Complexity"]
+                    #[doc = "- O(C) where C is the number of calls to be batched."]
+                    #[doc = ""]
+                    #[doc = "This will return `Ok` in all circumstances. To determine the success of the batch, an"]
+                    #[doc = "event is deposited. If a call failed and the batch was interrupted, then the"]
+                    #[doc = "`BatchInterrupted` event is deposited, along with the number of successful calls made"]
+                    #[doc = "and the error of the failed call. If all were successful, then the `BatchCompleted`"]
+                    #[doc = "event is deposited."]
+                    batch {
+                        calls: ::subxt::ext::subxt_core::alloc::vec::Vec<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 1)]
+                    #[doc = "Send a call through an indexed pseudonym of the sender."]
+                    #[doc = ""]
+                    #[doc = "Filter from origin are passed along. The call will be dispatched with an origin which"]
+                    #[doc = "use the same filter as the origin of this call."]
+                    #[doc = ""]
+                    #[doc = "NOTE: If you need to ensure that any account-based filtering is not honored (i.e."]
+                    #[doc = "because you expect `proxy` to have been used prior in the call stack and you do not want"]
+                    #[doc = "the call restrictions to apply to any sub-accounts), then use `as_multi_threshold_1`"]
+                    #[doc = "in the Multisig pallet instead."]
+                    #[doc = ""]
+                    #[doc = "NOTE: Prior to version *12, this was called `as_limited_sub`."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Signed_."]
+                    as_derivative {
+                        index: ::core::primitive::u16,
+                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 2)]
+                    #[doc = "Send a batch of dispatch calls and atomically execute them."]
+                    #[doc = "The whole transaction will rollback and fail if any of the calls failed."]
+                    #[doc = ""]
+                    #[doc = "May be called from any origin except `None`."]
+                    #[doc = ""]
+                    #[doc = "- `calls`: The calls to be dispatched from the same origin. The number of call must not"]
+                    #[doc = "  exceed the constant: `batched_calls_limit` (available in constant metadata)."]
+                    #[doc = ""]
+                    #[doc = "If origin is root then the calls are dispatched without checking origin filter. (This"]
+                    #[doc = "includes bypassing `frame_system::Config::BaseCallFilter`)."]
+                    #[doc = ""]
+                    #[doc = "## Complexity"]
+                    #[doc = "- O(C) where C is the number of calls to be batched."]
+                    batch_all {
+                        calls: ::subxt::ext::subxt_core::alloc::vec::Vec<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 3)]
+                    #[doc = "Dispatches a function call with a provided origin."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Root_."]
+                    #[doc = ""]
+                    #[doc = "## Complexity"]
+                    #[doc = "- O(1)."]
+                    dispatch_as {
+                        as_origin: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::OriginCaller,
+                        >,
+                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 4)]
+                    #[doc = "Send a batch of dispatch calls."]
+                    #[doc = "Unlike `batch`, it allows errors and won't interrupt."]
+                    #[doc = ""]
+                    #[doc = "May be called from any origin except `None`."]
+                    #[doc = ""]
+                    #[doc = "- `calls`: The calls to be dispatched from the same origin. The number of call must not"]
+                    #[doc = "  exceed the constant: `batched_calls_limit` (available in constant metadata)."]
+                    #[doc = ""]
+                    #[doc = "If origin is root then the calls are dispatch without checking origin filter. (This"]
+                    #[doc = "includes bypassing `frame_system::Config::BaseCallFilter`)."]
+                    #[doc = ""]
+                    #[doc = "## Complexity"]
+                    #[doc = "- O(C) where C is the number of calls to be batched."]
+                    force_batch {
+                        calls: ::subxt::ext::subxt_core::alloc::vec::Vec<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 5)]
+                    #[doc = "Dispatch a function call with a specified weight."]
+                    #[doc = ""]
+                    #[doc = "This function does not check the weight of the call, and instead allows the"]
+                    #[doc = "Root origin to specify the weight of the call."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Root_."]
+                    with_weight {
+                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                        weight: runtime_types::sp_weights::weight_v2::Weight,
+                    },
+                    #[codec(index = 6)]
+                    #[doc = "Dispatch a fallback call in the event the main call fails to execute."]
+                    #[doc = "May be called from any origin except `None`."]
+                    #[doc = ""]
+                    #[doc = "This function first attempts to dispatch the `main` call."]
+                    #[doc = "If the `main` call fails, the `fallback` is attemted."]
+                    #[doc = "if the fallback is successfully dispatched, the weights of both calls"]
+                    #[doc = "are accumulated and an event containing the main call error is deposited."]
+                    #[doc = ""]
+                    #[doc = "In the event of a fallback failure the whole call fails"]
+                    #[doc = "with the weights returned."]
+                    #[doc = ""]
+                    #[doc = "- `main`: The main call to be dispatched. This is the primary action to execute."]
+                    #[doc = "- `fallback`: The fallback call to be dispatched in case the `main` call fails."]
+                    #[doc = ""]
+                    #[doc = "## Dispatch Logic"]
+                    #[doc = "- If the origin is `root`, both the main and fallback calls are executed without"]
+                    #[doc = "  applying any origin filters."]
+                    #[doc = "- If the origin is not `root`, the origin filter is applied to both the `main` and"]
+                    #[doc = "  `fallback` calls."]
+                    #[doc = ""]
+                    #[doc = "## Use Case"]
+                    #[doc = "- Some use cases might involve submitting a `batch` type call in either main, fallback"]
+                    #[doc = "  or both."]
+                    if_else {
+                        main: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                        fallback: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                    #[codec(index = 7)]
+                    #[doc = "Dispatches a function call with a provided origin."]
+                    #[doc = ""]
+                    #[doc = "Almost the same as [`Pallet::dispatch_as`] but forwards any error of the inner call."]
+                    #[doc = ""]
+                    #[doc = "The dispatch origin for this call must be _Root_."]
+                    dispatch_as_fallible {
+                        as_origin: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::OriginCaller,
+                        >,
+                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
+                            runtime_types::node_subtensor_runtime::RuntimeCall,
+                        >,
+                    },
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "The `Error` enum of this pallet."]
+                pub enum Error {
+                    #[codec(index = 0)]
+                    #[doc = "Too many calls batched."]
+                    TooManyCalls,
+                }
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                #[doc = "The `Event` enum of this pallet"]
+                pub enum Event {
+                    #[codec(index = 0)]
+                    #[doc = "Batch of dispatches did not complete fully. Index of first failing dispatch given, as"]
+                    #[doc = "well as the error."]
+                    BatchInterrupted {
+                        index: ::core::primitive::u32,
+                        error: runtime_types::sp_runtime::DispatchError,
+                    },
+                    #[codec(index = 1)]
+                    #[doc = "Batch of dispatches completed fully with no error."]
+                    BatchCompleted,
+                    #[codec(index = 2)]
+                    #[doc = "Batch of dispatches completed but has errors."]
+                    BatchCompletedWithErrors,
+                    #[codec(index = 3)]
+                    #[doc = "A single item within a Batch of dispatches has completed with no error."]
+                    ItemCompleted,
+                    #[codec(index = 4)]
+                    #[doc = "A single item within a Batch of dispatches has completed with error."]
+                    ItemFailed {
+                        error: runtime_types::sp_runtime::DispatchError,
+                    },
+                    #[codec(index = 5)]
+                    #[doc = "A call was dispatched."]
+                    DispatchedAs {
+                        result:
+                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
+                    },
+                    #[codec(index = 6)]
+                    #[doc = "Main call was dispatched."]
+                    IfElseMainSuccess,
+                    #[codec(index = 7)]
+                    #[doc = "The fallback call was dispatched."]
+                    IfElseFallbackCalled {
+                        main_error: runtime_types::sp_runtime::DispatchError,
+                    },
+                }
             }
         }
         pub mod pallet_sudo {
@@ -55404,209 +59108,6 @@ pub mod api {
                 V2,
             }
         }
-        pub mod pallet_utility {
-            use super::runtime_types;
-            pub mod pallet {
-                use super::runtime_types;
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "Contains a variant per dispatchable extrinsic that this pallet has."]
-                pub enum Call {
-                    #[codec(index = 0)]
-                    #[doc = "Send a batch of dispatch calls."]
-                    #[doc = ""]
-                    #[doc = "May be called from any origin except `None`."]
-                    #[doc = ""]
-                    #[doc = "- `calls`: The calls to be dispatched from the same origin. The number of call must not"]
-                    #[doc = "  exceed the constant: `batched_calls_limit` (available in constant metadata)."]
-                    #[doc = ""]
-                    #[doc = "If origin is root then the calls are dispatched without checking origin filter. (This"]
-                    #[doc = "includes bypassing `frame_system::Config::BaseCallFilter`)."]
-                    #[doc = ""]
-                    #[doc = "## Complexity"]
-                    #[doc = "- O(C) where C is the number of calls to be batched."]
-                    #[doc = ""]
-                    #[doc = "This will return `Ok` in all circumstances. To determine the success of the batch, an"]
-                    #[doc = "event is deposited. If a call failed and the batch was interrupted, then the"]
-                    #[doc = "`BatchInterrupted` event is deposited, along with the number of successful calls made"]
-                    #[doc = "and the error of the failed call. If all were successful, then the `BatchCompleted`"]
-                    #[doc = "event is deposited."]
-                    batch {
-                        calls: ::subxt::ext::subxt_core::alloc::vec::Vec<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "Send a call through an indexed pseudonym of the sender."]
-                    #[doc = ""]
-                    #[doc = "Filter from origin are passed along. The call will be dispatched with an origin which"]
-                    #[doc = "use the same filter as the origin of this call."]
-                    #[doc = ""]
-                    #[doc = "NOTE: If you need to ensure that any account-based filtering is not honored (i.e."]
-                    #[doc = "because you expect `proxy` to have been used prior in the call stack and you do not want"]
-                    #[doc = "the call restrictions to apply to any sub-accounts), then use `as_multi_threshold_1`"]
-                    #[doc = "in the Multisig pallet instead."]
-                    #[doc = ""]
-                    #[doc = "NOTE: Prior to version *12, this was called `as_limited_sub`."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Signed_."]
-                    as_derivative {
-                        index: ::core::primitive::u16,
-                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                    },
-                    #[codec(index = 2)]
-                    #[doc = "Send a batch of dispatch calls and atomically execute them."]
-                    #[doc = "The whole transaction will rollback and fail if any of the calls failed."]
-                    #[doc = ""]
-                    #[doc = "May be called from any origin except `None`."]
-                    #[doc = ""]
-                    #[doc = "- `calls`: The calls to be dispatched from the same origin. The number of call must not"]
-                    #[doc = "  exceed the constant: `batched_calls_limit` (available in constant metadata)."]
-                    #[doc = ""]
-                    #[doc = "If origin is root then the calls are dispatched without checking origin filter. (This"]
-                    #[doc = "includes bypassing `frame_system::Config::BaseCallFilter`)."]
-                    #[doc = ""]
-                    #[doc = "## Complexity"]
-                    #[doc = "- O(C) where C is the number of calls to be batched."]
-                    batch_all {
-                        calls: ::subxt::ext::subxt_core::alloc::vec::Vec<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                    },
-                    #[codec(index = 3)]
-                    #[doc = "Dispatches a function call with a provided origin."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Root_."]
-                    #[doc = ""]
-                    #[doc = "## Complexity"]
-                    #[doc = "- O(1)."]
-                    dispatch_as {
-                        as_origin: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::OriginCaller,
-                        >,
-                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                    },
-                    #[codec(index = 4)]
-                    #[doc = "Send a batch of dispatch calls."]
-                    #[doc = "Unlike `batch`, it allows errors and won't interrupt."]
-                    #[doc = ""]
-                    #[doc = "May be called from any origin except `None`."]
-                    #[doc = ""]
-                    #[doc = "- `calls`: The calls to be dispatched from the same origin. The number of call must not"]
-                    #[doc = "  exceed the constant: `batched_calls_limit` (available in constant metadata)."]
-                    #[doc = ""]
-                    #[doc = "If origin is root then the calls are dispatch without checking origin filter. (This"]
-                    #[doc = "includes bypassing `frame_system::Config::BaseCallFilter`)."]
-                    #[doc = ""]
-                    #[doc = "## Complexity"]
-                    #[doc = "- O(C) where C is the number of calls to be batched."]
-                    force_batch {
-                        calls: ::subxt::ext::subxt_core::alloc::vec::Vec<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                    },
-                    #[codec(index = 5)]
-                    #[doc = "Dispatch a function call with a specified weight."]
-                    #[doc = ""]
-                    #[doc = "This function does not check the weight of the call, and instead allows the"]
-                    #[doc = "Root origin to specify the weight of the call."]
-                    #[doc = ""]
-                    #[doc = "The dispatch origin for this call must be _Root_."]
-                    with_weight {
-                        call: ::subxt::ext::subxt_core::alloc::boxed::Box<
-                            runtime_types::node_subtensor_runtime::RuntimeCall,
-                        >,
-                        weight: runtime_types::sp_weights::weight_v2::Weight,
-                    },
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "The `Error` enum of this pallet."]
-                pub enum Error {
-                    #[codec(index = 0)]
-                    #[doc = "Too many calls batched."]
-                    TooManyCalls,
-                }
-                #[derive(
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                    Clone,
-                    Debug,
-                )]
-                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-                #[codec(dumb_trait_bound)]
-                #[decode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
-                )]
-                #[encode_as_type(
-                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
-                )]
-                #[doc = "The `Event` enum of this pallet"]
-                pub enum Event {
-                    #[codec(index = 0)]
-                    #[doc = "Batch of dispatches did not complete fully. Index of first failing dispatch given, as"]
-                    #[doc = "well as the error."]
-                    BatchInterrupted {
-                        index: ::core::primitive::u32,
-                        error: runtime_types::sp_runtime::DispatchError,
-                    },
-                    #[codec(index = 1)]
-                    #[doc = "Batch of dispatches completed fully with no error."]
-                    BatchCompleted,
-                    #[codec(index = 2)]
-                    #[doc = "Batch of dispatches completed but has errors."]
-                    BatchCompletedWithErrors,
-                    #[codec(index = 3)]
-                    #[doc = "A single item within a Batch of dispatches has completed with no error."]
-                    ItemCompleted,
-                    #[codec(index = 4)]
-                    #[doc = "A single item within a Batch of dispatches has completed with error."]
-                    ItemFailed {
-                        error: runtime_types::sp_runtime::DispatchError,
-                    },
-                    #[codec(index = 5)]
-                    #[doc = "A call was dispatched."]
-                    DispatchedAs {
-                        result:
-                            ::core::result::Result<(), runtime_types::sp_runtime::DispatchError>,
-                    },
-                }
-            }
-        }
         pub mod primitive_types {
             use super::runtime_types;
             #[derive(
@@ -55732,6 +59233,126 @@ pub mod api {
                 }
             }
         }
+        pub mod sp_consensus_babe {
+            use super::runtime_types;
+            pub mod app {
+                use super::runtime_types;
+                #[derive(
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                    :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                    :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                    Clone,
+                    Debug,
+                )]
+                # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+                #[codec(dumb_trait_bound)]
+                #[decode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode"
+                )]
+                #[encode_as_type(
+                    crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
+                )]
+                pub struct Public(pub [::core::primitive::u8; 32usize]);
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub enum AllowedSlots {
+                #[codec(index = 0)]
+                PrimarySlots,
+                #[codec(index = 1)]
+                PrimaryAndSecondaryPlainSlots,
+                #[codec(index = 2)]
+                PrimaryAndSecondaryVRFSlots,
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct BabeConfiguration {
+                pub slot_duration: ::core::primitive::u64,
+                pub epoch_length: ::core::primitive::u64,
+                pub c: (::core::primitive::u64, ::core::primitive::u64),
+                pub authorities: ::subxt::ext::subxt_core::alloc::vec::Vec<(
+                    runtime_types::sp_consensus_babe::app::Public,
+                    ::core::primitive::u64,
+                )>,
+                pub randomness: [::core::primitive::u8; 32usize],
+                pub allowed_slots: runtime_types::sp_consensus_babe::AllowedSlots,
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct BabeEpochConfiguration {
+                pub c: (::core::primitive::u64, ::core::primitive::u64),
+                pub allowed_slots: runtime_types::sp_consensus_babe::AllowedSlots,
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct Epoch {
+                pub epoch_index: ::core::primitive::u64,
+                pub start_slot: runtime_types::sp_consensus_slots::Slot,
+                pub duration: ::core::primitive::u64,
+                pub authorities: ::subxt::ext::subxt_core::alloc::vec::Vec<(
+                    runtime_types::sp_consensus_babe::app::Public,
+                    ::core::primitive::u64,
+                )>,
+                pub randomness: [::core::primitive::u8; 32usize],
+                pub config: runtime_types::sp_consensus_babe::BabeEpochConfiguration,
+            }
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct OpaqueKeyOwnershipProof(
+                pub ::subxt::ext::subxt_core::alloc::vec::Vec<::core::primitive::u8>,
+            );
+        }
         pub mod sp_consensus_grandpa {
             use super::runtime_types;
             pub mod app {
@@ -55820,6 +59441,24 @@ pub mod api {
         }
         pub mod sp_consensus_slots {
             use super::runtime_types;
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub struct EquivocationProof<_0, _1> {
+                pub offender: _1,
+                pub slot: runtime_types::sp_consensus_slots::Slot,
+                pub first_header: _0,
+                pub second_header: _0,
+            }
             #[derive(
                 :: subxt :: ext :: subxt_core :: ext :: codec :: CompactAs,
                 :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
@@ -57113,58 +60752,7 @@ pub mod api {
                 pub __ignore: ::core::marker::PhantomData<_0>,
             }
         }
-        pub mod subtensor_runtime_common {
-            use super::runtime_types;
-            #[derive(
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
-                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
-                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
-                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
-                Clone,
-                Debug,
-            )]
-            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
-            #[codec(dumb_trait_bound)]
-            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
-            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
-            pub enum ProxyType {
-                #[codec(index = 0)]
-                Any,
-                #[codec(index = 1)]
-                Owner,
-                #[codec(index = 2)]
-                NonCritical,
-                #[codec(index = 3)]
-                NonTransfer,
-                #[codec(index = 4)]
-                Senate,
-                #[codec(index = 5)]
-                NonFungibile,
-                #[codec(index = 6)]
-                Triumvirate,
-                #[codec(index = 7)]
-                Governance,
-                #[codec(index = 8)]
-                Staking,
-                #[codec(index = 9)]
-                Registration,
-                #[codec(index = 10)]
-                Transfer,
-                #[codec(index = 11)]
-                SmallTransfer,
-                #[codec(index = 12)]
-                RootWeights,
-                #[codec(index = 13)]
-                ChildKeys,
-                #[codec(index = 14)]
-                SudoUncheckedSetCode,
-                #[codec(index = 15)]
-                SwapHotkey,
-                #[codec(index = 16)]
-                SubnetLeaseBeneficiary,
-            }
-        }
-        pub mod typenum {
+        pub mod substrate_typenum {
             use super::runtime_types;
             pub mod bit {
                 use super::runtime_types;
@@ -57242,6 +60830,57 @@ pub mod api {
                     crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode"
                 )]
                 pub struct UTerm;
+            }
+        }
+        pub mod subtensor_runtime_common {
+            use super::runtime_types;
+            #[derive(
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Decode,
+                :: subxt :: ext :: subxt_core :: ext :: codec :: Encode,
+                :: subxt :: ext :: subxt_core :: ext :: scale_decode :: DecodeAsType,
+                :: subxt :: ext :: subxt_core :: ext :: scale_encode :: EncodeAsType,
+                Clone,
+                Debug,
+            )]
+            # [codec (crate = :: subxt :: ext :: subxt_core :: ext :: codec)]
+            #[codec(dumb_trait_bound)]
+            #[decode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_decode")]
+            #[encode_as_type(crate_path = ":: subxt :: ext :: subxt_core :: ext :: scale_encode")]
+            pub enum ProxyType {
+                #[codec(index = 0)]
+                Any,
+                #[codec(index = 1)]
+                Owner,
+                #[codec(index = 2)]
+                NonCritical,
+                #[codec(index = 3)]
+                NonTransfer,
+                #[codec(index = 4)]
+                Senate,
+                #[codec(index = 5)]
+                NonFungibile,
+                #[codec(index = 6)]
+                Triumvirate,
+                #[codec(index = 7)]
+                Governance,
+                #[codec(index = 8)]
+                Staking,
+                #[codec(index = 9)]
+                Registration,
+                #[codec(index = 10)]
+                Transfer,
+                #[codec(index = 11)]
+                SmallTransfer,
+                #[codec(index = 12)]
+                RootWeights,
+                #[codec(index = 13)]
+                ChildKeys,
+                #[codec(index = 14)]
+                SudoUncheckedSetCode,
+                #[codec(index = 15)]
+                SwapHotkey,
+                #[codec(index = 16)]
+                SubnetLeaseBeneficiary,
             }
         }
     }

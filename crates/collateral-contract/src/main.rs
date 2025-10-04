@@ -60,6 +60,12 @@ enum TxCommands {
         /// Amount to deposit in wei
         #[arg(long)]
         amount: String,
+        /// Hotkey as hex string (32 bytes)
+        #[arg(long)]
+        alpha_hotkey: String,
+        /// Amount to deposit in wei
+        #[arg(long)]
+        alpha_amount: String,
     },
     /// Reclaim collateral for an executor
     ReclaimCollateral {
@@ -72,6 +78,9 @@ enum TxCommands {
         /// Executor ID as string
         #[arg(long)]
         executor_id: String,
+        /// Hotkey as hex string (32 bytes)
+        #[arg(long)]
+        alpha_coldkey: String,
         /// URL for proof of reclaim
         #[arg(long)]
         url: String,
@@ -114,6 +123,12 @@ enum TxCommands {
         /// Executor ID as string
         #[arg(long)]
         executor_id: String,
+        /// Hotkey as hex string (32 bytes)
+        #[arg(long)]
+        amount: String,
+        /// Amount to slash in wei
+        #[arg(long)]
+        alpha_amount: String,
         /// URL for proof of slashing
         #[arg(long)]
         url: String,
@@ -207,20 +222,26 @@ async fn handle_tx_command(
             hotkey,
             executor_id,
             amount,
+            alpha_hotkey,
+            alpha_amount,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let amount_u256 = parse_u256(&amount)?;
             let executor_uuid = Uuid::parse_str(&executor_id)?;
+            let alpha_hotkey_bytes = parse_hotkey(&alpha_hotkey)?;
+            let alpha_amount_u256 = parse_u256(&alpha_amount)?;
 
             println!(
-                "Depositing {} in wei for executor {} with hotkey {}",
-                amount, executor_id, hotkey
+                "Depositing {} in wei for executor {} with hotkey {} and {} for alpha hotkey {}",
+                amount, executor_id, hotkey, alpha_amount, alpha_hotkey,
             );
             collateral_contract::deposit(
                 &private_key,
                 hotkey_bytes,
                 executor_uuid.into_bytes(),
                 amount_u256,
+                alpha_hotkey_bytes,
+                alpha_amount_u256,
                 network_config,
             )
             .await?;
@@ -230,12 +251,14 @@ async fn handle_tx_command(
             private_key,
             hotkey,
             executor_id,
+            alpha_coldkey,
             url,
             url_content_md5_checksum,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
             let executor_uuid = Uuid::parse_str(&executor_id)?;
+            let alpha_coldkey_bytes = parse_hotkey(&alpha_coldkey)?;
 
             println!(
                 "Reclaiming collateral for executor {} with hotkey {}",
@@ -245,6 +268,7 @@ async fn handle_tx_command(
                 &private_key,
                 hotkey_bytes,
                 executor_uuid.into_bytes(),
+                alpha_coldkey_bytes,
                 &url,
                 checksum,
                 network_config,
@@ -286,12 +310,16 @@ async fn handle_tx_command(
             private_key,
             hotkey,
             executor_id,
+            amount,
+            alpha_amount,
             url,
             url_content_md5_checksum,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
             let executor_uuid = Uuid::parse_str(&executor_id)?;
+            let amount_u256 = parse_u256(&amount)?;
+            let alpha_amount_u256 = parse_u256(&alpha_amount)?;
 
             println!(
                 "Slashing all collateral for executor {} with hotkey {}",
@@ -301,6 +329,8 @@ async fn handle_tx_command(
                 &private_key,
                 hotkey_bytes,
                 executor_uuid.into_bytes(),
+                amount_u256,
+                alpha_amount_u256,
                 &url,
                 checksum,
                 network_config,
@@ -462,6 +492,7 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     );
                     println!("    Miner: {}", deposit.miner);
                     println!("    Amount: {} in wei", deposit.amount);
+                    println!("    Alpha Amount: {} in wei", deposit.alphaAmount);
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
                     println!("    Type: Reclaimed");
@@ -473,6 +504,11 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     );
                     println!("    Miner: {}", reclaimed.miner);
                     println!("    Amount: {} in wei", reclaimed.amount);
+                    println!(
+                        "    Alpha Coldkey: {}",
+                        hex::encode(reclaimed.alphaColdkey.as_slice())
+                    );
+                    println!("    Alpha Amount: {} in wei", reclaimed.alphaAmount);
                 }
                 CollateralEvent::Slashed(slashed) => {
                     println!("    Type: Slashed");
@@ -482,7 +518,8 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                         hex::encode(slashed.executorId.as_slice())
                     );
                     println!("    Miner: {}", slashed.miner);
-                    println!("    Amount: {} in wei", slashed.amount);
+                    println!("    Amount: {} in wei", slashed.slashAmount);
+                    println!("    Alpha Amount: {} in wei", slashed.slashAlphaAmount);
                     println!("    URL: {}", slashed.url);
                     println!(
                         "    URL Content MD5: {}",
@@ -508,7 +545,9 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "hotkey": hex::encode(deposit.hotkey.as_slice()),
                         "executorId": hex::encode(deposit.executorId.as_slice()),
                         "miner": deposit.miner.to_string(),
-                        "amount": deposit.amount.to_string()
+                        "amount": deposit.amount.to_string(),
+                        "alphaHotkey": hex::encode(deposit.alphaHotkey.as_slice()),
+                        "alphaAmount": deposit.alphaAmount.to_string()
                     })
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
@@ -518,7 +557,9 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "hotkey": hex::encode(reclaimed.hotkey.as_slice()),
                         "executorId": hex::encode(reclaimed.executorId.as_slice()),
                         "miner": reclaimed.miner.to_string(),
-                        "amount": reclaimed.amount.to_string()
+                        "amount": reclaimed.amount.to_string(),
+                        "alphaColdkey": hex::encode(reclaimed.alphaColdkey.as_slice()),
+                        "alphaAmount": reclaimed.alphaAmount.to_string()
                     })
                 }
                 CollateralEvent::Slashed(slashed) => {
@@ -527,7 +568,8 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "hotkey": hex::encode(slashed.hotkey.as_slice()),
                         "executorId": hex::encode(slashed.executorId.as_slice()),
                         "miner": slashed.miner.to_string(),
-                        "amount": slashed.amount.to_string(),
+                        "amount": slashed.slashAmount.to_string(),
+                        "alphaAmount": slashed.slashAlphaAmount.to_string(),
                         "url": slashed.url,
                         "urlContentMd5Checksum": hex::encode(slashed.urlContentMd5Checksum.as_slice())
                     })

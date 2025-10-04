@@ -7,6 +7,7 @@ use alloy_primitives::Bytes;
 use alloy_sol_types::{sol, SolCall};
 use bittensor::api::api::{self as bittensorapi};
 use proxy::Proxy;
+use std::time::Duration;
 use subxt::{OnlineClient, PolkadotConfig};
 use subxt_signer::sr25519::dev;
 
@@ -14,7 +15,7 @@ use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {
-    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint64 decisionTimeout, address admin);
+    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint64 decisionTimeout, address admin, bytes32 alphaHotkey);
 }
 
 #[allow(dead_code)]
@@ -38,6 +39,8 @@ async fn disable_whitelist() -> Result<(), anyhow::Error> {
         .sign_and_submit_then_watch_default(&call, &signer)
         .await?;
 
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
     let storage_query = bittensorapi::storage().evm().disable_whitelist_check();
 
     let result = client
@@ -58,7 +61,7 @@ async fn disable_whitelist() -> Result<(), anyhow::Error> {
 // to test against local network, must get the metadata for local network
 // ./scripts/generate-metadata.sh local
 // export BITTENSOR_NETWORK=local
-// cargo test --package collateral --lib -- test::test_collateral_deploy --exact --show-output --ignored
+// cargo test --package collateral-contract --lib -- test::test_collateral_deploy --exact --show-output --ignored
 #[ignore]
 async fn test_collateral_deploy() {
     disable_whitelist().await.unwrap();
@@ -77,15 +80,22 @@ async fn test_collateral_deploy() {
         .await
         .unwrap();
 
-    let netuid = 1;
+    let netuid = 39;
     let trustee = signer.address();
     let min_collateral_increase = U256::from(1_000_000_000_000_000_000u128); // 1 TAO
     let decision_timeout = 3600u64; // 1 hour
     let admin = signer.address();
+    let alpha_hotkey = [2u8; 32];
 
-    let contract = CollateralUpgradeable::deploy(provider.clone())
-        .await
-        .unwrap();
+    let contract = CollateralUpgradeable::deploy(provider.clone()).await;
+    // .unwrap();
+
+    if contract.is_err() {
+        println!("Deploy failed: {:?}", contract.err());
+        return;
+    }
+
+    let contract = contract.unwrap();
 
     println!("Deployed contract at: {:?}", contract.address());
 
@@ -96,6 +106,7 @@ async fn test_collateral_deploy() {
             minCollateralIncrease: min_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
+            alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),
         }
         .abi_encode(),
     );
@@ -108,6 +119,8 @@ async fn test_collateral_deploy() {
     let hotkey = [1u8; 32];
     let executor_id = 1u128;
     let amount = U256::from(2_000_000_000_000_000_000u128); // 2 TAO
+    let alpha_hotkey = [2u8; 32];
+    let alpha_amount = U256::from(1_000_000_000_000_000_000u128); // 1 TAO
 
     // Call through proxy address
     let proxied = CollateralUpgradeable::new(*proxy.address(), provider.clone());
@@ -116,6 +129,8 @@ async fn test_collateral_deploy() {
         .deposit(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&executor_id.to_be_bytes()),
+            FixedBytes::from_slice(&alpha_hotkey),
+            alpha_amount,
         )
         .value(amount);
     let tx = tx.send().await.unwrap();
@@ -197,6 +212,7 @@ async fn test_deploy_proxy_in_testnet() {
     let min_collateral_increase = U256::from(1);
     let decision_timeout = 1; // 1 hour
     let admin = signer.address();
+    let alpha_hotkey = [2u8; 32];
 
     let data: Bytes = Bytes::from(
         initializeCall {
@@ -205,6 +221,7 @@ async fn test_deploy_proxy_in_testnet() {
             minCollateralIncrease: min_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
+            alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),
         }
         .abi_encode(),
     );
