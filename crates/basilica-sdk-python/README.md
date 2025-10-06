@@ -33,6 +33,27 @@ For complete working examples, see the `examples/` directory:
 - `health_check.py` - API health monitoring
 - `ssh_utils.py` - SSH credential handling examples
 
+## SDK Components
+
+The Basilica Python SDK consists of two main components:
+
+### 1. Core SDK (Rust-backed)
+Low-level bindings for interacting with the Basilica API:
+- Start and manage GPU rentals
+- List available nodes and filter by requirements
+- Monitor rental status and stream logs
+- Type-safe Python bindings with Pydantic models
+
+### 2. AFINE SDK (Pure Python)
+**Agent Framework for Interactive Network Environments** - High-level SDK for RL environments:
+- Define containerized RL environments as Python classes
+- Automatic RPC endpoint generation with FastAPI
+- Secure deployment to Basilica GPU nodes
+- Gymnasium-compatible interface
+- State persistence across container lifecycles
+
+See `basilica.afine` submodule and `examples/afine/` for details.
+
 ## Features
 
 ### 🚀 Auto-Configuration

@@ -20,13 +20,27 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-dependencies = []
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.0.0",
+    "httpx>=0.25.0",
+    "tenacity>=8.2.0",
+    "docker>=6.1.0",
+    "cloudpickle>=3.0.0",
+    "click>=8.1.0",
+    "cryptography>=41.0.0",
+]
 
 [project.optional-dependencies]
+afine = [
+    "gymnasium>=0.29.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "mypy>=1.0",
+    "pytest-mock>=3.12.0",
 ]
 
 [tool.maturin]

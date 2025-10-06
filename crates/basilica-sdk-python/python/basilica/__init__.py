@@ -7,42 +7,80 @@ A Python SDK for interacting with the Basilica GPU rental network.
 import os
 from typing import Optional, Dict, Any, List
 
-from basilica._basilica import (
-    BasilicaClient as _BasilicaClient,
-    # Helper functions
-    node_by_id,
-    node_by_gpu,
-    # Response types
-    HealthCheckResponse,
-    RentalResponse,
-    RentalStatusWithSshResponse,
-    RentalStatus,
-    SshAccess,
-    NodeDetails,
-    GpuSpec,
-    CpuSpec,
-    AvailableNode,
-    AvailabilityInfo,
-    # Request types
-    StartRentalApiRequest,
-    NodeSelection,
-    GpuRequirements,
-    PortMappingRequest,
-    ResourceRequirementsRequest,
-    VolumeMountRequest,
-    ListAvailableNodesQuery,
-    ListRentalsQuery,
-    # Constants from Rust
-    DEFAULT_API_URL,
-    DEFAULT_TIMEOUT_SECS,
-    DEFAULT_CONTAINER_IMAGE,
-    DEFAULT_GPU_TYPE,
-    DEFAULT_GPU_COUNT,
-    DEFAULT_GPU_MIN_MEMORY_GB,
-    DEFAULT_CPU_CORES,
-    DEFAULT_MEMORY_MB,
-    DEFAULT_STORAGE_MB,
-)
+try:
+    from basilica._basilica import (
+        BasilicaClient as _BasilicaClient,
+        # Helper functions
+        node_by_id,
+        node_by_gpu,
+        # Response types
+        HealthCheckResponse,
+        RentalResponse,
+        RentalStatusWithSshResponse,
+        RentalStatus,
+        SshAccess,
+        NodeDetails,
+        GpuSpec,
+        CpuSpec,
+        AvailableNode,
+        AvailabilityInfo,
+        # Request types
+        StartRentalApiRequest,
+        NodeSelection,
+        GpuRequirements,
+        PortMappingRequest,
+        ResourceRequirementsRequest,
+        VolumeMountRequest,
+        ListAvailableNodesQuery,
+        ListRentalsQuery,
+        # Constants from Rust
+        DEFAULT_API_URL,
+        DEFAULT_TIMEOUT_SECS,
+        DEFAULT_CONTAINER_IMAGE,
+        DEFAULT_GPU_TYPE,
+        DEFAULT_GPU_COUNT,
+        DEFAULT_GPU_MIN_MEMORY_GB,
+        DEFAULT_CPU_CORES,
+        DEFAULT_MEMORY_MB,
+        DEFAULT_STORAGE_MB,
+    )
+    _RUST_BINDINGS_AVAILABLE = True
+except ImportError:
+    # Rust bindings not available - set to None
+    # This allows AFINE SDK to work independently
+    _BasilicaClient = None
+    _RUST_BINDINGS_AVAILABLE = False
+
+    # Set dummy types for type hints
+    node_by_id = None
+    node_by_gpu = None
+    HealthCheckResponse = Any
+    RentalResponse = Any
+    RentalStatusWithSshResponse = Any
+    RentalStatus = Any
+    SshAccess = Any
+    NodeDetails = Any
+    GpuSpec = Any
+    CpuSpec = Any
+    AvailableNode = Any
+    AvailabilityInfo = Any
+    StartRentalApiRequest = Any
+    NodeSelection = Any
+    GpuRequirements = Any
+    PortMappingRequest = Any
+    ResourceRequirementsRequest = Any
+    VolumeMountRequest = Any
+    ListAvailableNodesQuery = Any
+    ListRentalsQuery = Any
+    DEFAULT_API_URL = "https://api.basilica.ai"
+    DEFAULT_TIMEOUT_SECS = 30
+    DEFAULT_CONTAINER_IMAGE = "ubuntu:22.04"
+    DEFAULT_GPU_TYPE = "RTX3090"
+    DEFAULT_GPU_COUNT = 1
+    DEFAULT_GPU_MIN_MEMORY_GB = 8
+    DEFAULT_CPU_CORES = 4
+    DEFAULT_MEMORY_MB = 8192
+    DEFAULT_STORAGE_MB = 10240
 
 # Default command is a list in Python
 DEFAULT_COMMAND = ["/bin/bash"]
@@ -98,6 +136,12 @@ class BasilicaClient:
             api_key: Optional authentication token (default: from BASILICA_API_TOKEN env)
                 Create token using: basilica tokens create
         """
+        if not _RUST_BINDINGS_AVAILABLE:
+            raise ImportError(
+                "Rust bindings not available. Please build the package with maturin: "
+                "cd crates/basilica-sdk-python && maturin develop"
+            )
+
         # Auto-detect base_url if not provided
         if base_url is None:
             base_url = os.environ.get("BASILICA_API_URL", DEFAULT_API_URL)
