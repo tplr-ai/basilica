@@ -67,7 +67,6 @@ cargo test --lib
 # Run all tests
 cargo test
 
-
 ## CLI Tool Usage
 
 The `collateral-cli` provides a comprehensive interface for interacting with the Collateral contract.
