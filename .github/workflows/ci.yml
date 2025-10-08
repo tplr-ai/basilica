@@ -156,8 +156,8 @@ jobs:
           ./scripts/gen-key.sh
       - name: Run clippy on complex packages
         run: |
-          cargo update
-          cargo upgrade
+          rustup update
+          rustup upgrade
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
           # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
           # Run clippy on miner
