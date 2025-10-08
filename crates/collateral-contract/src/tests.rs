@@ -1,7 +1,6 @@
 // The unit tests are for testing against local network
 // Just can be executed if local subtensor node is running
 use super::*;
-use crate::config::LOCAL_CHAIN_ID;
 use alloy::hex::FromHex;
 use alloy_primitives::Bytes;
 use alloy_sol_types::{sol, SolCall};
@@ -11,7 +10,7 @@ use std::time::Duration;
 use subxt::{OnlineClient, PolkadotConfig};
 use subxt_signer::sr25519::dev;
 
-use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
+use config::{LOCAL_CHAIN_ID, LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {
@@ -61,12 +60,16 @@ async fn disable_whitelist() -> Result<(), anyhow::Error> {
 // to test against local network, must get the metadata for local network
 // ./scripts/generate-metadata.sh local
 // export BITTENSOR_NETWORK=local
-// cargo test --package collateral-contract --lib -- test::test_collateral_deploy --exact --show-output --ignored
-#[ignore]
+// cargo test --package collateral-contract --lib -- tests::test_collateral_deploy --exact --show-output
+// export OPEN_EVM_PRIVATE_KEY=5fb92d6e98884f76de468fa3f6278f8807c48bebc13595d45af5bdc4da702133
+// LOCAL_RPC_URL=127.0.0.1:8545
+// LOCAL_CHAIN_ID=31337
+// #[ignore]
 async fn test_collateral_deploy() {
     disable_whitelist().await.unwrap();
 
     // get predefined evm account alithe signer
+    // let alithe_private_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
     let alithe_private_key = std::env::var("OPEN_EVM_PRIVATE_KEY").unwrap_or_else(|_| {
         "5fb92d6e98884f76de468fa3f6278f8807c48bebc13595d45af5bdc4da702133".to_string()
     });
@@ -79,6 +82,11 @@ async fn test_collateral_deploy() {
         .connect(LOCAL_RPC_URL)
         .await
         .unwrap();
+
+    println!(
+        "singer balance: {:?}",
+        provider.get_balance(signer.address()).await.unwrap()
+    );
 
     let netuid = 39;
     let trustee = signer.address();
@@ -98,6 +106,7 @@ async fn test_collateral_deploy() {
     let contract = contract.unwrap();
 
     println!("Deployed contract at: {:?}", contract.address());
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     let data: Bytes = Bytes::from(
         initializeCall {
@@ -114,6 +123,8 @@ async fn test_collateral_deploy() {
     let proxy = Proxy::deploy(provider.clone(), *contract.address(), data)
         .await
         .unwrap();
+
+    println!("Deployed proxy at: {:?}", proxy.address());
 
     // Test deposit
     let hotkey = [1u8; 32];
