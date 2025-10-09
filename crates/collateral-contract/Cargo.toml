@@ -32,7 +32,6 @@ basilica-common = { path = "../basilica-common" }
 
 [dev-dependencies]
 subxt = { workspace = true }
-# sp-core = { workspace = true }
 subxt-signer = { workspace = true }
 bittensor = { path = "../bittensor" }
-blake2 = "0.10"
+blake2 = {workspace = true}
