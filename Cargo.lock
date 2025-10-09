@@ -3314,6 +3314,7 @@ dependencies = [
  "anyhow",
  "basilica-common",
  "bittensor",
+ "blake2",
  "clap",
  "clap-verbosity-flag",
  "hex",

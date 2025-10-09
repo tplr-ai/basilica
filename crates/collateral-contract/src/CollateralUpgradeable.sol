@@ -222,7 +222,7 @@ contract CollateralUpgradeable is
         bytes16 executorId,
         bytes32 alphaHotkey,
         uint256 alphaAmount
-    ) external payable virtual {
+    ) external payable {
         if (msg.value != 0 && msg.value < MIN_COLLATERAL_INCREASE) {
             revert InsufficientAmount();
         }
@@ -555,33 +555,33 @@ contract CollateralUpgradeable is
         }(data);
         require(success, "user deposit alpha call failed");
 
-        // uint256 newContractStake = getContractStake();
+        uint256 newContractStake = getContractStake();
 
-        // require(
-        //     newContractStake > contractStake,
-        //     "contract stake decreased after deposit"
-        // );
+        require(
+            newContractStake > contractStake,
+            "contract stake decreased after deposit"
+        );
 
-        // // use the increased stake as the actual alpha amount, for the swap fee in the move stake call
-        // // the contract will take it and get compensated by laster emission of alpha
-        // uint256 actualAlphaAmount = newContractStake - contractStake;
+        // use the increased stake as the actual alpha amount, for the swap fee in the move stake call
+        // the contract will take it and get compensated by laster emission of alpha
+        uint256 actualAlphaAmount = newContractStake - contractStake;
 
-        // if (alphaHotkey != CONTRACT_HOTKEY) {
-        //     data = abi.encodeWithSelector(
-        //         IStaking.moveStake.selector,
-        //         alphaHotkey,
-        //         CONTRACT_HOTKEY,
-        //         NETUID,
-        //         NETUID,
-        //         actualAlphaAmount
-        //     );
-        //     (success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
-        //         data
-        //     );
-        //     require(success, "user deposit, move stake call failed");
-        // }
+        if (alphaHotkey != CONTRACT_HOTKEY) {
+            data = abi.encodeWithSelector(
+                IStaking.moveStake.selector,
+                alphaHotkey,
+                CONTRACT_HOTKEY,
+                NETUID,
+                NETUID,
+                actualAlphaAmount
+            );
+            (success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
+                data
+            );
+            require(success, "user deposit, move stake call failed");
+        }
 
-        return contractStake;
+        return actualAlphaAmount;
     }
 
     function withdrawAlpha(bytes32 alphaColdkey, uint256 alphaAmount) internal {

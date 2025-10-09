@@ -72,6 +72,7 @@ prost = "0.12"
 prost-types = "0.12"
 
 # Crypto and security
+blake2 = "0.10"
 blake3 = "1.5"
 aes-gcm = "0.10"
 rand = "0.8"
@@ -176,6 +177,9 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 
 # Bittensor integration via crabtensor
 crabtensor = { git = "https://github.com/storb-tech/crabtensor", tag = "v0.5.2" }
+
+# polkadot SDK
+# sp-core = { git = "https://github.com/paritytech/polkadot-sdk.git", tag = "polkadot-stable2503-6", default-features = false }
 
 [workspace.metadata]
 # Workspace metadata for tooling

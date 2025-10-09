@@ -219,6 +219,13 @@
   },
   {
     "type": "function",
+    "name": "dummy",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "executorToMiner",
     "inputs": [
       {
