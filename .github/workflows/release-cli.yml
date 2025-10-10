@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   create-release:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       release_id: ${{ steps.create_release.outputs.id }}
@@ -68,13 +68,13 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux x86_64 - native build on Ubuntu 22.04 LTS
+          # Linux x86_64 - native build on Ubuntu 24.04 LTS
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-22.04
+            os: blacksmith-4vcpu-ubuntu-2404
             suffix: linux-amd64
-          # Linux ARM64 - native build on GitHub ARM runner
+          # Linux ARM64 - native build on Blacksmith ARM runner
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-22.04-arm # Free GitHub ARM runner
+            os: blacksmith-4vcpu-ubuntu-2404-arm
             suffix: linux-arm64
           # macOS Intel build
           - target: x86_64-apple-darwin
@@ -96,6 +96,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          components: rustfmt
           targets: ${{ matrix.target }}
 
       - name: Setup Rust cache

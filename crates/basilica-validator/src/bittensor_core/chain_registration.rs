@@ -19,7 +19,6 @@ impl ChainRegistration {
     pub async fn new(
         config: &ValidatorConfig,
         bittensor_service: Arc<bittensor::Service>,
-        local_test: bool,
     ) -> Result<Self> {
         info!(
             "Initializing chain registration for validator on netuid: {}",
@@ -33,7 +32,6 @@ impl ChainRegistration {
             config.bittensor.axon_port,
         )
         .external_ip(config.bittensor.external_ip.clone())
-        .skip_registration(local_test)
         .local_spoofed_ip("10.0.0.2".to_string())
         .neuron_type("validator".to_string())
         .build();

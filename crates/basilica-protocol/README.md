@@ -4,10 +4,10 @@ This crate provides the gRPC protocol definitions and generated Rust code for al
 
 ## Overview
 
-The protocol crate defines three main services that support the validator-miner-executor interaction flow:
+The protocol crate defines three main services that support the validator-miner-node interaction flow:
 
 1. **MinerDiscovery** - Validator ↔ Miner coordination (steps 3-4 of interaction flow)
-2. **ExecutorControl** - Direct Validator ↔ Executor communication (step 5)
+2. **NodeControl** - Direct Validator ↔ Node communication (step 5)
 3. **ValidatorExternalApi** - External services → Validator API for capacity rental
 
 ## Building
@@ -25,10 +25,10 @@ Generated code is placed in `src/gen/` and included in the crate.
 ### Client Example
 
 ```rust
-use protocol::executor_control::executor_control_client::ExecutorControlClient;
+use protocol::node_control::node_control_client::NodeControlClient;
 use protocol::helpers;
 
-let mut client = ExecutorControlClient::connect("http://[::1]:50051").await?;
+let mut client = NodeControlClient::connect("http://[::1]:50051").await?;
 
 // Add authentication
 let request = helpers::add_auth_metadata(
@@ -43,15 +43,15 @@ let response = client.health_check(request).await?;
 ### Server Example
 
 ```rust
-use protocol::executor_control::executor_control_server::{ExecutorControl, ExecutorControlServer};
+use protocol::node_control::node_control_server::{NodeControl, NodeControlServer};
 
 #[tonic::async_trait]
-impl ExecutorControl for MyService {
+impl NodeControl for MyService {
     // Implement service methods
 }
 
 Server::builder()
-    .add_service(ExecutorControlServer::new(MyService))
+    .add_service(NodeControlServer::new(MyService))
     .serve(addr)
     .await?;
 ```

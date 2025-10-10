@@ -5,21 +5,6 @@ pub mod basilca {
             include!("basilca.common.v1.rs");
         }
     }
-    pub mod executor {
-        pub mod v1 {
-            include!("basilca.executor.v1.rs");
-        }
-    }
-    pub mod executor_management {
-        pub mod v1 {
-            include!("basilca.executor_management.v1.rs");
-        }
-    }
-    pub mod executor_registration {
-        pub mod v1 {
-            include!("basilca.executor_registration.v1.rs");
-        }
-    }
     pub mod gpu_pow {
         pub mod v1 {
             include!("basilca.gpu_pow.v1.rs");
@@ -45,6 +30,11 @@ pub mod basilica {
     pub mod payments {
         pub mod v1 {
             include!("basilica.payments.v1.rs");
+        }
+    }
+    pub mod rental {
+        pub mod v1 {
+            include!("basilica.rental.v1.rs");
         }
     }
 }

@@ -15,15 +15,15 @@ use basilica_common::metrics::traits::BasilcaMetrics;
 pub struct MinerBusinessMetrics {
     prometheus: Arc<MinerPrometheusMetrics>,
     // Cache for aggregated business metrics
-    executor_fleet_stats: Arc<RwLock<ExecutorFleetStats>>,
+    node_fleet_stats: Arc<RwLock<NodeFleetStats>>,
     validator_interaction_stats: Arc<RwLock<HashMap<String, ValidatorInteractionStats>>>,
     deployment_stats: Arc<RwLock<DeploymentStats>>,
 }
 
 #[derive(Debug, Default, Clone)]
-struct ExecutorFleetStats {
-    total_executors: u64,
-    healthy_executors: u64,
+struct NodeFleetStats {
+    total_nodes: u64,
+    healthy_nodes: u64,
     total_health_checks: u64,
     failed_health_checks: u64,
     average_health_check_duration: Duration,
@@ -36,7 +36,7 @@ struct ValidatorInteractionStats {
     successful_requests: u64,
     auth_failures: u64,
     active_sessions: u64,
-    total_executor_discoveries: u64,
+    total_node_discoveries: u64,
     last_interaction: Option<std::time::SystemTime>,
 }
 
@@ -45,7 +45,7 @@ struct DeploymentStats {
     total_deployments: u64,
     successful_deployments: u64,
     failed_deployments: u64,
-    remote_executors_deployed: u64,
+    remote_nodes_deployed: u64,
     ssh_sessions_created: u64,
     ssh_sessions_active: u64,
 }
@@ -55,36 +55,32 @@ impl MinerBusinessMetrics {
     pub fn new(prometheus: Arc<MinerPrometheusMetrics>) -> Result<Self> {
         Ok(Self {
             prometheus,
-            executor_fleet_stats: Arc::new(RwLock::new(ExecutorFleetStats::default())),
+            node_fleet_stats: Arc::new(RwLock::new(NodeFleetStats::default())),
             validator_interaction_stats: Arc::new(RwLock::new(HashMap::new())),
             deployment_stats: Arc::new(RwLock::new(DeploymentStats::default())),
         })
     }
 
-    /// Record complete executor health check workflow
-    pub async fn record_executor_health_workflow(
+    /// Record complete node health check workflow
+    pub async fn record_node_health_workflow(
         &self,
-        executor_id: &str,
+        node_id: &str,
         check_success: bool,
-        executor_healthy: bool,
+        node_healthy: bool,
         duration: Duration,
         check_type: &str,
     ) {
         // Record in Prometheus
-        self.prometheus.record_executor_health_check(
-            executor_id,
-            check_success,
-            duration,
-            executor_healthy,
-        );
+        self.prometheus
+            .record_node_health_check(node_id, check_success, duration, node_healthy);
 
         // Update aggregated stats
-        self.update_executor_fleet_stats(check_success, executor_healthy, duration)
+        self.update_node_fleet_stats(check_success, node_healthy, duration)
             .await;
 
         debug!(
-            "Recorded executor health workflow: executor={}, check_type={}, check_success={}, healthy={}, duration={:?}",
-            executor_id, check_type, check_success, executor_healthy, duration
+            "Recorded node health workflow: node={}, check_type={}, check_success={}, healthy={}, duration={:?}",
+            node_id, check_type, check_success, node_healthy, duration
         );
     }
 
@@ -119,7 +115,7 @@ impl MinerBusinessMetrics {
     /// Record SSH session management
     pub async fn record_ssh_session_management(
         &self,
-        executor_id: &str,
+        node_id: &str,
         validator_hotkey: &str,
         operation: &str, // "create", "close", "key_deployment"
         success: bool,
@@ -128,18 +124,18 @@ impl MinerBusinessMetrics {
         match operation {
             "create" => {
                 self.prometheus
-                    .record_ssh_session_created(executor_id, validator_hotkey);
+                    .record_ssh_session_created(node_id, validator_hotkey);
                 self.update_deployment_stats_ssh_created().await;
             }
             "close" => {
                 if let Some(dur) = duration {
                     self.prometheus
-                        .record_ssh_session_closed(executor_id, validator_hotkey, dur);
+                        .record_ssh_session_closed(node_id, validator_hotkey, dur);
                 }
             }
             "key_deployment" => {
                 self.prometheus
-                    .record_ssh_key_deployment(executor_id, success, "deployment");
+                    .record_ssh_key_deployment(node_id, success, "deployment");
             }
             _ => {
                 warn!("Unknown SSH operation: {}", operation);
@@ -147,15 +143,15 @@ impl MinerBusinessMetrics {
         }
 
         debug!(
-            "Recorded SSH session management: executor={}, validator={}, operation={}, success={}",
-            executor_id, validator_hotkey, operation, success
+            "Recorded SSH session management: node={}, validator={}, operation={}, success={}",
+            node_id, validator_hotkey, operation, success
         );
     }
 
-    /// Record executor deployment operation
-    pub async fn record_executor_deployment(
+    /// Record node deployment operation
+    pub async fn record_node_deployment(
         &self,
-        executor_id: &str,
+        node_id: &str,
         deployment_type: &str, // "remote", "local", "docker"
         success: bool,
         duration: Duration,
@@ -163,27 +159,27 @@ impl MinerBusinessMetrics {
     ) {
         // Record in Prometheus
         self.prometheus
-            .record_deployment(executor_id, success, duration, deployment_type);
+            .record_deployment(node_id, success, duration, deployment_type);
 
         // Update deployment stats
         self.update_deployment_stats(success, is_remote).await;
 
         debug!(
-            "Recorded executor deployment: executor={}, type={}, success={}, duration={:?}, remote={}",
-            executor_id, deployment_type, success, duration, is_remote
+            "Recorded node deployment: node={}, type={}, success={}, duration={:?}, remote={}",
+            node_id, deployment_type, success, duration, is_remote
         );
     }
 
-    /// Record executor discovery for validator
-    pub async fn record_executor_discovery(
+    /// Record node discovery for validator
+    pub async fn record_node_discovery(
         &self,
         validator_hotkey: &str,
-        executors_returned: u32,
+        nodes_returned: u32,
         discovery_type: &str,
     ) {
         // Record in Prometheus
         self.prometheus
-            .record_executor_discovery(validator_hotkey, executors_returned);
+            .record_node_discovery(validator_hotkey, nodes_returned);
 
         // Update validator interaction stats
         {
@@ -194,30 +190,30 @@ impl MinerBusinessMetrics {
                     validator_hotkey: validator_hotkey.to_string(),
                     ..Default::default()
                 })
-                .total_executor_discoveries += 1;
+                .total_node_discoveries += 1;
         }
 
         debug!(
-            "Recorded executor discovery: validator={}, type={}, executors_returned={}",
-            validator_hotkey, discovery_type, executors_returned
+            "Recorded node discovery: validator={}, type={}, nodes_returned={}",
+            validator_hotkey, discovery_type, nodes_returned
         );
     }
 
-    /// Update executor fleet status
-    pub async fn update_executor_fleet_status(&self, total: u64, healthy: u64, unhealthy: u64) {
+    /// Update node fleet status
+    pub async fn update_node_fleet_status(&self, total: u64, healthy: u64, unhealthy: u64) {
         // Record in Prometheus
         self.prometheus
-            .update_executor_counts(total, healthy, unhealthy);
+            .update_node_counts(total, healthy, unhealthy);
 
         // Update fleet stats
         {
-            let mut stats = self.executor_fleet_stats.write().await;
-            stats.total_executors = total;
-            stats.healthy_executors = healthy;
+            let mut stats = self.node_fleet_stats.write().await;
+            stats.total_nodes = total;
+            stats.healthy_nodes = healthy;
         }
 
         debug!(
-            "Updated executor fleet status: total={}, healthy={}, unhealthy={}",
+            "Updated node fleet status: total={}, healthy={}, unhealthy={}",
             total, healthy, unhealthy
         );
     }
@@ -236,13 +232,13 @@ impl MinerBusinessMetrics {
         }
     }
 
-    /// Get executor fleet summary
-    pub async fn get_executor_fleet_summary(&self) -> ExecutorFleetSummary {
-        let stats = self.executor_fleet_stats.read().await;
+    /// Get node fleet summary
+    pub async fn get_node_fleet_summary(&self) -> NodeFleetSummary {
+        let stats = self.node_fleet_stats.read().await;
 
-        ExecutorFleetSummary {
-            total_executors: stats.total_executors,
-            healthy_executors: stats.healthy_executors,
+        NodeFleetSummary {
+            total_nodes: stats.total_nodes,
+            healthy_nodes: stats.healthy_nodes,
             health_rate: if stats.total_health_checks > 0 {
                 (stats.total_health_checks - stats.failed_health_checks) as f64
                     / stats.total_health_checks as f64
@@ -277,7 +273,7 @@ impl MinerBusinessMetrics {
                     0.0
                 },
                 active_sessions: validator_stats.active_sessions,
-                total_executor_discoveries: validator_stats.total_executor_discoveries,
+                total_node_discoveries: validator_stats.total_node_discoveries,
                 last_interaction: validator_stats.last_interaction,
             })
     }
@@ -293,19 +289,19 @@ impl MinerBusinessMetrics {
             } else {
                 0.0
             },
-            remote_executors_deployed: stats.remote_executors_deployed,
+            remote_nodes_deployed: stats.remote_nodes_deployed,
             ssh_sessions_created: stats.ssh_sessions_created,
             ssh_sessions_active: stats.ssh_sessions_active,
         }
     }
 
-    async fn update_executor_fleet_stats(
+    async fn update_node_fleet_stats(
         &self,
         check_success: bool,
-        _executor_healthy: bool,
+        _node_healthy: bool,
         duration: Duration,
     ) {
-        let mut stats = self.executor_fleet_stats.write().await;
+        let mut stats = self.node_fleet_stats.write().await;
 
         stats.total_health_checks += 1;
         if !check_success {
@@ -354,7 +350,7 @@ impl MinerBusinessMetrics {
         if success {
             stats.successful_deployments += 1;
             if is_remote {
-                stats.remote_executors_deployed += 1;
+                stats.remote_nodes_deployed += 1;
             }
         } else {
             stats.failed_deployments += 1;
@@ -367,11 +363,11 @@ impl MinerBusinessMetrics {
     }
 }
 
-/// Summary of executor fleet operations
+/// Summary of node fleet operations
 #[derive(Debug, Clone)]
-pub struct ExecutorFleetSummary {
-    pub total_executors: u64,
-    pub healthy_executors: u64,
+pub struct NodeFleetSummary {
+    pub total_nodes: u64,
+    pub healthy_nodes: u64,
     pub health_rate: f64,
     pub average_health_check_duration: Duration,
 }
@@ -384,7 +380,7 @@ pub struct ValidatorInteractionSummary {
     pub success_rate: f64,
     pub auth_failure_rate: f64,
     pub active_sessions: u64,
-    pub total_executor_discoveries: u64,
+    pub total_node_discoveries: u64,
     pub last_interaction: Option<std::time::SystemTime>,
 }
 
@@ -393,7 +389,7 @@ pub struct ValidatorInteractionSummary {
 pub struct DeploymentSummary {
     pub total_deployments: u64,
     pub success_rate: f64,
-    pub remote_executors_deployed: u64,
+    pub remote_nodes_deployed: u64,
     pub ssh_sessions_created: u64,
     pub ssh_sessions_active: u64,
 }
@@ -409,9 +405,9 @@ impl BasilcaMetrics for MinerBusinessMetrics {
         labels: &[(&str, &str)],
     ) {
         // Map to deployment operations for miners
-        let executor_id = labels
+        let node_id = labels
             .iter()
-            .find(|(k, _)| *k == "executor_id")
+            .find(|(k, _)| *k == "node_id")
             .map(|(_, v)| *v)
             .unwrap_or("unknown");
 
@@ -419,21 +415,21 @@ impl BasilcaMetrics for MinerBusinessMetrics {
             .iter()
             .any(|(k, v)| *k == "deployment_type" && *v == "remote");
 
-        self.record_executor_deployment(executor_id, task_type, success, duration, is_remote)
+        self.record_node_deployment(node_id, task_type, success, duration, is_remote)
             .await;
     }
 
     /// Record verification attempt (miners track as validator interactions)
     async fn record_verification_attempt(
         &self,
-        executor_id: &str,
+        node_id: &str,
         verification_type: &str,
         success: bool,
         score: Option<f64>,
     ) {
         debug!(
-            "Verification attempt recorded in miner: executor={}, type={}, success={}, score={:?}",
-            executor_id, verification_type, success, score
+            "Verification attempt recorded in miner: node={}, type={}, success={}, score={:?}",
+            node_id, verification_type, success, score
         );
         // Miners don't perform verifications directly, but can track related metrics
     }
@@ -453,25 +449,22 @@ impl BasilcaMetrics for MinerBusinessMetrics {
 
         // Map common mining operations to existing metrics
         match operation {
-            "executor_discovery" => {
-                // Record as executor discovery without specific validator
-                self.record_executor_discovery("unknown_validator", 1, operation)
+            "node_discovery" => {
+                // Record as node discovery without specific validator
+                self.record_node_discovery("unknown_validator", 1, operation)
                     .await;
             }
             "fleet_health_check" => {
-                let executor_id = "fleet"; // Generic identifier for fleet operations
-                self.record_executor_health_workflow(
-                    executor_id,
-                    success,
-                    success, // Assume healthy if operation succeeded
-                    duration,
-                    operation,
+                let node_id = "fleet"; // Generic identifier for fleet operations
+                self.record_node_health_workflow(
+                    node_id, success, success, // Assume healthy if operation succeeded
+                    duration, operation,
                 )
                 .await;
             }
             "ssh_management" => {
                 self.record_ssh_session_management(
-                    "unknown_executor",
+                    "unknown_node",
                     "unknown_validator",
                     "management",
                     success,
@@ -503,10 +496,10 @@ impl BasilcaMetrics for MinerBusinessMetrics {
         .await;
     }
 
-    /// Record executor health status
-    async fn record_executor_health(&self, executor_id: &str, healthy: bool) {
-        self.record_executor_health_workflow(
-            executor_id,
+    /// Record node health status
+    async fn record_node_health(&self, node_id: &str, healthy: bool) {
+        self.record_node_health_workflow(
+            node_id,
             true, // Health check succeeded if we got a result
             healthy,
             Duration::from_millis(0), // Duration not tracked here

@@ -10,8 +10,8 @@
 |---------|--------|--------|-------|
 | Subtensor (Alice) | ✅ Running | Healthy | Blockchain accessible on ws://localhost:9944 |
 | Executor | ✅ Running | Healthy | gRPC on 50052, configured for GPU support |
-| Miner | ✅ Running | Healthy | Successfully monitoring executor, skip_registration=true |
-| Validator | ✅ Running | Healthy | Running with --local-test flag |
+| Miner | ✅ Running | Healthy | Successfully monitoring executor |
+| Validator | ✅ Running | Healthy | Running with local Subtensor |
 | Redis | ✅ Running | Healthy | Cache available on port 6379 |
 | Prometheus | ✅ Running | Running | Metrics collection active |
 | Grafana | ✅ Running | Healthy | Dashboard accessible on http://localhost:3000 |
@@ -19,7 +19,7 @@
 
 ## Key Features Verified
 
-1. **Registration Bypass**: Both miner and validator successfully bypass Bittensor registration
+1. **Local Network**: Both miner and validator successfully connect to local Subtensor
 2. **Service Communication**: Miner successfully connects to and monitors executor health
 3. **Database Initialization**: Both miner and validator successfully initialize SQLite databases
 4. **GPU Support**: Executor configured with GPU support (will use if available)
@@ -53,4 +53,4 @@ docker logs basilica-executor-localnet --tail 20
 
 ## Conclusion
 
-The localnet setup is working correctly for development and testing purposes. The core services (Executor, Miner, Validator) are all functioning properly with registration bypass enabled. The Basilica API requires code fixes to work with localnet but is not critical for basic testing.
+The localnet setup is working correctly for development and testing purposes. The core services (Executor, Miner, Validator) are all functioning properly with local Subtensor. The Basilica API requires code fixes to work with localnet but is not critical for basic testing.

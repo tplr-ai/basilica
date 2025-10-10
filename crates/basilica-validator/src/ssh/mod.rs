@@ -12,7 +12,7 @@
 //! ### Why SSH Instead of gRPC?
 //!
 //! 1. **Binary Control**: Validators upload and execute their own attestation binaries,
-//!    preventing executors from running modified versions that could fake results.
+//!    preventing nodes from running modified versions that could fake results.
 //!
 //! 2. **Direct Execution**: Commands run directly on the hardware without intermediary
 //!    services that could intercept or modify results.
@@ -39,13 +39,14 @@ pub mod session;
 
 pub use automation_components::SshAutomationComponents;
 pub use key_manager::ValidatorSshKeyManager;
-pub use session::SshSessionManager;
+pub use session::DirectSshSessionManager;
+pub type SshSessionManager = DirectSshSessionManager; // Alias for backward compatibility
 
 #[cfg(test)]
 mod tests;
 
 use anyhow::Result;
-use basilica_common::identity::ExecutorId;
+use basilica_common::identity::NodeId;
 use basilica_common::ssh::{
     PackageManager, SshConnectionConfig, SshConnectionDetails, SshConnectionManager,
     SshFileTransferManager, StandardSshClient,
@@ -147,12 +148,18 @@ impl ValidatorSshClient {
 
     /// Create a new validator SSH client with default configuration
     pub fn new() -> Self {
+        // Use permissive SSH config to avoid host key verification issues
+        let config = SshConnectionConfig {
+            strict_host_key_checking: false,
+            known_hosts_file: None,
+            ..Default::default()
+        };
         Self {
-            client: StandardSshClient::new(),
+            client: StandardSshClient::with_config(config),
             connection_pool: Arc::new(Mutex::new(HashMap::new())),
             session_stats: Arc::new(Mutex::new(SshSessionStats::default())),
             max_pool_size: 100,
-            pool_timeout: Duration::from_secs(300), // 5 minutes
+            pool_timeout: Duration::from_secs(900),
             retry_config: RetryConfig::default(),
         }
     }
@@ -164,7 +171,7 @@ impl ValidatorSshClient {
             connection_pool: Arc::new(Mutex::new(HashMap::new())),
             session_stats: Arc::new(Mutex::new(SshSessionStats::default())),
             max_pool_size: 100,
-            pool_timeout: Duration::from_secs(300),
+            pool_timeout: Duration::from_secs(900),
             retry_config: RetryConfig::default(),
         }
     }
@@ -176,7 +183,7 @@ impl ValidatorSshClient {
             connection_pool: Arc::new(Mutex::new(HashMap::new())),
             session_stats: Arc::new(Mutex::new(SshSessionStats::default())),
             max_pool_size: 100,
-            pool_timeout: Duration::from_secs(300),
+            pool_timeout: Duration::from_secs(900),
             retry_config,
         }
     }
@@ -267,7 +274,18 @@ impl ValidatorSshClient {
         }
     }
 
-    /// Test SSH connection to executor
+    /// Refresh host key for node
+    pub async fn refresh_host_key(&self, details: &SshConnectionDetails) -> Result<()> {
+        info!(
+            target: "ssh_audit",
+            host = %details.host,
+            port = details.port,
+            "Refreshing host key"
+        );
+        self.client.refresh_host_key(details).await
+    }
+
+    /// Test SSH connection to node
     pub async fn test_connection(&self, details: &SshConnectionDetails) -> Result<()> {
         info!(
             "Testing SSH connection to {}@{}",
@@ -276,7 +294,7 @@ impl ValidatorSshClient {
         self.client.test_connection(details).await
     }
 
-    /// Execute command on executor with audit logging
+    /// Execute command on node with audit logging
     pub async fn execute_command(
         &self,
         details: &SshConnectionDetails,
@@ -345,7 +363,7 @@ impl ValidatorSshClient {
             .await
     }
 
-    /// Upload file to executor with audit logging
+    /// Upload file to node with audit logging
     pub async fn upload_file(
         &self,
         details: &SshConnectionDetails,
@@ -403,7 +421,7 @@ impl ValidatorSshClient {
         }
     }
 
-    /// Download file from executor with audit logging
+    /// Download file from node with audit logging
     pub async fn download_file(
         &self,
         details: &SshConnectionDetails,
@@ -469,9 +487,9 @@ impl ValidatorSshClient {
         self.client.cleanup_remote_files(details, file_paths).await
     }
 
-    /// Create SSH connection details for executor
-    pub fn create_executor_connection(
-        _executor_id: ExecutorId,
+    /// Create SSH connection details for node
+    pub fn create_node_connection(
+        _node_id: NodeId,
         host: String,
         username: String,
         port: u16,
@@ -494,19 +512,19 @@ impl Default for ValidatorSshClient {
     }
 }
 
-/// SSH connection details specifically for executor validation
+/// SSH connection details specifically for node validation
 #[derive(Debug, Clone)]
-pub struct ExecutorSshDetails {
-    /// Executor ID
-    pub executor_id: ExecutorId,
+pub struct NodeSshDetails {
+    /// Node ID
+    pub node_id: NodeId,
     /// SSH connection details
     pub connection: SshConnectionDetails,
 }
 
-impl ExecutorSshDetails {
-    /// Create new executor SSH details
+impl NodeSshDetails {
+    /// Create new node SSH details
     pub fn new(
-        executor_id: ExecutorId,
+        node_id: NodeId,
         host: String,
         username: String,
         port: u16,
@@ -514,7 +532,7 @@ impl ExecutorSshDetails {
         timeout: Option<Duration>,
     ) -> Self {
         Self {
-            executor_id,
+            node_id,
             connection: SshConnectionDetails {
                 host,
                 username,
@@ -530,15 +548,15 @@ impl ExecutorSshDetails {
         &self.connection
     }
 
-    /// Get executor ID
-    pub fn executor_id(&self) -> &ExecutorId {
-        &self.executor_id
+    /// Get node ID
+    pub fn node_id(&self) -> &NodeId {
+        &self.node_id
     }
 }
 
 /// Bulk SSH operations for handling multiple targets
 impl ValidatorSshClient {
-    /// Upload file to multiple executors concurrently
+    /// Upload file to multiple nodes concurrently
     pub async fn upload_file_to_multiple(
         &self,
         targets: &[(SshConnectionDetails, String)], // (connection, remote_path)
@@ -581,7 +599,7 @@ impl ValidatorSshClient {
         Ok(results)
     }
 
-    /// Execute command on multiple executors concurrently
+    /// Execute command on multiple nodes concurrently
     pub async fn execute_command_on_multiple(
         &self,
         targets: &[SshConnectionDetails],
@@ -762,7 +780,7 @@ impl ValidatorSshClient {
     /// * `Err` if installation fails or package manager is not supported
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// // Ensure lshw is installed (command and package have same name)
     /// client.ensure_installed(ssh_details, "lshw", "lshw").await?;
     ///
@@ -843,7 +861,7 @@ impl ValidatorSshClient {
 
         // Use a longer timeout for package installation operations (5 minutes)
         let mut install_details = ssh_details.clone();
-        install_details.timeout = Duration::from_secs(300);
+        install_details.timeout = Duration::from_secs(900);
 
         self.execute_command(&install_details, &install_cmd, true)
             .await

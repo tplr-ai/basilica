@@ -37,7 +37,6 @@ impl ChainRegistration {
             config.axon_port,
         )
         .external_ip(config.external_ip.clone())
-        .skip_registration(config.skip_registration)
         .local_spoofed_ip("10.0.0.1".to_string())
         .neuron_type("miner".to_string())
         .build();
@@ -55,16 +54,6 @@ impl ChainRegistration {
         self.inner.register_startup().await
     }
 
-    /// Get current registration state
-    pub async fn get_state(&self) -> RegistrationStateSnapshot {
-        let state = self.inner.get_state().await;
-        RegistrationStateSnapshot {
-            is_registered: state.is_registered,
-            registration_time: state.registration_time,
-            discovered_uid: state.discovered_uid,
-        }
-    }
-
     /// Get discovered UID
     pub async fn get_discovered_uid(&self) -> Option<u16> {
         self.inner.get_discovered_uid().await
@@ -79,12 +68,4 @@ impl ChainRegistration {
     pub fn get_bittensor_service(&self) -> Arc<bittensor::Service> {
         self.bittensor_service.clone()
     }
-}
-
-/// Snapshot of the current registration state
-#[derive(Debug, Clone)]
-pub struct RegistrationStateSnapshot {
-    pub is_registered: bool,
-    pub registration_time: Option<chrono::DateTime<chrono::Utc>>,
-    pub discovered_uid: Option<u16>,
 }

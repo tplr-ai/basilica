@@ -7,12 +7,11 @@
 #![cfg_attr(feature = "stub-gen", allow(deprecated))]
 
 use basilica_sdk::types::{
-    AvailabilityInfo as SdkAvailabilityInfo, AvailableExecutor as SdkAvailableExecutor,
-    CpuSpec as SdkCpuSpec, ExecutorDetails as SdkExecutorDetails,
-    ExecutorSelection as SdkExecutorSelection, GpuRequirements as SdkGpuRequirements,
-    GpuSpec as SdkGpuSpec, ListAvailableExecutorsQuery as SdkListAvailableExecutorsQuery,
-    ListRentalsQuery as SdkListRentalsQuery, PortMappingRequest as SdkPortMappingRequest,
-    RentalState, RentalStatus as SdkRentalStatus,
+    AvailabilityInfo as SdkAvailabilityInfo, AvailableNode as SdkAvailableNode,
+    CpuSpec as SdkCpuSpec, GpuRequirements as SdkGpuRequirements, GpuSpec as SdkGpuSpec,
+    ListAvailableNodesQuery as SdkListAvailableNodesQuery, ListRentalsQuery as SdkListRentalsQuery,
+    NodeDetails as SdkNodeDetails, NodeSelection as SdkNodeSelection,
+    PortMappingRequest as SdkPortMappingRequest, RentalState, RentalStatus as SdkRentalStatus,
     RentalStatusWithSshResponse as SdkRentalStatusWithSshResponse,
     ResourceRequirementsRequest as SdkResourceRequirementsRequest, SshAccess as SdkSshAccess,
     StartRentalApiRequest as SdkStartRentalApiRequest, VolumeMountRequest as SdkVolumeMountRequest,
@@ -92,11 +91,11 @@ impl From<SdkCpuSpec> for CpuSpec {
     }
 }
 
-/// Executor details including GPU and CPU specifications
+/// Node details including GPU and CPU specifications
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
-pub struct ExecutorDetails {
+pub struct NodeDetails {
     #[pyo3(get)]
     pub id: String,
     #[pyo3(get)]
@@ -107,8 +106,8 @@ pub struct ExecutorDetails {
     pub location: Option<String>,
 }
 
-impl From<SdkExecutorDetails> for ExecutorDetails {
-    fn from(details: SdkExecutorDetails) -> Self {
+impl From<SdkNodeDetails> for NodeDetails {
+    fn from(details: SdkNodeDetails) -> Self {
         Self {
             id: details.id,
             gpu_specs: details.gpu_specs.into_iter().map(Into::into).collect(),
@@ -184,7 +183,7 @@ pub struct RentalStatusWithSshResponse {
     #[pyo3(get)]
     pub status: RentalStatus,
     #[pyo3(get)]
-    pub executor: ExecutorDetails,
+    pub node: NodeDetails,
     #[pyo3(get)]
     pub ssh_credentials: Option<String>,
     #[pyo3(get)]
@@ -198,7 +197,7 @@ impl From<SdkRentalStatusWithSshResponse> for RentalStatusWithSshResponse {
         Self {
             rental_id: response.rental_id,
             status: response.status.into(),
-            executor: response.executor.into(),
+            node: response.node.into(),
             ssh_credentials: response.ssh_credentials,
             created_at: response.created_at.to_rfc3339(),
             updated_at: response.updated_at.to_rfc3339(),
@@ -206,7 +205,7 @@ impl From<SdkRentalStatusWithSshResponse> for RentalStatusWithSshResponse {
     }
 }
 
-/// Availability information for an executor
+/// Availability information for an node
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
@@ -229,22 +228,22 @@ impl From<SdkAvailabilityInfo> for AvailabilityInfo {
     }
 }
 
-/// Available executor with details and availability info
+/// Available node with details and availability info
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
-pub struct AvailableExecutor {
+pub struct AvailableNode {
     #[pyo3(get)]
-    pub executor: ExecutorDetails,
+    pub node: NodeDetails,
     #[pyo3(get)]
     pub availability: AvailabilityInfo,
 }
 
-impl From<SdkAvailableExecutor> for AvailableExecutor {
-    fn from(executor: SdkAvailableExecutor) -> Self {
+impl From<SdkAvailableNode> for AvailableNode {
+    fn from(node: SdkAvailableNode) -> Self {
         Self {
-            executor: executor.executor.into(),
-            availability: executor.availability.into(),
+            node: node.node.into(),
+            availability: node.availability.into(),
         }
     }
 }
@@ -280,7 +279,7 @@ impl From<basilica_sdk::types::HealthCheckResponse> for HealthCheckResponse {
 
 // Request types for Python bindings
 
-/// GPU requirements for executor selection
+/// GPU requirements for node selection
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
@@ -317,23 +316,21 @@ impl From<GpuRequirements> for SdkGpuRequirements {
     }
 }
 
-/// Executor selection strategy
+/// Node selection strategy
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass_enum)]
 #[pyclass]
 #[derive(Clone)]
-pub enum ExecutorSelection {
-    ExecutorId { executor_id: String },
+pub enum NodeSelection {
+    NodeId { node_id: String },
     ExactGpuConfiguration { gpu_requirements: GpuRequirements },
 }
 
-impl From<ExecutorSelection> for SdkExecutorSelection {
-    fn from(selection: ExecutorSelection) -> Self {
+impl From<NodeSelection> for SdkNodeSelection {
+    fn from(selection: NodeSelection) -> Self {
         match selection {
-            ExecutorSelection::ExecutorId { executor_id } => {
-                SdkExecutorSelection::ExecutorId { executor_id }
-            }
-            ExecutorSelection::ExactGpuConfiguration { gpu_requirements } => {
-                SdkExecutorSelection::ExactGpuConfiguration {
+            NodeSelection::NodeId { node_id } => SdkNodeSelection::NodeId { node_id },
+            NodeSelection::ExactGpuConfiguration { gpu_requirements } => {
+                SdkNodeSelection::ExactGpuConfiguration {
                     gpu_requirements: gpu_requirements.into(),
                 }
             }
@@ -484,7 +481,7 @@ impl From<VolumeMountRequest> for SdkVolumeMountRequest {
 #[derive(Clone)]
 pub struct StartRentalApiRequest {
     #[pyo3(get, set)]
-    pub executor_selection: ExecutorSelection,
+    pub node_selection: NodeSelection,
     #[pyo3(get, set)]
     pub container_image: String,
     #[pyo3(get, set)]
@@ -507,10 +504,10 @@ pub struct StartRentalApiRequest {
 #[pymethods]
 impl StartRentalApiRequest {
     #[new]
-    #[pyo3(signature = (executor_selection, container_image, ssh_public_key, environment=None, ports=None, resources=None, command=None, volumes=None, no_ssh=false))]
+    #[pyo3(signature = (node_selection, container_image, ssh_public_key, environment=None, ports=None, resources=None, command=None, volumes=None, no_ssh=false))]
     #[allow(clippy::too_many_arguments)]
     fn new(
-        executor_selection: ExecutorSelection,
+        node_selection: NodeSelection,
         container_image: String,
         ssh_public_key: String,
         environment: Option<HashMap<String, String>>,
@@ -521,7 +518,7 @@ impl StartRentalApiRequest {
         no_ssh: bool,
     ) -> Self {
         Self {
-            executor_selection,
+            node_selection,
             container_image,
             ssh_public_key,
             environment: environment.unwrap_or_default(),
@@ -537,7 +534,7 @@ impl StartRentalApiRequest {
 impl From<StartRentalApiRequest> for SdkStartRentalApiRequest {
     fn from(req: StartRentalApiRequest) -> Self {
         Self {
-            executor_selection: req.executor_selection.into(),
+            node_selection: req.node_selection.into(),
             container_image: req.container_image,
             ssh_public_key: req.ssh_public_key,
             environment: req.environment,
@@ -550,11 +547,11 @@ impl From<StartRentalApiRequest> for SdkStartRentalApiRequest {
     }
 }
 
-/// Query parameters for listing available executors
+/// Query parameters for listing available nodes
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone, Default)]
-pub struct ListAvailableExecutorsQuery {
+pub struct ListAvailableNodesQuery {
     #[pyo3(get, set)]
     pub available: Option<bool>,
     #[pyo3(get, set)]
@@ -567,7 +564,7 @@ pub struct ListAvailableExecutorsQuery {
 
 #[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
-impl ListAvailableExecutorsQuery {
+impl ListAvailableNodesQuery {
     #[new]
     #[pyo3(signature = (available=None, min_gpu_memory=None, gpu_type=None, min_gpu_count=None))]
     fn new(
@@ -585,8 +582,8 @@ impl ListAvailableExecutorsQuery {
     }
 }
 
-impl From<ListAvailableExecutorsQuery> for SdkListAvailableExecutorsQuery {
-    fn from(query: ListAvailableExecutorsQuery) -> Self {
+impl From<ListAvailableNodesQuery> for SdkListAvailableNodesQuery {
+    fn from(query: ListAvailableNodesQuery) -> Self {
         Self {
             available: query.available,
             min_gpu_memory: query.min_gpu_memory,

@@ -1,8 +1,8 @@
 use super::scheduler::VerificationTask;
-use super::types::{ExecutorInfoDetailed, ValidationType};
+use super::types::{NodeInfoDetailed, ValidationType};
 use super::verification::VerificationEngine;
 use anyhow::Result;
-use basilica_common::identity::ExecutorId;
+use basilica_common::identity::NodeId;
 use lru::LruCache;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
@@ -81,7 +81,7 @@ impl Ord for Priority {
 pub struct WorkItem {
     pub id: Uuid,
     pub miner_uid: u16,
-    pub executor_info: ExecutorInfoDetailed,
+    pub node_info: NodeInfoDetailed,
     pub task: VerificationTask,
     pub miner_hotkey: String,
     pub miner_endpoint: String,
@@ -108,17 +108,14 @@ enum CompletionStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ExecutorKey {
+struct NodeKey {
     miner_uid: u16,
-    executor_id: ExecutorId,
+    node_id: NodeId,
 }
 
-impl ExecutorKey {
-    fn new(miner_uid: u16, executor_id: ExecutorId) -> Self {
-        Self {
-            miner_uid,
-            executor_id,
-        }
+impl NodeKey {
+    fn new(miner_uid: u16, node_id: NodeId) -> Self {
+        Self { miner_uid, node_id }
     }
 }
 
@@ -146,9 +143,9 @@ impl Ord for QueueKey {
 
 struct QueueState {
     pending: BTreeMap<QueueKey, WorkItem>,
-    processing: HashMap<ExecutorKey, ProcessingEntry>,
-    completed: LruCache<ExecutorKey, CompletionStatus>,
-    executor_index: HashMap<ExecutorKey, QueueKey>,
+    processing: HashMap<NodeKey, ProcessingEntry>,
+    completed: LruCache<NodeKey, CompletionStatus>,
+    node_index: HashMap<NodeKey, QueueKey>,
 }
 
 impl QueueState {
@@ -157,15 +154,15 @@ impl QueueState {
             pending: BTreeMap::new(),
             processing: HashMap::new(),
             completed: LruCache::new(std::num::NonZeroUsize::new(completed_capacity).unwrap()),
-            executor_index: HashMap::new(),
+            node_index: HashMap::new(),
         }
     }
 
-    fn is_duplicate(&self, key: &ExecutorKey) -> bool {
-        self.executor_index.contains_key(key) || self.processing.contains_key(key)
+    fn is_duplicate(&self, key: &NodeKey) -> bool {
+        self.node_index.contains_key(key) || self.processing.contains_key(key)
     }
 
-    fn can_requeue(&self, key: &ExecutorKey, cooldown: Duration) -> bool {
+    fn can_requeue(&self, key: &NodeKey, cooldown: Duration) -> bool {
         if let Some(status) = self.completed.peek(key) {
             match status {
                 CompletionStatus::Success { completed_at, .. }
@@ -179,36 +176,35 @@ impl QueueState {
     }
 
     fn add_pending(&mut self, item: WorkItem) -> Result<()> {
-        let executor_key = ExecutorKey::new(item.miner_uid, item.executor_info.id.clone());
+        let node_key = NodeKey::new(item.miner_uid, item.node_info.id.clone());
         let queue_key = QueueKey {
             priority: item.priority,
             created_at: item.created_at,
             id: item.id,
         };
 
-        if self.is_duplicate(&executor_key) {
+        if self.is_duplicate(&node_key) {
             return Err(anyhow::anyhow!("Duplicate work item"));
         }
 
-        self.executor_index.insert(executor_key, queue_key.clone());
+        self.node_index.insert(node_key, queue_key.clone());
         self.pending.insert(queue_key, item);
         Ok(())
     }
 
     fn pop_next(&mut self) -> Option<WorkItem> {
         if let Some((_queue_key, work_item)) = self.pending.pop_first() {
-            let executor_key =
-                ExecutorKey::new(work_item.miner_uid, work_item.executor_info.id.clone());
-            self.executor_index.remove(&executor_key);
+            let node_key = NodeKey::new(work_item.miner_uid, work_item.node_info.id.clone());
+            self.node_index.remove(&node_key);
             Some(work_item)
         } else {
             None
         }
     }
 
-    fn mark_processing(&mut self, executor_key: ExecutorKey, work_item: WorkItem) {
+    fn mark_processing(&mut self, node_key: NodeKey, work_item: WorkItem) {
         self.processing.insert(
-            executor_key,
+            node_key,
             ProcessingEntry {
                 started_at: Instant::now(),
                 work_item,
@@ -216,17 +212,17 @@ impl QueueState {
         );
     }
 
-    fn complete(&mut self, key: ExecutorKey, status: CompletionStatus) -> Option<ProcessingEntry> {
+    fn complete(&mut self, key: NodeKey, status: CompletionStatus) -> Option<ProcessingEntry> {
         let entry = self.processing.remove(&key);
 
         // Log failed completions with their error for diagnostics
         if let CompletionStatus::Failed { ref error, .. } = &status {
             debug!(
                 miner_uid = key.miner_uid,
-                executor_id = %key.executor_id,
+                node_id = %key.node_id,
                 error = %error,
-                "Task for executor {} (miner {}) failed: {}",
-                key.executor_id,
+                "Task for node {} (miner {}) failed: {}",
+                key.node_id,
                 key.miner_uid,
                 error
             );
@@ -236,11 +232,11 @@ impl QueueState {
         entry
     }
 
-    fn rollback(&mut self, key: ExecutorKey) -> Option<ProcessingEntry> {
+    fn rollback(&mut self, key: NodeKey) -> Option<ProcessingEntry> {
         self.processing.remove(&key)
     }
 
-    fn rollback_for_retry(&mut self, key: ExecutorKey) -> Option<WorkItem> {
+    fn rollback_for_retry(&mut self, key: NodeKey) -> Option<WorkItem> {
         self.processing.remove(&key).map(|entry| entry.work_item)
     }
 }
@@ -336,13 +332,13 @@ impl ValidationWorkerQueue {
     async fn store_successful_validation(
         verification_engine: &Arc<VerificationEngine>,
         item: &WorkItem,
-        executor_key: &ExecutorKey,
-        verification_result: &super::types::ExecutorVerificationResult,
+        node_key: &NodeKey,
+        verification_result: &super::types::NodeVerificationResult,
     ) {
         match Self::create_miner_info(item, verification_result.verification_score) {
             Ok(miner_info) => {
                 if let Err(e) = verification_engine
-                    .store_executor_verification_result_with_miner_info(
+                    .store_node_verification_result_with_miner_info(
                         item.miner_uid,
                         verification_result,
                         &miner_info,
@@ -350,8 +346,8 @@ impl ValidationWorkerQueue {
                     .await
                 {
                     error!(
-                        "Failed to store verification result for executor {} (miner {}): {}",
-                        executor_key.executor_id, executor_key.miner_uid, e
+                        "Failed to store verification result for node {} (miner {}): {}",
+                        node_key.node_id, node_key.miner_uid, e
                     );
                 }
             }
@@ -368,19 +364,19 @@ impl ValidationWorkerQueue {
     async fn store_failed_validation(
         verification_engine: &Arc<VerificationEngine>,
         item: &WorkItem,
-        executor_key: &ExecutorKey,
+        node_key: &NodeKey,
         error_message: String,
         execution_time: Duration,
         validation_type: ValidationType,
     ) {
         // Create a failed verification result
-        let failed_result = super::types::ExecutorVerificationResult {
-            executor_id: item.executor_info.id.clone(),
-            grpc_endpoint: item.executor_info.grpc_endpoint.clone(),
+        let failed_result = super::types::NodeVerificationResult {
+            node_id: item.node_info.id.clone(),
+            node_ssh_endpoint: item.node_info.node_ssh_endpoint.clone(),
             verification_score: 0.0,
             ssh_connection_successful: false,
             binary_validation_successful: false,
-            executor_result: None,
+            node_result: None,
             error: Some(error_message.clone()),
             execution_time,
             validation_details: super::types::ValidationDetails {
@@ -400,7 +396,7 @@ impl ValidationWorkerQueue {
         match Self::create_miner_info(item, 0.0) {
             Ok(miner_info) => {
                 if let Err(e) = verification_engine
-                    .store_executor_verification_result_with_miner_info(
+                    .store_node_verification_result_with_miner_info(
                         item.miner_uid,
                         &failed_result,
                         &miner_info,
@@ -408,8 +404,8 @@ impl ValidationWorkerQueue {
                     .await
                 {
                     error!(
-                        "Failed to store failed validation result for executor {} (miner {}): {}",
-                        executor_key.executor_id, executor_key.miner_uid, e
+                        "Failed to store failed validation result for node {} (miner {}): {}",
+                        node_key.node_id, node_key.miner_uid, e
                     );
                 }
             }
@@ -551,7 +547,7 @@ impl ValidationWorkerQueue {
         };
 
         if let Some(item) = work_item {
-            let executor_key = ExecutorKey::new(item.miner_uid, item.executor_info.id.clone());
+            let node_key = NodeKey::new(item.miner_uid, item.node_info.id.clone());
 
             metrics
                 .processing_full
@@ -559,24 +555,24 @@ impl ValidationWorkerQueue {
             metrics.pending_full.fetch_sub(1, AtomicOrdering::Relaxed);
 
             debug!(
-                miner_uid = executor_key.miner_uid,
-                executor_id = %executor_key.executor_id,
+                miner_uid = node_key.miner_uid,
+                node_id = %node_key.node_id,
                 worker_id = %worker_id,
-                "Full worker {:?} processing executor {} for miner {}",
-                worker_id, executor_key.executor_id, executor_key.miner_uid
+                "Full worker {:?} processing node {} for miner {}",
+                worker_id, node_key.node_id, node_key.miner_uid
             );
 
             {
                 let mut state = queue.write().await;
-                state.mark_processing(executor_key.clone(), item.clone());
+                state.mark_processing(node_key.clone(), item.clone());
             }
 
             // Clear in-queue state now that processing has started
             // The validation strategy will set appropriate states during verification
             if let Some(ref metrics) = verification_engine.get_metrics().await {
-                metrics.prometheus().clear_executor_validation_states(
-                    &executor_key.executor_id.to_string(),
-                    executor_key.miner_uid,
+                metrics.prometheus().clear_node_validation_states(
+                    &node_key.node_id.to_string(),
+                    node_key.miner_uid,
                     ValidationType::Full,
                 );
             }
@@ -584,9 +580,9 @@ impl ValidationWorkerQueue {
             let start_time = Instant::now();
             let result = timeout(
                 max_processing_time,
-                verification_engine.verify_executor(
+                verification_engine.verify_node(
                     &item.task.miner_endpoint,
-                    &item.executor_info,
+                    &item.node_info,
                     item.miner_uid,
                     &item.task.miner_hotkey,
                     item.task.intended_validation_strategy,
@@ -601,7 +597,7 @@ impl ValidationWorkerQueue {
                     let status = CompletionStatus::Success {
                         completed_at: Instant::now(),
                     };
-                    state.complete(executor_key.clone(), status);
+                    state.complete(node_key.clone(), status);
 
                     metrics
                         .completed_total
@@ -616,12 +612,12 @@ impl ValidationWorkerQueue {
                         .store(duration_ms, AtomicOrdering::Relaxed);
 
                     info!(
-                        miner_uid = executor_key.miner_uid,
-                        executor_id = %executor_key.executor_id,
+                        miner_uid = node_key.miner_uid,
+                        node_id = %node_key.node_id,
                         worker_id = %worker_id,
-                        "Full validation completed for executor {} (miner {}): score={:.2}",
-                        executor_key.executor_id,
-                        executor_key.miner_uid,
+                        "Full validation completed for node {} (miner {}): score={:.2}",
+                        node_key.node_id,
+                        node_key.miner_uid,
                         verification_result.verification_score
                     );
 
@@ -630,14 +626,14 @@ impl ValidationWorkerQueue {
                     Self::store_successful_validation(
                         &verification_engine,
                         &item,
-                        &executor_key,
+                        &node_key,
                         &verification_result,
                     )
                     .await;
                 }
                 Ok(Err(e)) => {
                     // Use rollback_for_retry to get the work item with its current retry count
-                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                    if let Some(mut retry_item) = state.rollback_for_retry(node_key.clone()) {
                         metrics
                             .processing_full
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -668,7 +664,7 @@ impl ValidationWorkerQueue {
                                 completed_at: Instant::now(),
                                 error: error_msg.clone(),
                             };
-                            state.complete(executor_key.clone(), status);
+                            state.complete(node_key.clone(), status);
                             metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
 
                             // Store failed validation result (release lock before await)
@@ -676,7 +672,7 @@ impl ValidationWorkerQueue {
                             Self::store_failed_validation(
                                 &verification_engine,
                                 &retry_item,
-                                &executor_key,
+                                &node_key,
                                 error_msg,
                                 start_time.elapsed(),
                                 ValidationType::Full,
@@ -685,7 +681,7 @@ impl ValidationWorkerQueue {
                         }
                     } else {
                         // Should not happen but handle gracefully
-                        state.rollback(executor_key.clone());
+                        state.rollback(node_key.clone());
                         metrics
                             .processing_full
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -693,7 +689,7 @@ impl ValidationWorkerQueue {
                 }
                 Err(_) => {
                     // Timeout case - use rollback_for_retry to get the work item
-                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                    if let Some(mut retry_item) = state.rollback_for_retry(node_key.clone()) {
                         metrics
                             .processing_full
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -724,7 +720,7 @@ impl ValidationWorkerQueue {
                                 completed_at: Instant::now(),
                                 error: error_msg.clone(),
                             };
-                            state.complete(executor_key.clone(), status);
+                            state.complete(node_key.clone(), status);
                             metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
 
                             // Store failed validation result (release lock before await)
@@ -732,7 +728,7 @@ impl ValidationWorkerQueue {
                             Self::store_failed_validation(
                                 &verification_engine,
                                 &retry_item,
-                                &executor_key,
+                                &node_key,
                                 error_msg,
                                 start_time.elapsed(),
                                 ValidationType::Full,
@@ -741,7 +737,7 @@ impl ValidationWorkerQueue {
                         }
                     } else {
                         // Should not happen but handle gracefully
-                        state.rollback(executor_key.clone());
+                        state.rollback(node_key.clone());
                         metrics
                             .processing_full
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -765,7 +761,7 @@ impl ValidationWorkerQueue {
         };
 
         if let Some(item) = work_item {
-            let executor_key = ExecutorKey::new(item.miner_uid, item.executor_info.id.clone());
+            let node_key = NodeKey::new(item.miner_uid, item.node_info.id.clone());
 
             metrics
                 .processing_lightweight
@@ -775,24 +771,24 @@ impl ValidationWorkerQueue {
                 .fetch_sub(1, AtomicOrdering::Relaxed);
 
             debug!(
-                miner_uid = executor_key.miner_uid,
-                executor_id = %executor_key.executor_id,
+                miner_uid = node_key.miner_uid,
+                node_id = %node_key.node_id,
                 worker_id = %worker_id,
-                "Lightweight worker {:?} processing executor {} for miner {}",
-                worker_id, executor_key.executor_id, executor_key.miner_uid
+                "Lightweight worker {:?} processing node {} for miner {}",
+                worker_id, node_key.node_id, node_key.miner_uid
             );
 
             {
                 let mut state = queue.write().await;
-                state.mark_processing(executor_key.clone(), item.clone());
+                state.mark_processing(node_key.clone(), item.clone());
             }
 
             // Clear in-queue state now that processing has started
             // The validation strategy will set appropriate states during verification
             if let Some(ref metrics) = verification_engine.get_metrics().await {
-                metrics.prometheus().clear_executor_validation_states(
-                    &executor_key.executor_id.to_string(),
-                    executor_key.miner_uid,
+                metrics.prometheus().clear_node_validation_states(
+                    &node_key.node_id.to_string(),
+                    node_key.miner_uid,
                     ValidationType::Lightweight,
                 );
             }
@@ -800,9 +796,9 @@ impl ValidationWorkerQueue {
             let start_time = Instant::now();
             let result = timeout(
                 max_processing_time,
-                verification_engine.verify_executor(
+                verification_engine.verify_node(
                     &item.task.miner_endpoint,
-                    &item.executor_info,
+                    &item.node_info,
                     item.miner_uid,
                     &item.task.miner_hotkey,
                     item.task.intended_validation_strategy,
@@ -817,7 +813,7 @@ impl ValidationWorkerQueue {
                     let status = CompletionStatus::Success {
                         completed_at: Instant::now(),
                     };
-                    state.complete(executor_key.clone(), status);
+                    state.complete(node_key.clone(), status);
 
                     metrics
                         .completed_total
@@ -832,12 +828,12 @@ impl ValidationWorkerQueue {
                         .store(duration_ms, AtomicOrdering::Relaxed);
 
                     info!(
-                        miner_uid = executor_key.miner_uid,
-                        executor_id = %executor_key.executor_id,
+                        miner_uid = node_key.miner_uid,
+                        node_id = %node_key.node_id,
                         worker_id = %worker_id,
-                        "Lightweight validation completed for executor {} (miner {}): score={:.2}",
-                        executor_key.executor_id,
-                        executor_key.miner_uid,
+                        "Lightweight validation completed for node {} (miner {}): score={:.2}",
+                        node_key.node_id,
+                        node_key.miner_uid,
                         verification_result.verification_score
                     );
 
@@ -846,14 +842,14 @@ impl ValidationWorkerQueue {
                     Self::store_successful_validation(
                         &verification_engine,
                         &item,
-                        &executor_key,
+                        &node_key,
                         &verification_result,
                     )
                     .await;
                 }
                 Ok(Err(e)) => {
                     // Use rollback_for_retry to get the work item with current retry count
-                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                    if let Some(mut retry_item) = state.rollback_for_retry(node_key.clone()) {
                         metrics
                             .processing_lightweight
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -888,7 +884,7 @@ impl ValidationWorkerQueue {
                                 completed_at: Instant::now(),
                                 error: error_msg.clone(),
                             };
-                            state.complete(executor_key.clone(), status);
+                            state.complete(node_key.clone(), status);
                             metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
 
                             // Store failed validation result (release lock before await)
@@ -896,7 +892,7 @@ impl ValidationWorkerQueue {
                             Self::store_failed_validation(
                                 &verification_engine,
                                 &retry_item,
-                                &executor_key,
+                                &node_key,
                                 error_msg,
                                 start_time.elapsed(),
                                 ValidationType::Lightweight,
@@ -905,7 +901,7 @@ impl ValidationWorkerQueue {
                         }
                     } else {
                         // Should not happen but handle gracefully
-                        state.rollback(executor_key.clone());
+                        state.rollback(node_key.clone());
                         metrics
                             .processing_lightweight
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -913,7 +909,7 @@ impl ValidationWorkerQueue {
                 }
                 Err(_) => {
                     // Timeout case - use rollback_for_retry to get the work item
-                    if let Some(mut retry_item) = state.rollback_for_retry(executor_key.clone()) {
+                    if let Some(mut retry_item) = state.rollback_for_retry(node_key.clone()) {
                         metrics
                             .processing_lightweight
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -948,7 +944,7 @@ impl ValidationWorkerQueue {
                                 completed_at: Instant::now(),
                                 error: error_msg.clone(),
                             };
-                            state.complete(executor_key.clone(), status);
+                            state.complete(node_key.clone(), status);
                             metrics.failed_total.fetch_add(1, AtomicOrdering::Relaxed);
 
                             // Store failed validation result (release lock before await)
@@ -956,7 +952,7 @@ impl ValidationWorkerQueue {
                             Self::store_failed_validation(
                                 &verification_engine,
                                 &retry_item,
-                                &executor_key,
+                                &node_key,
                                 error_msg,
                                 start_time.elapsed(),
                                 ValidationType::Lightweight,
@@ -965,7 +961,7 @@ impl ValidationWorkerQueue {
                         }
                     } else {
                         // Should not happen but handle gracefully
-                        state.rollback(executor_key.clone());
+                        state.rollback(node_key.clone());
                         metrics
                             .processing_lightweight
                             .fetch_sub(1, AtomicOrdering::Relaxed);
@@ -1047,7 +1043,7 @@ impl ValidationWorkerQueue {
         let now = Instant::now();
 
         // Collect stale items with their data
-        let stale_items: Vec<(ExecutorKey, WorkItem, Duration)> = {
+        let stale_items: Vec<(NodeKey, WorkItem, Duration)> = {
             let state = queue.read().await;
             state
                 .processing
@@ -1112,12 +1108,8 @@ impl ValidationWorkerQueue {
         }
     }
 
-    pub async fn publish(
-        &self,
-        executor: ExecutorInfoDetailed,
-        task: VerificationTask,
-    ) -> Result<()> {
-        let executor_key = ExecutorKey::new(task.miner_uid, executor.id.clone());
+    pub async fn publish(&self, node: NodeInfoDetailed, task: VerificationTask) -> Result<()> {
+        let node_key = NodeKey::new(task.miner_uid, node.id.clone());
         let validation_type = task.intended_validation_strategy;
 
         let queue = match validation_type {
@@ -1127,19 +1119,19 @@ impl ValidationWorkerQueue {
 
         let mut state = queue.write().await;
 
-        if state.is_duplicate(&executor_key) {
+        if state.is_duplicate(&node_key) {
             debug!(
-                "Executor {} for miner {} already queued, skipping",
-                executor_key.executor_id, executor_key.miner_uid
+                "Node {} for miner {} already queued, skipping",
+                node_key.node_id, node_key.miner_uid
             );
             return Ok(());
         }
 
         let cooldown = Duration::from_secs(self.config.completed_item_ttl_secs);
-        if !state.can_requeue(&executor_key, cooldown) {
+        if !state.can_requeue(&node_key, cooldown) {
             debug!(
-                "Executor {} for miner {} in cooldown period, skipping",
-                executor_key.executor_id, executor_key.miner_uid
+                "Node {} for miner {} in cooldown period, skipping",
+                node_key.node_id, node_key.miner_uid
             );
             return Ok(());
         }
@@ -1156,7 +1148,7 @@ impl ValidationWorkerQueue {
         let work_item = WorkItem {
             id: Uuid::new_v4(),
             miner_uid: task.miner_uid,
-            executor_info: executor,
+            node_info: node,
             miner_hotkey: task.miner_hotkey.clone(),
             miner_endpoint: task.miner_endpoint.clone(),
             task,
@@ -1230,13 +1222,13 @@ mod tests {
     use crate::miner_prover::verification_engine_builder::VerificationEngineBuilder;
     use basilica_common::identity::Hotkey;
 
-    fn create_test_executor_info(id: &str) -> ExecutorInfoDetailed {
-        use uuid::Uuid;
-        ExecutorInfoDetailed {
-            id: ExecutorId::from_uuid(Uuid::new_v4()),
+    fn create_test_node_info(id: &str) -> NodeInfoDetailed {
+        NodeInfoDetailed {
+            id: NodeId::new("test-node").unwrap(),
+            miner_uid: basilica_common::identity::MinerUid::new(1),
             status: "online".to_string(),
             capabilities: vec!["gpu".to_string()],
-            grpc_endpoint: format!("http://executor-{}.test:8080", id),
+            node_ssh_endpoint: format!("http://node-{}.test:8080", id),
         }
     }
 
@@ -1282,12 +1274,12 @@ mod tests {
 
         let queue = ValidationWorkerQueue::new(config, Arc::new(verification_engine));
 
-        let executor = create_test_executor_info("exec1");
+        let node = create_test_node_info("exec1");
         let task = create_test_task(1, ValidationType::Lightweight);
 
-        assert!(queue.publish(executor.clone(), task.clone()).await.is_ok());
+        assert!(queue.publish(node.clone(), task.clone()).await.is_ok());
 
-        assert!(queue.publish(executor.clone(), task.clone()).await.is_ok());
+        assert!(queue.publish(node.clone(), task.clone()).await.is_ok());
 
         let (_, lightweight_pending) = queue.pending_count().await;
         assert_eq!(lightweight_pending, 1);
@@ -1302,7 +1294,7 @@ mod tests {
         let high_priority_item = WorkItem {
             id: Uuid::new_v4(),
             miner_uid: 1,
-            executor_info: create_test_executor_info("high"),
+            node_info: create_test_node_info("high"),
             task: create_test_task(1, ValidationType::Lightweight),
             miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
             miner_endpoint: "http://miner-1.test:8091".to_string(),
@@ -1314,7 +1306,7 @@ mod tests {
         let normal_priority_item = WorkItem {
             id: Uuid::new_v4(),
             miner_uid: 2,
-            executor_info: create_test_executor_info("normal"),
+            node_info: create_test_node_info("normal"),
             task: create_test_task(2, ValidationType::Full),
             miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
             miner_endpoint: "http://miner-2.test:8091".to_string(),
@@ -1326,7 +1318,7 @@ mod tests {
         let low_priority_item = WorkItem {
             id: Uuid::new_v4(),
             miner_uid: 3,
-            executor_info: create_test_executor_info("low"),
+            node_info: create_test_node_info("low"),
             task: create_test_task(3, ValidationType::Full),
             miner_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
             miner_endpoint: "http://miner-3.test:8091".to_string(),
@@ -1354,20 +1346,19 @@ mod tests {
         let completed_capacity = 10;
         let mut queue_state = QueueState::new(completed_capacity);
 
-        use uuid::Uuid;
-        let executor_key = ExecutorKey::new(1, ExecutorId::from_uuid(Uuid::new_v4()));
+        let node_key = NodeKey::new(1, NodeId::new("test-node").unwrap());
 
         let status = CompletionStatus::Success {
             completed_at: Instant::now(),
         };
 
-        queue_state.completed.put(executor_key.clone(), status);
+        queue_state.completed.put(node_key.clone(), status);
 
-        assert!(queue_state.completed.contains(&executor_key));
+        assert!(queue_state.completed.contains(&node_key));
 
         let cooldown = Duration::from_millis(1);
         tokio::time::sleep(Duration::from_millis(2)).await;
-        assert!(queue_state.can_requeue(&executor_key, cooldown));
+        assert!(queue_state.can_requeue(&node_key, cooldown));
     }
 
     #[tokio::test]

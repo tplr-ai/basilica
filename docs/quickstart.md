@@ -4,7 +4,14 @@ This guide provides step-by-step instructions for quickly getting started with B
 
 ## Deployment Options
 
-Basilica supports multiple deployment methods:
+Basilica supports two primary roles with multiple deployment methods:
+
+**Roles:**
+
+- **Validator** - Verifies GPU availability and performance, sets weights
+- **Miner** - Orchestrates validator access to GPU nodes via SSH
+
+**Deployment Methods:**
 
 1. **Production Docker Compose** (Recommended) - Fully automated with monitoring
 2. **Manual Build and Deploy** - For development and customization
@@ -63,7 +70,7 @@ cp ../../config/miner.correct.toml /opt/basilica/config/miner.toml
 # Edit /opt/basilica/config/miner.toml with your settings:
 # - wallet_name and hotkey_name
 # - external_ip (your public IP)
-# - executor fleet configuration
+# - GPU node SSH endpoints configuration
 # - network ("finney" for mainnet, "test" for testnet)
 
 # 3. Create directories and deploy
@@ -74,25 +81,7 @@ docker compose -f compose.prod.yml up -d
 docker logs basilica-miner
 ```
 
-### Executor
-
-```bash
-# 1. Navigate to executor scripts
-cd scripts/executor
-
-# 2. Prepare configuration
-cp ../../config/executor.correct.toml /opt/basilica/config/executor.toml
-# Edit /opt/basilica/config/executor.toml with your settings:
-# - managing_miner_hotkey (your miner's hotkey)
-# - advertised_host (your public IP)
-
-# 3. Create directories and deploy with GPU access
-mkdir -p /opt/basilica/config /opt/basilica/data /var/log/basilica
-docker compose -f compose.prod.yml up -d
-
-# 4. Check status
-docker logs basilica-executor
-```
+**Note**: GPU nodes require SSH access configuration. See [Miner Guide](miner.md) for detailed GPU node setup.
 
 ## Option 2: Remote Deployment
 
@@ -102,10 +91,7 @@ Deploy to remote servers using the automated deployment script:
 # Deploy individual services to remote servers
 ./scripts/validator/deploy.sh -s user@validator-server:port -w --health-check
 ./scripts/miner/deploy.sh -s user@miner-server:port -w --health-check
-./scripts/executor/deploy.sh -s user@executor-server:port --health-check
 ```
-
-See [BASILICA-DEPLOYMENT-GUIDE.md](../BASILICA-DEPLOYMENT-GUIDE.md) for detailed deployment instructions.
 
 ## Option 3: Development Build
 
@@ -115,18 +101,15 @@ For development and customization:
 # 1. Build components
 ./scripts/validator/build.sh
 ./scripts/miner/build.sh
-./scripts/executor/build.sh
 
 # 2. Prepare configuration
 cp config/validator.correct.toml config/validator.toml
 cp config/miner.correct.toml config/miner.toml
-cp config/executor.correct.toml config/executor.toml
 # Edit configurations as needed
 
 # 3. Run services
 ./validator --config config/validator.toml start
 ./miner --config config/miner.toml
-./executor --server --config config/executor.toml
 ```
 
 ## Monitoring Your Deployment
@@ -140,20 +123,18 @@ docker ps
 # View logs
 docker logs basilica-validator
 docker logs basilica-miner
-docker logs basilica-executor
 
 # Check health endpoints
 curl http://localhost:8080/health  # validator
 curl http://localhost:8080/health  # miner
-curl http://localhost:50052/health  # executor
 ```
 
 ### Access Monitoring Dashboard
 
 If monitoring is enabled (automatic with production compose files):
 
-- **Grafana**: http://localhost:3000 (admin/admin)
-- **Prometheus**: http://localhost:9090
+- **Grafana**: <http://localhost:3000> (admin/admin)
+- **Prometheus**: <http://localhost:9090>
 
 ## Common Issues
 
@@ -197,10 +178,9 @@ sudo ufw status
 Choose your role and dive deeper:
 
 - **[Validator Guide](validator.md)** - Detailed validator setup and operation
-- **[Miner Guide](miner.md)** - Comprehensive miner management and fleet operations  
-- **[Executor Guide](executor.md)** - GPU executor deployment and monitoring
-- **[Monitoring Guide](monitoring.md)** - Advanced monitoring and alerting setup
+- **[Miner Guide](miner.md)** - Comprehensive miner management and GPU node operations
 - **[Architecture Guide](architecture.md)** - Understand the system design
+- **[Monitoring Guide](monitoring.md)** - Advanced monitoring and alerting setup
 
 ## Support
 

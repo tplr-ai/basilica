@@ -15,7 +15,6 @@ url = { workspace = true }
 # Internal dependencies
 basilica-validator = { path = "../basilica-validator" }
 basilica-miner = { path = "../basilica-miner" }
-basilica-executor = { path = "../basilica-executor" }
 basilica-protocol = { path = "../basilica-protocol" }
 basilica-common = { path = "../basilica-common" }
 uuid = { workspace = true }
@@ -25,9 +24,6 @@ sqlx = { workspace = true }
 
 [dev-dependencies]
 
-[[test]]
-name = "miner_executor_flow"
-path = "tests/miner_executor_flow.rs"
 
 [[test]]
 name = "bdd_payment_billing_flow"

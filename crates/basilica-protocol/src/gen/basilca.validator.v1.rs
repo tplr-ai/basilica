@@ -23,7 +23,7 @@ pub struct CapacityOffer {
     #[prost(string, tag = "2")]
     pub miner_hotkey: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub executor_id: ::prost::alloc::string::String,
+    pub node_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "4")]
     pub gpu_spec: ::core::option::Option<super::super::common::v1::GpuSpec>,
     #[prost(message, optional, tag = "5")]

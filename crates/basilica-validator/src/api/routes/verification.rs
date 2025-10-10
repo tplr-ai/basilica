@@ -27,11 +27,11 @@ pub async fn list_active_verifications(
 }
 pub async fn get_verification_results(
     State(state): State<ApiState>,
-    Path(executor_id): Path<String>,
+    Path(node_id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
     match state
         .persistence
-        .query_verification_logs(Some(&executor_id), None, 10, 0)
+        .query_verification_logs(Some(&node_id), None, 10, 0)
         .await
     {
         Ok(logs) => {

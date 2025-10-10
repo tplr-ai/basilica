@@ -53,3 +53,26 @@ pub const AUTH_CALLBACK_PORTS: &[u16] = &[34521, 45632, 23457, 51234, 38901];
 pub fn auth0_callback_ports() -> &'static [u16] {
     AUTH_CALLBACK_PORTS
 }
+
+const DEV_AUTH0_DOMAIN: &str = "dev-ndynjuhl74mrh162.us.auth0.com";
+
+/// Check if running in development environment
+///
+/// Returns `true` when the current Auth0 domain matches the compile-time default domain,
+/// indicating a development environment. Returns `false` when a different domain is
+/// configured via the `BASILICA_AUTH0_DOMAIN` environment variable.
+///
+/// # Examples
+///
+/// ```
+/// use basilica_common::is_development_environment;
+///
+/// if is_development_environment() {
+///     println!("Running in development mode");
+/// } else {
+///     println!("Running with custom Auth0 domain");
+/// }
+/// ```
+pub fn is_development_environment() -> bool {
+    auth0_domain() == DEV_AUTH0_DOMAIN
+}

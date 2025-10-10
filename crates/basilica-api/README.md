@@ -51,7 +51,7 @@ netuid = 39
 
 - `GET /health` - Health check
 - `GET /docs` - Swagger UI
-- `GET /api/v1/executors` - List available GPUs
+- `GET /api/v1/nodes` - List available GPUs
 - `POST /api/v1/rentals` - Rent GPU capacity
 - `GET /api/v1/rentals/{id}` - Check rental status
 - `GET /api/v1/rentals/{id}/logs` - Stream logs (SSE)
@@ -59,8 +59,8 @@ netuid = 39
 ## Example Usage
 
 ```bash
-# List executors
-curl http://localhost:8000/api/v1/executors
+# List nodes
+curl http://localhost:8000/api/v1/nodes
 
 # Rent GPU (requires Auth0 JWT token)
 curl -X POST http://localhost:8000/api/v1/rentals \

@@ -72,13 +72,13 @@ impl ExponentialBackoff {
     }
 }
 
-/// Retry executor with comprehensive error handling
-pub struct RetryExecutor {
+/// Retry node with comprehensive error handling
+pub struct RetryNode {
     total_timeout: Option<Duration>,
 }
 
-impl RetryExecutor {
-    /// Creates a new retry executor
+impl RetryNode {
+    /// Creates a new retry node
     pub fn new() -> Self {
         Self {
             total_timeout: None,
@@ -248,7 +248,7 @@ impl RetryExecutor {
     }
 }
 
-impl Default for RetryExecutor {
+impl Default for RetryNode {
     fn default() -> Self {
         Self::new()
     }
@@ -260,7 +260,7 @@ where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, BittensorError>>,
 {
-    RetryExecutor::new().execute(operation).await
+    RetryNode::new().execute(operation).await
 }
 
 /// Convenience function for retrying operations with timeout
@@ -272,7 +272,7 @@ where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, BittensorError>>,
 {
-    RetryExecutor::new()
+    RetryNode::new()
         .with_timeout(timeout)
         .execute(operation)
         .await
@@ -401,7 +401,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_executor_success_after_failure() {
+    async fn test_retry_node_success_after_failure() {
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
 
@@ -419,8 +419,8 @@ mod tests {
             }
         };
 
-        let executor = RetryExecutor::new();
-        let result: Result<&str, BittensorError> = executor.execute(operation).await;
+        let node = RetryNode::new();
+        let result: Result<&str, BittensorError> = node.execute(operation).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
@@ -428,15 +428,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_executor_non_retryable_error() {
+    async fn test_retry_node_non_retryable_error() {
         let operation = || async {
             Err(BittensorError::InvalidHotkey {
                 hotkey: "invalid".to_string(),
             })
         };
 
-        let executor = RetryExecutor::new();
-        let result: Result<&str, BittensorError> = executor.execute(operation).await;
+        let node = RetryNode::new();
+        let result: Result<&str, BittensorError> = node.execute(operation).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {

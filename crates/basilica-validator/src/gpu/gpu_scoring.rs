@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-use super::categorization::{ExecutorValidationResult, GpuCategory, MinerGpuProfile};
+use super::categorization::{GpuCategory, MinerGpuProfile, NodeValidationResult};
 use crate::config::emission::EmissionConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
@@ -46,18 +46,18 @@ impl GpuScoringEngine {
     pub async fn update_miner_profile_from_validation(
         &self,
         miner_uid: MinerUid,
-        executor_validations: Vec<ExecutorValidationResult>,
+        node_validations: Vec<NodeValidationResult>,
     ) -> Result<MinerGpuProfile> {
-        // Calculate verification score from executor results
-        let new_score = self.calculate_verification_score(&executor_validations);
+        // Calculate verification score from node results
+        let new_score = self.calculate_verification_score(&node_validations);
 
         // Check if there are any successful validations
-        let has_successful_validation = executor_validations
+        let has_successful_validation = node_validations
             .iter()
             .any(|v| v.is_valid && v.attestation_valid);
 
         // Create or update the profile with the calculated score
-        let mut profile = MinerGpuProfile::new(miner_uid, &executor_validations, new_score);
+        let mut profile = MinerGpuProfile::new(miner_uid, &node_validations, new_score);
 
         // If there's a successful validation, update the timestamp
         if has_successful_validation {
@@ -71,7 +71,7 @@ impl GpuScoringEngine {
             miner_uid = miner_uid.as_u16(),
             score = new_score,
             total_gpus = profile.total_gpu_count(),
-            validations = executor_validations.len(),
+            validations = node_validations.len(),
             gpu_distribution = ?profile.gpu_counts,
             "Updated miner GPU profile with GPU count weighting"
         );
@@ -85,12 +85,12 @@ impl GpuScoringEngine {
                 new_score,
             );
 
-            // Record individual executor GPU counts
-            for validation in &executor_validations {
+            // Record individual node GPU counts
+            for validation in &node_validations {
                 if validation.is_valid && validation.attestation_valid {
-                    metrics.prometheus().record_executor_gpu_count(
+                    metrics.prometheus().record_node_gpu_count(
                         miner_uid.as_u16(),
-                        &validation.executor_id,
+                        &validation.node_id,
                         &validation.gpu_model,
                         validation.gpu_count,
                     );
@@ -98,14 +98,14 @@ impl GpuScoringEngine {
                     // Record successful validation
                     metrics.prometheus().record_miner_successful_validation(
                         miner_uid.as_u16(),
-                        &validation.executor_id,
+                        &validation.node_id,
                     );
 
                     // Record GPU profile
                     metrics.prometheus().record_miner_gpu_profile(
                         miner_uid.as_u16(),
                         &validation.gpu_model,
-                        &validation.executor_id,
+                        &validation.node_id,
                         validation.gpu_count as u32,
                     );
 
@@ -114,7 +114,7 @@ impl GpuScoringEngine {
                         .business()
                         .record_gpu_profile_validation(
                             miner_uid.as_u16(),
-                            &validation.executor_id,
+                            &validation.node_id,
                             &validation.gpu_model,
                             validation.gpu_count,
                             validation.is_valid && validation.attestation_valid,
@@ -137,23 +137,20 @@ impl GpuScoringEngine {
             .contains_key(&normalized_model)
     }
 
-    /// Calculate verification score from executor results
-    fn calculate_verification_score(
-        &self,
-        executor_validations: &[ExecutorValidationResult],
-    ) -> f64 {
-        if executor_validations.is_empty() {
+    /// Calculate verification score from node results
+    fn calculate_verification_score(&self, node_validations: &[NodeValidationResult]) -> f64 {
+        if node_validations.is_empty() {
             return 0.0;
         }
 
         let mut valid_count = 0;
         let mut total_count = 0;
         let mut total_gpu_count = 0;
-        let mut unique_executors = std::collections::HashSet::new();
+        let mut unique_nodes = std::collections::HashSet::new();
 
-        // count unique executors and their GPU counts
-        for validation in executor_validations {
-            unique_executors.insert(&validation.executor_id);
+        // count unique nodes and their GPU counts
+        for validation in node_validations {
+            unique_nodes.insert(&validation.node_id);
             total_count += 1;
 
             // Count valid attestations and accumulate GPU counts
@@ -162,12 +159,12 @@ impl GpuScoringEngine {
             }
         }
 
-        // sum GPU counts from unique executors only
-        let mut seen_executors = std::collections::HashSet::new();
-        for validation in executor_validations {
+        // sum GPU counts from unique nodes only
+        let mut seen_nodes = std::collections::HashSet::new();
+        for validation in node_validations {
             if validation.is_valid
                 && validation.attestation_valid
-                && seen_executors.insert(&validation.executor_id)
+                && seen_nodes.insert(&validation.node_id)
             {
                 total_gpu_count += validation.gpu_count;
             }
@@ -181,10 +178,10 @@ impl GpuScoringEngine {
             let gpu_weighted_score = final_score * total_gpu_count as f64;
 
             debug!(
-                validations = executor_validations.len(),
+                validations = node_validations.len(),
                 valid_count = valid_count,
                 total_count = total_count,
-                unique_executors = unique_executors.len(),
+                unique_nodes = unique_nodes.len(),
                 total_gpu_count = total_gpu_count,
                 final_score = final_score,
                 gpu_weighted_score = gpu_weighted_score,
@@ -193,7 +190,7 @@ impl GpuScoringEngine {
             final_score
         } else {
             warn!(
-                validations = executor_validations.len(),
+                validations = node_validations.len(),
                 "No validations found for score calculation"
             );
             0.0
@@ -271,7 +268,7 @@ impl GpuScoringEngine {
             let rewardable_gpus: Vec<(GpuCategory, u32)> = self
                 .gpu_profile_repo
                 .get_miner_gpu_assignments(profile.miner_uid)
-                .await?.iter().filter_map(|(executor_id, (gpu_count, gpu_name, gpu_memory_gb))| {
+                .await?.iter().filter_map(|(node_id, (gpu_count, gpu_name, gpu_memory_gb))| {
                     if *gpu_count > 0 {
                         let category = GpuCategory::from_str(gpu_name).unwrap();
                         let normalized_model = category.to_string();
@@ -291,7 +288,7 @@ impl GpuScoringEngine {
                                 if meets_gpu_count && meets_vram {
                                     info!(
                                         miner_uid = profile.miner_uid.as_u16(),
-                                        executor_id = %executor_id,
+                                        node_id = %node_id,
                                         gpu_model = %gpu_name,
                                         gpu_count = *gpu_count,
                                         min_required = allocation.min_gpu_count,
@@ -302,7 +299,7 @@ impl GpuScoringEngine {
                                     if !meets_gpu_count {
                                         info!(
                                             miner_uid = profile.miner_uid.as_u16(),
-                                            executor_id = %executor_id,
+                                            node_id = %node_id,
                                             gpu_model = %gpu_name,
                                             gpu_count = *gpu_count,
                                             min_required = allocation.min_gpu_count,
@@ -312,7 +309,7 @@ impl GpuScoringEngine {
                                     if !meets_vram {
                                         info!(
                                             miner_uid = profile.miner_uid.as_u16(),
-                                            executor_id = %executor_id,
+                                            node_id = %node_id,
                                             gpu_model = %gpu_name,
                                             gpu_vram = *gpu_memory_gb,
                                             min_required = allocation.min_gpu_vram,
@@ -485,7 +482,6 @@ mod tests {
     use chrono::Utc;
     use std::collections::HashMap;
     use std::sync::Arc;
-    use tempfile::NamedTempFile;
 
     /// Helper function to create a test MinerGpuProfile without specific memory requirements
     fn create_test_profile(
@@ -517,15 +513,15 @@ mod tests {
             gpu_repo.upsert_gpu_profile(profile).await?;
 
             let miner_id = format!("miner_{}", profile.miner_uid.as_u16());
-            let executor_id = format!(
-                "miner{}__test-executor-{}",
+            let node_id = format!(
+                "miner{}__test-node-{}",
                 profile.miner_uid.as_u16(),
                 profile.miner_uid.as_u16()
             );
 
             // Seed miners table first (required for foreign key constraint)
             sqlx::query(
-                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info)
+                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
                  VALUES (?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&miner_id)
@@ -544,12 +540,12 @@ mod tests {
                     let gpu_uuid =
                         format!("gpu-{}-{}-{}", profile.miner_uid.as_u16(), gpu_model, i);
                     sqlx::query(
-                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified)
+                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, node_id, miner_id, gpu_name, gpu_memory_gb, last_verified)
                          VALUES (?, ?, ?, ?, ?, ?, ?)"
                     )
                     .bind(&gpu_uuid)
                     .bind(i as i32)
-                    .bind(&executor_id)
+                    .bind(&node_id)
                     .bind(&miner_id)
                     .bind(gpu_model)
                     .bind(80i64) // Default 80GB for test data
@@ -559,14 +555,14 @@ mod tests {
                 }
             }
 
-            // Seed miner_executors table
+            // Seed miner_nodes table
             sqlx::query(
-                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, created_at, updated_at)
+                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
-            .bind(&executor_id)
+            .bind(&node_id)
             .bind(&miner_id)
-            .bind(&executor_id)
+            .bind(&node_id)
             .bind("127.0.0.1:8080")
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
             .bind("online")
@@ -579,11 +575,11 @@ mod tests {
             if let Some(last_successful) = profile.last_successful_validation {
                 let log_id = uuid::Uuid::new_v4().to_string();
                 sqlx::query(
-                    "INSERT INTO verification_logs (id, executor_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at)
+                    "INSERT INTO verification_logs (id, node_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&log_id)
-                .bind(&executor_id)
+                .bind(&node_id)
                 .bind("test_validator_hotkey")
                 .bind("gpu_validation")
                 .bind(last_successful.to_rfc3339())
@@ -602,26 +598,21 @@ mod tests {
         Ok(())
     }
 
-    async fn create_test_gpu_profile_repo() -> Result<(Arc<GpuProfileRepository>, NamedTempFile)> {
-        let temp_file = NamedTempFile::new()?;
-        let db_path = temp_file.path().to_str().unwrap();
-
-        let persistence =
-            crate::persistence::SimplePersistence::new(db_path, "test".to_string()).await?;
+    async fn create_test_gpu_profile_repo() -> Result<Arc<GpuProfileRepository>> {
+        let persistence = crate::persistence::SimplePersistence::for_testing().await?;
         let repo = Arc::new(GpuProfileRepository::new(persistence.pool().clone()));
-
-        Ok((repo, temp_file))
+        Ok(repo)
     }
 
     #[tokio::test]
     async fn test_verification_score_calculation() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test with valid attestations
         let validations = vec![
-            ExecutorValidationResult {
-                executor_id: "exec1".to_string(),
+            NodeValidationResult {
+                node_id: "exec1".to_string(),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 2,
@@ -629,8 +620,8 @@ mod tests {
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
-            ExecutorValidationResult {
-                executor_id: "exec2".to_string(),
+            NodeValidationResult {
+                node_id: "exec2".to_string(),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -647,8 +638,8 @@ mod tests {
         assert!((score - expected).abs() < 0.001);
 
         // Test with invalid attestations
-        let invalid_validations = vec![ExecutorValidationResult {
-            executor_id: "exec1".to_string(),
+        let invalid_validations = vec![NodeValidationResult {
+            node_id: "exec1".to_string(),
             is_valid: false,
             gpu_model: "A100".to_string(),
             gpu_count: 2,
@@ -662,8 +653,8 @@ mod tests {
 
         // Test with mixed results
         let mixed_validations = vec![
-            ExecutorValidationResult {
-                executor_id: "exec1".to_string(),
+            NodeValidationResult {
+                node_id: "exec1".to_string(),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 2,
@@ -671,8 +662,8 @@ mod tests {
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
-            ExecutorValidationResult {
-                executor_id: "exec2".to_string(),
+            NodeValidationResult {
+                node_id: "exec2".to_string(),
                 is_valid: false,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -694,8 +685,8 @@ mod tests {
         assert_eq!(score, 0.0);
 
         // Test that pass/fail scoring gives 1.0 for valid attestations regardless of memory
-        let high_memory_validations = vec![ExecutorValidationResult {
-            executor_id: "exec1".to_string(),
+        let high_memory_validations = vec![NodeValidationResult {
+            node_id: "exec1".to_string(),
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
@@ -704,8 +695,8 @@ mod tests {
             validation_timestamp: Utc::now(),
         }];
 
-        let low_memory_validations = vec![ExecutorValidationResult {
-            executor_id: "exec1".to_string(),
+        let low_memory_validations = vec![NodeValidationResult {
+            node_id: "exec1".to_string(),
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
@@ -723,13 +714,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_gpu_count_weighting() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test different GPU counts
         for gpu_count in 1..=8 {
-            let validations = vec![ExecutorValidationResult {
-                executor_id: format!("exec_{gpu_count}"),
+            let validations = vec![NodeValidationResult {
+                node_id: format!("exec_{gpu_count}"),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count,
@@ -747,8 +738,8 @@ mod tests {
         }
 
         // Test with many GPUs (no cap, linear scaling)
-        let many_gpu_validations = vec![ExecutorValidationResult {
-            executor_id: "exec_many".to_string(),
+        let many_gpu_validations = vec![NodeValidationResult {
+            node_id: "exec_many".to_string(),
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 128,
@@ -763,12 +754,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_miner_profile_update() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         let miner_uid = MinerUid::new(1);
-        let validations = vec![ExecutorValidationResult {
-            executor_id: "exec1".to_string(),
+        let validations = vec![NodeValidationResult {
+            node_id: "exec1".to_string(),
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 2,
@@ -786,8 +777,8 @@ mod tests {
         assert!(profile.total_score > 0.0);
 
         // Test existing profile update with different memory
-        let new_validations = vec![ExecutorValidationResult {
-            executor_id: "exec2".to_string(),
+        let new_validations = vec![NodeValidationResult {
+            node_id: "exec2".to_string(),
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
@@ -806,7 +797,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_category_statistics() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
 
         // Create test profiles
@@ -853,13 +844,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_pass_fail_scoring_edge_cases() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test all invalid validations
         let all_invalid = vec![
-            ExecutorValidationResult {
-                executor_id: "exec1".to_string(),
+            NodeValidationResult {
+                node_id: "exec1".to_string(),
                 is_valid: false,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -867,8 +858,8 @@ mod tests {
                 attestation_valid: false,
                 validation_timestamp: Utc::now(),
             },
-            ExecutorValidationResult {
-                executor_id: "exec2".to_string(),
+            NodeValidationResult {
+                node_id: "exec2".to_string(),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -883,8 +874,8 @@ mod tests {
 
         // Test partial success
         let partial_success = vec![
-            ExecutorValidationResult {
-                executor_id: "exec1".to_string(),
+            NodeValidationResult {
+                node_id: "exec1".to_string(),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -892,8 +883,8 @@ mod tests {
                 attestation_valid: true,
                 validation_timestamp: Utc::now(),
             },
-            ExecutorValidationResult {
-                executor_id: "exec2".to_string(),
+            NodeValidationResult {
+                node_id: "exec2".to_string(),
                 is_valid: false,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -901,8 +892,8 @@ mod tests {
                 attestation_valid: false,
                 validation_timestamp: Utc::now(),
             },
-            ExecutorValidationResult {
-                executor_id: "exec3".to_string(),
+            NodeValidationResult {
+                node_id: "exec3".to_string(),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -919,7 +910,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_direct_score_update() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
 
         let miner_uid = MinerUid::new(100);
@@ -932,8 +923,8 @@ mod tests {
         repo.upsert_gpu_profile(&initial_profile).await.unwrap();
 
         // Update with new validations that would give score 1.0
-        let validations = vec![ExecutorValidationResult {
-            executor_id: "exec1".to_string(),
+        let validations = vec![NodeValidationResult {
+            node_id: "exec1".to_string(),
             is_valid: true,
             gpu_model: "A100".to_string(),
             gpu_count: 1,
@@ -952,15 +943,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_scoring_ignores_gpu_memory() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo, EmissionConfig::for_testing());
 
         // Test various memory sizes all get same score
         let memory_sizes = vec![16, 24, 40, 80, 100];
 
         for memory in memory_sizes {
-            let validations = vec![ExecutorValidationResult {
-                executor_id: format!("exec_{memory}"),
+            let validations = vec![NodeValidationResult {
+                node_id: format!("exec_{memory}"),
                 is_valid: true,
                 gpu_model: "A100".to_string(),
                 gpu_count: 1,
@@ -976,7 +967,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_b200_gpu_support() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
 
         // Test that B200 is considered rewardable
@@ -1018,7 +1009,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_emission_config_filtering() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
 
         // Create custom emission config with only A100 and B200 (exclude H100)
         let mut custom_gpu_allocations = HashMap::new();
@@ -1089,7 +1080,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_multi_gpu_category_with_b200() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
         let engine = GpuScoringEngine::new(repo.clone(), EmissionConfig::for_testing());
 
         // Create a miner with multiple GPU types including B200
@@ -1139,11 +1130,7 @@ mod tests {
             weight_version_key: 0,
         };
 
-        // Create a minimal repo for testing (we only need the method, not async functionality)
-        let _temp_file = tempfile::NamedTempFile::new().unwrap();
-
         // This test doesn't need async functionality, just the is_gpu_model_rewardable method
-        // So we'll test the underlying logic directly
 
         // Test that various GPU model strings are normalized correctly
         let test_cases = vec![
@@ -1178,7 +1165,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_min_gpu_count_filtering() {
-        let (repo, _temp_file) = create_test_gpu_profile_repo().await.unwrap();
+        let repo = create_test_gpu_profile_repo().await.unwrap();
 
         // Create custom emission config with min_gpu_count requirements
         let mut gpu_allocations = HashMap::new();

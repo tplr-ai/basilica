@@ -302,7 +302,7 @@ async fn test_mtls_configuration() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_executor_task_submission() -> Result<()> {
+async fn test_node_task_submission() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -332,7 +332,7 @@ async fn test_executor_task_submission() -> Result<()> {
     // Create test task submission
     let task_submission = basilica_miner::grpc_client::TaskSubmission {
         task_id: "test-task-123".to_string(),
-        executor_id: "test-executor-1".to_string(),
+        node_id: "test-node-1".to_string(),
         task_type: "verification".to_string(),
         payload: serde_json::json!({
             "hardware_specs": {
@@ -355,8 +355,8 @@ async fn test_executor_task_submission() -> Result<()> {
         "Task ID should not be empty"
     );
     assert!(
-        !task_submission.executor_id.is_empty(),
-        "Executor ID should not be empty"
+        !task_submission.node_id.is_empty(),
+        "Node ID should not be empty"
     );
     assert_eq!(
         task_submission.task_type, "verification",

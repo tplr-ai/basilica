@@ -20,8 +20,6 @@ pub struct RegistrationConfig {
     pub axon_port: u16,
     /// External IP (optional - will auto-detect if not provided)
     pub external_ip: Option<String>,
-    /// Skip registration for local testing
-    pub skip_registration: bool,
     /// Spoofed IP for local development (e.g., "10.0.0.1" for miners, "10.0.0.2" for validators)
     pub local_spoofed_ip: String,
     /// Neuron type for logging (e.g., "miner", "validator")
@@ -91,18 +89,6 @@ impl ChainRegistration {
             "Performing one-time startup chain registration for {}",
             self.config.neuron_type
         );
-
-        // Check if we should skip registration (for local testing)
-        if self.config.skip_registration {
-            warn!("Skipping chain registration check (local testing mode)");
-            let mut state = self.state.write().await;
-            state.is_registered = true;
-            state.registration_time = Some(chrono::Utc::now());
-            state.discovered_uid = Some(0); // Mock UID for local testing
-            drop(state);
-            info!("Registration check bypassed for local testing");
-            return Ok(());
-        }
 
         // First, check if our hotkey is registered in the metagraph
         let our_account_id = self.bittensor_service.get_account_id();
@@ -329,7 +315,6 @@ pub struct RegistrationConfigBuilder {
     network: String,
     axon_port: u16,
     external_ip: Option<String>,
-    skip_registration: bool,
     local_spoofed_ip: String,
     neuron_type: String,
 }
@@ -341,7 +326,6 @@ impl RegistrationConfigBuilder {
             network,
             axon_port,
             external_ip: None,
-            skip_registration: false,
             local_spoofed_ip: "10.0.0.1".to_string(),
             neuron_type: "neuron".to_string(),
         }
@@ -349,11 +333,6 @@ impl RegistrationConfigBuilder {
 
     pub fn external_ip(mut self, ip: Option<String>) -> Self {
         self.external_ip = ip;
-        self
-    }
-
-    pub fn skip_registration(mut self, skip: bool) -> Self {
-        self.skip_registration = skip;
         self
     }
 
@@ -373,7 +352,6 @@ impl RegistrationConfigBuilder {
             network: self.network,
             axon_port: self.axon_port,
             external_ip: self.external_ip,
-            skip_registration: self.skip_registration,
             local_spoofed_ip: self.local_spoofed_ip,
             neuron_type: self.neuron_type,
         }

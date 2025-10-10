@@ -12,8 +12,7 @@ This directory contains comprehensive documentation for the Basilica decentraliz
 ### Component Guides
 
 - **[Validator Guide](validator.md)** - Deploy and manage validator nodes for network verification
-- **[Miner Guide](miner.md)** - Set up miners to manage GPU executor fleets
-- **[Executor Guide](executor.md)** - Configure GPU executors for computational tasks
+- **[Miner Guide](miner.md)** - Set up miners to orchestrate GPU node access via SSH
 
 ### Operations
 
@@ -25,10 +24,10 @@ This directory contains comprehensive documentation for the Basilica decentraliz
 
 Comprehensive overview of Basilica's system design, including:
 
-- Core components (Validator, Miner, Executor, Basilica API)
+- Core components (Validator, Miner, GPU Nodes, Basilica API)
 - Communication protocols (Bittensor, gRPC, SSH, REST)
 - Security architecture with cryptographic framework
-- Data flow and deployment patterns
+- Direct SSH-based verification model and deployment patterns
 
 ### Quick Start Guide
 
@@ -51,21 +50,12 @@ Complete validator deployment and operation:
 
 ### Miner Guide
 
-Comprehensive miner setup and fleet management:
+Comprehensive miner setup and GPU node orchestration:
 
-- Executor fleet configuration and management
+- GPU node SSH endpoint configuration and management
+- Validator SSH key deployment and access control
 - GPU verification through Proof-of-Work challenges
-- Multiple deployment modes (SSH, Manual, Kubernetes)
 - Security best practices and troubleshooting
-
-### Executor Guide
-
-GPU executor deployment and configuration:
-
-- NVIDIA GPU requirements and Docker setup
-- Container management and resource limits
-- Hardware attestation and verification
-- Security considerations and performance optimization
 
 ### Monitoring Guide
 
@@ -87,17 +77,19 @@ Observability and monitoring setup:
 
 ### Miner
 
-- Linux system with Docker support
+- Linux system with stable internet connection
 - Bittensor wallet with TAO tokens
-- One or more GPU machines for executors
-- Network connectivity between miner and executors
+- One or more GPU nodes with SSH access
+- SSH key management for validator access control
 
-### Executor
+### GPU Node (formerly Executor)
+
+**Note**: The executor binary is deprecated. GPU nodes now require:
 
 - NVIDIA GPU with CUDA support (8.7 CUDA GPU Compute Capability)
 - CUDA Toolkit 12.8 (for GPU verification kernels)
-- Docker with GPU runtime support
-- SSH server for validator access
+- Docker with GPU runtime support (nvidia-container-toolkit)
+- SSH server configured for validator access
 - Linux server with sufficient resources
 
 ## Key Features

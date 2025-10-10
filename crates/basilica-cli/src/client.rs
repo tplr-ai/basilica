@@ -55,11 +55,13 @@ pub async fn create_client(config: &CliConfig) -> Result<BasilicaClient> {
 /// before returning, ensuring the API client always gets valid tokens.
 async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<basilica_sdk::auth::TokenSet> {
     let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
-    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
+    let token_store = TokenStore::new(data_dir)
+        .await
+        .wrap_err("Failed to initialize token store")?;
 
     // Try to get stored tokens
     let mut tokens = token_store
-        .retrieve()
+        .retrieve_tokens()
         .await
         .wrap_err("Failed to retrieve authentication tokens")?
         .ok_or_else(|| CliError::from(AuthError::UserNotLoggedIn))?;
@@ -77,7 +79,7 @@ async fn get_valid_jwt_tokens(_config: &CliConfig) -> Result<basilica_sdk::auth:
                 Ok(new_tokens) => {
                     debug!("Successfully refreshed tokens pre-emptively");
                     // Store new tokens
-                    if let Err(e) = token_store.store(&new_tokens).await {
+                    if let Err(e) = token_store.store_tokens(&new_tokens).await {
                         warn!("Failed to store refreshed tokens: {}", e);
                     }
                     tokens = new_tokens;
@@ -99,12 +101,12 @@ pub async fn is_authenticated() -> bool {
         Ok(dir) => dir,
         Err(_) => return false,
     };
-    let token_store = match TokenStore::new(data_dir) {
+    let token_store = match TokenStore::new(data_dir).await {
         Ok(store) => store,
         Err(_) => return false,
     };
 
-    match token_store.retrieve().await {
+    match token_store.retrieve_tokens().await {
         Ok(Some(tokens)) => !tokens.is_expired(),
         Ok(None) => false,
         Err(_) => false,
@@ -114,7 +116,9 @@ pub async fn is_authenticated() -> bool {
 /// Clears stored authentication tokens
 pub async fn clear_authentication() -> Result<()> {
     let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
-    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
+    let token_store = TokenStore::new(data_dir)
+        .await
+        .wrap_err("Failed to initialize token store")?;
     token_store
         .delete_tokens()
         .await

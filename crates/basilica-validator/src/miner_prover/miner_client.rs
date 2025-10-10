@@ -1,7 +1,7 @@
 //! # Miner Client
 //!
 //! gRPC client for communicating with miners' MinerDiscovery service.
-//! Handles authentication, executor discovery, and SSH session initialization.
+//! Handles authentication, node discovery, and SSH session initialization.
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -11,8 +11,7 @@ use tracing::{debug, error, info, warn};
 
 use basilica_common::identity::Hotkey;
 use basilica_protocol::miner_discovery::{
-    miner_discovery_client::MinerDiscoveryClient, CloseSshSessionRequest, CloseSshSessionResponse,
-    ExecutorConnectionDetails, InitiateSshSessionRequest, InitiateSshSessionResponse, LeaseRequest,
+    miner_discovery_client::MinerDiscoveryClient, DiscoverNodesRequest, NodeConnectionDetails,
     ValidatorAuthRequest,
 };
 
@@ -50,9 +49,10 @@ impl Default for MinerClientConfig {
 pub struct MinerClient {
     config: MinerClientConfig,
     validator_hotkey: Hotkey,
-    /// Optional signer for creating signatures
-    /// In production, this should be provided by the validator's key management
-    signer: Option<Box<dyn ValidatorSigner>>,
+    /// Signer for creating cryptographic signatures using validator's key
+    signer: Option<Arc<dyn ValidatorSigner>>,
+    /// Validator's SSH public key for node access
+    validator_ssh_public_key: Option<String>,
 }
 
 /// Trait for validator signing operations
@@ -91,6 +91,7 @@ impl MinerClient {
             config,
             validator_hotkey,
             signer: None,
+            validator_ssh_public_key: None,
         }
     }
 
@@ -98,13 +99,20 @@ impl MinerClient {
     pub fn with_signer(
         config: MinerClientConfig,
         validator_hotkey: Hotkey,
-        signer: Box<dyn ValidatorSigner>,
+        signer: Arc<dyn ValidatorSigner>,
     ) -> Self {
         Self {
             config,
             validator_hotkey,
             signer: Some(signer),
+            validator_ssh_public_key: None,
         }
+    }
+
+    /// Set the validator's SSH public key
+    pub fn with_ssh_public_key(mut self, ssh_public_key: String) -> Self {
+        self.validator_ssh_public_key = Some(ssh_public_key);
+        self
     }
 
     /// Get the configured rental session duration
@@ -112,19 +120,14 @@ impl MinerClient {
         self.config.rental_session_duration
     }
 
-    /// Create a validator signature for authentication
-    fn create_validator_signature(&self, nonce: &str) -> Result<String> {
-        if let Some(ref signer) = self.signer {
-            // Use the provided signer
-            let signature_bytes = signer
-                .sign(nonce.as_bytes())
-                .map_err(|e| anyhow::anyhow!("Failed to create validator signature: {e}"))?;
-            Ok(hex::encode(signature_bytes))
-        } else {
-            Err(anyhow::anyhow!(
-                "No signer provided for validator signature creation"
-            ))
-        }
+    /// Create a validator signature for authentication (required for initial auth)
+    fn create_signature(&self, payload: &str) -> Result<String> {
+        self.signer
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No signer provided for validator signature creation"))?
+            .sign(payload.as_bytes())
+            .map(hex::encode)
+            .map_err(|e| anyhow::anyhow!("Failed to create validator signature: {e}"))
     }
 
     /// Extract gRPC endpoint from axon endpoint
@@ -161,13 +164,14 @@ impl MinerClient {
     /// Connect to a miner and authenticate
     pub async fn connect_and_authenticate(
         &self,
+        miner_uid: u16,
         axon_endpoint: &str,
         target_miner_hotkey: &str,
     ) -> Result<AuthenticatedMinerConnection> {
         let grpc_endpoint = self.axon_to_grpc_endpoint(axon_endpoint)?;
         info!(
-            "Connecting to miner gRPC service at {} (from axon: {})",
-            grpc_endpoint, axon_endpoint
+            miner_uid = miner_uid,
+            "Connecting to miner gRPC service at {} (from axon: {})", grpc_endpoint, axon_endpoint
         );
 
         // Create channel with timeout
@@ -197,11 +201,13 @@ impl MinerClient {
             "{}:{}:{}:{}",
             AUTH_PREFIX, nonce, target_miner_hotkey, timestamp.seconds
         );
-        let signature = self.create_validator_signature(&signature_payload)?;
+        let signature = self.create_signature(&signature_payload)?;
 
         debug!(
+            miner_uid = miner_uid,
             "Creating canonical auth signature with timestamp {} for target miner {}",
-            timestamp.seconds, target_miner_hotkey
+            timestamp.seconds,
+            target_miner_hotkey
         );
 
         let auth_request = ValidatorAuthRequest {
@@ -215,8 +221,8 @@ impl MinerClient {
         };
 
         debug!(
-            "Authenticating with miner as validator {}",
-            self.validator_hotkey
+            miner_uid = miner_uid,
+            "Authenticating with miner as validator {}", self.validator_hotkey
         );
 
         // Authenticate with retry logic
@@ -247,8 +253,8 @@ impl MinerClient {
         // Verify miner's signature
         if !auth_response.miner_hotkey.is_empty() && !auth_response.miner_signature.is_empty() {
             debug!(
-                "Verifying miner signature from hotkey: {}",
-                auth_response.miner_hotkey
+                miner_uid = miner_uid,
+                "Verifying miner signature from hotkey: {}", auth_response.miner_hotkey
             );
 
             // Parse miner hotkey
@@ -269,8 +275,8 @@ impl MinerClient {
                 canonical_data.as_bytes(),
             ) {
                 warn!(
-                    "Miner signature verification failed for {}: {}",
-                    auth_response.miner_hotkey, e
+                    miner_uid = miner_uid,
+                    "Miner signature verification failed for {}: {}", auth_response.miner_hotkey, e
                 );
                 return Err(anyhow::anyhow!(
                     "Miner signature verification failed: {}",
@@ -280,8 +286,10 @@ impl MinerClient {
 
             if auth_response.miner_hotkey != target_miner_hotkey {
                 error!(
+                    miner_uid = miner_uid,
                     "Miner hotkey mismatch! Expected: {}, Got: {}. Possible MITM attack.",
-                    target_miner_hotkey, auth_response.miner_hotkey
+                    target_miner_hotkey,
+                    auth_response.miner_hotkey
                 );
                 return Err(anyhow::anyhow!(
                     "Security violation: Miner hotkey mismatch. Expected {}, but got {}",
@@ -289,29 +297,46 @@ impl MinerClient {
                     auth_response.miner_hotkey
                 ));
             }
-            debug!("Miner hotkey matches expected target, proceeding with signature verification");
+            debug!(
+                miner_uid = miner_uid,
+                "Miner hotkey matches expected target, proceeding with signature verification"
+            );
 
             info!(
-                "Successfully verified miner signature from {}",
-                auth_response.miner_hotkey
+                miner_uid = miner_uid,
+                "Successfully verified miner signature from {}", auth_response.miner_hotkey
             );
         } else if self.config.require_miner_signature {
             // Signature is required but not provided
-            error!("Miner did not provide required signature for verification");
+            error!(
+                miner_uid = miner_uid,
+                "Miner did not provide required signature for verification"
+            );
             return Err(anyhow::anyhow!(
                 "Miner authentication response missing required signature"
             ));
         } else {
             // Signature not required and not provided
-            warn!("Miner did not provide signature for verification (not required by config)");
+            warn!(
+                miner_uid = miner_uid,
+                "Miner did not provide signature for verification (not required by config)"
+            );
         }
 
         let session_token = auth_response.session_token;
-        info!("Successfully authenticated with miner");
+        info!(
+            miner_uid = miner_uid,
+            "Successfully authenticated with miner"
+        );
 
         Ok(AuthenticatedMinerConnection {
             client: MinerDiscoveryClient::new(channel),
-            session_token,
+            _session_token: session_token,
+            validator_hotkey: self.validator_hotkey.clone(),
+            signer: self.signer.clone(),
+            validator_ssh_public_key: self.validator_ssh_public_key.clone(),
+            miner_uid,
+            target_miner_hotkey: target_miner_hotkey.to_string(),
         })
     }
 
@@ -352,160 +377,92 @@ impl MinerClient {
 /// Authenticated connection to a miner
 pub struct AuthenticatedMinerConnection {
     client: MinerDiscoveryClient<Channel>,
-    session_token: String,
+    _session_token: String,
+    /// Validator's actual hotkey
+    validator_hotkey: Hotkey,
+    /// Optional signer for creating signatures
+    signer: Option<Arc<dyn ValidatorSigner>>,
+    /// Validator's SSH public key
+    validator_ssh_public_key: Option<String>,
+    /// Miner UID
+    miner_uid: u16,
+    /// Target miner hotkey
+    target_miner_hotkey: String,
 }
 
 impl AuthenticatedMinerConnection {
-    /// Request available executors from the miner
-    pub async fn request_executors(
-        &mut self,
-        requirements: Option<basilica_protocol::common::ResourceLimits>,
-        lease_duration: Duration,
-    ) -> Result<Vec<ExecutorConnectionDetails>> {
-        info!("Requesting available executors from miner");
-
-        let request = LeaseRequest {
-            validator_hotkey: String::new(), // Will be extracted from token by miner
-            session_token: self.session_token.clone(),
-            requirements,
-            lease_duration_seconds: lease_duration.as_secs(),
-        };
-
-        let response = self
-            .client
-            .request_executor_lease(request)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to request executors: {}", e))?;
-
-        let response = response.into_inner();
-
-        if let Some(error) = response.error {
-            return Err(anyhow::anyhow!(
-                "Executor request failed: {}",
-                error.message
-            ));
-        }
-
-        info!(
-            "Received {} available executors from miner",
-            response.available_executors.len()
-        );
-
-        Ok(response.available_executors)
-    }
-
-    /// Initiate SSH session with public key
-    pub async fn initiate_ssh_session(
-        &mut self,
-        request: InitiateSshSessionRequest,
-    ) -> Result<InitiateSshSessionResponse> {
-        info!(
-            "Initiating SSH session for executor {} with public key",
-            request.executor_id
-        );
-
-        // DEBUG: Log the SSH public key being sent through the gRPC pipeline
-        debug!(
-            "SSH public key being sent to miner: '{}' (length: {} chars)",
-            request.validator_public_key,
-            request.validator_public_key.len()
-        );
-
-        let response = self
-            .client
-            .initiate_ssh_session(request)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to initiate SSH session: {}", e))?;
-
-        let response = response.into_inner();
-
-        info!(
-            "SSH session response: session_id={}, status={:?}",
-            response.session_id, response.status
-        );
-
-        Ok(response)
-    }
-
-    /// Initiate SSH session for rental with public key
-    pub async fn initiate_rental_ssh_session(
-        &mut self,
-        executor_id: &str,
-        validator_hotkey: &str,
-        validator_public_key: &str,
-        rental_id: &str,
-        session_duration: u64,
-    ) -> Result<InitiateSshSessionResponse> {
-        info!(
-            "Initiating rental SSH session for executor {} (rental: {})",
-            executor_id, rental_id
-        );
-
-        let request = InitiateSshSessionRequest {
-            validator_hotkey: validator_hotkey.to_string(),
-            executor_id: executor_id.to_string(),
-            purpose: "rental".to_string(),
-            validator_public_key: validator_public_key.to_string(),
-            session_duration_secs: session_duration as i64,
-            session_metadata: serde_json::json!({
-                "rental_id": rental_id,
-                "type": "container_deployment"
+    /// Create a validator signature for a payload, returning empty string if unavailable
+    fn create_signature(&self, payload: &str) -> String {
+        self.signer
+            .as_ref()
+            .and_then(|signer| {
+                signer
+                    .sign(payload.as_bytes())
+                    .map(hex::encode)
+                    .map_err(|e| {
+                        debug!("Failed to create signature: {}", e);
+                        e
+                    })
+                    .ok()
             })
-            .to_string(),
-            rental_mode: true,
-            rental_id: rental_id.to_string(),
-        };
-
-        self.initiate_ssh_session(request).await
+            .unwrap_or_default()
     }
 
-    /// Close SSH session
-    pub async fn close_ssh_session(
-        &mut self,
-        request: CloseSshSessionRequest,
-    ) -> Result<CloseSshSessionResponse> {
-        info!("Closing SSH session {}", request.session_id);
+    /// Request available nodes from the miner
+    pub async fn request_nodes(&mut self) -> Result<Vec<NodeConnectionDetails>> {
+        info!(
+            miner_uid = self.miner_uid,
+            "Requesting available nodes from miner"
+        );
+
+        // Create request with authentication fields
+        let now = chrono::Utc::now();
+        let timestamp = basilica_protocol::common::Timestamp {
+            value: Some(prost_types::Timestamp {
+                seconds: now.timestamp(),
+                nanos: now.timestamp_subsec_nanos() as i32,
+            }),
+        };
+
+        let nonce = uuid::Uuid::new_v4().to_string();
+
+        // Create signature if signer is available
+        const DISCOVER_PREFIX: &str = "BASILICA_DISCOVER_V1";
+        let signature_payload = format!(
+            "{}:{}:{}:{}",
+            DISCOVER_PREFIX,
+            self.validator_hotkey,
+            nonce,
+            timestamp.value.as_ref().map(|t| t.seconds).unwrap_or(0)
+        );
+
+        // Create signature using helper method
+        let signature = self.create_signature(&signature_payload);
+
+        let request = DiscoverNodesRequest {
+            validator_hotkey: self.validator_hotkey.to_string(),
+            signature,
+            nonce,
+            validator_public_key: self.validator_ssh_public_key.clone().unwrap_or_default(),
+            timestamp: Some(timestamp),
+            target_miner_hotkey: self.target_miner_hotkey.to_string(),
+        };
 
         let response = self
             .client
-            .close_ssh_session(request)
+            .discover_nodes(request)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to close SSH session: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to discover nodes: {}", e))?;
 
         let response = response.into_inner();
 
-        if response.success {
-            info!("Successfully closed SSH session");
-        } else {
-            warn!("Failed to close SSH session: {}", response.message);
-        }
+        info!(
+            miner_uid = self.miner_uid,
+            "Received {} available nodes from miner",
+            response.nodes.len()
+        );
 
-        Ok(response)
-    }
-
-    /// Close SSH session by ID
-    pub async fn close_ssh_session_by_id(
-        &mut self,
-        session_id: &str,
-        validator_hotkey: &str,
-        reason: &str,
-    ) -> Result<()> {
-        let request = CloseSshSessionRequest {
-            session_id: session_id.to_string(),
-            validator_hotkey: validator_hotkey.to_string(),
-            reason: reason.to_string(),
-        };
-
-        let response = self.close_ssh_session(request).await?;
-
-        if !response.success {
-            return Err(anyhow::anyhow!(
-                "Failed to close SSH session: {}",
-                response.message
-            ));
-        }
-
-        Ok(())
+        Ok(response.nodes)
     }
 }
 

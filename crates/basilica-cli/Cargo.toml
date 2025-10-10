@@ -1,6 +1,6 @@
 [package]
 name = "basilica-cli"
-version = "0.3.5"
+version = "0.4.1"
 edition = "2021"
 authors = ["Basilica Team"]
 description = "Unified CLI for Basilica GPU rental and network management"
@@ -27,6 +27,7 @@ chrono = { workspace = true }
 # HTTP client for API communication
 reqwest = { workspace = true }
 futures = { workspace = true }
+futures-util = { workspace = true }
 eventsource-stream = { workspace = true }
 
 # Terminal UI and interaction

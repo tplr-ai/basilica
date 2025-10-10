@@ -375,7 +375,7 @@ impl BillingService for BillingServiceImpl {
             .rental_manager
             .create_rental(
                 user_id.clone(),
-                req.executor_id.clone(),
+                req.node_id.clone(),
                 validator_id,
                 package_id,
                 resource_spec,
@@ -413,7 +413,7 @@ impl BillingService for BillingServiceImpl {
             event_id: uuid::Uuid::new_v4(),
             rental_id: rental_id.as_uuid(),
             user_id: user_id.to_string(),
-            executor_id: req.executor_id.clone(),
+            node_id: req.node_id.clone(),
             validator_id: validator_id_copy,
             event_type: EventType::RentalStart,
             event_data: serde_json::json!({
@@ -483,7 +483,7 @@ impl BillingService for BillingServiceImpl {
             event_id: uuid::Uuid::new_v4(),
             rental_id: rental_id.as_uuid(),
             user_id: rental.user_id.to_string(),
-            executor_id: rental.executor_id.clone(),
+            node_id: rental.node_id.clone(),
             validator_id: rental.validator_id.clone(),
             event_type: EventType::StatusChange,
             event_data: serde_json::json!({
@@ -525,9 +525,7 @@ impl BillingService for BillingServiceImpl {
                         .await
                         .map_err(|e| Status::internal(format!("Failed to list rentals: {}", e)))?
                 }
-                basilica_protocol::billing::get_active_rentals_request::Filter::ExecutorId(
-                    executor_id,
-                ) => {
+                basilica_protocol::billing::get_active_rentals_request::Filter::NodeId(node_id) => {
                     let all_rentals = self
                         .rental_repository
                         .get_active_rentals(None)
@@ -536,7 +534,7 @@ impl BillingService for BillingServiceImpl {
 
                     all_rentals
                         .into_iter()
-                        .filter(|r| r.executor_id == executor_id)
+                        .filter(|r| r.node_id == node_id)
                         .collect()
                 }
                 basilica_protocol::billing::get_active_rentals_request::Filter::ValidatorId(
@@ -586,7 +584,7 @@ impl BillingService for BillingServiceImpl {
                 ActiveRental {
                     rental_id: r.id.to_string(),
                     user_id: r.user_id.to_string(),
-                    executor_id: r.executor_id.clone(),
+                    node_id: r.node_id.clone(),
                     validator_id: r.validator_id.clone(),
                     status: Self::domain_status_to_proto(r.state).into(),
                     resource_spec,

@@ -57,14 +57,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile(
             &[
                 "proto/common.proto",
-                "proto/executor_control.proto",
                 "proto/miner_discovery.proto",
                 "proto/validator_api.proto",
-                "proto/executor_registration.proto",
-                "proto/executor_management.proto",
                 "proto/gpu_pow.proto",
                 "proto/billing.proto",
                 "proto/payments.proto",
+                "proto/rental.proto",
             ],
             &["proto"],
         )?;

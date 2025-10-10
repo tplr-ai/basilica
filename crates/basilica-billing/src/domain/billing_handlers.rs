@@ -391,7 +391,7 @@ impl EventHandlers for BillingEventHandlers {
 
         let mut rental = Rental::new(
             user_id.clone(),
-            event.executor_id.clone(),
+            event.node_id.clone(),
             event.validator_id.clone(),
             package_id,
             resource_spec,
@@ -414,7 +414,7 @@ impl EventHandlers for BillingEventHandlers {
             user_id.as_uuid().ok(),
             serde_json::json!({
                 "package_id": rental.package_id.to_string(),
-                "executor_id": event.executor_id,
+                "node_id": event.node_id,
                 "validator_id": event.validator_id,
                 "estimated_cost": estimated_cost.to_string(),
                 "reservation_id": reservation.id.to_string(),

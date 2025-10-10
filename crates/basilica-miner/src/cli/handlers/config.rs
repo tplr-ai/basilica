@@ -122,18 +122,11 @@ async fn show_config(config: &MinerConfig, show_sensitive: bool) -> Result<()> {
     println!("\n=== Derived Configuration ===");
     println!("Database Type: SQLite");
     println!(
-        "Server Address: {}:{}",
-        config.server.host, config.server.port
+        "Validator Comms Address: {}:{}",
+        config.validator_comms.host, config.validator_comms.port
     );
     println!("Metrics Enabled: {}", config.metrics.enabled);
-    println!(
-        "Executor Count: {}",
-        config.executor_management.executors.len()
-    );
-    println!(
-        "Remote Deployment: {}",
-        config.remote_executor_deployment.is_some()
-    );
+    println!("Node Count: {}", config.node_management.nodes.len());
 
     // Show validation status
     let validation_result = perform_comprehensive_validation(config).await?;
@@ -283,8 +276,8 @@ async fn perform_comprehensive_validation(config: &MinerConfig) -> Result<Valida
     // Database configuration validation
     validate_database_config(&config.database, &mut errors, &mut warnings);
 
-    // Server configuration validation
-    validate_server_config(&config.server, &mut errors, &mut warnings);
+    // Validator communications configuration validation
+    validate_validator_comms_config(&config.validator_comms, &mut errors, &mut warnings);
 
     // Bittensor configuration validation
     validate_bittensor_config(
@@ -294,9 +287,9 @@ async fn perform_comprehensive_validation(config: &MinerConfig) -> Result<Valida
         &mut suggestions,
     );
 
-    // Executor management validation
-    validate_executor_config(
-        &config.executor_management,
+    // Node management validation
+    validate_node_config(
+        &config.node_management,
         &mut errors,
         &mut warnings,
         &mut suggestions,
@@ -309,11 +302,6 @@ async fn perform_comprehensive_validation(config: &MinerConfig) -> Result<Valida
         &mut warnings,
         &mut suggestions,
     );
-
-    // Remote deployment validation (if configured)
-    if let Some(ref deployment) = config.remote_executor_deployment {
-        validate_remote_deployment_config(deployment, &mut errors, &mut warnings);
-    }
 
     Ok(ValidationResult {
         is_valid: errors.is_empty(),
@@ -343,21 +331,17 @@ fn validate_database_config(
 }
 
 /// Validate server configuration
-fn validate_server_config(
-    config: &basilica_common::config::ServerConfig,
-    _errors: &mut [String],
+fn validate_validator_comms_config(
+    config: &crate::config::ValidatorCommsConfig,
+    errors: &mut Vec<String>,
     warnings: &mut Vec<String>,
 ) {
     if config.port < 1024 && config.host != "127.0.0.1" && config.host != "localhost" {
-        warnings.push("Using privileged port (<1024) requires elevated permissions".to_string());
+        errors.push("Using privileged port (<1024) requires elevated permissions".to_string());
     }
 
     if config.host == "0.0.0.0" {
         warnings.push("Binding to 0.0.0.0 exposes service to all network interfaces".to_string());
-    }
-
-    if config.max_connections > 10000 {
-        warnings.push("Very high max_connections may cause resource exhaustion".to_string());
     }
 }
 
@@ -387,16 +371,16 @@ fn validate_bittensor_config(
     }
 }
 
-/// Validate executor management configuration
-fn validate_executor_config(
-    config: &crate::config::ExecutorManagementConfig,
+/// Validate node management configuration
+fn validate_node_config(
+    config: &crate::config::NodeManagementConfig,
     _errors: &mut [String],
     warnings: &mut Vec<String>,
     suggestions: &mut Vec<String>,
 ) {
-    if config.executors.is_empty() {
-        warnings.push("No executors configured".to_string());
-        suggestions.push("Add executor configurations or enable remote deployment".to_string());
+    if config.nodes.is_empty() {
+        warnings.push("No nodes configured".to_string());
+        suggestions.push("Add node configurations or enable remote deployment".to_string());
     }
 
     if config.health_check_interval.as_secs() < 30 {
@@ -420,25 +404,19 @@ fn validate_security_config(
         suggestions.push("Enable signature verification for production".to_string());
     }
 
-    if config.jwt_secret == "change-me-in-production" {
-        errors.push("Default JWT secret must be changed for production".to_string());
-    }
-
-    if config.jwt_secret.len() < 32 {
-        warnings.push("JWT secret should be at least 32 characters long".to_string());
-    }
-
-    if config.token_expiration.as_secs() > 86400 {
-        warnings.push("Long token expiration may pose security risks".to_string());
-    }
-
-    match config.get_private_key() {
-        Ok(private_key) => {
-            validate_private_key_config(&private_key, errors, warnings, suggestions);
+    if config.private_key_file.is_some() {
+        match config.get_private_key() {
+            Ok(private_key) => {
+                validate_private_key_config(&private_key, errors, warnings, suggestions);
+            }
+            Err(e) => {
+                errors.push(format!("Failed to get private key: {e}"));
+            }
         }
-        Err(e) => {
-            errors.push(format!("Failed to get private key: {e}"));
-        }
+    } else {
+        suggestions.push(
+            "Consider setting private_key_file for collateral contract operations".to_string(),
+        );
     }
 }
 
@@ -463,31 +441,6 @@ fn validate_private_key_config(
     // Validate that the private key can be parsed and get the corresponding address
     if private_key.parse::<PrivateKeySigner>().is_err() {
         errors.push("Invalid private key format".to_string());
-    }
-}
-
-/// Validate remote deployment configuration
-fn validate_remote_deployment_config(
-    config: &crate::config::RemoteExecutorDeploymentConfig,
-    errors: &mut Vec<String>,
-    warnings: &mut Vec<String>,
-) {
-    if config.remote_machines.is_empty() {
-        warnings.push("Remote deployment configured but no machines specified".to_string());
-    }
-
-    for machine in &config.remote_machines {
-        if machine.ssh.host.is_empty() {
-            errors.push(format!("SSH host empty for machine: {}", machine.id));
-        }
-
-        if machine.ssh.username.is_empty() {
-            errors.push(format!("SSH username empty for machine: {}", machine.id));
-        }
-
-        if machine.ssh.private_key_path.to_string_lossy().is_empty() {
-            warnings.push(format!("No SSH key configured for machine: {}", machine.id));
-        }
     }
 }
 
@@ -526,20 +479,6 @@ fn display_validation_results(result: &ValidationResult) {
 
 /// Mask sensitive configuration fields
 fn mask_sensitive_fields(config: &mut MinerConfig) {
-    // Mask JWT secret
-    if !config.security.jwt_secret.is_empty() {
-        config.security.jwt_secret = "****MASKED****".to_string();
-    }
-
-    // Mask SSH private key paths
-    if let Some(ref mut deployment) = config.remote_executor_deployment {
-        for machine in &mut deployment.remote_machines {
-            if !machine.ssh.private_key_path.to_string_lossy().is_empty() {
-                machine.ssh.private_key_path = PathBuf::from("****MASKED****");
-            }
-        }
-    }
-
     // Mask database connection details if they contain passwords
     if config.database.url.contains("password") {
         config.database.url = config
@@ -555,8 +494,8 @@ fn mask_sensitive_fields(config: &mut MinerConfig) {
 /// Check if configuration changes require restart
 fn check_restart_required(current: &MinerConfig, new: &MinerConfig) -> bool {
     // Changes that require restart
-    current.server.port != new.server.port
-        || current.server.host != new.server.host
+    current.validator_comms.port != new.validator_comms.port
+        || current.validator_comms.host != new.validator_comms.host
         || current.database.url != new.database.url
         || current.bittensor.common.netuid != new.bittensor.common.netuid
         || current.bittensor.axon_port != new.bittensor.axon_port
@@ -564,16 +503,16 @@ fn check_restart_required(current: &MinerConfig, new: &MinerConfig) -> bool {
 
 /// Print configuration differences that require restart
 fn print_config_differences(current: &MinerConfig, new: &MinerConfig) {
-    if current.server.port != new.server.port {
+    if current.validator_comms.port != new.validator_comms.port {
         println!(
-            "   • Server port: {} → {}",
-            current.server.port, new.server.port
+            "   • Validator comms port: {} → {}",
+            current.validator_comms.port, new.validator_comms.port
         );
     }
-    if current.server.host != new.server.host {
+    if current.validator_comms.host != new.validator_comms.host {
         println!(
-            "   • Server host: {} → {}",
-            current.server.host, new.server.host
+            "   • Validator comms host: {} → {}",
+            current.validator_comms.host, new.validator_comms.host
         );
     }
     if current.database.url != new.database.url {

@@ -38,8 +38,8 @@ pub const HOTKEY_LABEL: &str = "hotkey";
 /// Netuid label key for Bittensor subnet identification
 pub const NETUID_LABEL: &str = "netuid";
 
-/// Executor ID label key
-pub const EXECUTOR_ID_LABEL: &str = "executor_id";
+/// Node ID label key
+pub const NODE_ID_LABEL: &str = "node_id";
 
 /// Validator UID label key
 pub const VALIDATOR_UID_LABEL: &str = "validator_uid";
@@ -58,7 +58,7 @@ pub mod values {
     // Component values
     pub const COMPONENT_VALIDATOR: &str = "validator";
     pub const COMPONENT_MINER: &str = "miner";
-    pub const COMPONENT_EXECUTOR: &str = "executor";
+    pub const COMPONENT_NODE: &str = "node";
     pub const COMPONENT_COMMON: &str = "common";
 
     // Status values
@@ -154,15 +154,15 @@ pub fn create_bittensor_labels(
     ]
 }
 
-/// Helper function to create executor-specific labels
-pub fn create_executor_labels<'a>(
-    executor_id: &'a str,
+/// Helper function to create node-specific labels
+pub fn create_node_labels<'a>(
+    node_id: &'a str,
     operation: &'a str,
     status: &'a str,
 ) -> Vec<(&'static str, &'a str)> {
     vec![
-        (COMPONENT_LABEL, values::COMPONENT_EXECUTOR),
-        (EXECUTOR_ID_LABEL, executor_id),
+        (COMPONENT_LABEL, values::COMPONENT_NODE),
+        (NODE_ID_LABEL, node_id),
         (OPERATION_LABEL, operation),
         (STATUS_LABEL, status),
     ]

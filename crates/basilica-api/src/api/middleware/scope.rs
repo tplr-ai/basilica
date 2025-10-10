@@ -95,8 +95,8 @@ fn get_required_scope(req: &Request) -> Option<String> {
         }
         (&Method::GET, p) if p.starts_with("/rentals/") => Some("rentals:view".to_string()),
 
-        // Executor endpoints
-        (&Method::GET, "/executors") => Some("executors:list".to_string()),
+        // Node endpoints
+        (&Method::GET, "/nodes") => Some("nodes:list".to_string()),
 
         // API Key management endpoints
         (&Method::POST, "/api-keys") => Some("keys:create".to_string()),
@@ -155,13 +155,13 @@ mod tests {
             .unwrap();
         assert_eq!(get_required_scope(&req), Some("rentals:logs".to_string()));
 
-        // Test executor endpoint
+        // Test node endpoint
         let req = Request::builder()
             .method(Method::GET)
-            .uri("/executors")
+            .uri("/nodes")
             .body(Body::empty())
             .unwrap();
-        assert_eq!(get_required_scope(&req), Some("executors:list".to_string()));
+        assert_eq!(get_required_scope(&req), Some("nodes:list".to_string()));
 
         // Test health endpoint (requires authentication but no specific scope)
         let req = Request::builder()

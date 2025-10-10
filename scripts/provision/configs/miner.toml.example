@@ -65,10 +65,6 @@ name = "Primary Executor"
 enable_tls = false  # Set to true for production
 verify_signatures = true
 rate_limit_requests_per_minute = 600
-# IMPORTANT: Add your validator IPs
-allowed_validators = [
-    "YOUR_VALIDATOR_IP_HERE",
-]
 
 # Authentication settings
 [auth]

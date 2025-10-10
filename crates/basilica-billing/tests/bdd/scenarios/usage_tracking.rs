@@ -24,7 +24,7 @@ async fn test_get_usage_report_for_rental() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_usage".to_string(),
+        node_id: "node_usage".to_string(),
         validator_id: "validator_usage".to_string(),
         hourly_rate: "5.0".to_string(),
         max_duration: Some(hours_to_duration(10)),
@@ -57,13 +57,13 @@ async fn test_get_usage_report_for_rental() {
         Uuid::parse_str(&track_response.tracking_id).expect("Failed to parse rental UUID");
 
     sqlx::query(
-        "INSERT INTO billing.usage_events (event_id, rental_id, user_id, executor_id, validator_id, event_type, event_data, timestamp) 
+        "INSERT INTO billing.usage_events (event_id, rental_id, user_id, node_id, validator_id, event_type, event_data, timestamp) 
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())"
     )
     .bind(Uuid::new_v4())
     .bind(rental_uuid)
     .bind(user_id)
-    .bind("executor_usage")
+    .bind("node_usage")
     .bind("validator_usage")
     .bind("telemetry")
     .bind(serde_json::json!({
@@ -118,7 +118,7 @@ async fn test_usage_report_empty_for_new_rental() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_empty".to_string(),
+        node_id: "node_empty".to_string(),
         validator_id: "validator_empty".to_string(),
         hourly_rate: "3.0".to_string(),
         max_duration: Some(hours_to_duration(5)),
@@ -169,7 +169,7 @@ async fn test_ingest_telemetry_stream() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_telemetry".to_string(),
+        node_id: "node_telemetry".to_string(),
         validator_id: "validator_telemetry".to_string(),
         hourly_rate: "4.0".to_string(),
         max_duration: Some(hours_to_duration(8)),
@@ -190,7 +190,7 @@ async fn test_ingest_telemetry_stream() {
     for i in 0..3 {
         let telemetry = TelemetryData {
             rental_id: track_response.tracking_id.clone(),
-            executor_id: "executor_telemetry".to_string(),
+            node_id: "node_telemetry".to_string(),
             timestamp: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
             resource_usage: Some(ResourceUsage {
                 cpu_percent: 50.0 + (i as f64 * 10.0),
@@ -239,7 +239,7 @@ async fn test_usage_aggregation_in_report() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_agg".to_string(),
+        node_id: "node_agg".to_string(),
         validator_id: "validator_agg".to_string(),
         hourly_rate: "6.0".to_string(),
         max_duration: Some(hours_to_duration(12)),
@@ -263,13 +263,13 @@ async fn test_usage_aggregation_in_report() {
 
     for (i, (cpu, memory)) in cpu_values.iter().zip(memory_values.iter()).enumerate() {
         sqlx::query(
-            "INSERT INTO billing.usage_events (event_id, rental_id, user_id, executor_id, validator_id, event_type, event_data, timestamp) 
+            "INSERT INTO billing.usage_events (event_id, rental_id, user_id, node_id, validator_id, event_type, event_data, timestamp) 
              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW() - INTERVAL '1 minute' * $8)"
         )
         .bind(Uuid::new_v4())
         .bind(rental_uuid)
         .bind(user_id)
-        .bind("executor_agg")
+        .bind("node_agg")
         .bind("validator_agg")
         .bind("telemetry")
         .bind(serde_json::json!({
@@ -335,7 +335,7 @@ async fn test_usage_report_calculates_cost() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_cost".to_string(),
+        node_id: "node_cost".to_string(),
         validator_id: "validator_cost".to_string(),
         hourly_rate: hourly_rate.to_string(),
         max_duration: Some(hours_to_duration(24)),

@@ -15,7 +15,7 @@ use std::sync::Arc;
 pub struct Rental {
     pub id: RentalId,
     pub user_id: UserId,
-    pub executor_id: String,
+    pub node_id: String,
     pub validator_id: String,
     pub package_id: PackageId,
     pub reservation_id: Option<ReservationId>,
@@ -39,7 +39,7 @@ pub struct Rental {
 impl Rental {
     pub fn new(
         user_id: UserId,
-        executor_id: String,
+        node_id: String,
         validator_id: String,
         package_id: PackageId,
         resource_spec: ResourceSpec,
@@ -49,7 +49,7 @@ impl Rental {
         Self {
             id: RentalId::new(),
             user_id,
-            executor_id,
+            node_id,
             validator_id,
             package_id,
             reservation_id,
@@ -140,7 +140,7 @@ pub trait RentalOperations: Send + Sync {
     async fn create_rental(
         &self,
         user_id: UserId,
-        executor_id: String,
+        node_id: String,
         validator_id: String,
         package_id: PackageId,
         resource_spec: ResourceSpec,
@@ -186,7 +186,7 @@ impl RentalOperations for RentalManager {
     async fn create_rental(
         &self,
         user_id: UserId,
-        executor_id: String,
+        node_id: String,
         validator_id: String,
         package_id: PackageId,
         resource_spec: ResourceSpec,
@@ -194,7 +194,7 @@ impl RentalOperations for RentalManager {
     ) -> Result<RentalId> {
         let rental = Rental::new(
             user_id,
-            executor_id,
+            node_id,
             validator_id,
             package_id,
             resource_spec,

@@ -12,7 +12,7 @@ pub struct TestConfig {
     pub billing_endpoint: String,
     pub validator_endpoint: String,
     pub miner_endpoint: String,
-    pub executor_endpoint: String,
+    pub node_endpoint: String,
 }
 
 impl Default for TestConfig {
@@ -22,7 +22,7 @@ impl Default for TestConfig {
             billing_endpoint: "http://localhost:50051".to_string(),
             validator_endpoint: "http://localhost:50052".to_string(),
             miner_endpoint: "http://localhost:50053".to_string(),
-            executor_endpoint: "http://localhost:50054".to_string(),
+            node_endpoint: "http://localhost:50054".to_string(),
         }
     }
 }
@@ -39,7 +39,7 @@ impl TestConfig {
                 .unwrap_or_else(|_| "http://localhost:50052".to_string()),
             miner_endpoint: env::var("MINER_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:50053".to_string()),
-            executor_endpoint: env::var("EXECUTOR_ENDPOINT")
+            node_endpoint: env::var("NODE_ENDPOINT")
                 .unwrap_or_else(|_| "http://localhost:50054".to_string()),
         }
     }
@@ -74,7 +74,7 @@ impl TestConfig {
             billing: check_endpoint(self.billing_endpoint.clone()).await,
             validator: check_endpoint(self.validator_endpoint.clone()).await,
             miner: check_endpoint(self.miner_endpoint.clone()).await,
-            executor: check_endpoint(self.executor_endpoint.clone()).await,
+            node: check_endpoint(self.node_endpoint.clone()).await,
         }
     }
 }
@@ -86,7 +86,7 @@ pub struct ServiceAvailability {
     pub billing: bool,
     pub validator: bool,
     pub miner: bool,
-    pub executor: bool,
+    pub node: bool,
 }
 
 impl ServiceAvailability {
@@ -95,7 +95,7 @@ impl ServiceAvailability {
     }
 
     pub fn all_available(&self) -> bool {
-        self.payments && self.billing && self.validator && self.miner && self.executor
+        self.payments && self.billing && self.validator && self.miner && self.node
     }
 
     pub fn report(&self) {
@@ -104,7 +104,7 @@ impl ServiceAvailability {
         println!("  Billing: {}", if self.billing { "✓" } else { "✗" });
         println!("  Validator: {}", if self.validator { "✓" } else { "✗" });
         println!("  Miner: {}", if self.miner { "✓" } else { "✗" });
-        println!("  Executor: {}", if self.executor { "✓" } else { "✗" });
+        println!("  Node: {}", if self.node { "✓" } else { "✗" });
     }
 }
 

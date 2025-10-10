@@ -4,8 +4,8 @@
 //! for testing authentication functionality across integration tests.
 
 use anyhow::Result;
-use basilica_executor::miner_auth;
-use basilica_miner::executor_auth;
+use basilica_node::miner_auth;
+use basilica_miner::node_auth;
 use basilica_protocol::common::MinerAuthentication;
 use chrono::{Duration, Utc};
 
@@ -41,14 +41,14 @@ impl MockBittensorService {
     }
 }
 
-/// Mock executor auth service that wraps the functionality for testing
+/// Mock node auth service that wraps the functionality for testing
 #[derive(Clone)]
-pub struct MockExecutorAuthService {
+pub struct MockNodeAuthService {
     miner_hotkey: String,
     bittensor_service: MockBittensorService,
 }
 
-impl MockExecutorAuthService {
+impl MockNodeAuthService {
     pub fn new(miner_hotkey: &str) -> Self {
         Self {
             miner_hotkey: miner_hotkey.to_string(),
@@ -62,7 +62,7 @@ impl MockExecutorAuthService {
         let request_id = uuid::Uuid::new_v4().to_string();
 
         // Create canonical data to sign
-        let canonical_data = executor_auth::create_canonical_data(
+        let canonical_data = node_auth::create_canonical_data(
             &self.miner_hotkey,
             timestamp_ms,
             &nonce,
@@ -95,7 +95,7 @@ impl MockExecutorAuthService {
 
 /// Test helper to create a valid authentication using mock service
 pub fn create_valid_auth(miner_hotkey: &str, request_data: &[u8]) -> Result<MinerAuthentication> {
-    let auth_service = MockExecutorAuthService::new(miner_hotkey);
+    let auth_service = MockNodeAuthService::new(miner_hotkey);
     auth_service.create_auth(request_data)
 }
 
@@ -181,7 +181,7 @@ pub fn assert_grpc_error_contains(result: &Result<(), tonic::Status>, expected_m
 /// This prevents the circular dependency issue where auth field is included in signature.
 pub fn create_authenticated_request<T>(request: T, miner_hotkey: &str) -> Result<T>
 where
-    T: prost::Message + executor_auth::AuthenticatedRequest + Clone,
+    T: prost::Message + node_auth::AuthenticatedRequest + Clone,
 {
     // Serialize request without auth field for signature calculation
     let request_bytes = request.encode_to_vec();
@@ -200,7 +200,7 @@ pub fn create_expired_authenticated_request<T>(
     hours_ago: i64,
 ) -> Result<T>
 where
-    T: prost::Message + executor_auth::AuthenticatedRequest + Clone,
+    T: prost::Message + node_auth::AuthenticatedRequest + Clone,
 {
     let _request_bytes = request.encode_to_vec();
 
@@ -242,8 +242,8 @@ mod tests {
     }
 
     #[test]
-    fn test_mock_executor_auth_service() {
-        let service = MockExecutorAuthService::new("test_miner");
+    fn test_mock_node_auth_service() {
+        let service = MockNodeAuthService::new("test_miner");
         let request_data = b"test request";
 
         let auth = service.create_auth(request_data).unwrap();

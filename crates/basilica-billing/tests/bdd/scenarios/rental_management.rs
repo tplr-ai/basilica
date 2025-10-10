@@ -18,7 +18,7 @@ fn hours_to_duration(hours: u32) -> prost_types::Duration {
 async fn test_track_rental_creates_new_rental_with_reservation() {
     let mut context = TestContext::new().await;
     let user_id = "test_rental_track_001";
-    let executor_id = "executor_001";
+    let node_id = "node_001";
     let validator_id = "validator_001";
 
     context.create_test_user(user_id, "1000.0").await;
@@ -27,7 +27,7 @@ async fn test_track_rental_creates_new_rental_with_reservation() {
     let request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: executor_id.to_string(),
+        node_id: node_id.to_string(),
         validator_id: validator_id.to_string(),
         hourly_rate: "10.0".to_string(),
         max_duration: Some(hours_to_duration(24)),
@@ -97,7 +97,7 @@ async fn test_track_rental_fails_with_insufficient_balance() {
     let request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_002".to_string(),
+        node_id: "node_002".to_string(),
         validator_id: "validator_002".to_string(),
         hourly_rate: "100.0".to_string(),
         max_duration: Some(hours_to_duration(10)),
@@ -134,7 +134,7 @@ async fn test_update_rental_status_transitions() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_003".to_string(),
+        node_id: "node_003".to_string(),
         validator_id: "validator_003".to_string(),
         hourly_rate: "5.0".to_string(),
         max_duration: Some(hours_to_duration(10)),
@@ -215,7 +215,7 @@ async fn test_get_active_rentals_by_user() {
         let request = TrackRentalRequest {
             rental_id,
             user_id: user_id.to_string(),
-            executor_id: format!("executor_{}", i),
+            node_id: format!("node_{}", i),
             validator_id: format!("validator_{}", i),
             hourly_rate: "2.0".to_string(),
             max_duration: Some(hours_to_duration(5)),
@@ -276,9 +276,9 @@ async fn test_get_active_rentals_by_user() {
 }
 
 #[tokio::test]
-async fn test_get_active_rentals_by_executor() {
+async fn test_get_active_rentals_by_node() {
     let mut context = TestContext::new().await;
-    let executor_id = "executor_specific_001";
+    let node_id = "node_specific_001";
 
     for i in 0..2 {
         let user_id = format!("user_{}", i);
@@ -288,7 +288,7 @@ async fn test_get_active_rentals_by_executor() {
         let request = TrackRentalRequest {
             rental_id: rental_id.clone(),
             user_id: user_id.clone(),
-            executor_id: executor_id.to_string(),
+            node_id: node_id.to_string(),
             validator_id: "validator_001".to_string(),
             hourly_rate: "3.0".to_string(),
             max_duration: Some(hours_to_duration(8)),
@@ -322,23 +322,23 @@ async fn test_get_active_rentals_by_executor() {
     let request = GetActiveRentalsRequest {
         limit: 100,
         offset: 0,
-        filter: Some(Filter::ExecutorId(executor_id.to_string())),
+        filter: Some(Filter::NodeId(node_id.to_string())),
     };
 
     let response = context
         .client
         .get_active_rentals(request)
         .await
-        .expect("Failed to get rentals by executor")
+        .expect("Failed to get rentals by node")
         .into_inner();
 
     assert!(
         response.rentals.len() >= 2,
-        "Should return at least 2 rentals for executor"
+        "Should return at least 2 rentals for node"
     );
 
     for rental in &response.rentals {
-        assert_eq!(rental.executor_id, executor_id);
+        assert_eq!(rental.node_id, node_id);
     }
 
     context.cleanup().await;
@@ -355,7 +355,7 @@ async fn test_finalize_rental_charges_correct_amount() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_final".to_string(),
+        node_id: "node_final".to_string(),
         validator_id: "validator_final".to_string(),
         hourly_rate: "10.0".to_string(),
         max_duration: Some(hours_to_duration(10)),
@@ -456,7 +456,7 @@ async fn test_finalize_rental_without_reservation_charges_directly() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_direct".to_string(),
+        node_id: "node_direct".to_string(),
         validator_id: "validator_direct".to_string(),
         hourly_rate: "5.0".to_string(),
         max_duration: Some(hours_to_duration(2)), // Small duration to ensure we have enough balance

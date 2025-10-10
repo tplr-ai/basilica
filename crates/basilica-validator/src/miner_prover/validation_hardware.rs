@@ -1,7 +1,7 @@
 //! Hardware Profile Collection and Parsing Module
 //!
 //! This module handles the collection and parsing of hardware information
-//! from executors using the `lshw` command. It extracts key hardware metrics
+//! from nodes using the `lshw` command. It extracts key hardware metrics
 //! including CPU model, core count, RAM, and disk capacity.
 
 use crate::persistence::SimplePersistence;
@@ -165,7 +165,7 @@ fn find_nodes_by_class<'a>(
     }
 }
 
-/// Hardware collector for gathering hardware profiles from executors
+/// Hardware collector for gathering hardware profiles from nodes
 #[derive(Clone)]
 pub struct HardwareCollector {
     ssh_client: Arc<ValidatorSshClient>,
@@ -181,14 +181,14 @@ impl HardwareCollector {
         }
     }
 
-    /// Collect hardware profile from executor
+    /// Collect hardware profile from node
     pub async fn collect(
         &self,
-        executor_id: &str,
+        node_id: &str,
         ssh_details: &SshConnectionDetails,
     ) -> Result<HardwareProfile> {
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             "[HARDWARE_PROFILE] Starting hardware profile collection"
         );
 
@@ -222,7 +222,7 @@ impl HardwareCollector {
         );
 
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             cpu_info = cpu_info,
             mem_info = mem_info,
             "[HARDWARE_PROFILE] Successfully collected hardware profile"
@@ -235,13 +235,13 @@ impl HardwareCollector {
     pub async fn store(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
         hardware_profile: &HardwareProfile,
     ) -> Result<()> {
         self.persistence
-            .store_executor_hardware_profile(
+            .store_node_hardware_profile(
                 miner_uid,
-                executor_id,
+                node_id,
                 hardware_profile.cpu_model.clone(),
                 hardware_profile.cpu_cores,
                 hardware_profile.ram_gb,
@@ -252,40 +252,39 @@ impl HardwareCollector {
 
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[HARDWARE_PROFILE] Stored hardware profile in database"
         );
 
         Ok(())
     }
 
-    /// Collect hardware profile from executor and store in database
+    /// Collect hardware profile from node and store in database
     pub async fn collect_and_store(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Result<HardwareProfile> {
-        let hardware_profile = self.collect(executor_id, ssh_details).await?;
-        self.store(miner_uid, executor_id, &hardware_profile)
-            .await?;
+        let hardware_profile = self.collect(node_id, ssh_details).await?;
+        self.store(miner_uid, node_id, &hardware_profile).await?;
         Ok(hardware_profile)
     }
 
     /// Collect hardware profile with error handling (non-critical operation)
     pub async fn collect_with_fallback(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<HardwareProfile> {
-        match self.collect(executor_id, ssh_details).await {
+        match self.collect(node_id, ssh_details).await {
             Ok(profile) => {
                 // Try to store but don't fail if storage fails
-                if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
+                if let Err(e) = self.store(miner_uid, node_id, &profile).await {
                     warn!(
                         miner_uid = miner_uid,
-                        executor_id = executor_id,
+                        node_id = node_id,
                         error = %e,
                         "[HARDWARE_PROFILE] Failed to store hardware profile (non-critical)"
                     );
@@ -295,7 +294,7 @@ impl HardwareCollector {
             Err(e) => {
                 warn!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     error = %e,
                     "[HARDWARE_PROFILE] Failed to collect hardware profile (non-critical)"
                 );
@@ -305,14 +304,10 @@ impl HardwareCollector {
     }
 
     /// Retrieve hardware profile from database
-    pub async fn retrieve(
-        &self,
-        miner_uid: u16,
-        executor_id: &str,
-    ) -> Result<Option<HardwareProfile>> {
+    pub async fn retrieve(&self, miner_uid: u16, node_id: &str) -> Result<Option<HardwareProfile>> {
         let result = self
             .persistence
-            .get_executor_hardware_profile(miner_uid, executor_id)
+            .get_node_hardware_profile(miner_uid, node_id)
             .await?;
 
         match result {
@@ -321,7 +316,7 @@ impl HardwareCollector {
 
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[HARDWARE_PROFILE] Retrieved hardware profile from database"
                 );
 
@@ -330,7 +325,7 @@ impl HardwareCollector {
             None => {
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[HARDWARE_PROFILE] No hardware profile found in database"
                 );
                 Ok(None)

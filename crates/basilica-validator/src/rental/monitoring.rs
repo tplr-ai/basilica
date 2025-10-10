@@ -229,16 +229,16 @@ impl DatabaseHealthMonitor {
                 let miner_uid = super::extract_miner_uid(&rental.miner_id);
 
                 if let Some(miner_uid) = miner_uid {
-                    let gpu_type = super::get_gpu_type(&rental.executor_details);
-                    self.metrics.record_executor_rental_status(
-                        &rental.executor_id,
+                    let gpu_type = super::get_gpu_type(&rental.node_details);
+                    self.metrics.record_node_rental_status(
+                        &rental.node_id,
                         miner_uid,
                         &gpu_type,
                         false, // is_rented = false for stopped/failed states
                     );
                     debug!(
-                        "Health monitor cleared rental metric for executor {} (state: {:?}, miner_uid: {}, gpu_type: {})",
-                        rental.executor_id,
+                        "Health monitor cleared rental metric for node {} (state: {:?}, miner_uid: {}, gpu_type: {})",
+                        rental.node_id,
                         new_state,
                         miner_uid,
                         gpu_type

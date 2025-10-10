@@ -1,14 +1,14 @@
 //! Miner Prometheus Metrics Implementation
 //!
 //! Provides comprehensive business and operational metrics for the Basilica Miner component.
-//! Tracks executor management, validator interactions, SSH sessions, and deployment operations.
+//! Tracks node management, validator interactions, SSH sessions, and deployment operations.
 
 pub mod business_metrics;
-pub mod executor_metrics;
+pub mod node_metrics;
 pub mod prometheus_metrics;
 
 pub use business_metrics::*;
-pub use executor_metrics::*;
+pub use node_metrics::*;
 pub use prometheus_metrics::*;
 
 use anyhow::Result;
@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub struct MinerMetrics {
     prometheus: Arc<MinerPrometheusMetrics>,
     business: Arc<MinerBusinessMetrics>,
-    executor: Arc<MinerExecutorMetrics>,
+    node: Arc<MinerNodeMetrics>,
     config: MetricsConfig,
 }
 
@@ -29,12 +29,12 @@ impl MinerMetrics {
     pub fn new(config: MetricsConfig) -> Result<Self> {
         let prometheus = Arc::new(MinerPrometheusMetrics::new()?);
         let business = Arc::new(MinerBusinessMetrics::new(prometheus.clone())?);
-        let executor = Arc::new(MinerExecutorMetrics::new(prometheus.clone())?);
+        let node = Arc::new(MinerNodeMetrics::new(prometheus.clone())?);
 
         Ok(Self {
             prometheus,
             business,
-            executor,
+            node,
             config,
         })
     }
@@ -49,9 +49,9 @@ impl MinerMetrics {
         self.business.clone()
     }
 
-    /// Get executor metrics instance
-    pub fn executor(&self) -> Arc<MinerExecutorMetrics> {
-        self.executor.clone()
+    /// Get node metrics instance
+    pub fn node(&self) -> Arc<MinerNodeMetrics> {
+        self.node.clone()
     }
 
     /// Start metrics server

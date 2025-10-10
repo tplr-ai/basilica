@@ -2,7 +2,6 @@
 members = [
   "crates/basilica-common",
   "crates/basilica-protocol",
-  "crates/basilica-executor",
   "crates/basilica-miner",
   "crates/basilica-validator",
   "crates/basilica-billing",
@@ -39,6 +38,7 @@ anyhow = "1.0"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_with = "3.4"
 toml = "0.8"
 hex = "0.4"
 # Logging and metrics
@@ -108,7 +108,7 @@ tempfile = "3.8"
 # Build dependencies
 dotenvy = "0.15"
 
-# Executor-specific dependencies
+# Node-specific dependencies
 tokio-stream = { version = "0.1", features = ["net"] }
 nvml-wrapper = "0.9"
 num_cpus = "1.16"
@@ -155,7 +155,7 @@ pyo3-stub-gen-derive = { version = "0.13.1" }
 pythonize = "0.26"
 
 # Subxt
-subxt = "0.38"
+subxt = { version = "0.38", features = ["substrate-compat"] }
 subxt-signer = "0.38"
 subxt-codegen = { version = "0.38" }
 subxt-metadata = { version = "0.38" }
@@ -175,8 +175,8 @@ axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
-# Bittensor integration via crabtensor
-crabtensor = { git = "https://github.com/storb-tech/crabtensor", tag = "v0.5.2" }
+# Bittensor integration via crabtensor (patched fork for metadata compatibility)
+crabtensor = { git = "https://github.com/one-covenant/crabtensor", branch = "main" }
 
 [workspace.metadata]
 # Workspace metadata for tooling

@@ -1,41 +1,31 @@
 //! # Basilca Miner
 //!
-//! Bittensor neuron that manages a fleet of executors and serves
+//! Bittensor neuron that manages a fleet of nodes and serves
 //! validator requests for GPU rental and computational challenges.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use basilica_common::identity::MinerUid;
+use basilica_common::node_identity::NodeIdentity;
 use clap::Parser;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::signal;
 use tracing::{error, info, warn};
 
-mod auth;
 mod bittensor_core;
 mod cli;
 mod config;
-mod executor_auth;
-mod executor_manager;
-mod executors;
 mod metrics;
+mod node_manager;
 mod persistence;
-mod request_verification;
 mod services;
-mod session_cleanup;
-mod ssh;
 mod validator_comms;
 mod validator_discovery;
 
-use auth::JwtAuthService;
-use basilica_common::ssh::manager::DefaultSshService;
 use bittensor_core::ChainRegistration;
 use config::MinerConfig;
-use executor_manager::ExecutorManager;
+use node_manager::NodeManager;
 use persistence::RegistrationDb;
-use session_cleanup::run_cleanup_service;
-use ssh::{MinerSshConfig, SshCleanupService, ValidatorAccessService};
 use validator_comms::ValidatorCommsServer;
 
 use crate::cli::{Args, Commands};
@@ -46,12 +36,9 @@ pub struct MinerState {
     pub miner_uid: MinerUid,
     pub chain_registration: ChainRegistration,
     pub validator_comms: ValidatorCommsServer,
-    pub executor_manager: Arc<ExecutorManager>,
     pub registration_db: RegistrationDb,
-    pub ssh_access_service: ValidatorAccessService,
-    pub jwt_service: std::sync::Arc<JwtAuthService>,
     pub metrics: Option<metrics::MinerMetrics>,
-    pub validator_discovery: Option<std::sync::Arc<validator_discovery::ValidatorDiscovery>>,
+    pub validator_discovery: Arc<validator_discovery::ValidatorDiscovery>,
 }
 
 impl MinerState {
@@ -70,144 +57,102 @@ impl MinerState {
         // Initialize persistence layer
         let registration_db = RegistrationDb::new(&config.database).await?;
 
-        // Initialize assignment database and run migrations
-        let assignment_pool = sqlx::SqlitePool::connect(&config.database.url).await?;
-        let assignment_db = persistence::AssignmentDb::new(assignment_pool.clone());
-        assignment_db.run_migrations().await?;
+        // Initialize node manager with SSH config
+        let node_manager = Arc::new(NodeManager::new(config.ssh_session.clone()));
 
-        // Initialize executor manager
-        let executor_manager =
-            Arc::new(ExecutorManager::new(&config, registration_db.clone()).await?);
+        // Register all configured nodes with auto-generated deterministic IDs
+        info!(
+            "Registering {} configured nodes",
+            config.node_management.nodes.len()
+        );
+        for node_config in &config.node_management.nodes {
+            // Generate deterministic node_id from SSH credentials
+            let node_id = match registration_db
+                .get_or_create_node_id(&node_config.username, &node_config.host, node_config.port)
+                .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    error!(
+                        "Failed to generate node ID for {}@{}:{}: {}",
+                        node_config.username, node_config.host, node_config.port, e
+                    );
+                    continue;
+                }
+            };
 
-        // Initialize SSH services
-        let ssh_config = MinerSshConfig::default();
-        let ssh_service = std::sync::Arc::new(DefaultSshService::new(ssh_config.clone())?);
-        let ssh_access_service = ValidatorAccessService::new(
-            ssh_config.clone(),
-            ssh_service,
-            executor_manager.clone(),
-            registration_db.clone(),
-        )
-        .await?;
+            match node_manager
+                .register_node(node_id.to_string(), node_config.clone())
+                .await
+            {
+                Ok(_) => info!(
+                    "Registered node {} at {}@{}:{}",
+                    node_id.uuid(),
+                    node_config.username,
+                    node_config.host,
+                    node_config.port
+                ),
+                Err(e) => error!(
+                    "Failed to register node {} at {}@{}:{}: {}",
+                    node_id.uuid(),
+                    node_config.username,
+                    node_config.host,
+                    node_config.port,
+                    e
+                ),
+            }
+        }
 
-        // Start SSH cleanup background task
-        let cleanup_service = SshCleanupService::new(ssh_access_service.clone(), &ssh_config);
-        cleanup_service.start_cleanup_task().await?;
+        // Verify at least one node is registered
+        let registered_nodes = node_manager.list_nodes().await?;
+        if registered_nodes.is_empty() {
+            warn!("No nodes registered - miner will not be able to serve validators");
+        } else {
+            info!("Successfully registered {} nodes", registered_nodes.len());
+        }
 
         // Initialize Bittensor chain registration
         let chain_registration = ChainRegistration::new(config.bittensor.clone()).await?;
 
-        // Initialize validator discovery based on configuration
-        let validator_discovery = if config.bittensor.skip_registration
-            || !config.validator_assignment.enabled
+        // Initialize validator discovery
+        let strategy: Box<dyn validator_discovery::AssignmentStrategy> = match config
+            .validator_assignment
+            .strategy
+            .as_str()
         {
-            info!("Validator discovery disabled (local testing mode)");
-            None
-        } else {
-            let strategy: Box<dyn validator_discovery::AssignmentStrategy> = match config
-                .validator_assignment
-                .strategy
-                .as_str()
-            {
-                "round_robin" => Box::new(validator_discovery::RoundRobinAssignment),
-                "highest_stake" => {
-                    let strategy = validator_discovery::HighestStakeAssignment::new(
-                        assignment_pool.clone(),
-                        config.validator_assignment.min_stake_threshold,
-                        config.validator_assignment.validator_hotkey.clone(),
-                    );
-                    Box::new(strategy)
-                }
-                _ => {
-                    return Err(anyhow::anyhow!(
-                                "Unknown assignment strategy '{}'. Valid strategies are: highest_stake, round_robin",
-                                config.validator_assignment.strategy
-                            ));
-                }
-            };
-
-            let discovery = validator_discovery::ValidatorDiscovery::new(
-                chain_registration.get_bittensor_service(),
-                executor_manager.clone(),
-                strategy,
-                config.bittensor.common.netuid,
-            );
-            Some(std::sync::Arc::new(discovery))
-        };
-
-        // Initialize SSH session orchestrator
-        let executor_connection_config = executors::ExecutorConnectionConfig {
-            miner_executor_key_path: config.ssh_session.miner_executor_key_path.clone(),
-            default_executor_username: config.ssh_session.default_executor_username.clone(),
-            connection_timeout: config.ssh_session.ssh_connection_timeout,
-            max_idle_time: Duration::from_secs(300),
-            health_check_interval: Duration::from_secs(60),
-        };
-        let executor_connection_manager = Arc::new(executors::ExecutorConnectionManager::new(
-            executor_connection_config,
-        ));
-
-        // Register all executors with the connection manager
-        for executor_config in &config.executor_management.executors {
-            let executor_id = registration_db
-                .get_or_create_executor_id(&executor_config.grpc_address)
-                .await?;
-            if !executor_config.enabled {
-                info!("Skipping disabled executor: {}", executor_id.uuid);
-                continue;
+            "highest_stake" => Box::new(validator_discovery::HighestStakeAssignment),
+            "fixed_assignment" => {
+                let validator_hotkey = config
+                    .validator_assignment
+                    .validator_hotkey
+                    .clone()
+                    .expect("validator_hotkey is required for fixed_assignment strategy");
+                Box::new(validator_discovery::FixedAssignment::new(validator_hotkey))
             }
-
-            use std::str::FromStr;
-            let executor_info = executors::ExecutorInfo {
-                id: basilica_common::identity::ExecutorId::from_str(&executor_id.uuid.to_string())
-                    .map_err(|e| {
-                        anyhow::anyhow!("Invalid executor ID '{}': {}", executor_id.uuid, e)
-                    })?,
-                host: executor_config.host.clone(),
-                ssh_port: executor_config.ssh_port,
-                ssh_username: executor_config.ssh_username.clone(),
-                grpc_endpoint: Some(executor_config.grpc_address.clone()),
-                last_health_check: None,
-                is_healthy: true,
-            };
-            executor_connection_manager
-                .register_executor(executor_info)
-                .await
-                .with_context(|| format!("Failed to register executor {}", executor_id.uuid))?;
-        }
-
-        // Create executor auth service for signing requests
-        let executor_auth_service = Arc::new(executor_auth::ExecutorAuthService::new(
-            chain_registration.get_bittensor_service(),
-        ));
-
-        let ssh_session_config = ssh::SshSessionConfig {
-            max_sessions_per_validator: config.ssh_session.max_sessions_per_validator,
-            session_rate_limit: config.ssh_session.session_rate_limit,
-            cleanup_interval: config.ssh_session.session_cleanup_interval,
-            max_session_duration: Duration::from_secs(config.ssh_session.max_session_duration),
-            enable_audit_log: config.ssh_session.enable_audit_log,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Unknown assignment strategy '{}'. Valid strategies are: highest_stake, fixed_assignment",
+                    config.validator_assignment.strategy
+                ));
+            }
         };
-        let ssh_session_orchestrator = Arc::new(ssh::SshSessionOrchestrator::new_with_auth(
-            executor_connection_manager,
-            ssh_session_config,
-            executor_auth_service,
+
+        let validator_discovery = Arc::new(validator_discovery::ValidatorDiscovery::new(
+            chain_registration.get_bittensor_service(),
+            node_manager.clone(),
+            strategy,
+            config.bittensor.common.netuid,
         ));
 
         // Initialize validator communications server
         let validator_comms = ValidatorCommsServer::new(
             config.validator_comms.clone(),
             config.security.clone(),
-            executor_manager.clone(),
-            registration_db.clone(),
-            ssh_access_service.clone(),
+            node_manager.clone(),
             validator_discovery.clone(),
+            chain_registration.get_bittensor_service(),
         )
-        .await?
-        .with_ssh_session_orchestrator(ssh_session_orchestrator)
-        .with_bittensor_service(chain_registration.get_bittensor_service());
-
-        let jwt_service = validator_comms.jwt_service.clone();
+        .await?;
 
         // Use a placeholder UID that will be updated after chain registration
         let miner_uid = MinerUid::from(0);
@@ -217,10 +162,7 @@ impl MinerState {
             miner_uid,
             chain_registration,
             validator_comms,
-            executor_manager,
             registration_db,
-            ssh_access_service,
-            jwt_service,
             metrics,
             validator_discovery,
         })
@@ -258,123 +200,40 @@ impl MinerState {
         }
 
         // Start validator communications server
-        let validator_addr = format!("{}:{}", self.config.server.host, self.config.server.port)
-            .parse()
-            .expect("Invalid server address configuration");
         let validator_handle = {
             let validator_comms = self.validator_comms.clone();
             tokio::spawn(async move {
-                if let Err(e) = validator_comms.serve(validator_addr).await {
+                if let Err(e) = validator_comms.start().await {
                     error!("Validator comms server error: {}", e);
                 }
             })
         };
 
-        // Start executor health monitoring
-        let executor_handle = {
-            let executor_manager = self.executor_manager.clone();
-            tokio::spawn(async move {
-                if let Err(e) = executor_manager.start_monitoring().await {
-                    error!("Executor monitoring error: {}", e);
+        // Start validator discovery service
+        let discovery = self.validator_discovery.clone();
+        let discovery_interval = tokio::time::Duration::from_secs(600); // 10 minutes
+        let discovery_handle = tokio::spawn(async move {
+            info!("Starting validator discovery service");
+            loop {
+                if let Err(e) = discovery.run_discovery().await {
+                    error!("Validator discovery error: {}", e);
                 }
-                // Keep the task alive
-                loop {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-                }
-            })
-        };
-
-        // Start JWT session cleanup service
-        let cleanup_handle = {
-            let jwt_service = self.jwt_service.clone();
-            let cleanup_interval = tokio::time::Duration::from_secs(300); // 5 minutes
-            tokio::spawn(async move {
-                if let Err(e) = run_cleanup_service(jwt_service, cleanup_interval).await {
-                    error!("Session cleanup service error: {}", e);
-                }
-            })
-        };
-
-        // Start stake monitor service
-        let stake_monitor_handle = {
-            let config = self.config.clone();
-            let pool = sqlx::SqlitePool::connect(&config.database.url)
-                .await
-                .context("Failed to create pool for stake monitor")?;
-            tokio::spawn(async move {
-                match services::StakeMonitor::new(&config, pool).await {
-                    Ok(monitor) => {
-                        info!("Starting stake monitor service");
-                        if let Err(e) = monitor.start().await {
-                            error!("Stake monitor error: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        error!("Failed to create stake monitor: {}", e);
-                    }
-                }
-            })
-        };
-
-        // Start validator discovery service if enabled
-        let discovery_handle = if let Some(ref discovery) = self.validator_discovery {
-            let discovery = discovery.clone();
-            let discovery_interval = tokio::time::Duration::from_secs(600); // 10 minutes
-            Some(tokio::spawn(async move {
-                info!("Starting validator discovery service");
-                loop {
-                    if let Err(e) = discovery.discover_and_assign().await {
-                        error!("Validator discovery error: {}", e);
-                    }
-                    tokio::time::sleep(discovery_interval).await;
-                }
-            }))
-        } else {
-            info!("Validator discovery disabled (local testing mode)");
-            None
-        };
+                tokio::time::sleep(discovery_interval).await;
+            }
+        });
 
         info!("All miner services started successfully");
 
         // Wait for shutdown signal
-        if let Some(discovery_handle) = discovery_handle {
-            tokio::select! {
-                _ = signal::ctrl_c() => {
-                    info!("Received shutdown signal, stopping miner...");
-                }
-                _ = validator_handle => {
-                    warn!("Validator comms server stopped unexpectedly");
-                }
-                _ = executor_handle => {
-                    warn!("Executor monitoring stopped unexpectedly");
-                }
-                _ = cleanup_handle => {
-                    warn!("Session cleanup service stopped unexpectedly");
-                }
-                _ = stake_monitor_handle => {
-                    warn!("Stake monitor service stopped unexpectedly");
-                }
-                _ = discovery_handle => {
-                    warn!("Validator discovery service stopped unexpectedly");
-                }
+        tokio::select! {
+            _ = signal::ctrl_c() => {
+                info!("Received shutdown signal, stopping miner...");
             }
-        } else {
-            tokio::select! {
-                _ = signal::ctrl_c() => {
-                    info!("Received shutdown signal, stopping miner...");
-                }
-                _ = validator_handle => {
-                    warn!("Validator comms server stopped unexpectedly");
-                }
-                _ = executor_handle => {
-                    warn!("Executor monitoring stopped unexpectedly");
-                }
-                _ = cleanup_handle => {
-                    warn!("Session cleanup service stopped unexpectedly");
-                }
-                _ = stake_monitor_handle => {
-                    warn!("Stake monitor service stopped unexpectedly");
-                }
+            _ = validator_handle => {
+                error!("Validator comms server stopped unexpectedly");
+            }
+            _ = discovery_handle => {
+                error!("Validator discovery service stopped unexpectedly");
             }
         }
 
@@ -430,17 +289,6 @@ async fn main() -> Result<()> {
 /// Handle CLI commands
 async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<()> {
     match command {
-        Commands::Executor { executor_cmd } => {
-            let db = RegistrationDb::new(&config.database).await?;
-            cli::handle_executor_command(executor_cmd, config, db).await
-        }
-        Commands::Validator { validator_cmd } => {
-            let db = RegistrationDb::new(&config.database).await?;
-            cli::handle_validator_command(validator_cmd, db).await
-        }
-        Commands::Assignment { assignment_cmd } => {
-            cli::handle_assignment_command(&assignment_cmd, config).await
-        }
         Commands::Service { service_cmd } => cli::handle_service_command(service_cmd, config).await,
         Commands::Database { database_cmd } => {
             cli::handle_database_command(database_cmd, config).await
@@ -454,100 +302,10 @@ async fn handle_cli_command(command: Commands, config: &MinerConfig) -> Result<(
             let mut db_config = config.database.clone();
             db_config.run_migrations = true;
             let _db = RegistrationDb::new(&db_config).await?;
-            // Also run assignment migrations
-            let assignment_pool = sqlx::SqlitePool::connect(&config.database.url).await?;
-            let assignment_db = persistence::AssignmentDb::new(assignment_pool);
-            assignment_db.run_migrations().await?;
             println!("Database migrations completed successfully");
             Ok(())
         }
-        Commands::DeployExecutors {
-            dry_run,
-            only_machines,
-            status_only,
-        } => handle_deploy_executors(config, dry_run, only_machines, status_only).await,
     }
-}
-
-/// Handle deploy executors command
-async fn handle_deploy_executors(
-    config: &MinerConfig,
-    dry_run: bool,
-    _only_machines: Option<String>,
-    status_only: bool,
-) -> Result<()> {
-    // Check if deployment is configured
-    let deployment_config = config
-        .remote_executor_deployment
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No executor deployment configuration found"))?;
-
-    // Initialize persistence
-    let db = RegistrationDb::new(&config.database).await?;
-
-    // Create executor manager
-    let manager = ExecutorManager::new(config, db).await?;
-
-    // Status check only
-    if status_only {
-        let available = manager.list_available().await?;
-        info!("Checking status of executors...");
-
-        if available.is_empty() {
-            warn!("No healthy executors found");
-        } else {
-            for executor in available {
-                info!("✓ {} ({}) - Available", executor.name, executor.id);
-                info!(
-                    "  GPUs: {}, Address: {}",
-                    executor.gpu_count, executor.grpc_address
-                );
-            }
-        }
-        return Ok(());
-    }
-
-    // Dry run
-    if dry_run {
-        info!("DRY RUN: Would deploy executors to the following machines:");
-        for machine in &deployment_config.remote_machines {
-            info!(
-                "  - {} ({}) at {}:{}",
-                machine.name, machine.id, machine.ssh.host, machine.ssh.port
-            );
-            info!("    SSH user: {}", machine.ssh.username);
-            info!("    GPU count: {}", machine.gpu_count.unwrap_or(0));
-            info!("    Executor port: {}", machine.executor_port);
-        }
-        return Ok(());
-    }
-
-    // Actual deployment
-    info!("Deploying executors...");
-    let results = manager.deploy_all().await?;
-
-    // Report results
-    let successful = results.iter().filter(|r| r.success).count();
-    let failed = results.len() - successful;
-
-    info!("\nDeployment Summary:");
-    info!("  Successful: {}", successful);
-    info!("  Failed: {}", failed);
-
-    // Show details
-    for result in &results {
-        if result.success {
-            info!("✓ {} - Deployed successfully", result.machine_name);
-        } else {
-            error!(
-                "✗ {} - Failed: {}",
-                result.machine_name,
-                result.error.as_ref().unwrap()
-            );
-        }
-    }
-
-    Ok(())
 }
 
 /// Load configuration from file and environment
@@ -575,15 +333,3 @@ fn load_config(config_path: &Path) -> Result<MinerConfig> {
 
     Ok(config)
 }
-
-// TODO: Implement the following for production readiness:
-// 1. Graceful shutdown with proper cleanup of all services
-// 2. Configuration hot-reloading for dynamic updates
-// 3. Service discovery and health monitoring
-// 4. Backup and disaster recovery procedures
-// 5. Performance monitoring and alerting
-// 6. Load balancing across multiple validators
-// 7. Fault tolerance and circuit breaker patterns
-// 8. Distributed tracing and correlation IDs
-// 9. Security hardening and rate limiting
-// 10. Integration testing and end-to-end validation

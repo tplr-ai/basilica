@@ -60,7 +60,7 @@ contract CollateralUpgradeableV2 is
     bytes32 public CONTRACT_COLDKEY;
     bytes32 public CONTRACT_HOTKEY;
 
-    mapping(bytes32 => mapping(bytes16 => address)) public executorToMiner;
+    mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
     mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
     mapping(bytes32 => mapping(bytes16 => uint256)) internal alphaCollaterals;
     mapping(uint256 => Reclaim) public reclaims;
@@ -73,7 +73,7 @@ contract CollateralUpgradeableV2 is
 
     struct Reclaim {
         bytes32 hotkey;
-        bytes16 executorId;
+        bytes16 nodeId;
         address miner;
         uint256 amount;
         bytes32 alphaColdkey;
@@ -84,7 +84,7 @@ contract CollateralUpgradeableV2 is
     // Events
     event Deposit(
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address indexed miner,
         uint256 amount,
         bytes32 alphaHotkey,
@@ -93,7 +93,7 @@ contract CollateralUpgradeableV2 is
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address miner,
         uint256 amount,
         bytes32 alphaColdkey,
@@ -105,7 +105,7 @@ contract CollateralUpgradeableV2 is
     event Reclaimed(
         uint256 indexed reclaimRequestId,
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address miner,
         uint256 amount,
         bytes32 alphaColdkey,
@@ -118,7 +118,7 @@ contract CollateralUpgradeableV2 is
     );
     event Slashed(
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address indexed miner,
         uint256 slashAmount,
         uint256 slashAlphaAmount,
@@ -139,7 +139,7 @@ contract CollateralUpgradeableV2 is
     // Custom errors
     error AmountZero();
     error BeforeDenyTimeout();
-    error ExecutorNotOwned();
+    error NodeNotOwned();
     error InsufficientAmount();
     error InvalidDepositMethod();
     error NotTrustee();
@@ -211,15 +211,15 @@ contract CollateralUpgradeableV2 is
         revert InvalidDepositMethod();
     }
 
-    /// @notice Allows users to deposit collateral into the contract for a specific executor
+    /// @notice Allows users to deposit collateral into the contract for a specific node
     /// @param hotkey The netuid key for the subnet
-    /// @param executorId The ID of the executor to deposit collateral for
-    /// @dev The first deposit for an executorId sets the owner. Subsequent deposits must be from the owner.
+    /// @param nodeId The ID of the node to deposit collateral for
+    /// @dev The first deposit for an nodeId sets the owner. Subsequent deposits must be from the owner.
     /// @dev The deposited amount must be greater than or equal to MIN_COLLATERAL_INCREASE
-    /// @dev Emits a Deposit event with the hotkey, executorId, sender's address and deposited amount
+    /// @dev Emits a Deposit event with the hotkey, nodeId, sender's address and deposited amount
     function deposit(
         bytes32 hotkey,
-        bytes16 executorId,
+        bytes16 nodeId,
         bytes32 alphaHotkey,
         uint256 alphaAmount
     ) external payable virtual {
@@ -227,24 +227,24 @@ contract CollateralUpgradeableV2 is
             revert InsufficientAmount();
         }
 
-        address owner = executorToMiner[hotkey][executorId];
+        address owner = nodeToMiner[hotkey][nodeId];
         if (owner == address(0)) {
-            executorToMiner[hotkey][executorId] = msg.sender;
+            nodeToMiner[hotkey][nodeId] = msg.sender;
         } else if (owner != msg.sender) {
-            revert ExecutorNotOwned();
+            revert NodeNotOwned();
         }
 
         uint256 actualAlphaAmount = 0;
         if (alphaAmount > 0) {
             actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
-            alphaCollaterals[hotkey][executorId] += actualAlphaAmount;
+            alphaCollaterals[hotkey][nodeId] += actualAlphaAmount;
         }
 
-        collaterals[hotkey][executorId] += msg.value;
+        collaterals[hotkey][nodeId] += msg.value;
 
         emit Deposit(
             hotkey,
-            executorId,
+            nodeId,
             msg.sender,
             msg.value,
             alphaHotkey,
@@ -252,31 +252,31 @@ contract CollateralUpgradeableV2 is
         );
     }
 
-    /// @notice Initiates a process to reclaim all available collateral from a specific executor
+    /// @notice Initiates a process to reclaim all available collateral from a specific node
     /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after DECISION_TIMEOUT
     /// @param hotkey The netuid key for the subnet
-    /// @param executorId The ID of the executor to reclaim collateral from
+    /// @param nodeId The ID of the node to reclaim collateral from
     /// @param url URL containing information about the reclaim request
     /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
     /// @dev Emits ReclaimProcessStarted event with reclaim details and timeout
-    /// @dev Reverts with ExecutorNotOwned if caller is not the owner of the executor
+    /// @dev Reverts with NodeNotOwned if caller is not the owner of the node
     /// @dev Reverts with AmountZero if there is no available collateral to reclaim
     function reclaimCollateral(
         bytes32 hotkey,
-        bytes16 executorId,
+        bytes16 nodeId,
         bytes32 alphaColdkey,
         string calldata url,
         bytes16 urlContentMd5Checksum
     ) external {
-        if (msg.sender != executorToMiner[hotkey][executorId]) {
-            revert ExecutorNotOwned();
+        if (msg.sender != nodeToMiner[hotkey][nodeId]) {
+            revert NodeNotOwned();
         }
 
-        uint256 availableAmount = collaterals[hotkey][executorId] -
-            collateralUnderPendingReclaims[hotkey][executorId];
+        uint256 availableAmount = collaterals[hotkey][nodeId] -
+            collateralUnderPendingReclaims[hotkey][nodeId];
 
-        uint256 availableAlphaAmount = alphaCollaterals[hotkey][executorId] -
-            alphaCollateralUnderPendingReclaims[hotkey][executorId];
+        uint256 availableAlphaAmount = alphaCollaterals[hotkey][nodeId] -
+            alphaCollateralUnderPendingReclaims[hotkey][nodeId];
 
         if (availableAmount == 0 && availableAlphaAmount == 0) {
             revert AmountZero();
@@ -290,7 +290,7 @@ contract CollateralUpgradeableV2 is
 
         reclaims[nextReclaimId] = Reclaim({
             hotkey: hotkey,
-            executorId: executorId,
+            nodeId: nodeId,
             miner: msg.sender,
             amount: availableAmount,
             alphaColdkey: alphaColdkey,
@@ -298,15 +298,15 @@ contract CollateralUpgradeableV2 is
             denyTimeout: denyTimeout
         });
 
-        collateralUnderPendingReclaims[hotkey][executorId] += availableAmount;
+        collateralUnderPendingReclaims[hotkey][nodeId] += availableAmount;
         alphaCollateralUnderPendingReclaims[hotkey][
-            executorId
+            nodeId
         ] += availableAlphaAmount;
 
         emit ReclaimProcessStarted(
             nextReclaimId,
             hotkey,
-            executorId,
+            nodeId,
             msg.sender,
             availableAmount,
             alphaColdkey,
@@ -321,7 +321,7 @@ contract CollateralUpgradeableV2 is
 
     /// @notice Finalizes a reclaim request after the deny timeout has expired
     /// @dev Can only be called after the deny timeout has passed for the specific reclaim request
-    /// @dev Transfers the collateral to the miner and removes the executor-to-miner mapping if successful
+    /// @dev Transfers the collateral to the miner and removes the node-to-miner mapping if successful
     /// @dev This fully closes the relationship, allowing to request another reclaim
     /// @param reclaimRequestId The ID of the reclaim request to finalize
     /// @dev Emits Reclaimed event with reclaim details if successful
@@ -338,19 +338,19 @@ contract CollateralUpgradeableV2 is
         }
 
         bytes32 hotkey = reclaim.hotkey;
-        bytes16 executorId = reclaim.executorId;
+        bytes16 nodeId = reclaim.nodeId;
         address miner = reclaim.miner;
         uint256 amount = reclaim.amount;
 
         delete reclaims[reclaimRequestId];
-        collateralUnderPendingReclaims[hotkey][executorId] -= amount;
+        collateralUnderPendingReclaims[hotkey][nodeId] -= amount;
 
-        if (collaterals[hotkey][executorId] < amount) {
+        if (collaterals[hotkey][nodeId] < amount) {
             // miner got slashed and can't withdraw
             revert InsufficientCollateralForReclaim();
         }
 
-        collaterals[hotkey][executorId] -= amount;
+        collaterals[hotkey][nodeId] -= amount;
 
         // check-effect-interact pattern used to prevent reentrancy attacks
         (bool success, ) = payable(miner).call{value: amount}("");
@@ -362,14 +362,14 @@ contract CollateralUpgradeableV2 is
             withdrawAlpha(reclaim.alphaColdkey, reclaim.alphaAmount);
         }
 
-        if (collaterals[hotkey][executorId] == 0 && reclaim.alphaAmount == 0) {
-            executorToMiner[hotkey][executorId] = address(0);
+        if (collaterals[hotkey][nodeId] == 0 && reclaim.alphaAmount == 0) {
+            nodeToMiner[hotkey][nodeId] = address(0);
         }
 
         emit Reclaimed(
             reclaimRequestId,
             hotkey,
-            executorId,
+            nodeId,
             miner,
             amount,
             reclaim.alphaColdkey,
@@ -402,36 +402,36 @@ contract CollateralUpgradeableV2 is
         }
 
         collateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.executorId
+            reclaim.nodeId
         ] -= reclaim.amount;
         alphaCollateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.executorId
+            reclaim.nodeId
         ] -= reclaim.alphaAmount;
         emit Denied(reclaimRequestId, url, urlContentMd5Checksum);
 
         delete reclaims[reclaimRequestId];
     }
 
-    /// @notice Allows the trustee to slash a miner's collateral for a specific executor
+    /// @notice Allows the trustee to slash a miner's collateral for a specific node
     /// @dev Can only be called by the trustee (address set in initializer)
-    /// @dev Removes the collateral from the executor and burns it
+    /// @dev Removes the collateral from the node and burns it
     /// @param hotkey The netuid key for the subnet
-    /// @param executorId The ID of the executor to slash
+    /// @param nodeId The ID of the node to slash
     /// @param url URL containing the reason for slashing
     /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
-    /// @dev Emits Slashed event with the executor's ID, miner's address and the amount slashed
+    /// @dev Emits Slashed event with the node's ID, miner's address and the amount slashed
     /// @dev Reverts with AmountZero if there is no collateral to slash
     /// @dev Reverts with TransferFailed if the TAO transfer fails
     function slashCollateral(
         bytes32 hotkey,
-        bytes16 executorId,
+        bytes16 nodeId,
         uint256 slashAmount,
         uint256 slashAlphaAmount,
         string calldata url,
         bytes16 urlContentMd5Checksum
     ) external onlyTrustee {
-        uint256 amount = collaterals[hotkey][executorId];
-        uint256 alphaAmount = alphaCollaterals[hotkey][executorId];
+        uint256 amount = collaterals[hotkey][nodeId];
+        uint256 alphaAmount = alphaCollaterals[hotkey][nodeId];
 
         if (amount == 0 && alphaAmount == 0) {
             revert AmountZero();
@@ -441,9 +441,9 @@ contract CollateralUpgradeableV2 is
             revert InsufficientCollateralForSlash();
         }
 
-        collaterals[hotkey][executorId] = amount - slashAmount;
-        alphaCollaterals[hotkey][executorId] = alphaAmount - slashAlphaAmount;
-        address miner = executorToMiner[hotkey][executorId];
+        collaterals[hotkey][nodeId] = amount - slashAmount;
+        alphaCollaterals[hotkey][nodeId] = alphaAmount - slashAlphaAmount;
+        address miner = nodeToMiner[hotkey][nodeId];
 
         // burn the collateral, alpha locked in the contract
         (bool success, ) = payable(address(0)).call{value: slashAmount}("");
@@ -451,11 +451,11 @@ contract CollateralUpgradeableV2 is
             revert TransferFailed();
         }
         if (amount == slashAmount && alphaAmount == slashAlphaAmount) {
-            executorToMiner[hotkey][executorId] = address(0);
+            nodeToMiner[hotkey][nodeId] = address(0);
         }
         emit Slashed(
             hotkey,
-            executorId,
+            nodeId,
             miner,
             slashAmount,
             slashAlphaAmount,

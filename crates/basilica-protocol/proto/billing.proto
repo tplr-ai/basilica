@@ -88,7 +88,7 @@ message ReleaseReservationResponse {
 message TrackRentalRequest {
     string rental_id = 1;
     string user_id = 2;
-    string executor_id = 3;
+    string node_id = 3;
     string validator_id = 4;
     ResourceSpec resource_spec = 5;
     string hourly_rate = 6; // Decimal string
@@ -144,7 +144,7 @@ message GetActiveRentalsRequest {
     oneof filter {
         string user_id = 1;
         string validator_id = 2;
-        string executor_id = 3;
+        string node_id = 3;
     }
     uint32 limit = 4;
     uint32 offset = 5;
@@ -158,7 +158,7 @@ message GetActiveRentalsResponse {
 message ActiveRental {
     string rental_id = 1;
     string user_id = 2;
-    string executor_id = 3;
+    string node_id = 3;
     string validator_id = 4;
     RentalStatus status = 5;
     ResourceSpec resource_spec = 6;
@@ -188,7 +188,7 @@ message FinalizeRentalResponse {
 
 message TelemetryData {
     string rental_id = 1;
-    string executor_id = 2;
+    string node_id = 2;
     google.protobuf.Timestamp timestamp = 3;
     ResourceUsage resource_usage = 4;
     map<string, double> custom_metrics = 5;

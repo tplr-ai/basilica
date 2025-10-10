@@ -294,7 +294,7 @@ mod tests {
             iss: auth0_issuer().to_string(),
             exp: 9999999999,
             iat: 1234567890,
-            scope: Some("rentals:* executors:list".to_string()),
+            scope: Some("rentals:* nodes:list".to_string()),
             email: None,
             email_verified: None,
             name: None,
@@ -312,7 +312,7 @@ mod tests {
         assert!(has_scope(&claims, "rentals:*"));
 
         // Should match other exact scopes
-        assert!(has_scope(&claims, "executors:list"));
+        assert!(has_scope(&claims, "nodes:list"));
 
         // Should not match unrelated scopes
         assert!(!has_scope(&claims, "users:list"));

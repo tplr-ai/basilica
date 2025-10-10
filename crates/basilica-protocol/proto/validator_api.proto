@@ -40,7 +40,7 @@ message ListCapacityRequest {
 message CapacityOffer {
   string offer_id = 1;
   string miner_hotkey = 2;
-  string executor_id = 3;
+  string node_id = 3;
   basilca.common.v1.GpuSpec gpu_spec = 4;
   basilca.common.v1.ResourceLimits available_resources = 5;
   double price_per_hour = 6;

@@ -50,16 +50,13 @@ impl StorageCollector {
         }
     }
 
-    /// Collect storage profile from executor
+    /// Collect storage profile from node
     pub async fn collect(
         &self,
-        executor_id: &str,
+        node_id: &str,
         ssh_details: &SshConnectionDetails,
     ) -> Result<StorageProfile> {
-        info!(
-            executor_id = executor_id,
-            "[STORAGE] Starting storage validation"
-        );
+        info!(node_id = node_id, "[STORAGE] Starting storage validation");
 
         // Primary command, filtering of virtual filesystems
         let primary_cmd = "df -B1 --output=avail,size,fstype,target --exclude-type=tmpfs --exclude-type=devtmpfs --exclude-type=squashfs --exclude-type=sysfs --exclude-type=proc --exclude-type=cgroup --exclude-type=cgroup2 --exclude-type=debugfs --exclude-type=tracefs --exclude-type=securityfs --exclude-type=pstore --exclude-type=configfs --exclude-type=fusectl --exclude-type=hugetlbfs --exclude-type=mqueue --exclude-type=binfmt_misc --exclude-type=autofs 2>/dev/null | tail -n +2";
@@ -74,15 +71,12 @@ impl StorageCollector {
             .await
         {
             Ok(output) if !output.trim().is_empty() => {
-                debug!(
-                    executor_id = executor_id,
-                    "[STORAGE] Primary df command successful"
-                );
+                debug!(node_id = node_id, "[STORAGE] Primary df command successful");
                 (output, true)
             }
             _ => {
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[STORAGE] Primary command failed, trying fallback"
                 );
                 let output = self
@@ -94,14 +88,14 @@ impl StorageCollector {
             }
         };
 
-        let filesystem_details = parse_df_output(&output, executor_id, is_bytes_format)?;
+        let filesystem_details = parse_df_output(&output, node_id, is_bytes_format)?;
 
         let total_bytes: u64 = filesystem_details.iter().map(|fs| fs.total_bytes).sum();
         let available_bytes: u64 = filesystem_details.iter().map(|fs| fs.available_bytes).sum();
 
         let available_tb = available_bytes as f64 / 1024_f64.powi(4);
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             available_tb = format!("{:.2}", available_tb),
             "[STORAGE] Storage: {:.2} TB available",
             available_tb
@@ -130,17 +124,17 @@ impl StorageCollector {
     pub async fn store(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
         profile: &StorageProfile,
     ) -> Result<()> {
         debug!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[STORAGE] Storing storage profile"
         );
 
         self.persistence
-            .store_executor_storage_profile(miner_uid, executor_id, profile)
+            .store_node_storage_profile(miner_uid, node_id, profile)
             .await
             .context("Failed to store storage profile")?;
 
@@ -150,18 +144,18 @@ impl StorageCollector {
     /// Collect and store storage profile
     pub async fn collect_and_store(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Result<StorageProfile> {
-        let profile = self.collect(executor_id, ssh_details).await?;
-        self.store(miner_uid, executor_id, &profile).await?;
+        let profile = self.collect(node_id, ssh_details).await?;
+        self.store(miner_uid, node_id, &profile).await?;
 
         if profile.available_bytes < self.min_required_storage_bytes {
             let available_tb = profile.available_bytes as f64 / 1024_f64.powi(4);
             let required_tb = self.min_required_storage_bytes as f64 / 1024_f64.powi(4);
             error!(
-                executor_id = executor_id,
+                node_id = node_id,
                 available_tb = format!("{:.2}", available_tb),
                 required_tb = format!("{:.2}", required_tb),
                 "[STORAGE] Storage requirement not met: {:.2} TB available, {:.2} TB required",
@@ -181,18 +175,18 @@ impl StorageCollector {
     /// Collect with fallback
     pub async fn collect_with_fallback(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<StorageProfile> {
         match self
-            .collect_and_store(executor_id, miner_uid, ssh_details)
+            .collect_and_store(node_id, miner_uid, ssh_details)
             .await
         {
             Ok(profile) => {
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     available_tb =
                         format!("{:.2}", profile.available_bytes as f64 / 1024_f64.powi(4)),
                     "[STORAGE] Storage validation completed successfully with {:.2} TB available",
@@ -203,7 +197,7 @@ impl StorageCollector {
             Err(e) => {
                 error!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     error = %e,
                     "[STORAGE] Storage validation failed: {}",
                     e
@@ -214,13 +208,9 @@ impl StorageCollector {
     }
 
     /// Retrieve storage profile from database
-    pub async fn retrieve(
-        &self,
-        miner_uid: u16,
-        executor_id: &str,
-    ) -> Result<Option<StorageProfile>> {
+    pub async fn retrieve(&self, miner_uid: u16, node_id: &str) -> Result<Option<StorageProfile>> {
         self.persistence
-            .get_executor_storage_profile(miner_uid, executor_id)
+            .get_node_storage_profile(miner_uid, node_id)
             .await
             .context("Failed to retrieve storage profile")
     }
@@ -229,7 +219,7 @@ impl StorageCollector {
 /// df output parsing - robust implementation to avoid false negatives
 pub fn parse_df_output(
     output: &str,
-    executor_id: &str,
+    node_id: &str,
     is_bytes_format: bool,
 ) -> Result<Vec<FilesystemInfo>> {
     let mut filesystems = Vec::new();
@@ -307,7 +297,7 @@ pub fn parse_df_output(
             Ok(result) => result,
             Err(e) => {
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     line = line,
                     error = %e,
                     "[STORAGE] Failed to parse line, skipping"
@@ -319,7 +309,7 @@ pub fn parse_df_output(
         // Validate parsed values
         if total_bytes == 0 || available_bytes > total_bytes {
             debug!(
-                executor_id = executor_id,
+                node_id = node_id,
                 mount_point = mount_point,
                 total_bytes = total_bytes,
                 available_bytes = available_bytes,
@@ -333,7 +323,7 @@ pub fn parse_df_output(
         }
 
         debug!(
-            executor_id = executor_id,
+            node_id = node_id,
             mount_point = mount_point,
             available_gb = format!("{:.2}", available_bytes as f64 / 1024_f64.powi(3)),
             total_gb = format!("{:.2}", total_bytes as f64 / 1024_f64.powi(3)),
@@ -505,7 +495,7 @@ mod tests {
         // Total available: ~1.5TB which meets the 1TB requirement
         let output = "536870912000 1073741824000 ext4 /\n268435456000 536870912000 ext4 /home\n1099511627776 2199023255552 xfs /data";
 
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -526,7 +516,7 @@ mod tests {
         // Sample output from df -k -P
         let output = "/dev/sda1 1073741824 536870912 524288000 52% /\n/dev/sdb1 2147483648 1048576000 1073741824 50% /home\ntmpfs 8388608 0 8388608 0% /dev/shm";
 
-        let result = parse_df_output(output, "test-executor", false);
+        let result = parse_df_output(output, "test-node", false);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -543,7 +533,7 @@ mod tests {
     fn test_parse_df_output_filters_virtual_filesystems() {
         let output = "1073741824 2147483648 ext4 /\n536870912 1073741824 proc /proc\n268435456 536870912 sysfs /sys\n134217728 268435456 devtmpfs /dev\n67108864 134217728 ext4 /home";
 
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -561,7 +551,7 @@ mod tests {
         // Fallback format with mount point containing spaces
         let output = "/dev/sdc1 1073741824 536870912 524288000 52% /mnt/my backup drive";
 
-        let result = parse_df_output(output, "test-executor", false);
+        let result = parse_df_output(output, "test-node", false);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -574,7 +564,7 @@ mod tests {
         // Duplicate mount points with different available space
         let output = "536870912 1073741824 ext4 /data\n1073741824 2147483648 ext4 /data";
 
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -586,7 +576,7 @@ mod tests {
     #[test]
     fn test_parse_df_output_empty_input() {
         let output = "";
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -598,7 +588,7 @@ mod tests {
     fn test_parse_df_output_no_valid_filesystems() {
         // Only virtual filesystems
         let output = "536870912 1073741824 proc /proc\n268435456 536870912 sysfs /sys";
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -612,7 +602,7 @@ mod tests {
         // Create a scenario where available storage is less than 1TB
         let output = "500000000000 1000000000000 ext4 /"; // 500GB available, less than 1TB
 
-        let filesystems = parse_df_output(output, "test-executor", true).unwrap();
+        let filesystems = parse_df_output(output, "test-node", true).unwrap();
         let available_bytes: u64 = filesystems.iter().map(|fs| fs.available_bytes).sum();
 
         // Verify that 500GB is less than 1TB requirement
@@ -625,7 +615,7 @@ mod tests {
         // Create a scenario where available storage exceeds 1TB
         let output = "1500000000000 2000000000000 ext4 /"; // 1.5TB available
 
-        let filesystems = parse_df_output(output, "test-executor", true).unwrap();
+        let filesystems = parse_df_output(output, "test-node", true).unwrap();
         let available_bytes: u64 = filesystems.iter().map(|fs| fs.available_bytes).sum();
 
         // Verify that 1.5TB meets the 1TB requirement
@@ -638,7 +628,7 @@ mod tests {
         // Test handling of filesystem names split across lines
         let output = "/dev/mapper/ubuntu--vg-ubuntu--lv\n                       1073741824 536870912 524288000 52% /";
 
-        let result = parse_df_output(output, "test-executor", false);
+        let result = parse_df_output(output, "test-node", false);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -652,7 +642,7 @@ mod tests {
         let output =
             "server.example.com:/export/data 2147483648 1048576000 1073741824 50% /mnt/nfs";
 
-        let result = parse_df_output(output, "test-executor", false);
+        let result = parse_df_output(output, "test-node", false);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -665,7 +655,7 @@ mod tests {
         // Test LVM logical volume paths
         let output = "/dev/mapper/vg0-lv_root 1073741824 536870912 524288000 52% /\n/dev/mapper/vg0-lv_home 2147483648 1048576000 1073741824 50% /home";
 
-        let result = parse_df_output(output, "test-executor", false);
+        let result = parse_df_output(output, "test-node", false);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -676,7 +666,7 @@ mod tests {
     fn test_parse_df_output_primary_format_mount_with_spaces() {
         // Test mount point with spaces in primary format (bytes)
         let output = "1073741824 2147483648 ext4 /mnt/my backup drive";
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_ok());
         let fs = result.unwrap();
         assert_eq!(fs.len(), 1);
@@ -691,7 +681,7 @@ mod tests {
         // Test that we handle potential overflow gracefully
         let output = "/dev/sda1 18446744073709551615 9223372036854775807 9223372036854775807 50% /";
 
-        let result = parse_df_output(output, "test-executor", false);
+        let result = parse_df_output(output, "test-node", false);
         // Should either parse successfully or fail gracefully, not panic
         assert!(result.is_ok() || result.is_err());
     }
@@ -701,7 +691,7 @@ mod tests {
         // Test that Docker overlay filesystems are excluded
         let output = "1073741824 2147483648 ext4 /\n536870912 1073741824 overlay /var/lib/docker/overlay2/abc123/merged";
 
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -714,7 +704,7 @@ mod tests {
         // Test that results are consistently ordered
         let output = "1073741824 2147483648 ext4 /home\n536870912 1073741824 ext4 /\n268435456 536870912 ext4 /var";
 
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_ok());
 
         let filesystems = result.unwrap();
@@ -728,7 +718,7 @@ mod tests {
         // Test that we skip filesystems with invalid metrics
         let output = "2000000000000 1000000000000 ext4 /"; // Available > Total (invalid)
 
-        let result = parse_df_output(output, "test-executor", true);
+        let result = parse_df_output(output, "test-node", true);
         assert!(result.is_err()); // Should fail as no valid filesystems
     }
 }

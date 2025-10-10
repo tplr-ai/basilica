@@ -111,7 +111,7 @@ pub struct TrackRentalRequest {
     #[prost(string, tag = "2")]
     pub user_id: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub executor_id: ::prost::alloc::string::String,
+    pub node_id: ::prost::alloc::string::String,
     #[prost(string, tag = "4")]
     pub validator_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "5")]
@@ -210,7 +210,7 @@ pub mod get_active_rentals_request {
         #[prost(string, tag = "2")]
         ValidatorId(::prost::alloc::string::String),
         #[prost(string, tag = "3")]
-        ExecutorId(::prost::alloc::string::String),
+        NodeId(::prost::alloc::string::String),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -229,7 +229,7 @@ pub struct ActiveRental {
     #[prost(string, tag = "2")]
     pub user_id: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub executor_id: ::prost::alloc::string::String,
+    pub node_id: ::prost::alloc::string::String,
     #[prost(string, tag = "4")]
     pub validator_id: ::prost::alloc::string::String,
     #[prost(enumeration = "RentalStatus", tag = "5")]
@@ -288,7 +288,7 @@ pub struct TelemetryData {
     #[prost(string, tag = "1")]
     pub rental_id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub executor_id: ::prost::alloc::string::String,
+    pub node_id: ::prost::alloc::string::String,
     #[prost(message, optional, tag = "3")]
     pub timestamp: ::core::option::Option<::prost_types::Timestamp>,
     #[prost(message, optional, tag = "4")]

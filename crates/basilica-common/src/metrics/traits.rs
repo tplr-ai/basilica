@@ -90,7 +90,7 @@ pub trait BasilcaMetrics: Send + Sync {
     /// Record verification attempt
     async fn record_verification_attempt(
         &self,
-        executor_id: &str,
+        node_id: &str,
         verification_type: &str,
         success: bool,
         score: Option<f64>,
@@ -114,8 +114,8 @@ pub trait BasilcaMetrics: Send + Sync {
         duration: Duration,
     );
 
-    /// Record executor health status
-    async fn record_executor_health(&self, executor_id: &str, healthy: bool);
+    /// Record node health status
+    async fn record_node_health(&self, node_id: &str, healthy: bool);
 
     /// Record network consensus metrics
     async fn record_consensus_metrics(&self, weights_set: bool, stake_amount: u64);
@@ -289,5 +289,5 @@ pub mod metric_names {
 
     // Health metrics
     pub const SERVICE_HEALTH: &str = "basilca_service_health_status";
-    pub const EXECUTOR_HEALTH: &str = "basilca_executor_health_status";
+    pub const NODE_HEALTH: &str = "basilca_node_health_status";
 }

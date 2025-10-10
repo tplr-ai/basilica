@@ -95,7 +95,7 @@ pub struct VerificationConfig {
     pub min_verification_interval: Duration,
     /// Network ID for the subnet
     pub netuid: u16,
-    /// Enable dynamic discovery of executor SSH details from miners
+    /// Enable dynamic discovery of node SSH details from miners
     #[serde(default = "default_use_dynamic_discovery")]
     pub use_dynamic_discovery: bool,
     /// Timeout for miner discovery operations
@@ -122,10 +122,10 @@ pub struct VerificationConfig {
     /// Collateral event scan interval
     #[serde(default = "default_collateral_event_scan_interval")]
     pub collateral_event_scan_interval: Duration,
-    /// Interval between full binary validations per executor
-    #[serde(default = "default_executor_validation_interval")]
-    pub executor_validation_interval: Duration,
-    /// Time period for cleaning up GPU assignments from offline executors (min 2 hours)
+    /// Interval between full binary validations per node
+    #[serde(default = "default_node_validation_interval")]
+    pub node_validation_interval: Duration,
+    /// Time period for cleaning up GPU assignments from offline nodes (min 2 hours)
     #[serde(default = "default_gpu_assignment_cleanup_ttl")]
     pub gpu_assignment_cleanup_ttl: Option<Duration>,
     /// Enable worker queue for decoupled validation execution
@@ -153,7 +153,7 @@ fn default_collateral_event_scan_interval() -> Duration {
     Duration::from_secs(12) // one block time
 }
 
-fn default_executor_validation_interval() -> Duration {
+fn default_node_validation_interval() -> Duration {
     Duration::from_secs(6 * 3600) // 6 hours
 }
 
@@ -189,7 +189,7 @@ impl VerificationConfig {
             binary_validation: BinaryValidationConfig::default(),
             docker_validation: DockerValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
-            executor_validation_interval: Duration::from_secs(3600),
+            node_validation_interval: Duration::from_secs(3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(7200)),
             enable_worker_queue: false,
             storage_validation: StorageValidationConfig::default(),
@@ -212,9 +212,9 @@ pub struct BinaryValidationConfig {
     pub enabled: bool,
     /// Binary validation weight in final score calculation
     pub score_weight: f64,
-    /// Default executor port for SSH tunnel cleanup
-    #[serde(default = "default_executor_port")]
-    pub executor_port: u16,
+    /// Default node port for SSH tunnel cleanup
+    #[serde(default = "default_node_port")]
+    pub node_port: u16,
     /// Server mode configuration
     #[serde(default)]
     pub server_mode: ValidationServerConfig,
@@ -351,7 +351,7 @@ fn default_server_ready_check_interval_ms() -> u64 {
     500 // Check every 500ms
 }
 
-fn default_executor_port() -> u16 {
+fn default_node_port() -> u16 {
     3000
 }
 
@@ -364,7 +364,7 @@ impl Default for BinaryValidationConfig {
             output_format: "json".to_string(),
             enabled: true,
             score_weight: 0.8,
-            executor_port: default_executor_port(),
+            node_port: default_node_port(),
             server_mode: ValidationServerConfig::default(),
         }
     }
@@ -659,7 +659,7 @@ impl Default for ValidatorConfig {
                 docker_validation: DockerValidationConfig::default(),
                 storage_validation: StorageValidationConfig::default(),
                 collateral_event_scan_interval: default_collateral_event_scan_interval(),
-                executor_validation_interval: default_executor_validation_interval(),
+                node_validation_interval: default_node_validation_interval(),
                 gpu_assignment_cleanup_ttl: default_gpu_assignment_cleanup_ttl(),
                 enable_worker_queue: default_enable_worker_queue(),
             },

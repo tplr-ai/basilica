@@ -4,7 +4,7 @@
 //! This crate provides the fundamental building blocks that all other Basilica crates depend on.
 //!
 //! ## Key Features
-//! - Identity types (Hotkey, ExecutorId, ValidatorUid, MinerUid)
+//! - Identity types (Hotkey, NodeId, ValidatorUid, MinerUid)
 //! - Comprehensive error handling with BasilicaError trait
 //! - Cryptographic utilities for hashing and signature verification
 //! - Shared persistence abstractions and repository patterns
@@ -23,12 +23,12 @@ pub mod config;
 pub mod crypto;
 pub mod distributed;
 pub mod error;
-pub mod executor_identity;
 pub mod identity;
 pub mod journal;
 pub mod logging;
 pub mod metrics;
 pub mod network;
+pub mod node_identity;
 pub mod persistence;
 pub mod ssh;
 pub mod storage;

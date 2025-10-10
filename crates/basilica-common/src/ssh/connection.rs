@@ -24,6 +24,10 @@ pub struct SshConnectionConfig {
     pub retry_attempts: u32,
     /// Whether to cleanup remote files after operations
     pub cleanup_remote_files: bool,
+    /// Enable strict host key checking
+    pub strict_host_key_checking: bool,
+    /// Path to known_hosts file (only used when strict_host_key_checking is true)
+    pub known_hosts_file: Option<std::path::PathBuf>,
 }
 
 impl Default for SshConnectionConfig {
@@ -34,6 +38,8 @@ impl Default for SshConnectionConfig {
             max_transfer_size: 100 * 1024 * 1024, // 100MB
             retry_attempts: 3,
             cleanup_remote_files: true,
+            strict_host_key_checking: false,
+            known_hosts_file: None,
         }
     }
 }
@@ -132,8 +138,22 @@ impl StandardSshClient {
             return Err(anyhow::anyhow!("Host cannot be empty"));
         }
 
+        if details
+            .host
+            .contains(&[';', '&', '|', '$', '`', '\n', '\r'][..])
+        {
+            return Err(anyhow::anyhow!("Host contains invalid characters"));
+        }
+
         if details.username.is_empty() {
             return Err(anyhow::anyhow!("Username cannot be empty"));
+        }
+
+        if details
+            .username
+            .contains(&[';', '&', '|', '$', '`', '\n', '\r', '@'][..])
+        {
+            return Err(anyhow::anyhow!("Username contains invalid characters"));
         }
 
         if !details.private_key_path.exists() {
@@ -143,6 +163,260 @@ impl StandardSshClient {
             ));
         }
 
+        Ok(())
+    }
+
+    /// Format host specification for ssh-keygen and known_hosts operations
+    fn format_host_spec(host: &str, port: u16) -> String {
+        if port == 22 {
+            return host.to_string();
+        }
+
+        let is_ipv6 = host.contains(':') && !host.starts_with('[');
+        if is_ipv6 {
+            format!("[{}]:{}", host, port)
+        } else if host.starts_with('[') {
+            format!("{}:{}", host, port)
+        } else {
+            format!("[{}]:{}", host, port)
+        }
+    }
+
+    /// Remove host key from known_hosts file
+    pub async fn remove_host_key(&self, details: &SshConnectionDetails) -> Result<()> {
+        let host_spec = Self::format_host_spec(&details.host, details.port);
+        let known_hosts_path = self.get_known_hosts_path()?;
+
+        debug!(
+            "Removing host key for {} from {}",
+            host_spec,
+            known_hosts_path.display()
+        );
+
+        let output = std::process::Command::new("ssh-keygen")
+            .arg("-R")
+            .arg(&host_spec)
+            .arg("-f")
+            .arg(&known_hosts_path)
+            .output()
+            .map_err(|e| anyhow::anyhow!("Failed to execute ssh-keygen: {}", e))?;
+
+        if output.status.success() {
+            debug!("Successfully removed host key for {}", host_spec);
+            return Ok(());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("not found") || stderr.is_empty() {
+            debug!("Host key not found in known_hosts for {}", host_spec);
+            return Ok(());
+        }
+
+        Err(anyhow::anyhow!(
+            "Failed to remove host key for {}: {}",
+            host_spec,
+            stderr
+        ))
+    }
+
+    /// Check if host key exists in known_hosts
+    fn host_key_exists(&self, details: &SshConnectionDetails) -> Result<bool> {
+        let host_spec = Self::format_host_spec(&details.host, details.port);
+        let known_hosts_path = self.get_known_hosts_path()?;
+
+        let output = std::process::Command::new("ssh-keygen")
+            .arg("-F")
+            .arg(&host_spec)
+            .arg("-f")
+            .arg(&known_hosts_path)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| anyhow::anyhow!("Failed to check host key: {}", e))?;
+
+        Ok(output.success())
+    }
+
+    /// Extract SHA256 fingerprints from ssh-keygen output
+    fn extract_sha256_fingerprints(output: &str) -> Vec<String> {
+        output
+            .lines()
+            .filter_map(|line| {
+                line.find("SHA256:").and_then(|pos| {
+                    let rest = &line[pos + 7..];
+                    rest.find(' ').map(|end| rest[..end].to_string())
+                })
+            })
+            .collect()
+    }
+
+    /// Get current host key fingerprints from remote host
+    async fn get_remote_host_fingerprints(
+        &self,
+        details: &SshConnectionDetails,
+    ) -> Result<Vec<String>> {
+        let mut cmd = tokio::process::Command::new("ssh-keyscan");
+        cmd.arg("-p")
+            .arg(details.port.to_string())
+            .arg("-T")
+            .arg("5")
+            .arg("-t")
+            .arg("rsa,ed25519,ecdsa")
+            .arg(&details.host)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let output = timeout(Duration::from_secs(10), cmd.output())
+            .await
+            .map_err(|_| anyhow::anyhow!("Host key scan timeout"))?
+            .map_err(|e| anyhow::anyhow!("Failed to scan host key: {}", e))?;
+
+        if !output.status.success() || output.stdout.is_empty() {
+            return Err(anyhow::anyhow!("Failed to retrieve remote host key"));
+        }
+
+        let mut fingerprint_cmd = std::process::Command::new("ssh-keygen");
+        fingerprint_cmd
+            .arg("-lf")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let mut child = fingerprint_cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn ssh-keygen: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            stdin
+                .write_all(&output.stdout)
+                .map_err(|e| anyhow::anyhow!("Failed to write to ssh-keygen stdin: {}", e))?;
+            stdin
+                .flush()
+                .map_err(|e| anyhow::anyhow!("Failed to flush ssh-keygen stdin: {}", e))?;
+            drop(stdin);
+        }
+
+        let fp_output = child
+            .wait_with_output()
+            .map_err(|e| anyhow::anyhow!("Failed to get fingerprint: {}", e))?;
+
+        let fingerprint_output = String::from_utf8_lossy(&fp_output.stdout);
+        let fingerprints = Self::extract_sha256_fingerprints(&fingerprint_output);
+
+        if fingerprints.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No fingerprints extracted from remote host"
+            ));
+        }
+
+        Ok(fingerprints)
+    }
+
+    /// Get existing host key fingerprints from known_hosts
+    fn get_known_host_fingerprints(&self, details: &SshConnectionDetails) -> Result<Vec<String>> {
+        let host_spec = Self::format_host_spec(&details.host, details.port);
+        let known_hosts_path = self.get_known_hosts_path()?;
+
+        let output = std::process::Command::new("ssh-keygen")
+            .arg("-F")
+            .arg(&host_spec)
+            .arg("-f")
+            .arg(&known_hosts_path)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .map_err(|e| anyhow::anyhow!("Failed to check known host: {}", e))?;
+
+        if !output.status.success() {
+            return Err(anyhow::anyhow!("Host not found in known_hosts"));
+        }
+
+        let known_host_entry = String::from_utf8_lossy(&output.stdout);
+
+        let mut fingerprint_cmd = std::process::Command::new("ssh-keygen");
+        fingerprint_cmd
+            .arg("-lf")
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null());
+
+        let mut child = fingerprint_cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn ssh-keygen: {}", e))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            use std::io::Write;
+            stdin
+                .write_all(known_host_entry.as_bytes())
+                .map_err(|e| anyhow::anyhow!("Failed to write to ssh-keygen stdin: {}", e))?;
+            stdin
+                .flush()
+                .map_err(|e| anyhow::anyhow!("Failed to flush ssh-keygen stdin: {}", e))?;
+            drop(stdin);
+        }
+
+        let fp_output = child
+            .wait_with_output()
+            .map_err(|e| anyhow::anyhow!("Failed to get fingerprint: {}", e))?;
+
+        let fingerprint_output = String::from_utf8_lossy(&fp_output.stdout);
+        let fingerprints = Self::extract_sha256_fingerprints(&fingerprint_output);
+
+        if fingerprints.is_empty() {
+            return Err(anyhow::anyhow!(
+                "No fingerprints extracted from known_hosts"
+            ));
+        }
+
+        Ok(fingerprints)
+    }
+
+    /// Refresh host key only if it's mismatched or missing
+    pub async fn refresh_host_key(&self, details: &SshConnectionDetails) -> Result<()> {
+        debug!("Checking host key for {}:{}", details.host, details.port);
+
+        let exists = self.host_key_exists(details)?;
+
+        if !exists {
+            debug!(
+                "No existing host key for {}:{}, adding new key",
+                details.host, details.port
+            );
+            return self.ensure_host_key_available(details).await;
+        }
+
+        let remote_fps = self.get_remote_host_fingerprints(details).await?;
+        let known_fps = self.get_known_host_fingerprints(details)?;
+
+        let has_matching_key = remote_fps.iter().any(|rfp| known_fps.contains(rfp));
+
+        if has_matching_key {
+            debug!(
+                "Host key for {}:{} has matching fingerprints, no refresh needed",
+                details.host, details.port
+            );
+            debug!("Remote fingerprints: {:?}", remote_fps);
+            debug!("Known fingerprints: {:?}", known_fps);
+            return Ok(());
+        }
+
+        warn!(
+            "Host key mismatch detected for {}:{}, refreshing",
+            details.host, details.port
+        );
+        debug!("Remote fingerprints: {:?}", remote_fps);
+        debug!("Known fingerprints: {:?}", known_fps);
+
+        self.remove_host_key(details).await?;
+        self.ensure_host_key_available(details).await?;
+
+        debug!(
+            "Successfully refreshed host key for {}:{}",
+            details.host, details.port
+        );
         Ok(())
     }
 
@@ -162,7 +436,7 @@ impl StandardSshClient {
             .arg("-T")
             .arg("5")
             .arg("-t")
-            .arg("rsa,ed25519")
+            .arg("rsa,ed25519,ecdsa")
             .arg(&details.host)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null());
@@ -207,6 +481,10 @@ impl StandardSshClient {
 
     /// Get the path to known_hosts file
     fn get_known_hosts_path(&self) -> Result<std::path::PathBuf> {
+        if let Some(ref path) = self.config.known_hosts_file {
+            return Ok(path.clone());
+        }
+
         match std::env::var("HOME") {
             Ok(home) => Ok(std::path::PathBuf::from(home)
                 .join(".ssh")
@@ -246,11 +524,22 @@ impl StandardSshClient {
         cmd.arg("-i")
             .arg(&details.private_key_path)
             .arg("-p")
-            .arg(details.port.to_string())
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("UserKnownHostsFile=/dev/null")
+            .arg(details.port.to_string());
+
+        // Configure host key checking based on settings
+        if self.config.strict_host_key_checking {
+            cmd.arg("-o").arg("StrictHostKeyChecking=yes");
+            if let Some(ref known_hosts) = self.config.known_hosts_file {
+                cmd.arg("-o")
+                    .arg(format!("UserKnownHostsFile={}", known_hosts.display()));
+            }
+        } else {
+            cmd.arg("-o").arg("StrictHostKeyChecking=no");
+            cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
+        }
+
+        cmd.arg("-o")
+            .arg("IdentitiesOnly=yes")
             .arg("-o")
             .arg("BatchMode=yes")
             .arg("-o")
@@ -419,11 +708,22 @@ impl SshFileTransferManager for StandardSshClient {
         cmd.arg("-i")
             .arg(&details.private_key_path)
             .arg("-P")
-            .arg(details.port.to_string())
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("UserKnownHostsFile=/dev/null")
+            .arg(details.port.to_string());
+
+        // Configure host key checking based on settings
+        if self.config.strict_host_key_checking {
+            cmd.arg("-o").arg("StrictHostKeyChecking=yes");
+            if let Some(ref known_hosts) = self.config.known_hosts_file {
+                cmd.arg("-o")
+                    .arg(format!("UserKnownHostsFile={}", known_hosts.display()));
+            }
+        } else {
+            cmd.arg("-o").arg("StrictHostKeyChecking=no");
+            cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
+        }
+
+        cmd.arg("-o")
+            .arg("IdentitiesOnly=yes")
             .arg("-o")
             .arg(format!(
                 "ConnectTimeout={}",
@@ -484,11 +784,22 @@ impl SshFileTransferManager for StandardSshClient {
         cmd.arg("-i")
             .arg(&details.private_key_path)
             .arg("-P")
-            .arg(details.port.to_string())
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("UserKnownHostsFile=/dev/null")
+            .arg(details.port.to_string());
+
+        // Configure host key checking based on settings
+        if self.config.strict_host_key_checking {
+            cmd.arg("-o").arg("StrictHostKeyChecking=yes");
+            if let Some(ref known_hosts) = self.config.known_hosts_file {
+                cmd.arg("-o")
+                    .arg(format!("UserKnownHostsFile={}", known_hosts.display()));
+            }
+        } else {
+            cmd.arg("-o").arg("StrictHostKeyChecking=no");
+            cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
+        }
+
+        cmd.arg("-o")
+            .arg("IdentitiesOnly=yes")
             .arg("-o")
             .arg(format!(
                 "ConnectTimeout={}",
@@ -553,5 +864,172 @@ impl SshFileTransferManager for StandardSshClient {
                 Ok(())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_ssh_details() -> SshConnectionDetails {
+        SshConnectionDetails {
+            host: "test.example.com".to_string(),
+            username: "testuser".to_string(),
+            port: 22,
+            private_key_path: std::path::PathBuf::from("/tmp/test_key"),
+            timeout: Duration::from_secs(30),
+        }
+    }
+
+    #[test]
+    fn test_host_spec_formatting_standard_port() {
+        let details = create_test_ssh_details();
+
+        let host_spec = StandardSshClient::format_host_spec(&details.host, details.port);
+
+        assert_eq!(host_spec, "test.example.com");
+    }
+
+    #[test]
+    fn test_host_spec_formatting_custom_port() {
+        let mut details = create_test_ssh_details();
+        details.port = 2222;
+
+        let host_spec = StandardSshClient::format_host_spec(&details.host, details.port);
+
+        assert_eq!(host_spec, "[test.example.com]:2222");
+    }
+
+    #[test]
+    fn test_ssh_connection_config_default() {
+        let config = SshConnectionConfig::default();
+        assert_eq!(config.connection_timeout, Duration::from_secs(30));
+        assert_eq!(config.execution_timeout, Duration::from_secs(300));
+        assert_eq!(config.max_transfer_size, 100 * 1024 * 1024);
+        assert_eq!(config.retry_attempts, 3);
+        assert!(config.cleanup_remote_files);
+        assert!(!config.strict_host_key_checking);
+        assert!(config.known_hosts_file.is_none());
+    }
+
+    #[test]
+    fn test_connection_details_validation() {
+        let client = StandardSshClient::new();
+
+        let mut details = create_test_ssh_details();
+        details.host = String::new();
+
+        let result = client.validate_connection_details(&details);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Host cannot be empty"));
+
+        let mut details = create_test_ssh_details();
+        details.username = String::new();
+
+        let result = client.validate_connection_details(&details);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Username cannot be empty"));
+    }
+
+    #[test]
+    fn test_extract_sha256_fingerprints() {
+        let output = "3072 SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s github.com (RSA)\n\
+                      256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU github.com (ED25519)\n\
+                      256 SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM |1|hash| (ECDSA)";
+
+        let fingerprints = StandardSshClient::extract_sha256_fingerprints(output);
+
+        assert_eq!(fingerprints.len(), 3);
+        assert!(fingerprints.contains(&"uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s".to_string()));
+        assert!(fingerprints.contains(&"+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU".to_string()));
+        assert!(fingerprints.contains(&"p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM".to_string()));
+    }
+
+    #[test]
+    fn test_extract_sha256_fingerprints_empty() {
+        let output = "No SHA256 fingerprints here";
+        let fingerprints = StandardSshClient::extract_sha256_fingerprints(output);
+        assert!(fingerprints.is_empty());
+    }
+
+    #[test]
+    fn test_extract_sha256_fingerprints_mixed() {
+        let output = "# Host github.com found: line 1\n\
+                      256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU |1|hash| (ED25519)\n\
+                      # Comment line\n\
+                      3072 SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s |1|hash| (RSA)";
+
+        let fingerprints = StandardSshClient::extract_sha256_fingerprints(output);
+
+        assert_eq!(fingerprints.len(), 2);
+        assert!(fingerprints.contains(&"+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU".to_string()));
+        assert!(fingerprints.contains(&"uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s".to_string()));
+    }
+
+    #[test]
+    fn test_extract_sha256_fingerprints_real_scenario() {
+        let output =
+            "256 SHA256:ZRvRYFEFyp5VGOwzrIhCEYHTQI4Gk6z0by/qD8bIAFE 31.22.104.140 (ED25519)\n\
+                      3072 SHA256:wJjqSeEKT4m8Oz9lM7l1I6GMlJKFfh3ozKM9W5g/mVQ 31.22.104.140 (RSA)";
+
+        let fingerprints = StandardSshClient::extract_sha256_fingerprints(output);
+
+        assert_eq!(fingerprints.len(), 2);
+        assert!(fingerprints.contains(&"ZRvRYFEFyp5VGOwzrIhCEYHTQI4Gk6z0by/qD8bIAFE".to_string()));
+        assert!(fingerprints.contains(&"wJjqSeEKT4m8Oz9lM7l1I6GMlJKFfh3ozKM9W5g/mVQ".to_string()));
+    }
+
+    #[test]
+    fn test_host_spec_port_22_no_brackets() {
+        let details = SshConnectionDetails {
+            host: "31.22.104.140".to_string(),
+            username: "ubuntu".to_string(),
+            port: 22,
+            private_key_path: std::path::PathBuf::from("/tmp/key"),
+            timeout: Duration::from_secs(30),
+        };
+
+        let host_spec = StandardSshClient::format_host_spec(&details.host, details.port);
+
+        assert_eq!(host_spec, "31.22.104.140");
+    }
+
+    #[test]
+    fn test_host_spec_custom_port_with_brackets() {
+        let details = SshConnectionDetails {
+            host: "31.22.104.140".to_string(),
+            username: "ubuntu".to_string(),
+            port: 2222,
+            private_key_path: std::path::PathBuf::from("/tmp/key"),
+            timeout: Duration::from_secs(30),
+        };
+
+        let host_spec = StandardSshClient::format_host_spec(&details.host, details.port);
+
+        assert_eq!(host_spec, "[31.22.104.140]:2222");
+    }
+
+    #[test]
+    fn test_host_spec_ipv6_port_22() {
+        let host_spec = StandardSshClient::format_host_spec("2001:db8::1", 22);
+        assert_eq!(host_spec, "2001:db8::1");
+    }
+
+    #[test]
+    fn test_host_spec_ipv6_custom_port() {
+        let host_spec = StandardSshClient::format_host_spec("2001:db8::1", 2222);
+        assert_eq!(host_spec, "[2001:db8::1]:2222");
+    }
+
+    #[test]
+    fn test_host_spec_ipv6_already_bracketed() {
+        let host_spec = StandardSshClient::format_host_spec("[2001:db8::1]", 2222);
+        assert_eq!(host_spec, "[2001:db8::1]:2222");
     }
 }

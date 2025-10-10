@@ -4,8 +4,8 @@ use crate::error::Result;
 use basilica_api::country_mapping::get_country_name_from_code;
 use basilica_common::LocationProfile;
 use basilica_sdk::{
-    types::{ApiKeyInfo, ApiRentalListItem, ExecutorDetails, GpuSpec, RentalStatusResponse},
-    AvailableExecutor,
+    types::{ApiKeyInfo, ApiRentalListItem, GpuSpec, NodeDetails, RentalStatusResponse},
+    AvailableNode,
 };
 use basilica_validator::gpu::GpuCategory;
 use chrono::{DateTime, Local};
@@ -23,10 +23,10 @@ fn format_timestamp(timestamp: &str) -> String {
         .unwrap_or_else(|| timestamp.to_string())
 }
 
-/// Display executors in table format
-pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
+/// Display nodes in table format
+pub fn display_nodes(nodes: &[NodeDetails]) -> Result<()> {
     #[derive(Tabled)]
-    struct ExecutorRow {
+    struct NodeRow {
         #[tabled(rename = "ID")]
         id: String,
         // #[tabled(rename = "GPUs")]
@@ -39,26 +39,26 @@ pub fn display_executors(executors: &[ExecutorDetails]) -> Result<()> {
         location: String,
     }
 
-    let rows: Vec<ExecutorRow> = executors
+    let rows: Vec<NodeRow> = nodes
         .iter()
-        .map(|executor| {
-            // let gpu_info = if executor.gpu_specs.is_empty() {
+        .map(|node| {
+            // let gpu_info = if node.gpu_specs.is_empty() {
             //     "None".to_string()
             // } else {
             //     format!(
             //         "{} x {} ({}GB)",
-            //         executor.gpu_specs.len(),
-            //         executor.gpu_specs[0].name,
-            //         executor.gpu_specs[0].memory_gb
+            //         node.gpu_specs.len(),
+            //         node.gpu_specs[0].name,
+            //         node.gpu_specs[0].memory_gb
             //     )
             // };
 
-            ExecutorRow {
-                id: executor.id.clone(),
+            NodeRow {
+                id: node.id.clone(),
                 // gpus: gpu_info,
-                // cpu: format!("{} cores", executor.cpu_specs.cores),
-                // memory: format!("{}GB", executor.cpu_specs.memory_gb),
-                location: executor
+                // cpu: format!("{} cores", node.cpu_specs.cores),
+                // memory: format!("{}GB", node.cpu_specs.memory_gb),
+                location: node
                     .location
                     .clone()
                     .unwrap_or_else(|| "Unknown".to_string()),
@@ -81,8 +81,8 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
         rental_id: String,
         #[tabled(rename = "Status")]
         status: String,
-        #[tabled(rename = "Executor")]
-        executor: String,
+        #[tabled(rename = "Node")]
+        node: String,
         #[tabled(rename = "Created")]
         created: String,
     }
@@ -92,7 +92,7 @@ pub fn display_rentals(rentals: &[RentalStatusResponse]) -> Result<()> {
         .map(|rental| RentalRow {
             rental_id: rental.rental_id.clone(),
             status: format!("{:?}", rental.status),
-            executor: rental.executor.id.clone(),
+            node: rental.node.id.clone(),
             created: rental.created_at.format("%y-%m-%d %H:%M:%S").to_string(),
         })
         .collect();
@@ -116,14 +116,16 @@ pub fn display_rental_items(
         struct DetailedRentalRowWithIds {
             #[tabled(rename = "RENTAL ID")]
             rental_id: String,
-            #[tabled(rename = "EXECUTOR ID")]
-            executor_id: String,
+            #[tabled(rename = "NODE ID")]
+            node_id: String,
             #[tabled(rename = "GPU")]
             gpu: String,
             #[tabled(rename = "State")]
             state: String,
             #[tabled(rename = "SSH")]
             ssh: String,
+            #[tabled(rename = "Ports (Host → Container)")]
+            ports: String,
             #[tabled(rename = "Image")]
             image: String,
             #[tabled(rename = "CPU")]
@@ -139,12 +141,12 @@ pub fn display_rental_items(
         let rows: Vec<DetailedRentalRowWithIds> = rentals
             .iter()
             .map(|rental| {
-                // Extract the executor ID (remove miner prefix if present)
-                let executor_id = rental
-                    .executor_id
+                // Extract the node ID (remove miner prefix if present)
+                let node_id = rental
+                    .node_id
                     .split_once("__")
                     .map(|(_, id)| id)
-                    .unwrap_or(&rental.executor_id)
+                    .unwrap_or(&rental.node_id)
                     .to_string();
 
                 // Format GPU info from specs
@@ -175,12 +177,16 @@ pub fn display_rental_items(
                 // Format SSH availability
                 let ssh = if rental.has_ssh { "✓" } else { "✗" };
 
+                // Format port mappings (show all ports in detailed view)
+                let ports = format_port_mappings(&rental.port_mappings, None);
+
                 DetailedRentalRowWithIds {
                     rental_id: rental.rental_id.clone(),
-                    executor_id,
+                    node_id,
                     gpu,
                     state: rental.state.to_string(),
                     ssh: ssh.to_string(),
+                    ports,
                     image: rental.container_image.clone(),
                     cpu,
                     ram,
@@ -203,6 +209,8 @@ pub fn display_rental_items(
             state: String,
             #[tabled(rename = "SSH")]
             ssh: String,
+            #[tabled(rename = "Ports (Host → Container)")]
+            ports: String,
             #[tabled(rename = "Image")]
             image: String,
             #[tabled(rename = "CPU")]
@@ -246,10 +254,14 @@ pub fn display_rental_items(
                 // Format SSH availability
                 let ssh = if rental.has_ssh { "✓" } else { "✗" };
 
+                // Format port mappings (show up to 2-3 ports)
+                let ports = format_port_mappings(&rental.port_mappings, Some(2));
+
                 DetailedRentalRow {
                     gpu,
                     state: rental.state.to_string(),
                     ssh: ssh.to_string(),
+                    ports,
                     image: rental.container_image.clone(),
                     cpu,
                     ram,
@@ -300,6 +312,32 @@ pub fn display_rental_items(
     }
 
     Ok(())
+}
+
+/// Helper function to format port mappings
+fn format_port_mappings(
+    port_mappings: &Option<Vec<basilica_validator::rental::PortMapping>>,
+    max_count: Option<usize>,
+) -> String {
+    match port_mappings {
+        None => "-".to_string(),
+        Some(ports) if ports.is_empty() => "-".to_string(),
+        Some(ports) => {
+            let formatted_ports: Vec<String> = ports
+                .iter()
+                .map(|p| format!("{}→{}", p.host_port, p.container_port))
+                .collect();
+
+            match max_count {
+                Some(max) if formatted_ports.len() > max => {
+                    let shown = &formatted_ports[..max];
+                    let remaining = formatted_ports.len() - max;
+                    format!("{}, +{} more", shown.join(", "), remaining)
+                }
+                _ => formatted_ports.join(", "),
+            }
+        }
+    }
 }
 
 /// Helper function to format GPU info
@@ -371,21 +409,20 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
     Ok(())
 }
 
-/// Display available executors in compact format (grouped by location and GPU type)
-pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> Result<()> {
-    if executors.is_empty() {
-        println!("No available executors found matching the specified criteria.");
+/// Display available nodes in compact format (grouped by location and GPU type)
+pub fn display_available_nodes_compact(nodes: &[AvailableNode]) -> Result<()> {
+    if nodes.is_empty() {
+        println!("No available nodes found matching the specified criteria.");
         return Ok(());
     }
 
-    // Group executors by country (extracted from location) and GPU configuration
-    let mut country_groups: HashMap<String, HashMap<String, Vec<&AvailableExecutor>>> =
-        HashMap::new();
+    // Group nodes by country (extracted from location) and GPU configuration
+    let mut country_groups: HashMap<String, HashMap<String, Vec<&AvailableNode>>> = HashMap::new();
 
-    for executor in executors {
+    for node in nodes {
         // Parse location string using LocationProfile to extract country
-        let country = executor
-            .executor
+        let country = node
+            .node
             .location
             .as_ref()
             .and_then(|loc| {
@@ -395,12 +432,12 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
             })
             .unwrap_or_else(|| "Unknown".to_string());
 
-        let gpu_key = if executor.executor.gpu_specs.is_empty() {
+        let gpu_key = if node.node.gpu_specs.is_empty() {
             "No GPU".to_string()
         } else {
-            let gpu = &executor.executor.gpu_specs[0];
+            let gpu = &node.node.gpu_specs[0];
             let category = GpuCategory::from_str(&gpu.name).unwrap();
-            let gpu_count = executor.executor.gpu_specs.len();
+            let gpu_count = node.node.gpu_specs.len();
             format!("{}x {}", gpu_count, category)
         };
 
@@ -409,7 +446,7 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
             .or_default()
             .entry(gpu_key)
             .or_default()
-            .push(executor);
+            .push(node);
     }
 
     // Sort countries for consistent display
@@ -439,8 +476,8 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
         sorted_gpu_configs.sort();
 
         for gpu_config in sorted_gpu_configs {
-            let executors_in_group = gpu_groups.get(&gpu_config).unwrap();
-            let count = executors_in_group.len();
+            let nodes_in_group = gpu_groups.get(&gpu_config).unwrap();
+            let count = nodes_in_group.len();
 
             rows.push(CompactRow {
                 gpu_type: gpu_config.clone(),
@@ -454,8 +491,8 @@ pub fn display_available_executors_compact(executors: &[AvailableExecutor]) -> R
         println!();
     }
 
-    let total_count = executors.len();
-    println!("Total available executors: {}", total_count);
+    let total_count = nodes.len();
+    println!("Total available nodes: {}", total_count);
 
     Ok(())
 }
@@ -491,13 +528,13 @@ pub fn display_api_keys(keys: &[ApiKeyInfo]) -> Result<()> {
     Ok(())
 }
 
-/// Helper function to format GPU info for an executor
-fn format_executor_gpu_info(executor: &AvailableExecutor, show_full_gpu_names: bool) -> String {
-    if executor.executor.gpu_specs.is_empty() {
+/// Helper function to format GPU info for an node
+fn format_node_gpu_info(node: &AvailableNode, show_full_gpu_names: bool) -> String {
+    if node.node.gpu_specs.is_empty() {
         "No GPU".to_string()
-    } else if executor.executor.gpu_specs.len() == 1 {
+    } else if node.node.gpu_specs.len() == 1 {
         // Single GPU
-        let gpu = &executor.executor.gpu_specs[0];
+        let gpu = &node.node.gpu_specs[0];
         let gpu_display_name = if show_full_gpu_names {
             gpu.name.clone()
         } else {
@@ -506,9 +543,9 @@ fn format_executor_gpu_info(executor: &AvailableExecutor, show_full_gpu_names: b
         format!("1x {}", gpu_display_name)
     } else {
         // Multiple GPUs - check if they're all the same model
-        let first_gpu = &executor.executor.gpu_specs[0];
-        let all_same = executor
-            .executor
+        let first_gpu = &node.node.gpu_specs[0];
+        let all_same = node
+            .node
             .gpu_specs
             .iter()
             .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
@@ -520,15 +557,11 @@ fn format_executor_gpu_info(executor: &AvailableExecutor, show_full_gpu_names: b
             } else {
                 GpuCategory::from_str(&first_gpu.name).unwrap().to_string()
             };
-            format!(
-                "{}x {}",
-                executor.executor.gpu_specs.len(),
-                gpu_display_name
-            )
+            format!("{}x {}", node.node.gpu_specs.len(), gpu_display_name)
         } else {
             // Different GPU models - list them individually
-            let gpu_names: Vec<String> = executor
-                .executor
+            let gpu_names: Vec<String> = node
+                .node
                 .gpu_specs
                 .iter()
                 .map(|g| {
@@ -545,7 +578,7 @@ fn format_executor_gpu_info(executor: &AvailableExecutor, show_full_gpu_names: b
 }
 
 /// Helper function to format location
-fn format_executor_location(location: &Option<String>) -> String {
+fn format_node_location(location: &Option<String>) -> String {
     location
         .as_ref()
         .map(|loc| {
@@ -557,23 +590,23 @@ fn format_executor_location(location: &Option<String>) -> String {
         .unwrap_or_else(|| "Unknown".to_string())
 }
 
-/// Display available executors in detailed format (individual executors)
-pub fn display_available_executors_detailed(
-    executors: &[AvailableExecutor],
+/// Display available nodes in detailed format (individual nodes)
+pub fn display_available_nodes_detailed(
+    nodes: &[AvailableNode],
     show_full_gpu_names: bool,
     show_ids: bool,
 ) -> Result<()> {
-    if executors.is_empty() {
-        println!("No available executors found matching the specified criteria.");
+    if nodes.is_empty() {
+        println!("No available nodes found matching the specified criteria.");
         return Ok(());
     }
 
     // Different structs based on whether we show IDs
     if show_ids {
         #[derive(Tabled)]
-        struct DetailedExecutorRowWithId {
-            #[tabled(rename = "EXECUTOR ID")]
-            executor_id: String,
+        struct DetailedNodeRowWithId {
+            #[tabled(rename = "NODE ID")]
+            node_id: String,
             #[tabled(rename = "GPU")]
             gpu_info: String,
             #[tabled(rename = "CPU")]
@@ -584,27 +617,27 @@ pub fn display_available_executors_detailed(
             location: String,
         }
 
-        let rows: Vec<DetailedExecutorRowWithId> = executors
+        let rows: Vec<DetailedNodeRowWithId> = nodes
             .iter()
-            .map(|executor| {
-                // Extract the executor ID (remove miner prefix if present)
-                let executor_id = executor
-                    .executor
+            .map(|node| {
+                // Extract the node ID (remove miner prefix if present)
+                let node_id = node
+                    .node
                     .id
                     .split_once("__")
                     .map(|(_, id)| id)
-                    .unwrap_or(&executor.executor.id)
+                    .unwrap_or(&node.node.id)
                     .to_string();
 
-                DetailedExecutorRowWithId {
-                    executor_id,
-                    gpu_info: format_executor_gpu_info(executor, show_full_gpu_names),
+                DetailedNodeRowWithId {
+                    node_id,
+                    gpu_info: format_node_gpu_info(node, show_full_gpu_names),
                     cpu: format!(
                         "{} ({} cores)",
-                        executor.executor.cpu_specs.model, executor.executor.cpu_specs.cores
+                        node.node.cpu_specs.model, node.node.cpu_specs.cores
                     ),
-                    ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
-                    location: format_executor_location(&executor.executor.location),
+                    ram: format!("{}GB", node.node.cpu_specs.memory_gb),
+                    location: format_node_location(&node.node.location),
                 }
             })
             .collect();
@@ -614,7 +647,7 @@ pub fn display_available_executors_detailed(
         println!("{}", table);
     } else {
         #[derive(Tabled)]
-        struct DetailedExecutorRow {
+        struct DetailedNodeRow {
             #[tabled(rename = "GPU")]
             gpu_info: String,
             #[tabled(rename = "CPU")]
@@ -625,16 +658,16 @@ pub fn display_available_executors_detailed(
             location: String,
         }
 
-        let rows: Vec<DetailedExecutorRow> = executors
+        let rows: Vec<DetailedNodeRow> = nodes
             .iter()
-            .map(|executor| DetailedExecutorRow {
-                gpu_info: format_executor_gpu_info(executor, show_full_gpu_names),
+            .map(|node| DetailedNodeRow {
+                gpu_info: format_node_gpu_info(node, show_full_gpu_names),
                 cpu: format!(
                     "{} ({} cores)",
-                    executor.executor.cpu_specs.model, executor.executor.cpu_specs.cores
+                    node.node.cpu_specs.model, node.node.cpu_specs.cores
                 ),
-                ram: format!("{}GB", executor.executor.cpu_specs.memory_gb),
-                location: format_executor_location(&executor.executor.location),
+                ram: format!("{}GB", node.node.cpu_specs.memory_gb),
+                location: format_node_location(&node.node.location),
             })
             .collect();
 
@@ -643,7 +676,7 @@ pub fn display_available_executors_detailed(
         println!("{}", table);
     }
 
-    println!("\nTotal available executors: {}", executors.len());
+    println!("\nTotal available nodes: {}", nodes.len());
 
     Ok(())
 }

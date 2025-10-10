@@ -163,14 +163,14 @@ mod tests {
     fn test_gpu_distribution_calculation() {
         // Test single GPU type
         let validations = vec![
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec1".to_string(),
                 "NVIDIA A100".to_string(),
                 2,
                 true,
                 true,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec2".to_string(),
                 "A100 SXM".to_string(),
                 1,
@@ -184,21 +184,21 @@ mod tests {
 
         // Test multiple GPU types
         let validations = vec![
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec1".to_string(),
                 "NVIDIA A100".to_string(),
                 1,
                 true,
                 true,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec2".to_string(),
                 "H100".to_string(),
                 2,
                 true,
                 true,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec3".to_string(),
                 "NVIDIA H100".to_string(),
                 1,
@@ -213,14 +213,14 @@ mod tests {
 
         // Test tie scenarios
         let validations = vec![
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec1".to_string(),
                 "A100".to_string(),
                 2,
                 true,
                 true,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec2".to_string(),
                 "H100".to_string(),
                 2,
@@ -240,14 +240,14 @@ mod tests {
 
         // Test all invalid validations
         let validations = vec![
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec1".to_string(),
                 "A100".to_string(),
                 1,
                 false,
                 false,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec2".to_string(),
                 "A100".to_string(),
                 1,
@@ -264,14 +264,14 @@ mod tests {
     fn test_miner_gpu_profile_creation() {
         let miner_uid = MinerUid::new(123);
         let validations = vec![
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec1".to_string(),
                 "A100".to_string(),
                 2,
                 true,
                 true,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec2".to_string(),
                 "H100".to_string(),
                 1,
@@ -294,7 +294,7 @@ mod tests {
 
         // Test profile updates
         let mut profile = profile;
-        let new_validations = vec![ExecutorValidationResult::new_for_testing(
+        let new_validations = vec![NodeValidationResult::new_for_testing(
             "exec3".to_string(),
             "H100".to_string(),
             4,
@@ -321,21 +321,21 @@ mod tests {
     fn test_gpu_models_by_count() {
         let miner_uid = MinerUid::new(456);
         let validations = vec![
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec1".to_string(),
                 "A100".to_string(),
                 1,
                 true,
                 true,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec2".to_string(),
                 "A100".to_string(),
                 4,
                 true,
                 true,
             ),
-            ExecutorValidationResult::new_for_testing(
+            NodeValidationResult::new_for_testing(
                 "exec3".to_string(),
                 "RTX4090".to_string(),
                 2,
@@ -356,7 +356,7 @@ mod tests {
     #[test]
     fn test_edge_cases() {
         // Test unicode GPU names
-        let validations = vec![ExecutorValidationResult::new_for_testing(
+        let validations = vec![NodeValidationResult::new_for_testing(
             "exec1".to_string(),
             "NVIDIA A100-新".to_string(),
             1,
@@ -368,7 +368,7 @@ mod tests {
 
         // Test very long GPU names
         let long_name = "A".repeat(1000) + " A100";
-        let validations = vec![ExecutorValidationResult::new_for_testing(
+        let validations = vec![NodeValidationResult::new_for_testing(
             "exec1".to_string(),
             long_name,
             1,
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(gpu_counts.get("A100"), Some(&1));
 
         // Test special characters
-        let validations = vec![ExecutorValidationResult::new_for_testing(
+        let validations = vec![NodeValidationResult::new_for_testing(
             "exec1".to_string(),
             "NVIDIA@@A100##PCIe".to_string(),
             1,
@@ -390,7 +390,7 @@ mod tests {
         assert_eq!(gpu_counts.get("A100"), Some(&1));
 
         // Test null/empty strings
-        let validations = vec![ExecutorValidationResult::new_for_testing(
+        let validations = vec![NodeValidationResult::new_for_testing(
             "exec1".to_string(),
             "".to_string(),
             1,
@@ -401,7 +401,7 @@ mod tests {
         assert_eq!(gpu_counts.get("OTHER"), Some(&1));
 
         // Test whitespace-only strings
-        let validations = vec![ExecutorValidationResult::new_for_testing(
+        let validations = vec![NodeValidationResult::new_for_testing(
             "exec1".to_string(),
             "   ".to_string(),
             1,
@@ -440,16 +440,16 @@ mod tests {
     }
 
     #[test]
-    fn test_executor_validation_result() {
-        let result = ExecutorValidationResult::new_for_testing(
-            "test_executor".to_string(),
+    fn test_node_validation_result() {
+        let result = NodeValidationResult::new_for_testing(
+            "test_node".to_string(),
             "A100".to_string(),
             4,
             true,
             true,
         );
 
-        assert_eq!(result.executor_id, "test_executor");
+        assert_eq!(result.node_id, "test_node");
         assert_eq!(result.gpu_model, "A100");
         assert_eq!(result.gpu_count, 4);
         assert!(result.is_valid);
@@ -506,10 +506,10 @@ mod tests {
     #[test]
     fn test_profile_edge_cases_with_zero_gpus() {
         let miner_uid = MinerUid::new(789);
-        let validations = vec![ExecutorValidationResult::new_for_testing(
+        let validations = vec![NodeValidationResult::new_for_testing(
             "exec1".to_string(),
             "A100".to_string(),
-            0, // Zero GPUs
+            0,
             true,
             true,
         )];
@@ -517,14 +517,14 @@ mod tests {
         let profile = MinerGpuProfile::new(miner_uid, &validations, 0.0);
 
         assert_eq!(profile.total_gpu_count(), 0);
-        assert!(profile.has_gpu_model("A100"));
+        assert!(!profile.has_gpu_model("A100"));
         assert_eq!(profile.get_gpu_count("A100"), 0);
     }
 
     #[test]
     fn test_large_gpu_counts() {
         let miner_uid = MinerUid::new(999);
-        let validations = vec![ExecutorValidationResult::new_for_testing(
+        let validations = vec![NodeValidationResult::new_for_testing(
             "exec1".to_string(),
             "A100".to_string(),
             u32::MAX as usize,

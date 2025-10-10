@@ -1,12 +1,12 @@
 use anyhow::Result;
 use basilica_miner::config::{
-    AuthConfig, BittensorConfig, ExecutorConfig, ExecutorManagementConfig, MinerConfig,
+    AuthConfig, BittensorConfig, NodeConfig, NodeManagementConfig, MinerConfig,
     RateLimitConfig, SecurityConfig, ValidatorCommsConfig,
 };
 use basilica_miner::{MinerService, ServiceManager};
 use basilica_protocol::basilica::basilica_miner::v1::{
     miner_service_client::MinerServiceClient, AuthenticateRequest, GrantSshAccessRequest,
-    ListExecutorsRequest,
+    ListNodesRequest,
 };
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -17,7 +17,7 @@ use tokio::time::{sleep, timeout};
 use tonic::transport::Channel;
 
 #[tokio::test]
-async fn test_complete_validator_miner_executor_workflow() -> Result<()> {
+async fn test_complete_validator_miner_node_workflow() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -26,16 +26,16 @@ async fn test_complete_validator_miner_executor_workflow() -> Result<()> {
     let pool = SqlitePool::connect(&db_url).await?;
     sqlx::migrate!("../../migrations").run(&pool).await?;
 
-    // Configure miner with test executors
-    let executors = vec![
-        ExecutorConfig {
-            id: "test-executor-1".to_string(),
-            name: "Test Executor 1".to_string(),
+    // Configure miner with test nodes
+    let nodes = vec![
+        NodeConfig {
+            id: "test-node-1".to_string(),
+            name: "Test Node 1".to_string(),
             grpc_address: "127.0.0.1:60001".to_string(),
         },
-        ExecutorConfig {
-            id: "test-executor-2".to_string(),
-            name: "Test Executor 2".to_string(),
+        NodeConfig {
+            id: "test-node-2".to_string(),
+            name: "Test Node 2".to_string(),
             grpc_address: "127.0.0.1:60002".to_string(),
         },
     ];
@@ -66,33 +66,21 @@ async fn test_complete_validator_miner_executor_workflow() -> Result<()> {
             tls_enabled: false,
             request_timeout: Duration::from_secs(30),
         },
-        executor_management: ExecutorManagementConfig {
-            executors,
+        node_management: NodeManagementConfig {
+            nodes,
             health_check_interval: Duration::from_secs(300),
             health_check_timeout: Duration::from_secs(10),
             max_retry_attempts: 3,
             auto_recovery: true,
         },
         validator_comms: ValidatorCommsConfig {
-            max_concurrent_sessions: 10,
-            session_timeout: Duration::from_secs(3600),
-            auth: AuthConfig {
-                enabled: true,
-                method: "bittensor_signature".to_string(),
-            },
+            host: "0.0.0.0".to_string(),
+            port: 50051,
             request_timeout: Duration::from_secs(30),
-            rate_limit: RateLimitConfig {
-                enabled: true,
-                requests_per_second: 100,
-                burst_capacity: 200,
-            },
         },
         security: SecurityConfig {
-            enable_mtls: false,
-            jwt_secret: "test-secret-key-for-e2e-testing".to_string(),
-            allowed_validators: vec![],
             verify_signatures: false, // Disable for E2E test
-            token_expiration: Duration::from_secs(3600),
+            ..Default::default()
         },
         ..Default::default()
     };
@@ -127,8 +115,8 @@ async fn test_complete_validator_miner_executor_workflow() -> Result<()> {
     let session_token = auth_response.into_inner().session_token;
     assert!(!session_token.is_empty(), "Should receive session token");
 
-    // Step 2: List available executors
-    let mut list_request = tonic::Request::new(ListExecutorsRequest {
+    // Step 2: List available nodes
+    let mut list_request = tonic::Request::new(ListNodesRequest {
         include_unhealthy: true,
         limit: 100,
     });
@@ -137,16 +125,16 @@ async fn test_complete_validator_miner_executor_workflow() -> Result<()> {
         format!("Bearer {}", session_token).parse()?,
     );
 
-    let list_response = client.list_executors(list_request).await?;
-    let executors = list_response.into_inner().executors;
+    let list_response = client.list_nodes(list_request).await?;
+    let nodes = list_response.into_inner().nodes;
 
-    assert_eq!(executors.len(), 2, "Should have 2 executors");
-    assert!(executors.iter().any(|e| e.id == "test-executor-1"));
-    assert!(executors.iter().any(|e| e.id == "test-executor-2"));
+    assert_eq!(nodes.len(), 2, "Should have 2 nodes");
+    assert!(nodes.iter().any(|e| e.id == "test-node-1"));
+    assert!(nodes.iter().any(|e| e.id == "test-node-2"));
 
-    // Step 3: Request SSH access to an executor
+    // Step 3: Request SSH access to an node
     let mut ssh_request = tonic::Request::new(GrantSshAccessRequest {
-        executor_id: "test-executor-1".to_string(),
+        node_id: "test-node-1".to_string(),
         validator_hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
         ssh_public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKeyForE2E test@e2e.com"
             .to_string(),
@@ -160,18 +148,18 @@ async fn test_complete_validator_miner_executor_workflow() -> Result<()> {
 
     let ssh_response = client.grant_ssh_access(ssh_request).await;
 
-    // SSH grant might fail without real executor, but structure should work
+    // SSH grant might fail without real node, but structure should work
     match ssh_response {
         Ok(response) => {
             let grant = response.into_inner();
             assert!(!grant.access_token.is_empty(), "Should have access token");
-            assert_eq!(grant.executor_id, "test-executor-1");
+            assert_eq!(grant.node_id, "test-node-1");
         }
         Err(status) => {
-            // Expected if executor not actually running
+            // Expected if node not actually running
             assert!(
                 status.code() == tonic::Code::NotFound || status.code() == tonic::Code::Internal,
-                "Expected executor-related error, got: {:?}",
+                "Expected node-related error, got: {:?}",
                 status
             );
         }
@@ -216,25 +204,13 @@ async fn test_concurrent_validator_sessions() -> Result<()> {
             request_timeout: Duration::from_secs(30),
         },
         validator_comms: ValidatorCommsConfig {
-            max_concurrent_sessions: 5, // Low limit for testing
-            session_timeout: Duration::from_secs(3600),
-            auth: AuthConfig {
-                enabled: true,
-                method: "bittensor_signature".to_string(),
-            },
+            host: "0.0.0.0".to_string(),
+            port: miner_addr.port(),
             request_timeout: Duration::from_secs(30),
-            rate_limit: RateLimitConfig {
-                enabled: false, // Disable for concurrent test
-                requests_per_second: 100,
-                burst_capacity: 200,
-            },
         },
         security: SecurityConfig {
-            enable_mtls: false,
-            jwt_secret: "test-secret".to_string(),
-            allowed_validators: vec![],
             verify_signatures: false,
-            token_expiration: Duration::from_secs(3600),
+            ..Default::default()
         },
         ..Default::default()
     };
@@ -290,7 +266,7 @@ async fn test_concurrent_validator_sessions() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_executor_failover_scenario() -> Result<()> {
+async fn test_node_failover_scenario() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -298,23 +274,23 @@ async fn test_executor_failover_scenario() -> Result<()> {
     let pool = SqlitePool::connect(&db_url).await?;
     sqlx::migrate!("../../migrations").run(&pool).await?;
 
-    // Configure with multiple executors
-    let executors = vec![
-        ExecutorConfig {
-            id: "primary-executor".to_string(),
-            name: "Primary Executor".to_string(),
+    // Configure with multiple nodes
+    let nodes = vec![
+        NodeConfig {
+            id: "primary-node".to_string(),
+            name: "Primary Node".to_string(),
             grpc_address: "127.0.0.1:60001".to_string(),
         },
-        ExecutorConfig {
-            id: "backup-executor".to_string(),
-            name: "Backup Executor".to_string(),
+        NodeConfig {
+            id: "backup-node".to_string(),
+            name: "Backup Node".to_string(),
             grpc_address: "127.0.0.1:60002".to_string(),
         },
     ];
 
     let config = MinerConfig {
-        executor_management: ExecutorManagementConfig {
-            executors,
+        node_management: NodeManagementConfig {
+            nodes,
             health_check_interval: Duration::from_secs(1), // Fast for testing
             health_check_timeout: Duration::from_secs(1),
             max_retry_attempts: 2,
@@ -328,14 +304,14 @@ async fn test_executor_failover_scenario() -> Result<()> {
     // Mark primary as unhealthy
     sqlx::query!(
         r#"
-        INSERT INTO executors (id, name, grpc_address, is_healthy, last_health_check, failure_count)
+        INSERT INTO nodes (id, name, grpc_address, is_healthy, last_health_check, failure_count)
         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         ON CONFLICT(id) DO UPDATE SET
             is_healthy = excluded.is_healthy,
             failure_count = excluded.failure_count
         "#,
-        "primary-executor",
-        "Primary Executor",
+        "primary-node",
+        "Primary Node",
         "127.0.0.1:60001",
         false,
         chrono::Utc::now(),
@@ -347,13 +323,13 @@ async fn test_executor_failover_scenario() -> Result<()> {
     // Mark backup as healthy
     sqlx::query!(
         r#"
-        INSERT INTO executors (id, name, grpc_address, is_healthy, last_health_check)
+        INSERT INTO nodes (id, name, grpc_address, is_healthy, last_health_check)
         VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(id) DO UPDATE SET
             is_healthy = excluded.is_healthy
         "#,
-        "backup-executor",
-        "Backup Executor",
+        "backup-node",
+        "Backup Node",
         "127.0.0.1:60002",
         true,
         chrono::Utc::now()
@@ -361,29 +337,29 @@ async fn test_executor_failover_scenario() -> Result<()> {
     .execute(&pool)
     .await?;
 
-    // Request healthy executors
-    let healthy_executors = service.get_healthy_executors().await?;
+    // Request healthy nodes
+    let healthy_nodes = service.get_healthy_nodes().await?;
 
     assert_eq!(
-        healthy_executors.len(),
+        healthy_nodes.len(),
         1,
-        "Should have one healthy executor"
+        "Should have one healthy node"
     );
     assert_eq!(
-        healthy_executors[0].id, "backup-executor",
+        healthy_nodes[0].id, "backup-node",
         "Backup should be available"
     );
 
     // Simulate recovery of primary
     service
-        .attempt_executor_recovery("primary-executor")
+        .attempt_node_recovery("primary-node")
         .await
         .ok();
 
     // Check recovery was attempted
     let primary_status = sqlx::query!(
-        "SELECT recovery_attempts FROM executors WHERE id = ?",
-        "primary-executor"
+        "SELECT recovery_attempts FROM nodes WHERE id = ?",
+        "primary-node"
     )
     .fetch_one(&pool)
     .await?;
@@ -419,7 +395,7 @@ async fn test_audit_logging() -> Result<()> {
         .await?;
 
     service
-        .log_validator_interaction("test-validator-2", "list_executors", true, None)
+        .log_validator_interaction("test-validator-2", "list_nodes", true, None)
         .await?;
 
     service
@@ -427,7 +403,7 @@ async fn test_audit_logging() -> Result<()> {
             "test-validator-1",
             "grant_ssh_access",
             false,
-            Some("Executor not found".to_string()),
+            Some("Node not found".to_string()),
         )
         .await?;
 

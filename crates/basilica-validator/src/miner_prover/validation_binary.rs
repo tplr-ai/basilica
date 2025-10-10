@@ -3,7 +3,7 @@
 //! Handles the execution and parsing of validator binary outputs for hardware attestation.
 
 use super::types::{
-    BinaryCpuInfo, BinaryMemoryInfo, BinaryNetworkInfo, CompressedMatrix, ExecutorResult, GpuInfo,
+    BinaryCpuInfo, BinaryMemoryInfo, BinaryNetworkInfo, CompressedMatrix, GpuInfo, NodeResult,
     SmUtilizationStats, ValidatorBinaryOutput,
 };
 use anyhow::{Context, Result};
@@ -565,7 +565,7 @@ impl ValidationServerClient {
     }
 }
 
-/// Binary validation executor for running and parsing validator binaries
+/// Binary validation node for running and parsing validator binaries
 pub struct BinaryValidator {
     server_manager: Option<Arc<ValidationServerManager>>,
     server_client: Option<Arc<ValidationServerClient>>,
@@ -727,13 +727,13 @@ impl BinaryValidator {
     /// Parse validator binary output
     pub fn parse_validator_binary_output(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         output: &[u8],
     ) -> Result<ValidatorBinaryOutput> {
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[EVAL_FLOW] Parsing validator binary output ({} bytes)",
             output.len()
         );
@@ -741,7 +741,7 @@ impl BinaryValidator {
         if output.is_empty() {
             error!(
                 miner_uid = miner_uid,
-                executor_id = executor_id,
+                node_id = node_id,
                 "[EVAL_FLOW] Validator binary output is empty - this indicates a capture problem"
             );
             return Err(anyhow::anyhow!(
@@ -753,13 +753,13 @@ impl BinaryValidator {
 
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[EVAL_FLOW] Parsing validator binary output ({} bytes)",
             output.len()
         );
         debug!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[EVAL_FLOW] Raw output: {}",
             output_str
         );
@@ -771,7 +771,7 @@ impl BinaryValidator {
         {
             error!(
                 miner_uid = miner_uid,
-                executor_id = executor_id,
+                node_id = node_id,
                 "[EVAL_FLOW] Validator binary output does not appear to contain expected content"
             );
             return Err(anyhow::anyhow!(
@@ -786,13 +786,13 @@ impl BinaryValidator {
             Err(e) => {
                 error!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[EVAL_FLOW] Failed to extract JSON from validator output: {}",
                     e
                 );
                 error!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[EVAL_FLOW] Raw output for debugging: {}",
                     output_str.chars().take(1000).collect::<String>()
                 );
@@ -803,63 +803,63 @@ impl BinaryValidator {
         // Parse raw JSON and convert to expected format
         let parsed_output = self.parse_and_convert_validator_output(&json_str)?;
 
-        debug!(miner_uid = miner_uid, executor_id = executor_id,
+        debug!(miner_uid = miner_uid, node_id = node_id,
             "[EVAL_FLOW] Successfully parsed binary output - success: {}, execution_time: {}ms, validation_score: {:.3}",
             parsed_output.success, parsed_output.execution_time_ms, parsed_output.validation_score);
 
-        if let Some(ref executor_result) = parsed_output.executor_result {
-            debug!(miner_uid = miner_uid, executor_id = executor_id,
-                "[EVAL_FLOW] Executor hardware details - CPU cores: {}, Memory: {:.1}GB, Network interfaces: {}",
-                executor_result.cpu_info.cores, executor_result.memory_info.total_gb,
-                  executor_result.network_info.interfaces.len());
+        if let Some(ref node_result) = parsed_output.node_result {
+            debug!(miner_uid = miner_uid, node_id = node_id,
+                "[EVAL_FLOW] Node hardware details - CPU cores: {}, Memory: {:.1}GB, Network interfaces: {}",
+                node_result.cpu_info.cores, node_result.memory_info.total_gb,
+                  node_result.network_info.interfaces.len());
 
-            if !executor_result.gpu_name.is_empty() {
-                info!(miner_uid = miner_uid, executor_id = executor_id,
+            if !node_result.gpu_name.is_empty() {
+                info!(miner_uid = miner_uid, node_id = node_id,
                     "[EVAL_FLOW] GPU Details: {} (UUID: {}), SMs: {}/{}, Memory bandwidth: {:.1} GB/s Memory: {:.1} GB",
-                    executor_result.gpu_name, executor_result.gpu_uuid,
-                    executor_result.active_sms, executor_result.total_sms,
-                    executor_result.memory_bandwidth_gbps,
-                    executor_result.gpu_infos.iter().map(|g| g.gpu_memory_gb).sum::<f64>()
+                    node_result.gpu_name, node_result.gpu_uuid,
+                    node_result.active_sms, node_result.total_sms,
+                    node_result.memory_bandwidth_gbps,
+                    node_result.gpu_infos.iter().map(|g| g.gpu_memory_gb).sum::<f64>()
                 );
             } else {
                 warn!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
-                    "[EVAL_FLOW] No GPU information found in executor result"
+                    node_id = node_id,
+                    "[EVAL_FLOW] No GPU information found in node result"
                 );
             }
 
-            info!(miner_uid = miner_uid, executor_id = executor_id,
+            info!(miner_uid = miner_uid, node_id = node_id,
                 "[EVAL_FLOW] Binary validation metrics - Matrix computation: {:.2}ms, SM utilization: max={:.1}%, avg={:.1}%",
-                executor_result.computation_time_ns as f64 / 1_000_000.0,
-                  executor_result.sm_utilization.max_utilization,
-                  executor_result.sm_utilization.avg_utilization);
+                node_result.computation_time_ns as f64 / 1_000_000.0,
+                  node_result.sm_utilization.max_utilization,
+                  node_result.sm_utilization.avg_utilization);
         } else {
             warn!(
                 miner_uid = miner_uid,
-                executor_id = executor_id,
-                "[EVAL_FLOW] No executor result found in binary output"
+                node_id = node_id,
+                "[EVAL_FLOW] No node result found in binary output"
             );
         }
 
         if let Some(ref error_msg) = parsed_output.error_message {
             error!(
                 miner_uid = miner_uid,
-                executor_id = executor_id,
+                node_id = node_id,
                 "[EVAL_FLOW] Binary validation error message: {}",
                 error_msg
             );
         }
 
         // Validate structure
-        if parsed_output.success && parsed_output.executor_result.is_none() {
+        if parsed_output.success && parsed_output.node_result.is_none() {
             error!(
                 miner_uid = miner_uid,
-                executor_id = executor_id,
-                "[EVAL_FLOW] Validator binary reported success but no executor result provided"
+                node_id = node_id,
+                "[EVAL_FLOW] Validator binary reported success but no node result provided"
             );
             return Err(anyhow::anyhow!(
-                "Validator binary reported success but no executor result provided"
+                "Validator binary reported success but no node result provided"
             ));
         }
 
@@ -1094,9 +1094,9 @@ impl BinaryValidator {
             0.0
         };
 
-        // Convert GPU results to executor result if available
-        let executor_result = if effective_success {
-            self.convert_gpu_results_to_executor_result(&raw_json)?
+        // Convert GPU results to node result if available
+        let node_result = if effective_success {
+            self.convert_gpu_results_to_node_result(&raw_json)?
         } else {
             None
         };
@@ -1113,12 +1113,12 @@ impl BinaryValidator {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
-        info!("[EVAL_FLOW] Converted to ValidatorBinaryOutput - validation_score: {:.3}, has_executor_result: {}, gpu_count: {}",
-              validation_score, executor_result.is_some(), gpu_count);
+        info!("[EVAL_FLOW] Converted to ValidatorBinaryOutput - validation_score: {:.3}, has_node_result: {}, gpu_count: {}",
+              validation_score, node_result.is_some(), gpu_count);
 
         Ok(ValidatorBinaryOutput {
             success: effective_success, // Use effective_success instead of raw success
-            executor_result,
+            node_result,
             error_message,
             execution_time_ms,
             validation_score,
@@ -1215,11 +1215,11 @@ impl BinaryValidator {
         Ok(average_score)
     }
 
-    /// Convert GPU results to ExecutorResult format
-    pub fn convert_gpu_results_to_executor_result(
+    /// Convert GPU results to NodeResult format
+    pub fn convert_gpu_results_to_node_result(
         &self,
         raw_json: &serde_json::Value,
-    ) -> Result<Option<ExecutorResult>> {
+    ) -> Result<Option<NodeResult>> {
         let gpu_results = raw_json
             .get("gpu_results")
             .and_then(|v| v.as_array())
@@ -1356,7 +1356,7 @@ impl BinaryValidator {
             .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
             .unwrap_or(0);
 
-        let executor_result = ExecutorResult {
+        let node_result = NodeResult {
             gpu_name,
             gpu_uuid,
             gpu_infos,
@@ -1387,15 +1387,15 @@ impl BinaryValidator {
         };
 
         info!(
-            "[EVAL_FLOW] Converted GPU results to ExecutorResult - GPU: {}, bandwidth: {:.1} GB/s, SMs: {}/{}",
-            executor_result.gpu_name, executor_result.memory_bandwidth_gbps,
-            executor_result.active_sms, executor_result.total_sms
+            "[EVAL_FLOW] Converted GPU results to NodeResult - GPU: {}, bandwidth: {:.1} GB/s, SMs: {}/{}",
+            node_result.gpu_name, node_result.memory_bandwidth_gbps,
+            node_result.active_sms, node_result.total_sms
         );
 
-        Ok(Some(executor_result))
+        Ok(Some(node_result))
     }
 
-    /// Calculate binary validation score based on executor result
+    /// Calculate binary validation score based on node result
     pub fn calculate_binary_validation_score(
         &self,
         validation_result: &ValidatorBinaryOutput,
@@ -1407,9 +1407,9 @@ impl BinaryValidator {
             return Ok(0.0);
         }
 
-        let executor_result = validation_result.executor_result.as_ref().ok_or_else(|| {
-            error!("[EVAL_FLOW] No executor result available for scoring");
-            anyhow::anyhow!("No executor result available for scoring")
+        let node_result = validation_result.node_result.as_ref().ok_or_else(|| {
+            error!("[EVAL_FLOW] No node result available for scoring");
+            anyhow::anyhow!("No node result available for scoring")
         })?;
 
         let mut score: f64 = 0.0;
@@ -1424,7 +1424,7 @@ impl BinaryValidator {
         );
 
         // Anti-debug check score
-        if executor_result.anti_debug_passed {
+        if node_result.anti_debug_passed {
             score += 0.2;
             score_breakdown.push(("anti_debug", 0.2));
             info!(
@@ -1439,7 +1439,7 @@ impl BinaryValidator {
         }
 
         // SM utilization score (higher utilization = better score)
-        let avg_utilization = executor_result.sm_utilization.avg_utilization;
+        let avg_utilization = node_result.sm_utilization.avg_utilization;
         let sm_score = if avg_utilization > 0.8 {
             0.2
         } else if avg_utilization > 0.6 {
@@ -1457,7 +1457,7 @@ impl BinaryValidator {
         );
 
         // GPU resource score
-        let gpu_efficiency = executor_result.active_sms as f64 / executor_result.total_sms as f64;
+        let gpu_efficiency = node_result.active_sms as f64 / node_result.total_sms as f64;
         let gpu_score = if gpu_efficiency > 0.9 {
             0.15
         } else if gpu_efficiency > 0.7 {
@@ -1470,16 +1470,16 @@ impl BinaryValidator {
         info!(
             "[EVAL_FLOW] Score component - GPU efficiency ({:.1}%, {}/{}): +{:.3} (total: {:.3})",
             gpu_efficiency * 100.0,
-            executor_result.active_sms,
-            executor_result.total_sms,
+            node_result.active_sms,
+            node_result.total_sms,
             gpu_score,
             score
         );
 
         // Memory bandwidth score
-        let bandwidth_score = if executor_result.memory_bandwidth_gbps > 500.0 {
+        let bandwidth_score = if node_result.memory_bandwidth_gbps > 500.0 {
             0.1
-        } else if executor_result.memory_bandwidth_gbps > 200.0 {
+        } else if node_result.memory_bandwidth_gbps > 200.0 {
             0.05
         } else {
             0.0
@@ -1488,11 +1488,11 @@ impl BinaryValidator {
         score_breakdown.push(("memory_bandwidth", bandwidth_score));
         info!(
             "[EVAL_FLOW] Score component - Memory bandwidth ({:.1} GB/s): +{:.3} (total: {:.3})",
-            executor_result.memory_bandwidth_gbps, bandwidth_score, score
+            node_result.memory_bandwidth_gbps, bandwidth_score, score
         );
 
         // Computation time score (reasonable timing)
-        let computation_time_ms = executor_result.computation_time_ns / 1_000_000;
+        let computation_time_ms = node_result.computation_time_ns / 1_000_000;
         let timing_score = if computation_time_ms > 10 && computation_time_ms < 5000 {
             0.05
         } else {
@@ -1519,15 +1519,14 @@ impl BinaryValidator {
     /// Execute binary validation using validator-binary
     pub async fn execute_binary_validation(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
-        _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         binary_config: &crate::config::BinaryValidationConfig,
     ) -> Result<ValidatorBinaryOutput> {
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             ssh_host = %ssh_details.host,
             ssh_port = ssh_details.port,
             "[EVAL_FLOW] Starting binary validation process"
@@ -1540,7 +1539,7 @@ impl BinaryValidator {
 
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             ssh_host = %ssh_details.host,
             ssh_port = ssh_details.port,
             execution_duration = ?execution_duration,
@@ -1549,14 +1548,14 @@ impl BinaryValidator {
 
         // Parse and validate output
         let validation_result =
-            self.parse_validator_binary_output(executor_id, miner_uid, &binary_output)?;
+            self.parse_validator_binary_output(node_id, miner_uid, &binary_output)?;
 
         // Calculate validation score
         let validation_score = self.calculate_binary_validation_score(&validation_result)?;
 
         Ok(ValidatorBinaryOutput {
             success: validation_result.success,
-            executor_result: validation_result.executor_result,
+            node_result: validation_result.node_result,
             error_message: validation_result.error_message,
             execution_time_ms: execution_duration.as_millis() as u64,
             validation_score,
@@ -1632,25 +1631,18 @@ mod tests {
         assert_eq!(parsed.gpu_count, 1);
         assert!(parsed.validation_score > 0.0);
 
-        let executor_result = parsed.executor_result.expect("Should have executor result");
-        assert_eq!(executor_result.gpu_name, "NVIDIA B200");
-        assert_eq!(
-            executor_result.gpu_uuid,
-            "GPU-12345678901234567890123456789abc"
-        );
-        assert_eq!(executor_result.computation_time_ns, 214282408766);
-        assert_eq!(executor_result.active_sms, 148);
-        assert_eq!(executor_result.total_sms, 148);
-        assert!(executor_result.anti_debug_passed);
-        assert!((executor_result.memory_bandwidth_gbps - 0.7563359043671317).abs() < 0.0001);
-        assert!(
-            (executor_result.sm_utilization.avg_utilization - 0.5703122615814209).abs() < 0.0001
-        );
-        assert!(
-            (executor_result.sm_utilization.max_utilization - 1.0011287927627563).abs() < 0.0001
-        );
-        assert_eq!(executor_result.sm_utilization.min_utilization, 0.0);
-        assert_eq!(executor_result.gpu_infos.len(), 1);
+        let node_result = parsed.node_result.expect("Should have node result");
+        assert_eq!(node_result.gpu_name, "NVIDIA B200");
+        assert_eq!(node_result.gpu_uuid, "GPU-12345678901234567890123456789abc");
+        assert_eq!(node_result.computation_time_ns, 214282408766);
+        assert_eq!(node_result.active_sms, 148);
+        assert_eq!(node_result.total_sms, 148);
+        assert!(node_result.anti_debug_passed);
+        assert!((node_result.memory_bandwidth_gbps - 0.7563359043671317).abs() < 0.0001);
+        assert!((node_result.sm_utilization.avg_utilization - 0.5703122615814209).abs() < 0.0001);
+        assert!((node_result.sm_utilization.max_utilization - 1.0011287927627563).abs() < 0.0001);
+        assert_eq!(node_result.sm_utilization.min_utilization, 0.0);
+        assert_eq!(node_result.gpu_infos.len(), 1);
     }
 
     #[test]
@@ -1661,7 +1653,7 @@ mod tests {
         let mixed_output = r#"
 [INFO] Starting validator binary
 [DEBUG] Connecting to SSH host
-[INFO] Uploading executor binary
+[INFO] Uploading node binary
 [DEBUG] Running GPU validation
 {
   "execution_time_ms": 680536,

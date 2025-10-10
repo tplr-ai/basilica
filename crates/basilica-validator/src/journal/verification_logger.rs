@@ -18,12 +18,12 @@ impl VerificationLogger {
     pub async fn log_verification_started(
         &self,
         verification_id: Uuid,
-        executor_id: &str,
+        node_id: &str,
         verification_type: &str,
     ) {
         let event = VerificationEvent::VerificationStarted {
             verification_id,
-            executor_id: executor_id.to_string(),
+            node_id: node_id.to_string(),
             validator_hotkey: self.validator_hotkey.clone(),
             verification_type: verification_type.to_string(),
             timestamp: Utc::now(),
@@ -32,7 +32,7 @@ impl VerificationLogger {
         tracing::info!(
             event_type = "VALIDATOR_VERIFICATION_STARTED",
             verification_id = %verification_id,
-            executor_id = %executor_id,
+            node_id = %node_id,
             validator_hotkey = %self.validator_hotkey,
             verification_type = %verification_type,
             event_data = ?serde_json::to_string(&event).unwrap_or_default(),
@@ -44,14 +44,14 @@ impl VerificationLogger {
     pub async fn log_verification_completed(
         &self,
         verification_id: Uuid,
-        executor_id: &str,
+        node_id: &str,
         success: bool,
         score: f64,
         duration_ms: i64,
     ) {
         let event = VerificationEvent::VerificationCompleted {
             verification_id,
-            executor_id: executor_id.to_string(),
+            node_id: node_id.to_string(),
             success,
             score,
             duration_ms,
@@ -64,7 +64,7 @@ impl VerificationLogger {
             tracing::info!(
                 event_type = "VALIDATOR_VERIFICATION_COMPLETED",
                 verification_id = %verification_id,
-                executor_id = %executor_id,
+                node_id = %node_id,
                 validator_hotkey = %self.validator_hotkey,
                 status = %status,
                 score = %score,
@@ -76,7 +76,7 @@ impl VerificationLogger {
             tracing::warn!(
                 event_type = "VALIDATOR_VERIFICATION_COMPLETED",
                 verification_id = %verification_id,
-                executor_id = %executor_id,
+                node_id = %node_id,
                 validator_hotkey = %self.validator_hotkey,
                 status = %status,
                 score = %score,
@@ -91,13 +91,13 @@ impl VerificationLogger {
     pub async fn log_challenge_issued(
         &self,
         challenge_id: Uuid,
-        executor_id: &str,
+        node_id: &str,
         challenge_type: &str,
         difficulty_level: i32,
     ) {
         let event = VerificationEvent::ChallengeIssued {
             challenge_id,
-            executor_id: executor_id.to_string(),
+            node_id: node_id.to_string(),
             challenge_type: challenge_type.to_string(),
             difficulty_level,
             timestamp: Utc::now(),
@@ -106,12 +106,12 @@ impl VerificationLogger {
         tracing::info!(
             event_type = "VALIDATOR_CHALLENGE_ISSUED",
             challenge_id = %challenge_id,
-            executor_id = %executor_id,
+            node_id = %node_id,
             validator_hotkey = %self.validator_hotkey,
             challenge_type = %challenge_type,
             difficulty_level = %difficulty_level,
             event_data = ?serde_json::to_string(&event).unwrap_or_default(),
-            "Challenge issued to executor"
+            "Challenge issued to node"
         );
     }
 
@@ -119,14 +119,14 @@ impl VerificationLogger {
     pub async fn log_challenge_completed(
         &self,
         challenge_id: Uuid,
-        executor_id: &str,
+        node_id: &str,
         success: bool,
         score: f64,
         execution_time_ms: Option<i64>,
     ) {
         let event = VerificationEvent::ChallengeCompleted {
             challenge_id,
-            executor_id: executor_id.to_string(),
+            node_id: node_id.to_string(),
             success,
             score,
             execution_time_ms,
@@ -140,7 +140,7 @@ impl VerificationLogger {
             tracing::info!(
                 event_type = "VALIDATOR_CHALLENGE_COMPLETED",
                 challenge_id = %challenge_id,
-                executor_id = %executor_id,
+                node_id = %node_id,
                 validator_hotkey = %self.validator_hotkey,
                 status = %status,
                 score = %score,
@@ -152,7 +152,7 @@ impl VerificationLogger {
             tracing::warn!(
                 event_type = "VALIDATOR_CHALLENGE_COMPLETED",
                 challenge_id = %challenge_id,
-                executor_id = %executor_id,
+                node_id = %node_id,
                 validator_hotkey = %self.validator_hotkey,
                 status = %status,
                 score = %score,
@@ -167,14 +167,14 @@ impl VerificationLogger {
     pub async fn log_environment_validated(
         &self,
         validation_id: Uuid,
-        executor_id: &str,
+        node_id: &str,
         overall_score: f64,
         issues_count: usize,
         warnings_count: usize,
     ) {
         let event = VerificationEvent::EnvironmentValidated {
             validation_id,
-            executor_id: executor_id.to_string(),
+            node_id: node_id.to_string(),
             overall_score,
             issues_count,
             warnings_count,
@@ -187,7 +187,7 @@ impl VerificationLogger {
             tracing::info!(
                 event_type = "VALIDATOR_ENVIRONMENT_VALIDATED",
                 validation_id = %validation_id,
-                executor_id = %executor_id,
+                node_id = %node_id,
                 validator_hotkey = %self.validator_hotkey,
                 overall_score = %overall_score,
                 issues_count = %issues_count,
@@ -199,7 +199,7 @@ impl VerificationLogger {
             tracing::warn!(
                 event_type = "VALIDATOR_ENVIRONMENT_VALIDATED",
                 validation_id = %validation_id,
-                executor_id = %executor_id,
+                node_id = %node_id,
                 validator_hotkey = %self.validator_hotkey,
                 overall_score = %overall_score,
                 issues_count = %issues_count,
@@ -210,34 +210,34 @@ impl VerificationLogger {
         }
     }
 
-    /// Log executor connection failure
-    pub async fn log_executor_connection_failed(&self, executor_id: &str, error_message: &str) {
-        let event = VerificationEvent::ExecutorConnectionFailed {
-            executor_id: executor_id.to_string(),
+    /// Log node connection failure
+    pub async fn log_node_connection_failed(&self, node_id: &str, error_message: &str) {
+        let event = VerificationEvent::NodeConnectionFailed {
+            node_id: node_id.to_string(),
             error_message: error_message.to_string(),
             timestamp: Utc::now(),
         };
 
         tracing::error!(
-            event_type = "VALIDATOR_EXECUTOR_CONNECTION_FAILED",
-            executor_id = %executor_id,
+            event_type = "VALIDATOR_NODE_CONNECTION_FAILED",
+            node_id = %node_id,
             validator_hotkey = %self.validator_hotkey,
             error = %error_message,
             event_data = ?serde_json::to_string(&event).unwrap_or_default(),
-            "Failed to connect to executor"
+            "Failed to connect to node"
         );
     }
 
     /// Log security violation
     pub async fn log_security_violation(
         &self,
-        executor_id: &str,
+        node_id: &str,
         violation_type: &str,
         severity: SecuritySeverity,
         details: &str,
     ) {
         let event = VerificationEvent::SecurityViolation {
-            executor_id: executor_id.to_string(),
+            node_id: node_id.to_string(),
             violation_type: violation_type.to_string(),
             severity: severity.clone(),
             details: details.to_string(),
@@ -260,7 +260,7 @@ impl VerificationLogger {
         };
 
         log_security_violation(
-            Some(executor_id),
+            Some(node_id),
             violation_type,
             details,
             None, // source_ip
@@ -272,7 +272,7 @@ impl VerificationLogger {
             SecuritySeverity::Critical | SecuritySeverity::High => {
                 tracing::error!(
                     event_type = "VALIDATOR_SECURITY_VIOLATION",
-                    executor_id = %executor_id,
+                    node_id = %node_id,
                     violation_type = %violation_type,
                     severity = %severity_str,
                     details = %details,
@@ -283,7 +283,7 @@ impl VerificationLogger {
             SecuritySeverity::Medium => {
                 tracing::warn!(
                     event_type = "VALIDATOR_SECURITY_VIOLATION",
-                    executor_id = %executor_id,
+                    node_id = %node_id,
                     violation_type = %violation_type,
                     severity = %severity_str,
                     details = %details,
@@ -294,7 +294,7 @@ impl VerificationLogger {
             SecuritySeverity::Low => {
                 tracing::info!(
                     event_type = "VALIDATOR_SECURITY_VIOLATION",
-                    executor_id = %executor_id,
+                    node_id = %node_id,
                     violation_type = %violation_type,
                     severity = %severity_str,
                     details = %details,
@@ -308,7 +308,7 @@ impl VerificationLogger {
     /// Query verification events from journal
     pub async fn query_verification_events(
         &self,
-        executor_id: Option<&str>,
+        node_id: Option<&str>,
         event_type: Option<&str>,
         since: Option<chrono::DateTime<Utc>>,
         limit: Option<usize>,
@@ -318,8 +318,8 @@ impl VerificationLogger {
             format!("VALIDATOR_HOTKEY={}", self.validator_hotkey),
         ];
 
-        if let Some(executor_id) = executor_id {
-            filters.push(format!("EXECUTOR_ID={executor_id}"));
+        if let Some(node_id) = node_id {
+            filters.push(format!("NODE_ID={node_id}"));
         }
 
         if let Some(event_type) = event_type {
@@ -334,12 +334,12 @@ impl VerificationLogger {
     /// Get verification statistics from journal
     pub async fn get_verification_stats(
         &self,
-        executor_id: Option<&str>,
+        node_id: Option<&str>,
         days: u32,
     ) -> Result<VerificationStats, Box<dyn std::error::Error>> {
         let since = Utc::now() - chrono::Duration::days(days as i64);
         let entries = self
-            .query_verification_events(executor_id, None, Some(since), None)
+            .query_verification_events(node_id, None, Some(since), None)
             .await?;
 
         let mut stats = VerificationStats::default();
@@ -355,7 +355,7 @@ impl VerificationLogger {
                 if entry.contains("STATUS=SUCCESS") {
                     stats.successful_challenges += 1;
                 }
-            } else if entry.contains("VALIDATOR_EXECUTOR_CONNECTION_FAILED") {
+            } else if entry.contains("VALIDATOR_NODE_CONNECTION_FAILED") {
                 stats.connection_failures += 1;
             } else if entry.contains("SECURITY_VIOLATION") {
                 stats.security_violations += 1;

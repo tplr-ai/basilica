@@ -4,7 +4,7 @@
 //!
 //! This crate provides a comprehensive CLI that combines:
 //! - GPU rental operations (ls, up, down, exec, ssh, etc.)
-//! - Network component management (validator, miner, executor)
+//! - Network component management (validator, miner, node)
 //! - Configuration and wallet management
 //!
 //! ## Architecture

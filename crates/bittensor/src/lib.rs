@@ -28,7 +28,7 @@ pub use error::{BittensorError, ErrorCategory, RetryConfig};
 pub use registration::{
     ChainRegistration, RegistrationConfig, RegistrationConfigBuilder, RegistrationStateSnapshot,
 };
-pub use retry::{retry_operation, retry_operation_with_timeout, CircuitBreaker, RetryExecutor};
+pub use retry::{retry_operation, retry_operation_with_timeout, CircuitBreaker, RetryNode};
 pub use service::ConnectionPoolMetrics;
 pub use service::Service;
 pub use utils::{

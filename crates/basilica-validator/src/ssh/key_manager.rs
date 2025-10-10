@@ -1,6 +1,6 @@
 //! SSH Key Management for Validator Sessions
 //!
-//! Handles generation, storage, and cleanup of ephemeral SSH keys for validator-executor sessions.
+//! Handles generation, storage, and cleanup of ephemeral SSH keys for validator-node sessions.
 
 use anyhow::{Context, Result};
 use ssh_key::{Algorithm, LineEnding, PrivateKey, PublicKey};
@@ -143,6 +143,12 @@ impl ValidatorSshKeyManager {
         self.persistent_key.as_ref()
     }
 
+    pub fn get_ssh_public_key(&self) -> Option<String> {
+        self.persistent_key
+            .as_ref()
+            .map(|(pub_key, _)| pub_key.clone())
+    }
+
     /// Generate ephemeral SSH keypair for a session
     pub async fn generate_session_keypair(
         &self,
@@ -271,6 +277,42 @@ impl ValidatorSshKeyManager {
                 warn!("SSH key cleanup failed: {}", e);
             }
         }
+    }
+
+    pub fn get_ssh_connection_details(
+        &self,
+        node_ssh_endpoint: &str,
+    ) -> Result<basilica_common::ssh::SshConnectionDetails> {
+        // Get node's SSH credentials from node_ssh_endpoint
+        // node_ssh_endpoint format is expected to be "user@host:port" or similar
+        let endpoint_parts: Vec<&str> = node_ssh_endpoint.split('@').collect();
+        let (username, host_port) = if endpoint_parts.len() == 2 {
+            (endpoint_parts[0], endpoint_parts[1])
+        } else {
+            ("root", node_ssh_endpoint)
+        };
+
+        let host_port_parts: Vec<&str> = host_port.split(':').collect();
+        let (host, port) = if host_port_parts.len() == 2 {
+            (
+                host_port_parts[0],
+                host_port_parts[1].parse::<u16>().unwrap_or(22),
+            )
+        } else {
+            (host_port, 22)
+        };
+
+        let (_, private_key_path) = self
+            .get_persistent_key()
+            .ok_or_else(|| anyhow::anyhow!("No persistent validator SSH key available"))?;
+
+        Ok(basilica_common::ssh::SshConnectionDetails {
+            host: host.to_string(),
+            port,
+            username: username.to_string(),
+            private_key_path: private_key_path.clone(),
+            timeout: std::time::Duration::from_secs(30),
+        })
     }
 }
 

@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,7 +12,7 @@ env:
 
 jobs:
   create-release:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       release_id: ${{ steps.create_release.outputs.id }}
@@ -40,10 +40,10 @@ jobs:
     needs: create-release
     strategy:
       matrix:
-        service: [executor, miner, validator, basilica-api]
+        service: [miner, validator, basilica-api]
         include:
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: blacksmith-4vcpu-ubuntu-2404
             suffix: linux-x86_64
           - target: x86_64-apple-darwin
             os: macos-latest
@@ -85,7 +85,6 @@ jobs:
       - name: Copy veritas binaries
         if: matrix.service == 'validator'
         run: |
-          cp bin/executor-binary/executor-binary ./executor-binary
           cp bin/validator-binary/validator-binary ./validator-binary
 
       # Build release binary
@@ -128,19 +127,19 @@ jobs:
 
   build-docker-images:
     needs: create-release
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       packages: write
     strategy:
       matrix:
-        service: [executor, miner, validator]
+        service: [miner, validator]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -157,7 +156,6 @@ jobs:
       - name: Copy veritas binaries
         if: matrix.service == 'validator'
         run: |
-          cp bin/executor-binary/executor-binary ./executor-binary
           cp bin/validator-binary/validator-binary ./validator-binary
 
       - name: Build Docker image

@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-/// Environment validation result for tracking executor environment health
+/// Environment validation result for tracking node environment health
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentValidation {
     pub id: Uuid,
-    pub executor_id: String,
+    pub node_id: String,
     pub docker_score: f64,
     pub gpu_score: f64,
     pub security_score: f64,
@@ -21,10 +21,10 @@ pub struct EnvironmentValidation {
 }
 
 impl EnvironmentValidation {
-    pub fn new(executor_id: String) -> Self {
+    pub fn new(node_id: String) -> Self {
         Self {
             id: Uuid::new_v4(),
-            executor_id,
+            node_id,
             docker_score: 0.0,
             gpu_score: 0.0,
             security_score: 0.0,

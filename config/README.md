@@ -26,25 +26,13 @@ Bittensor neuron for verification and scoring. Key configuration sections:
 
 ### Miner (`miner.toml`)
 
-Bittensor neuron that manages executor fleets. Key configuration sections:
+Bittensor neuron that orchestrates GPU node access. Key configuration sections:
 
 - `[bittensor]` - Wallet and network settings (auto-detects UID and chain endpoint)
-- `[executor_management]` - Fleet management configuration with SSH access
+- `[gpu_nodes]` - GPU node SSH endpoint configuration
 - `[validator_comms]` - Communication with validators including rate limiting
 - `[ssh_session]` - SSH session orchestration for validator access
 - `[advertised_addresses]` - Service endpoint advertising
-
-### Executor (`executor.toml`)
-
-GPU machine agent for task execution. Key configuration sections:
-
-- `[server]` - gRPC server configuration
-- `[docker]` - Container runtime settings with GPU passthrough
-- `[system]` - GPU and system monitoring configuration  
-- `[validator]` - Validator access configuration with hotkey verification
-- `[advertised_endpoint]` - Service endpoint advertising
-
-**Requirements**: NVIDIA GPU with 8.7+ CUDA compute capability, CUDA Toolkit 12.8
 
 ### Basilica API (`basilica-api.toml`)
 
@@ -82,11 +70,9 @@ vim config/validator.toml
 **Required placeholders to update:**
 
 - `YOUR_WALLET_NAME` - Bittensor wallet name
-- `YOUR_HOTKEY_NAME` - Bittensor hotkey name  
+- `YOUR_HOTKEY_NAME` - Bittensor hotkey name
 - `YOUR_PUBLIC_IP_HERE` - Server's public IP address
-- `YOUR_MINER_HOTKEY_HERE` - Managing miner's hotkey (for executors)
-- `YOUR_EXECUTOR_ID` - Unique executor identifier
-- `YOUR_SSH_USERNAME` - SSH username for executor access
+- `YOUR_SSH_USERNAME` - SSH username for GPU node access
 - `YOUR_SECURE_JWT_SECRET_HERE` - JWT secret for authentication
 
 **Network Configuration:**
@@ -119,6 +105,7 @@ vim config/validator.toml
 **Important**: To avoid metadata compatibility errors, always:
 
 1. **Regenerate metadata** before production deployments:
+
    ```bash
    ./scripts/generate-metadata.sh --network finney
    ```

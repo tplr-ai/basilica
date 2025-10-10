@@ -78,9 +78,10 @@ final_weight = SUM(miner_weight_in_category) across all categories
 
 ### Validation Process
 
-1. **Executor Discovery**: Validators discover executors from miners via gRPC
-2. **SSH Verification**: Each executor undergoes SSH-based hardware verification
-3. **Score Calculation**: Based on validation success and GPU specifications
+1. **Miner Discovery**: Validators discover miners from the Bittensor metagraph
+2. **SSH Endpoint Discovery**: Validators query miners via gRPC for GPU node SSH endpoints
+3. **Direct SSH Verification**: Validators SSH directly to GPU nodes for hardware verification
+4. **Score Calculation**: Based on validation success and GPU specifications
 
 ### GPU Profile Updates
 
@@ -97,13 +98,13 @@ The system maintains GPU profiles for each miner that track:
 Weights are set periodically based on the configured `blocks_per_weight_set` parameter. The weight setter:
 
 - Sets weights when 360 blocks have passed
-- Only includes miners with active axons on the chain and valid executors
+- Only includes miners with active axons on the chain and GPU nodes that passed verification
 
 ### Filtering Criteria
 
 Miners must meet several criteria to receive weights:
 
-- Have executors that passed validation within the cutoff time (default: 3 hours)
+- Have GPU nodes that passed validation within the cutoff time (default: 3 hours)
 - Have active axons on the Bittensor network (non-zero IP and port)
 - Own H100 or H200 GPUs (OTHER category GPUs are excluded)
 

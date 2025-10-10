@@ -48,12 +48,10 @@ When making code changes:
 
 ## Configuration
 
-All services are pre-configured to work without Bittensor registration:
+All services are pre-configured for local development:
 
-- **Miner**: `skip_registration = true` in `config/miner-localnet.toml`
-- **Validator**: `--local-test` flag in `compose.yml`
 - **Network**: All services use `netuid = 1` (default subnet)
-- **Chain**: `ws://subtensor-alice:9944`
+- **Chain**: `ws://subtensor-alice:9944` (local Subtensor instance)
 
 ## Directory Structure
 
@@ -78,9 +76,8 @@ scripts/localnet/
 
 ## Known Limitations
 
-1. **No Registration**: Services bypass Bittensor registration for local testing
-2. **No Funding**: Wallets have no balance (not needed with skip_registration)
-3. **Basilica API**: Currently has issues with localnet (metadata compatibility and route conflicts)
+1. **Basilica API**: Currently has issues with localnet (metadata compatibility and route conflicts)
+2. **Local Network**: Services connect to local Subtensor instance (not production network)
 
 ## GPU Support
 

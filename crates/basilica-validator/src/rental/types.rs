@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub struct RentalRequest {
     pub validator_hotkey: String,
     pub miner_id: String,
-    pub executor_id: String,
+    pub node_id: String,
     pub container_spec: ContainerSpec,
     pub ssh_public_key: String,
     pub metadata: HashMap<String, String>,
@@ -109,15 +109,16 @@ impl fmt::Display for RentalState {
 pub struct RentalInfo {
     pub rental_id: String,
     pub validator_hotkey: String,
-    pub executor_id: String,
+    pub node_id: String,
     pub container_id: String,
     pub ssh_session_id: String,
-    pub ssh_credentials: String, // Validator SSH access to executor
+    pub ssh_credentials: String, // Validator SSH access to node
     pub state: RentalState,
     pub created_at: DateTime<Utc>,
     pub container_spec: ContainerSpec,
     pub miner_id: String,
-    pub executor_details: crate::api::types::ExecutorDetails,
+    pub node_details: crate::api::types::NodeDetails,
+    pub metadata: HashMap<String, String>,
 }
 
 /// Rental status

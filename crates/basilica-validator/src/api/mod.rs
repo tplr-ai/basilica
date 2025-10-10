@@ -6,7 +6,6 @@
 #[cfg(feature = "client")]
 pub mod client;
 
-pub mod rental_routes;
 pub mod routes;
 pub mod types;
 
@@ -14,7 +13,7 @@ use crate::config::ApiConfig;
 use crate::rental;
 use anyhow::Result;
 use axum::{
-    routing::{delete, get, post, put},
+    routing::{delete, get, post},
     Router,
 };
 use std::sync::Arc;
@@ -132,27 +131,17 @@ impl ApiHandler {
     /// Follows Open/Closed Principle - easy to extend with new routes
     fn create_router(&self) -> Router {
         Router::new()
-            .route("/rentals", get(rental_routes::list_rentals))
-            .route("/rentals", post(rental_routes::start_rental))
-            .route("/rentals/:id", get(rental_routes::get_rental_status))
-            .route("/rentals/:id", delete(rental_routes::stop_rental))
-            .route("/rentals/:id/logs", get(rental_routes::stream_rental_logs))
-            .route("/executors", get(routes::list_available_executors))
+            .route("/rentals", get(routes::list_rentals))
+            .route("/rentals", post(routes::start_rental))
+            .route("/rentals/:id", get(routes::get_rental_status))
+            .route("/rentals/:id", delete(routes::stop_rental))
+            .route("/rentals/:id/logs", get(routes::stream_rental_logs))
+            .route("/nodes", get(routes::list_available_nodes))
             // Existing miner routes
             .route("/miners", get(routes::list_miners))
-            .route("/miners/register", post(routes::register_miner))
             .route("/miners/:miner_id", get(routes::get_miner))
-            .route("/miners/:miner_id", put(routes::update_miner))
-            .route("/miners/:miner_id", delete(routes::remove_miner))
             .route("/miners/:miner_id/health", get(routes::get_miner_health))
-            .route(
-                "/miners/:miner_id/verify",
-                post(routes::trigger_miner_verification),
-            )
-            .route(
-                "/miners/:miner_id/executors",
-                get(routes::list_miner_executors),
-            )
+            .route("/miners/:miner_id/nodes", get(routes::list_miner_nodes))
             .route("/health", get(routes::health_check))
             // new
             .route("/gpu-profiles", get(routes::list_gpu_profiles))

@@ -10,16 +10,8 @@ service MinerDiscovery {
   // Authenticate validator with the miner
   rpc AuthenticateValidator(ValidatorAuthRequest) returns (MinerAuthResponse);
 
-  // Request available executor leases from miner
-  rpc RequestExecutorLease(LeaseRequest) returns (LeaseOfferResponse);
-
-  // Initiate session with specific executor
-  rpc InitiateExecutorSession(SessionInitRequest) returns (SessionInitResponse);
-
-  // SSH Session Management
-  rpc InitiateSshSession(InitiateSshSessionRequest) returns (InitiateSshSessionResponse);
-  rpc CloseSshSession(CloseSshSessionRequest) returns (CloseSshSessionResponse);
-  rpc ListSshSessions(ListSshSessionsRequest) returns (ListSshSessionsResponse);
+  // Discover available nodes from miner
+  rpc DiscoverNodes(DiscoverNodesRequest) returns (ListNodeConnectionDetailsResponse);
 }
 
 message ValidatorAuthRequest {
@@ -42,94 +34,28 @@ message MinerAuthResponse {
   string response_nonce = 7;      // Nonce included in signature to prevent replay
 }
 
-message LeaseRequest {
+// Node discovery request - validators request available nodes from miners
+message DiscoverNodesRequest {
   string validator_hotkey = 1;
-  string session_token = 2;
-  // Resource requirements
-  basilca.common.v1.ResourceLimits requirements = 3;
-  uint64 lease_duration_seconds = 4;
-}
-
-message ExecutorConnectionDetails {
-  string executor_id = 1;
-  string grpc_endpoint = 2;
-  basilca.common.v1.GpuSpec gpu_spec = 3;
-  basilca.common.v1.ResourceLimits available_resources = 4;
-  string status = 5;
-}
-
-message LeaseOfferResponse {
-  repeated ExecutorConnectionDetails available_executors = 1;
-  basilca.common.v1.ErrorInfo error = 2;
-}
-
-message SessionInitRequest {
-  string validator_hotkey = 1;
-  string session_token = 2;
-  string executor_id = 3;
-  string session_type = 4; // verification, rental, etc.
-}
-
-message SessionInitResponse {
-  bool success = 1;
-  string session_id = 2;
-  string access_credentials = 3;
-  basilca.common.v1.ErrorInfo error = 4;
-}
-
-// SSH Session Management Messages
-
-message InitiateSshSessionRequest {
-  string validator_hotkey = 1;
-  string executor_id = 2;
-  string purpose = 3;
+  string signature = 2;
+  string nonce = 3;
   string validator_public_key = 4;  // Required: SSH public key
-  int64 session_duration_secs = 5;  // Required: Max session length
-  string session_metadata = 6;      // Optional: For audit trail
-  bool rental_mode = 7;             // Enable rental permissions
-  string rental_id = 8;             // Associated rental ID if rental_mode=true
+  basilca.common.v1.Timestamp timestamp = 5;
+  string target_miner_hotkey = 6;
 }
 
-message InitiateSshSessionResponse {
-  string session_id = 1;
-  string access_credentials = 2;     // Format: "username@host:port"
-  int64 expires_at = 3;             // Unix timestamp
-  string executor_id = 4;           // Confirm executor ID
-  SshSessionStatus status = 5;      // Session setup status
+// Node connection details for direct SSH access
+message NodeConnectionDetails {
+  string node_id = 1;
+  string host = 2;
+  string port = 3;
+  string username = 4;
+  string additional_opts = 5;
+  basilca.common.v1.GpuSpec gpu_spec = 6;
+  string status = 7;
 }
 
-enum SshSessionStatus {
-  SSH_SESSION_STATUS_UNKNOWN = 0;
-  SSH_SESSION_STATUS_ACTIVE = 1;
-  SSH_SESSION_STATUS_EXPIRED = 2;
-  SSH_SESSION_STATUS_FAILED = 3;
-}
-
-message CloseSshSessionRequest {
-  string session_id = 1;
-  string validator_hotkey = 2;
-  string reason = 3;                // For audit trail
-}
-
-message CloseSshSessionResponse {
-  bool success = 1;
-  string message = 2;
-}
-
-message ListSshSessionsRequest {
-  string validator_hotkey = 1;
-  bool include_expired = 2;
-}
-
-message ListSshSessionsResponse {
-  repeated SshSession sessions = 1;
-}
-
-message SshSession {
-  string session_id = 1;
-  string executor_id = 2;
-  string validator_hotkey = 3;
-  int64 created_at = 4;
-  int64 expires_at = 5;
-  SshSessionStatus status = 6;
+// Response containing list of available nodes
+message ListNodeConnectionDetailsResponse {
+  repeated NodeConnectionDetails nodes = 1; // list of nodes
 }

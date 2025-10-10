@@ -9,10 +9,10 @@ use tracing::info;
 
 #[cfg(feature = "client")]
 use crate::api::client::ValidatorClient;
-use crate::api::rental_routes::{
+use crate::api::routes::rentals::{
     PortMappingRequest, ResourceRequirementsRequest, StartRentalRequest,
 };
-use crate::api::types::{ListAvailableExecutorsQuery, LogQuery, TerminateRentalRequest};
+use crate::api::types::{ListAvailableNodesQuery, LogQuery, TerminateRentalRequest};
 use crate::cli::commands::RentalAction;
 use crate::config::ValidatorConfig;
 use crate::rental::types::RentalState;
@@ -23,30 +23,10 @@ use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 /// This is used by the service handler to set up the API with rental capabilities
 pub async fn create_rental_manager(
     config: &ValidatorConfig,
-    validator_hotkey: basilica_common::identity::Hotkey,
     persistence: Arc<crate::persistence::SimplePersistence>,
-    bittensor_service: Arc<bittensor::Service>,
     metrics: Arc<crate::metrics::ValidatorPrometheusMetrics>,
 ) -> Result<crate::rental::RentalManager> {
-    use crate::miner_prover::miner_client::{
-        BittensorServiceSigner, MinerClient, MinerClientConfig,
-    };
     use crate::ssh::ValidatorSshKeyManager;
-
-    // Create signer
-    let signer = Box::new(BittensorServiceSigner::new(bittensor_service));
-
-    // Create miner client with rental session duration from config
-    let miner_config = MinerClientConfig {
-        rental_session_duration: config.ssh_session.rental_session_duration,
-        ..Default::default()
-    };
-
-    let miner_client = Arc::new(MinerClient::with_signer(
-        miner_config,
-        validator_hotkey,
-        signer,
-    ));
 
     // Create SSH key manager
     let ssh_key_dir = config.ssh_session.ssh_key_directory.clone();
@@ -57,7 +37,7 @@ pub async fn create_rental_manager(
     let ssh_key_manager = Arc::new(ssh_key_manager);
 
     // Create rental manager
-    let rental_manager = RentalManager::new(miner_client, persistence, ssh_key_manager, metrics);
+    let rental_manager = RentalManager::new(persistence, ssh_key_manager, metrics);
     rental_manager.start_monitor();
 
     // Initialize metrics for existing rentals
@@ -66,11 +46,11 @@ pub async fn create_rental_manager(
         .await
         .context("Failed to initialize rental metrics")?;
 
-    // Initialize metrics for all executors
+    // Initialize metrics for all nodes
     rental_manager
-        .initialize_executor_metrics()
+        .initialize_node_metrics()
         .await
-        .context("Failed to initialize executor metrics")?;
+        .context("Failed to initialize node metrics")?;
 
     Ok(rental_manager)
 }
@@ -115,7 +95,7 @@ pub async fn handle_rental_command(
 
     match action {
         RentalAction::Start {
-            executor,
+            node,
             image,
             ports,
             env,
@@ -128,7 +108,7 @@ pub async fn handle_rental_command(
         } => {
             handle_start_rental(
                 client,
-                executor,
+                node,
                 image,
                 ports,
                 env,
@@ -150,7 +130,7 @@ pub async fn handle_rental_command(
             memory_min,
             gpu_type,
             gpu_min,
-        } => handle_ls_executors(client, memory_min, gpu_type, gpu_min).await,
+        } => handle_ls_nodes(client, memory_min, gpu_type, gpu_min).await,
         RentalAction::Ps { state } => handle_ps_rentals(client, state).await,
     }
 }
@@ -159,7 +139,7 @@ pub async fn handle_rental_command(
 #[allow(clippy::too_many_arguments)]
 async fn handle_start_rental(
     client: ValidatorClient,
-    executor: String,
+    node: String,
     image: String,
     ports: Vec<String>,
     env: Vec<String>,
@@ -170,7 +150,7 @@ async fn handle_start_rental(
     gpu_count: Option<u32>,
     storage_mb: Option<i64>,
 ) -> Result<()> {
-    info!("Starting rental on executor {}", executor);
+    info!("Starting rental on node {}", node);
 
     // Parse port mappings and environment variables
     let port_mappings: Vec<PortMappingRequest> = parse_port_mappings(&ports)?
@@ -181,7 +161,7 @@ async fn handle_start_rental(
 
     // Build API request
     let request = StartRentalRequest {
-        executor_id: executor,
+        node_id: node,
         container_image: image,
         ssh_public_key,
         environment,
@@ -232,26 +212,26 @@ async fn handle_rental_status(client: ValidatorClient, rental_id: String) -> Res
     info!("Rental Status:");
     info!("  ID: {}", status.rental_id);
     info!("  Status: {:?}", status.status);
-    info!("  Executor: {}", status.executor.id);
-    if let Some(location) = &status.executor.location {
+    info!("  Node: {}", status.node.id);
+    if let Some(location) = &status.node.location {
         info!("  Location: {}", location);
     }
     info!("  Created: {}", status.created_at);
     info!("  Updated: {}", status.updated_at);
 
     // Display GPU specs if available
-    if !status.executor.gpu_specs.is_empty() {
+    if !status.node.gpu_specs.is_empty() {
         info!("GPU Specs:");
-        for gpu in &status.executor.gpu_specs {
+        for gpu in &status.node.gpu_specs {
             info!("  - {}", gpu.name);
         }
     }
 
     // Display CPU specs
     info!("CPU Specs:");
-    info!("  Model: {}", status.executor.cpu_specs.model);
-    info!("  Cores: {}", status.executor.cpu_specs.cores);
-    info!("  Memory: {} GB", status.executor.cpu_specs.memory_gb);
+    info!("  Model: {}", status.node.cpu_specs.model);
+    info!("  Cores: {}", status.node.cpu_specs.cores);
+    info!("  Memory: {} GB", status.node.cpu_specs.memory_gb);
 
     Ok(())
 }
@@ -317,74 +297,70 @@ async fn handle_stop_rental(client: ValidatorClient, rental_id: String) -> Resul
 }
 
 #[cfg(feature = "client")]
-async fn handle_ls_executors(
+async fn handle_ls_nodes(
     client: ValidatorClient,
     memory_min: Option<u32>,
     gpu_type: Option<String>,
     gpu_min: Option<u32>,
 ) -> Result<()> {
-    info!("Listing available executors");
+    info!("Listing available nodes");
 
     // Build query from filters
-    let query = ListAvailableExecutorsQuery {
-        available: Some(true), // Filter for available executors only
+    let query = ListAvailableNodesQuery {
+        available: Some(true), // Filter for available nodes only
         min_gpu_memory: memory_min,
         gpu_type,
         min_gpu_count: gpu_min,
         location: None,
     };
 
-    // List available executors via API
+    // List available nodes via API
     let response = client
-        .list_available_executors(Some(query))
+        .list_available_nodes(Some(query))
         .await
-        .context("Failed to list available executors via API")?;
+        .context("Failed to list available nodes via API")?;
 
-    if response.available_executors.is_empty() {
-        info!("No available executors found matching the specified criteria.");
+    if response.available_nodes.is_empty() {
+        info!("No available nodes found matching the specified criteria.");
         return Ok(());
     }
 
-    info!("Found {} available executors:", response.total_count);
+    info!("Found {} available nodes:", response.total_count);
     info!("");
 
     // Format output similar to basilica-cli
-    info!("GPU                                   | Executor ID                          | CPU        | RAM    | Score | Uptime");
+    info!("GPU                                   | Node ID                              | CPU        | RAM    | Score | Uptime");
     info!("--------------------------------------+--------------------------------------+------------+--------+-------+--------");
 
-    for executor in response.available_executors {
+    for node in response.available_nodes {
         // Format GPU info
-        let gpu_info = if executor.executor.gpu_specs.is_empty() {
+        let gpu_info = if node.node.gpu_specs.is_empty() {
             "No GPU".to_string()
-        } else if executor.executor.gpu_specs.len() == 1 {
+        } else if node.node.gpu_specs.len() == 1 {
             // Single GPU
-            let gpu = &executor.executor.gpu_specs[0];
+            let gpu = &node.node.gpu_specs[0];
             gpu.name.clone()
         } else {
             // Multiple GPUs - check if they're all the same model
-            let first_gpu = &executor.executor.gpu_specs[0];
-            let all_same = executor
-                .executor
+            let first_gpu = &node.node.gpu_specs[0];
+            let all_same = node
+                .node
                 .gpu_specs
                 .iter()
                 .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
 
             if all_same {
                 // All GPUs are identical - use count prefix format
-                format!("{}x {}", executor.executor.gpu_specs.len(), first_gpu.name)
+                format!("{}x {}", node.node.gpu_specs.len(), first_gpu.name)
             } else {
                 // Different GPU models - list them individually
-                let gpu_names: Vec<String> = executor
-                    .executor
-                    .gpu_specs
-                    .iter()
-                    .map(|g| g.name.clone())
-                    .collect();
+                let gpu_names: Vec<String> =
+                    node.node.gpu_specs.iter().map(|g| g.name.clone()).collect();
                 gpu_names.join(", ")
             }
         };
 
-        let executor_id = executor.executor.id;
+        let node_id = node.node.id;
 
         info!(
             "{:<36} | {:<36} | {:<10} | {:<6} | {:<5.2} | {:<5.1}%",
@@ -394,16 +370,16 @@ async fn handle_ls_executors(
             } else {
                 gpu_info
             },
-            executor_id,
-            format!("{} cores", executor.executor.cpu_specs.cores),
-            format!("{}GB", executor.executor.cpu_specs.memory_gb),
-            executor.availability.verification_score,
-            executor.availability.uptime_percentage,
+            node_id,
+            format!("{} cores", node.node.cpu_specs.cores),
+            format!("{}GB", node.node.cpu_specs.memory_gb),
+            node.availability.verification_score,
+            node.availability.uptime_percentage,
         );
     }
 
     info!("");
-    info!("Total available executors: {}", response.total_count);
+    info!("Total available nodes: {}", response.total_count);
 
     Ok(())
 }
@@ -432,7 +408,7 @@ async fn handle_ps_rentals(client: ValidatorClient, state_filter: String) -> Res
 
     info!("Found {} rentals:", response.rentals.len());
     info!("");
-    info!("ID                                    | State   | Executor                             | Created");
+    info!("ID                                    | State   | Node                             | Created");
     info!("--------------------------------------+---------+--------------------------------------+-------------------------");
 
     for rental in response.rentals {
@@ -441,7 +417,7 @@ async fn handle_ps_rentals(client: ValidatorClient, state_filter: String) -> Res
             "{:<36} | {:<7} | {:<36} | {}",
             rental.rental_id,
             format!("{:?}", rental.state),
-            rental.executor_id,
+            rental.node_id,
             rental.created_at
         );
     }

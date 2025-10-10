@@ -10,27 +10,27 @@ from typing import Optional, Dict, Any, List
 from basilica._basilica import (
     BasilicaClient as _BasilicaClient,
     # Helper functions
-    executor_by_id,
-    executor_by_gpu,
+    node_by_id,
+    node_by_gpu,
     # Response types
     HealthCheckResponse,
     RentalResponse,
     RentalStatusWithSshResponse,
     RentalStatus,
     SshAccess,
-    ExecutorDetails,
+    NodeDetails,
     GpuSpec,
     CpuSpec,
-    AvailableExecutor,
+    AvailableNode,
     AvailabilityInfo,
     # Request types
     StartRentalApiRequest,
-    ExecutorSelection,
+    NodeSelection,
     GpuRequirements,
     PortMappingRequest,
     ResourceRequirementsRequest,
     VolumeMountRequest,
-    ListAvailableExecutorsQuery,
+    ListAvailableNodesQuery,
     ListRentalsQuery,
     # Constants from Rust
     DEFAULT_API_URL,
@@ -51,25 +51,25 @@ __version__ = "0.1.0"
 __all__ = [
     "BasilicaClient",
     # Helper functions
-    "executor_by_id",
-    "executor_by_gpu",
+    "node_by_id",
+    "node_by_gpu",
     # Response types
     "HealthCheckResponse",
     "RentalResponse",
     "RentalStatusWithSshResponse",
     "RentalStatus",
     "SshAccess",
-    "ExecutorDetails",
+    "NodeDetails",
     "GpuSpec",
     "CpuSpec",
-    "AvailableExecutor",
+    "AvailableNode",
     "AvailabilityInfo",
     # Request types
     "StartRentalApiRequest",
-    "ExecutorSelection",
+    "NodeSelection",
     "GpuRequirements",
     "PortMappingRequest",
-    "ListAvailableExecutorsQuery",
+    "ListAvailableNodesQuery",
     "ListRentalsQuery",
 ]
 
@@ -105,50 +105,50 @@ class BasilicaClient:
         # Pass api_key directly to Rust binding
         # The Rust binding will check BASILICA_API_TOKEN env var if api_key is None
         self._client = _BasilicaClient(base_url, api_key)
-    
+
     def health_check(self) -> HealthCheckResponse:
         """
         Check the health of the API.
-        
+
         Returns:
             HealthCheckResponse: Typed response with status, version, and validator info
         """
         return self._client.health_check()
-    
-    def list_executors(
+
+    def list_nodes(
         self,
         available: Optional[bool] = None,
         gpu_type: Optional[str] = None,
         min_gpu_count: Optional[int] = None,
         min_gpu_memory: Optional[int] = None
-    ) -> List[AvailableExecutor]:
+    ) -> List[AvailableNode]:
         """
-        List available executors.
-        
+        List available nodes.
+
         Args:
             available: Filter by availability
             gpu_type: Filter by GPU type
             min_gpu_count: Filter by minimum GPU count
             min_gpu_memory: Filter by minimum GPU memory in GB
-            
+
         Returns:
-            List[AvailableExecutor]: List of typed executor objects with details
+            List[AvailableNode]: List of typed node objects with details
         """
         if any([available is not None, gpu_type is not None, min_gpu_count is not None, min_gpu_memory is not None]):
-            query = ListAvailableExecutorsQuery(
+            query = ListAvailableNodesQuery(
                 available=available,
                 gpu_type=gpu_type,
                 min_gpu_count=min_gpu_count,
                 min_gpu_memory=min_gpu_memory
             )
-            return self._client.list_executors(query)
+            return self._client.list_nodes(query)
         else:
-            return self._client.list_executors(None)
-    
+            return self._client.list_nodes(None)
+
     def start_rental(
         self,
         container_image: Optional[str] = None,
-        executor_id: Optional[str] = None,
+        node_id: Optional[str] = None,
         gpu_type: Optional[str] = None,
         ssh_pubkey_path: Optional[str] = None,
         environment: Optional[Dict[str, str]] = None,
@@ -158,10 +158,10 @@ class BasilicaClient:
     ) -> RentalResponse:
         """
         Start a new rental.
-        
+
         Args:
             container_image: Docker image to run (default: DEFAULT_CONTAINER_IMAGE)
-            executor_id: Optional specific executor to use
+            node_id: Optional specific node to use
             gpu_type: GPU type to request (default: DEFAULT_GPU_TYPE)
             ssh_pubkey_path: Path to SSH public key file (e.g., "~/.ssh/id_rsa.pub").
                 If None, defaults to ~/.ssh/basilica_ed25519.pub
@@ -169,17 +169,17 @@ class BasilicaClient:
             ports: Port mappings
             command: Command to run (default: ["/bin/bash"])
             no_ssh: Disable SSH access
-            
+
         Returns:
             RentalResponse: Typed response with rental details
         """
         # Set defaults from constants
         if container_image is None:
             container_image = DEFAULT_CONTAINER_IMAGE
-        
+
         if gpu_type is None:
             gpu_type = DEFAULT_GPU_TYPE
-        
+
         ssh_public_key = None  # This will hold the actual key content
         if not no_ssh:
             # Determine which SSH key file to use
@@ -189,7 +189,7 @@ class BasilicaClient:
             else:
                 # Use default path
                 ssh_key_path = os.path.expanduser("~/.ssh/basilica_ed25519.pub")
-            
+
             # Read the SSH key from the file
             if os.path.exists(ssh_key_path):
                 with open(ssh_key_path) as f:
@@ -199,7 +199,7 @@ class BasilicaClient:
                 if ssh_pubkey_path is not None:
                     raise FileNotFoundError(f"SSH public key file not found: {ssh_key_path}")
                 # Otherwise, leave as None (no SSH key available)
-        
+
         # Always use default resources internally
         resources = {
             "gpu_count": DEFAULT_GPU_COUNT,
@@ -208,15 +208,15 @@ class BasilicaClient:
             "memory_mb": DEFAULT_MEMORY_MB,
             "storage_mb": DEFAULT_STORAGE_MB
         }
-        
-        # Build executor_selection based on whether executor_id is provided
-        if executor_id:
-            executor_selection = executor_by_id(executor_id)
+
+        # Build node_selection based on whether node_id is provided
+        if node_id:
+            node_selection = node_by_id(node_id)
         else:
             # Use GPU requirements for auto-selection with defaults
             gpu_count_val = DEFAULT_GPU_COUNT
             min_memory_gb_val = DEFAULT_GPU_MIN_MEMORY_GB
-            
+
             # Get GPU type from gpu_types array if available
             gpu_types = resources.get("gpu_types", [])
             gpu_type_val = None
@@ -224,14 +224,14 @@ class BasilicaClient:
                 gpu_type_val = gpu_types[0]
             elif gpu_type:
                 gpu_type_val = gpu_type
-            
+
             gpu_requirements = GpuRequirements(
                 gpu_count=gpu_count_val,
                 min_memory_gb=min_memory_gb_val,
                 gpu_type=gpu_type_val
             )
-            executor_selection = executor_by_gpu(gpu_requirements)
-        
+            node_selection = node_by_gpu(gpu_requirements)
+
         # Convert ports to PortMappingRequest objects
         port_mappings = []
         if ports:
@@ -241,7 +241,7 @@ class BasilicaClient:
                     host_port=port.get("host_port", 0),
                     protocol=port.get("protocol", "tcp")
                 ))
-        
+
         # Create ResourceRequirementsRequest with defaults
         resource_req = ResourceRequirementsRequest(
             cpu_cores=resources.get("cpu_cores", DEFAULT_CPU_CORES),
@@ -250,12 +250,12 @@ class BasilicaClient:
             gpu_count=resources.get("gpu_count", DEFAULT_GPU_COUNT),
             gpu_types=resources.get("gpu_types", [])
         )
-        
+
         # Volume mounts are always empty now
         volume_mounts = []
-        
+
         request = StartRentalApiRequest(
-            executor_selection=executor_selection,
+            node_selection=node_selection,
             container_image=container_image,
             ssh_public_key=ssh_public_key if ssh_public_key else "",
             environment=environment or {},
@@ -265,30 +265,30 @@ class BasilicaClient:
             volumes=volume_mounts,
             no_ssh=no_ssh
         )
-            
+
         return self._client.start_rental(request)
-    
+
     def get_rental(self, rental_id: str) -> RentalStatusWithSshResponse:
         """
         Get rental status.
-        
+
         Args:
             rental_id: The rental ID
-            
+
         Returns:
             RentalStatusWithSshResponse: Typed response with status and SSH details
         """
         return self._client.get_rental(rental_id)
-    
+
     def stop_rental(self, rental_id: str) -> None:
         """
         Stop a rental.
-        
+
         Args:
             rental_id: The rental ID
         """
         self._client.stop_rental(rental_id)
-    
+
     def list_rentals(
         self,
         status: Optional[str] = None,
@@ -297,12 +297,12 @@ class BasilicaClient:
     ) -> Dict[str, Any]:
         """
         List rentals.
-        
+
         Args:
             status: Filter by status (e.g., "active", "provisioning")
             gpu_type: Filter by GPU type
             min_gpu_count: Filter by minimum GPU count
-            
+
         Returns:
             List of rentals
         """

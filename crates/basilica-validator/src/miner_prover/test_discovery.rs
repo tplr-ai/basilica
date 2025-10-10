@@ -5,8 +5,8 @@ mod tests {
     use crate::miner_prover::miner_client::{
         BittensorServiceSigner, MinerClient, MinerClientConfig, ValidatorSigner,
     };
-    use crate::miner_prover::types::{ExecutorInfo, MinerInfo};
-    use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
+    use crate::miner_prover::types::{MinerInfo, NodeInfo};
+    use basilica_common::identity::{Hotkey, MinerUid, NodeId};
     use std::time::Duration;
 
     #[tokio::test]
@@ -94,14 +94,14 @@ mod tests {
     }
 
     #[test]
-    fn test_executor_info_creation() {
-        let executor_info = ExecutorInfo {
-            id: ExecutorId::new(),
+    fn test_node_info_creation() {
+        let node_info = NodeInfo {
+            id: NodeId::new("test_node").unwrap(),
             miner_uid: MinerUid::new(1),
-            grpc_endpoint: "http://127.0.0.1:50051".to_string(),
+            node_ssh_endpoint: "root@127.0.0.1:50051".to_string(),
         };
 
-        assert_eq!(executor_info.miner_uid.as_u16(), 1);
-        assert_eq!(executor_info.grpc_endpoint, "http://127.0.0.1:50051");
+        assert_eq!(node_info.miner_uid.as_u16(), 1);
+        assert_eq!(node_info.node_ssh_endpoint, "root@127.0.0.1:50051");
     }
 }

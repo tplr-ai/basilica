@@ -4,10 +4,9 @@
 
 use super::types::{AuthError, AuthResult};
 use basilica_sdk::auth::TokenSet;
-use std::collections::HashMap; // Still needed for migration from old format
-use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
+use tokio::fs;
 
 const REFRESH_BUFFER_MINUTES: u64 = 5;
 
@@ -18,58 +17,25 @@ pub struct TokenStore {
 
 impl TokenStore {
     /// Create a new token store with the provided data directory
-    pub fn new(data_dir: PathBuf) -> AuthResult<Self> {
-        fs::create_dir_all(&data_dir).map_err(|e| {
+    ///
+    /// The token file name is determined by the current Auth0 domain:
+    /// - Development (matches basilica_common::AUTH0_DOMAIN): auth.dev.json
+    /// - Production (different domain via env var): auth.json
+    pub async fn new(data_dir: PathBuf) -> AuthResult<Self> {
+        fs::create_dir_all(&data_dir).await.map_err(|e| {
             AuthError::StorageError(format!("Failed to create data directory: {}", e))
         })?;
 
-        let auth_file_path = data_dir.join("auth.json");
+        // Detect environment based on Auth0 domain
+        let auth_file_name = if basilica_common::is_development_environment() {
+            "auth.dev.json"
+        } else {
+            "auth.json"
+        };
+
+        let auth_file_path = data_dir.join(auth_file_name);
 
         Ok(Self { auth_file_path })
-    }
-
-    /// Store tokens securely
-    pub async fn store_tokens(&self, tokens: &TokenSet) -> AuthResult<()> {
-        self.store_in_file(tokens).await
-    }
-
-    /// Store tokens (main public method)
-    pub async fn store(&self, tokens: &TokenSet) -> AuthResult<()> {
-        self.store_tokens(tokens).await
-    }
-
-    /// Retrieve stored tokens
-    pub async fn get_tokens(&self) -> AuthResult<Option<TokenSet>> {
-        self.retrieve_from_file().await
-    }
-
-    /// Retrieve tokens (main public method)
-    pub async fn retrieve(&self) -> AuthResult<Option<TokenSet>> {
-        self.get_tokens().await
-    }
-
-    /// Delete stored tokens
-    pub async fn delete_tokens(&self) -> AuthResult<()> {
-        self.delete_from_file().await
-    }
-
-    /// Delete tokens (main public method)
-    pub async fn delete(&self) -> AuthResult<()> {
-        self.delete_tokens().await
-    }
-
-    /// Check if tokens exist
-    pub async fn has_tokens(&self) -> AuthResult<bool> {
-        match self.get_tokens().await? {
-            Some(_) => Ok(true),
-            None => Ok(false),
-        }
-    }
-
-    /// Update existing tokens (typically refresh token)
-    pub async fn update_tokens(&self, tokens: &TokenSet) -> AuthResult<()> {
-        // For atomic update, we simply overwrite the existing tokens
-        self.store_tokens(tokens).await
     }
 
     /// Check if token needs refresh (with 5 minute buffer)
@@ -77,51 +43,49 @@ impl TokenStore {
         tokens.expires_within(Duration::from_secs(REFRESH_BUFFER_MINUTES * 60))
     }
 
-    /// Store tokens in file
-    async fn store_in_file(&self, tokens: &TokenSet) -> AuthResult<()> {
+    /// Store tokens securely
+    pub async fn store_tokens(&self, tokens: &TokenSet) -> AuthResult<()> {
         // Write tokens directly to file
         let json = serde_json::to_string_pretty(tokens)
             .map_err(|e| AuthError::StorageError(format!("Failed to serialize tokens: {}", e)))?;
 
         fs::write(&self.auth_file_path, json)
+            .await
             .map_err(|e| AuthError::StorageError(format!("Failed to write auth file: {}", e)))?;
 
         Ok(())
     }
 
-    /// Retrieve tokens from file (with migration support)
-    async fn retrieve_from_file(&self) -> AuthResult<Option<TokenSet>> {
-        if !self.auth_file_path.exists() {
-            return Ok(None);
+    /// Retrieve stored tokens
+    pub async fn retrieve_tokens(&self) -> AuthResult<Option<TokenSet>> {
+        // Check if file exists
+        match fs::try_exists(&self.auth_file_path).await {
+            Ok(false) => return Ok(None),
+            Err(e) => {
+                return Err(AuthError::StorageError(format!(
+                    "Failed to check if auth file exists: {}",
+                    e
+                )))
+            }
+            Ok(true) => {}
         }
 
         let content = fs::read_to_string(&self.auth_file_path)
+            .await
             .map_err(|e| AuthError::StorageError(format!("Failed to read auth file: {}", e)))?;
 
-        // Try to parse as direct TokenSet first (new format)
-        if let Ok(tokens) = serde_json::from_str::<TokenSet>(&content) {
-            return Ok(Some(tokens));
-        }
+        // Parse as TokenSet
+        let tokens = serde_json::from_str::<TokenSet>(&content)
+            .map_err(|e| AuthError::StorageError(format!("Failed to parse auth file: {}", e)))?;
 
-        // Try to parse as old format (HashMap with service names)
-        if let Ok(auth_data) = serde_json::from_str::<HashMap<String, TokenSet>>(&content) {
-            // Migrate from old format: extract basilica-cli tokens
-            if let Some(tokens) = auth_data.get("basilica-cli") {
-                // Automatically migrate to new format
-                let migrated_tokens = tokens.clone();
-                // Store in new format (this will overwrite the file)
-                self.store_in_file(&migrated_tokens).await?;
-                return Ok(Some(migrated_tokens));
-            }
-        }
-
-        Ok(None)
+        Ok(Some(tokens))
     }
 
-    /// Delete tokens from file
-    async fn delete_from_file(&self) -> AuthResult<()> {
-        if self.auth_file_path.exists() {
-            fs::remove_file(&self.auth_file_path).map_err(|e| {
+    /// Delete stored tokens
+    pub async fn delete_tokens(&self) -> AuthResult<()> {
+        // Check if file exists before attempting deletion
+        if let Ok(true) = fs::try_exists(&self.auth_file_path).await {
+            fs::remove_file(&self.auth_file_path).await.map_err(|e| {
                 AuthError::StorageError(format!("Failed to delete auth file: {}", e))
             })?;
         }

@@ -33,7 +33,7 @@ impl ValidatorPrometheusMetrics {
         );
         describe_histogram!(
             "basilica_validator_validation_score",
-            "Validation scores assigned to executors"
+            "Validation scores assigned to nodes"
         );
         describe_counter!(
             "basilica_validator_validation_errors_total",
@@ -111,8 +111,8 @@ impl ValidatorPrometheusMetrics {
 
         // Business metrics
         describe_gauge!(
-            "basilica_validator_executor_health_status",
-            "Executor health status (1=healthy, 0=unhealthy)"
+            "basilica_validator_node_health_status",
+            "Node health status (1=healthy, 0=unhealthy)"
         );
         describe_counter!(
             "basilica_validator_consensus_weight_sets_total",
@@ -136,10 +136,7 @@ impl ValidatorPrometheusMetrics {
             "basilica_validator_miner_gpu_weighted_score",
             "GPU count weighted scores for miners"
         );
-        describe_gauge!(
-            "basilica_validator_executor_gpu_count",
-            "GPU count per executor"
-        );
+        describe_gauge!("basilica_validator_node_gpu_count", "GPU count per node");
 
         // Weight metrics
         describe_gauge!(
@@ -161,8 +158,8 @@ impl ValidatorPrometheusMetrics {
 
         // Rental metrics
         describe_gauge!(
-            "basilica_validator_executor_rental_status",
-            "Executor rental status (1=rented, 0=available)"
+            "basilica_validator_node_rental_status",
+            "Node rental status (1=rented, 0=available)"
         );
         describe_counter!(
             "basilica_validator_rentals_created_total",
@@ -183,8 +180,8 @@ impl ValidatorPrometheusMetrics {
 
         // Validation state tracking metrics
         describe_gauge!(
-            "basilica_validator_executor_validation_state",
-            "Current validation state of executors (0=not in state, 1=current, 2=failed)"
+            "basilica_validator_node_validation_state",
+            "Current validation state of nodes (0=not in state, 1=current, 2=failed)"
         );
 
         Ok(Self {
@@ -196,7 +193,7 @@ impl ValidatorPrometheusMetrics {
     /// Record validation operation
     pub fn record_validation(
         &self,
-        _executor_id: &str,
+        _node_id: &str,
         success: bool,
         duration: Duration,
         score: Option<f64>,
@@ -260,9 +257,9 @@ impl ValidatorPrometheusMetrics {
         histogram!("basilica_validator_http_response_size_bytes").record(response_size as f64);
     }
 
-    /// Set executor health status
-    pub fn set_executor_health(&self, _executor_id: &str, healthy: bool) {
-        gauge!("basilica_validator_executor_health_status").set(if healthy { 1.0 } else { 0.0 });
+    /// Set node health status
+    pub fn set_node_health(&self, _node_id: &str, healthy: bool) {
+        gauge!("basilica_validator_node_health_status").set(if healthy { 1.0 } else { 0.0 });
     }
 
     /// Record consensus weight set operation
@@ -294,17 +291,17 @@ impl ValidatorPrometheusMetrics {
             .record(weighted_score);
     }
 
-    /// Record GPU count for an executor
-    pub fn record_executor_gpu_count(
+    /// Record GPU count for an node
+    pub fn record_node_gpu_count(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
         gpu_model: &str,
         gpu_count: usize,
     ) {
-        gauge!("basilica_validator_executor_gpu_count",
+        gauge!("basilica_validator_node_gpu_count",
             "miner_uid" => miner_uid.to_string(),
-            "executor_id" => executor_id.to_string(),
+            "node_id" => node_id.to_string(),
             "gpu_model" => gpu_model.to_string()
         )
         .set(gpu_count as f64);
@@ -319,10 +316,10 @@ impl ValidatorPrometheusMetrics {
     }
 
     /// Record successful validation for a miner
-    pub fn record_miner_successful_validation(&self, miner_uid: u16, executor_id: &str) {
+    pub fn record_miner_successful_validation(&self, miner_uid: u16, node_id: &str) {
         counter!("basilica_validator_miner_successful_validations",
             "miner_uid" => miner_uid.to_string(),
-            "executor_id" => executor_id.to_string()
+            "node_id" => node_id.to_string()
         )
         .increment(1);
     }
@@ -332,27 +329,27 @@ impl ValidatorPrometheusMetrics {
         &self,
         miner_uid: u16,
         gpu_profile: &str,
-        executor_id: &str,
+        node_id: &str,
         count: u32,
     ) {
         gauge!("basilica_validator_miner_gpu_profiles",
             "miner_uid" => miner_uid.to_string(),
             "gpu_profile" => gpu_profile.to_string(),
-            "executor_id" => executor_id.to_string()
+            "node_id" => node_id.to_string()
         )
         .set(count as f64);
     }
 
-    /// Record executor rental status
-    pub fn record_executor_rental_status(
+    /// Record node rental status
+    pub fn record_node_rental_status(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         gpu_type: &str,
         is_rented: bool,
     ) {
-        gauge!("basilica_validator_executor_rental_status",
-            "executor_id" => executor_id.to_string(),
+        gauge!("basilica_validator_node_rental_status",
+            "node_id" => node_id.to_string(),
             "miner_uid" => miner_uid.to_string(),
             "gpu_type" => gpu_type.to_string()
         )
@@ -478,31 +475,31 @@ impl ValidatorPrometheusMetrics {
                 .and_then(|uid_str| uid_str.parse::<u16>().ok())
                 .unwrap_or(0);
 
-            let executor_gpu_counts = self
+            let node_gpu_counts = self
                 .persistence
                 .get_miner_gpu_uuid_assignments(&miner.miner_id)
                 .await
                 .unwrap();
 
             debug!(
-                "Miner {} (UID: {}) has {} executors with GPU assignments",
+                "Miner {} (UID: {}) has {} nodes with GPU assignments",
                 miner.miner_id,
                 miner_uid,
-                executor_gpu_counts.len()
+                node_gpu_counts.len()
             );
 
-            // Only set metrics for executors that have GPU assignments
-            for (executor_id, gpu_count, gpu_model, gpu_memory_gb) in &executor_gpu_counts {
-                let executor_uuid = executor_id.as_str();
+            // Only set metrics for nodes that have GPU assignments
+            for (node_id, gpu_count, gpu_model, gpu_memory_gb) in &node_gpu_counts {
+                let node_uuid = node_id.as_str();
 
                 debug!(
-                    "Setting executor GPU count: miner_uid={}, executor_id={}, gpu_model={}, gpu_count={}, gpu_memory_gb={}",
-                    miner_uid, executor_uuid, gpu_model, gpu_count, gpu_memory_gb
+                    "Setting node GPU count: miner_uid={}, node_id={}, gpu_model={}, gpu_count={}, gpu_memory_gb={}",
+                    miner_uid, node_uuid, gpu_model, gpu_count, gpu_memory_gb
                 );
 
-                gauge!("basilica_validator_executor_gpu_count",
+                gauge!("basilica_validator_node_gpu_count",
                     "miner_uid" => miner_uid.to_string(),
-                    "executor_id" => executor_uuid.to_string(),
+                    "node_id" => node_uuid.to_string(),
                     "gpu_model" => gpu_model.to_string()
                 )
                 .set(*gpu_count as f64);
@@ -547,10 +544,10 @@ impl ValidatorPrometheusMetrics {
         gauge!("basilica_validator_discovered_miners_total").set(count as f64);
     }
 
-    /// Sets executor validation state atomically, clearing all other states for the validation type
-    pub fn set_executor_validation_state(
+    /// Sets node validation state atomically, clearing all other states for the validation type
+    pub fn set_node_validation_state(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         validation_type: ValidationType,
         current_state: ValidationState,
@@ -572,8 +569,8 @@ impl ValidatorPrometheusMetrics {
                 0.0
             };
 
-            gauge!("basilica_validator_executor_validation_state",
-                "executor_id" => executor_id.to_string(),
+            gauge!("basilica_validator_node_validation_state",
+                "node_id" => node_id.to_string(),
                 "miner_uid" => miner_uid.to_string(),
                 "validation_type" => validation_type_str.to_string(),
                 "state" => state.as_str().to_string()
@@ -582,10 +579,10 @@ impl ValidatorPrometheusMetrics {
         }
     }
 
-    /// Clears all validation states for an executor (sets all to 0.0)
-    pub fn clear_executor_validation_states(
+    /// Clears all validation states for an node (sets all to 0.0)
+    pub fn clear_node_validation_states(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         validation_type: ValidationType,
     ) {
@@ -597,8 +594,8 @@ impl ValidatorPrometheusMetrics {
         let all_states = ValidationState::states_for_type(validation_type);
 
         for state in all_states {
-            gauge!("basilica_validator_executor_validation_state",
-                "executor_id" => executor_id.to_string(),
+            gauge!("basilica_validator_node_validation_state",
+                "node_id" => node_id.to_string(),
                 "miner_uid" => miner_uid.to_string(),
                 "validation_type" => validation_type_str.to_string(),
                 "state" => state.as_str().to_string()

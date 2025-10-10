@@ -49,10 +49,10 @@ async fn test_metrics_registry_initialization() -> Result<()> {
     // Check for specific metric types
     let metric_names: Vec<_> = metric_families.iter().map(|f| f.get_name()).collect();
 
-    // Should have executor-related metrics
+    // Should have node-related metrics
     assert!(
-        metric_names.iter().any(|n| n.contains("executor")),
-        "Should have executor metrics"
+        metric_names.iter().any(|n| n.contains("node")),
+        "Should have node metrics"
     );
 
     // Should have chain-related metrics
@@ -71,7 +71,7 @@ async fn test_metrics_registry_initialization() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_executor_fleet_metrics() -> Result<()> {
+async fn test_node_fleet_metrics() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -90,55 +90,55 @@ async fn test_executor_fleet_metrics() -> Result<()> {
     let db = Arc::new(RwLock::new(RegistrationDb::new(pool.clone())));
     let collector = MetricsCollector::new(config.clone(), db.clone())?;
 
-    // Register test executors
+    // Register test nodes
     {
         let mut db_write = db.write().await;
         db_write
-            .register_executor("test-executor-1", "127.0.0.1:50051", Some("Test 1"))
+            .register_node("test-node-1", "127.0.0.1:50051", Some("Test 1"))
             .await?;
         db_write
-            .register_executor("test-executor-2", "127.0.0.1:50052", Some("Test 2"))
+            .register_node("test-node-2", "127.0.0.1:50052", Some("Test 2"))
             .await?;
         db_write
-            .register_executor("test-executor-3", "127.0.0.1:50053", Some("Test 3"))
+            .register_node("test-node-3", "127.0.0.1:50053", Some("Test 3"))
             .await?;
     }
 
     // Update fleet metrics
-    collector.update_executor_fleet_metrics().await?;
+    collector.update_node_fleet_metrics().await?;
 
     // Verify metrics
-    let total_executors = collector.get_metric_value("miner_executors_total").await?;
-    assert_eq!(total_executors, 3.0, "Should have 3 total executors");
+    let total_nodes = collector.get_metric_value("miner_nodes_total").await?;
+    assert_eq!(total_nodes, 3.0, "Should have 3 total nodes");
 
-    let healthy_executors = collector
-        .get_metric_value("miner_executors_healthy")
+    let healthy_nodes = collector
+        .get_metric_value("miner_nodes_healthy")
         .await?;
     assert_eq!(
-        healthy_executors, 0.0,
-        "Should have 0 healthy executors initially"
+        healthy_nodes, 0.0,
+        "Should have 0 healthy nodes initially"
     );
 
     // Simulate health check updates
     {
         let mut db_write = db.write().await;
         db_write
-            .update_executor_health("test-executor-1", true)
+            .update_node_health("test-node-1", true)
             .await?;
         db_write
-            .update_executor_health("test-executor-2", true)
+            .update_node_health("test-node-2", true)
             .await?;
     }
 
     // Update metrics again
-    collector.update_executor_fleet_metrics().await?;
+    collector.update_node_fleet_metrics().await?;
 
-    let healthy_executors = collector
-        .get_metric_value("miner_executors_healthy")
+    let healthy_nodes = collector
+        .get_metric_value("miner_nodes_healthy")
         .await?;
     assert_eq!(
-        healthy_executors, 2.0,
-        "Should have 2 healthy executors after update"
+        healthy_nodes, 2.0,
+        "Should have 2 healthy nodes after update"
     );
 
     Ok(())
@@ -317,7 +317,7 @@ async fn test_database_metrics() -> Result<()> {
     for i in 0..20 {
         let mut db_write = db.write().await;
         db_write
-            .register_executor(
+            .register_node(
                 &format!("exec-{}", i),
                 &format!("127.0.0.1:{}", 50000 + i),
                 None,
@@ -341,23 +341,23 @@ async fn test_database_metrics() -> Result<()> {
     let start = std::time::Instant::now();
     {
         let db_read = db.read().await;
-        let _ = db_read.list_executors().await?;
+        let _ = db_read.list_nodes().await?;
     }
     let duration = start.elapsed();
 
     collector
-        .record_database_query("list_executors", duration, true)
+        .record_database_query("list_nodes", duration, true)
         .await?;
 
     let query_count = collector
         .get_counter_value(
             "miner_db_queries_total",
-            &[("query", "list_executors"), ("status", "success")],
+            &[("query", "list_nodes"), ("status", "success")],
         )
         .await?;
     assert_eq!(
         query_count, 1.0,
-        "Should have 1 successful list_executors query"
+        "Should have 1 successful list_nodes query"
     );
 
     Ok(())
@@ -531,32 +531,32 @@ async fn test_metrics_aggregation() -> Result<()> {
     let db = Arc::new(RwLock::new(RegistrationDb::new(pool.clone())));
     let collector = MetricsCollector::new(config, db.clone())?;
 
-    // Register multiple executors with different states
+    // Register multiple nodes with different states
     {
         let mut db_write = db.write().await;
         for i in 0..10 {
             db_write
-                .register_executor(
+                .register_node(
                     &format!("healthy-{}", i),
                     &format!("127.0.0.1:{}", 50000 + i),
                     None,
                 )
                 .await?;
             db_write
-                .update_executor_health(&format!("healthy-{}", i), true)
+                .update_node_health(&format!("healthy-{}", i), true)
                 .await?;
         }
 
         for i in 0..5 {
             db_write
-                .register_executor(
+                .register_node(
                     &format!("unhealthy-{}", i),
                     &format!("127.0.0.1:{}", 51000 + i),
                     None,
                 )
                 .await?;
             db_write
-                .update_executor_health(&format!("unhealthy-{}", i), false)
+                .update_node_health(&format!("unhealthy-{}", i), false)
                 .await?;
         }
     }
@@ -586,11 +586,11 @@ async fn test_metrics_aggregation() -> Result<()> {
     collector.update_all_metrics().await?;
 
     // Verify aggregated results
-    let total_executors = collector.get_metric_value("miner_executors_total").await?;
-    assert_eq!(total_executors, 15.0, "Should have 15 total executors");
+    let total_nodes = collector.get_metric_value("miner_nodes_total").await?;
+    assert_eq!(total_nodes, 15.0, "Should have 15 total nodes");
 
     let healthy_ratio = collector
-        .get_metric_value("miner_executors_healthy_ratio")
+        .get_metric_value("miner_nodes_healthy_ratio")
         .await?;
     assert!(
         (healthy_ratio - 0.666).abs() < 0.01,

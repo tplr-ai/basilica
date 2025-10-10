@@ -10,7 +10,7 @@ contract Collateral {
     uint64 public DECISION_TIMEOUT;
     uint256 public MIN_COLLATERAL_INCREASE;
 
-    mapping(bytes32 => mapping(bytes16 => address)) public executorToMiner;
+    mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
     mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
     mapping(uint256 => Reclaim) public reclaims;
 
@@ -20,7 +20,7 @@ contract Collateral {
 
     struct Reclaim {
         bytes32 hotkey;
-        bytes16 executorId;
+        bytes16 nodeId;
         address miner;
         uint256 amount;
         uint64 denyTimeout;
@@ -28,14 +28,14 @@ contract Collateral {
 
     event Deposit(
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address indexed miner,
         uint256 amount
     );
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address miner,
         uint256 amount,
         uint64 expirationTime,
@@ -45,7 +45,7 @@ contract Collateral {
     event Reclaimed(
         uint256 indexed reclaimRequestId,
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address miner,
         uint256 amount
     );
@@ -56,7 +56,7 @@ contract Collateral {
     );
     event Slashed(
         bytes32 indexed hotkey,
-        bytes16 indexed executorId,
+        bytes16 indexed nodeId,
         address indexed miner,
         uint256 amount,
         string url,
@@ -65,7 +65,7 @@ contract Collateral {
 
     error AmountZero();
     error BeforeDenyTimeout();
-    error ExecutorNotOwned();
+    error NodeNotOwned();
     error InsufficientAmount();
     error InvalidDepositMethod();
     error NotTrustee();
@@ -117,51 +117,51 @@ contract Collateral {
         revert InvalidDepositMethod();
     }
 
-    /// @notice Allows users to deposit collateral into the contract for a specific executor
+    /// @notice Allows users to deposit collateral into the contract for a specific node
     /// @param hotkey The netuid key for the subnet
-    /// @param executorId The ID of the executor to deposit collateral for
-    /// @dev The first deposit for an executorId sets the owner. Subsequent deposits must be from the owner.
+    /// @param nodeId The ID of the node to deposit collateral for
+    /// @dev The first deposit for an nodeId sets the owner. Subsequent deposits must be from the owner.
     /// @dev The deposited amount must be greater than or equal to MIN_COLLATERAL_INCREASE
     /// @dev If it's not revert with InsufficientAmount error
-    /// @dev Emits a Deposit event with the hotkey, executorId, sender's address and deposited amount
-    function deposit(bytes32 hotkey, bytes16 executorId) external payable {
+    /// @dev Emits a Deposit event with the hotkey, nodeId, sender's address and deposited amount
+    function deposit(bytes32 hotkey, bytes16 nodeId) external payable {
         if (msg.value < MIN_COLLATERAL_INCREASE) {
             revert InsufficientAmount();
         }
 
-        address owner = executorToMiner[hotkey][executorId];
+        address owner = nodeToMiner[hotkey][nodeId];
         if (owner == address(0)) {
-            executorToMiner[hotkey][executorId] = msg.sender;
+            nodeToMiner[hotkey][nodeId] = msg.sender;
         } else if (owner != msg.sender) {
-            revert ExecutorNotOwned();
+            revert NodeNotOwned();
         }
 
-        collaterals[hotkey][executorId] += msg.value;
-        emit Deposit(hotkey, executorId, msg.sender, msg.value);
+        collaterals[hotkey][nodeId] += msg.value;
+        emit Deposit(hotkey, nodeId, msg.sender, msg.value);
     }
 
-    /// @notice Initiates a process to reclaim all available collateral from a specific executor
+    /// @notice Initiates a process to reclaim all available collateral from a specific node
     /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after DECISION_TIMEOUT
     /// @param hotkey The netuid key for the subnet
-    /// @param executorId The ID of the executor to reclaim collateral from
+    /// @param nodeId The ID of the node to reclaim collateral from
     /// @param url URL containing information about the reclaim request
     /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
     /// @dev Emits ReclaimProcessStarted event with reclaim details and timeout
-    /// @dev Reverts with ExecutorNotOwned if caller is not the owner of the executor
+    /// @dev Reverts with NodeNotOwned if caller is not the owner of the node
     /// @dev Reverts with AmountZero if there is no available collateral to reclaim
     function reclaimCollateral(
         bytes32 hotkey,
-        bytes16 executorId,
+        bytes16 nodeId,
         string calldata url,
         bytes16 urlContentMd5Checksum
     ) external {
-        if (executorToMiner[hotkey][executorId] != msg.sender) {
-            revert ExecutorNotOwned();
+        if (nodeToMiner[hotkey][nodeId] != msg.sender) {
+            revert NodeNotOwned();
         }
 
-        uint256 collateral = collaterals[hotkey][executorId];
+        uint256 collateral = collaterals[hotkey][nodeId];
         uint256 pendingCollateral = collateralUnderPendingReclaims[hotkey][
-            executorId
+            nodeId
         ];
         uint256 amount = collateral - pendingCollateral;
 
@@ -172,17 +172,17 @@ contract Collateral {
         uint64 expirationTime = uint64(block.timestamp) + DECISION_TIMEOUT;
         reclaims[++nextReclaimId] = Reclaim(
             hotkey,
-            executorId,
+            nodeId,
             msg.sender,
             amount,
             expirationTime
         );
-        collateralUnderPendingReclaims[hotkey][executorId] += amount;
+        collateralUnderPendingReclaims[hotkey][nodeId] += amount;
 
         emit ReclaimProcessStarted(
             nextReclaimId,
             hotkey,
-            executorId,
+            nodeId,
             msg.sender,
             amount,
             expirationTime,
@@ -210,28 +210,28 @@ contract Collateral {
         }
 
         bytes32 hotkey = reclaim.hotkey;
-        bytes16 executorId = reclaim.executorId;
+        bytes16 nodeId = reclaim.nodeId;
         address miner = reclaim.miner;
         uint256 amount = reclaim.amount;
 
         delete reclaims[reclaimRequestId];
-        collateralUnderPendingReclaims[hotkey][executorId] -= amount;
+        collateralUnderPendingReclaims[hotkey][nodeId] -= amount;
 
-        if (collaterals[hotkey][executorId] < amount) {
+        if (collaterals[hotkey][nodeId] < amount) {
             // miner got slashed and can't withdraw
             revert InsufficientCollateralForReclaim();
         }
 
-        collaterals[hotkey][executorId] -= amount;
+        collaterals[hotkey][nodeId] -= amount;
 
-        emit Reclaimed(reclaimRequestId, hotkey, executorId, miner, amount);
+        emit Reclaimed(reclaimRequestId, hotkey, nodeId, miner, amount);
 
         // check-effect-interact pattern used to prevent reentrancy attacks
         (bool success, ) = payable(miner).call{value: amount}("");
         if (!success) {
             revert TransferFailed();
         }
-        executorToMiner[hotkey][executorId] = address(0);
+        nodeToMiner[hotkey][nodeId] = address(0);
     }
 
     /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires
@@ -259,47 +259,47 @@ contract Collateral {
         }
 
         collateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.executorId
+            reclaim.nodeId
         ] -= reclaim.amount;
         emit Denied(reclaimRequestId, url, urlContentMd5Checksum);
 
         delete reclaims[reclaimRequestId];
     }
 
-    /// @notice Allows the trustee to slash a miner's collateral for a specific executor
+    /// @notice Allows the trustee to slash a miner's collateral for a specific node
     /// @dev Can only be called by the trustee (address set in constructor)
-    /// @dev Removes the collateral from the executor and burns it
+    /// @dev Removes the collateral from the node and burns it
     /// @param hotkey The netuid key for the subnet
-    /// @param executorId The ID of the executor to slash
+    /// @param nodeId The ID of the node to slash
     /// @param url URL containing the reason for slashing
     /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
-    /// @dev Emits Slashed event with the executor's ID, miner's address and the amount slashed
+    /// @dev Emits Slashed event with the node's ID, miner's address and the amount slashed
     /// @dev Reverts with AmountZero if there is no collateral to slash
     /// @dev Reverts with TransferFailed if the TAO transfer fails
     function slashCollateral(
         bytes32 hotkey,
-        bytes16 executorId,
+        bytes16 nodeId,
         string calldata url,
         bytes16 urlContentMd5Checksum
     ) external onlyTrustee {
-        uint256 amount = collaterals[hotkey][executorId];
+        uint256 amount = collaterals[hotkey][nodeId];
 
         if (amount == 0) {
             revert AmountZero();
         }
 
-        collaterals[hotkey][executorId] = 0;
-        address miner = executorToMiner[hotkey][executorId];
+        collaterals[hotkey][nodeId] = 0;
+        address miner = nodeToMiner[hotkey][nodeId];
 
         // burn the collateral
         (bool success, ) = payable(address(0)).call{value: amount}("");
         if (!success) {
             revert TransferFailed();
         }
-        executorToMiner[hotkey][executorId] = address(0);
+        nodeToMiner[hotkey][nodeId] = address(0);
         emit Slashed(
             hotkey,
-            executorId,
+            nodeId,
             miner,
             amount,
             url,

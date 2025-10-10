@@ -39,8 +39,15 @@ pub struct ApiConfig {
 
 impl Default for ApiConfig {
     fn default() -> Self {
+        // Use localhost for development environment, production URL otherwise
+        let base_url = if basilica_common::is_development_environment() {
+            "http://localhost:8000".to_string()
+        } else {
+            "https://api.basilica.ai".to_string()
+        };
+
         Self {
-            base_url: "https://api.basilica.ai".to_string(),
+            base_url,
             request_timeout: 900,
         }
     }
@@ -160,7 +167,7 @@ pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig
             "email".to_string(),
             "offline_access".to_string(), // Required for refresh tokens
             "rentals:*".to_string(),      // All rental operations
-            "executors:list".to_string(), // List available executors
+            "nodes:list".to_string(),     // List available nodes
             "keys:create".to_string(),    // Create API keys
             "keys:list".to_string(),      // List API keys
             "keys:revoke".to_string(),    // Revoke API keys

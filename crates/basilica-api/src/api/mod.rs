@@ -28,7 +28,7 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/rentals/:id/logs",
             get(routes::rentals::stream_rental_logs),
         )
-        .route("/executors", get(routes::rentals::list_available_executors))
+        .route("/nodes", get(routes::rentals::list_available_nodes))
         // API key management endpoints (JWT auth only)
         .route(
             "/api-keys",

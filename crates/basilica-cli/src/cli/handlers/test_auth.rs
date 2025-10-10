@@ -191,11 +191,13 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
     println!("──────────────────────────────────\n");
 
     let data_dir = CliConfig::data_dir().map_err(|e| eyre!(e.to_string()))?;
-    let token_store = TokenStore::new(data_dir).map_err(|e| eyre!(e.to_string()))?;
+    let token_store = TokenStore::new(data_dir)
+        .await
+        .map_err(|e| eyre!(e.to_string()))?;
 
     // Get current tokens to test refresh
     let tokens = token_store
-        .retrieve()
+        .retrieve_tokens()
         .await
         .map_err(|e| eyre!(format!("Failed to retrieve tokens: {}", e)))?
         .ok_or_else(|| {
@@ -237,7 +239,7 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
                 println!("  ✅ Token refresh SUCCESSFUL!");
 
                 // Store the new tokens
-                if let Err(e) = token_store.store(&new_tokens).await {
+                if let Err(e) = token_store.store_tokens(&new_tokens).await {
                     println!("  ⚠️  Warning: Failed to store refreshed tokens: {}", e);
                 }
 
@@ -273,9 +275,9 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
 
     // Get the bearer token from TokenStore
     let data_dir = CliConfig::data_dir()?;
-    let token_store = TokenStore::new(data_dir)?;
+    let token_store = TokenStore::new(data_dir).await?;
     let tokens = token_store
-        .retrieve()
+        .retrieve_tokens()
         .await?
         .ok_or_else(|| eyre!("No authentication token found. Please run 'basilica login' first"))?;
     let token = tokens.access_token;
@@ -398,9 +400,9 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
             .build()
             .map_err(|e| eyre!(format!("Failed to build API key client: {}", e)))?;
 
-        // Test with list_available_executors endpoint
-        println!("Testing API key with list_available_executors endpoint...");
-        match api_key_client.list_available_executors(None).await {
+        // Test with list_available_nodes endpoint
+        println!("Testing API key with list_available_nodes endpoint...");
+        match api_key_client.list_available_nodes(None).await {
             Ok(_) => {
                 println!("✅ API key authentication successful!");
             }

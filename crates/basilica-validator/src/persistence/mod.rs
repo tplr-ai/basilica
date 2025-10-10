@@ -1,9 +1,23 @@
 pub mod cleanup_task;
 pub mod collateral_persistence;
+pub mod docker_profile;
 pub mod entities;
+pub mod gpu_assignments;
 pub mod gpu_profile_repository;
+pub mod hardware_profile;
+pub mod miner_nodes;
+pub mod miners;
+pub mod nat_profile;
+pub mod network_profile;
+pub mod rentals;
 pub mod simple_persistence;
+pub mod speedtest_profile;
+pub mod storage_profile;
+pub mod types;
 pub mod validator_persistence;
+pub mod verification;
+pub mod verification_logs;
 
 pub use simple_persistence::*;
+pub use types::*;
 pub use validator_persistence::ValidatorPersistence;

@@ -317,16 +317,21 @@ async fn test_collateral_deploy_local() {
     println!("Deposit receipt: {:?}", receipt);
 
     let executor_to_miner_result = proxied
-        .executorToMiner(hotkey, executor_id)
-        .call()
-        .await
-        .unwrap();
-    assert_eq!(executor_to_miner_result, signer.address());
+        .executorToMiner(hotkey, executor_id);
+    // Test get methods
+    let netuid_result = proxied.NETUID().call().await.unwrap();
+    assert_eq!(netuid_result, netuid);
 
-    let collaterals_result = proxied
-        .collaterals(hotkey, executor_id)
-        .call()
-        .await
+    let trustee_result = proxied.TRUSTEE().call().await.unwrap();
+    assert_eq!(trustee_result, trustee);
+
+    let min_collateral_increase_result = proxied.MIN_COLLATERAL_INCREASE().call().await.unwrap();
+    assert_eq!(min_collateral_increase_result, min_collateral_increase);
+
+    let decision_timeout_result = proxied.DECISION_TIMEOUT().call().await.unwrap();
+    assert_eq!(decision_timeout_result, decision_timeout);
+    let node_to_miner_result = proxied
+        .nodeToMiner(
         .unwrap();
     assert_eq!(collaterals_result, amount);
 }

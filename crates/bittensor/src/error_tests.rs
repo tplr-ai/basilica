@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::error::{BittensorError, ErrorCategory, RetryConfig};
-    use super::super::retry::{CircuitBreaker, ExponentialBackoff, RetryExecutor};
+    use super::super::retry::{CircuitBreaker, ExponentialBackoff, RetryNode};
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -183,18 +183,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_executor_success_on_first_attempt() {
+    async fn test_retry_node_success_on_first_attempt() {
         let operation = || async { Ok::<&str, BittensorError>("success") };
 
-        let executor = RetryExecutor::new();
-        let result: Result<&str, BittensorError> = executor.execute(operation).await;
+        let node = RetryNode::new();
+        let result: Result<&str, BittensorError> = node.execute(operation).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
     }
 
     #[tokio::test]
-    async fn test_retry_executor_success_after_retries() {
+    async fn test_retry_node_success_after_retries() {
         let counter = Arc::new(AtomicU32::new(0));
         let counter_clone = counter.clone();
 
@@ -212,8 +212,8 @@ mod tests {
             }
         };
 
-        let executor = RetryExecutor::new();
-        let result: Result<&str, BittensorError> = executor.execute(operation).await;
+        let node = RetryNode::new();
+        let result: Result<&str, BittensorError> = node.execute(operation).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "success");
@@ -221,15 +221,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_executor_non_retryable_error() {
+    async fn test_retry_node_non_retryable_error() {
         let operation = || async {
             Err(BittensorError::InvalidHotkey {
                 hotkey: "invalid".to_string(),
             })
         };
 
-        let executor = RetryExecutor::new();
-        let result: Result<&str, BittensorError> = executor.execute(operation).await;
+        let node = RetryNode::new();
+        let result: Result<&str, BittensorError> = node.execute(operation).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -241,15 +241,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_executor_max_retries_exceeded() {
+    async fn test_retry_node_max_retries_exceeded() {
         let operation = || async {
             Err(BittensorError::RpcConnectionError {
                 message: "Always fails".to_string(),
             })
         };
 
-        let executor = RetryExecutor::new();
-        let result: Result<&str, BittensorError> = executor.execute(operation).await;
+        let node = RetryNode::new();
+        let result: Result<&str, BittensorError> = node.execute(operation).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_executor_with_timeout() {
+    async fn test_retry_node_with_timeout() {
         let operation = || async {
             sleep(Duration::from_millis(200)).await;
             Err(BittensorError::RpcConnectionError {
@@ -269,8 +269,8 @@ mod tests {
             })
         };
 
-        let executor = RetryExecutor::new().with_timeout(Duration::from_millis(500));
-        let result: Result<&str, BittensorError> = executor.execute(operation).await;
+        let node = RetryNode::new().with_timeout(Duration::from_millis(500));
+        let result: Result<&str, BittensorError> = node.execute(operation).await;
 
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -282,7 +282,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_retry_executor_custom_config() {
+    async fn test_retry_node_custom_config() {
         let custom_config = RetryConfig {
             max_attempts: 2,
             initial_delay: Duration::from_millis(10),
@@ -304,9 +304,9 @@ mod tests {
             }
         };
 
-        let executor = RetryExecutor::new();
+        let node = RetryNode::new();
         let result: Result<&str, BittensorError> =
-            executor.execute_with_config(operation, custom_config).await;
+            node.execute_with_config(operation, custom_config).await;
 
         assert!(result.is_err());
         // For custom config, it attempts the operation first (1 time) + max_attempts retries (2 times) = 3 total

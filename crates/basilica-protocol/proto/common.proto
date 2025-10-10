@@ -557,7 +557,7 @@ message GpuPerformanceBaseline {
   uint64 max_time_ms = 6;
 }
 
-// Authentication data for miner-to-executor requests
+// Authentication data for miner-to-node requests
 message MinerAuthentication {
   // Miner's hotkey address
   string miner_hotkey = 1;

@@ -71,15 +71,15 @@ impl GpuProfileRepository {
             .get_miner_gpu_uuid_assignments(&format!("miner_{}", miner_uid.as_u16()))
             .await?;
         let mut assignments = HashMap::new();
-        for (executor_id, count, name, memory_gb) in assignments_rows {
-            match assignments.entry(executor_id.clone()) {
+        for (node_id, count, name, memory_gb) in assignments_rows {
+            match assignments.entry(node_id.clone()) {
                 HashMapEntry::Occupied(mut entry) => {
                     // impossible case, but log a warning if it happens
                     let (existing_count, existing_name, existing_memory) = entry.get();
                     let total_count = existing_count + count;
                     warn!(
-                        "Data inconsistency: executor {} has multiple GPU models ({} and {}). Aggregating counts.",
-                        executor_id, existing_name, name
+                        "Data inconsistency: node {} has multiple GPU models ({} and {}). Aggregating counts.",
+                        node_id, existing_name, name
                     );
                     if count > *existing_count {
                         entry.insert((total_count, name, memory_gb));
@@ -201,7 +201,7 @@ impl GpuProfileRepository {
                 END as miner_uid,
                 g.miner_id
             FROM gpu_uuid_assignments g
-            INNER JOIN miner_executors me ON g.miner_id = me.miner_id AND g.executor_id = me.executor_id
+            INNER JOIN miner_nodes me ON g.miner_id = me.miner_id AND g.node_id = me.node_id
             WHERE me.status IN ('online', 'verified')
                 AND g.miner_id LIKE 'miner_%'
             ORDER BY g.miner_id
@@ -239,7 +239,7 @@ impl GpuProfileRepository {
                     COALESCE(AVG(score), 0.0) as avg_score,
                     COUNT(*) as verification_count
                 FROM verification_logs vl
-                INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+                INNER JOIN miner_nodes me ON vl.node_id = me.node_id
                 WHERE me.miner_id = ?
                 AND vl.success = 1
                 AND vl.timestamp > datetime('now', '-3 hours')
@@ -256,7 +256,7 @@ impl GpuProfileRepository {
             let latest_successfull_validation_query = r#"
                 SELECT MAX(vl.timestamp) AS latest_timestamp
                 FROM verification_logs vl
-                INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+                INNER JOIN miner_nodes me ON vl.node_id = me.node_id
                 WHERE me.miner_id = ?
                 AND vl.success = 1
             "#;
@@ -321,7 +321,7 @@ impl GpuProfileRepository {
                 END as miner_uid,
                 g.miner_id
             FROM gpu_uuid_assignments g
-            INNER JOIN miner_executors me ON g.miner_id = me.miner_id AND g.executor_id = me.executor_id
+            INNER JOIN miner_nodes me ON g.miner_id = me.miner_id AND g.node_id = me.node_id
             WHERE me.status IN ('online', 'verified')
                 AND g.miner_id LIKE 'miner_%'
                 AND g.gpu_name LIKE '%' || ? || '%'
@@ -364,7 +364,7 @@ impl GpuProfileRepository {
                     COALESCE(AVG(score), 0.0) as avg_score,
                     COUNT(*) as verification_count
                 FROM verification_logs vl
-                INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+                INNER JOIN miner_nodes me ON vl.node_id = me.node_id
                 WHERE me.miner_id = ?
                 AND vl.success = 1
                 AND vl.timestamp > datetime('now', '-3 hours')
@@ -380,7 +380,7 @@ impl GpuProfileRepository {
             let latest_successfull_validation_query = r#"
                 SELECT MAX(vl.timestamp) AS latest_timestamp
                 FROM verification_logs vl
-                INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
+                INNER JOIN miner_nodes me ON vl.node_id = me.node_id
                 WHERE me.miner_id = ?
                 AND vl.success = 1
             "#;
@@ -457,43 +457,43 @@ impl GpuProfileRepository {
         Ok(deleted)
     }
 
-    /// Clean up stale executors and orphan GPU profiles
-    pub async fn cleanup_stale_executors(&self) -> Result<usize> {
+    /// Clean up stale nodes and orphan GPU profiles
+    pub async fn cleanup_stale_nodes(&self) -> Result<usize> {
         let stale_threshold = Utc::now() - chrono::Duration::minutes(30);
 
         info!(
-            "Cleaning up executors not validated in the last 30 minutes. since: {}",
+            "Cleaning up nodes not validated in the last 30 minutes. since: {}",
             stale_threshold
         );
 
         let mut tx = self.pool.begin().await?;
 
-        let stale_executors_query = r#"
-            SELECT id, executor_id, miner_id
-            FROM miner_executors
+        let stale_nodes_query = r#"
+            SELECT id, node_id, miner_id
+            FROM miner_nodes
             WHERE status IN ('online', 'verified')
             AND (last_health_check IS NULL OR last_health_check < ?)
         "#;
 
-        let stale_executors = sqlx::query(stale_executors_query)
+        let stale_nodes = sqlx::query(stale_nodes_query)
             .bind(stale_threshold.to_rfc3339())
             .fetch_all(&mut *tx)
             .await?;
 
-        let stale_count = stale_executors.len();
+        let stale_count = stale_nodes.len();
         let mut total_assignments_deleted = 0u64;
 
-        for row in stale_executors {
-            let executor_id: String = row.get("executor_id");
+        for row in stale_nodes {
+            let node_id: String = row.get("node_id");
             let miner_id: String = row.get("miner_id");
 
             let delete_assignments = r#"
                 DELETE FROM gpu_uuid_assignments
-                WHERE executor_id = ? AND miner_id = ?
+                WHERE node_id = ? AND miner_id = ?
             "#;
 
             let result = sqlx::query(delete_assignments)
-                .bind(&executor_id)
+                .bind(&node_id)
                 .bind(&miner_id)
                 .execute(&mut *tx)
                 .await?;
@@ -502,14 +502,14 @@ impl GpuProfileRepository {
 
             if result.rows_affected() > 0 {
                 debug!(
-                    "Deleted {} GPU assignments for stale executor {}",
+                    "Deleted {} GPU assignments for stale node {}",
                     result.rows_affected(),
-                    executor_id
+                    node_id
                 );
             }
 
             let mark_offline = r#"
-                UPDATE miner_executors
+                UPDATE miner_nodes
                 SET status = 'offline', updated_at = datetime('now')
                 WHERE id = ?
             "#;
@@ -541,7 +541,7 @@ impl GpuProfileRepository {
 
         if stale_count > 0 {
             info!(
-                "Marked {} stale executors as offline and deleted {} GPU assignments",
+                "Marked {} stale nodes as offline and deleted {} GPU assignments",
                 stale_count, total_assignments_deleted
             );
         }
@@ -857,15 +857,15 @@ mod tests {
             gpu_repo.upsert_gpu_profile(profile).await?;
 
             let miner_id = format!("miner_{}", profile.miner_uid.as_u16());
-            let executor_id = format!(
-                "miner{}__test-executor-{}",
+            let node_id = format!(
+                "miner{}__test-node-{}",
                 profile.miner_uid.as_u16(),
                 profile.miner_uid.as_u16()
             );
 
             // Seed miners table first (required for foreign key constraint)
             sqlx::query(
-                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info)
+                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
                  VALUES (?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&miner_id)
@@ -884,12 +884,12 @@ mod tests {
                     let gpu_uuid =
                         format!("gpu-{}-{}-{}", profile.miner_uid.as_u16(), gpu_model, i);
                     sqlx::query(
-                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified)
+                        "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, node_id, miner_id, gpu_name, gpu_memory_gb, last_verified)
                          VALUES (?, ?, ?, ?, ?, ?, ?)"
                     )
                     .bind(&gpu_uuid)
                     .bind(i as i32)
-                    .bind(&executor_id)
+                    .bind(&node_id)
                     .bind(&miner_id)
                     .bind(gpu_model)
                     .bind(80i64) // Default 80GB for test data
@@ -899,14 +899,14 @@ mod tests {
                 }
             }
 
-            // Seed miner_executors table
+            // Seed miner_nodes table
             sqlx::query(
-                "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, created_at, updated_at)
+                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
-            .bind(&executor_id)
+            .bind(&node_id)
             .bind(&miner_id)
-            .bind(&executor_id)
+            .bind(&node_id)
             .bind("127.0.0.1:8080")
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
             .bind("online")
@@ -919,11 +919,11 @@ mod tests {
             if let Some(last_successful) = profile.last_successful_validation {
                 let log_id = uuid::Uuid::new_v4().to_string();
                 sqlx::query(
-                    "INSERT INTO verification_logs (id, executor_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at)
+                    "INSERT INTO verification_logs (id, node_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at)
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 )
                 .bind(&log_id)
-                .bind(&executor_id)
+                .bind(&node_id)
                 .bind("test_validator_hotkey")
                 .bind("gpu_validation")
                 .bind(last_successful.to_rfc3339())
@@ -949,6 +949,7 @@ mod tests {
         // Create a new persistence instance which will handle the database creation and migrations
         let persistence =
             crate::persistence::SimplePersistence::new(db_path, "test".to_string()).await?;
+        persistence.run_migrations().await?;
 
         // Return the pool from the persistence instance along with the temp file to keep it alive
         Ok((persistence.pool().clone(), temp_file))
@@ -1021,20 +1022,20 @@ mod tests {
 
         // Now update the GPU assignments to have 2 GPUs
         let miner_id = format!("miner_{}", miner_uid.as_u16());
-        let executor_id = format!(
-            "miner{}__test-executor-{}",
+        let node_id = format!(
+            "miner{}__test-node-{}",
             miner_uid.as_u16(),
             miner_uid.as_u16()
         );
 
         // Add another GPU assignment
         sqlx::query(
-            "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, last_verified)
+            "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, node_id, miner_id, gpu_name, last_verified)
              VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(format!("gpu-{}-A100-1", miner_uid.as_u16()))
         .bind(1i32)
-        .bind(&executor_id)
+        .bind(&node_id)
         .bind(&miner_id)
         .bind("A100")
         .bind(Utc::now().to_rfc3339())
@@ -1112,12 +1113,12 @@ mod tests {
 
         let miner_uid = MinerUid::new(1);
         let miner_id = format!("miner_{}", miner_uid.as_u16());
-        let executor_id = "exec_1";
+        let node_id = "exec_1";
 
-        // Manually insert inconsistent data - same executor with different GPU models
+        // Manually insert inconsistent data - same node with different GPU models
         // This shouldn't happen in reality but we handle it defensively
         sqlx::query(
-            "INSERT INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, executor_info)
+            "INSERT INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
              VALUES (?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&miner_id)
@@ -1131,14 +1132,14 @@ mod tests {
         .await
         .unwrap();
 
-        // Insert executor
+        // Insert node
         sqlx::query(
-            "INSERT INTO miner_executors (id, miner_id, executor_id, grpc_address, gpu_count, status, created_at, updated_at)
+            "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(format!("{}_{}", miner_id, executor_id))
+        .bind(format!("{}_{}", miner_id, node_id))
         .bind(&miner_id)
-        .bind(executor_id)
+        .bind(node_id)
         .bind("127.0.0.1:8080")
         .bind(5i64) // Total GPUs
         .bind("online")
@@ -1148,16 +1149,16 @@ mod tests {
         .await
         .unwrap();
 
-        // Insert inconsistent GPU assignments - same executor, different models
+        // Insert inconsistent GPU assignments - same node, different models
         // 3 A100s
         for i in 0..3 {
             sqlx::query(
-                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
+                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, node_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(format!("gpu-a100-{}", i))
             .bind(i)
-            .bind(executor_id)
+            .bind(node_id)
             .bind(&miner_id)
             .bind("A100")
             .bind(80.0)
@@ -1169,15 +1170,15 @@ mod tests {
             .unwrap();
         }
 
-        // 2 H100s (incorrect data - executor can't have mixed models)
+        // 2 H100s (incorrect data - node can't have mixed models)
         for i in 0..2 {
             sqlx::query(
-                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, executor_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
+                "INSERT INTO gpu_uuid_assignments (gpu_uuid, gpu_index, node_id, miner_id, gpu_name, gpu_memory_gb, last_verified, created_at, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(format!("gpu-h100-{}", i))
             .bind(i + 3)
-            .bind(executor_id)
+            .bind(node_id)
             .bind(&miner_id)
             .bind("H100")
             .bind(80.0)
@@ -1192,11 +1193,11 @@ mod tests {
         // Get assignments - should aggregate and keep the model with higher count
         let assignments = repo.get_miner_gpu_assignments(miner_uid).await.unwrap();
 
-        // Should have only one entry per executor
+        // Should have only one entry per node
         assert_eq!(assignments.len(), 1);
-        assert!(assignments.contains_key(executor_id));
+        assert!(assignments.contains_key(node_id));
 
-        let (count, gpu_model, memory) = assignments.get(executor_id).unwrap();
+        let (count, gpu_model, memory) = assignments.get(node_id).unwrap();
         // Should aggregate counts: 3 + 2 = 5
         assert_eq!(*count, 5);
         // Should keep A100 (had higher count: 3 > 2)

@@ -21,8 +21,8 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 
 use crate::types::{
-    AvailableExecutor, HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
-    RentalResponse, RentalStatusWithSshResponse, StartRentalApiRequest,
+    AvailableNode, HealthCheckResponse, ListAvailableNodesQuery, ListRentalsQuery, RentalResponse,
+    RentalStatusWithSshResponse, StartRentalApiRequest,
 };
 
 /// Python wrapper for BasilicaClient
@@ -97,16 +97,16 @@ impl BasilicaClient {
         Ok(response.into())
     }
 
-    /// List available executors
+    /// List available nodes
     ///
     /// Args:
     ///     query: Optional query parameters
     #[pyo3(signature = (query=None))]
-    fn list_executors(
+    fn list_nodes(
         &self,
         py: Python,
-        query: Option<ListAvailableExecutorsQuery>,
-    ) -> PyResult<Vec<AvailableExecutor>> {
+        query: Option<ListAvailableNodesQuery>,
+    ) -> PyResult<Vec<AvailableNode>> {
         let client = Arc::clone(&self.inner);
 
         // Convert Python query to SDK query if provided
@@ -115,12 +115,12 @@ impl BasilicaClient {
         let response = py
             .detach(|| {
                 self.runtime
-                    .block_on(async move { client.list_available_executors(query).await })
+                    .block_on(async move { client.list_available_nodes(query).await })
             })
             .map_err(|e| self.map_error_to_python(e))?;
 
         Ok(response
-            .available_executors
+            .available_nodes
             .into_iter()
             .map(Into::into)
             .collect())
@@ -224,18 +224,18 @@ impl BasilicaClient {
     }
 }
 
-/// Helper function to create executor selection by ID
+/// Helper function to create node selection by ID
 #[cfg_attr(feature = "stub-gen", gen_stub_pyfunction)]
 #[pyfunction]
-fn executor_by_id(executor_id: String) -> types::ExecutorSelection {
-    types::ExecutorSelection::ExecutorId { executor_id }
+fn node_by_id(node_id: String) -> types::NodeSelection {
+    types::NodeSelection::NodeId { node_id }
 }
 
-/// Helper function to create executor selection by GPU requirements (exact count)
+/// Helper function to create node selection by GPU requirements (exact count)
 #[cfg_attr(feature = "stub-gen", gen_stub_pyfunction)]
 #[pyfunction]
-fn executor_by_gpu(gpu_requirements: types::GpuRequirements) -> types::ExecutorSelection {
-    types::ExecutorSelection::ExactGpuConfiguration { gpu_requirements }
+fn node_by_gpu(gpu_requirements: types::GpuRequirements) -> types::NodeSelection {
+    types::NodeSelection::ExactGpuConfiguration { gpu_requirements }
 }
 
 /// Python module for Basilica SDK
@@ -267,25 +267,25 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::RentalStatusWithSshResponse>()?;
     m.add_class::<types::RentalStatus>()?;
     m.add_class::<types::SshAccess>()?;
-    m.add_class::<types::ExecutorDetails>()?;
+    m.add_class::<types::NodeDetails>()?;
     m.add_class::<types::GpuSpec>()?;
     m.add_class::<types::CpuSpec>()?;
-    m.add_class::<types::AvailableExecutor>()?;
+    m.add_class::<types::AvailableNode>()?;
     m.add_class::<types::AvailabilityInfo>()?;
 
     // Request types
     m.add_class::<types::StartRentalApiRequest>()?;
-    m.add_class::<types::ExecutorSelection>()?;
+    m.add_class::<types::NodeSelection>()?;
     m.add_class::<types::GpuRequirements>()?;
     m.add_class::<types::PortMappingRequest>()?;
     m.add_class::<types::ResourceRequirementsRequest>()?;
     m.add_class::<types::VolumeMountRequest>()?;
-    m.add_class::<types::ListAvailableExecutorsQuery>()?;
+    m.add_class::<types::ListAvailableNodesQuery>()?;
     m.add_class::<types::ListRentalsQuery>()?;
 
     // Helper functions
-    m.add_function(wrap_pyfunction!(executor_by_id, m)?)?;
-    m.add_function(wrap_pyfunction!(executor_by_gpu, m)?)?;
+    m.add_function(wrap_pyfunction!(node_by_id, m)?)?;
+    m.add_function(wrap_pyfunction!(node_by_gpu, m)?)?;
 
     Ok(())
 }

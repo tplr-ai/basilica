@@ -21,9 +21,8 @@ permissions:
 jobs:
   # Detect changes to determine which services need building
   changes:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     outputs:
-      executor: ${{ steps.changes.outputs.executor }}
       validator: ${{ steps.changes.outputs.validator }}
       miner: ${{ steps.changes.outputs.miner }}
       basilica-api: ${{ steps.changes.outputs.basilica-api }}
@@ -37,13 +36,6 @@ jobs:
         id: changes
         with:
           filters: |
-            executor:
-              - 'crates/basilica-executor/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/executor/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
             validator:
               - 'crates/basilica-validator/**'
               - 'crates/basilica-common/**'
@@ -94,7 +86,7 @@ jobs:
               - '.github/workflows/**'
 
   quick-checks:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -103,100 +95,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "25.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: pkg-config libssl-dev xxd mold clang python3-dev python3-dev
-          version: 1.0
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - name: Generate test key
-        run: |
-          chmod +x scripts/gen-key.sh
-          ./scripts/gen-key.sh
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-      - name: Quick check builds
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p basilica-common -p basilica-protocol -p bittensor
-      - name: Run clippy on core packages
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo clippy -p basilica-common -p basilica-protocol -p bittensor --all-targets -- -D warnings
-
-  # Lint complex packages
-  lint-complex:
-    runs-on: ubuntu-latest
-    needs: quick-checks
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "shared-cache"
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "25.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: pkg-config libssl-dev xxd mold clang python3-dev python3-dev
-          version: 1.0
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - name: Generate test key
-        run: |
-          chmod +x scripts/gen-key.sh
-          ./scripts/gen-key.sh
-      - name: Run clippy on complex packages
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
-          cargo clippy -p basilica-executor --all-targets --all-features -- -D warnings
-          # Run clippy on miner
-          cargo clippy -p basilica-miner --all-targets --all-features -- -D warnings
-          # Run clippy on validator
-          cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
-          # Run clippy on basilica-api
-          cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
-          # Run clippy on billing
-          cargo clippy -p basilica-billing --all-targets --all-features -- -D warnings
-          # Run clippy on payments
-          cargo clippy -p basilica-payments --all-targets --all-features -- -D warnings
-          # Run clippy on basilica-cli
-          cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
-
-  # Build and test executor
-  build-executor:
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.executor == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -211,38 +110,70 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
-      - name: Check executor builds
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Quick check builds
+        run: |
+          cargo check -p basilica-common -p basilica-protocol -p bittensor
+      - name: Run clippy on core packages
+        run: |
+          cargo clippy -p basilica-common -p basilica-protocol -p bittensor --all-targets -- -D warnings
+
+  # Lint complex packages
+  lint-complex:
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    needs: quick-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang python3-dev
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Generate test key
+        run: |
+          chmod +x scripts/gen-key.sh
+          ./scripts/gen-key.sh
+      - name: Run clippy on complex packages
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p basilica-executor
-      - name: Test executor crate (unit tests only)
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-executor --lib
-      - name: Test executor CLI functionality
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p basilica-executor
-          ./target/debug/basilica-executor --help
-      - name: Clean up space before Docker build
-        run: |
-          docker system prune -af
-          df -h
-      - name: Test Docker build script
-        run: |
-          chmod +x scripts/executor/build.sh
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          BITTENSOR_NETWORK=finney VALIDATOR_PUBLIC_KEY=$VALIDATOR_PUBLIC_KEY ./scripts/executor/build.sh --no-extract
+          # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
+          # Run clippy on miner
+          cargo clippy -p basilica-miner --all-targets --all-features -- -D warnings
+          # Run clippy on validator
+          cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
+          # Run clippy on basilica-api
+          cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
+          # Run clippy on billing
+          cargo clippy -p basilica-billing --all-targets --all-features -- -D warnings
+          # Run clippy on payments
+          cargo clippy -p basilica-payments --all-targets --all-features -- -D warnings
+          # Run clippy on basilica-cli
+          cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
 
   # Build and test validator
   build-validator:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.validator == 'true' || needs.changes.outputs.workspace == 'true'
     strategy:
@@ -257,33 +188,33 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: protobuf-compiler pkg-config libssl-dev xxd mold clang
+          packages: pkg-config libssl-dev xxd mold clang
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
-      - name: Check validator builds
+      - name: Build and test validator
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p basilica-validator
-      - name: Test validator crate (unit tests only)
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-validator --all-features
-      - name: Test validator CLI functionality
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          # Build once for both tests and CLI check
           cargo build -p basilica-validator
+          cargo nextest run -p basilica-validator --all-features --no-fail-fast
           ./target/debug/basilica-validator --help
       - name: Clean up space before Docker build
         run: |
@@ -297,7 +228,7 @@ jobs:
 
   # Build and test miner
   build-miner:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.miner == 'true' || needs.changes.outputs.workspace == 'true'
     strategy:
@@ -312,6 +243,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -326,24 +258,18 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
-      - name: Check miner builds
+      - name: Build and test miner
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p basilica-miner
-      - name: Test miner crate (unit tests only)
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-miner --lib
-      - name: Test miner CLI functionality
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          # Build once for both tests and CLI check
           cargo build -p basilica-miner
+          cargo nextest run -p basilica-miner --lib --no-fail-fast
           ./target/debug/basilica-miner --help
       - name: Clean up space before Docker build
         run: |
@@ -356,7 +282,7 @@ jobs:
 
   # Build and test basilica-api
   build-api:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.basilica-api == 'true' || needs.changes.outputs.workspace == 'true'
     strategy:
@@ -371,6 +297,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -385,24 +312,18 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
           ./scripts/gen-key.sh
-      - name: Check basilica-api builds
+      - name: Build and test basilica-api
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo check -p basilica-api
-      - name: Test basilica-api crate (unit tests only)
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo nextest run -p basilica-api --all-features
-      - name: Test basilica-api CLI functionality
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          # Build once for both tests and CLI check
           cargo build -p basilica-api
+          cargo nextest run -p basilica-api --all-features --no-fail-fast
           ./target/debug/basilica-api --help
       - name: Clean up space before Docker build
         run: |
@@ -415,7 +336,7 @@ jobs:
 
   # Build and test basilica-cli
   build-cli:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.basilica-cli == 'true' || needs.changes.outputs.workspace == 'true'
     strategy:
@@ -430,6 +351,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -444,20 +366,16 @@ jobs:
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Check basilica-cli builds
+      - name: Build and test basilica-cli
         run: |
-          cargo check -p basilica-cli
-      - name: Test basilica-cli crate (unit tests only)
-        run: |
-          cargo nextest run -p basilica-cli --all-features
-      - name: Test basilica-cli CLI functionality
-        run: |
+          # Build once for both tests and CLI check
           cargo build -p basilica-cli
+          cargo nextest run -p basilica-cli --all-features --no-fail-fast
           ./target/debug/basilica --help
 
   # Build and test billing
   build-billing:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.workspace == 'true'
     services:
@@ -486,6 +404,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -494,14 +413,14 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client python3-dev
+          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
       - name: Wait for Postgres (billing)
         run: |
           : "${BILLING_DB_PASSWORD:=billing_dev_password}"
@@ -522,9 +441,6 @@ jobs:
           fi
 
           PGPASSWORD="$BILLING_DB_PASSWORD" psql -h localhost -p 5432 -U billing -d postgres -c "SELECT 1;"
-      - name: Check billing builds
-        run: |
-          cargo check -p basilica-billing
       - name: Run billing migrations
         run: |
           export DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
@@ -535,20 +451,17 @@ jobs:
             echo "Running migration: $migration"
             PGPASSWORD=billing_dev_password psql -h localhost -p 5432 -U billing -d basilica_billing -f "$migration" || true
           done
-      - name: Test billing crate (unit tests only)
+      - name: Build and test billing
         run: |
           export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
           export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
-          cargo nextest run -p basilica-billing --lib
-      - name: Test billing BDD integration tests
-        run: |
-          export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
-          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
-          # Run from the billing crate directory so migrations path is correct
-          cd crates/basilica-billing && cargo test --test bdd_integration_tests -- --test-threads=1
-      - name: Test billing CLI functionality
-        run: |
+          # Build once for all tests and CLI checks
           cargo build -p basilica-billing
+          cargo nextest run -p basilica-billing --lib --no-fail-fast
+          # Run BDD integration tests from billing crate directory
+          cd crates/basilica-billing && cargo test --test bdd_integration_tests -- --test-threads=1
+          cd ../..
+          # Test CLI functionality
           ./target/debug/basilica-billing --help
           ./target/debug/basilica-billing --gen-config
       - name: Clean up space before Docker build
@@ -562,7 +475,7 @@ jobs:
 
   # Build and test payments
   build-payments:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.payments == 'true' || needs.changes.outputs.workspace == 'true'
     services:
@@ -591,6 +504,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
         uses: arduino/setup-protoc@v3
         with:
@@ -599,14 +513,14 @@ jobs:
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
-          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client python3-dev
+          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client
           version: 1.0
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
       - name: Wait for Postgres (payments)
         run: |
           : "${PAYMENTS_DB_PASSWORD:=payments_dev_password}"
@@ -627,9 +541,6 @@ jobs:
           fi
 
           PGPASSWORD="$PAYMENTS_DB_PASSWORD" psql -h localhost -p 5432 -U payments -d postgres -c "SELECT 1;"
-      - name: Check payments builds
-        run: |
-          cargo check -p basilica-payments
       - name: Run payments migrations
         run: |
           export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
@@ -640,24 +551,19 @@ jobs:
             echo "Running migration: $migration"
             PGPASSWORD=payments_dev_password psql -h localhost -p 5432 -U payments -d basilica_payments -f "$migration" || true
           done
-      - name: Test payments crate (unit tests only)
-        run: |
-          export PAYMENTS_DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
-          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
-          cargo nextest run -p basilica-payments --lib
-      - name: Test payments BDD integration tests
-        run: |
-          export PAYMENTS_DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
-          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
-          # Run from the payments crate directory so migrations path is correct
-          cd crates/basilica-payments && cargo test --test bdd_integration_tests -- --test-threads=1 || true
-      - name: Test payments CLI functionality
+      - name: Build and test payments
         run: |
           export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
           export PAYMENTS_DATABASE_URL="$DATABASE_URL"
           export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
           export SUBXT_WS="ws://localhost:9944"
+          # Build once for all tests and CLI checks
           cargo build -p basilica-payments
+          cargo nextest run -p basilica-payments --lib --no-fail-fast
+          # Run BDD integration tests from payments crate directory
+          cd crates/basilica-payments && cargo test --test bdd_integration_tests -- --test-threads=1 || true
+          cd ../..
+          # Test CLI functionality
           ./target/debug/basilica-payments --help
           ./target/debug/basilica-payments --gen-config
       - name: Clean up space before Docker build
@@ -671,11 +577,10 @@ jobs:
 
   # Final status check
   ci-success:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-32vcpu-ubuntu-2404
     needs:
       - quick-checks
       - lint-complex
-      - build-executor
       - build-validator
       - build-miner
       - build-api
@@ -688,7 +593,6 @@ jobs:
         run: |
           if [[ "${{ needs.quick-checks.result }}" == "success" && \
                 "${{ needs.lint-complex.result }}" == "success" && \
-                ("${{ needs.build-executor.result }}" == "success" || "${{ needs.build-executor.result }}" == "skipped") && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
                 ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") && \

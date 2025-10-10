@@ -1,12 +1,11 @@
 //! Validation Strategy Module
 //!
-//! Determines the appropriate validation strategy based on executor status,
+//! Determines the appropriate validation strategy based on node status,
 //! validation history, and configuration settings. Also handles the execution
 //! of different validation strategies (lightweight vs full validation).
 
 use super::types::{
-    ExecutorInfoDetailed, ExecutorResult, ExecutorVerificationResult, ValidationDetails,
-    ValidationType,
+    NodeInfoDetailed, NodeResult, NodeVerificationResult, ValidationDetails, ValidationType,
 };
 use super::validation_binary::BinaryValidator;
 use super::validation_docker::DockerCollector;
@@ -37,7 +36,7 @@ pub enum ValidationStrategy {
     /// Lightweight connectivity check only
     Lightweight {
         previous_score: f64,
-        executor_result: Option<ExecutorResult>,
+        node_result: Option<NodeResult>,
         gpu_count: u64,
         binary_validation_successful: bool,
     },
@@ -49,8 +48,8 @@ pub struct ValidationStrategySelector {
     persistence: Arc<SimplePersistence>,
 }
 
-/// Validation executor for running different validation strategies
-pub struct ValidationExecutor {
+/// Validation node for running different validation strategies
+pub struct ValidationNode {
     ssh_client: Arc<ValidatorSshClient>,
     binary_validator: BinaryValidator,
     hardware_collector: HardwareCollector,
@@ -71,28 +70,28 @@ impl ValidationStrategySelector {
         }
     }
 
-    /// Determine validation strategy based on executor status and validation history
+    /// Determine validation strategy based on node status and validation history
     pub async fn determine_validation_strategy(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
     ) -> Result<ValidationStrategy> {
         let miner_id = format!("miner_{}", miner_uid);
 
         debug!(
-            executor_id = executor_id,
+            node_id = node_id,
             miner_uid = miner_uid,
             "[EVAL_FLOW] Determining validation strategy"
         );
 
-        // Check if executor has an active rental
+        // Check if node has an active rental
         let has_active_rental = self
             .persistence
-            .has_active_rental(executor_id, &miner_id)
+            .has_active_rental(node_id, &miner_id)
             .await
             .unwrap_or_else(|e| {
                 warn!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_uid = miner_uid,
                     error = %e,
                     "[EVAL_FLOW] Failed to check for active rental, assuming no rental"
@@ -103,11 +102,11 @@ impl ValidationStrategySelector {
         // If there's an active rental, skip binary validation check and go straight to lightweight
         if !has_active_rental {
             let needs_binary_validation = self
-                .is_binary_validation_needed(executor_id, &miner_id, miner_uid)
+                .is_binary_validation_needed(node_id, &miner_id, miner_uid)
                 .await
                 .unwrap_or_else(|e| {
                     error!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         miner_uid = miner_uid,
                         error = %e,
                         "[EVAL_FLOW] Failed to determine if binary validation needed, defaulting to full"
@@ -118,7 +117,7 @@ impl ValidationStrategySelector {
             if needs_binary_validation {
                 info!(
                     security = true,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_uid = miner_uid,
                     validation_strategy = "Full",
                     "[EVAL_FLOW] Strategy: Full validation required"
@@ -127,9 +126,9 @@ impl ValidationStrategySelector {
             }
         }
 
-        let (previous_score, executor_result, gpu_count, binary_validation_successful) = match self
+        let (previous_score, node_result, gpu_count, binary_validation_successful) = match self
             .persistence
-            .get_last_full_validation_data(executor_id, &miner_id)
+            .get_last_full_validation_data(node_id, &miner_id)
             .await
         {
             Ok(Some((score, exec_result, gpu_cnt, binary_success))) => {
@@ -139,7 +138,7 @@ impl ValidationStrategySelector {
                 // If no previous validation data and no active rental, require full validation
                 if !has_active_rental {
                     debug!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         miner_uid = miner_uid,
                         "[EVAL_FLOW] No previous validation data found - requiring full validation"
                     );
@@ -147,7 +146,7 @@ impl ValidationStrategySelector {
                 }
                 // For active rentals without previous data, use default values
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_uid = miner_uid,
                     "[EVAL_FLOW] Active rental with no previous validation data - using defaults"
                 );
@@ -157,7 +156,7 @@ impl ValidationStrategySelector {
                 // If we can't get previous data and no active rental, require full validation
                 if !has_active_rental {
                     error!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         miner_uid = miner_uid,
                         error = %e,
                         "[EVAL_FLOW] Failed to get previous validation data - requiring full validation"
@@ -166,7 +165,7 @@ impl ValidationStrategySelector {
                 }
                 // For active rentals, use defaults even if we can't get previous data
                 warn!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_uid = miner_uid,
                     error = %e,
                     "[EVAL_FLOW] Active rental, failed to get previous data - using defaults"
@@ -177,7 +176,7 @@ impl ValidationStrategySelector {
 
         info!(
             security = true,
-            executor_id = executor_id,
+            node_id = node_id,
             miner_uid = miner_uid,
             validation_strategy = "Lightweight",
             has_active_rental = has_active_rental,
@@ -189,23 +188,22 @@ impl ValidationStrategySelector {
 
         Ok(ValidationStrategy::Lightweight {
             previous_score,
-            executor_result,
+            node_result,
             gpu_count,
             binary_validation_successful,
         })
     }
 
-    /// Check if binary validation is needed for an executor
+    /// Check if binary validation is needed for an node
     async fn is_binary_validation_needed(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_id: &str,
         miner_uid: u16,
     ) -> Result<bool> {
-        let status_query =
-            "SELECT status FROM miner_executors WHERE executor_id = ? AND miner_id = ?";
+        let status_query = "SELECT status FROM miner_nodes WHERE node_id = ? AND miner_id = ?";
         let status_row = sqlx::query(status_query)
-            .bind(executor_id)
+            .bind(node_id)
             .bind(miner_id)
             .fetch_optional(self.persistence.pool())
             .await?;
@@ -214,49 +212,47 @@ impl ValidationStrategySelector {
             let status: String = row.get("status");
             if status != "online" && status != "verified" {
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_id = miner_id,
                     status = status,
-                    "Binary validation needed - executor not in online/verified status"
+                    "[EVAL_FLOW] Binary validation needed - node not in online/verified status"
                 );
                 return Ok(true);
             }
         } else {
             debug!(
-                executor_id = executor_id,
+                node_id = node_id,
                 miner_id = miner_id,
-                "Binary validation needed - executor not found in database"
+                "[EVAL_FLOW] Binary validation needed - node not found in database"
             );
             return Ok(true);
         }
 
-        let last_validation = self
-            .get_last_binary_validation(executor_id, miner_uid)
-            .await?;
+        let last_validation = self.get_last_binary_validation(node_id, miner_uid).await?;
 
         match last_validation {
             None => {
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_id = miner_id,
-                    "Binary validation needed - no previous successful validation found"
+                    "[EVAL_FLOW] Binary validation needed - no previous successful validation found"
                 );
                 Ok(true)
             }
             Some((timestamp, _score)) => {
                 let elapsed = chrono::Utc::now() - timestamp;
                 let validation_interval =
-                    chrono::Duration::from_std(self.config.executor_validation_interval)
+                    chrono::Duration::from_std(self.config.node_validation_interval)
                         .map_err(|e| anyhow::anyhow!("Invalid validation interval: {}", e))?;
 
                 let needs_validation = elapsed > validation_interval;
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_id = miner_id,
                     elapsed_secs = elapsed.num_seconds(),
                     interval_secs = validation_interval.num_seconds(),
                     needs_validation = needs_validation,
-                    "Binary validation check - last validation was {} seconds ago",
+                    "[EVAL_FLOW] Binary validation check - last validation was {} seconds ago",
                     elapsed.num_seconds()
                 );
                 Ok(needs_validation)
@@ -264,22 +260,22 @@ impl ValidationStrategySelector {
         }
     }
 
-    /// Get last successful binary validation for an executor
+    /// Get last successful binary validation for an node
     async fn get_last_binary_validation(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
     ) -> Result<Option<(chrono::DateTime<chrono::Utc>, f64)>> {
         debug!(
-            executor_id = executor_id,
+            node_id = node_id,
             miner_uid = miner_uid,
-            "Attempting to find last binary validation for executor_id"
+            "Attempting to find last binary validation for node_id"
         );
 
         let query = r#"
             SELECT timestamp, score
             FROM verification_logs
-            WHERE executor_id = ?
+            WHERE node_id = ?
               AND success = 1
               AND verification_type = 'ssh_automation'
               AND (
@@ -291,26 +287,26 @@ impl ValidationStrategySelector {
         "#;
 
         let row = sqlx::query(query)
-            .bind(executor_id)
+            .bind(node_id)
             .fetch_optional(self.persistence.pool())
             .await?;
 
         let row = if row.is_none() {
             debug!(
-                executor_id = executor_id,
+                node_id = node_id,
                 miner_uid = miner_uid,
-                "No validation found with composite executor_id, trying plain executor_id as fallback"
+                "No validation found with composite node_id, trying plain node_id as fallback"
             );
 
             sqlx::query(query)
-                .bind(executor_id)
+                .bind(node_id)
                 .fetch_optional(self.persistence.pool())
                 .await?
         } else {
             debug!(
-                executor_id = executor_id,
+                node_id = node_id,
                 miner_uid = miner_uid,
-                "Found validation with composite executor_id"
+                "Found validation with composite node_id"
             );
             row
         };
@@ -330,8 +326,8 @@ impl ValidationStrategySelector {
     }
 }
 
-impl ValidationExecutor {
-    /// Create a new validation executor
+impl ValidationNode {
+    /// Create a new validation node
     pub fn new(
         config: VerificationConfig,
         ssh_client: Arc<ValidatorSshClient>,
@@ -395,30 +391,29 @@ impl ValidationExecutor {
     pub async fn execute_lightweight_validation(
         &self,
         miner_uid: u16,
-        executor_info: &ExecutorInfoDetailed,
+        node_info: &NodeInfoDetailed,
         ssh_details: &SshConnectionDetails,
-        _session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         previous_score: f64,
-        executor_result: Option<ExecutorResult>,
+        node_result: Option<NodeResult>,
         gpu_count: u64,
         _binary_validation_successful: bool,
         _validator_hotkey: &Hotkey,
         _config: &crate::config::VerificationConfig,
-    ) -> Result<ExecutorVerificationResult> {
+    ) -> Result<NodeVerificationResult> {
         info!(
             miner_uid = miner_uid,
-            executor_id = %executor_info.id,
+            node_id = %node_info.id,
             previous_score = previous_score,
             "[EVAL_FLOW] Executing lightweight validation"
         );
 
         let total_start = Instant::now();
-        let executor_id = executor_info.id.to_string();
+        let node_id = node_info.id.to_string();
 
         // Track state: Connecting
         if let Some(ref metrics) = self.metrics {
-            metrics.prometheus().set_executor_validation_state(
-                &executor_id,
+            metrics.prometheus().set_node_validation_state(
+                &node_id,
                 miner_uid,
                 ValidationType::Lightweight,
                 ValidationState::Connecting,
@@ -438,8 +433,8 @@ impl ValidationExecutor {
             Ok(output) => {
                 // Move to Connected state
                 if let Some(ref metrics) = self.metrics {
-                    metrics.prometheus().set_executor_validation_state(
-                        &executor_id,
+                    metrics.prometheus().set_node_validation_state(
+                        &node_id,
                         miner_uid,
                         ValidationType::Lightweight,
                         ValidationState::Connected,
@@ -449,8 +444,8 @@ impl ValidationExecutor {
 
                 // Move to ConnectivityChecking state
                 if let Some(ref metrics) = self.metrics {
-                    metrics.prometheus().set_executor_validation_state(
-                        &executor_id,
+                    metrics.prometheus().set_node_validation_state(
+                        &node_id,
                         miner_uid,
                         ValidationType::Lightweight,
                         ValidationState::ConnectivityChecking,
@@ -467,7 +462,7 @@ impl ValidationExecutor {
                 let gpu_present = gpus_detected > 0;
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = %executor_info.id,
+                    node_id = %node_info.id,
                     gpu_present = gpu_present,
                     gpus_detected = gpus_detected,
                     "[EVAL_FLOW] GPU availability check completed"
@@ -476,8 +471,8 @@ impl ValidationExecutor {
                 if !gpu_present {
                     // Failed at connectivity check
                     if let Some(ref metrics) = self.metrics {
-                        metrics.prometheus().set_executor_validation_state(
-                            &executor_id,
+                        metrics.prometheus().set_node_validation_state(
+                            &node_id,
                             miner_uid,
                             ValidationType::Lightweight,
                             ValidationState::ConnectivityChecking,
@@ -490,15 +485,15 @@ impl ValidationExecutor {
             Err(e) => {
                 warn!(
                     miner_uid = miner_uid,
-                    executor_id = %executor_info.id,
+                    node_id = %node_info.id,
                     error = %e,
                     "[EVAL_FLOW] Lightweight connectivity check failed"
                 );
 
                 // Failed at Connecting stage
                 if let Some(ref metrics) = self.metrics {
-                    metrics.prometheus().set_executor_validation_state(
-                        &executor_id,
+                    metrics.prometheus().set_node_validation_state(
+                        &node_id,
                         miner_uid,
                         ValidationType::Lightweight,
                         ValidationState::Connecting,
@@ -515,8 +510,8 @@ impl ValidationExecutor {
         } else {
             // Move to NatValidating state
             if let Some(ref metrics) = self.metrics {
-                metrics.prometheus().set_executor_validation_state(
-                    &executor_id,
+                metrics.prometheus().set_node_validation_state(
+                    &node_id,
                     miner_uid,
                     ValidationType::Lightweight,
                     ValidationState::NatValidating,
@@ -527,13 +522,13 @@ impl ValidationExecutor {
             let nat_collector = self.nat_collector.clone();
 
             match nat_collector
-                .collect_with_fallback(&executor_id, miner_uid, ssh_details)
+                .collect_with_fallback(&node_id, miner_uid, ssh_details)
                 .await
             {
                 Some(result) if result.is_accessible => {
                     info!(
                         miner_uid = miner_uid,
-                        executor_id = %executor_info.id,
+                        node_id = %node_info.id,
                         "[EVAL_FLOW] NAT validation successful"
                     );
                     true
@@ -541,14 +536,14 @@ impl ValidationExecutor {
                 _ => {
                     warn!(
                         miner_uid = miner_uid,
-                        executor_id = %executor_info.id,
+                        node_id = %node_info.id,
                         "[EVAL_FLOW] NAT validation failed"
                     );
 
                     // Failed at NAT stage
                     if let Some(ref metrics) = self.metrics {
-                        metrics.prometheus().set_executor_validation_state(
-                            &executor_id,
+                        metrics.prometheus().set_node_validation_state(
+                            &node_id,
                             miner_uid,
                             ValidationType::Lightweight,
                             ValidationState::NatValidating,
@@ -565,7 +560,7 @@ impl ValidationExecutor {
         if !validation_successful {
             error!(
                 miner_uid = miner_uid,
-                executor_id = executor_id,
+                node_id = node_id,
                 connectivity_successful = connectivity_successful,
                 nat_validation_successful = nat_validation_successful,
                 "[EVAL_FLOW] Critical validation failed during lightweight validation"
@@ -592,7 +587,7 @@ impl ValidationExecutor {
 
         info!(
             miner_uid = miner_uid,
-            executor_id = %executor_info.id,
+            node_id = %node_info.id,
             score = verification_score,
             duration_ms = total_duration.as_millis(),
             node_available = connectivity_successful,
@@ -606,7 +601,7 @@ impl ValidationExecutor {
             metrics
                 .business()
                 .record_attestation_verification(
-                    &executor_info.id.to_string(),
+                    &node_info.id.to_string(),
                     "connectivity_check",
                     validation_successful,
                     validation_successful,
@@ -618,8 +613,8 @@ impl ValidationExecutor {
         // Final state - only set if validation was successful
         if validation_successful {
             if let Some(ref metrics) = self.metrics {
-                metrics.prometheus().set_executor_validation_state(
-                    &executor_id,
+                metrics.prometheus().set_node_validation_state(
+                    &node_id,
                     miner_uid,
                     ValidationType::Lightweight,
                     ValidationState::Completed,
@@ -629,13 +624,13 @@ impl ValidationExecutor {
         }
         // Note: If failed, we keep the state where it failed (don't move to Completed)
 
-        Ok(ExecutorVerificationResult {
-            executor_id: executor_info.id.clone(),
-            grpc_endpoint: executor_info.grpc_endpoint.clone(),
+        Ok(NodeVerificationResult {
+            node_id: node_info.id.clone(),
+            node_ssh_endpoint: node_info.node_ssh_endpoint.clone(),
             verification_score,
             ssh_connection_successful: validation_successful,
             binary_validation_successful: false,
-            executor_result,
+            node_result,
             error: if validation_successful {
                 None
             } else if !connectivity_successful {
@@ -653,21 +648,20 @@ impl ValidationExecutor {
     /// Execute full validation
     pub async fn execute_full_validation(
         &self,
-        executor_info: &ExecutorInfoDetailed,
+        node_info: &NodeInfoDetailed,
         ssh_details: &SshConnectionDetails,
-        session_info: &basilica_protocol::miner_discovery::InitiateSshSessionResponse,
         binary_config: &crate::config::BinaryValidationConfig,
         _validator_hotkey: &Hotkey,
         miner_uid: u16,
-    ) -> Result<ExecutorVerificationResult> {
+    ) -> Result<NodeVerificationResult> {
         info!(
             miner_uid = miner_uid,
-            executor_id = %executor_info.id,
+            node_id = %node_info.id,
             "[EVAL_FLOW] Executing full validation"
         );
 
         let total_start = Instant::now();
-        let executor_id = executor_info.id.to_string();
+        let node_id = node_info.id.to_string();
         let mut validation_details = ValidationDetails {
             ssh_test_duration: Duration::from_secs(0),
             binary_upload_duration: Duration::from_secs(0),
@@ -680,8 +674,8 @@ impl ValidationExecutor {
 
         // Track state: Connecting
         if let Some(ref metrics) = self.metrics {
-            metrics.prometheus().set_executor_validation_state(
-                &executor_id,
+            metrics.prometheus().set_node_validation_state(
+                &node_id,
                 miner_uid,
                 ValidationType::Full,
                 ValidationState::Connecting,
@@ -691,13 +685,24 @@ impl ValidationExecutor {
 
         // Phase 1: SSH Connection Test
         let ssh_test_start = Instant::now();
+
+        // Refresh host key to prevent stale key issues with validator binary
+        if let Err(e) = self.ssh_client.refresh_host_key(ssh_details).await {
+            warn!(
+                miner_uid = miner_uid,
+                node_id = %node_info.id,
+                error = %e,
+                "[EVAL_FLOW] Failed to refresh host key, continuing with validation"
+            );
+        }
+
         let ssh_connection_successful: bool =
             match self.ssh_client.test_connection(ssh_details).await {
                 Ok(_) => {
                     // Move to Connected state
                     if let Some(ref metrics) = self.metrics {
-                        metrics.prometheus().set_executor_validation_state(
-                            &executor_id,
+                        metrics.prometheus().set_node_validation_state(
+                            &node_id,
                             miner_uid,
                             ValidationType::Full,
                             ValidationState::Connected,
@@ -707,7 +712,7 @@ impl ValidationExecutor {
 
                     info!(
                         miner_uid = miner_uid,
-                        executor_id = %executor_info.id,
+                        node_id = %node_info.id,
                         "[EVAL_FLOW] SSH connection test successful"
                     );
                     true
@@ -715,8 +720,8 @@ impl ValidationExecutor {
                 Err(e) => {
                     // Failed at Connecting stage
                     if let Some(ref metrics) = self.metrics {
-                        metrics.prometheus().set_executor_validation_state(
-                            &executor_id,
+                        metrics.prometheus().set_node_validation_state(
+                            &node_id,
                             miner_uid,
                             ValidationType::Full,
                             ValidationState::Connecting,
@@ -726,7 +731,7 @@ impl ValidationExecutor {
 
                     error!(
                         miner_uid = miner_uid,
-                        executor_id = %executor_info.id,
+                        node_id = %node_info.id,
                         error = %e,
                         "[EVAL_FLOW] SSH connection test failed"
                     );
@@ -741,12 +746,10 @@ impl ValidationExecutor {
         // Phase 1.5: Node Profiling Collection
         let mut quality_validations_successful = false;
         if ssh_connection_successful {
-            let executor_id = executor_info.id.to_string();
-
             // Move to DockerValidating state
             if let Some(ref metrics) = self.metrics {
-                metrics.prometheus().set_executor_validation_state(
-                    &executor_id,
+                metrics.prometheus().set_node_validation_state(
+                    &node_id,
                     miner_uid,
                     ValidationType::Full,
                     ValidationState::DockerValidating,
@@ -761,17 +764,16 @@ impl ValidationExecutor {
             let storage_collector = self.storage_collector.clone();
 
             let hardware_future =
-                hardware_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                hardware_collector.collect_with_fallback(&node_id, miner_uid, ssh_details);
             let network_future =
-                network_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                network_collector.collect_with_fallback(&node_id, miner_uid, ssh_details);
             let speedtest_future =
-                speedtest_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                speedtest_collector.collect_with_fallback(&node_id, miner_uid, ssh_details);
             let docker_future =
-                docker_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
-            let nat_future =
-                nat_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                docker_collector.collect_with_fallback(&node_id, miner_uid, ssh_details);
+            let nat_future = nat_collector.collect_with_fallback(&node_id, miner_uid, ssh_details);
             let storage_future =
-                storage_collector.collect_with_fallback(&executor_id, miner_uid, ssh_details);
+                storage_collector.collect_with_fallback(&node_id, miner_uid, ssh_details);
 
             let (_hardware, _network, _speedtest, docker_result, nat_result, storage_result) = tokio::join!(
                 hardware_future,
@@ -783,7 +785,7 @@ impl ValidationExecutor {
             );
 
             // For now, I'm disabling storage validation from affecting the overall quality validation result
-            // as we may have valid executors with <1TB storage that we want to allow
+            // as we may have valid nodes with <1TB storage that we want to allow
             // once we have a better understanding of the ecosystem we can re-enable this
             // quality_validations_successful = docker_result.is_some() && nat_result.is_some() && storage_result.is_some();
             let nat_successful = nat_result
@@ -796,8 +798,8 @@ impl ValidationExecutor {
             if docker_result.is_none() {
                 // Failed at DockerValidating stage
                 if let Some(ref metrics) = self.metrics {
-                    metrics.prometheus().set_executor_validation_state(
-                        &executor_id,
+                    metrics.prometheus().set_node_validation_state(
+                        &node_id,
                         miner_uid,
                         ValidationType::Full,
                         ValidationState::DockerValidating,
@@ -807,8 +809,8 @@ impl ValidationExecutor {
             } else if !nat_successful {
                 // Docker passed, move to NatValidating and mark as failed
                 if let Some(ref metrics) = self.metrics {
-                    metrics.prometheus().set_executor_validation_state(
-                        &executor_id,
+                    metrics.prometheus().set_node_validation_state(
+                        &node_id,
                         miner_uid,
                         ValidationType::Full,
                         ValidationState::NatValidating,
@@ -818,8 +820,8 @@ impl ValidationExecutor {
             } else {
                 // Both Docker and NAT passed, move to NatValidating as current
                 if let Some(ref metrics) = self.metrics {
-                    metrics.prometheus().set_executor_validation_state(
-                        &executor_id,
+                    metrics.prometheus().set_node_validation_state(
+                        &node_id,
                         miner_uid,
                         ValidationType::Full,
                         ValidationState::NatValidating,
@@ -831,7 +833,7 @@ impl ValidationExecutor {
             if !quality_validations_successful {
                 error!(
                     miner_uid = miner_uid,
-                    executor_id = %executor_info.id,
+                    node_id = %node_info.id,
                     docker_successful = docker_result.is_some(),
                     nat_successful = nat_result.is_some(),
                     storage_successful = storage_result.is_some(),
@@ -845,7 +847,7 @@ impl ValidationExecutor {
 
         // Phase 2: Binary Validation
         let mut binary_validation_successful = false;
-        let mut executor_result = None;
+        let mut node_result = None;
         let mut binary_score = 0.0;
         let mut gpu_count = 0u64;
         let pre_validations_successful =
@@ -854,8 +856,8 @@ impl ValidationExecutor {
         if pre_validations_successful && binary_config.enabled {
             // Move to BinaryValidating state
             if let Some(ref metrics) = self.metrics {
-                metrics.prometheus().set_executor_validation_state(
-                    &executor_id,
+                metrics.prometheus().set_node_validation_state(
+                    &node_id,
                     miner_uid,
                     ValidationType::Full,
                     ValidationState::BinaryValidating,
@@ -866,17 +868,16 @@ impl ValidationExecutor {
             match self
                 .binary_validator
                 .execute_binary_validation(
-                    &executor_info.id.to_string(),
+                    &node_info.id.to_string(),
                     miner_uid,
                     ssh_details,
-                    session_info,
                     binary_config,
                 )
                 .await
             {
                 Ok(binary_result) => {
                     binary_validation_successful = binary_result.success;
-                    executor_result = binary_result.executor_result;
+                    node_result = binary_result.node_result;
                     binary_score = binary_result.validation_score;
                     gpu_count = binary_result.gpu_count;
                     validation_details.binary_execution_duration =
@@ -886,7 +887,7 @@ impl ValidationExecutor {
                         metrics
                             .business()
                             .record_attestation_verification(
-                                &executor_info.id.to_string(),
+                                &node_info.id.to_string(),
                                 "hardware_attestation",
                                 binary_validation_successful,
                                 true, // signature_valid - binary executed successfully
@@ -898,8 +899,8 @@ impl ValidationExecutor {
                 Err(e) => {
                     // Failed at BinaryValidating stage
                     if let Some(ref metrics) = self.metrics {
-                        metrics.prometheus().set_executor_validation_state(
-                            &executor_id,
+                        metrics.prometheus().set_node_validation_state(
+                            &node_id,
                             miner_uid,
                             ValidationType::Full,
                             ValidationState::BinaryValidating,
@@ -909,7 +910,7 @@ impl ValidationExecutor {
 
                     error!(
                         miner_uid = miner_uid,
-                        executor_id = %executor_info.id,
+                        node_id = %node_info.id,
                         error = %e,
                         "[EVAL_FLOW] Binary validation failed"
                     );
@@ -918,7 +919,7 @@ impl ValidationExecutor {
                         metrics
                             .business()
                             .record_attestation_verification(
-                                &executor_info.id.to_string(),
+                                &node_info.id.to_string(),
                                 "hardware_attestation",
                                 false,
                                 false,
@@ -951,8 +952,8 @@ impl ValidationExecutor {
         // Final state - only set if validation was successful
         if overall_success {
             if let Some(ref metrics) = self.metrics {
-                metrics.prometheus().set_executor_validation_state(
-                    &executor_id,
+                metrics.prometheus().set_node_validation_state(
+                    &node_id,
                     miner_uid,
                     ValidationType::Full,
                     ValidationState::Completed,
@@ -962,14 +963,14 @@ impl ValidationExecutor {
         }
         // Note: If failed, we keep the state where it failed (don't move to Completed)
 
-        Ok(ExecutorVerificationResult {
-            executor_id: executor_info.id.clone(),
-            grpc_endpoint: executor_info.grpc_endpoint.clone(),
+        Ok(NodeVerificationResult {
+            node_id: node_info.id.clone(),
+            node_ssh_endpoint: node_info.node_ssh_endpoint.clone(),
             verification_score: combined_score,
             ssh_connection_successful,
             binary_validation_successful: pre_validations_successful
                 && binary_validation_successful,
-            executor_result,
+            node_result,
             error: None,
             execution_time: total_start.elapsed(),
             validation_details,

@@ -14,7 +14,7 @@ pub enum Command {
         output: PathBuf,
     },
 
-    /// Test SSH connection to executor machines
+    /// Test SSH connection to node machines
     Connect {
         /// SSH hostname or IP address
         #[arg(long)]
@@ -36,12 +36,12 @@ pub enum Command {
         #[arg(long)]
         timeout: Option<u64>,
 
-        /// Executor ID to connect to (alternative to host/username)
+        /// Node ID to connect to (alternative to host/username)
         #[arg(long)]
-        executor_id: Option<String>,
+        node_id: Option<String>,
     },
 
-    /// Verify executor hardware via SSH validation protocol
+    /// Verify node hardware via SSH validation protocol
     Verify {
         /// SSH hostname or IP address
         #[arg(long)]
@@ -63,11 +63,11 @@ pub enum Command {
         #[arg(long)]
         timeout: Option<u64>,
 
-        /// Executor ID to verify
+        /// Node ID to verify
         #[arg(short, long)]
-        executor_id: Option<String>,
+        node_id: Option<String>,
 
-        /// Miner UID to verify all executors
+        /// Miner UID to verify all nodes
         #[arg(short, long)]
         miner_uid: Option<u16>,
 
@@ -99,15 +99,10 @@ pub enum Command {
         miner_uid: Option<u16>,
 
         #[arg(short, long)]
-        executor_id: Option<String>,
+        node_id: Option<String>,
 
         #[arg(long)]
         all: bool,
-    },
-
-    Database {
-        #[command(subcommand)]
-        action: DatabaseAction,
     },
 
     /// Container rental commands
@@ -122,30 +117,13 @@ pub enum Command {
 }
 
 #[derive(Subcommand, Debug, Clone)]
-pub enum DatabaseAction {
-    Migrate,
-
-    Reset {
-        #[arg(long)]
-        confirm: bool,
-    },
-
-    Status,
-
-    Cleanup {
-        #[arg(long, default_value = "30")]
-        days: u32,
-    },
-}
-
-#[derive(Subcommand, Debug, Clone)]
 #[allow(dead_code, unused_imports, clippy::large_enum_variant)]
 pub enum RentalAction {
     /// Start a new container rental
     Start {
-        /// Executor ID
+        /// Node ID
         #[arg(long)]
-        executor: String,
+        node: String,
 
         /// Docker image to deploy (e.g., ubuntu:22.04, nginx:alpine)
         #[arg(long)]
@@ -217,7 +195,7 @@ pub enum RentalAction {
         force: bool,
     },
 
-    /// List available executors for rental
+    /// List available nodes for rental
     Ls {
         /// Filter by minimum GPU memory in GB
         #[arg(long)]

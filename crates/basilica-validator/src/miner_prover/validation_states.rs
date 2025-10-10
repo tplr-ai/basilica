@@ -1,7 +1,7 @@
-//! Centralized validation states for executor verification
+//! Centralized validation states for node verification
 //!
-//! This module implements a state tracking system for the executor validation pipeline.
-//! Each executor progresses through validation states with metrics tracking:
+//! This module implements a state tracking system for the node validation pipeline.
+//! Each node progresses through validation states with metrics tracking:
 //!
 //! **Metric Values:**
 //! - `0.0`: Not in this state
@@ -12,13 +12,13 @@
 //! - **Lightweight**: InQueue → Connecting → Connected → ConnectivityChecking → NatValidating → Completed
 //! - **Full**: InQueue → Connecting → Connected → DockerValidating → NatValidating → BinaryValidating → Completed
 //!
-//! **Example** (executor failed at NAT validation):
-//! ```
-//! basilica_validator_executor_validation_state{executor_id="e1",state="in_queue"} 0.0
-//! basilica_validator_executor_validation_state{executor_id="e1",state="connecting"} 0.0
-//! basilica_validator_executor_validation_state{executor_id="e1",state="connected"} 0.0
-//! basilica_validator_executor_validation_state{executor_id="e1",state="nat_validating"} 2.0
-//! basilica_validator_executor_validation_state{executor_id="e1",state="completed"} 0.0
+//! **Example** (node failed at NAT validation):
+//! ```text
+//! basilica_validator_node_validation_state{node_id="e1",state="in_queue"} 0.0
+//! basilica_validator_node_validation_state{node_id="e1",state="connecting"} 0.0
+//! basilica_validator_node_validation_state{node_id="e1",state="connected"} 0.0
+//! basilica_validator_node_validation_state{node_id="e1",state="nat_validating"} 2.0
+//! basilica_validator_node_validation_state{node_id="e1",state="completed"} 0.0
 //! ```
 
 use super::types::ValidationType;

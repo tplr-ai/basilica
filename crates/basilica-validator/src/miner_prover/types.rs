@@ -2,7 +2,7 @@
 //!
 //! Shared data structures used across the miner verification system.
 
-use basilica_common::identity::{ExecutorId, Hotkey, MinerUid};
+use basilica_common::identity::{Hotkey, MinerUid, NodeId};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -18,12 +18,12 @@ pub struct MinerInfo {
     pub verification_score: f64,
 }
 
-/// Information about an executor available for verification
+/// Information about a node available for verification
 #[derive(Debug, Clone)]
-pub struct ExecutorInfo {
-    pub id: ExecutorId,
+pub struct NodeInfo {
+    pub id: NodeId, // Using NodeId alias which maps to NodeId
     pub miner_uid: MinerUid,
-    pub grpc_endpoint: String,
+    pub node_ssh_endpoint: String,
 }
 
 #[derive(Debug, Clone)]
@@ -77,15 +77,15 @@ impl std::fmt::Display for ValidationType {
     }
 }
 
-/// Enhanced executor verification result
+/// Enhanced node verification result
 #[derive(Debug, Clone)]
-pub struct ExecutorVerificationResult {
-    pub executor_id: ExecutorId,
-    pub grpc_endpoint: String,
+pub struct NodeVerificationResult {
+    pub node_id: NodeId, // Using NodeId alias which maps to NodeId
+    pub node_ssh_endpoint: String,
     pub verification_score: f64,
     pub ssh_connection_successful: bool,
     pub binary_validation_successful: bool,
-    pub executor_result: Option<ExecutorResult>,
+    pub node_result: Option<NodeResult>,
     pub error: Option<String>,
     pub execution_time: Duration,
     pub validation_details: ValidationDetails,
@@ -105,9 +105,9 @@ pub struct ValidationDetails {
     pub combined_score: f64,
 }
 
-/// GPU executor result from binary validation
+/// GPU node result from binary validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutorResult {
+pub struct NodeResult {
     pub gpu_name: String,
     pub gpu_uuid: String,
     pub gpu_infos: Vec<GpuInfo>,
@@ -196,20 +196,21 @@ pub struct SmStat {
     pub max_warps: u32,
 }
 
-/// Detailed executor information for verification processes
+/// Detailed node information for verification processes
 #[derive(Debug, Clone)]
-pub struct ExecutorInfoDetailed {
-    pub id: ExecutorId,
+pub struct NodeInfoDetailed {
+    pub id: NodeId,
+    pub miner_uid: MinerUid,
     pub status: String,
     pub capabilities: Vec<String>,
-    pub grpc_endpoint: String,
+    pub node_ssh_endpoint: String,
 }
 
 /// Output from validator binary execution
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorBinaryOutput {
     pub success: bool,
-    pub executor_result: Option<ExecutorResult>,
+    pub node_result: Option<NodeResult>,
     pub error_message: Option<String>,
     pub execution_time_ms: u64,
     pub validation_score: f64,

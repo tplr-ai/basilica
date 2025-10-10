@@ -627,7 +627,7 @@ pub struct GpuPerformanceBaseline {
     #[prost(uint64, tag = "6")]
     pub max_time_ms: u64,
 }
-/// Authentication data for miner-to-executor requests
+/// Authentication data for miner-to-node requests
 #[derive(serde::Serialize, serde::Deserialize)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

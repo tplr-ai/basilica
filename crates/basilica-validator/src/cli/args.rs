@@ -1,5 +1,5 @@
 use crate::cli::{
-    handlers::{database, rental, service},
+    handlers::{rental, service},
     Command,
 };
 use clap::Parser;
@@ -22,15 +22,12 @@ pub struct Args {
 
     #[arg(long, global = true)]
     pub dry_run: bool,
-
-    #[arg(long, global = true)]
-    pub local_test: bool,
 }
 
 impl Args {
     pub async fn run(self) -> anyhow::Result<()> {
         match self.command {
-            Command::Start => service::handle_start(self.config, self.local_test).await,
+            Command::Start => service::handle_start(self.config).await,
             Command::Stop => service::handle_stop().await,
             Command::Status => service::handle_status(self.config).await,
             Command::GenConfig { output } => service::handle_gen_config(output).await,
@@ -49,8 +46,6 @@ impl Args {
             Command::VerifyLegacy { .. } => {
                 Err(anyhow::anyhow!("Legacy validation commands have been removed. Use the verification engine API instead."))
             }
-
-            Command::Database { action } => database::handle_database(action).await,
 
             Command::Rental { action, api_url } => {
                 // Load configuration

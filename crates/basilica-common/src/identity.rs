@@ -2,7 +2,8 @@
 //!
 //! This module defines the core identity types used throughout the system:
 //! - `Hotkey`: Bittensor hotkey in SS58 format
-//! - `ExecutorId`: Unique identifier for executor agents
+//! - `NodeId`: Unique identifier for compute nodes (from node_identity module)
+//! - `NodeId`: Alias for NodeId for backward compatibility
 //! - `ValidatorUid`: Bittensor validator UID
 //! - `MinerUid`: Bittensor miner UID
 //! - `JobId`: Unique identifier for computational jobs
@@ -13,6 +14,9 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use uuid::Uuid;
+
+// Import NodeId from node_identity module
+pub use crate::node_identity::NodeId;
 
 /// Bittensor hotkey identifier in SS58 format
 ///
@@ -144,58 +148,6 @@ impl Hotkey {
 // Note: TryFrom<&Hotkey> for crabtensor::AccountId conflicts with blanket TryFrom
 // Use explicit to_account_id() method instead
 
-/// Unique identifier for executor agents
-///
-/// # Implementation Notes
-/// - Uses UUID v4 for global uniqueness
-/// - Generated when executor agent starts up
-/// - Persisted in executor's local database
-/// - Used for tracking executor state across restarts
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ExecutorId(Uuid);
-
-impl ExecutorId {
-    /// Generate a new random ExecutorId
-    pub fn new() -> Self {
-        ExecutorId(Uuid::new_v4())
-    }
-
-    /// Create ExecutorId from existing UUID
-    pub fn from_uuid(uuid: Uuid) -> Self {
-        ExecutorId(uuid)
-    }
-
-    /// Get the inner UUID
-    pub fn as_uuid(&self) -> &Uuid {
-        &self.0
-    }
-
-    /// Convert to UUID
-    pub fn into_uuid(self) -> Uuid {
-        self.0
-    }
-}
-
-impl Default for ExecutorId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl fmt::Display for ExecutorId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::str::FromStr for ExecutorId {
-    type Err = uuid::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(ExecutorId(Uuid::from_str(s)?))
-    }
-}
-
 /// Bittensor validator unique identifier
 ///
 /// # Implementation Notes
@@ -295,7 +247,7 @@ impl From<MinerUid> for u16 {
 /// # Implementation Notes
 /// - Uses UUID v4 for global uniqueness
 /// - Generated when job is created
-/// - Used for tracking job state across executors and miners
+/// - Used for tracking job state across nodes and miners
 /// - Persisted in verification logs and job databases
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct JobId(Uuid);
@@ -465,14 +417,16 @@ mod tests {
     }
 
     #[test]
-    fn test_executor_id() {
-        let id1 = ExecutorId::new();
-        let id2 = ExecutorId::new();
-        assert_ne!(id1, id2); // Should be unique
+    fn test_node_id() {
+        // NodeId from node_identity module requires a seed
+        let id1 = NodeId::new("test-seed-1").unwrap();
+        let id2 = NodeId::new("test-seed-2").unwrap();
+        // Different seeds produce different IDs
+        assert_ne!(id1.uuid, id2.uuid);
 
-        let uuid = uuid::Uuid::new_v4();
-        let id3 = ExecutorId::from_uuid(uuid);
-        assert_eq!(id3.as_uuid(), &uuid);
+        // Same seed produces same ID (deterministic)
+        let id3 = NodeId::new("test-seed-1").unwrap();
+        assert_eq!(id1.uuid, id3.uuid);
     }
 
     #[test]
@@ -508,10 +462,12 @@ mod tests {
 
     #[test]
     fn test_serialization() {
-        let executor_id = ExecutorId::new();
-        let serialized = serde_json::to_string(&executor_id).unwrap();
-        let deserialized: ExecutorId = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(executor_id, deserialized);
+        // Note: NodeId serialization test would require implementing Serialize/Deserialize
+        // for NodeId which is in a different module. For now, test JobId serialization.
+        let job_id = JobId::new();
+        let serialized = serde_json::to_string(&job_id).unwrap();
+        let deserialized: JobId = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(job_id, deserialized);
     }
 
     #[test]

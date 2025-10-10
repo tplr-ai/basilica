@@ -19,26 +19,23 @@ impl MinerPrometheusMetrics {
     pub fn new() -> Result<Self> {
         // Register and describe all metrics
 
-        // Executor management metrics
+        // Node management metrics
         describe_gauge!(
-            "basilica_miner_executors_total",
-            "Total number of managed executors"
+            "basilica_miner_nodes_total",
+            "Total number of managed nodes"
         );
+        describe_gauge!("basilica_miner_nodes_healthy", "Number of healthy nodes");
         describe_gauge!(
-            "basilica_miner_executors_healthy",
-            "Number of healthy executors"
-        );
-        describe_gauge!(
-            "basilica_miner_executors_unhealthy",
-            "Number of unhealthy executors"
+            "basilica_miner_nodes_unhealthy",
+            "Number of unhealthy nodes"
         );
         describe_counter!(
-            "basilica_miner_executor_health_checks_total",
-            "Total executor health checks performed"
+            "basilica_miner_node_health_checks_total",
+            "Total node health checks performed"
         );
         describe_histogram!(
-            "basilica_miner_executor_health_check_duration_seconds",
-            "Duration of executor health checks"
+            "basilica_miner_node_health_check_duration_seconds",
+            "Duration of node health checks"
         );
 
         // Validator interaction metrics
@@ -59,8 +56,8 @@ impl MinerPrometheusMetrics {
             "Duration of validator sessions"
         );
         describe_counter!(
-            "basilica_miner_validator_executor_discoveries_total",
-            "Total executor discovery requests"
+            "basilica_miner_validator_node_discoveries_total",
+            "Total node discovery requests"
         );
 
         // SSH management metrics
@@ -103,8 +100,8 @@ impl MinerPrometheusMetrics {
             "Duration of deployment operations"
         );
         describe_gauge!(
-            "basilica_miner_remote_executors_deployed",
-            "Number of remotely deployed executors"
+            "basilica_miner_remote_nodes_deployed",
+            "Number of remotely deployed nodes"
         );
 
         // Database metrics
@@ -152,29 +149,29 @@ impl MinerPrometheusMetrics {
         })
     }
 
-    /// Record executor health check
-    pub fn record_executor_health_check(
+    /// Record node health check
+    pub fn record_node_health_check(
         &self,
-        _executor_id: &str,
+        _node_id: &str,
         success: bool,
         duration: Duration,
         healthy: bool,
     ) {
-        counter!("basilica_miner_executor_health_checks_total").increment(1);
-        histogram!("basilica_miner_executor_health_check_duration_seconds")
+        counter!("basilica_miner_node_health_checks_total").increment(1);
+        histogram!("basilica_miner_node_health_check_duration_seconds")
             .record(duration.as_secs_f64());
 
         debug!(
-            "Recorded executor health check: success={}, healthy={}, duration={:?}",
+            "Recorded node health check: success={}, healthy={}, duration={:?}",
             success, healthy, duration
         );
     }
 
-    /// Update executor counts
-    pub fn update_executor_counts(&self, total: u64, healthy: u64, unhealthy: u64) {
-        gauge!("basilica_miner_executors_total").set(total as f64);
-        gauge!("basilica_miner_executors_healthy").set(healthy as f64);
-        gauge!("basilica_miner_executors_unhealthy").set(unhealthy as f64);
+    /// Update node counts
+    pub fn update_node_counts(&self, total: u64, healthy: u64, unhealthy: u64) {
+        gauge!("basilica_miner_nodes_total").set(total as f64);
+        gauge!("basilica_miner_nodes_healthy").set(healthy as f64);
+        gauge!("basilica_miner_nodes_unhealthy").set(unhealthy as f64);
     }
 
     /// Record validator request
@@ -208,24 +205,21 @@ impl MinerPrometheusMetrics {
             .record(duration.as_secs_f64());
     }
 
-    /// Record executor discovery request
-    pub fn record_executor_discovery(&self, _validator_hotkey: &str, executors_returned: u32) {
-        counter!("basilica_miner_validator_executor_discoveries_total").increment(1);
-        debug!(
-            "Recorded executor discovery: executors_returned={}",
-            executors_returned
-        );
+    /// Record node discovery request
+    pub fn record_node_discovery(&self, _validator_hotkey: &str, nodes_returned: u32) {
+        counter!("basilica_miner_validator_node_discoveries_total").increment(1);
+        debug!("Recorded node discovery: nodes_returned={}", nodes_returned);
     }
 
     /// Record SSH session creation
-    pub fn record_ssh_session_created(&self, _executor_id: &str, _validator_hotkey: &str) {
+    pub fn record_ssh_session_created(&self, _node_id: &str, _validator_hotkey: &str) {
         counter!("basilica_miner_ssh_sessions_created_total").increment(1);
     }
 
     /// Record SSH session closure
     pub fn record_ssh_session_closed(
         &self,
-        _executor_id: &str,
+        _node_id: &str,
         _validator_hotkey: &str,
         duration: Duration,
     ) {
@@ -239,12 +233,7 @@ impl MinerPrometheusMetrics {
     }
 
     /// Record SSH key deployment
-    pub fn record_ssh_key_deployment(
-        &self,
-        _executor_id: &str,
-        success: bool,
-        _operation_type: &str,
-    ) {
+    pub fn record_ssh_key_deployment(&self, _node_id: &str, success: bool, _operation_type: &str) {
         counter!("basilica_miner_ssh_key_deployments_total").increment(1);
 
         if !success {
@@ -255,7 +244,7 @@ impl MinerPrometheusMetrics {
     /// Record deployment operation
     pub fn record_deployment(
         &self,
-        _executor_id: &str,
+        _node_id: &str,
         success: bool,
         duration: Duration,
         _deployment_type: &str,
@@ -273,9 +262,9 @@ impl MinerPrometheusMetrics {
         );
     }
 
-    /// Update remote executors deployed count
-    pub fn set_remote_executors_deployed(&self, count: u64) {
-        gauge!("basilica_miner_remote_executors_deployed").set(count as f64);
+    /// Update remote nodes deployed count
+    pub fn set_remote_nodes_deployed(&self, count: u64) {
+        gauge!("basilica_miner_remote_nodes_deployed").set(count as f64);
     }
 
     /// Record database operation

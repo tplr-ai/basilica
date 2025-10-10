@@ -1,5 +1,0 @@
-pub mod container_management_integration_test;
-pub mod grpc_communication_integration_test;
-pub mod resource_allocation_integration_test;
-pub mod system_monitoring_integration_test;
-pub mod validation_session_integration_test;

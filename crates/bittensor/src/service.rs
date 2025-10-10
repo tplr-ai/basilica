@@ -2,7 +2,7 @@
 //!
 //! Central service for all Bittensor chain interactions using crabtensor.
 
-use crate::connect::{CircuitBreaker, HealthChecker, RetryConfig, RetryExecutor};
+use crate::connect::{CircuitBreaker, HealthChecker, RetryConfig, RetryNode};
 use crate::connect::{ConnectionManager, ConnectionPool, ConnectionPoolBuilder};
 use crate::error::BittensorError;
 use anyhow::Result;
@@ -89,7 +89,7 @@ pub struct Service {
     connection_pool: Arc<ConnectionPool>,
     connection_manager: Arc<ConnectionManager>,
     signer: Signer,
-    retry_executor: RetryExecutor,
+    retry_node: RetryNode,
     circuit_breaker: Arc<tokio::sync::Mutex<CircuitBreaker>>,
     health_monitor_handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -124,9 +124,9 @@ impl Service {
         );
 
         // Initialize pool with retry logic
-        let retry_executor = RetryExecutor::new().with_timeout(Duration::from_secs(120));
+        let retry_node = RetryNode::new().with_timeout(Duration::from_secs(120));
 
-        retry_executor
+        retry_node
             .execute_with_config(
                 || async {
                     pool.initialize()
@@ -193,7 +193,7 @@ impl Service {
             connection_pool: pool,
             connection_manager,
             signer,
-            retry_executor,
+            retry_node,
             circuit_breaker,
             health_monitor_handle: Some(monitor_handle),
         };
@@ -287,7 +287,7 @@ impl Service {
             }
         };
 
-        self.retry_executor.execute(operation).await?;
+        self.retry_node.execute(operation).await?;
         info!("Axon served successfully");
         Ok(())
     }
@@ -398,7 +398,7 @@ impl Service {
             }
         };
 
-        self.retry_executor.execute(operation).await?;
+        self.retry_node.execute(operation).await?;
         info!("Weights set successfully for netuid {}", netuid);
         Ok(())
     }

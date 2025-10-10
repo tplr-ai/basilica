@@ -117,28 +117,28 @@ collateral-cli --contract-address 0x1234567890123456789012345678901234567890
 collateral-cli tx deposit \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 123 \
+  --node-id 123 \
   --amount 1000000000000000000
 
 # Deposit on testnet
 collateral-cli --network testnet tx deposit \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 456 \
+  --node-id 456 \
   --amount 5000000000000000000
 
 # Deposit with custom contract address
 collateral-cli --contract-address 0x5FbDB2315678afecb367f032d93F642f64180aa3 tx deposit \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 789 \
+  --node-id 789 \
   --amount 2000000000000000000
 
 # Using environment variable for private key
 export PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12
 collateral-cli tx deposit \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 101 \
+  --node-id 101 \
   --amount 1500000000000000000
 ```
 
@@ -149,7 +149,7 @@ collateral-cli tx deposit \
 collateral-cli tx reclaim-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 123 \
+  --node-id 123 \
   --url "https://example.com/reclaim-proof" \
   --url-content-md5-checksum abcdef1234567890abcdef1234567890
 
@@ -157,7 +157,7 @@ collateral-cli tx reclaim-collateral \
 collateral-cli --network testnet tx reclaim-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 456 \
+  --node-id 456 \
   --url "https://proof-server.testnet.com/evidence/456" \
   --url-content-md5-checksum d41d8cd98f00b204e9800998ecf8427e
 ```
@@ -194,7 +194,7 @@ collateral-cli tx deny-reclaim \
 collateral-cli tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 123 \
+  --node-id 123 \
   --slash-amount 1000000000000000000 \
   --url "https://evidence.example.com/slash-proof" \
   --url-content-md5-checksum aab03e786183b16c8a0b15f6b40ff607
@@ -203,7 +203,7 @@ collateral-cli tx slash-collateral \
 collateral-cli --network testnet tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --executor-id 999 \
+  --node-id 999 \
   --slash-amount 1000000000000000000 \
   --url "https://audit.testnet.com/violations/999" \
   --url-content-md5-checksum 098f6bcd4621d373cade4e832627b4f6
@@ -227,18 +227,18 @@ collateral-cli query decision-timeout
 collateral-cli query min-collateral-increase
 ```
 
-#### Executor-Specific Queries
+#### Node-Specific Queries
 
 ```bash
-# Get miner address for executor
-collateral-cli query executor-to-miner \
+# Get miner address for node
+collateral-cli query node-to-miner \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 123
+  --node-id 123
 
-# Get collateral amount for executor
+# Get collateral amount for node
 collateral-cli query collaterals \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --executor-id 123
+  --node-id 123
 
 # Get reclaim details
 collateral-cli query reclaims \
@@ -247,7 +247,7 @@ collateral-cli query reclaims \
 # Query on different networks
 collateral-cli --network testnet query collaterals \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --executor-id 456
+  --node-id 456
 
 # Query with custom contract
 collateral-cli --contract-address 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 query netuid

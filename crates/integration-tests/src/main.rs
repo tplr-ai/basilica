@@ -13,7 +13,9 @@ fn main() -> Result<()> {
     println!("  - Authentication gRPC: cargo test --test grpc_auth_integration -- --nocapture");
     println!("  - Authentication Security: cargo test --test auth_security_tests -- --nocapture");
     println!("  - GPU PoW End-to-End: cargo test gpu_pow_e2e --test gpu_pow_e2e -- --nocapture");
-    println!("  - Miner-Executor Flow: cargo test miner_executor_flow --test miner_executor_flow -- --nocapture");
+    println!(
+        "  - Miner-Node Flow: cargo test miner_node_flow --test miner_node_flow -- --nocapture"
+    );
     println!();
     println!("To run all integration tests:");
     println!("  cargo test -- --nocapture");

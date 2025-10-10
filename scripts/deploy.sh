@@ -24,10 +24,9 @@ Usage: $0 [OPTIONS]
 Deploy Basilica components to remote servers.
 
 OPTIONS:
-    -s, --services SERVICES      Comma-separated list: validator,miner,executor or 'all'
+    -s, --services SERVICES      Comma-separated list: validator,miner or 'all'
     -v, --validator USER@HOST:PORT    Validator server connection
     -m, --miner USER@HOST:PORT        Miner server connection
-    -e, --executor USER@HOST:PORT     Executor server connection
     -w, --sync-wallets               Sync local wallets to remote servers
     -f, --follow-logs                Stream logs after deployment
     -c, --health-check               Perform health checks on service endpoints
@@ -47,7 +46,7 @@ EXAMPLES:
 
     # Deploy all services and follow logs
     $0 -s all -v root@64.247.196.98:9001 -m root@51.159.160.71:46088 -e shadeform@160.202.129.13:22 -f
-    
+
     # Deploy validator with veritas binaries
     $0 -s validator -v root@64.247.196.98:9001 -b ../veritas/binaries
 EOF
@@ -70,25 +69,22 @@ ssh_cmd() {
         miner)
             ssh -o ConnectTimeout=30 "$MINER_USER@$MINER_HOST" -p "$MINER_PORT" "$cmd"
             ;;
-        executor)
-            ssh -o ConnectTimeout=30 "$EXECUTOR_USER@$EXECUTOR_HOST" -p "$EXECUTOR_PORT" "$cmd"
-            ;;
     esac
 }
 
 deploy_service() {
     local service="$1"
     log "Deploying $service using service-specific script"
-    
+
     local deploy_script="./scripts/$service/deploy.sh"
     if [[ ! -f "$deploy_script" ]]; then
         log "ERROR: Deploy script $deploy_script not found"
         exit 1
     fi
-    
+
     local server_arg=""
     local deploy_args=()
-    
+
     case $service in
         validator)
             server_arg="$VALIDATOR_USER@$VALIDATOR_HOST:$VALIDATOR_PORT"
@@ -96,30 +92,27 @@ deploy_service() {
         miner)
             server_arg="$MINER_USER@$MINER_HOST:$MINER_PORT"
             ;;
-        executor)
-            server_arg="$EXECUTOR_USER@$EXECUTOR_HOST:$EXECUTOR_PORT"
-            ;;
     esac
-    
+
     deploy_args+=("-s" "$server_arg")
     deploy_args+=("-t" "$TIMEOUT")
-    
+
     if [[ "$SYNC_WALLETS" == "true" && ("$service" == "validator" || "$service" == "miner") ]]; then
         deploy_args+=("-w")
     fi
-    
+
     if [[ "$FOLLOW_LOGS" == "true" ]]; then
         deploy_args+=("-f")
     fi
-    
+
     if [[ "$HEALTH_CHECK" == "true" ]]; then
         deploy_args+=("--health-check")
     fi
-    
-    if [[ -n "$VERITAS_BINARIES_DIR" && ("$service" == "validator" || "$service" == "executor") ]]; then
+
+    if [[ -n "$VERITAS_BINARIES_DIR" && ("$service" == "validator") ]]; then
         deploy_args+=("-b" "$VERITAS_BINARIES_DIR")
     fi
-    
+
     log "Executing: $deploy_script ${deploy_args[*]}"
     "$deploy_script" "${deploy_args[@]}"
 }
@@ -129,12 +122,12 @@ setup_ssh_access() {
         return
     fi
 
-    log "Setting up SSH access from miner to executor"
-    MINER_PUBKEY=$(ssh_cmd miner "cat /root/.ssh/miner_executor_key.pub")
-    ssh_cmd executor "grep -qF '$MINER_PUBKEY' ~/.ssh/authorized_keys || echo '$MINER_PUBKEY' >> ~/.ssh/authorized_keys"
+    log "Setting up SSH access from miner to node"
+    MINER_PUBKEY=$(ssh_cmd miner "cat /root/.ssh/miner_node_key.pub")
+    ssh_cmd node "grep -qF '$MINER_PUBKEY' ~/.ssh/authorized_keys || echo '$MINER_PUBKEY' >> ~/.ssh/authorized_keys"
 
     log "Testing SSH connectivity"
-    ssh_cmd miner "ssh -i /root/.ssh/miner_executor_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 $EXECUTOR_USER@$EXECUTOR_HOST 'echo SSH access verified'"
+    ssh_cmd miner "ssh -i /root/.ssh/miner_node_key -o StrictHostKeyChecking=no -o ConnectTimeout=10 $EXECUTOR_USER@$EXECUTOR_HOST 'echo SSH access verified'"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -151,11 +144,6 @@ while [[ $# -gt 0 ]]; do
         -m|--miner)
             IFS='@' read -r MINER_USER temp <<< "$2"
             IFS=':' read -r MINER_HOST MINER_PORT <<< "$temp"
-            shift 2
-            ;;
-        -e|--executor)
-            IFS='@' read -r EXECUTOR_USER temp <<< "$2"
-            IFS=':' read -r EXECUTOR_HOST EXECUTOR_PORT <<< "$temp"
             shift 2
             ;;
         -w|--sync-wallets)
@@ -194,7 +182,7 @@ if [[ -z "$SERVICES" ]]; then
 fi
 
 if [[ "$SERVICES" == "all" ]]; then
-    SERVICES="validator,miner,executor"
+    SERVICES="validator,miner"
 fi
 
 IFS=',' read -ra SERVICE_LIST <<< "$SERVICES"
@@ -210,12 +198,6 @@ for service in "${SERVICE_LIST[@]}"; do
         miner)
             if [[ -z "$MINER_USER" || -z "$MINER_HOST" || -z "$MINER_PORT" ]]; then
                 echo "ERROR: Miner connection required for miner deployment (-m)"
-                exit 1
-            fi
-            ;;
-        executor)
-            if [[ -z "$EXECUTOR_USER" || -z "$EXECUTOR_HOST" || -z "$EXECUTOR_PORT" ]]; then
-                echo "ERROR: Executor connection required for executor deployment (-e)"
                 exit 1
             fi
             ;;
@@ -240,7 +222,7 @@ for service in "${SERVICE_LIST[@]}"; do
     deploy_service "$service"
 done
 
-if [[ " ${SERVICE_LIST[*]} " =~ " miner " ]] && [[ " ${SERVICE_LIST[*]} " =~ " executor " ]]; then
+if [[ " ${SERVICE_LIST[*]} " =~ " miner " ]]; then
     setup_ssh_access
 fi
 

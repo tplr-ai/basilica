@@ -1,6 +1,6 @@
 //! Network Speed Test Validation Module
 //!
-//! This module handles network speed testing for executors using a bash script
+//! This module handles network speed testing for nodes using a bash script
 //! to measure download and upload speeds. It collects network performance metrics
 //! and stores them for validation scoring purposes.
 
@@ -92,7 +92,7 @@ impl NetworkSpeedProfile {
     }
 }
 
-/// Network speed test collector for gathering network performance from executors
+/// Network speed test collector for gathering network performance from nodes
 #[derive(Clone)]
 pub struct NetworkSpeedCollector {
     ssh_client: Arc<ValidatorSshClient>,
@@ -108,14 +108,14 @@ impl NetworkSpeedCollector {
         }
     }
 
-    /// Collect network speed profile from executor
+    /// Collect network speed profile from node
     pub async fn collect(
         &self,
-        executor_id: &str,
+        node_id: &str,
         ssh_details: &SshConnectionDetails,
     ) -> Result<NetworkSpeedProfile> {
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             "[SPEEDTEST] Starting network speed test collection"
         );
 
@@ -154,7 +154,7 @@ impl NetworkSpeedCollector {
         let speed_profile = NetworkSpeedProfile::from_speedtest_output(&speedtest_output)?;
 
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             download_mbps = speed_profile.download_mbps.unwrap_or(0.0),
             upload_mbps = speed_profile.upload_mbps.unwrap_or(0.0),
             "[SPEEDTEST] Successfully collected network speed profile"
@@ -167,13 +167,13 @@ impl NetworkSpeedCollector {
     pub async fn store(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
         speed_profile: &NetworkSpeedProfile,
     ) -> Result<()> {
         self.persistence
-            .store_executor_speedtest_profile(
+            .store_node_speedtest_profile(
                 miner_uid,
-                executor_id,
+                node_id,
                 speed_profile.download_mbps,
                 speed_profile.upload_mbps,
                 &speed_profile.test_timestamp.to_rfc3339(),
@@ -184,38 +184,38 @@ impl NetworkSpeedCollector {
 
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[SPEEDTEST] Stored network speed profile in database"
         );
 
         Ok(())
     }
 
-    /// Collect network speed profile from executor and store in database
+    /// Collect network speed profile from node and store in database
     pub async fn collect_and_store(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Result<NetworkSpeedProfile> {
-        let speed_profile = self.collect(executor_id, ssh_details).await?;
-        self.store(miner_uid, executor_id, &speed_profile).await?;
+        let speed_profile = self.collect(node_id, ssh_details).await?;
+        self.store(miner_uid, node_id, &speed_profile).await?;
         Ok(speed_profile)
     }
 
     /// Collect network speed profile with error handling (non-critical operation)
     pub async fn collect_with_fallback(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<NetworkSpeedProfile> {
-        match self.collect(executor_id, ssh_details).await {
+        match self.collect(node_id, ssh_details).await {
             Ok(profile) => {
-                if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
+                if let Err(e) = self.store(miner_uid, node_id, &profile).await {
                     warn!(
                         miner_uid = miner_uid,
-                        executor_id = executor_id,
+                        node_id = node_id,
                         error = %e,
                         "[SPEEDTEST] Failed to store network speed profile (non-critical)"
                     );
@@ -225,7 +225,7 @@ impl NetworkSpeedCollector {
             Err(e) => {
                 warn!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     error = %e,
                     "[SPEEDTEST] Failed to collect network speed profile (non-critical)"
                 );
@@ -238,11 +238,11 @@ impl NetworkSpeedCollector {
     pub async fn retrieve(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
     ) -> Result<Option<NetworkSpeedProfile>> {
         let result = self
             .persistence
-            .get_executor_speedtest_profile(miner_uid, executor_id)
+            .get_node_speedtest_profile(miner_uid, node_id)
             .await?;
 
         match result {
@@ -261,7 +261,7 @@ impl NetworkSpeedCollector {
 
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[SPEEDTEST] Retrieved network speed profile from database"
                 );
 
@@ -270,7 +270,7 @@ impl NetworkSpeedCollector {
             None => {
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[SPEEDTEST] No network speed profile found in database"
                 );
                 Ok(None)

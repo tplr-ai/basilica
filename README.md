@@ -9,10 +9,17 @@
 ---
 
 <p align="center">
-  <a href="docs/miner.md">Miner</a> • 
-  <a href="docs/validator.md">Validator</a> • 
-  <a href="docs/architecture.md">Architecture</a>
+  <a href="docs/miner.md">Miner</a> •
+  <a href="docs/validator.md">Validator</a> •
+  <a href="docs/architecture.md">Architecture</a> •
+  <a href="https://basilica-grafana.tplr.ai/" target="_blank">Dashboard</a> •
+  <a href="https://basilica.ai/" target="_blank">Website</a> •
+  <a href="https://discord.gg/4s7A5nQqAn" target="_blank">Discord</a>
 </p>
+
+```bash
+curl -sSL https://basilica.ai/install.sh | bash
+```
 
 ## Overview
 

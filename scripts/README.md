@@ -5,7 +5,8 @@ This directory contains build and deployment scripts for each Basilica component
 ## Structure
 
 Each component has its own directory with:
-- `build.sh` - Build the component 
+
+- `build.sh` - Build the component
 - `deploy.sh` - Deploy to remote servers
 - `Dockerfile` - Container definition
 - `compose.dev.yml` - Local development setup
@@ -28,6 +29,7 @@ Each component has its own directory with:
 ```
 
 **When to regenerate metadata:**
+
 - Before production deployments
 - When encountering "metadata compatibility" errors
 - After Bittensor network upgrades
@@ -35,15 +37,27 @@ Each component has its own directory with:
 
 ## Components
 
-- **executor/** - GPU machine agent
-- **miner/** - Bittensor miner neuron
-- **validator/** - Bittensor validator neuron
-- **gpu-attestor/** - GPU verification tool
-- **basilica-api/** - External HTTP API
+### Core Services
+
+- **validator/** - Bittensor validator neuron for verification and scoring
+- **miner/** - Bittensor miner neuron for GPU node orchestration
+- **api/** - External HTTP API service
+
+### Supporting Services
+
+- **billing/** - Billing and payment processing
+- **payments/** - Payment gateway integration
+
+### Infrastructure & Tools
+
+- **cloud/** - Terraform infrastructure as code (AWS deployments)
+- **localtest/** - Local testing environment
+- **provision/** - Provisioning and configuration management
 
 ## Usage
 
 ### Building
+
 ```bash
 # For production builds, regenerate metadata first
 ./scripts/generate-metadata.sh --network finney
@@ -53,26 +67,30 @@ cd scripts/{component}
 ```
 
 ### Deploying
+
 ```bash
 cd scripts/{component}
 ./deploy.sh user@host [port]
 ```
 
 ### Running Locally
+
 ```bash
-cd scripts/gpu-attestor
-./build.sh --release
+cd scripts/{component}
+docker compose -f compose.dev.yml up -d
 ```
 
 ### Running in Production
+
 ```bash
 cd scripts/{component}
-docker-compose -f compose.prod.yml up -d
+docker compose -f compose.prod.yml up -d
 ```
 
 ## Main CLI
 
 Use `just` commands from the project root:
+
 - `just test-run` - Run tests
 - `just test-verify` - Verify test implementation
 - `just test-stats` - Show test statistics

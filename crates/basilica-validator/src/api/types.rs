@@ -38,7 +38,7 @@ impl Default for GpuRequirements {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RentCapacityResponse {
     pub rental_id: String,
-    pub executor: ExecutorDetails,
+    pub node: NodeDetails,
     pub ssh_access: SshAccess,
 }
 
@@ -50,7 +50,7 @@ pub struct NetworkSpeedInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutorDetails {
+pub struct NodeDetails {
     pub id: String,
     pub gpu_specs: Vec<GpuSpec>,
     pub cpu_specs: CpuSpec,
@@ -91,7 +91,7 @@ pub struct TerminateRentalRequest {
 pub struct RentalStatusResponse {
     pub rental_id: String,
     pub status: RentalStatus,
-    pub executor: ExecutorDetails,
+    pub node: NodeDetails,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -105,16 +105,16 @@ pub enum RentalStatus {
     Failed,
 }
 
-/// Available executors listing
+/// Available nodes listing
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ListAvailableExecutorsResponse {
-    pub available_executors: Vec<AvailableExecutor>,
+pub struct ListAvailableNodesResponse {
+    pub available_nodes: Vec<AvailableNode>,
     pub total_count: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct AvailableExecutor {
-    pub executor: ExecutorDetails,
+pub struct AvailableNode {
+    pub node: NodeDetails,
     pub availability: AvailabilityInfo,
 }
 
@@ -125,10 +125,10 @@ pub struct AvailabilityInfo {
     pub uptime_percentage: f64,
 }
 
-/// Query parameters for listing available executors
+/// Query parameters for listing available nodes
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ListAvailableExecutorsQuery {
-    /// Filter for available executors only (default: true for /executors endpoint)
+pub struct ListAvailableNodesQuery {
+    /// Filter for available nodes only (default: true for /nodes endpoint)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub available: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -156,13 +156,13 @@ pub struct RegisterMinerRequest {
     pub hotkey: String,
     pub endpoint: String,
     pub signature: String,
-    pub executors: Vec<ExecutorRegistration>,
+    pub nodes: Vec<NodeRegistration>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct ExecutorRegistration {
-    pub executor_id: String,
-    pub grpc_address: String,
+pub struct NodeRegistration {
+    pub node_id: String,
+    pub ssh_endpoint: String,
     pub gpu_count: u32,
     pub gpu_specs: Vec<GpuSpec>,
     pub cpu_specs: CpuSpec,
@@ -183,7 +183,7 @@ pub struct MinerDetails {
     pub hotkey: String,
     pub endpoint: String,
     pub status: MinerStatus,
-    pub executor_count: u32,
+    pub node_count: u32,
     pub total_gpu_count: u32,
     pub verification_score: f64,
     pub uptime_percentage: f64,
@@ -225,7 +225,7 @@ pub struct ListMinersQuery {
 pub struct UpdateMinerRequest {
     pub endpoint: Option<String>,
     pub signature: String,
-    pub executors: Option<Vec<ExecutorRegistration>>,
+    pub nodes: Option<Vec<NodeRegistration>>,
 }
 
 /// Miner health status response
@@ -234,13 +234,13 @@ pub struct MinerHealthResponse {
     pub miner_id: String,
     pub overall_status: MinerStatus,
     pub last_health_check: chrono::DateTime<chrono::Utc>,
-    pub executor_health: Vec<ExecutorHealthStatus>,
+    pub node_health: Vec<NodeHealthStatus>,
     pub response_time_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
-pub struct ExecutorHealthStatus {
-    pub executor_id: String,
+pub struct NodeHealthStatus {
+    pub node_id: String,
     pub status: String,
     pub last_seen: chrono::DateTime<chrono::Utc>,
 }
@@ -249,7 +249,7 @@ pub struct ExecutorHealthStatus {
 #[derive(Debug, Deserialize)]
 pub struct TriggerVerificationRequest {
     pub verification_type: String,
-    pub executor_id: Option<String>,
+    pub node_id: Option<String>,
 }
 
 /// Verification trigger response
@@ -301,22 +301,22 @@ pub struct CategoryWeightSummary {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RentalListItem {
     pub rental_id: String,
-    pub executor_id: String,
+    pub node_id: String,
     pub container_id: String,
     pub state: RentalState,
     pub created_at: String,
     pub miner_id: String,
     pub container_image: String,
-    /// GPU specifications for this rental's executor
+    /// GPU specifications for this rental's node
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_specs: Option<Vec<GpuSpec>>,
-    /// CPU specifications for this rental's executor
+    /// CPU specifications for this rental's node
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_specs: Option<CpuSpec>,
-    /// Location of the executor
+    /// Location of the node
     #[serde(skip_serializing_if = "Option::is_none")]
     pub location: Option<String>,
-    /// Network speed information for this rental's executor
+    /// Network speed information for this rental's node
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_speed: Option<NetworkSpeedInfo>,
 }

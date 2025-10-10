@@ -7,7 +7,7 @@ from enum import Enum
 
 class AvailabilityInfo:
     r"""
-    Availability information for an executor
+    Availability information for an node
     """
     @property
     def available_until(self) -> typing.Optional[builtins.str]: ...
@@ -16,12 +16,12 @@ class AvailabilityInfo:
     @property
     def uptime_percentage(self) -> builtins.float: ...
 
-class AvailableExecutor:
+class AvailableNode:
     r"""
-    Available executor with details and availability info
+    Available node with details and availability info
     """
     @property
-    def executor(self) -> ExecutorDetails: ...
+    def node(self) -> NodeDetails: ...
     @property
     def availability(self) -> AvailabilityInfo: ...
 
@@ -42,9 +42,9 @@ class CpuSpec:
     @property
     def memory_gb(self) -> builtins.int: ...
 
-class ExecutorDetails:
+class NodeDetails:
     r"""
-    Executor details including GPU and CPU specifications
+    Node details including GPU and CPU specifications
     """
     @property
     def id(self) -> builtins.str: ...
@@ -57,7 +57,7 @@ class ExecutorDetails:
 
 class GpuRequirements:
     r"""
-    GPU requirements for executor selection
+    GPU requirements for node selection
     """
     @property
     def gpu_count(self) -> builtins.int: ...
@@ -99,9 +99,9 @@ class HealthCheckResponse:
     @property
     def total_validators(self) -> builtins.int: ...
 
-class ListAvailableExecutorsQuery:
+class ListAvailableNodesQuery:
     r"""
-    Query parameters for listing available executors
+    Query parameters for listing available nodes
     """
     @property
     def available(self) -> typing.Optional[builtins.bool]: ...
@@ -119,7 +119,7 @@ class ListAvailableExecutorsQuery:
     def gpu_type(self, value: typing.Optional[builtins.str]) -> None: ...
     @min_gpu_count.setter
     def min_gpu_count(self, value: typing.Optional[builtins.int]) -> None: ...
-    def __new__(cls, available:typing.Optional[builtins.bool]=None, min_gpu_memory:typing.Optional[builtins.int]=None, gpu_type:typing.Optional[builtins.str]=None, min_gpu_count:typing.Optional[builtins.int]=None) -> ListAvailableExecutorsQuery: ...
+    def __new__(cls, available:typing.Optional[builtins.bool]=None, min_gpu_memory:typing.Optional[builtins.int]=None, gpu_type:typing.Optional[builtins.str]=None, min_gpu_count:typing.Optional[builtins.int]=None) -> ListAvailableNodesQuery: ...
 
 class ListRentalsQuery:
     r"""
@@ -190,7 +190,7 @@ class RentalStatusWithSshResponse:
     @property
     def status(self) -> RentalStatus: ...
     @property
-    def executor(self) -> ExecutorDetails: ...
+    def node(self) -> NodeDetails: ...
     @property
     def ssh_credentials(self) -> typing.Optional[builtins.str]: ...
     @property
@@ -240,7 +240,7 @@ class StartRentalApiRequest:
     Start rental API request
     """
     @property
-    def executor_selection(self) -> ExecutorSelection: ...
+    def node_selection(self) -> NodeSelection: ...
     @property
     def container_image(self) -> builtins.str: ...
     @property
@@ -257,8 +257,8 @@ class StartRentalApiRequest:
     def volumes(self) -> builtins.list[VolumeMountRequest]: ...
     @property
     def no_ssh(self) -> builtins.bool: ...
-    @executor_selection.setter
-    def executor_selection(self, value: ExecutorSelection) -> None: ...
+    @node_selection.setter
+    def node_selection(self, value: NodeSelection) -> None: ...
     @container_image.setter
     def container_image(self, value: builtins.str) -> None: ...
     @ssh_public_key.setter
@@ -275,7 +275,7 @@ class StartRentalApiRequest:
     def volumes(self, value: builtins.list[VolumeMountRequest]) -> None: ...
     @no_ssh.setter
     def no_ssh(self, value: builtins.bool) -> None: ...
-    def __new__(cls, executor_selection:ExecutorSelection, container_image:builtins.str, ssh_public_key:builtins.str, environment:typing.Optional[typing.Mapping[builtins.str, builtins.str]]=None, ports:typing.Optional[typing.Sequence[PortMappingRequest]]=None, resources:typing.Optional[ResourceRequirementsRequest]=None, command:typing.Optional[typing.Sequence[builtins.str]]=None, volumes:typing.Optional[typing.Sequence[VolumeMountRequest]]=None, no_ssh:builtins.bool=False) -> StartRentalApiRequest: ...
+    def __new__(cls, node_selection:NodeSelection, container_image:builtins.str, ssh_public_key:builtins.str, environment:typing.Optional[typing.Mapping[builtins.str, builtins.str]]=None, ports:typing.Optional[typing.Sequence[PortMappingRequest]]=None, resources:typing.Optional[ResourceRequirementsRequest]=None, command:typing.Optional[typing.Sequence[builtins.str]]=None, volumes:typing.Optional[typing.Sequence[VolumeMountRequest]]=None, no_ssh:builtins.bool=False) -> StartRentalApiRequest: ...
 
 class VolumeMountRequest:
     r"""
@@ -295,20 +295,20 @@ class VolumeMountRequest:
     def read_only(self, value: builtins.bool) -> None: ...
     def __new__(cls, host_path:builtins.str, container_path:builtins.str, read_only:builtins.bool=False) -> VolumeMountRequest: ...
 
-class ExecutorSelection(Enum):
+class NodeSelection(Enum):
     r"""
-    Executor selection strategy
+    Node selection strategy
     """
-    ExecutorId = ...
+    NodeId = ...
     GpuRequirements = ...
 
-def executor_by_gpu(gpu_requirements:GpuRequirements) -> ExecutorSelection:
+def node_by_gpu(gpu_requirements:GpuRequirements) -> NodeSelection:
     r"""
-    Helper function to create executor selection by GPU requirements
+    Helper function to create node selection by GPU requirements
     """
 
-def executor_by_id(executor_id:builtins.str) -> ExecutorSelection:
+def node_by_id(node_id:builtins.str) -> NodeSelection:
     r"""
-    Helper function to create executor selection by ID
+    Helper function to create node selection by ID
     """
 

@@ -4,7 +4,6 @@ use crate::config::ValidatorConfig;
 use anyhow::Result;
 use basilica_common::config::ConfigValidation;
 
-pub mod database;
 pub mod rental;
 pub mod service;
 

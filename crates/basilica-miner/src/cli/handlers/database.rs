@@ -18,7 +18,6 @@ pub enum DatabaseOperation {
     Backup { path: String },
     Restore { path: String },
     Stats,
-    Cleanup { days: Option<u32> },
     Vacuum,
     Integrity,
 }
@@ -29,7 +28,6 @@ pub struct DatabaseStats {
     pub file_size: u64,
     pub page_count: u64,
     pub page_size: u64,
-    pub _vacuum_count: u64,
     pub table_stats: Vec<TableStats>,
     pub last_backup: Option<DateTime<Utc>>,
 }
@@ -51,7 +49,6 @@ pub async fn handle_database_command(
         DatabaseOperation::Backup { path } => backup_database(config, &path).await,
         DatabaseOperation::Restore { path } => restore_database(config, &path).await,
         DatabaseOperation::Stats => show_database_stats(config).await,
-        DatabaseOperation::Cleanup { days } => cleanup_database(config, days.unwrap_or(30)).await,
         DatabaseOperation::Vacuum => vacuum_database(config).await,
         DatabaseOperation::Integrity => check_database_integrity(config).await,
     }
@@ -210,68 +207,6 @@ async fn show_database_stats(config: &MinerConfig) -> Result<()> {
         );
     }
 
-    // Show health status
-    let health_records = db.get_all_executor_health().await.unwrap_or_default();
-    let interaction_count = db
-        .get_recent_validator_interactions(100)
-        .await
-        .unwrap_or_default()
-        .len();
-
-    println!("\n=== Content Summary ===");
-    println!("Executor Health Records: {}", health_records.len());
-    println!("Recent Validator Interactions: {interaction_count}");
-
-    let healthy_executors = health_records.iter().filter(|h| h.is_healthy).count();
-    if !health_records.is_empty() {
-        println!(
-            "Healthy Executors: {}/{} ({:.1}%)",
-            healthy_executors,
-            health_records.len(),
-            (healthy_executors as f64 / health_records.len() as f64) * 100.0
-        );
-    }
-
-    Ok(())
-}
-
-/// Clean up old database records
-async fn cleanup_database(config: &MinerConfig, days: u32) -> Result<()> {
-    info!("Starting database cleanup (older than {} days)", days);
-    println!("Cleaning up database records older than {days} days...");
-
-    let db = RegistrationDb::new(&config.database).await?;
-
-    // Calculate cutoff date
-    let cutoff_date = Utc::now() - chrono::Duration::days(days as i64);
-    println!(
-        "   Cutoff date: {}",
-        cutoff_date.format("%Y-%m-%d %H:%M:%S UTC")
-    );
-
-    // Clean up old validator interactions
-    let interactions_cleaned = clean_old_validator_interactions(&db, cutoff_date).await?;
-    if interactions_cleaned > 0 {
-        println!("Cleaned {interactions_cleaned} old validator interactions");
-    }
-
-    // Clean up old SSH grants
-    let grants_cleaned = clean_old_ssh_grants(&db, cutoff_date).await?;
-    if grants_cleaned > 0 {
-        println!("Cleaned {grants_cleaned} old SSH grants");
-    }
-
-    // Clean up stale executor health records
-    let health_cleaned = clean_stale_executor_health(&db, cutoff_date).await?;
-    if health_cleaned > 0 {
-        println!("Cleaned {health_cleaned} stale executor health records");
-    }
-
-    if interactions_cleaned == 0 && grants_cleaned == 0 && health_cleaned == 0 {
-        println!("INFO: No old records found to clean up");
-    }
-
-    println!("Database cleanup completed");
     Ok(())
 }
 
@@ -416,7 +351,6 @@ async fn collect_database_stats(
         file_size,
         page_count: stats.page_count,
         page_size: stats.page_size,
-        _vacuum_count: stats.vacuum_count,
         table_stats: stats
             .table_stats
             .into_iter()
@@ -428,25 +362,4 @@ async fn collect_database_stats(
             .collect(),
         last_backup: None, // Would need to track this separately
     })
-}
-
-/// Clean old validator interactions
-async fn clean_old_validator_interactions(
-    db: &RegistrationDb,
-    cutoff_date: DateTime<Utc>,
-) -> Result<u64> {
-    db.cleanup_old_validator_interactions(cutoff_date).await
-}
-
-/// Clean old SSH grants
-async fn clean_old_ssh_grants(db: &RegistrationDb, cutoff_date: DateTime<Utc>) -> Result<u64> {
-    db.cleanup_old_ssh_grants(cutoff_date).await
-}
-
-/// Clean stale executor health records
-async fn clean_stale_executor_health(
-    db: &RegistrationDb,
-    cutoff_date: DateTime<Utc>,
-) -> Result<u64> {
-    db.cleanup_stale_executor_health(cutoff_date).await
 }

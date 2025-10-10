@@ -5,8 +5,8 @@
 
 #[cfg(test)]
 mod ssh_tests {
-    use crate::ssh::{ExecutorSshDetails, RetryConfig, SshSessionStats, ValidatorSshClient};
-    use basilica_common::identity::ExecutorId;
+    use crate::ssh::{NodeSshDetails, RetryConfig, SshSessionStats, ValidatorSshClient};
+    use basilica_common::identity::NodeId;
     use basilica_common::ssh::{SshConnectionConfig, SshConnectionDetails};
     use std::time::Duration;
     use tempfile::tempdir;
@@ -26,11 +26,11 @@ mod ssh_tests {
         }
     }
 
-    /// Create test executor SSH details
-    fn create_test_executor_details() -> ExecutorSshDetails {
+    /// Create test node SSH details
+    fn create_test_node_details() -> NodeSshDetails {
         let connection = create_test_ssh_details();
-        ExecutorSshDetails {
-            executor_id: ExecutorId::new(),
+        NodeSshDetails {
+            node_id: NodeId::new(&connection.host.clone()).unwrap(),
             connection,
         }
     }
@@ -79,6 +79,8 @@ mod ssh_tests {
             max_transfer_size: 50 * 1024 * 1024, // 50MB
             retry_attempts: 5,
             cleanup_remote_files: false,
+            strict_host_key_checking: false,
+            known_hosts_file: None,
         };
 
         let client = ValidatorSshClient::with_config(ssh_config);
@@ -198,14 +200,14 @@ mod ssh_tests {
     }
 
     #[test]
-    fn test_create_executor_connection() {
+    fn test_create_node_connection() {
         let temp_dir = tempdir().unwrap();
         let key_path = temp_dir.path().join("test_key");
         std::fs::write(&key_path, "dummy_key_content").unwrap();
 
-        let executor_id = ExecutorId::new();
-        let connection = ValidatorSshClient::create_executor_connection(
-            executor_id,
+        let node_id = NodeId::new("test_node").unwrap();
+        let connection = ValidatorSshClient::create_node_connection(
+            node_id,
             "test.example.com".to_string(),
             "testuser".to_string(),
             2222,
@@ -221,14 +223,14 @@ mod ssh_tests {
     }
 
     #[test]
-    fn test_create_executor_connection_defaults() {
+    fn test_create_node_connection_defaults() {
         let temp_dir = tempdir().unwrap();
         let key_path = temp_dir.path().join("test_key");
         std::fs::write(&key_path, "dummy_key_content").unwrap();
 
-        let executor_id = ExecutorId::new();
-        let connection = ValidatorSshClient::create_executor_connection(
-            executor_id,
+        let node_id = NodeId::new("test_node").unwrap();
+        let connection = ValidatorSshClient::create_node_connection(
+            node_id,
             "test.example.com".to_string(),
             "testuser".to_string(),
             22,
@@ -241,25 +243,22 @@ mod ssh_tests {
     }
 
     #[test]
-    fn test_executor_ssh_details_creation() {
-        let executor_details = create_test_executor_details();
+    fn test_node_ssh_details_creation() {
+        let node_details = create_test_node_details();
 
-        assert_eq!(executor_details.connection().host, "test.example.com");
-        assert_eq!(executor_details.connection().username, "testuser");
-        assert_eq!(executor_details.connection().port, 2222);
-        assert_eq!(
-            executor_details.connection().timeout,
-            Duration::from_secs(30)
-        );
+        assert_eq!(node_details.connection().host, "test.example.com");
+        assert_eq!(node_details.connection().username, "testuser");
+        assert_eq!(node_details.connection().port, 2222);
+        assert_eq!(node_details.connection().timeout, Duration::from_secs(30));
     }
 
     #[test]
-    fn test_executor_ssh_details_getters() {
-        let executor_details = create_test_executor_details();
-        let original_id = executor_details.executor_id.clone();
+    fn test_node_ssh_details_getters() {
+        let node_details = create_test_node_details();
+        let original_id = node_details.node_id.clone();
 
-        assert_eq!(executor_details.executor_id(), &original_id);
-        assert_eq!(executor_details.connection().host, "test.example.com");
+        assert_eq!(node_details.node_id(), &original_id);
+        assert_eq!(node_details.connection().host, "test.example.com");
     }
 
     /// Test error types that should be retried with custom retry config

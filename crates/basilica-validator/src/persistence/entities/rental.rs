@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Rental {
     pub id: Uuid,
-    pub executor_id: String,
+    pub node_id: String,
     pub customer_public_key: String,
     pub docker_image: String,
     pub env_vars: Option<Value>,
@@ -35,7 +35,7 @@ pub enum RentalStatus {
 impl Rental {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        executor_id: String,
+        node_id: String,
         customer_public_key: String,
         docker_image: String,
         env_vars: Option<Value>,
@@ -47,7 +47,7 @@ impl Rental {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
-            executor_id,
+            node_id,
             customer_public_key,
             docker_image,
             env_vars,

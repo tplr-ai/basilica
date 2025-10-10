@@ -16,7 +16,7 @@ pub struct ValidatorBusinessMetrics {
     prometheus: Arc<ValidatorPrometheusMetrics>,
     // Cache for aggregated business metrics
     verification_stats: Arc<RwLock<VerificationStats>>,
-    executor_stats: Arc<RwLock<HashMap<String, ExecutorStats>>>,
+    node_stats: Arc<RwLock<HashMap<String, NodeStats>>>,
     consensus_stats: Arc<RwLock<ConsensusStats>>,
 }
 
@@ -30,8 +30,8 @@ struct VerificationStats {
 }
 
 #[derive(Debug, Default, Clone)]
-struct ExecutorStats {
-    executor_id: String,
+struct NodeStats {
+    node_id: String,
     total_validations: u64,
     successful_validations: u64,
     current_health_status: bool,
@@ -53,7 +53,7 @@ impl ValidatorBusinessMetrics {
         Ok(Self {
             prometheus,
             verification_stats: Arc::new(RwLock::new(VerificationStats::default())),
-            executor_stats: Arc::new(RwLock::new(HashMap::new())),
+            node_stats: Arc::new(RwLock::new(HashMap::new())),
             consensus_stats: Arc::new(RwLock::new(ConsensusStats::default())),
         })
     }
@@ -61,7 +61,7 @@ impl ValidatorBusinessMetrics {
     /// Record complete validation workflow
     pub async fn record_validation_workflow(
         &self,
-        executor_id: &str,
+        node_id: &str,
         success: bool,
         duration: Duration,
         score: Option<f64>,
@@ -69,17 +69,16 @@ impl ValidatorBusinessMetrics {
     ) {
         // Record in Prometheus
         self.prometheus
-            .record_validation(executor_id, success, duration, score);
+            .record_validation(node_id, success, duration, score);
 
         // Update aggregated stats
         self.update_verification_stats(success, duration, score)
             .await;
-        self.update_executor_stats(executor_id, success, score)
-            .await;
+        self.update_node_stats(node_id, success, score).await;
 
         debug!(
-            "Recorded validation workflow: executor={}, type={}, success={}, duration={:?}, score={:?}",
-            executor_id, validation_type, success, duration, score
+            "Recorded validation workflow: node={}, type={}, success={}, duration={:?}, score={:?}",
+            node_id, validation_type, success, duration, score
         );
     }
 
@@ -87,25 +86,25 @@ impl ValidatorBusinessMetrics {
     pub async fn record_gpu_profile_validation(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
         gpu_model: &str,
         gpu_count: usize,
         success: bool,
         weighted_score: f64,
     ) {
-        // Record executor GPU count in Prometheus
+        // Record node GPU count in Prometheus
         self.prometheus
-            .record_executor_gpu_count(miner_uid, executor_id, gpu_model, gpu_count);
+            .record_node_gpu_count(miner_uid, node_id, gpu_model, gpu_count);
 
         // Record miner GPU metrics if validation successful
         if success {
             // Get total GPU count for miner from aggregated stats
             let total_gpu_count = {
-                let stats = self.executor_stats.read().await;
+                let stats = self.node_stats.read().await;
                 let mut miner_total = 0u32;
                 for (exec_id, _exec_stats) in stats.iter() {
                     if exec_id.contains(&miner_uid.to_string()) {
-                        // In real implementation, would track GPU counts per executor
+                        // In real implementation, would track GPU counts per node
                         miner_total += gpu_count as u32;
                     }
                 }
@@ -124,7 +123,7 @@ impl ValidatorBusinessMetrics {
     /// Record SSH validation session
     pub async fn record_ssh_validation_session(
         &self,
-        executor_id: &str,
+        node_id: &str,
         host: &str,
         success: bool,
         duration: Duration,
@@ -140,8 +139,8 @@ impl ValidatorBusinessMetrics {
 
         if !success {
             warn!(
-                "SSH validation session failed: executor={}, host={}, duration={:?}",
-                executor_id, host, duration
+                "SSH validation session failed: node={}, host={}, duration={:?}",
+                node_id, host, duration
             );
         }
     }
@@ -149,7 +148,7 @@ impl ValidatorBusinessMetrics {
     /// Record attestation verification
     pub async fn record_attestation_verification(
         &self,
-        executor_id: &str,
+        node_id: &str,
         attestation_type: &str,
         success: bool,
         signature_valid: bool,
@@ -164,14 +163,14 @@ impl ValidatorBusinessMetrics {
 
         if !overall_success {
             warn!(
-                "Attestation verification issues: executor={}, type={}, success={}, sig_valid={}, hw_verified={}",
-                executor_id, attestation_type, success, signature_valid, hardware_verified
+                "Attestation verification issues: node={}, type={}, success={}, sig_valid={}, hw_verified={}",
+                node_id, attestation_type, success, signature_valid, hardware_verified
             );
         }
 
         debug!(
-            "Attestation verification: executor={}, type={}, success={}, sig_valid={}, hw_verified={}",
-            executor_id, attestation_type, success, signature_valid, hardware_verified
+            "Attestation verification: node={}, type={}, success={}, sig_valid={}, hw_verified={}",
+            node_id, attestation_type, success, signature_valid, hardware_verified
         );
     }
 
@@ -203,24 +202,24 @@ impl ValidatorBusinessMetrics {
         );
     }
 
-    /// Update executor health status
-    pub async fn update_executor_health(&self, executor_id: &str, healthy: bool) {
+    /// Update node health status
+    pub async fn update_node_health(&self, node_id: &str, healthy: bool) {
         // Record health status
-        self.prometheus.set_executor_health(executor_id, healthy);
+        self.prometheus.set_node_health(node_id, healthy);
 
-        // Update executor stats
+        // Update node stats
         {
-            let mut stats = self.executor_stats.write().await;
+            let mut stats = self.node_stats.write().await;
             stats
-                .entry(executor_id.to_string())
-                .or_insert_with(|| ExecutorStats {
-                    executor_id: executor_id.to_string(),
+                .entry(node_id.to_string())
+                .or_insert_with(|| NodeStats {
+                    node_id: node_id.to_string(),
                     ..Default::default()
                 })
                 .current_health_status = healthy;
         }
 
-        debug!("Updated executor health: {}={}", executor_id, healthy);
+        debug!("Updated node health: {}={}", node_id, healthy);
     }
 
     /// Get verification statistics summary
@@ -243,25 +242,22 @@ impl ValidatorBusinessMetrics {
         }
     }
 
-    /// Get executor performance summary
-    pub async fn get_executor_summary(&self, executor_id: &str) -> Option<ExecutorSummary> {
-        let stats = self.executor_stats.read().await;
+    /// Get node performance summary
+    pub async fn get_node_summary(&self, node_id: &str) -> Option<NodeSummary> {
+        let stats = self.node_stats.read().await;
 
-        stats
-            .get(executor_id)
-            .map(|executor_stats| ExecutorSummary {
-                executor_id: executor_stats.executor_id.clone(),
-                total_validations: executor_stats.total_validations,
-                success_rate: if executor_stats.total_validations > 0 {
-                    executor_stats.successful_validations as f64
-                        / executor_stats.total_validations as f64
-                } else {
-                    0.0
-                },
-                average_score: executor_stats.average_score,
-                current_health: executor_stats.current_health_status,
-                last_validation: executor_stats.last_validation,
-            })
+        stats.get(node_id).map(|node_stats| NodeSummary {
+            node_id: node_stats.node_id.clone(),
+            total_validations: node_stats.total_validations,
+            success_rate: if node_stats.total_validations > 0 {
+                node_stats.successful_validations as f64 / node_stats.total_validations as f64
+            } else {
+                0.0
+            },
+            average_score: node_stats.average_score,
+            current_health: node_stats.current_health_status,
+            last_validation: node_stats.last_validation,
+        })
     }
 
     /// Get consensus summary
@@ -306,29 +302,28 @@ impl ValidatorBusinessMetrics {
         }
     }
 
-    async fn update_executor_stats(&self, executor_id: &str, success: bool, score: Option<f64>) {
-        let mut stats = self.executor_stats.write().await;
+    async fn update_node_stats(&self, node_id: &str, success: bool, score: Option<f64>) {
+        let mut stats = self.node_stats.write().await;
 
-        let executor_stats =
-            stats
-                .entry(executor_id.to_string())
-                .or_insert_with(|| ExecutorStats {
-                    executor_id: executor_id.to_string(),
-                    ..Default::default()
-                });
+        let node_stats = stats
+            .entry(node_id.to_string())
+            .or_insert_with(|| NodeStats {
+                node_id: node_id.to_string(),
+                ..Default::default()
+            });
 
-        executor_stats.total_validations += 1;
+        node_stats.total_validations += 1;
         if success {
-            executor_stats.successful_validations += 1;
+            node_stats.successful_validations += 1;
         }
 
-        executor_stats.last_validation = Some(std::time::SystemTime::now());
+        node_stats.last_validation = Some(std::time::SystemTime::now());
 
         if let Some(score_value) = score {
             // Update running average
-            let total = executor_stats.total_validations;
-            executor_stats.average_score =
-                (executor_stats.average_score * (total - 1) as f64 + score_value) / total as f64;
+            let total = node_stats.total_validations;
+            node_stats.average_score =
+                (node_stats.average_score * (total - 1) as f64 + score_value) / total as f64;
         }
     }
 }
@@ -342,10 +337,10 @@ pub struct VerificationSummary {
     pub average_duration: Duration,
 }
 
-/// Summary of executor performance
+/// Summary of node performance
 #[derive(Debug, Clone)]
-pub struct ExecutorSummary {
-    pub executor_id: String,
+pub struct NodeSummary {
+    pub node_id: String,
     pub total_validations: u64,
     pub success_rate: f64,
     pub average_score: f64,
@@ -373,26 +368,26 @@ impl BasilcaMetrics for ValidatorBusinessMetrics {
         labels: &[(&str, &str)],
     ) {
         // Map to validation workflow for validators
-        let executor_id = labels
+        let node_id = labels
             .iter()
-            .find(|(k, _)| *k == "executor_id")
+            .find(|(k, _)| *k == "node_id")
             .map(|(_, v)| *v)
             .unwrap_or("unknown");
 
-        self.record_validation_workflow(executor_id, success, duration, None, task_type)
+        self.record_validation_workflow(node_id, success, duration, None, task_type)
             .await;
     }
 
     /// Record verification attempt
     async fn record_verification_attempt(
         &self,
-        executor_id: &str,
+        node_id: &str,
         verification_type: &str,
         success: bool,
         score: Option<f64>,
     ) {
         self.record_validation_workflow(
-            executor_id,
+            node_id,
             success,
             Duration::from_millis(0), // Duration not tracked here
             score,
@@ -436,9 +431,9 @@ impl BasilcaMetrics for ValidatorBusinessMetrics {
                     .await;
             }
             "ssh_validation" => {
-                let executor_id = "unknown"; // Would need to be passed in labels
+                let node_id = "unknown"; // Would need to be passed in labels
                 self.record_ssh_validation_session(
-                    executor_id,
+                    node_id,
                     "unknown_host",
                     success,
                     duration,
@@ -453,9 +448,9 @@ impl BasilcaMetrics for ValidatorBusinessMetrics {
         }
     }
 
-    /// Record executor health status
-    async fn record_executor_health(&self, executor_id: &str, healthy: bool) {
-        self.update_executor_health(executor_id, healthy).await;
+    /// Record node health status
+    async fn record_node_health(&self, node_id: &str, healthy: bool) {
+        self.update_node_health(node_id, healthy).await;
     }
 
     /// Record network consensus metrics

@@ -71,7 +71,7 @@ impl ValidatorClient {
     /// Start a new rental
     pub async fn start_rental(
         &self,
-        request: crate::api::rental_routes::StartRentalRequest,
+        request: crate::api::routes::rentals::StartRentalRequest,
     ) -> Result<crate::rental::RentalResponse> {
         let url = format!("{}/rentals", self.base_url);
 
@@ -191,12 +191,12 @@ impl ValidatorClient {
         Ok(Box::pin(stream))
     }
 
-    /// List available executors for rental
-    pub async fn list_available_executors(
+    /// List available nodes for rental
+    pub async fn list_available_nodes(
         &self,
-        query: Option<ListAvailableExecutorsQuery>,
-    ) -> Result<ListAvailableExecutorsResponse> {
-        let url = format!("{}/executors", self.base_url);
+        query: Option<ListAvailableNodesQuery>,
+    ) -> Result<ListAvailableNodesResponse> {
+        let url = format!("{}/nodes", self.base_url);
 
         let mut req = self.http_client.get(&url);
 
@@ -207,13 +207,13 @@ impl ValidatorClient {
         let response = req
             .send()
             .await
-            .context("Failed to send available executors request")?;
+            .context("Failed to send available nodes request")?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_default();
             anyhow::bail!(
-                "Failed to list available executors: {} - {}",
+                "Failed to list available nodes: {} - {}",
                 status,
                 error_body
             );
@@ -222,7 +222,7 @@ impl ValidatorClient {
         let json = response
             .json()
             .await
-            .context("Failed to parse available executors response")?;
+            .context("Failed to parse available nodes response")?;
 
         Ok(json)
     }

@@ -1,7 +1,7 @@
 //! Network Geolocation Validation Module
 //!
 //! This module handles network geolocation and proximity information collection
-//! for executors by querying ipinfo.io to gather location and network metadata.
+//! for nodes by querying ipinfo.io to gather location and network metadata.
 
 use crate::persistence::SimplePersistence;
 use crate::ssh::ValidatorSshClient;
@@ -113,11 +113,11 @@ impl NetworkProfileCollector {
 
     pub async fn collect(
         &self,
-        executor_id: &str,
+        node_id: &str,
         ssh_details: &SshConnectionDetails,
     ) -> Result<NetworkProfile> {
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             "[NETWORK_PROFILE] Starting network geolocation collection"
         );
 
@@ -144,7 +144,7 @@ impl NetworkProfileCollector {
         );
 
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             ip = network_profile.ip_address.as_deref().unwrap_or("Unknown"),
             location = location_info,
             organization = network_profile.organization.as_deref().unwrap_or("Unknown"),
@@ -158,13 +158,13 @@ impl NetworkProfileCollector {
     pub async fn store(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
         network_profile: &NetworkProfile,
     ) -> Result<()> {
         self.persistence
-            .store_executor_network_profile(
+            .store_node_network_profile(
                 miner_uid,
-                executor_id,
+                node_id,
                 network_profile.ip_address.clone(),
                 network_profile.hostname.clone(),
                 network_profile.city.clone(),
@@ -181,38 +181,38 @@ impl NetworkProfileCollector {
 
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[NETWORK_PROFILE] Stored network profile in database"
         );
 
         Ok(())
     }
 
-    /// Collect network profile from executor and store in database
+    /// Collect network profile from node and store in database
     pub async fn collect_and_store(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Result<NetworkProfile> {
-        let network_profile = self.collect(executor_id, ssh_details).await?;
-        self.store(miner_uid, executor_id, &network_profile).await?;
+        let network_profile = self.collect(node_id, ssh_details).await?;
+        self.store(miner_uid, node_id, &network_profile).await?;
         Ok(network_profile)
     }
 
     /// Collect network profile with error handling (non-critical operation)
     pub async fn collect_with_fallback(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<NetworkProfile> {
-        match self.collect(executor_id, ssh_details).await {
+        match self.collect(node_id, ssh_details).await {
             Ok(profile) => {
-                if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
+                if let Err(e) = self.store(miner_uid, node_id, &profile).await {
                     warn!(
                         miner_uid = miner_uid,
-                        executor_id = executor_id,
+                        node_id = node_id,
                         error = %e,
                         "[NETWORK_PROFILE] Failed to store network profile (non-critical)"
                     );
@@ -222,7 +222,7 @@ impl NetworkProfileCollector {
             Err(e) => {
                 warn!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     error = %e,
                     "[NETWORK_PROFILE] Failed to collect network profile (non-critical)"
                 );
@@ -232,14 +232,10 @@ impl NetworkProfileCollector {
     }
 
     /// Retrieve network profile from database
-    pub async fn retrieve(
-        &self,
-        miner_uid: u16,
-        executor_id: &str,
-    ) -> Result<Option<NetworkProfile>> {
+    pub async fn retrieve(&self, miner_uid: u16, node_id: &str) -> Result<Option<NetworkProfile>> {
         let result = self
             .persistence
-            .get_executor_network_profile(miner_uid, executor_id)
+            .get_node_network_profile(miner_uid, node_id)
             .await?;
 
         match result {
@@ -276,7 +272,7 @@ impl NetworkProfileCollector {
 
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[NETWORK_PROFILE] Retrieved network profile from database"
                 );
 
@@ -285,7 +281,7 @@ impl NetworkProfileCollector {
             None => {
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[NETWORK_PROFILE] No network profile found in database"
                 );
                 Ok(None)

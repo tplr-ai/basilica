@@ -50,7 +50,9 @@ pub async fn handle_login_with_options(
 
     // Initialize token store
     let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
-    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
+    let token_store = TokenStore::new(data_dir)
+        .await
+        .wrap_err("Failed to initialize token store")?;
 
     let token_set = if use_device_flow {
         let spinner = create_spinner("Requesting device code...");
@@ -139,10 +141,12 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
 
     // Initialize token store
     let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
-    let token_store = TokenStore::new(data_dir).wrap_err("Failed to initialize token store")?;
+    let token_store = TokenStore::new(data_dir)
+        .await
+        .wrap_err("Failed to initialize token store")?;
 
     // Check if user is currently logged in and get tokens for revocation
-    let tokens = match token_store.get_tokens().await {
+    let tokens = match token_store.retrieve_tokens().await {
         Ok(Some(tokens)) => {
             complete_spinner_and_clear(spinner);
             Some(tokens)

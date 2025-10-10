@@ -132,5 +132,5 @@ fi
 echo ""
 echo "Next steps:"
 echo "1. Start the local Subtensor network: docker compose -f compose.yml up -d"
-echo "2. Services will run without registration (skip_registration=true for miner, --local-test for validator)"
+echo "2. Services will connect to local Subtensor instance on ws://localhost:9944"
 echo ""

@@ -93,8 +93,8 @@ service GpuPowValidator {
 
 // Request for a new challenge
 message ChallengeRequest {
-  // Executor ID requesting the challenge
-  string executor_id = 1;
+  // Node ID requesting the challenge
+  string node_id = 1;
   
   // Claimed GPU model
   string claimed_gpu_model = 2;

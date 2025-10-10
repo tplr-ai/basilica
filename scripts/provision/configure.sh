@@ -235,12 +235,6 @@ max_connections = 1000
 tls_enabled = ${MINER_TLS_ENABLED:-false}
 
 [validator_comms]
-max_concurrent_sessions = ${MINER_MAX_SESSIONS:-100}
-auth.enabled = true
-auth.method = "bittensor_signature"
-rate_limit.enabled = true
-rate_limit.requests_per_second = ${MINER_RATE_LIMIT:-10}
-rate_limit.burst_capacity = ${MINER_BURST_CAPACITY:-20}
 
 [executor_management]
 # Static executor configuration
@@ -253,11 +247,8 @@ max_retry_attempts = 3
 auto_recovery = true
 
 [security]
-enable_mtls = ${MINER_MTLS_ENABLED:-false}
-jwt_secret = "${MINER_JWT_SECRET:-$(openssl rand -hex 32)}"
 allowed_validators = []  # Empty = allow all
 verify_signatures = true
-token_expiration = { secs = 3600 }
 
 [logging]
 level = "${LOG_LEVEL:-info}"

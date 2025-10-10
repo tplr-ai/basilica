@@ -262,7 +262,6 @@ pub struct TlsConfig {
     pub cert_path: PathBuf,
     pub key_path: PathBuf,
     pub ca_cert_path: Option<PathBuf>,
-    pub require_client_cert: bool,
 }
 
 /// Logging configuration

@@ -5,18 +5,19 @@ use sqlx::Row;
 async fn test_network_profile_table_exists() -> Result<(), anyhow::Error> {
     // Create an in-memory database
     let persistence = SimplePersistence::new(":memory:", "test_validator".to_string()).await?;
+    persistence.run_migrations().await?;
 
     // Check if the table exists
     let row = sqlx::query(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='executor_network_profile'",
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='node_network_profile'",
     )
     .fetch_optional(persistence.pool())
     .await?;
 
-    assert!(row.is_some(), "executor_network_profile table should exist");
+    assert!(row.is_some(), "node_network_profile table should exist");
 
     // Check the columns exist
-    let columns = sqlx::query("PRAGMA table_info(executor_network_profile)")
+    let columns = sqlx::query("PRAGMA table_info(node_network_profile)")
         .fetch_all(persistence.pool())
         .await?;
 
@@ -24,7 +25,7 @@ async fn test_network_profile_table_exists() -> Result<(), anyhow::Error> {
 
     // Verify all expected columns exist
     assert!(column_names.contains(&"miner_uid".to_string()));
-    assert!(column_names.contains(&"executor_id".to_string()));
+    assert!(column_names.contains(&"node_id".to_string()));
     assert!(column_names.contains(&"ip_address".to_string()));
     assert!(column_names.contains(&"hostname".to_string()));
     assert!(column_names.contains(&"city".to_string()));

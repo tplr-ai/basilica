@@ -5,19 +5,11 @@
 //!
 //! ## Services
 //!
-//! ### ExecutorControl
-//! Service for direct Validator ↔ Executor communication. Allows validators to:
-//! - Provision validator access
-//! - Execute system profiling
-//! - Run computational challenges
-//! - Manage containers
-//! - Stream logs
-//!
 //! ### MinerDiscovery
 //! Service for Validator ↔ Miner coordination. Allows validators to:
 //! - Authenticate with miners using Bittensor signatures
-//! - Request executor leases with resource requirements
-//! - Initiate executor sessions
+//! - Discover available nodes with resource information
+//! - Get node access credentials
 //!
 //! ### ValidatorExternalApi
 //! Service for external → Validator communication. Allows external services to:
@@ -34,33 +26,20 @@
 //! ### Client Example
 //!
 //! ```rust,ignore
-//! use basilica_protocol::executor_control::executor_control_client::ExecutorControlClient;
-//! use basilica_protocol::executor_control::HealthCheckRequest;
+//! use basilica_protocol::miner_discovery::miner_discovery_client::MinerDiscoveryClient;
+//! use basilica_protocol::miner_discovery::DiscoverNodesRequest;
 //! use tonic::Request;
 //!
-//! let mut client = ExecutorControlClient::connect("http://[::1]:50051").await?;
-//! let request = Request::new(HealthCheckRequest {
-//!     requester: "validator".to_string(),
-//!     check_type: "full".to_string(),
+//! let mut client = MinerDiscoveryClient::connect("http://[::1]:50051").await?;
+//! let request = Request::new(DiscoverNodesRequest {
+//!     validator_hotkey: "validator-key".to_string(),
+//!     signature: "signature".to_string(),
+//!     nonce: "nonce".to_string(),
+//!     validator_public_key: "ssh-rsa ...".to_string(),
+//!     timestamp: Some(current_timestamp()),
+//!     target_miner_hotkey: "miner-key".to_string(),
 //! });
-//! let response = client.health_check(request).await?;
-//! ```
-//!
-//! ### Server Example
-//!
-//! ```rust,ignore
-//! use basilica_protocol::executor_control::executor_control_server::{ExecutorControl, ExecutorControlServer};
-//! use tonic::{transport::Server, Request, Response, Status};
-//!
-//! #[tonic::async_trait]
-//! impl ExecutorControl for MyService {
-//!     // Implement required methods
-//! }
-//!
-//! Server::builder()
-//!     .add_service(ExecutorControlServer::new(MyService))
-//!     .serve(addr)
-//!     .await?;
+//! let response = client.discover_nodes(request).await?;
 //! ```
 
 // Create proper module hierarchy for generated protobuf code
@@ -71,21 +50,9 @@ pub mod basilca {
         }
     }
 
-    pub mod executor {
+    pub mod rental {
         pub mod v1 {
-            include!("gen/basilca.executor.v1.rs");
-        }
-    }
-
-    pub mod executor_registration {
-        pub mod v1 {
-            include!("gen/basilca.executor_registration.v1.rs");
-        }
-    }
-
-    pub mod executor_management {
-        pub mod v1 {
-            include!("gen/basilca.executor_management.v1.rs");
+            include!("gen/basilica.rental.v1.rs");
         }
     }
 
@@ -126,50 +93,22 @@ pub mod common {
     pub use crate::basilca::common::v1::*;
 }
 
-pub mod executor_control {
-    //! Executor control service for direct Validator ↔ Executor communication
-    //!
-    //! This service supports step 5 of the interaction flow (direct validation):
-    //! - System profiling and hardware specification collection
-    //! - Computational challenge execution and verification
-    //! - Container lifecycle management
-    //! - Real-time log streaming
-    //! - Health monitoring and heartbeat
-    pub use crate::basilca::executor::v1::*;
-}
-
 pub mod miner_discovery {
     //! Miner discovery service for Validator ↔ Miner coordination
     //!
     //! This service supports steps 3-4 of the interaction flow:
     //! - Bittensor signature-based validator authentication
-    //! - Executor lease requests with resource requirements
-    //! - Validator-executor session initialization
+    //! - Node discovery and access
     pub use crate::basilca::miner::v1::*;
 }
 
-pub mod executor_registration {
-    //! Executor registration service for Executor ↔ Miner registration
-    //!
-    //! This service allows executors to register with their managing miner:
-    //! - Executor registration with GPU attestation
-    //! - Status updates and heartbeats
-    //! - Graceful unregistration
-    pub use crate::basilca::executor_registration::v1::*;
-}
-
-pub mod executor_management {
-    //! Executor management service for Miner ↔ Executor management
-    //!
-    //! This service allows miners to manage their executors:
-    //! - Health checks and status monitoring
-    //! - SSH key management for validator access
-    //! - Resource usage tracking
-    pub use crate::basilca::executor_management::v1::*;
+pub mod rental {
+    //! Rental service for managing GPU rentals
+    pub use crate::basilca::rental::v1::*;
 }
 
 pub mod validator_api {
-    //! External API service for services like Celium to interact with validators
+    //! External API service for services to interact with validators
     //!
     //! Public interface for capacity rental:
     //! - Discover available GPU capacity across the network
@@ -207,15 +146,15 @@ pub use basilica_common::*;
 pub mod utils {
     use super::common::*;
 
-    /// Convert ExecutorId to string representation for protobuf
-    pub fn executor_id_to_string(id: &str) -> String {
+    /// Convert NodeId to string representation for protobuf
+    pub fn node_id_to_string(id: &str) -> String {
         id.to_string()
     }
 
-    /// Convert string to ExecutorId (with validation)
-    pub fn string_to_executor_id(s: &str) -> Result<String, String> {
+    /// Convert string to NodeId (with validation)
+    pub fn string_to_node_id(s: &str) -> Result<String, String> {
         if s.is_empty() {
-            Err("Executor ID cannot be empty".to_string())
+            Err("Node ID cannot be empty".to_string())
         } else {
             Ok(s.to_string())
         }
@@ -372,11 +311,9 @@ pub mod helpers {
         request
     }
 
-    /// Create a gRPC interceptor for mTLS when implemented
+    /// Create a basic gRPC TLS config using system roots
     pub fn create_tls_config(
     ) -> Result<tonic::transport::ClientTlsConfig, Box<dyn std::error::Error>> {
-        // TODO: Implement mTLS configuration when certificates are available
-        // For now, return a placeholder that uses system roots
         Ok(tonic::transport::ClientTlsConfig::new())
     }
 }
@@ -387,9 +324,9 @@ mod tests {
 
     #[test]
     fn test_utility_functions() {
-        let id = "test-executor-123";
-        let id_str = utils::executor_id_to_string(id);
-        let parsed_id = utils::string_to_executor_id(&id_str).unwrap();
+        let id = "test-node-123";
+        let id_str = utils::node_id_to_string(id);
+        let parsed_id = utils::string_to_node_id(&id_str).unwrap();
 
         assert_eq!(id, parsed_id);
     }

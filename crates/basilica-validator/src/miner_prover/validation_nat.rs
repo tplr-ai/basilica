@@ -42,16 +42,16 @@ impl NatCollector {
 
     pub async fn collect(
         &self,
-        executor_id: &str,
+        node_id: &str,
         ssh_details: &SshConnectionDetails,
     ) -> Result<NatProfile> {
-        info!(executor_id = executor_id, "[NAT] Starting NAT validation");
+        info!(node_id = node_id, "[NAT] Starting NAT validation");
 
         let test_id = Uuid::new_v4().to_string().replace("-", "");
         let test_content = format!("NAT_TEST_{}", test_id);
 
         debug!(
-            executor_id = executor_id,
+            node_id = node_id,
             test_id = test_id,
             "[NAT] Generated test parameters"
         );
@@ -71,7 +71,7 @@ impl NatCollector {
                 let id = output.trim().to_string();
                 if id.is_empty() || id.contains("Error") {
                     error!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         output = output,
                         "[NAT] Failed to start container"
                     );
@@ -81,7 +81,7 @@ impl NatCollector {
                     ));
                 }
                 info!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     container_id = id,
                     "[NAT] Container started successfully"
                 );
@@ -89,7 +89,7 @@ impl NatCollector {
             }
             Err(e) => {
                 error!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     error = %e,
                     "[NAT] Failed to start container"
                 );
@@ -98,11 +98,11 @@ impl NatCollector {
         };
 
         let ready = self
-            .wait_for_container_ready(ssh_details, &container_id, executor_id)
+            .wait_for_container_ready(ssh_details, &container_id, node_id)
             .await;
 
         if !ready {
-            self.cleanup_container(ssh_details, &container_id, executor_id)
+            self.cleanup_container(ssh_details, &container_id, node_id)
                 .await;
             return Err(anyhow::anyhow!(
                 "Container failed to become ready within timeout"
@@ -120,7 +120,7 @@ impl NatCollector {
                 match port_str.parse::<u16>() {
                     Ok(port) => {
                         info!(
-                            executor_id = executor_id,
+                            node_id = node_id,
                             allocated_port = port,
                             "[NAT] OS allocated port for container"
                         );
@@ -128,12 +128,12 @@ impl NatCollector {
                     }
                     Err(e) => {
                         error!(
-                            executor_id = executor_id,
+                            node_id = node_id,
                             output = port_str,
                             error = %e,
                             "[NAT] Failed to parse allocated port"
                         );
-                        self.cleanup_container(ssh_details, &container_id, executor_id)
+                        self.cleanup_container(ssh_details, &container_id, node_id)
                             .await;
                         return Err(anyhow::anyhow!("Failed to parse allocated port: {}", e));
                     }
@@ -141,11 +141,11 @@ impl NatCollector {
             }
             Err(e) => {
                 error!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     error = %e,
                     "[NAT] Failed to get allocated port from Docker"
                 );
-                self.cleanup_container(ssh_details, &container_id, executor_id)
+                self.cleanup_container(ssh_details, &container_id, node_id)
                     .await;
                 return Err(anyhow::anyhow!("Failed to get allocated port: {}", e));
             }
@@ -160,7 +160,7 @@ impl NatCollector {
             if attempt > 0 {
                 let delay = Duration::from_secs(1 << attempt);
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     attempt = attempt + 1,
                     delay_secs = delay.as_secs(),
                     "[NAT] Retrying after delay"
@@ -169,7 +169,7 @@ impl NatCollector {
             }
 
             debug!(
-                executor_id = executor_id,
+                node_id = node_id,
                 url = test_url,
                 attempt = attempt + 1,
                 "[NAT] Testing HTTP connectivity"
@@ -195,7 +195,7 @@ impl NatCollector {
                             is_accessible = true;
                             response_content = Some(text.to_string());
                             info!(
-                                executor_id = executor_id,
+                                node_id = node_id,
                                 attempt = attempt + 1,
                                 "[NAT] Connectivity test successful"
                             );
@@ -206,7 +206,7 @@ impl NatCollector {
                                 test_content, text
                             ));
                             debug!(
-                                executor_id = executor_id,
+                                node_id = node_id,
                                 expected = test_content,
                                 received = text,
                                 "[NAT] Response content mismatch"
@@ -220,7 +220,7 @@ impl NatCollector {
                 Err(e) => {
                     last_error = Some(format!("HTTP request failed: {}", e));
                     debug!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         error = %e,
                         "[NAT] HTTP request failed"
                     );
@@ -228,14 +228,14 @@ impl NatCollector {
             }
         }
 
-        self.cleanup_container(ssh_details, &container_id, executor_id)
+        self.cleanup_container(ssh_details, &container_id, node_id)
             .await;
 
         if is_accessible {
             info!(
-                executor_id = executor_id,
+                node_id = node_id,
                 port = test_port,
-                "[NAT] NAT validation successful - executor is accessible"
+                "[NAT] NAT validation successful - node is accessible"
             );
 
             Ok(NatProfile {
@@ -258,13 +258,13 @@ impl NatCollector {
         } else {
             let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
             error!(
-                executor_id = executor_id,
+                node_id = node_id,
                 error = error_msg,
                 "[NAT] NAT validation failed"
             );
 
             Err(anyhow::anyhow!(
-                "NAT validation failed: executor not accessible - {}",
+                "NAT validation failed: node not accessible - {}",
                 error_msg
             ))
         }
@@ -274,7 +274,7 @@ impl NatCollector {
         &self,
         ssh_details: &SshConnectionDetails,
         container_id: &str,
-        executor_id: &str,
+        node_id: &str,
     ) -> bool {
         for attempt in 0..20 {
             tokio::time::sleep(Duration::from_millis(500)).await;
@@ -292,7 +292,7 @@ impl NatCollector {
                 Ok(output) => {
                     if output.trim() == "true" {
                         debug!(
-                            executor_id = executor_id,
+                            node_id = node_id,
                             attempt = attempt + 1,
                             "[NAT] Container is running"
                         );
@@ -303,7 +303,7 @@ impl NatCollector {
                 }
                 Err(e) => {
                     debug!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         error = %e,
                         "[NAT] Failed to check container status"
                     );
@@ -312,7 +312,7 @@ impl NatCollector {
         }
 
         warn!(
-            executor_id = executor_id,
+            node_id = node_id,
             "[NAT] Container failed to become ready within timeout"
         );
         false
@@ -322,7 +322,7 @@ impl NatCollector {
         &self,
         ssh_details: &SshConnectionDetails,
         container_id: &str,
-        executor_id: &str,
+        node_id: &str,
     ) {
         let container_name = if container_id.starts_with("nat_test_") {
             container_id.to_string()
@@ -341,27 +341,22 @@ impl NatCollector {
             .await
         {
             debug!(
-                executor_id = executor_id,
+                node_id = node_id,
                 error = %e,
                 "[NAT] Failed to cleanup container"
             );
         }
     }
 
-    pub async fn store(
-        &self,
-        miner_uid: u16,
-        executor_id: &str,
-        profile: &NatProfile,
-    ) -> Result<()> {
+    pub async fn store(&self, miner_uid: u16, node_id: &str, profile: &NatProfile) -> Result<()> {
         debug!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[NAT] Storing NAT profile"
         );
 
         self.persistence
-            .store_executor_nat_profile(miner_uid, executor_id, profile)
+            .store_node_nat_profile(miner_uid, node_id, profile)
             .await
             .context("Failed to store NAT profile")?;
 
@@ -370,29 +365,29 @@ impl NatCollector {
 
     pub async fn collect_and_store(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Result<NatProfile> {
-        let profile = self.collect(executor_id, ssh_details).await?;
-        self.store(miner_uid, executor_id, &profile).await?;
+        let profile = self.collect(node_id, ssh_details).await?;
+        self.store(miner_uid, node_id, &profile).await?;
         Ok(profile)
     }
 
     pub async fn collect_with_fallback(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<NatProfile> {
         match self
-            .collect_and_store(executor_id, miner_uid, ssh_details)
+            .collect_and_store(node_id, miner_uid, ssh_details)
             .await
         {
             Ok(profile) => {
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     is_accessible = profile.is_accessible,
                     "[NAT] NAT validation completed successfully"
                 );
@@ -401,7 +396,7 @@ impl NatCollector {
             Err(e) => {
                 error!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     error = %e,
                     "[NAT] NAT validation failed: {}",
                     e
@@ -411,9 +406,9 @@ impl NatCollector {
         }
     }
 
-    pub async fn retrieve(&self, miner_uid: u16, executor_id: &str) -> Result<Option<NatProfile>> {
+    pub async fn retrieve(&self, miner_uid: u16, node_id: &str) -> Result<Option<NatProfile>> {
         self.persistence
-            .get_executor_nat_profile(miner_uid, executor_id)
+            .get_node_nat_profile(miner_uid, node_id)
             .await
             .context("Failed to retrieve NAT profile")
     }

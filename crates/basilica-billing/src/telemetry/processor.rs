@@ -42,8 +42,8 @@ impl TelemetryProcessor {
     /// Process a single telemetry data point
     pub async fn process_telemetry(&self, data: TelemetryData) -> Result<()> {
         debug!(
-            "Processing telemetry for rental {} from executor {}",
-            data.rental_id, data.executor_id
+            "Processing telemetry for rental {} from node {}",
+            data.rental_id, data.node_id
         );
 
         let rental_id =
@@ -96,7 +96,7 @@ impl TelemetryProcessor {
             event_id: Uuid::new_v4(),
             rental_id: rental_id.as_uuid(),
             user_id: rental.user_id.to_string(),
-            executor_id: data.executor_id.clone(),
+            node_id: data.node_id.clone(),
             validator_id: rental.validator_id.clone(),
             event_type: EventType::Telemetry,
             event_data: json!({

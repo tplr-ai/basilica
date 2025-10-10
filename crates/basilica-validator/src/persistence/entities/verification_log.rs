@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationLog {
     pub id: Uuid,
-    pub executor_id: String,
+    pub node_id: String,
     pub validator_hotkey: String,
     pub verification_type: String,
     pub timestamp: DateTime<Utc>,
@@ -23,7 +23,7 @@ pub struct VerificationLog {
 impl VerificationLog {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        executor_id: String,
+        node_id: String,
         validator_hotkey: String,
         verification_type: String,
         score: f64,
@@ -35,7 +35,7 @@ impl VerificationLog {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
-            executor_id,
+            node_id,
             validator_hotkey,
             verification_type,
             timestamp: now,
@@ -58,10 +58,10 @@ impl VerificationLog {
     }
 }
 
-/// Statistics for executor verification history
+/// Statistics for node verification history
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutorVerificationStats {
-    pub executor_id: String,
+pub struct NodeVerificationStats {
+    pub node_id: String,
     pub total_verifications: u64,
     pub successful_verifications: u64,
     pub average_score: Option<f64>,
@@ -70,7 +70,7 @@ pub struct ExecutorVerificationStats {
     pub last_verification: Option<DateTime<Utc>>,
 }
 
-impl ExecutorVerificationStats {
+impl NodeVerificationStats {
     pub fn success_rate(&self) -> f64 {
         if self.total_verifications == 0 {
             0.0

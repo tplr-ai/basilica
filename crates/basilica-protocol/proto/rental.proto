@@ -26,7 +26,7 @@ service RentalService {
 // Request to start a new rental
 message RentalRequest {
   string validator_hotkey = 1;
-  string executor_id = 2;
+  string node_id = 2;
   ContainerSpec container_spec = 3;
   int64 duration_seconds = 4;
   string ssh_public_key = 5;
@@ -184,10 +184,10 @@ message LogEntry {
   string container_id = 4;
 }
 
-// Container state update (from executor to miner)
+// Container state update (from node to miner)
 message ContainerStateUpdate {
   string rental_id = 1;
-  string executor_id = 2;
+  string node_id = 2;
   ContainerStatus status = 3;
   ResourceUsage resource_usage = 4;
   string event_type = 5; // started, stopped, health_changed, etc.

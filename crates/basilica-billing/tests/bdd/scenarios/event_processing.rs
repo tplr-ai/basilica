@@ -23,7 +23,7 @@ async fn test_rental_start_event_created() {
     let request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_event_001".to_string(),
+        node_id: "node_event_001".to_string(),
         validator_id: "validator_event_001".to_string(),
         hourly_rate: "8.0".to_string(),
         max_duration: Some(hours_to_duration(12)),
@@ -44,8 +44,8 @@ async fn test_rental_start_event_created() {
 
     let event_exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(
-            SELECT 1 FROM billing.usage_events 
-            WHERE rental_id = $1::uuid 
+            SELECT 1 FROM billing.usage_events
+            WHERE rental_id = $1::uuid
             AND event_type = 'rental_start'
         )",
     )
@@ -57,8 +57,8 @@ async fn test_rental_start_event_created() {
     assert!(event_exists, "Rental start event should exist");
 
     let event_data = sqlx::query_scalar::<_, serde_json::Value>(
-        "SELECT event_data FROM billing.usage_events 
-         WHERE rental_id = $1::uuid 
+        "SELECT event_data FROM billing.usage_events
+         WHERE rental_id = $1::uuid
          AND event_type = 'rental_start'",
     )
     .bind(&response.tracking_id)
@@ -93,7 +93,7 @@ async fn test_status_change_events_tracked() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_status".to_string(),
+        node_id: "node_status".to_string(),
         validator_id: "validator_status".to_string(),
         hourly_rate: "5.0".to_string(),
         max_duration: Some(hours_to_duration(8)),
@@ -131,8 +131,8 @@ async fn test_status_change_events_tracked() {
     }
 
     let status_events = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM billing.usage_events 
-         WHERE rental_id = $1::uuid 
+        "SELECT COUNT(*) FROM billing.usage_events
+         WHERE rental_id = $1::uuid
          AND event_type = 'status_change'",
     )
     .bind(&track_response.tracking_id)
@@ -143,8 +143,8 @@ async fn test_status_change_events_tracked() {
     assert_eq!(status_events, 3, "Should have 3 status change events");
 
     let last_event = sqlx::query_as::<_, (serde_json::Value,)>(
-        "SELECT event_data FROM billing.usage_events 
-         WHERE rental_id = $1::uuid 
+        "SELECT event_data FROM billing.usage_events
+         WHERE rental_id = $1::uuid
          AND event_type = 'status_change'
          ORDER BY timestamp DESC LIMIT 1",
     )
@@ -173,7 +173,7 @@ async fn test_event_timestamps_ordered() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_order".to_string(),
+        node_id: "node_order".to_string(),
         validator_id: "validator_order".to_string(),
         hourly_rate: "7.0".to_string(),
         max_duration: Some(hours_to_duration(6)),
@@ -220,8 +220,8 @@ async fn test_event_timestamps_ordered() {
         .expect("Failed to finalize rental");
 
     let timestamps = sqlx::query_as::<_, (chrono::DateTime<chrono::Utc>,)>(
-        "SELECT timestamp FROM billing.usage_events 
-         WHERE rental_id = $1::uuid 
+        "SELECT timestamp FROM billing.usage_events
+         WHERE rental_id = $1::uuid
          ORDER BY timestamp ASC",
     )
     .bind(&track_response.tracking_id)
@@ -252,7 +252,7 @@ async fn test_event_processing_flags() {
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: "executor_flags".to_string(),
+        node_id: "node_flags".to_string(),
         validator_id: "validator_flags".to_string(),
         hourly_rate: "6.0".to_string(),
         max_duration: Some(hours_to_duration(10)),
@@ -269,8 +269,8 @@ async fn test_event_processing_flags() {
         .into_inner();
 
     let unprocessed_events = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM billing.usage_events 
-         WHERE rental_id = $1::uuid 
+        "SELECT COUNT(*) FROM billing.usage_events
+         WHERE rental_id = $1::uuid
          AND processed = false",
     )
     .bind(&track_response.tracking_id)
@@ -281,8 +281,8 @@ async fn test_event_processing_flags() {
     assert!(unprocessed_events > 0, "New events should be unprocessed");
 
     let null_batch_events = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM billing.usage_events 
-         WHERE rental_id = $1::uuid 
+        "SELECT COUNT(*) FROM billing.usage_events
+         WHERE rental_id = $1::uuid
          AND batch_id IS NULL",
     )
     .bind(&track_response.tracking_id)
@@ -306,13 +306,13 @@ async fn test_event_metadata_preserved() {
     context.create_test_user(user_id, "1000.0").await;
 
     let rental_id = Uuid::new_v4().to_string();
-    let executor_id = "executor_metadata_001";
+    let node_id = "node_metadata_001";
     let validator_id = "validator_metadata_001";
 
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
         user_id: user_id.to_string(),
-        executor_id: executor_id.to_string(),
+        node_id: node_id.to_string(),
         validator_id: validator_id.to_string(),
         hourly_rate: "9.0".to_string(),
         max_duration: Some(hours_to_duration(15)),
@@ -329,9 +329,9 @@ async fn test_event_metadata_preserved() {
         .into_inner();
 
     let event = sqlx::query_as::<_, (String, String, String, serde_json::Value)>(
-        "SELECT user_id, executor_id, validator_id, event_data 
-         FROM billing.usage_events 
-         WHERE rental_id = $1::uuid 
+        "SELECT user_id, node_id, validator_id, event_data
+         FROM billing.usage_events
+         WHERE rental_id = $1::uuid
          AND event_type = 'rental_start'",
     )
     .bind(&track_response.tracking_id)
@@ -340,7 +340,7 @@ async fn test_event_metadata_preserved() {
     .expect("Failed to get event");
 
     assert_eq!(event.0, user_id, "User ID should be preserved");
-    assert_eq!(event.1, executor_id, "Executor ID should be preserved");
+    assert_eq!(event.1, node_id, "Node ID should be preserved");
     assert_eq!(event.2, validator_id, "Validator ID should be preserved");
 
     assert_eq!(
@@ -371,7 +371,7 @@ async fn test_concurrent_event_creation() {
             let request = TrackRentalRequest {
                 rental_id,
                 user_id,
-                executor_id: format!("executor_concurrent_{}", i),
+                node_id: format!("node_concurrent_{}", i),
                 validator_id: format!("validator_concurrent_{}", i),
                 hourly_rate: "4.0".to_string(),
                 max_duration: Some(hours_to_duration(4)),

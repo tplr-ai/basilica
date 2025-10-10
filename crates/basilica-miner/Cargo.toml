@@ -2,7 +2,7 @@
 name = "basilica-miner"
 version = "0.1.0"
 edition = "2021"
-description = "Basilca Miner - Bittensor neuron that manages executor fleets"
+description = "Basilca Miner - Bittensor neuron that manages node fleets"
 rust-version = "1.70"
 
 [lib]
@@ -19,6 +19,7 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_with = { workspace = true }
 tracing = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
@@ -67,5 +68,5 @@ futures = { workspace = true }
 
 [features]
 default = []
-# Enable test utilities for executor communication
+# Enable test utilities for node communication
 test-utils = []

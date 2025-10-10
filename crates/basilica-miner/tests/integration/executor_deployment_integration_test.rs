@@ -1,12 +1,8 @@
 use anyhow::Result;
-use basilica_miner::config::{
-    DatabaseConfig, ExecutorManagementConfig, MinerConfig, RemoteExecutorDeploymentConfig,
-    RemoteMachine, SshConfig,
-};
-use basilica_miner::executor_manager::ExecutorFleetManager;
+use basilica_miner::config::MinerConfig;
+use basilica_miner::node_manager::NodeFleetManager;
 use basilica_miner::persistence::registration_db::RegistrationDb;
 use sqlx::SqlitePool;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -14,7 +10,7 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 
 #[tokio::test]
-async fn test_static_executor_configuration() -> Result<()> {
+async fn test_static_node_configuration() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -24,42 +20,42 @@ async fn test_static_executor_configuration() -> Result<()> {
 
     let mut config = MinerConfig::default();
     config.database.url = db_url.clone();
-    config.executor_management.executors = vec![
-        basilica_miner::config::StaticExecutor {
-            id: "test-executor-1".to_string(),
+    config.node_management.nodes = vec![
+        basilica_miner::config::StaticNode {
+            id: "test-node-1".to_string(),
             grpc_address: "127.0.0.1:50051".to_string(),
-            name: Some("Test Executor 1".to_string()),
+            name: Some("Test Node 1".to_string()),
         },
-        basilica_miner::config::StaticExecutor {
-            id: "test-executor-2".to_string(),
+        basilica_miner::config::StaticNode {
+            id: "test-node-2".to_string(),
             grpc_address: "127.0.0.1:50052".to_string(),
-            name: Some("Test Executor 2".to_string()),
+            name: Some("Test Node 2".to_string()),
         },
     ];
 
     let db = Arc::new(RwLock::new(RegistrationDb::new(pool.clone())));
-    let manager = ExecutorFleetManager::new(config.clone(), db.clone());
+    let manager = NodeFleetManager::new(config.clone(), db.clone());
 
     // Initialize fleet from static config
     manager.initialize_from_config().await?;
 
-    // Verify executors were registered
-    let executors = manager.list_executors().await?;
-    assert_eq!(executors.len(), 2);
-    assert!(executors.iter().any(|e| e.id == "test-executor-1"));
-    assert!(executors.iter().any(|e| e.id == "test-executor-2"));
+    // Verify nodes were registered
+    let nodes = manager.list_nodes().await?;
+    assert_eq!(nodes.len(), 2);
+    assert!(nodes.iter().any(|e| e.id == "test-node-1"));
+    assert!(nodes.iter().any(|e| e.id == "test-node-2"));
 
     // Check initial health status
-    for executor in &executors {
-        assert!(!executor.is_healthy);
-        assert_eq!(executor.health_check_failures, 0);
+    for node in &nodes {
+        assert!(!node.is_healthy);
+        assert_eq!(node.health_check_failures, 0);
     }
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_executor_health_monitoring() -> Result<()> {
+async fn test_node_health_monitoring() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -69,35 +65,35 @@ async fn test_executor_health_monitoring() -> Result<()> {
 
     let mut config = MinerConfig::default();
     config.database.url = db_url.clone();
-    config.executor_management.health_check_interval = Duration::from_millis(100);
-    config.executor_management.health_check_timeout = Duration::from_millis(50);
-    config.executor_management.max_retry_attempts = 3;
+    config.node_management.health_check_interval = Duration::from_millis(100);
+    config.node_management.health_check_timeout = Duration::from_millis(50);
+    config.node_management.max_retry_attempts = 3;
 
     let db = Arc::new(RwLock::new(RegistrationDb::new(pool.clone())));
-    let manager = ExecutorFleetManager::new(config.clone(), db.clone());
+    let manager = NodeFleetManager::new(config.clone(), db.clone());
 
-    // Register a test executor
+    // Register a test node
     manager
-        .register_executor(
-            "health-test-executor",
+        .register_node(
+            "health-test-node",
             "127.0.0.1:60000", // Non-existent port
         )
         .await?;
 
     // Run health check - should fail due to connection error
-    let health_status = manager.check_executor_health().await?;
+    let health_status = manager.check_node_health().await?;
     assert_eq!(health_status.len(), 1);
     assert!(!health_status[0].is_healthy);
 
     // Verify failure count increases
-    let executors = manager.list_executors().await?;
-    assert_eq!(executors[0].health_check_failures, 1);
+    let nodes = manager.list_nodes().await?;
+    assert_eq!(nodes[0].health_check_failures, 1);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_remote_deployment_configuration() -> Result<()> {
+async fn test_node_auto_recovery() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -107,94 +103,30 @@ async fn test_remote_deployment_configuration() -> Result<()> {
 
     let mut config = MinerConfig::default();
     config.database.url = db_url.clone();
-    config.remote_executor_deployment = Some(RemoteExecutorDeploymentConfig {
-        remote_machines: vec![
-            RemoteMachine {
-                id: "remote-gpu-1".to_string(),
-                name: "Remote GPU Server 1".to_string(),
-                gpu_count: 4,
-                executor_port: 50051,
-                ssh: SshConfig {
-                    host: "gpu1.example.com".to_string(),
-                    port: 22,
-                    username: "ubuntu".to_string(),
-                    private_key_path: PathBuf::from("/home/user/.ssh/id_rsa"),
-                },
-            },
-            RemoteMachine {
-                id: "remote-gpu-2".to_string(),
-                name: "Remote GPU Server 2".to_string(),
-                gpu_count: 2,
-                executor_port: 50051,
-                ssh: SshConfig {
-                    host: "gpu2.example.com".to_string(),
-                    port: 22,
-                    username: "admin".to_string(),
-                    private_key_path: PathBuf::from("/home/user/.ssh/id_rsa"),
-                },
-            },
-        ],
-        local_executor_binary: PathBuf::from("./target/release/executor"),
-        executor_config_template: None,
-        health_check_interval: Some(Duration::from_secs(60)),
-        auto_deploy: false,
-        auto_start: false,
-    });
+    config.node_management.auto_recovery = true;
+    config.node_management.max_retry_attempts = 3;
+    config.node_management.health_check_interval = Duration::from_millis(100);
 
     let db = Arc::new(RwLock::new(RegistrationDb::new(pool.clone())));
-    let manager = ExecutorFleetManager::new(config.clone(), db.clone());
+    let manager = NodeFleetManager::new(config.clone(), db.clone());
 
-    // Test deployment info generation
-    let deployment_info = manager.get_deployment_info().await?;
-    assert_eq!(deployment_info.len(), 2);
-    assert!(deployment_info.iter().any(|d| d.id == "remote-gpu-1"));
-    assert!(deployment_info.iter().any(|d| d.id == "remote-gpu-2"));
-
-    // Verify SSH configuration
-    for info in &deployment_info {
-        assert!(!info.ssh_config.private_key_path.as_os_str().is_empty());
-        assert!(!info.ssh_config.host.is_empty());
-        assert!(info.ssh_config.port > 0);
-    }
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_executor_auto_recovery() -> Result<()> {
-    let temp_dir = TempDir::new()?;
-    let db_path = temp_dir.path().join("test_miner.db");
-    let db_url = format!("sqlite:{}", db_path.display());
-
-    let pool = SqlitePool::connect(&db_url).await?;
-    sqlx::migrate!("../../migrations").run(&pool).await?;
-
-    let mut config = MinerConfig::default();
-    config.database.url = db_url.clone();
-    config.executor_management.auto_recovery = true;
-    config.executor_management.max_retry_attempts = 3;
-    config.executor_management.health_check_interval = Duration::from_millis(100);
-
-    let db = Arc::new(RwLock::new(RegistrationDb::new(pool.clone())));
-    let manager = ExecutorFleetManager::new(config.clone(), db.clone());
-
-    // Register executor with invalid address for recovery testing
+    // Register node with invalid address for recovery testing
     manager
-        .register_executor("recovery-test", "127.0.0.1:60001")
+        .register_node("recovery-test", "127.0.0.1:60001")
         .await?;
 
     // Simulate multiple health check failures
     for _ in 0..3 {
-        let _ = manager.check_executor_health().await?;
+        let _ = manager.check_node_health().await?;
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
-    // Check that executor is marked for recovery
-    let executors = manager.list_executors().await?;
-    assert_eq!(executors[0].health_check_failures, 3);
+    // Check that node is marked for recovery
+    let nodes = manager.list_nodes().await?;
+    assert_eq!(nodes[0].health_check_failures, 3);
 
     // Test recovery attempt (should fail but not panic)
-    let recovery_result = manager.attempt_executor_recovery(&executors[0].id).await;
+    let recovery_result = manager.attempt_node_recovery(&nodes[0].id).await;
     assert!(recovery_result.is_err() || !recovery_result?);
 
     Ok(())
@@ -202,21 +134,21 @@ async fn test_executor_auto_recovery() -> Result<()> {
 
 #[tokio::test]
 async fn test_systemd_service_generation() -> Result<()> {
-    let service_content = basilica_miner::executor_manager::generate_systemd_service(
-        "/opt/basilica/bin/executor",
-        "/opt/basilica/config/executor.toml",
+    let service_content = basilica_miner::node_manager::generate_systemd_service(
+        "/opt/basilica/bin/node",
+        "/opt/basilica/config/node.toml",
         "basilica",
         50051,
     );
 
     // Verify service content
     assert!(service_content.contains("[Unit]"));
-    assert!(service_content.contains("Description=Basilica Executor Service"));
+    assert!(service_content.contains("Description=Basilica Node Service"));
     assert!(service_content.contains("[Service]"));
     assert!(service_content.contains("Type=simple"));
     assert!(service_content.contains("User=basilica"));
-    assert!(service_content.contains("ExecStart=/opt/basilica/bin/executor"));
-    assert!(service_content.contains("--config /opt/basilica/config/executor.toml"));
+    assert!(service_content.contains("ExecStart=/opt/basilica/bin/node"));
+    assert!(service_content.contains("--config /opt/basilica/config/node.toml"));
     assert!(service_content.contains("Restart=always"));
     assert!(service_content.contains("[Install]"));
     assert!(service_content.contains("WantedBy=multi-user.target"));
@@ -230,7 +162,7 @@ async fn test_systemd_service_generation() -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_concurrent_executor_management() -> Result<()> {
+async fn test_concurrent_node_management() -> Result<()> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test_miner.db");
     let db_url = format!("sqlite:{}", db_path.display());
@@ -242,16 +174,16 @@ async fn test_concurrent_executor_management() -> Result<()> {
     config.database.url = db_url.clone();
 
     let db = Arc::new(RwLock::new(RegistrationDb::new(pool.clone())));
-    let manager = Arc::new(ExecutorFleetManager::new(config.clone(), db.clone()));
+    let manager = Arc::new(NodeFleetManager::new(config.clone(), db.clone()));
 
-    // Test concurrent executor registration
+    // Test concurrent node registration
     let mut handles = vec![];
     for i in 0..5 {
         let manager_clone = manager.clone();
         let handle = tokio::spawn(async move {
             manager_clone
-                .register_executor(
-                    &format!("concurrent-executor-{}", i),
+                .register_node(
+                    &format!("concurrent-node-{}", i),
                     &format!("127.0.0.1:5005{}", i),
                 )
                 .await
@@ -264,12 +196,12 @@ async fn test_concurrent_executor_management() -> Result<()> {
         handle.await??;
     }
 
-    // Verify all executors were registered
-    let executors = manager.list_executors().await?;
-    assert_eq!(executors.len(), 5);
+    // Verify all nodes were registered
+    let nodes = manager.list_nodes().await?;
+    assert_eq!(nodes.len(), 5);
 
     // Test concurrent health checks
-    let health_result = timeout(Duration::from_secs(5), manager.check_executor_health()).await;
+    let health_result = timeout(Duration::from_secs(5), manager.check_node_health()).await;
     assert!(health_result.is_ok());
 
     Ok(())

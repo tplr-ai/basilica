@@ -40,7 +40,7 @@ use crate::{
     error::{ApiError, ErrorResponse, Result},
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, CreateApiKeyRequest,
-        HealthCheckResponse, ListAvailableExecutorsQuery, ListRentalsQuery,
+        HealthCheckResponse, ListAvailableNodesQuery, ListRentalsQuery,
         RentalStatusWithSshResponse,
     },
     StartRentalApiRequest,
@@ -52,7 +52,7 @@ pub const DEFAULT_API_URL: &str = "https://api.basilica.ai";
 /// Default timeout in seconds for API requests
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
 use basilica_common::ApiKeyName;
-use basilica_validator::api::types::ListAvailableExecutorsResponse;
+use basilica_validator::api::types::ListAvailableNodesResponse;
 use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
@@ -160,12 +160,12 @@ impl BasilicaClient {
         self.handle_response(response).await
     }
 
-    /// List available executors for rental
-    pub async fn list_available_executors(
+    /// List available nodes for rental
+    pub async fn list_available_nodes(
         &self,
-        query: Option<ListAvailableExecutorsQuery>,
-    ) -> Result<ListAvailableExecutorsResponse> {
-        let url = format!("{}/executors", self.base_url);
+        query: Option<ListAvailableNodesQuery>,
+    ) -> Result<ListAvailableNodesResponse> {
+        let url = format!("{}/nodes", self.base_url);
         let mut request = self.http_client.get(&url);
 
         if let Some(q) = &query {

@@ -29,7 +29,7 @@ The SDK provides a simple, intuitive interface for managing GPU rentals. With au
 For complete working examples, see the `examples/` directory:
 - `quickstart.py` - Minimal example to get started quickly
 - `start_rental.py` - Full rental workflow with SSH setup
-- `list_executors.py` - Finding available GPU resources
+- `list_nodes.py` - Finding available GPU resources
 - `health_check.py` - API health monitoring
 - `ssh_utils.py` - SSH credential handling examples
 
@@ -58,7 +58,7 @@ All code examples are available in the `examples/` directory. These provide comp
 
 - **`quickstart.py`** - Get started with minimal code, demonstrating the simplest way to rent a GPU
 - **`start_rental.py`** - Complete rental workflow including custom configuration, SSH setup, and resource management
-- **`list_executors.py`** - Query and filter available GPU executors based on your requirements
+- **`list_nodes.py`** - Query and filter available GPU nodes based on your requirements
 - **`health_check.py`** - Monitor API health and availability
 - **`ssh_utils.py`** - Work with SSH credentials, including parsing, formatting, and connection management
 

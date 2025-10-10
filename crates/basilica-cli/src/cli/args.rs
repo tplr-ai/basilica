@@ -28,7 +28,7 @@ const USAGE_STYLES: Styles = Styles::styled()
     long_about = "Unified command-line interface for Basilica GPU compute marketplace.
 
 QUICK START:
-  basilica login                    # Login and authentication  
+  basilica login                    # Login and authentication
   basilica up <spec>                # Start GPU rental with specification
   basilica exec <uid> \"python train.py\"  # Run your code
   basilica down <uid>               # Terminate specific rental
@@ -43,8 +43,7 @@ GPU RENTAL:
 
 NETWORK COMPONENTS:
   basilica validator                # Run validator
-  basilica miner                    # Run miner  
-  basilica executor                 # Run executor
+  basilica miner                    # Run miner
 
 AUTHENTICATION:
   basilica login                    # Log in to Basilica
@@ -178,7 +177,6 @@ impl Args {
             // Network component delegation
             Commands::Validator { args } => handlers::external::handle_validator(args.clone())?,
             Commands::Miner { args } => handlers::external::handle_miner(args.clone())?,
-            Commands::Executor { args } => handlers::external::handle_executor(args.clone())?,
 
             // Token management
             Commands::Tokens { action } => {

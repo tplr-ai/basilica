@@ -49,7 +49,7 @@ impl SqlRentalRepository {
         Rental {
             id: RentalId::from_uuid(r.get("rental_id")),
             user_id: UserId::new(r.get("user_id")),
-            executor_id: r.get("executor_id"),
+            node_id: r.get("node_id"),
             validator_id: r
                 .get::<Option<String>, _>("validator_id")
                 .unwrap_or_default(),
@@ -107,14 +107,14 @@ impl RentalRepository for SqlRentalRepository {
         sqlx::query(
             r#"
             INSERT INTO billing.rentals
-            (rental_id, user_id, executor_id, validator_id, package_id, status,
+            (rental_id, user_id, node_id, validator_id, package_id, status,
              resource_spec, hourly_rate, start_time, max_duration_hours, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             "#,
         )
         .bind(rental.id.as_uuid())
         .bind(rental.user_id.as_str())
-        .bind(&rental.executor_id)
+        .bind(&rental.node_id)
         .bind(if rental.validator_id.is_empty() {
             None
         } else {
@@ -140,7 +140,7 @@ impl RentalRepository for SqlRentalRepository {
     async fn get_rental(&self, id: &RentalId) -> Result<Option<Rental>> {
         let row = sqlx::query(
             r#"
-            SELECT rental_id, user_id, executor_id, validator_id, package_id, status,
+            SELECT rental_id, user_id, node_id, validator_id, package_id, status,
                    resource_spec, hourly_rate, start_time, end_time, total_cost,
                    metadata, created_at, updated_at
             FROM billing.rentals
@@ -204,7 +204,7 @@ impl RentalRepository for SqlRentalRepository {
         let query = if let Some(uid) = user_id {
             sqlx::query(
                 r#"
-                SELECT rental_id, user_id, executor_id, validator_id, package_id, status,
+                SELECT rental_id, user_id, node_id, validator_id, package_id, status,
                        resource_spec, hourly_rate, start_time, end_time, total_cost,
                        metadata, created_at, updated_at
                 FROM billing.rentals
@@ -216,7 +216,7 @@ impl RentalRepository for SqlRentalRepository {
         } else {
             sqlx::query(
                 r#"
-                SELECT rental_id, user_id, executor_id, validator_id, package_id, status,
+                SELECT rental_id, user_id, node_id, validator_id, package_id, status,
                        resource_spec, hourly_rate, start_time, end_time, total_cost,
                        metadata, created_at, updated_at
                 FROM billing.rentals
@@ -239,7 +239,7 @@ impl RentalRepository for SqlRentalRepository {
     async fn get_rentals_by_state(&self, state: RentalState) -> Result<Vec<Rental>> {
         let rows = sqlx::query(
             r#"
-            SELECT rental_id, user_id, executor_id, validator_id, package_id, status,
+            SELECT rental_id, user_id, node_id, validator_id, package_id, status,
                    resource_spec, hourly_rate, start_time, end_time, total_cost,
                    metadata, created_at, updated_at
             FROM billing.rentals

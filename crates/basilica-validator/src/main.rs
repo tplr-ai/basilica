@@ -2,7 +2,7 @@
 
 //! # Basilca Validator
 //!
-//! Bittensor neuron for verifying and scoring miners/executors.
+//! Bittensor neuron for verifying and scoring miners/nodes.
 
 use anyhow::Result;
 use clap::Parser;
@@ -19,6 +19,7 @@ mod miner_prover;
 mod os_process;
 mod persistence;
 mod rental;
+mod service;
 mod ssh;
 
 use cli::Args;

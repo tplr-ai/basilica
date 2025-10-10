@@ -21,8 +21,8 @@ pub struct CleanupConfig {
     /// Delete emission metrics older than this many days
     pub emission_retention_days: i64,
 
-    /// How often to run stale executor cleanup (in minutes)
-    pub stale_executor_cleanup_cadence_minutes: u64,
+    /// How often to run stale node cleanup (in minutes)
+    pub stale_node_cleanup_cadence_minutes: u64,
 
     /// Whether cleanup is enabled
     pub enabled: bool,
@@ -34,7 +34,7 @@ impl Default for CleanupConfig {
             run_interval_hours: 24,
             profile_retention_days: 30,
             emission_retention_days: 90,
-            stale_executor_cleanup_cadence_minutes: 30,
+            stale_node_cleanup_cadence_minutes: 30,
             enabled: true,
         }
     }
@@ -60,14 +60,14 @@ impl CleanupTask {
         }
 
         info!(
-            "Starting database cleanup task - will run every {} hours, stale executor cleanup every {} minutes",
-            self.config.run_interval_hours, self.config.stale_executor_cleanup_cadence_minutes
+            "Starting database cleanup task - will run every {} hours, stale node cleanup every {} minutes",
+            self.config.run_interval_hours, self.config.stale_node_cleanup_cadence_minutes
         );
 
         // Run both cleanup types concurrently
         tokio::try_join!(
             self.run_database_cleanup_loop(),
-            self.run_stale_executor_cleanup_loop()
+            self.run_stale_node_cleanup_loop()
         )?;
 
         Ok(())
@@ -86,17 +86,17 @@ impl CleanupTask {
         }
     }
 
-    /// Run the stale executor cleanup loop
-    async fn run_stale_executor_cleanup_loop(&self) -> Result<()> {
+    /// Run the stale node cleanup loop
+    async fn run_stale_node_cleanup_loop(&self) -> Result<()> {
         let mut interval = interval(Duration::from_secs(
-            self.config.stale_executor_cleanup_cadence_minutes * 60,
+            self.config.stale_node_cleanup_cadence_minutes * 60,
         ));
 
         loop {
             interval.tick().await;
 
-            if let Err(e) = self.run_stale_executor_cleanup().await {
-                error!("Stale executor cleanup failed: {}", e);
+            if let Err(e) = self.run_stale_node_cleanup().await {
+                error!("Stale node cleanup failed: {}", e);
             }
         }
     }
@@ -129,22 +129,22 @@ impl CleanupTask {
         Ok(())
     }
 
-    /// Run stale executor cleanup
-    async fn run_stale_executor_cleanup(&self) -> Result<()> {
-        info!("Starting stale executor cleanup");
+    /// Run stale node cleanup
+    async fn run_stale_node_cleanup(&self) -> Result<()> {
+        info!("Starting stale node cleanup");
 
-        let cleaned_count = self.gpu_repo.cleanup_stale_executors().await?;
+        let cleaned_count = self.gpu_repo.cleanup_stale_nodes().await?;
 
         if cleaned_count > 0 {
             info!(
                 security = true,
-                cleaned_executors = cleaned_count,
-                cleanup_reason = "stale_executor_cleanup_task",
-                "Cleaned up {} stale executors and their GPU assignments",
+                cleaned_nodes = cleaned_count,
+                cleanup_reason = "stale_node_cleanup_task",
+                "Cleaned up {} stale nodes and their GPU assignments",
                 cleaned_count
             );
         } else {
-            info!("No stale executors found for cleanup");
+            info!("No stale nodes found for cleanup");
         }
 
         Ok(())
@@ -165,6 +165,7 @@ mod tests {
         let temp_file = NamedTempFile::new()?;
         let db_path = temp_file.path().to_str().unwrap();
         let persistence = SimplePersistence::new(db_path, "test".to_string()).await?;
+        persistence.run_migrations().await?;
         let repo = Arc::new(GpuProfileRepository::new(persistence.pool().clone()));
         Ok((repo, temp_file))
     }
@@ -227,7 +228,7 @@ mod tests {
             run_interval_hours: 24,
             profile_retention_days: 30,
             emission_retention_days: 90,
-            stale_executor_cleanup_cadence_minutes: 30,
+            stale_node_cleanup_cadence_minutes: 30,
             enabled: true,
         };
 

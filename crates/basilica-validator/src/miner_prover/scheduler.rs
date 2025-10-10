@@ -147,10 +147,10 @@ impl VerificationScheduler {
                     _ = cleanup_interval.tick() => {
                         cleanup_completed_verification_handles(&cleanup_shared_state).await;
 
-                        info!("Running scheduled executor cleanup for failed executors");
-                        match cleanup_verification.cleanup_failed_executors_after_failures(2).await {
-                            Ok(()) => info!("Executor cleanup completed successfully"),
-                            Err(e) => error!("Failed executor cleanup failed: {}", e),
+                        info!("Running scheduled node cleanup for failed nodes");
+                        match cleanup_verification.cleanup_failed_nodes_after_failures(2).await {
+                            Ok(()) => info!("Node cleanup completed successfully"),
+                            Err(e) => error!("Failed node cleanup failed: {}", e),
                         }
                     }
                 }
@@ -550,7 +550,7 @@ mod tests {
             binary_validation: crate::config::BinaryValidationConfig::default(),
             docker_validation: crate::config::DockerValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
-            executor_validation_interval: Duration::from_secs(6 * 3600),
+            node_validation_interval: Duration::from_secs(6 * 3600),
             gpu_assignment_cleanup_ttl: Some(Duration::from_secs(120 * 60)),
             enable_worker_queue: false,
             storage_validation: crate::config::StorageValidationConfig::default(),

@@ -1,7 +1,7 @@
 //! # Weight Setter
 //!
 //! Manages Bittensor weight setting operations for the Validator.
-//! Sets weights every N blocks based on miner scores from executor validations.
+//! Sets weights every N blocks based on miner scores from node validations.
 
 use crate::bittensor_core::weight_allocation::WeightAllocationEngine;
 use crate::config::emission::EmissionConfig;
@@ -13,7 +13,7 @@ use crate::persistence::gpu_profile_repository::GpuProfileRepository;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
 use basilica_common::config::BittensorConfig;
-use basilica_common::identity::{ExecutorId, MinerUid};
+use basilica_common::identity::{MinerUid, NodeId};
 use basilica_common::{KeyValueStorage, MemoryStorage};
 use bittensor::{AccountId, Metagraph, NormalizedWeight, Service as BittensorService};
 use chrono::{DateTime, Utc};
@@ -30,10 +30,10 @@ use uuid::Uuid;
 /// Cutoff time in hours for filtering miners by GPU category
 const GPU_CATEGORY_CUTOFF_HOURS: u32 = 3;
 
-/// Executor validation result for scoring
+/// Node validation result for scoring
 #[derive(Debug, Clone)]
-pub struct ExecutorValidationResult {
-    pub executor_id: ExecutorId,
+pub struct NodeValidationResult {
+    pub node_id: NodeId,
     pub is_valid: bool,
     pub _hardware_score: f64,
     pub gpu_count: usize,
@@ -391,29 +391,29 @@ impl WeightSetter {
     pub async fn update_miner_gpu_profile(
         &self,
         miner_uid: MinerUid,
-        executor_validations: Vec<ExecutorValidationResult>,
+        node_validations: Vec<NodeValidationResult>,
     ) -> Result<()> {
         info!(
             miner_uid = miner_uid.as_u16(),
-            validation_count = executor_validations.len(),
+            validation_count = node_validations.len(),
             "[WEIGHT_FLOW] Updating GPU profile for miner"
         );
 
-        // Convert ExecutorValidationResult to the format expected by GPU scoring engine
-        let gpu_validations: Vec<categorization::ExecutorValidationResult> = executor_validations
+        // Convert NodeValidationResult to the format expected by GPU scoring engine
+        let gpu_validations: Vec<categorization::NodeValidationResult> = node_validations
             .into_iter()
             .map(|v| {
                 debug!(
                     miner_uid = miner_uid.as_u16(),
-                    executor_id = %v.executor_id,
+                    node_id = %v.node_id,
                     gpu_model = %v.gpu_model,
                     gpu_count = v.gpu_count,
                     is_valid = v.is_valid,
                     attestation_valid = v.attestation_valid,
-                    "[WEIGHT_FLOW] Converting validation for executor"
+                    "[WEIGHT_FLOW] Converting validation for node"
                 );
-                categorization::ExecutorValidationResult {
-                    executor_id: v.executor_id.to_string(),
+                categorization::NodeValidationResult {
+                    node_id: v.node_id.to_string(),
                     is_valid: v.is_valid,
                     gpu_model: v.gpu_model,
                     gpu_count: v.gpu_count,
@@ -575,13 +575,12 @@ impl WeightSetter {
                 let uid_list: Vec<u16> = normalized_weights.iter().map(|w| w.uid).collect();
 
                 Err(anyhow::anyhow!(
-                    "Weight submission failed ({}): {} - Context: {}",
+                    "Weight submission failed ({}): {} - Context: netuid={}, version_key={}, uids={:?}",
                     error_context,
                     e,
-                    format!(
-                        "netuid={}, version_key={}, uids={:?}",
-                        self.config.netuid, version_key, uid_list
-                    )
+                    self.config.netuid,
+                    version_key,
+                    uid_list
                 ))
             }
         }
@@ -955,9 +954,9 @@ impl WeightSetter {
     async fn extract_validation_result(
         &self,
         miner_id: &str,
-        executor_id: ExecutorId,
+        node_id: NodeId,
         log: &VerificationLog,
-    ) -> Result<ExecutorValidationResult> {
+    ) -> Result<NodeValidationResult> {
         // Parse hardware specs from the verification log details
         // Always try to parse specs, even for failed validations, to track GPU hardware
         let hardware_specs: Option<serde_json::Value> = if !log.details.is_null() {
@@ -969,42 +968,42 @@ impl WeightSetter {
         // Extract data from the verification log structure
         let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps, gpu_model) =
             if let Some(specs) = hardware_specs {
-                // Extract GPU model from executor_result.gpu_name
-                let mut gpu_model = specs["executor_result"]["gpu_name"]
+                // Extract GPU model from node_result.gpu_name
+                let mut gpu_model = specs["node_result"]["gpu_name"]
                     .as_str()
                     .map(|s| s.to_string());
 
                 if gpu_model.is_none() || gpu_model.as_ref() == Some(&"UNKNOWN".to_string()) {
                     debug!(
-                        executor_id = %executor_id,
-                        "GPU name not found in executor_result for executor {}, checking gpu_uuid_assignments",
-                        executor_id
+                        node_id = %node_id,
+                        "GPU name not found in node_result for node {}, checking gpu_uuid_assignments",
+                        node_id
                     );
 
                     match self
                         .persistence
-                        .get_executor_gpu_name_from_assignments(miner_id, &executor_id.to_string())
+                        .get_node_gpu_name_from_assignments(miner_id, &node_id.to_string())
                         .await
                     {
                         Ok(Some(name)) => {
                             debug!(
-                                executor_id = %executor_id,
-                                "Retrieved GPU model from assignments for executor {}: {}",
-                                executor_id, name
+                                node_id = %node_id,
+                                "Retrieved GPU model from assignments for node {}: {}",
+                                node_id, name
                             );
                             gpu_model = Some(name);
                         }
                         Ok(None) => {
                             warn!(
-                                executor_id = %executor_id,
-                                "No GPU assignments found for executor {}",
-                                executor_id
+                                node_id = %node_id,
+                                "No GPU assignments found for node {}",
+                                node_id
                             );
                         }
                         Err(e) => {
                             warn!(
-                                "Failed to get GPU model from assignments for executor {}: {}",
-                                executor_id, e
+                                "Failed to get GPU model from assignments for node {}: {}",
+                                node_id, e
                             );
                         }
                     }
@@ -1014,14 +1013,14 @@ impl WeightSetter {
 
                 let gpu_count = match self
                     .persistence
-                    .get_executor_gpu_count_from_assignments(miner_id, &executor_id.to_string())
+                    .get_node_gpu_count_from_assignments(miner_id, &node_id.to_string())
                     .await
                 {
                     Ok(count) => count as usize,
                     Err(e) => {
                         warn!(
-                            "Failed to get GPU count from assignments for executor {}: {}, using 0",
-                            executor_id, e
+                            "Failed to get GPU count from assignments for node {}: {}, using 0",
+                            node_id, e
                         );
                         0
                     }
@@ -1029,47 +1028,47 @@ impl WeightSetter {
 
                 let gpu_memory_gb = match self
                     .persistence
-                    .get_executor_first_gpu_memory_gb(miner_id, &executor_id.to_string())
+                    .get_node_first_gpu_memory_gb(miner_id, &node_id.to_string())
                     .await
                 {
                     Ok(mem) => mem,
                     Err(e) => {
                         warn!(
-                            "Failed to get GPU memory from assignments for executor {}: {}, using 0.0",
-                            executor_id, e
+                            "Failed to get GPU memory from assignments for node {}: {}, using 0.0",
+                            node_id, e
                         );
                         0.0
                     }
                 };
 
-                // Extract memory bandwidth from executor_result.memory_bandwidth_gbps
-                let bandwidth = specs["executor_result"]["memory_bandwidth_gbps"]
+                // Extract memory bandwidth from node_result.memory_bandwidth_gbps
+                let bandwidth = specs["node_result"]["memory_bandwidth_gbps"]
                     .as_f64()
                     .unwrap_or(0.0);
 
                 let score = self.calculate_hardware_score(&specs);
 
                 debug!(
-                    "Executor {}: Extracted GPU info - model: {}, count: {}, memory: {}GB, validation_success: {}",
-                    executor_id, gpu_model, gpu_count, gpu_memory_gb, log.success
+                    "Node {}: Extracted GPU info - model: {}, count: {}, memory: {}GB, validation_success: {}",
+                    node_id, gpu_model, gpu_count, gpu_memory_gb, log.success
                 );
 
                 (score, gpu_count, gpu_memory_gb, bandwidth, gpu_model)
             } else {
                 debug!(
-                    "Executor {}: No hardware specs in verification log, checking gpu_uuid_assignments",
-                    executor_id
+                    "Node {}: No hardware specs in verification log, checking gpu_uuid_assignments",
+                    node_id
                 );
 
                 let gpu_model = match self
                     .persistence
-                    .get_executor_gpu_name_from_assignments(miner_id, &executor_id.to_string())
+                    .get_node_gpu_name_from_assignments(miner_id, &node_id.to_string())
                     .await
                 {
                     Ok(Some(name)) => {
                         debug!(
-                            "Retrieved GPU model from assignments for executor {} (no specs): {}",
-                            executor_id, name
+                            "Retrieved GPU model from assignments for node {} (no specs): {}",
+                            node_id, name
                         );
                         name
                     }
@@ -1078,7 +1077,7 @@ impl WeightSetter {
 
                 let gpu_count = match self
                     .persistence
-                    .get_executor_gpu_count_from_assignments(miner_id, &executor_id.to_string())
+                    .get_node_gpu_count_from_assignments(miner_id, &node_id.to_string())
                     .await
                 {
                     Ok(count) => count as usize,
@@ -1087,20 +1086,20 @@ impl WeightSetter {
 
                 let gpu_memory_gb = (self
                     .persistence
-                    .get_executor_first_gpu_memory_gb(miner_id, &executor_id.to_string())
+                    .get_node_first_gpu_memory_gb(miner_id, &node_id.to_string())
                     .await)
                     .unwrap_or(0.0);
 
                 debug!(
-                    "Executor {}: From assignments only - model: {}, count: {}, memory: {}GB, validation_success: {}",
-                    executor_id, gpu_model, gpu_count, gpu_memory_gb, log.success
+                    "Node {}: From assignments only - model: {}, count: {}, memory: {}GB, validation_success: {}",
+                    node_id, gpu_model, gpu_count, gpu_memory_gb, log.success
                 );
 
                 (0.0, gpu_count, gpu_memory_gb, 0.0, gpu_model)
             };
 
-        Ok(ExecutorValidationResult {
-            executor_id,
+        Ok(NodeValidationResult {
+            node_id,
             is_valid: log.success,
             _hardware_score: hardware_score,
             gpu_count,
@@ -1124,58 +1123,36 @@ impl WeightSetter {
         &self,
         miner_uid: MinerUid,
         hours: u32,
-    ) -> Result<Vec<ExecutorValidationResult>> {
+    ) -> Result<Vec<NodeValidationResult>> {
         let cutoff_time = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
 
-        // Query verification logs for executors belonging to this miner
-        // We verify:
-        //  1) executor is online,
-        //  2) has recent verification,
-        //  3) has GPU assignments
-        let query = r#"
-            SELECT vl.*, me.miner_id, me.status
-            FROM verification_logs vl
-            INNER JOIN miner_executors me ON vl.executor_id = me.executor_id
-            WHERE me.miner_id = ?
-                AND vl.timestamp >= ?
-                AND me.status IN ('online', 'verified')
-                AND EXISTS (
-                    SELECT 1 FROM gpu_uuid_assignments ga
-                    WHERE ga.executor_id = vl.executor_id
-                    AND ga.miner_id = me.miner_id
-                )
-            ORDER BY vl.timestamp DESC
-        "#;
+        let rows = self
+            .persistence
+            .query_recent_miner_verification_logs(miner_uid.as_u16(), &cutoff_time.to_rfc3339())
+            .await?;
 
         let miner_id = format!("miner_{}", miner_uid.as_u16());
-        let rows = sqlx::query(query)
-            .bind(&miner_id)
-            .bind(cutoff_time.to_rfc3339())
-            .fetch_all(self.persistence.pool())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to query verification logs: {}", e))?;
 
         let mut validations = Vec::new();
         for row in rows {
-            let executor_id_str: String = row.get("executor_id");
+            let node_id_str: String = row.get("node_id");
 
             // Handle composite miner{uid}__{uuid} or fallback to the new format
-            let clean_executor_id =
-                if executor_id_str.starts_with("miner") && executor_id_str.contains("__") {
-                    let (_, rest) = executor_id_str.split_once("__").ok_or_else(|| {
-                        anyhow::anyhow!("Invalid composite executor_id format: {}", executor_id_str)
-                    })?;
-                    rest
-                } else {
-                    &executor_id_str
-                };
+            let clean_node_id = if node_id_str.starts_with("miner") && node_id_str.contains("__") {
+                let (_, rest) = node_id_str.split_once("__").ok_or_else(|| {
+                    anyhow::anyhow!("Invalid composite node_id format: {}", node_id_str)
+                })?;
+                rest
+            } else {
+                &node_id_str
+            };
 
-            let executor_id = clean_executor_id.parse::<ExecutorId>()?;
+            let node_id = clean_node_id.parse::<NodeId>()?;
 
             let log = VerificationLog {
                 id: Uuid::parse_str(&row.get::<String, _>("id"))
                     .map_err(|e| anyhow::anyhow!("Failed to parse verification log UUID: {}", e))?,
-                executor_id: row.get("executor_id"),
+                node_id: row.get("node_id"),
                 validator_hotkey: row.get("validator_hotkey"),
                 verification_type: row.get("verification_type"),
                 timestamp: DateTime::parse_from_rfc3339(&row.get::<String, _>("timestamp"))
@@ -1196,20 +1173,20 @@ impl WeightSetter {
             };
 
             match self
-                .extract_validation_result(&miner_id, executor_id.clone(), &log)
+                .extract_validation_result(&miner_id, node_id.clone(), &log)
                 .await
             {
                 Ok(validation) => {
                     debug!(
-                        "Successfully extracted validation for executor {}: gpu_model={}, gpu_count={}, success={} gpu_memory_gb={}",
-                        executor_id, validation.gpu_model, validation.gpu_count, validation.is_valid, validation.gpu_memory_gb
+                        "Successfully extracted validation for node {}: gpu_model={}, gpu_count={}, success={} gpu_memory_gb={}",
+                        node_id, validation.gpu_model, validation.gpu_count, validation.is_valid, validation.gpu_memory_gb
                     );
                     validations.push(validation);
                 }
                 Err(e) => {
                     warn!(
-                        "Failed to extract validation result for executor {} (miner {}): {}. Log details: {:?}",
-                        executor_id, miner_uid.as_u16(), e, log.details
+                        "Failed to extract validation result for node {} (miner {}): {}. Log details: {:?}",
+                        node_id, miner_uid.as_u16(), e, log.details
                     );
                 }
             }
@@ -1228,24 +1205,14 @@ impl WeightSetter {
     pub async fn update_all_miner_scores(&self) -> Result<()> {
         info!("Updating scores for all miners based on recent validations");
 
-        // Get all unique miner UIDs from recent validations
-        let query = r#"
-            SELECT DISTINCT me.miner_id
-            FROM miner_executors me
-            JOIN verification_logs vl ON me.executor_id = vl.executor_id
-            WHERE vl.timestamp >= ?
-        "#;
-
         let cutoff_time =
             chrono::Utc::now() - chrono::Duration::hours(GPU_CATEGORY_CUTOFF_HOURS as i64);
-        let rows = sqlx::query(query)
-            .bind(cutoff_time.to_rfc3339())
-            .fetch_all(self.persistence.pool())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to query miners: {}", e))?;
+        let miner_ids = self
+            .persistence
+            .get_miners_with_recent_validations(&cutoff_time.to_rfc3339())
+            .await?;
 
-        for row in rows {
-            let miner_id: String = row.get("miner_id");
+        for miner_id in miner_ids {
             if let Some(uid_str) = miner_id.strip_prefix("miner_") {
                 if let Ok(uid) = uid_str.parse::<u16>() {
                     let miner_uid = MinerUid::new(uid);
@@ -1288,7 +1255,7 @@ mod tests {
         // Create a verification log with A100 GPU
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "exec123".to_string(),
+            node_id: "exec123".to_string(),
             validator_hotkey: "validator".to_string(),
             verification_type: "attestation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1325,7 +1292,7 @@ mod tests {
         // Create a verification log with H100 GPU
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "exec456".to_string(),
+            node_id: "exec456".to_string(),
             validator_hotkey: "validator".to_string(),
             verification_type: "attestation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1361,7 +1328,7 @@ mod tests {
         // Create a failed verification log - should still extract GPU info
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "exec789".to_string(),
+            node_id: "exec789".to_string(),
             validator_hotkey: "validator".to_string(),
             verification_type: "attestation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1398,7 +1365,7 @@ mod tests {
         // Create a verification log with no GPU info
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "exec999".to_string(),
+            node_id: "exec999".to_string(),
             validator_hotkey: "validator".to_string(),
             verification_type: "attestation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1441,14 +1408,14 @@ mod tests {
         // Simulates actual validator-binary output structure
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_175".to_string(),
+            node_id: "node_175".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
             score: 0.84,
             success: true,
             details: json!({
-                "executor_result": {
+                "node_result": {
                     "gpu_name": "NVIDIA A100 80GB HBM3",
                     "gpu_uuid": "GPU-12345678-1234-1234-1234-123456789012",
                     "memory_bandwidth_gbps": 3.35,
@@ -1469,7 +1436,7 @@ mod tests {
         let details = &log.details;
 
         // Test the corrected GPU model extraction path
-        let gpu_model = details["executor_result"]["gpu_name"]
+        let gpu_model = details["node_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
 
@@ -1485,11 +1452,11 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_validation_result_missing_executor_result() {
-        // Test case where executor_result is missing (should default to UNKNOWN)
+    fn test_extract_validation_result_missing_node_result() {
+        // Test case where node_result is missing (should default to UNKNOWN)
         let log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_failed".to_string(),
+            node_id: "node_failed".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
@@ -1500,18 +1467,18 @@ mod tests {
                 "success": false,
                 "validation_score": 0.0,
                 "execution_time_ms": 5000,
-                "error_message": "Failed to connect to executor"
+                "error_message": "Failed to connect to node"
             }),
             duration_ms: 5000,
-            error_message: Some("Failed to connect to executor".to_string()),
+            error_message: Some("Failed to connect to node".to_string()),
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         };
 
         let details = &log.details;
 
-        // Test extraction when executor_result is missing
-        let gpu_model = details["executor_result"]["gpu_name"]
+        // Test extraction when node_result is missing
+        let gpu_model = details["node_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
 
@@ -1527,14 +1494,14 @@ mod tests {
         // Test that A100 and H100 GPUs are now properly identified
         let a100_log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_a100".to_string(),
+            node_id: "node_a100".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
             score: 0.9,
             success: true,
             details: json!({
-                "executor_result": {
+                "node_result": {
                     "gpu_name": "NVIDIA A100 80GB HBM3",
                     "memory_bandwidth_gbps": 3.35
                 },
@@ -1548,14 +1515,14 @@ mod tests {
 
         let h100_log = VerificationLog {
             id: uuid::Uuid::new_v4(),
-            executor_id: "executor_h100".to_string(),
+            node_id: "node_h100".to_string(),
             validator_hotkey: "validator_hotkey".to_string(),
             verification_type: "binary_validation".to_string(),
             timestamp: chrono::Utc::now(),
             score: 0.95,
             success: true,
             details: json!({
-                "executor_result": {
+                "node_result": {
                     "gpu_name": "NVIDIA H100",
                     "memory_bandwidth_gbps": 4.8
                 },
@@ -1568,10 +1535,10 @@ mod tests {
         };
 
         // Extract GPU models using the corrected path
-        let a100_model = a100_log.details["executor_result"]["gpu_name"]
+        let a100_model = a100_log.details["node_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
-        let h100_model = h100_log.details["executor_result"]["gpu_name"]
+        let h100_model = h100_log.details["node_result"]["gpu_name"]
             .as_str()
             .unwrap_or("UNKNOWN");
 
@@ -1590,8 +1557,8 @@ mod tests {
     async fn test_weight_setter_scoring() {
         // Create mock validation results
         let validations = vec![
-            ExecutorValidationResult {
-                executor_id: ExecutorId::new(),
+            NodeValidationResult {
+                node_id: NodeId::new("").unwrap(),
                 is_valid: true,
                 _hardware_score: 0.8,
                 gpu_count: 2,
@@ -1601,8 +1568,8 @@ mod tests {
                 validation_timestamp: chrono::Utc::now(),
                 gpu_model: "NVIDIA A100".to_string(),
             },
-            ExecutorValidationResult {
-                executor_id: ExecutorId::new(),
+            NodeValidationResult {
+                node_id: NodeId::new("").unwrap(),
                 is_valid: true,
                 _hardware_score: 0.9,
                 gpu_count: 4,

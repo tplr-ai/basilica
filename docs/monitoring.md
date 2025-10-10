@@ -9,6 +9,7 @@ Basilica services provide built-in metrics that can be monitored using Prometheu
 ## Available Monitoring Setup
 
 The repository includes monitoring configurations in:
+
 - `config/monitoring/prometheus.yml` - Prometheus configuration
 - `config/monitoring/grafana-datasources.yml` - Grafana datasource configuration  
 - `scripts/localtest/docker-compose-monitoring.yml` - Monitoring stack deployment
@@ -20,7 +21,7 @@ The repository includes monitoring configurations in:
 Ensure metrics are enabled in your configuration files:
 
 ```toml
-# In validator.toml, miner.toml, executor.toml
+# In validator.toml, miner.toml
 [metrics]
 enabled = true
 
@@ -88,82 +89,52 @@ docker compose -f docker-compose.monitoring.yml up -d
 ### 3. Verify Metrics Collection
 
 **Check individual service metrics:**
+
 ```bash
 # Validator metrics (adjust port based on your config)
 curl http://localhost:8080/metrics
 
-# Miner metrics  
-curl http://localhost:8080/metrics
-
-# Executor metrics
+# Miner metrics
 curl http://localhost:8080/metrics
 ```
 
 **Check Prometheus targets:**
-- Open http://localhost:9090/targets
+
+- Open <http://localhost:9090/targets>
 - Verify all services show as "UP"
 
 **Access Grafana:**
-- Open http://localhost:3000
+
+- Open <http://localhost:3000>
 - Login: admin/admin
 - Prometheus should be pre-configured as a datasource
 
 ## Key Metrics to Monitor
 
 ### System Health
+
 - `basilica_cpu_usage_percent` - CPU utilization
-- `basilica_memory_usage_bytes` - Memory usage  
-- `basilica_gpu_utilization_percent` - GPU utilization (executor only)
-- `basilica_network_bandwidth_mbps` - Network bandwidth usage (executor)
+- `basilica_memory_usage_bytes` - Memory usage
 - `basilica_disk_usage_percent` - Disk usage percentage
 
-### GPU Metrics (Executor Only)
+### GPU Metrics (from GPU Nodes)
+
+- `basilica_gpu_utilization_percent` - GPU utilization
 - `basilica_gpu_memory_used_bytes` - GPU memory usage
 - `basilica_gpu_temperature_celsius` - GPU temperature
 - `basilica_gpu_power_watts` - GPU power consumption
 - `basilica_gpu_clock_mhz` - GPU clock speed
+- `basilica_network_bandwidth_mbps` - Network bandwidth usage
 
 ### Service Performance
+
 - `basilica_validator_validations_total` - Total validations performed
-- `basilica_miner_executor_health_checks_total` - Executor health checks
-- `basilica_executor_grpc_requests_total` - gRPC requests handled
-- `basilica_executor_containers_running` - Active Docker containers
+- `basilica_miner_node_health_checks_total` - GPU node health checks
 
 ### Network Activity
+
 - `basilica_validator_ssh_connections_total` - SSH connections
 - `basilica_miner_ssh_sessions_active` - Active SSH sessions
-
-## Telemetry Streaming
-
-The executor can optionally stream telemetry data to a billing service for usage tracking:
-
-### Configuration
-
-```toml
-# In executor.toml
-[system.telemetry]
-url = "https://billing-service.example.com:50051"
-api_key = "optional-api-key"  # Not currently enforced
-api_key_header = "x-api-key"
-
-[system.telemetry_monitor]
-enabled = true  # Opt-in telemetry streaming
-host_interval_secs = 5
-container_sample_secs = 2
-```
-
-### Telemetry Data Includes
-
-- **Resource Utilization**: CPU, memory, disk, network bandwidth
-- **GPU Metrics**: Full NVIDIA GPU telemetry
-- **Container Metrics**: Per-container resource usage
-- **Lifecycle Events**: Container start/stop events
-
-The telemetry system features:
-- Automatic reconnection with exponential backoff
-- Buffered metric collection
-- Real-time network bandwidth calculation
-- Per-container resource tracking
 
 ## Production Monitoring
 
@@ -184,6 +155,7 @@ docker compose -f compose.prod.yml -f ../../scripts/localtest/docker-compose-mon
 In Grafana, create basic panels with these queries:
 
 **System Overview:**
+
 ```promql
 # CPU Usage
 basilica_cpu_usage_percent
@@ -196,6 +168,7 @@ up{job=~"basilica.*"}
 ```
 
 **Validation Activity:**
+
 ```promql
 # Validation Rate
 rate(basilica_validator_validations_total[5m])
@@ -207,17 +180,20 @@ rate(basilica_validator_ssh_connections_total[5m])
 ## Troubleshooting
 
 **No metrics showing up?**
+
 - Check that `[metrics] enabled = true` in your service config
 - Verify the service is running: `docker ps`
 - Test metrics endpoint: `curl http://localhost:8080/metrics`
-- Check Prometheus targets: http://localhost:9090/targets
+- Check Prometheus targets: <http://localhost:9090/targets>
 
 **Grafana can't connect to Prometheus?**
+
 - Verify both containers are running: `docker compose ps`
 - Check Docker network connectivity
 - Use the correct datasource URL: `http://prometheus:9090`
 
 **Services not appearing in Prometheus?**
+
 - Check the prometheus.yml configuration matches your service ports
 - Verify services are exposing metrics on the configured ports
 - Check Docker container network connectivity
@@ -225,10 +201,12 @@ rate(basilica_validator_ssh_connections_total[5m])
 ## Configuration Reference
 
 The monitoring setup uses these default ports:
+
 - **Validator**: 8080 (metrics)
-- **Miner**: 9090 (metrics) 
-- **Executor**: 9090 (metrics)
+- **Miner**: 9090 (metrics)
 - **Prometheus**: 9090 (web UI)
 - **Grafana**: 3000 (web UI)
 
 Adjust the `config/monitoring/prometheus.yml` file if your services use different ports.
+
+**Note**: GPU node metrics are collected by the miner during SSH-based health checks and verification operations.

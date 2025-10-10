@@ -109,4 +109,12 @@ impl MinerProver {
             .start(self.discovery, self.verification)
             .await
     }
+
+    pub fn get_public_key(&self) -> Option<String> {
+        self.verification.get_ssh_public_key()
+    }
+
+    pub fn get_verification_engine(&self) -> &VerificationEngine {
+        &self.verification
+    }
 }

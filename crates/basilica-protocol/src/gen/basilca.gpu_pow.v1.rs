@@ -85,9 +85,9 @@ pub struct GpuPerformanceBaseline {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ChallengeRequest {
-    /// Executor ID requesting the challenge
+    /// Node ID requesting the challenge
     #[prost(string, tag = "1")]
-    pub executor_id: ::prost::alloc::string::String,
+    pub node_id: ::prost::alloc::string::String,
     /// Claimed GPU model
     #[prost(string, tag = "2")]
     pub claimed_gpu_model: ::prost::alloc::string::String,

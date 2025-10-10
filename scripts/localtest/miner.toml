@@ -13,7 +13,6 @@ coldkey_name = "default"
 axon_port = 8091
 external_ip = "127.0.0.1"  # Localhost for testing
 max_weight_uids = 256
-skip_registration = true  # Skip chain registration for local testing
 
 [database]
 url = "sqlite:///var/lib/basilica/miner/miner.db?mode=rwc"
@@ -40,17 +39,7 @@ secs = 30
 nanos = 0
 
 [validator_comms]
-max_concurrent_sessions = 50  # Reduced for testing
 request_timeout = { secs = 30 }
-
-[validator_comms.auth]
-enabled = true
-method = "bittensor_signature"
-
-[validator_comms.rate_limit]
-enabled = true
-requests_per_second = 10
-burst_capacity = 20
 
 [executor_management]
 # Configure executor to connect to the local executor service
@@ -64,12 +53,7 @@ max_retry_attempts = 3
 auto_recovery = true
 
 [security]
-enable_mtls = false
-jwt_secret = "localtest-jwt-secret-change-in-production"
-allowed_validators = []  # Empty = allow all validators for testing
 verify_signatures = false  # Disabled for local testing
-token_expiration = { secs = 3600 }
-skip_registration = true  # Skip chain registration for local testing
 
 [logging]
 level = "debug"

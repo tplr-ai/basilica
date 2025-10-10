@@ -37,7 +37,7 @@ pub struct UsageEvent {
     pub event_id: Uuid,
     pub rental_id: Uuid,
     pub user_id: String,
-    pub executor_id: String,
+    pub node_id: String,
     pub validator_id: String,
     pub event_type: EventType,
     pub event_data: serde_json::Value,
@@ -208,10 +208,10 @@ impl SqlEventRepository {
                 message: "user_id cannot be empty for usage event".to_string(),
             });
         }
-        if event.executor_id.is_empty() {
+        if event.node_id.is_empty() {
             return Err(BillingError::ValidationError {
-                field: "executor_id".to_string(),
-                message: "executor_id cannot be empty for usage event".to_string(),
+                field: "node_id".to_string(),
+                message: "node_id cannot be empty for usage event".to_string(),
             });
         }
         if event.validator_id.is_empty() {
@@ -244,7 +244,7 @@ impl EventRepository for SqlEventRepository {
         sqlx::query(
             r#"
             INSERT INTO billing.usage_events (
-                event_id, rental_id, user_id, executor_id, validator_id, event_type,
+                event_id, rental_id, user_id, node_id, validator_id, event_type,
                 event_data, timestamp, processed
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
@@ -252,7 +252,7 @@ impl EventRepository for SqlEventRepository {
         .bind(event.event_id)
         .bind(event.rental_id)
         .bind(&event.user_id)
-        .bind(&event.executor_id)
+        .bind(&event.node_id)
         .bind(&event.validator_id)
         .bind(event.event_type.to_string())
         .bind(&event.event_data)
@@ -291,7 +291,7 @@ impl EventRepository for SqlEventRepository {
             sqlx::query(
                 r#"
                 INSERT INTO billing.usage_events (
-                    event_id, rental_id, user_id, executor_id, validator_id, event_type,
+                    event_id, rental_id, user_id, node_id, validator_id, event_type,
                     event_data, timestamp, processed
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 "#,
@@ -299,7 +299,7 @@ impl EventRepository for SqlEventRepository {
             .bind(event.event_id)
             .bind(event.rental_id)
             .bind(&event.user_id)
-            .bind(&event.executor_id)
+            .bind(&event.node_id)
             .bind(&event.validator_id)
             .bind(event.event_type.to_string())
             .bind(&event.event_data)
@@ -331,7 +331,7 @@ impl EventRepository for SqlEventRepository {
         let rows = sqlx::query(
             r#"
             SELECT
-                event_id, rental_id, user_id, executor_id, validator_id, event_type,
+                event_id, rental_id, user_id, node_id, validator_id, event_type,
                 event_data, timestamp, processed, processed_at, batch_id
             FROM billing.usage_events
             WHERE processed = false
@@ -356,7 +356,7 @@ impl EventRepository for SqlEventRepository {
                     event_id: row.get("event_id"),
                     rental_id: row.get("rental_id"),
                     user_id: row.get("user_id"),
-                    executor_id: row.get("executor_id"),
+                    node_id: row.get("node_id"),
                     validator_id: row.get("validator_id"),
                     event_type: Self::parse_event_type(&event_type_str),
                     event_data: row.get("event_data"),
@@ -411,7 +411,7 @@ impl EventRepository for SqlEventRepository {
         let rows = sqlx::query(
             r#"
             SELECT
-                event_id, rental_id, user_id, executor_id, validator_id, event_type,
+                event_id, rental_id, user_id, node_id, validator_id, event_type,
                 event_data, timestamp, processed, processed_at, batch_id
             FROM billing.usage_events
             WHERE rental_id = $1
@@ -438,7 +438,7 @@ impl EventRepository for SqlEventRepository {
                     event_id: row.get("event_id"),
                     rental_id: row.get("rental_id"),
                     user_id: row.get("user_id"),
-                    executor_id: row.get("executor_id"),
+                    node_id: row.get("node_id"),
                     validator_id: row.get("validator_id"),
                     event_type: Self::parse_event_type(&event_type_str),
                     event_data: row.get("event_data"),

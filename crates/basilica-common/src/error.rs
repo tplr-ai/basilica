@@ -300,7 +300,7 @@ impl BasilicaError for ValidationError {}
 
 /// Verification-related errors
 ///
-/// These errors occur during verification processes like executor validation,
+/// These errors occur during verification processes like node validation,
 /// challenge verification, or system integrity checks.
 #[derive(Error, Debug)]
 pub enum VerificationError {
@@ -316,8 +316,8 @@ pub enum VerificationError {
     #[error("System profile verification failed: {details}")]
     ProfileVerificationFailed { details: String },
 
-    /// Executor integrity check failed
-    #[error("Executor integrity check failed: {details}")]
+    /// Node integrity check failed
+    #[error("Node integrity check failed: {details}")]
     IntegrityCheckFailed { details: String },
 
     /// Verification timeout

@@ -63,6 +63,7 @@ chrono = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }
 futures = { workspace = true }
+futures-util = { workspace = true }
 once_cell = { workspace = true }
 
 # Load balancing algorithms

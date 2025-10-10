@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChallengeResult {
     pub id: Uuid,
-    pub executor_id: String,
+    pub node_id: String,
     pub challenge_type: String,
     pub challenge_parameters: Value,
     pub solution_data: Option<Value>,
@@ -26,7 +26,7 @@ pub struct ChallengeResult {
 
 impl ChallengeResult {
     pub fn new(
-        executor_id: String,
+        node_id: String,
         challenge_type: String,
         challenge_parameters: Value,
         difficulty_level: i32,
@@ -35,7 +35,7 @@ impl ChallengeResult {
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
-            executor_id,
+            node_id,
             challenge_type,
             challenge_parameters,
             solution_data: None,

@@ -70,6 +70,10 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     libsqlite3-0 \
+    openssh-client \
+    procps \
+    iproute2 \
+    net-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the built binary
@@ -79,27 +83,25 @@ COPY --from=builder /tmp/target/${BUILD_MODE}/basilica-miner /usr/local/bin/basi
 # Make binary executable
 RUN chmod +x /usr/local/bin/basilica-miner
 
-# Create data directory for SQLite database and configuration
-RUN mkdir -p /var/lib/basilica/miner && \
-    chmod 755 /var/lib/basilica/miner
+# Create required directories
+RUN mkdir -p /var/lib/basilica/miner/data && \
+    mkdir -p /var/lib/basilica/miner/.ssh && \
+    mkdir -p /var/lib/basilica/miner/.bittensor && \
+    chmod 755 /var/lib/basilica/miner && \
+    chmod 755 /var/lib/basilica/miner/.ssh && \
+    chmod 755 /var/lib/basilica/miner/.bittensor
 
-# Create user for running the service
-RUN useradd --system --home /var/lib/basilica/miner --shell /bin/false basilica
-
-# Set ownership of data directory
-RUN chown -R basilica:basilica /var/lib/basilica/miner
-
-# Switch to non-root user
-USER basilica
+# Set HOME environment variable for the basilica user
+ENV HOME=/var/lib/basilica/miner
 
 # Set working directory
 WORKDIR /var/lib/basilica/miner
 
 # Expose ports
-# 8092: Miner gRPC server for validator communications
+# 8080: Miner gRPC server for validator communications
 # 8091: Bittensor axon server port
-# 9092: Prometheus metrics endpoint
-EXPOSE 8092 8091 9092
+# 9090: Prometheus metrics endpoint
+EXPOSE 8080 8091 9090
 
 # Default command
 ENTRYPOINT ["/usr/local/bin/basilica-miner"]

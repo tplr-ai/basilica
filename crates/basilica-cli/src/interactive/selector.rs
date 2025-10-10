@@ -1,9 +1,9 @@
 //! Interactive selection utilities
 
 use crate::error::Result;
-use basilica_sdk::types::{ApiRentalListItem, ExecutorSelection};
+use basilica_sdk::types::{ApiRentalListItem, NodeSelection};
 use basilica_sdk::GpuRequirements;
-use basilica_validator::api::types::AvailableExecutor;
+use basilica_validator::api::types::AvailableNode;
 use basilica_validator::gpu::GpuCategory;
 use color_eyre::eyre::eyre;
 use console::Term;
@@ -25,122 +25,113 @@ impl InteractiveSelector {
         Self { theme }
     }
 
-    /// Let user select an executor from available options
-    pub fn select_executor(
+    /// Let user select an node from available options
+    pub fn select_node(
         &self,
-        executors: &[AvailableExecutor],
+        nodes: &[AvailableNode],
         use_detailed: bool,
         show_ids: bool,
         gpu_count_filter: Option<u32>,
-    ) -> Result<ExecutorSelection> {
-        if executors.is_empty() {
-            return Err(eyre!("No executors available").into());
+    ) -> Result<NodeSelection> {
+        if nodes.is_empty() {
+            return Err(eyre!("No nodes available").into());
         }
 
         if use_detailed {
-            // Detailed mode: Show all executors individually
-            self.select_executor_detailed(executors, show_ids, gpu_count_filter)
+            // Detailed mode: Show all nodes individually
+            self.select_node_detailed(nodes, show_ids, gpu_count_filter)
         } else {
             // Grouped mode: Group by GPU configuration
-            self.select_executor_grouped(executors, gpu_count_filter)
+            self.select_node_grouped(nodes, gpu_count_filter)
         }
     }
 
-    /// Select executor in detailed mode (show all executors)
-    fn select_executor_detailed(
+    /// Select node in detailed mode (show all nodes)
+    fn select_node_detailed(
         &self,
-        executors: &[AvailableExecutor],
+        nodes: &[AvailableNode],
         show_ids: bool,
         gpu_count_filter: Option<u32>,
-    ) -> Result<ExecutorSelection> {
-        // Filter executors by exact GPU count if specified
-        let filtered_executors: Vec<&AvailableExecutor> =
-            if let Some(required_count) = gpu_count_filter {
-                executors
-                    .iter()
-                    .filter(|e| e.executor.gpu_specs.len() as u32 == required_count)
-                    .collect()
-            } else {
-                executors.iter().collect()
-            };
+    ) -> Result<NodeSelection> {
+        // Filter nodes by exact GPU count if specified
+        let filtered_nodes: Vec<&AvailableNode> = if let Some(required_count) = gpu_count_filter {
+            nodes
+                .iter()
+                .filter(|e| e.node.gpu_specs.len() as u32 == required_count)
+                .collect()
+        } else {
+            nodes.iter().collect()
+        };
 
-        if filtered_executors.is_empty() {
+        if filtered_nodes.is_empty() {
             if let Some(required_count) = gpu_count_filter {
-                return Err(eyre!(
-                    "No executors available with exactly {} GPU(s)",
-                    required_count
-                )
-                .into());
+                return Err(
+                    eyre!("No nodes available with exactly {} GPU(s)", required_count).into(),
+                );
             } else {
-                return Err(eyre!("No executors available").into());
+                return Err(eyre!("No nodes available").into());
             }
         }
 
         // Collect all display components to calculate proper column widths
         struct DisplayComponents {
-            executor_id: String,
+            node_id: String,
             gpu_info: String,
             cpu_info: String,
             ram_info: String,
             use_case: String,
         }
 
-        let display_components: Vec<DisplayComponents> = filtered_executors
+        let display_components: Vec<DisplayComponents> = filtered_nodes
             .iter()
-            .map(|executor| {
-                // Extract executor ID (remove miner prefix if present)
-                let executor_id = if show_ids {
-                    executor
-                        .executor
+            .map(|node| {
+                // Extract node ID (remove miner prefix if present)
+                let node_id = if show_ids {
+                    node.node
                         .id
                         .split_once("__")
                         .map(|(_, id)| id)
-                        .unwrap_or(&executor.executor.id)
+                        .unwrap_or(&node.node.id)
                         .to_string()
                 } else {
                     String::new()
                 };
                 // Format GPU info
-                let gpu_info = if executor.executor.gpu_specs.is_empty() {
+                let gpu_info = if node.node.gpu_specs.is_empty() {
                     "No GPUs".to_string()
                 } else {
-                    let gpu = &executor.executor.gpu_specs[0];
+                    let gpu = &node.node.gpu_specs[0];
                     let gpu_display_name = gpu.name.clone(); // Full name in detailed mode
-                    if executor.executor.gpu_specs.len() > 1 {
-                        format!(
-                            "{}x {}",
-                            executor.executor.gpu_specs.len(),
-                            gpu_display_name
-                        )
+                    if node.node.gpu_specs.len() > 1 {
+                        format!("{}x {}", node.node.gpu_specs.len(), gpu_display_name)
                     } else {
                         format!("1x {}", gpu_display_name)
                     }
                 };
 
                 // Format CPU info - handle "Unknown" case
-                let cpu_info = if executor.executor.cpu_specs.model == "Unknown"
-                    || executor.executor.cpu_specs.cores == 0
-                {
-                    "Unknown CPU".to_string()
-                } else {
-                    format!(
-                        "{} ({} cores)",
-                        executor.executor.cpu_specs.model, executor.executor.cpu_specs.cores
-                    )
-                };
+                let cpu_info =
+                    if node.node.cpu_specs.model == "Unknown" || node.node.cpu_specs.cores == 0 {
+                        "Unknown CPU".to_string()
+                    } else {
+                        format!(
+                            "{} ({} cores)",
+                            node.node.cpu_specs.model, node.node.cpu_specs.cores
+                        )
+                    };
 
                 // Format RAM info
-                let ram_info = if executor.executor.cpu_specs.memory_gb == 0 {
+                let ram_info = if node.node.cpu_specs.memory_gb == 0 {
                     "Unknown".to_string()
                 } else {
-                    format!("{}GB", executor.executor.cpu_specs.memory_gb)
+                    format!("{}GB", node.node.cpu_specs.memory_gb)
                 };
 
                 // Get use case description for GPUs
-                let use_case = if executor.executor.gpu_specs.is_empty() {
+                let use_case = if node.node.gpu_specs.is_empty() {
                     "General compute".to_string()
                 } else {
-                    let gpu = &executor.executor.gpu_specs[0];
+                    let gpu = &node.node.gpu_specs[0];
                     GpuCategory::from_str(&gpu.name)
                         .unwrap()
                         .description()
@@ -148,7 +139,7 @@ impl InteractiveSelector {
                 };
 
                 DisplayComponents {
-                    executor_id,
+                    node_id,
                     gpu_info,
                     cpu_info,
                     ram_info,
@@ -161,7 +152,7 @@ impl InteractiveSelector {
         let id_max_width = if show_ids {
             display_components
                 .iter()
-                .map(|c| c.executor_id.len())
+                .map(|c| c.node_id.len())
                 .max()
                 .unwrap_or(36) // UUID default length
         } else {
@@ -193,7 +184,7 @@ impl InteractiveSelector {
                 if show_ids {
                     format!(
                         "{:<id_width$} │ {:<gpu_width$} │ {:<cpu_width$} │ {:<ram_width$} │ {}",
-                        components.executor_id,
+                        components.node_id,
                         components.gpu_info,
                         components.cpu_info,
                         components.ram_info,
@@ -219,7 +210,7 @@ impl InteractiveSelector {
             .collect();
 
         let selection = Select::with_theme(&self.theme)
-            .with_prompt("Select executor")
+            .with_prompt("Select node")
             .items(&selector_items)
             .default(0)
             .interact_opt()
@@ -230,44 +221,44 @@ impl InteractiveSelector {
             None => return Err(eyre!("Selection cancelled").into()),
         };
 
-        // Get the selected executor ID
-        let executor_id = filtered_executors[selection].executor.id.clone();
-        let executor_id = match executor_id.split_once("__") {
+        // Get the selected node ID
+        let node_id = filtered_nodes[selection].node.id.clone();
+        let node_id = match node_id.split_once("__") {
             Some((_, second)) => second.to_string(),
-            None => executor_id,
+            None => node_id,
         };
 
-        Ok(ExecutorSelection::ExecutorId { executor_id })
+        Ok(NodeSelection::NodeId { node_id })
     }
 
-    /// Select executor in grouped mode (group by GPU configuration)
-    fn select_executor_grouped(
+    /// Select node in grouped mode (group by GPU configuration)
+    fn select_node_grouped(
         &self,
-        executors: &[AvailableExecutor],
+        nodes: &[AvailableNode],
         gpu_count_filter: Option<u32>,
-    ) -> Result<ExecutorSelection> {
-        // Group executors by GPU configuration
+    ) -> Result<NodeSelection> {
+        // Group nodes by GPU configuration
         let mut gpu_groups: HashMap<String, (String, u32, u32)> = HashMap::new();
 
-        for executor in executors {
-            let key = if executor.executor.gpu_specs.is_empty() {
+        for node in nodes {
+            let key = if node.node.gpu_specs.is_empty() {
                 "no_gpu".to_string()
             } else {
-                let gpu = &executor.executor.gpu_specs[0];
+                let gpu = &node.node.gpu_specs[0];
                 let category = GpuCategory::from_str(&gpu.name)
                     .unwrap_or(GpuCategory::Other(gpu.name.clone()));
-                let gpu_count = executor.executor.gpu_specs.len() as u32;
+                let gpu_count = node.node.gpu_specs.len() as u32;
                 format!("{}_{}_{}", gpu_count, category, gpu.memory_gb)
             };
 
             gpu_groups.entry(key).or_insert_with(|| {
-                if executor.executor.gpu_specs.is_empty() {
+                if node.node.gpu_specs.is_empty() {
                     ("".to_string(), 0, 0)
                 } else {
-                    let gpu = &executor.executor.gpu_specs[0];
+                    let gpu = &node.node.gpu_specs[0];
                     let category = GpuCategory::from_str(&gpu.name)
                         .unwrap_or(GpuCategory::Other(gpu.name.clone()));
-                    let gpu_count = executor.executor.gpu_specs.len() as u32;
+                    let gpu_count = node.node.gpu_specs.len() as u32;
                     (category.to_string(), gpu_count, gpu.memory_gb)
                 }
             });
@@ -357,16 +348,16 @@ impl InteractiveSelector {
 
         // Return GPU requirements for automatic selection
         if selected_config.1.is_empty() {
-            // No GPU case - just pick the first available executor
-            let executor_id = executors[0].executor.id.clone();
-            let executor_id = match executor_id.split_once("__") {
+            // No GPU case - just pick the first available node
+            let node_id = nodes[0].node.id.clone();
+            let node_id = match node_id.split_once("__") {
                 Some((_, second)) => second.to_string(),
-                None => executor_id,
+                None => node_id,
             };
-            Ok(ExecutorSelection::ExecutorId { executor_id })
+            Ok(NodeSelection::NodeId { node_id })
         } else {
             // Use ExactGpuConfiguration for compact mode to ensure exact GPU count matching
-            Ok(ExecutorSelection::ExactGpuConfiguration {
+            Ok(NodeSelection::ExactGpuConfiguration {
                 gpu_requirements: GpuRequirements {
                     gpu_type: Some(selected_config.1.clone()),
                     gpu_count: selected_config.2,

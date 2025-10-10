@@ -35,6 +35,8 @@ impl SshClient {
             retry_attempts: 3,
             max_transfer_size: 1000 * 1024 * 1024, // 1000MB
             cleanup_remote_files: false,
+            strict_host_key_checking: false,
+            known_hosts_file: None,
         };
 
         Ok(Self {

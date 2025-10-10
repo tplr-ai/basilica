@@ -106,14 +106,14 @@ impl DockerCollector {
         }
     }
 
-    /// Collect Docker profile from executor
+    /// Collect Docker profile from node
     pub async fn collect(
         &self,
-        executor_id: &str,
+        node_id: &str,
         ssh_details: &SshConnectionDetails,
     ) -> Result<DockerProfile> {
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             "[DOCKER_PROFILE] Starting Docker validation"
         );
 
@@ -125,14 +125,14 @@ impl DockerCollector {
             Ok(active) => {
                 if !active {
                     let error = "Docker service is not active".to_string();
-                    error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                    error!(node_id = node_id, "[DOCKER_PROFILE] {}", error);
                     return Err(anyhow::anyhow!("Docker validation failed: {}", error));
                 }
                 active
             }
             Err(e) => {
                 let error = format!("Failed to check Docker service: {}", e);
-                error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                error!(node_id = node_id, "[DOCKER_PROFILE] {}", error);
                 return Err(anyhow::anyhow!("Docker validation failed: {}", error));
             }
         };
@@ -141,7 +141,7 @@ impl DockerCollector {
         let docker_version = match self.get_docker_version(ssh_details).await {
             Ok(version) => {
                 info!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     docker_version = version,
                     "[DOCKER_PROFILE] Docker version detected"
                 );
@@ -149,7 +149,7 @@ impl DockerCollector {
             }
             Err(e) => {
                 let error = format!("Failed to get Docker version: {}", e);
-                error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                error!(node_id = node_id, "[DOCKER_PROFILE] {}", error);
                 return Err(anyhow::anyhow!("Docker validation failed: {}", error));
             }
         };
@@ -162,14 +162,14 @@ impl DockerCollector {
             Ok(_) => {
                 images_pulled.push(self.docker_image.clone());
                 info!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     image = self.docker_image,
                     "[DOCKER_PROFILE] Successfully pulled Docker image"
                 );
             }
             Err(e) => {
                 let error = format!("Failed to pull Docker image {}: {}", self.docker_image, e);
-                error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                error!(node_id = node_id, "[DOCKER_PROFILE] {}", error);
                 return Err(anyhow::anyhow!("Docker validation failed: {}", error));
             }
         }
@@ -182,19 +182,19 @@ impl DockerCollector {
             Ok(supported) => {
                 if supported {
                     info!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         "[DOCKER_PROFILE] GPU runtime validation passed"
                     );
                     supported
                 } else {
                     let error = "GPU runtime not available or not configured".to_string();
-                    error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                    error!(node_id = node_id, "[DOCKER_PROFILE] {}", error);
                     return Err(anyhow::anyhow!("Docker validation failed: {}", error));
                 }
             }
             Err(e) => {
                 let error = format!("GPU runtime check failed: {}", e);
-                error!(executor_id = executor_id, "[DOCKER_PROFILE] {}", error);
+                error!(node_id = node_id, "[DOCKER_PROFILE] {}", error);
                 return Err(anyhow::anyhow!("Docker validation failed: {}", error));
             }
         };
@@ -207,7 +207,7 @@ impl DockerCollector {
         };
 
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             dind_supported = dind_supported,
             gpu_runtime_supported = gpu_runtime_supported,
             "[DOCKER_PROFILE] Docker validation completed successfully"
@@ -227,13 +227,13 @@ impl DockerCollector {
     pub async fn store(
         &self,
         miner_uid: u16,
-        executor_id: &str,
+        node_id: &str,
         docker_profile: &DockerProfile,
     ) -> Result<()> {
         self.persistence
-            .store_executor_docker_profile(
+            .store_node_docker_profile(
                 miner_uid,
-                executor_id,
+                node_id,
                 docker_profile.service_active,
                 docker_profile.docker_version.clone(),
                 docker_profile.images_pulled.clone(),
@@ -245,48 +245,48 @@ impl DockerCollector {
 
         info!(
             miner_uid = miner_uid,
-            executor_id = executor_id,
+            node_id = node_id,
             "[DOCKER_PROFILE] Stored Docker profile in database"
         );
 
         Ok(())
     }
 
-    /// Collect Docker profile from executor and store in database
+    /// Collect Docker profile from node and store in database
     pub async fn collect_and_store(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Result<DockerProfile> {
-        let docker_profile = self.collect(executor_id, ssh_details).await?;
-        self.store(miner_uid, executor_id, &docker_profile).await?;
+        let docker_profile = self.collect(node_id, ssh_details).await?;
+        self.store(miner_uid, node_id, &docker_profile).await?;
         Ok(docker_profile)
     }
 
     /// Collect Docker profile with error handling
     pub async fn collect_with_fallback(
         &self,
-        executor_id: &str,
+        node_id: &str,
         miner_uid: u16,
         ssh_details: &SshConnectionDetails,
     ) -> Option<DockerProfile> {
         info!(
-            executor_id = executor_id,
+            node_id = node_id,
             miner_uid = miner_uid,
             "[DOCKER_PROFILE] collect_with_fallback called - starting Docker validation"
         );
 
         let collect_result = match tokio::time::timeout(
             Duration::from_secs(2400), // 40 minutes timeout
-            self.collect(executor_id, ssh_details),
+            self.collect(node_id, ssh_details),
         )
         .await
         {
             Ok(result) => result,
             Err(_) => {
                 error!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_uid = miner_uid,
                     "[DOCKER_PROFILE] Docker validation timed out after 30 minutes"
                 );
@@ -297,13 +297,13 @@ impl DockerCollector {
         match collect_result {
             Ok(profile) => {
                 debug!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[DOCKER_PROFILE] Docker validation succeeded, attempting to store profile"
                 );
                 // Try to store but don't fail if storage fails
-                if let Err(e) = self.store(miner_uid, executor_id, &profile).await {
+                if let Err(e) = self.store(miner_uid, node_id, &profile).await {
                     warn!(
-                        executor_id = executor_id,
+                        node_id = node_id,
                         error = %e,
                         "[DOCKER_PROFILE] Failed to store Docker profile: {}",
                         e
@@ -313,7 +313,7 @@ impl DockerCollector {
             }
             Err(e) => {
                 error!(
-                    executor_id = executor_id,
+                    node_id = node_id,
                     miner_uid = miner_uid,
                     error = %e,
                     "[DOCKER_PROFILE] Docker validation failed: {}",
@@ -692,14 +692,10 @@ impl DockerCollector {
     }
 
     /// Retrieve Docker profile from database
-    pub async fn retrieve(
-        &self,
-        miner_uid: u16,
-        executor_id: &str,
-    ) -> Result<Option<DockerProfile>> {
+    pub async fn retrieve(&self, miner_uid: u16, node_id: &str) -> Result<Option<DockerProfile>> {
         let result = self
             .persistence
-            .get_executor_docker_profile(miner_uid, executor_id)
+            .get_node_docker_profile(miner_uid, node_id)
             .await?;
 
         match result {
@@ -713,7 +709,7 @@ impl DockerCollector {
             )) => {
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[DOCKER_PROFILE] Retrieved Docker profile from database"
                 );
 
@@ -730,7 +726,7 @@ impl DockerCollector {
             None => {
                 info!(
                     miner_uid = miner_uid,
-                    executor_id = executor_id,
+                    node_id = node_id,
                     "[DOCKER_PROFILE] No Docker profile found in database"
                 );
                 Ok(None)
