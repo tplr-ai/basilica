@@ -199,7 +199,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "internalType": "bytes16"
       },
@@ -216,37 +216,6 @@
     ],
     "outputs": [],
     "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "dummy",
-    "inputs": [],
-    "outputs": [],
-    "stateMutability": "payable"
-  },
-  {
-    "type": "function",
-    "name": "executorToMiner",
-    "inputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "",
-        "type": "bytes16",
-        "internalType": "bytes16"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -388,6 +357,30 @@
   },
   {
     "type": "function",
+    "name": "nodeToMiner",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes16",
+        "internalType": "bytes16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "proxiableUUID",
     "inputs": [],
     "outputs": [
@@ -409,7 +402,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "internalType": "bytes16"
       },
@@ -449,7 +442,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "internalType": "bytes16"
       },
@@ -540,7 +533,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "internalType": "bytes16"
       },
@@ -766,7 +759,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "indexed": true,
         "internalType": "bytes16"
@@ -847,7 +840,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "indexed": true,
         "internalType": "bytes16"
@@ -914,7 +907,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "indexed": true,
         "internalType": "bytes16"
@@ -1032,7 +1025,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "executorId",
+        "name": "nodeId",
         "type": "bytes16",
         "indexed": true,
         "internalType": "bytes16"
@@ -1162,11 +1155,6 @@
   },
   {
     "type": "error",
-    "name": "ExecutorNotOwned",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "FailedCall",
     "inputs": []
   },
@@ -1198,6 +1186,11 @@
   {
     "type": "error",
     "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NodeNotOwned",
     "inputs": []
   },
   {

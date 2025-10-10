@@ -237,7 +237,7 @@ contract CollateralUpgradeable is
         uint256 actualAlphaAmount = alphaAmount;
         if (alphaAmount > 0) {
             actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
-            alphaCollaterals[hotkey][executorId] += actualAlphaAmount;
+            alphaCollaterals[hotkey][nodeId] += actualAlphaAmount;
         }
 
         collaterals[hotkey][nodeId] += msg.value;
@@ -363,7 +363,7 @@ contract CollateralUpgradeable is
         }
 
         if (collaterals[hotkey][nodeId] == 0 && reclaim.alphaAmount == 0) {
-            executorToMiner[hotkey][nodeId] = address(0);
+            nodeToMiner[hotkey][nodeId] = address(0);
         }
 
         emit Reclaimed(
@@ -405,7 +405,7 @@ contract CollateralUpgradeable is
             reclaim.nodeId
         ] -= reclaim.amount;
         alphaCollateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.executorId
+            reclaim.nodeId
         ] -= reclaim.alphaAmount;
         emit Denied(reclaimRequestId, url, urlContentMd5Checksum);
 

@@ -126,9 +126,7 @@ contract CollateralBasicTest is Test {
         // Bob tries to deposit to same executor
         vm.prank(BOB);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                CollateralUpgradeable.ExecutorNotOwned.selector
-            )
+            abi.encodeWithSelector(CollateralUpgradeable.NodeNotOwned.selector)
         );
         collateral.deposit{value: 5 ether}(
             HOTKEY_1,
@@ -158,7 +156,7 @@ contract CollateralBasicTest is Test {
         );
 
         assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 8 ether);
-        assertEq(collateral.executorToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
     }
 
     // ============ RECLAIM TESTS ============
@@ -227,9 +225,7 @@ contract CollateralBasicTest is Test {
         // Bob tries to reclaim
         vm.prank(BOB);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                CollateralUpgradeable.ExecutorNotOwned.selector
-            )
+            abi.encodeWithSelector(CollateralUpgradeable.NodeNotOwned.selector)
         );
         collateral.reclaimCollateral(
             HOTKEY_1,
@@ -315,10 +311,7 @@ contract CollateralBasicTest is Test {
         // Check state
         assertEq(ALICE.balance, aliceBalanceBefore + 5 ether);
         assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
-        assertEq(
-            collateral.executorToMiner(HOTKEY_1, EXECUTOR_ID_1),
-            address(0)
-        );
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
     }
 
     function testFinalizeReclaimBeforeTimeout() public {
@@ -502,7 +495,7 @@ contract CollateralBasicTest is Test {
         // Check state
         assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
         assertEq(address(collateral).balance, contractBalanceBefore - 5 ether);
-        assertEq(collateral.executorToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE); // Still owned
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE); // Still owned
     }
 
     function testSlashAllCollateral() public {
@@ -527,10 +520,7 @@ contract CollateralBasicTest is Test {
         );
 
         // Check executor ownership is cleared
-        assertEq(
-            collateral.executorToMiner(HOTKEY_1, EXECUTOR_ID_1),
-            address(0)
-        );
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
         assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
     }
 
