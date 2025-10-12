@@ -93,6 +93,7 @@ libc = "0.2"
 
 # Additional crypto dependencies
 sp-core = "34.0.0"
+sp-io = "34.0.0"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
 pbkdf2 = { version = "0.12", features = ["hmac"] }

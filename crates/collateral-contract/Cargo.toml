@@ -35,3 +35,4 @@ subxt = { workspace = true }
 subxt-signer = { workspace = true }
 bittensor = { path = "../bittensor" }
 blake2 = {workspace = true}
+sp-io = {workspace = true}

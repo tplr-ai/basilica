@@ -86,11 +86,6 @@ contract CollateralUpgradeableTest is Test {
 
         vm.prank(alice);
         collateral.deposit{value: 5 ether}(hotkey, nodeId, alphaHotkey, 0);
-        emit Deposit(hotkey, nodeId, alice, 5 ether, alphaHotkey, 0);
-
-        vm.prank(alice);
-        collateral.deposit{value: 5 ether}(hotkey, nodeId, alphaHotkey, 0);
-
         // Verify state
         assertEq(collateral.collaterals(hotkey, nodeId), 5 ether);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);

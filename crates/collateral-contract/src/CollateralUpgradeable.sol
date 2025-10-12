@@ -13,19 +13,24 @@ interface IStaking {
         uint256 netuid1,
         uint256 netuid2,
         uint256 amount
-    ) external;
+    ) external payable;
     function moveStake(
         bytes32 hotkey1,
         bytes32 hotkey2,
         uint256 netuid1,
         uint256 netuid2,
         uint256 amount
-    ) external;
+    ) external payable;
     function getStake(
         bytes32 hotkey,
         bytes32 coldkey,
         uint256 netuid
     ) external view returns (uint256);
+}
+
+interface INeuron {
+    function burnedRegister(uint16 netuid, bytes32 hotkey) external payable;
+    function dummy() external payable;
 }
 
 contract CollateralUpgradeable is
@@ -52,6 +57,9 @@ contract CollateralUpgradeable is
     address public constant ISTAKING_V2_ADDRESS =
         0x0000000000000000000000000000000000000805;
 
+    address public constant INEURON_ADDRESS =
+        0x0000000000000000000000000000000000000804;
+
     // State variables
     uint16 public NETUID;
     address public TRUSTEE;
@@ -62,7 +70,7 @@ contract CollateralUpgradeable is
 
     mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
     mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
-    mapping(bytes32 => mapping(bytes16 => uint256)) internal alphaCollaterals;
+    mapping(bytes32 => mapping(bytes16 => uint256)) public alphaCollaterals;
     mapping(uint256 => Reclaim) public reclaims;
 
     mapping(bytes32 => mapping(bytes16 => uint256))
@@ -330,7 +338,7 @@ contract CollateralUpgradeable is
     /// @dev Reverts with TransferFailed if the TAO transfer fails
     function finalizeReclaim(uint256 reclaimRequestId) external {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
-        if (reclaim.amount == 0) {
+        if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
         }
         if (reclaim.denyTimeout >= block.timestamp) {
@@ -341,6 +349,8 @@ contract CollateralUpgradeable is
         bytes16 nodeId = reclaim.nodeId;
         address miner = reclaim.miner;
         uint256 amount = reclaim.amount;
+        bytes32 alphaColdkey = reclaim.alphaColdkey;
+        uint256 alphaAmount = reclaim.alphaAmount;
 
         delete reclaims[reclaimRequestId];
         collateralUnderPendingReclaims[hotkey][nodeId] -= amount;
@@ -358,11 +368,15 @@ contract CollateralUpgradeable is
             revert TransferFailed();
         }
 
-        if (reclaim.alphaAmount > 0) {
-            withdrawAlpha(reclaim.alphaColdkey, reclaim.alphaAmount);
+        if (alphaAmount > 0) {
+            alphaCollaterals[hotkey][nodeId] -= alphaAmount;
+            withdrawAlpha(alphaColdkey, alphaAmount);
         }
 
-        if (collaterals[hotkey][nodeId] == 0 && reclaim.alphaAmount == 0) {
+        if (
+            collaterals[hotkey][nodeId] == 0 &&
+            alphaCollaterals[hotkey][nodeId] == 0
+        ) {
             nodeToMiner[hotkey][nodeId] = address(0);
         }
 
@@ -372,8 +386,8 @@ contract CollateralUpgradeable is
             nodeId,
             miner,
             amount,
-            reclaim.alphaColdkey,
-            reclaim.alphaAmount
+            alphaColdkey,
+            alphaAmount
         );
     }
 
@@ -527,10 +541,10 @@ contract CollateralUpgradeable is
         uint256 newMinIncrease
     );
 
-    function getContractStake() public view returns (uint256) {
+    function getContractStake(bytes32 hotkey) public view returns (uint256) {
         return
             IStaking(ISTAKING_V2_ADDRESS).getStake(
-                CONTRACT_HOTKEY,
+                hotkey,
                 CONTRACT_COLDKEY,
                 NETUID
             );
@@ -540,7 +554,7 @@ contract CollateralUpgradeable is
         bytes32 alphaHotkey,
         uint256 alphaAmount
     ) internal returns (uint256) {
-        uint256 contractStake = getContractStake();
+        uint256 contractStake = getContractStake(alphaHotkey);
 
         bytes memory data = abi.encodeWithSelector(
             IStaking.transferStake.selector,
@@ -550,12 +564,13 @@ contract CollateralUpgradeable is
             uint256(NETUID),
             alphaAmount
         );
+        // delegatecall the original sender should be used as origin for deposit alpha
         (bool success, ) = address(ISTAKING_V2_ADDRESS).delegatecall{
             gas: gasleft()
         }(data);
         require(success, "user deposit alpha call failed");
 
-        uint256 newContractStake = getContractStake();
+        uint256 newContractStake = getContractStake(alphaHotkey);
 
         require(
             newContractStake > contractStake,
@@ -575,6 +590,7 @@ contract CollateralUpgradeable is
                 NETUID,
                 actualAlphaAmount
             );
+            // call the origin is the proxy contract. the alpha just transfer betweend different hotkeys of contract as coldkey
             (success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
                 data
             );
@@ -585,7 +601,7 @@ contract CollateralUpgradeable is
     }
 
     function withdrawAlpha(bytes32 alphaColdkey, uint256 alphaAmount) internal {
-        uint256 contractStake = getContractStake();
+        uint256 contractStake = getContractStake(CONTRACT_HOTKEY);
         require(
             contractStake >= alphaAmount,
             "contract stake is less than withdraw alpha amount"
@@ -599,9 +615,20 @@ contract CollateralUpgradeable is
             NETUID,
             alphaAmount
         );
-        (bool success, ) = address(ISTAKING_V2_ADDRESS).delegatecall{
-            gas: gasleft()
-        }(data);
+        // use call the origin should be the proxy contract
+        (bool success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
+            data
+        );
         require(success, "user withdraw alpha call failed");
+    }
+
+    function burnRegister() external payable {
+        bytes memory data = abi.encodeWithSelector(
+            INeuron.burnedRegister.selector,
+            NETUID,
+            CONTRACT_HOTKEY
+        );
+        (bool success, ) = address(INEURON_ADDRESS).call{gas: gasleft()}(data);
+        require(success, "user burn register call failed");
     }
 }
