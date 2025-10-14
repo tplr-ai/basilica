@@ -448,7 +448,7 @@ contract CollateralUpgradeable is
             revert AmountZero();
         }
 
-        if (slashAmount > amount && slashAlphaAmount > alphaAmount) {
+        if (slashAmount > amount || slashAlphaAmount > alphaAmount) {
             revert InsufficientCollateralForSlash();
         }
 

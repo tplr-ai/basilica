@@ -123,10 +123,10 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
-        /// Hotkey as hex string (32 bytes)
+        /// Amount to slash in wei
         #[arg(long)]
         amount: String,
-        /// Amount to slash in wei
+        /// Amount to slash alpha in wei
         #[arg(long)]
         alpha_amount: String,
         /// URL for proof of slashing

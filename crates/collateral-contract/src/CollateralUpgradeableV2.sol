@@ -28,6 +28,11 @@ interface IStaking {
     ) external view returns (uint256);
 }
 
+interface INeuron {
+    function burnedRegister(uint16 netuid, bytes32 hotkey) external payable;
+    function dummy() external payable;
+}
+
 contract CollateralUpgradeableV2 is
     Initializable,
     UUPSUpgradeable,
@@ -52,6 +57,9 @@ contract CollateralUpgradeableV2 is
     address public constant ISTAKING_V2_ADDRESS =
         0x0000000000000000000000000000000000000805;
 
+    address public constant INEURON_ADDRESS =
+        0x0000000000000000000000000000000000000804;
+
     // State variables
     uint16 public NETUID;
     address public TRUSTEE;
@@ -62,7 +70,7 @@ contract CollateralUpgradeableV2 is
 
     mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
     mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
-    mapping(bytes32 => mapping(bytes16 => uint256)) internal alphaCollaterals;
+    mapping(bytes32 => mapping(bytes16 => uint256)) public alphaCollaterals;
     mapping(uint256 => Reclaim) public reclaims;
 
     mapping(bytes32 => mapping(bytes16 => uint256))
@@ -527,10 +535,10 @@ contract CollateralUpgradeableV2 is
         uint256 newMinIncrease
     );
 
-    function getContractStake() public view returns (uint256) {
+    function getContractStake(bytes32 hotkey) public view returns (uint256) {
         return
             IStaking(ISTAKING_V2_ADDRESS).getStake(
-                CONTRACT_HOTKEY,
+                hotkey,
                 CONTRACT_COLDKEY,
                 NETUID
             );
@@ -540,7 +548,7 @@ contract CollateralUpgradeableV2 is
         bytes32 alphaHotkey,
         uint256 alphaAmount
     ) internal returns (uint256) {
-        uint256 contractStake = getContractStake();
+        uint256 contractStake = getContractStake(alphaHotkey);
 
         bytes memory data = abi.encodeWithSelector(
             IStaking.transferStake.selector,
@@ -555,7 +563,7 @@ contract CollateralUpgradeableV2 is
         }(data);
         require(success, "user deposit alpha call failed");
 
-        uint256 newContractStake = getContractStake();
+        uint256 newContractStake = getContractStake(alphaHotkey);
 
         require(
             newContractStake > contractStake,
@@ -585,7 +593,7 @@ contract CollateralUpgradeableV2 is
     }
 
     function withdrawAlpha(bytes32 alphaColdkey, uint256 alphaAmount) internal {
-        uint256 contractStake = getContractStake();
+        uint256 contractStake = getContractStake(CONTRACT_HOTKEY);
         require(
             contractStake >= alphaAmount,
             "contract stake is less than withdraw alpha amount"
@@ -599,9 +607,19 @@ contract CollateralUpgradeableV2 is
             NETUID,
             alphaAmount
         );
-        (bool success, ) = address(ISTAKING_V2_ADDRESS).delegatecall{
-            gas: gasleft()
-        }(data);
+        (bool success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
+            data
+        );
         require(success, "user withdraw alpha call failed");
+    }
+
+    function burnRegister() external payable {
+        bytes memory data = abi.encodeWithSelector(
+            INeuron.burnedRegister.selector,
+            NETUID,
+            CONTRACT_HOTKEY
+        );
+        (bool success, ) = address(INEURON_ADDRESS).call{gas: gasleft()}(data);
+        require(success, "user burn register call failed");
     }
 }
