@@ -5,13 +5,16 @@
 export NETWORK=local
 export CONTRACT_ADDRESS=0x970951a12F975E6762482ACA81E57D5A2A4e73F4
 export HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000001
+export ALPHA_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000002
 export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
-export PRIVATE_KEY=0x
+export PRIVATE_KEY=0x5fb92d6e98884f76de468fa3f6278f8807c48bebc13595d45af5bdc4da702133
 # deposit
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
 --private-key "$PRIVATE_KEY" \
 --hotkey "$HOTKEY" \
 --amount 10 \
+--alpha-hotkey "$ALPHA_HOTKEY" \
+--alpha-amount 10 \
 --node-id "$NODE_ID"
 
 # check the node to miner, miner is not zero if deposit is successful

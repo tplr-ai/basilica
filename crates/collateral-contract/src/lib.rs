@@ -312,7 +312,36 @@ pub async fn slash_collateral(
 }
 
 // Get methods
+pub async fn get_version(network_config: &CollateralNetworkConfig) -> Result<U256, anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
+    let version = contract.getVersion().call().await?;
+    Ok(version)
+}
 
+pub async fn contract_coldkey(
+    network_config: &CollateralNetworkConfig,
+) -> Result<[u8; 32], anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
+    let coldkey = contract.CONTRACT_COLDKEY().call().await?;
+    Ok(coldkey.into())
+}
+
+pub async fn contract_hotkey(
+    network_config: &CollateralNetworkConfig,
+) -> Result<[u8; 32], anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
+    let hotkey = contract.CONTRACT_HOTKEY().call().await?;
+    Ok(hotkey.into())
+}
 pub async fn netuid(network_config: &CollateralNetworkConfig) -> Result<u16, anyhow::Error> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
@@ -392,6 +421,24 @@ pub async fn collaterals(
     Ok(collaterals)
 }
 
+pub async fn alpha_collaterals(
+    hotkey: [u8; 32],
+    node_id: [u8; 16],
+    network_config: &CollateralNetworkConfig,
+) -> Result<U256, anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
+    let collaterals = contract
+        .alphaCollaterals(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&node_id),
+        )
+        .call()
+        .await?;
+    Ok(collaterals)
+}
 pub async fn reclaims(
     reclaim_request_id: U256,
     network_config: &CollateralNetworkConfig,

@@ -269,6 +269,7 @@ CREATE TABLE IF NOT EXISTS collateral_status (
   node_id TEXT NOT NULL,
   miner TEXT NOT NULL,
   collateral TEXT NOT NULL,
+  alpha_collateral TEXT NOT NULL,
   url TEXT,
   url_content_md5_checksum TEXT,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,

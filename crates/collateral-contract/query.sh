@@ -9,5 +9,7 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query min-collateral-increase
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query decision-timeout
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query netuid
-
+collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query contract-coldkey
+collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query contract-hotkey
+collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query version
 

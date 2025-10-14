@@ -57,10 +57,14 @@ mod tests {
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
+        let alpha_hotkey: [u8; 32] = [2u8; 32];
+        let alpha_amount = U256::from(10);
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
+                FixedBytes::from_slice(&alpha_hotkey),
+                alpha_amount,
             )
             .value(amount);
         let deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
@@ -98,10 +102,14 @@ mod tests {
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
+        let alpha_hotkey: [u8; 32] = [2u8; 32];
+        let alpha_amount = U256::from(10);
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
+                FixedBytes::from_slice(&alpha_hotkey),
+                alpha_amount,
             )
             .value(amount);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
@@ -109,9 +117,11 @@ mod tests {
         // Start reclaim process
         let url = "example.com";
         let url_checksum = 123_u128;
+        let alpha_coldkey: [u8; 32] = [3u8; 32];
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
+            FixedBytes::from_slice(&alpha_coldkey),
             url.to_owned(),
             FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
@@ -152,10 +162,14 @@ mod tests {
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
+        let alpha_hotkey: [u8; 32] = [2u8; 32];
+        let alpha_amount = U256::from(10);
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
+                FixedBytes::from_slice(&alpha_hotkey),
+                alpha_amount,
             )
             .value(amount);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
@@ -163,9 +177,11 @@ mod tests {
         // Start reclaim process
         let url = "example.com";
         let url_checksum = 123_u128;
+        let alpha_coldkey: [u8; 32] = [3u8; 32];
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
+            FixedBytes::from_slice(&alpha_coldkey),
             url.to_owned(),
             FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );

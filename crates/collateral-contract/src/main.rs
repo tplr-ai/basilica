@@ -140,12 +140,18 @@ enum TxCommands {
 
 #[derive(Subcommand)]
 enum QueryCommands {
+    /// Get the contract version
+    Version,
     /// Get the network UID
     Netuid,
     /// Get the trustee address
     Trustee,
     /// Get the decision timeout
     DecisionTimeout,
+    /// Get the contract coldkey
+    ContractColdkey,
+    /// Get the contract hotkey
+    ContractHotkey,
     /// Get the minimum collateral increase
     MinCollateralIncrease,
     /// Get the miner address for an node
@@ -159,6 +165,14 @@ enum QueryCommands {
     },
     /// Get the collateral amount for an node
     Collaterals {
+        /// Hotkey as hex string (32 bytes)
+        #[arg(long)]
+        hotkey: String,
+        /// Node ID as string
+        #[arg(long)]
+        node_id: String,
+    },
+    AlphaCollaterals {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
@@ -358,6 +372,18 @@ async fn handle_query_command(
     network_config: &CollateralNetworkConfig,
 ) -> Result<()> {
     match cmd {
+        QueryCommands::Version => {
+            let result = collateral_contract::get_version(network_config).await?;
+            println!("Contract version: {}", result);
+        }
+        QueryCommands::ContractColdkey => {
+            let result = collateral_contract::contract_coldkey(network_config).await?;
+            println!("Contract coldkey: {}", hex::encode(result.as_slice()));
+        }
+        QueryCommands::ContractHotkey => {
+            let result = collateral_contract::contract_hotkey(network_config).await?;
+            println!("Contract hotkey: {}", hex::encode(result.as_slice()));
+        }
         QueryCommands::Netuid => {
             let result = collateral_contract::netuid(network_config).await?;
             println!("Network UID: {}", result);
@@ -398,6 +424,25 @@ async fn handle_query_command(
             .await?;
             println!("Collateral for executor {}: {} in wei", node_uuid, result);
             println!("Collateral for node {}: {} wei", node_id_clone, result);
+        }
+        QueryCommands::AlphaCollaterals { hotkey, node_id } => {
+            let hotkey_bytes = parse_hotkey(&hotkey)?;
+            let node_id_clone = node_id.clone();
+            let node_uuid = Uuid::parse_str(&node_id)?;
+            let result = collateral_contract::alpha_collaterals(
+                hotkey_bytes,
+                node_uuid.into_bytes(),
+                network_config,
+            )
+            .await?;
+            println!(
+                "Alpha collateral for executor {}: {} in wei",
+                node_uuid, result
+            );
+            println!(
+                "Alpha collateral for node {}: {} in wei",
+                node_id_clone, result
+            );
         }
         QueryCommands::Reclaims { reclaim_request_id } => {
             let request_id = parse_u256(&reclaim_request_id)?;

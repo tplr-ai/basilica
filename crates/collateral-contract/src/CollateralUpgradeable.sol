@@ -48,9 +48,6 @@ contract CollateralUpgradeable is
         return 1;
     }
 
-    mapping(bytes32 => mapping(bytes32 => mapping(uint256 => uint256)))
-        public stakes;
-
     // Role for upgrading the contract
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
 
