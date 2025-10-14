@@ -55,8 +55,6 @@ else
             echo ""
             echo "Options:"
             echo "  --help, -h           Show this help message"
-            echo "  --all                Run all tests in parallel"
-            echo "  --sequential         Run all tests sequentially"
             echo "  test_name            Run specific test (e.g., test_collateral_deposit_reclaim_finalize)"
             echo ""
             echo "Available tests:"
