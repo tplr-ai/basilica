@@ -342,6 +342,7 @@ pub async fn contract_hotkey(
     let hotkey = contract.CONTRACT_HOTKEY().call().await?;
     Ok(hotkey.into())
 }
+
 pub async fn netuid(network_config: &CollateralNetworkConfig) -> Result<u16, anyhow::Error> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
