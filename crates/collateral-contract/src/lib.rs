@@ -286,6 +286,7 @@ pub async fn deny_reclaim(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn slash_collateral(
     private_key: &str,
     hotkey: [u8; 32],
