@@ -136,6 +136,21 @@ enum TxCommands {
         #[arg(long)]
         url_content_md5_checksum: String,
     },
+    /// Set the contract coldkey
+    SetContractColdkey {
+        /// Private key for signing the transaction (hex string)
+        #[arg(long, env = "PRIVATE_KEY")]
+        private_key: String,
+        /// Alpha coldkey as hex string (32 bytes)
+        #[arg(long)]
+        alpha_coldkey: String,
+    },
+    /// Burn the register for the contract hotkey
+    BurnRegister {
+        /// Private key for signing the transaction (hex string)
+        #[arg(long, env = "PRIVATE_KEY")]
+        private_key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -362,6 +377,28 @@ async fn handle_tx_command(
             )
             .await?;
             println!("Slash collateral transaction completed successfully!");
+        }
+        TxCommands::SetContractColdkey {
+            private_key,
+            alpha_coldkey,
+        } => {
+            let alpha_coldkey_bytes = parse_hotkey(&alpha_coldkey)?;
+            println!(
+                "Setting contract coldkey to {}. Make sure the coldkey is the deployed proxy contract's mapped substrate public key",
+                hex::encode(alpha_coldkey_bytes.as_slice())
+            );
+            collateral_contract::set_contract_coldkey(
+                &private_key,
+                alpha_coldkey_bytes,
+                network_config,
+            )
+            .await?;
+            println!("Contract coldkey set successfully!");
+        }
+        TxCommands::BurnRegister { private_key } => {
+            println!("Burning register for the contract hotkey and contract coldkey");
+            collateral_contract::burn_register(&private_key, network_config).await?;
+            println!("Burn register transaction completed successfully!");
         }
     }
     Ok(())

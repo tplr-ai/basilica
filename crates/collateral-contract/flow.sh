@@ -1,13 +1,23 @@
 +#!/usr/bin/env bash
 +set -euo pipefail
 
-# the whole collateral flow to verify everything
+# the whole collateral flow to verify everything after deployment
 export NETWORK=local
 export CONTRACT_ADDRESS=0x970951a12F975E6762482ACA81E57D5A2A4e73F4
 export HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000001
 export ALPHA_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000002
+export CONTRACT_COLDKEY=0x0000000000000000000000000000000000000000000000000000000000000003
 export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 export PRIVATE_KEY=0x
+# set the contract coldkey
+collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx set-contract-coldkey \
+--private-key "$PRIVATE_KEY" \
+--alpha-coldkey "$CONTRACT_COLDKEY"
+
+# burn the register
+collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx burn-register \
+--private-key "$PRIVATE_KEY"
+
 # deposit
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
 --private-key "$PRIVATE_KEY" \

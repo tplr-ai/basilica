@@ -613,7 +613,7 @@ contract CollateralUpgradeableV2 is
         require(success, "user withdraw alpha call failed");
     }
 
-    function burnRegister() external payable {
+    function burnRegister() external onlyTrustee {
         bytes memory data = abi.encodeWithSelector(
             INeuron.burnedRegister.selector,
             NETUID,

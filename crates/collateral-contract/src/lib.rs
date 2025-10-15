@@ -311,6 +311,31 @@ pub async fn slash_collateral(
     Ok(())
 }
 
+pub async fn set_contract_coldkey(
+    private_key: &str,
+    alpha_coldkey: [u8; 32],
+    network_config: &CollateralNetworkConfig,
+) -> Result<(), anyhow::Error> {
+    let contract = get_collateral(private_key, network_config).await?;
+
+    let tx = contract.setContractColdkey(FixedBytes::from_slice(&alpha_coldkey));
+    let tx = tx.send().await?;
+    tx.get_receipt().await?;
+    Ok(())
+}
+
+pub async fn burn_register(
+    private_key: &str,
+    network_config: &CollateralNetworkConfig,
+) -> Result<(), anyhow::Error> {
+    let contract = get_collateral(private_key, network_config).await?;
+
+    let tx = contract.burnRegister();
+    let tx = tx.send().await?;
+    tx.get_receipt().await?;
+    Ok(())
+}
+
 // Get methods
 pub async fn get_version(network_config: &CollateralNetworkConfig) -> Result<U256, anyhow::Error> {
     let provider = ProviderBuilder::new()
