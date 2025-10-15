@@ -22,9 +22,9 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx bu
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
 --private-key "$PRIVATE_KEY" \
 --hotkey "$HOTKEY" \
---amount 10 \
+--slash-amount 10 \
 --alpha-hotkey "$ALPHA_HOTKEY" \
---alpha-amount 10 \
+--slash-alpha-amount 10 \
 --node-id "$NODE_ID"
 
 # check the node to miner, miner is not zero if deposit is successful
@@ -80,8 +80,8 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx sl
 --private-key "$PRIVATE_KEY" \
 --hotkey "$HOTKEY" \
 --node-id "$NODE_ID" \
---amount 10 \
---alpha-amount 10 \
+--slash-amount 10 \
+--slash-alpha-amount 10 \
 --url https://www.tplr.ai/ \
 --url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
 

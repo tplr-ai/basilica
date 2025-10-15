@@ -180,9 +180,9 @@ You need replace the variable with the correct value like contract address.
   collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
   --private-key "$PRIVATE_KEY" \
   --hotkey "$HOTKEY" \
-  --amount 10 \
+  --slash-amount 10 \
   --alpha-hotkey "$ALPHA_HOTKEY" \
-  --alpha-amount 10 \
+  --slah-alpha-amount 10 \
   --node-id "$node_ID"
   ```
 
