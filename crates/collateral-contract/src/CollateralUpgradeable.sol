@@ -241,6 +241,10 @@ contract CollateralUpgradeable is
 
         uint256 actualAlphaAmount = alphaAmount;
         if (alphaAmount > 0) {
+            require(
+                CONTRACT_COLDKEY != bytes32(0),
+                "contract coldkey must be non-zero"
+            );
             actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
             alphaCollaterals[hotkey][nodeId] += actualAlphaAmount;
         }

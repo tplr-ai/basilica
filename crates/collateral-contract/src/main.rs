@@ -124,10 +124,10 @@ enum TxCommands {
         #[arg(long)]
         node_id: String,
         /// Amount to slash in wei
-        #[arg(long)]
+        #[arg(long = "slash-amount")]
         amount: String,
         /// Amount to slash alpha in wei
-        #[arg(long)]
+        #[arg(long = "slash-alpha-amount")]
         alpha_amount: String,
         /// URL for proof of slashing
         #[arg(long)]
@@ -459,7 +459,6 @@ async fn handle_query_command(
                 network_config,
             )
             .await?;
-            println!("Collateral for executor {}: {} in wei", node_uuid, result);
             println!("Collateral for node {}: {} wei", node_id_clone, result);
         }
         QueryCommands::AlphaCollaterals { hotkey, node_id } => {

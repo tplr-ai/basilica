@@ -13,14 +13,14 @@ interface IStaking {
         uint256 netuid1,
         uint256 netuid2,
         uint256 amount
-    ) external;
+    ) external payable;
     function moveStake(
         bytes32 hotkey1,
         bytes32 hotkey2,
         uint256 netuid1,
         uint256 netuid2,
         uint256 amount
-    ) external;
+    ) external payable;
     function getStake(
         bytes32 hotkey,
         bytes32 coldkey,
@@ -30,7 +30,6 @@ interface IStaking {
 
 interface INeuron {
     function burnedRegister(uint16 netuid, bytes32 hotkey) external payable;
-    function dummy() external payable;
 }
 
 contract CollateralUpgradeableV2 is
@@ -47,9 +46,6 @@ contract CollateralUpgradeableV2 is
     function getVersion() external pure virtual returns (uint256) {
         return 2;
     }
-
-    mapping(bytes32 => mapping(bytes32 => mapping(uint256 => uint256)))
-        public stakes;
 
     // Role for upgrading the contract
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
@@ -244,6 +240,10 @@ contract CollateralUpgradeableV2 is
 
         uint256 actualAlphaAmount = 0;
         if (alphaAmount > 0) {
+            require(
+                CONTRACT_COLDKEY != bytes32(0),
+                "contract coldkey must be set"
+            );
             actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
             alphaCollaterals[hotkey][nodeId] += actualAlphaAmount;
         }
@@ -338,7 +338,7 @@ contract CollateralUpgradeableV2 is
     /// @dev Reverts with TransferFailed if the TAO transfer fails
     function finalizeReclaim(uint256 reclaimRequestId) external {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
-        if (reclaim.amount == 0) {
+        if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
         }
         if (reclaim.denyTimeout >= block.timestamp) {
@@ -367,10 +367,14 @@ contract CollateralUpgradeableV2 is
         }
 
         if (reclaim.alphaAmount > 0) {
+            alphaCollaterals[hotkey][nodeId] -= reclaim.alphaAmount;
             withdrawAlpha(reclaim.alphaColdkey, reclaim.alphaAmount);
         }
 
-        if (collaterals[hotkey][nodeId] == 0 && reclaim.alphaAmount == 0) {
+        if (
+            collaterals[hotkey][nodeId] == 0 &&
+            alphaCollaterals[hotkey][nodeId] == 0
+        ) {
             nodeToMiner[hotkey][nodeId] = address(0);
         }
 
