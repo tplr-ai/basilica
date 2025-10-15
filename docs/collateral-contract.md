@@ -182,7 +182,7 @@ You need replace the variable with the correct value like contract address.
   --hotkey "$HOTKEY" \
   --slash-amount 10 \
   --alpha-hotkey "$ALPHA_HOTKEY" \
-  --slah-alpha-amount 10 \
+  --slash-alpha-amount 10 \
   --node-id "$node_ID"
   ```
 
