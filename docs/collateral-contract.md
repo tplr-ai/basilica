@@ -108,29 +108,29 @@ Below is a typical sequence for integrating and using this collateral contract w
   - The owner **publishes the contract address** on-chain, allowing miners to discover and verify it.
   - Once ready, the owner **enables collateral-required mode** and prioritizes miners based on their locked amounts.
 
-- **Owner set the contract coldkey**
+- **Set the contract coldkey**
 
-  - The owner get the contract address of deployed proxy contract
-  - Convert the contract address to substrate account public key
-  - The owner call **setContractColdkey** to set the coldkey value in contract
+  - Retrieve the deployed proxy contract address.
+  - Convert the contract address to a Substrate account public key.
+  - Call **setContractColdkey(...)** to set the coldkey in the contract.
 
-- **Owner call burned register to do neuron registration**
+- **Register the neuron (burnedRegister)**
 
-  - The owner **call burnedRegister** to register neuron with configured hotkey and coldkey in contract
-  - After successful registration, the proxy will be the owner (as coldkey) of hotkey in bittensor network
-  - Later, contract can do **transferStake** via precompile
+  - Call **burnedRegister(...)** to register the neuron with the configured hotkey and the coldkey stored in the contract.
+  - After successful registration, the proxy becomes the owner (coldkey) of the hotkey in the Bittensor network.
+  - The contract can later perform **transferStake** via the precompile.
 
-- **Miner Deposit**
+* **Miner Deposit**
 
   - Each miner **creates an Ethereum (H160) wallet**, links it to their hotkey, and funds it with enough TAO for transaction fees.
   - Miners **retrieve** the owner's contract address from the chain or another trusted source.
   - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(nodeUuid)` function, specifying the **GPU node UUID** (labeled as "node UUID" in the contract interface) to associate the collateral with specific GPU nodes.
   - Confirm on-chain that your collateral has been successfully locked for that GPU node
 
-- **Slashing Misbehaving Miners**
+* **Slashing Misbehaving Miners**
   If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` with the `miner`, `slashAmount`, `nodeUuid`, and justification details to reduce the miner’s collateral.
 
-- **Reclaiming Collateral**
+* **Reclaiming Collateral**
   - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **GPU node UUID** (labeled as "node UUID" in the contract) associated with the collateral.
   - If the validator does not deny the request before the deadline, miners (or anyone) can **finalize** it using `finalizeReclaim()`, thus unlocking and returning the collateral.
 
