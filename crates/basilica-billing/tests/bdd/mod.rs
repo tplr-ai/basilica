@@ -115,7 +115,7 @@ impl TestContext {
             "TRUNCATE TABLE billing.user_preferences CASCADE",
             "TRUNCATE TABLE billing.credits CASCADE",
             "TRUNCATE TABLE billing.users CASCADE",
-            "DELETE FROM billing.billing_packages WHERE package_id NOT IN ('h100', 'h200', 'a100', 'custom')",
+            "DELETE FROM billing.billing_packages WHERE package_id NOT IN ('h100', 'h200', 'a100', 'b200', 'custom')",
         ];
 
         for query in queries {
@@ -124,17 +124,28 @@ impl TestContext {
     }
 
     async fn seed_test_data(pool: &Pool<Postgres>) {
-        // Test packages matching production pricing from migration 005_billing_packages.sql
-        // h100: $3.50/hour (production default)
-        // h200: $5.00/hour (production)
-        // custom: $0.00/hour (production - for custom deals)
-        // a100: Test-only package for additional coverage
+        // Test packages matching production pricing from migration 021_update_gpu_pricing.sql
+        // a100: $1.80/hour (reduced from $2.50)
+        // h100: $2.50/hour (reduced from $3.50)
+        // h200: $3.75/hour (reduced from $5.00)
+        // b200: $11.00/hour (reduced from $15.00)
+        // custom: deprecated (inactive)
         let packages = vec![
+            (
+                "a100",
+                "NVIDIA A100",
+                "80",
+                "1.8",
+                "0.0",
+                "0.0",
+                "0.0",
+                true,
+            ),
             (
                 "h100",
                 "NVIDIA H100",
                 "80",
-                "3.5", // Matches production pricing
+                "2.5",
                 "0.0",
                 "0.0",
                 "0.0",
@@ -144,17 +155,17 @@ impl TestContext {
                 "h200",
                 "NVIDIA H200",
                 "141",
-                "5.0", // Matches production pricing
+                "3.75",
                 "0.0",
                 "0.0",
                 "0.0",
                 true,
             ),
             (
-                "a100",
-                "NVIDIA A100",
-                "40",
-                "2.5", // Test-only package for coverage
+                "b200",
+                "NVIDIA B200",
+                "192",
+                "11.0",
                 "0.0",
                 "0.0",
                 "0.0",
@@ -164,11 +175,11 @@ impl TestContext {
                 "custom",
                 "Custom Configuration",
                 "0",
-                "0.0", // Matches production pricing (free/custom deals)
                 "0.0",
                 "0.0",
                 "0.0",
-                true,
+                "0.0",
+                false,
             ),
         ];
 
@@ -176,8 +187,10 @@ impl TestContext {
             packages
         {
             let description = match id {
+                "a100" => "NVIDIA A100 GPU package for general-purpose AI/ML workloads",
                 "h100" => "High-performance NVIDIA H100 GPU package for demanding workloads",
                 "h200" => "Next-gen NVIDIA H200 GPU package with increased memory for AI/ML",
+                "b200" => "Cutting-edge NVIDIA B200 GPU package with Blackwell architecture",
                 "custom" => "Custom GPU configuration tailored to your specific requirements",
                 _ => "GPU compute package",
             };
