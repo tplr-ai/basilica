@@ -635,9 +635,18 @@ mod tests {
 
     #[test]
     fn test_package_id_from_gpu_model_rtx_a4000() {
-        assert_eq!(PackageId::from_gpu_model("RTX A4000"), PackageId::rtx_a4000());
-        assert_eq!(PackageId::from_gpu_model("NVIDIA RTX A4000"), PackageId::rtx_a4000());
-        assert_eq!(PackageId::from_gpu_model("rtx a4000"), PackageId::rtx_a4000());
+        assert_eq!(
+            PackageId::from_gpu_model("RTX A4000"),
+            PackageId::rtx_a4000()
+        );
+        assert_eq!(
+            PackageId::from_gpu_model("NVIDIA RTX A4000"),
+            PackageId::rtx_a4000()
+        );
+        assert_eq!(
+            PackageId::from_gpu_model("rtx a4000"),
+            PackageId::rtx_a4000()
+        );
     }
 
     #[test]
