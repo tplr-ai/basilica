@@ -38,7 +38,7 @@ WHERE
 -- Add new GPU packages following the same pattern
 INSERT INTO billing.billing_packages
   (package_id, name, description, hourly_rate, gpu_model,
-   billing_period, priority, active, metadata,
+   billing_period, priority, is_active, metadata,
    base_rate_per_hour, cpu_rate_per_hour, disk_iops_rate,
    storage_rate_per_gb_hour, network_rate_per_gb, disk_io_rate_per_gb,
    cpu_rate_per_core_hour, memory_rate_per_gb_hour,
@@ -188,7 +188,7 @@ ON CONFLICT (package_id) DO UPDATE SET
   hourly_rate = EXCLUDED.hourly_rate,
   gpu_model = EXCLUDED.gpu_model,
   priority = EXCLUDED.priority,
-  active = EXCLUDED.active,
+  is_active = EXCLUDED.is_active,
   metadata = EXCLUDED.metadata,
   base_rate_per_hour = EXCLUDED.base_rate_per_hour,
   cpu_rate_per_hour = EXCLUDED.cpu_rate_per_hour,

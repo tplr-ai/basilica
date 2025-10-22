@@ -226,10 +226,6 @@ impl PackageId {
             Self::h100()
         } else if model_lower.contains("a100") {
             Self::a100()
-        } else if model_lower.contains("a40") {
-            Self::a40()
-        } else if model_lower.contains("a30") {
-            Self::a30()
         } else if model_lower.contains("rtx 5090") || model_lower.contains("geforce rtx 5090") {
             Self::rtx_5090()
         } else if model_lower.contains("rtx 4090") || model_lower.contains("geforce rtx 4090") {
@@ -254,6 +250,10 @@ impl PackageId {
             Self::rtx_a4500()
         } else if model_lower.contains("rtx a4000") {
             Self::rtx_a4000()
+        } else if model_lower.contains("a40") {
+            Self::a40()
+        } else if model_lower.contains("a30") {
+            Self::a30()
         } else if model_lower.contains("rtx 3090") || model_lower.contains("geforce rtx 3090") {
             Self::rtx_3090()
         } else {
@@ -631,5 +631,28 @@ mod tests {
     fn test_rental_id_from_str_invalid_with_prefix() {
         let invalid_str = "rental-not-a-uuid";
         assert!(RentalId::from_str(invalid_str).is_err());
+    }
+
+    #[test]
+    fn test_package_id_from_gpu_model_rtx_a4000() {
+        assert_eq!(PackageId::from_gpu_model("RTX A4000"), PackageId::rtx_a4000());
+        assert_eq!(PackageId::from_gpu_model("NVIDIA RTX A4000"), PackageId::rtx_a4000());
+        assert_eq!(PackageId::from_gpu_model("rtx a4000"), PackageId::rtx_a4000());
+    }
+
+    #[test]
+    fn test_package_id_from_gpu_model_a40() {
+        assert_eq!(PackageId::from_gpu_model("A40"), PackageId::a40());
+        assert_eq!(PackageId::from_gpu_model("NVIDIA A40"), PackageId::a40());
+        assert_eq!(PackageId::from_gpu_model("a40"), PackageId::a40());
+    }
+
+    #[test]
+    fn test_package_id_from_gpu_model_a4000_vs_a40() {
+        let rtx_a4000_result = PackageId::from_gpu_model("RTX A4000");
+        let a40_result = PackageId::from_gpu_model("A40");
+        assert_ne!(rtx_a4000_result, a40_result);
+        assert_eq!(rtx_a4000_result, PackageId::rtx_a4000());
+        assert_eq!(a40_result, PackageId::a40());
     }
 }
