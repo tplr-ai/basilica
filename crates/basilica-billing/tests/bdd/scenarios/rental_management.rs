@@ -4,6 +4,7 @@ use basilica_protocol::billing::{
     ReleaseReservationRequest, RentalStatus, ResourceSpec, TrackRentalRequest,
     UpdateRentalStatusRequest,
 };
+use std::str::FromStr;
 use uuid::Uuid;
 
 // Helper function to convert hours to protobuf Duration
@@ -63,8 +64,8 @@ async fn test_track_rental_creates_new_rental_with_reservation() {
         "Should return reservation ID"
     );
     assert_eq!(
-        response.estimated_cost, "60",
-        "Estimated cost should be 2.5 * 24 (H100 package rate)"
+        response.estimated_cost, "26.64",
+        "Estimated cost should be 1.11 * 24 (H100 package rate)"
     );
 
     assert!(
@@ -79,7 +80,7 @@ async fn test_track_rental_creates_new_rental_with_reservation() {
     let reserved = context.get_reserved_balance(user_id).await;
     assert_eq!(
         reserved,
-        rust_decimal::Decimal::from(60),
+        rust_decimal::Decimal::from_str("26.64").unwrap(),
         "Should reserve estimated cost"
     );
 
@@ -391,8 +392,8 @@ async fn test_finalize_rental_charges_correct_amount() {
     let reserved_amount = context.get_reserved_balance(user_id).await;
     assert_eq!(
         reserved_amount,
-        rust_decimal::Decimal::from(25),
-        "Should reserve 2.5 * 10 (H100 package rate)"
+        rust_decimal::Decimal::from_str("11.1").unwrap(),
+        "Should reserve 1.11 * 10 (H100 package rate)"
     );
 
     let activate_request = UpdateRentalStatusRequest {
@@ -412,7 +413,7 @@ async fn test_finalize_rental_charges_correct_amount() {
 
     let finalize_request = FinalizeRentalRequest {
         rental_id: track_response.tracking_id.clone(),
-        final_cost: "25.0".to_string(),
+        final_cost: "11.1".to_string(),
         end_time: None,
         termination_reason: String::new(),
     };
@@ -426,20 +427,23 @@ async fn test_finalize_rental_charges_correct_amount() {
 
     assert!(finalize_response.success, "Finalization should succeed");
     assert_eq!(
-        finalize_response.total_cost, "25",
+        finalize_response.total_cost, "11.1",
         "Total cost should match requested"
     );
-    assert_eq!(finalize_response.charged_amount, "25", "Should charge 25");
+    assert_eq!(
+        finalize_response.charged_amount, "11.1",
+        "Should charge 11.1"
+    );
     assert_eq!(
         finalize_response.refunded_amount, "0",
-        "Should refund 0 (25 - 25)"
+        "Should refund 0 (11.1 - 11.1)"
     );
 
     let final_balance = context.get_user_balance(user_id).await;
-    let expected_balance = initial_balance - rust_decimal::Decimal::from(25);
+    let expected_balance = initial_balance - rust_decimal::Decimal::from_str("11.1").unwrap();
     assert_eq!(
         final_balance, expected_balance,
-        "Balance should be reduced by 25"
+        "Balance should be reduced by 11.1"
     );
 
     let final_reserved = context.get_reserved_balance(user_id).await;

@@ -345,7 +345,7 @@ async fn test_event_metadata_preserved() {
 
     assert_eq!(
         event.3.get("hourly_rate").and_then(|v| v.as_str()),
-        Some("2.5"),
+        Some("1.11"),
         "Hourly rate should be H100 package rate in event data"
     );
 

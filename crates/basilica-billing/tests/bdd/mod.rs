@@ -124,18 +124,18 @@ impl TestContext {
     }
 
     async fn seed_test_data(pool: &Pool<Postgres>) {
-        // Test packages matching production pricing from migration 021_update_gpu_pricing.sql
-        // a100: $1.80/hour (reduced from $2.50)
-        // h100: $2.50/hour (reduced from $3.50)
-        // h200: $3.75/hour (reduced from $5.00)
-        // b200: $11.00/hour (reduced from $15.00)
+        // Test packages matching production pricing from migration 022_update_gpu_pricing.sql
+        // a100: $0.36/hour (lowest among A100 variants)
+        // h100: $1.11/hour (lowest among H100 variants)
+        // h200: $1.90/hour
+        // b200: $2.99/hour
         // custom: deprecated (inactive)
         let packages = vec![
             (
                 "a100",
                 "NVIDIA A100",
                 "80",
-                "1.8",
+                "0.36",
                 "0.0",
                 "0.0",
                 "0.0",
@@ -145,7 +145,7 @@ impl TestContext {
                 "h100",
                 "NVIDIA H100",
                 "80",
-                "2.5",
+                "1.11",
                 "0.0",
                 "0.0",
                 "0.0",
@@ -155,7 +155,7 @@ impl TestContext {
                 "h200",
                 "NVIDIA H200",
                 "141",
-                "3.75",
+                "1.90",
                 "0.0",
                 "0.0",
                 "0.0",
@@ -165,7 +165,7 @@ impl TestContext {
                 "b200",
                 "NVIDIA B200",
                 "192",
-                "11.0",
+                "2.99",
                 "0.0",
                 "0.0",
                 "0.0",

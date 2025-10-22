@@ -231,7 +231,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
         let usage = UsageMetrics {
@@ -245,7 +245,7 @@ mod tests {
         };
 
         let cost = package.calculate_cost(&usage);
-        assert_eq!(cost.total_cost, CreditBalance::from_f64(25.0).unwrap());
+        assert_eq!(cost.total_cost, CreditBalance::from_f64(11.1).unwrap());
     }
 
     #[test]
@@ -254,7 +254,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -282,7 +282,7 @@ mod tests {
 
         let cost = package.calculate_cost(&usage);
 
-        let expected_base = CreditBalance::from_f64(25.0).unwrap();
+        let expected_base = CreditBalance::from_f64(11.1).unwrap();
 
         assert_eq!(cost.base_cost, expected_base);
         assert_eq!(cost.usage_cost, CreditBalance::zero());
@@ -295,7 +295,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -323,7 +323,7 @@ mod tests {
 
         let cost = package.calculate_cost(&usage);
 
-        let expected_base = CreditBalance::from_f64(25.0).unwrap();
+        let expected_base = CreditBalance::from_f64(11.1).unwrap();
         assert_eq!(cost.base_cost, expected_base);
         assert_eq!(cost.usage_cost, CreditBalance::zero());
         assert_eq!(cost.total_cost, expected_base);
@@ -335,7 +335,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -351,7 +351,7 @@ mod tests {
 
         let cost = package.calculate_cost(&usage);
 
-        let expected_base = CreditBalance::from_f64(25.0).unwrap();
+        let expected_base = CreditBalance::from_f64(11.1).unwrap();
         assert_eq!(cost.base_cost, expected_base);
         assert_eq!(cost.usage_cost, CreditBalance::zero());
         assert_eq!(cost.total_cost, expected_base);
@@ -363,7 +363,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -391,7 +391,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -412,7 +412,7 @@ mod tests {
 
         let cost = package.calculate_cost(&usage);
 
-        let expected_base = CreditBalance::from_f64(25.0).unwrap();
+        let expected_base = CreditBalance::from_f64(11.1).unwrap();
 
         assert_eq!(cost.base_cost, expected_base);
         assert_eq!(cost.usage_cost, CreditBalance::zero());
@@ -427,7 +427,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -446,7 +446,7 @@ mod tests {
 
         let cost = package.calculate_cost(&usage);
 
-        let expected_base = CreditBalance::from_f64(1.25).unwrap();
+        let expected_base = CreditBalance::from_f64(0.555).unwrap();
         assert_eq!(cost.base_cost, expected_base);
     }
 
@@ -456,7 +456,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -467,8 +467,8 @@ mod tests {
         let breakdown = package.calculate_cost_with_gpu_count(&usage, 1);
 
         assert_eq!(breakdown.volume_discount, CreditBalance::zero());
-        assert_eq!(breakdown.base_cost, CreditBalance::from_f64(2.5).unwrap());
-        assert_eq!(breakdown.total_cost, CreditBalance::from_f64(2.5).unwrap());
+        assert_eq!(breakdown.base_cost, CreditBalance::from_f64(1.11).unwrap());
+        assert_eq!(breakdown.total_cost, CreditBalance::from_f64(1.11).unwrap());
     }
 
     #[test]
@@ -477,7 +477,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -486,12 +486,15 @@ mod tests {
 
         let breakdown = package.calculate_cost_with_gpu_count(&usage, 2);
 
-        let expected_raw = CreditBalance::from_f64(5.0).unwrap();
-        let expected_discount = CreditBalance::from_f64(0.5).unwrap();
+        let expected_raw = CreditBalance::from_f64(2.22).unwrap();
+        let expected_discount = CreditBalance::from_f64(0.222).unwrap();
 
         assert_eq!(breakdown.base_cost, expected_raw);
         assert_eq!(breakdown.volume_discount, expected_discount);
-        assert_eq!(breakdown.total_cost, CreditBalance::from_f64(4.5).unwrap());
+        assert_eq!(
+            breakdown.total_cost,
+            CreditBalance::from_f64(1.998).unwrap()
+        );
     }
 
     #[test]
@@ -500,7 +503,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -509,12 +512,15 @@ mod tests {
 
         let breakdown = package.calculate_cost_with_gpu_count(&usage, 4);
 
-        let expected_raw = CreditBalance::from_f64(10.0).unwrap();
-        let expected_discount = CreditBalance::from_f64(1.0).unwrap();
+        let expected_raw = CreditBalance::from_f64(4.44).unwrap();
+        let expected_discount = CreditBalance::from_f64(0.444).unwrap();
 
         assert_eq!(breakdown.base_cost, expected_raw);
         assert_eq!(breakdown.volume_discount, expected_discount);
-        assert_eq!(breakdown.total_cost, CreditBalance::from_f64(9.0).unwrap());
+        assert_eq!(
+            breakdown.total_cost,
+            CreditBalance::from_f64(3.996).unwrap()
+        );
     }
 
     #[test]
@@ -523,7 +529,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -532,12 +538,15 @@ mod tests {
 
         let breakdown = package.calculate_cost_with_gpu_count(&usage, 8);
 
-        let expected_raw = CreditBalance::from_f64(20.0).unwrap();
-        let expected_discount = CreditBalance::from_f64(2.0).unwrap();
+        let expected_raw = CreditBalance::from_f64(8.88).unwrap();
+        let expected_discount = CreditBalance::from_f64(0.888).unwrap();
 
         assert_eq!(breakdown.base_cost, expected_raw);
         assert_eq!(breakdown.volume_discount, expected_discount);
-        assert_eq!(breakdown.total_cost, CreditBalance::from_f64(18.0).unwrap());
+        assert_eq!(
+            breakdown.total_cost,
+            CreditBalance::from_f64(7.992).unwrap()
+        );
     }
 
     #[test]
@@ -546,7 +555,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -559,9 +568,9 @@ mod tests {
 
         let breakdown = package.calculate_cost_with_gpu_count(&usage, 4);
 
-        let expected_raw = CreditBalance::from_f64(10.0).unwrap();
-        let expected_discount = CreditBalance::from_f64(1.0).unwrap();
-        let expected_total = CreditBalance::from_f64(9.0).unwrap();
+        let expected_raw = CreditBalance::from_f64(4.44).unwrap();
+        let expected_discount = CreditBalance::from_f64(0.444).unwrap();
+        let expected_total = CreditBalance::from_f64(3.996).unwrap();
 
         assert_eq!(breakdown.base_cost, expected_raw);
         assert_eq!(breakdown.volume_discount, expected_discount);
@@ -575,7 +584,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -585,7 +594,7 @@ mod tests {
         let breakdown = package.calculate_cost_with_gpu_count(&usage, 0);
 
         assert_eq!(breakdown.volume_discount, CreditBalance::zero());
-        assert_eq!(breakdown.base_cost, CreditBalance::from_f64(2.5).unwrap());
+        assert_eq!(breakdown.base_cost, CreditBalance::from_f64(1.11).unwrap());
     }
 
     #[test]
@@ -594,7 +603,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -604,8 +613,8 @@ mod tests {
         let breakdown_8gpu = package.calculate_cost_with_gpu_count(&usage, 8);
         let breakdown_1gpu = package.calculate_cost_with_gpu_count(&usage, 1);
 
-        let expected_raw_8gpu = CreditBalance::from_f64(20.0).unwrap();
-        let expected_discount_8gpu = CreditBalance::from_f64(2.0).unwrap();
+        let expected_raw_8gpu = CreditBalance::from_f64(8.88).unwrap();
+        let expected_discount_8gpu = CreditBalance::from_f64(0.888).unwrap();
 
         assert_eq!(breakdown_8gpu.base_cost, expected_raw_8gpu);
         assert_eq!(breakdown_8gpu.volume_discount, expected_discount_8gpu);
@@ -618,7 +627,7 @@ mod tests {
             PackageId::h100(),
             "H100 GPU".to_string(),
             "NVIDIA H100 GPU instances with extras".to_string(),
-            CreditBalance::from_f64(2.5).unwrap(),
+            CreditBalance::from_f64(1.11).unwrap(),
             "H100".to_string(),
         );
 
@@ -646,7 +655,7 @@ mod tests {
 
         let cost = package.calculate_cost(&usage);
 
-        let expected_base = CreditBalance::from_f64(250.0).unwrap();
+        let expected_base = CreditBalance::from_f64(111.0).unwrap();
 
         assert_eq!(cost.base_cost, expected_base);
         assert_eq!(cost.usage_cost, CreditBalance::zero());

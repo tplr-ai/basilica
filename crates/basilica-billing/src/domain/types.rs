@@ -112,12 +112,84 @@ impl PackageId {
         Self(id)
     }
 
+    pub fn a100() -> Self {
+        Self("a100".to_string())
+    }
+
     pub fn h100() -> Self {
         Self("h100".to_string())
     }
 
     pub fn h200() -> Self {
         Self("h200".to_string())
+    }
+
+    pub fn h800() -> Self {
+        Self("h800".to_string())
+    }
+
+    pub fn b200() -> Self {
+        Self("b200".to_string())
+    }
+
+    pub fn rtx_5090() -> Self {
+        Self("rtx_5090".to_string())
+    }
+
+    pub fn rtx_4090() -> Self {
+        Self("rtx_4090".to_string())
+    }
+
+    pub fn rtx_ada_6000() -> Self {
+        Self("rtx_ada_6000".to_string())
+    }
+
+    pub fn rtx_ada_4000() -> Self {
+        Self("rtx_ada_4000".to_string())
+    }
+
+    pub fn rtx_ada_2000() -> Self {
+        Self("rtx_ada_2000".to_string())
+    }
+
+    pub fn l40s() -> Self {
+        Self("l40s".to_string())
+    }
+
+    pub fn l40() -> Self {
+        Self("l40".to_string())
+    }
+
+    pub fn l4() -> Self {
+        Self("l4".to_string())
+    }
+
+    pub fn rtx_a6000() -> Self {
+        Self("rtx_a6000".to_string())
+    }
+
+    pub fn rtx_a5000() -> Self {
+        Self("rtx_a5000".to_string())
+    }
+
+    pub fn rtx_a4500() -> Self {
+        Self("rtx_a4500".to_string())
+    }
+
+    pub fn rtx_a4000() -> Self {
+        Self("rtx_a4000".to_string())
+    }
+
+    pub fn a40() -> Self {
+        Self("a40".to_string())
+    }
+
+    pub fn a30() -> Self {
+        Self("a30".to_string())
+    }
+
+    pub fn rtx_3090() -> Self {
+        Self("rtx_3090".to_string())
     }
 
     pub fn custom() -> Self {
@@ -143,10 +215,47 @@ impl PackageId {
 
     pub fn from_gpu_model(gpu_model: &str) -> Self {
         let model_lower = gpu_model.to_lowercase();
-        if model_lower.contains("h100") {
-            Self::h100()
+
+        if model_lower.contains("b200") {
+            Self::b200()
         } else if model_lower.contains("h200") {
             Self::h200()
+        } else if model_lower.contains("h800") {
+            Self::h800()
+        } else if model_lower.contains("h100") {
+            Self::h100()
+        } else if model_lower.contains("a100") {
+            Self::a100()
+        } else if model_lower.contains("a40") {
+            Self::a40()
+        } else if model_lower.contains("a30") {
+            Self::a30()
+        } else if model_lower.contains("rtx 5090") || model_lower.contains("geforce rtx 5090") {
+            Self::rtx_5090()
+        } else if model_lower.contains("rtx 4090") || model_lower.contains("geforce rtx 4090") {
+            Self::rtx_4090()
+        } else if model_lower.contains("rtx 6000 ada") {
+            Self::rtx_ada_6000()
+        } else if model_lower.contains("rtx 4000 ada") {
+            Self::rtx_ada_4000()
+        } else if model_lower.contains("rtx 2000 ada") {
+            Self::rtx_ada_2000()
+        } else if model_lower.contains("l40s") {
+            Self::l40s()
+        } else if model_lower.contains("l40") {
+            Self::l40()
+        } else if model_lower.contains("l4") {
+            Self::l4()
+        } else if model_lower.contains("rtx a6000") {
+            Self::rtx_a6000()
+        } else if model_lower.contains("rtx a5000") {
+            Self::rtx_a5000()
+        } else if model_lower.contains("rtx a4500") {
+            Self::rtx_a4500()
+        } else if model_lower.contains("rtx a4000") {
+            Self::rtx_a4000()
+        } else if model_lower.contains("rtx 3090") || model_lower.contains("geforce rtx 3090") {
+            Self::rtx_3090()
         } else {
             Self::custom()
         }
