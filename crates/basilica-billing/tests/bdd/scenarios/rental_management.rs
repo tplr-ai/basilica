@@ -63,8 +63,8 @@ async fn test_track_rental_creates_new_rental_with_reservation() {
         "Should return reservation ID"
     );
     assert_eq!(
-        response.estimated_cost, "84",
-        "Estimated cost should be 3.5 * 24 (H100 package rate)"
+        response.estimated_cost, "60",
+        "Estimated cost should be 2.5 * 24 (H100 package rate)"
     );
 
     assert!(
@@ -79,7 +79,7 @@ async fn test_track_rental_creates_new_rental_with_reservation() {
     let reserved = context.get_reserved_balance(user_id).await;
     assert_eq!(
         reserved,
-        rust_decimal::Decimal::from(84),
+        rust_decimal::Decimal::from(60),
         "Should reserve estimated cost"
     );
 
@@ -391,8 +391,8 @@ async fn test_finalize_rental_charges_correct_amount() {
     let reserved_amount = context.get_reserved_balance(user_id).await;
     assert_eq!(
         reserved_amount,
-        rust_decimal::Decimal::from(35),
-        "Should reserve 3.5 * 10 (H100 package rate)"
+        rust_decimal::Decimal::from(25),
+        "Should reserve 2.5 * 10 (H100 package rate)"
     );
 
     let activate_request = UpdateRentalStatusRequest {
@@ -431,8 +431,8 @@ async fn test_finalize_rental_charges_correct_amount() {
     );
     assert_eq!(finalize_response.charged_amount, "25", "Should charge 25");
     assert_eq!(
-        finalize_response.refunded_amount, "10",
-        "Should refund 10 (35 - 25)"
+        finalize_response.refunded_amount, "0",
+        "Should refund 0 (25 - 25)"
     );
 
     let final_balance = context.get_user_balance(user_id).await;
