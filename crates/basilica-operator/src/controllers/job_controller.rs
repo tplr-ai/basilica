@@ -144,6 +144,59 @@ fn build_security_contexts() -> (Option<PodSecurityContext>, Option<SecurityCont
     (pod_sc, container_sc)
 }
 
+fn build_fuse_wait_init_container(mount_path: &str) -> Container {
+    Container {
+        name: "wait-for-fuse".to_string(),
+        image: Some("busybox:1.36".to_string()),
+        command: Some(vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            format!(
+                r#"
+            echo "Waiting for FUSE mount at {}..."
+            for i in $(seq 1 60); do
+                if mountpoint -q {}; then
+                    echo "FUSE mount ready"
+                    exit 0
+                fi
+                echo "Waiting... ($i/60)"
+                sleep 1
+            done
+            echo "ERROR: FUSE mount not ready after 60s"
+            exit 1
+            "#,
+                mount_path, mount_path
+            ),
+        ]),
+        volume_mounts: Some(vec![VolumeMount {
+            name: "basilica-storage".to_string(),
+            mount_path: mount_path.to_string(),
+            mount_propagation: Some("HostToContainer".to_string()),
+            ..Default::default()
+        }]),
+        resources: Some(ResourceRequirements {
+            requests: Some(
+                vec![
+                    ("memory".to_string(), to_quantity("64Mi")),
+                    ("cpu".to_string(), to_quantity("50m")),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            limits: Some(
+                vec![
+                    ("memory".to_string(), to_quantity("128Mi")),
+                    ("cpu".to_string(), to_quantity("100m")),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            claims: None,
+        }),
+        ..Default::default()
+    }
+}
+
 // Phase 3: Added volume support for FUSE mounts
 pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
     let (pod_sc, container_sc) = build_security_contexts();
@@ -308,15 +361,13 @@ pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
                         ..Default::default()
                     }]),
                     security_context: Some(SecurityContext {
-                        privileged: Some(true), // Required for FUSE
+                        run_as_user: Some(0),
+                        run_as_non_root: Some(false),
+                        privileged: Some(true),
                         allow_privilege_escalation: Some(true),
                         capabilities: Some(Capabilities {
                             add: Some(vec!["SYS_ADMIN".into()]),
-                            ..Default::default()
-                        }),
-                        seccomp_profile: Some(SeccompProfile {
-                            type_: "RuntimeDefault".into(),
-                            localhost_profile: None,
+                            drop: None,
                         }),
                         ..Default::default()
                     }),
@@ -388,15 +439,23 @@ pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
     let volumes = if storage_mount_path.is_some() {
         Some(vec![Volume {
             name: "basilica-storage".into(),
-            empty_dir: Some(EmptyDirVolumeSource::default()),
+            empty_dir: Some(EmptyDirVolumeSource {
+                medium: Some("Memory".into()),
+                size_limit: Some(to_quantity("100Mi")),
+            }),
             ..Default::default()
         }])
     } else {
         None
     };
 
+    let init_containers = storage_mount_path
+        .as_ref()
+        .map(|mount_path| vec![build_fuse_wait_init_container(mount_path)]);
+
     let pod_spec = PodSpec {
         containers,
+        init_containers,
         volumes,
         restart_policy: Some("Never".into()),
         tolerations: Some(build_tolerations()),
