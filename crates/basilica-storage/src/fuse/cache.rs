@@ -231,6 +231,19 @@ impl PageCache {
         self.files.keys().cloned().collect()
     }
 
+    /// Remove a file from cache
+    pub async fn remove_file(&mut self, path: &str) -> Option<()> {
+        if let Some(file_lock) = self.files.remove(path) {
+            let file = file_lock.read().await;
+            for page in file.pages.values() {
+                self.current_size -= page.data.len();
+            }
+            Some(())
+        } else {
+            None
+        }
+    }
+
     /// Evict least recently used pages to make room
     async fn evict_pages(&mut self, needed: usize) {
         // Simple LRU eviction

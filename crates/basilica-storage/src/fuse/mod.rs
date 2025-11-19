@@ -7,5 +7,5 @@ pub mod sync_worker;
 
 pub use cache::{FileCache, FileMetadata, Page, PageCache, PAGE_SIZE};
 pub use dirty_tracker::{DirtyPageTracker, DirtyRegion};
-pub use filesystem::BasilicaFS;
+pub use filesystem::{BasilicaFS, SharedBasilicaFS};
 pub use sync_worker::{SyncStats, SyncWorker};
