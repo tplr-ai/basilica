@@ -710,6 +710,34 @@ spec:
                     type: string
                   memory:
                     type: string
+                  gpus:
+                    nullable: true
+                    properties:
+                      count:
+                        format: uint32
+                        maximum: 8.0
+                        minimum: 1.0
+                        type: integer
+                      model:
+                        items:
+                          type: string
+                        maxItems: 10
+                        minItems: 1
+                        type: array
+                      minCudaVersion:
+                        nullable: true
+                        pattern: ^\d+\.\d+$
+                        type: string
+                      minGpuMemoryGb:
+                        format: uint32
+                        maximum: 256.0
+                        minimum: 1.0
+                        nullable: true
+                        type: integer
+                    required:
+                    - count
+                    - model
+                    type: object
                 required:
                 - cpu
                 - memory
@@ -720,6 +748,69 @@ spec:
                 nullable: true
                 type: integer
               userId:
+                type: string
+              storage:
+                nullable: true
+                properties:
+                  ephemeral:
+                    nullable: true
+                    type: string
+                  persistent:
+                    nullable: true
+                    properties:
+                      enabled:
+                        type: boolean
+                      backend:
+                        enum:
+                        - r2
+                        - s3
+                        - gcs
+                        type: string
+                      bucket:
+                        type: string
+                      region:
+                        nullable: true
+                        type: string
+                      endpoint:
+                        nullable: true
+                        type: string
+                      credentialsSecret:
+                        nullable: true
+                        type: string
+                      syncIntervalMs:
+                        default: 1000
+                        format: uint64
+                        maximum: 60000.0
+                        minimum: 100.0
+                        type: integer
+                      cacheSizeMb:
+                        default: 2048
+                        format: uint
+                        maximum: 16384.0
+                        minimum: 512.0
+                        type: integer
+                      mountPath:
+                        default: /data
+                        type: string
+                    required:
+                    - enabled
+                    - backend
+                    - bucket
+                    type: object
+                type: object
+              enableBilling:
+                default: true
+                type: boolean
+              queueName:
+                maxLength: 255
+                nullable: true
+                type: string
+              suspended:
+                default: false
+                type: boolean
+              priority:
+                maxLength: 50
+                nullable: true
                 type: string
               healthCheck:
                 nullable: true
@@ -826,6 +917,39 @@ spec:
               state:
                 default: ''
                 type: string
+              suspended:
+                default: false
+                type: boolean
+              queued:
+                default: false
+                type: boolean
+              queuePosition:
+                format: uint32
+                minimum: 0.0
+                nullable: true
+                type: integer
+              resourceUsage:
+                nullable: true
+                properties:
+                  cpuUsage:
+                    format: double
+                    type: number
+                  memoryUsage:
+                    format: double
+                    type: number
+                  gpuUsage:
+                    format: double
+                    nullable: true
+                    type: number
+                  storageUsed:
+                    format: uint64
+                    minimum: 0.0
+                    nullable: true
+                    type: integer
+                required:
+                - cpuUsage
+                - memoryUsage
+                type: object
             type: object
         required:
         - spec

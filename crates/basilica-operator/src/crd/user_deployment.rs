@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
     namespaced
 )]
 #[kube(status = "UserDeploymentStatus")]
+#[kube(printcolumn = r#"{"name":"State", "type":"string", "jsonPath":".status.state"}"#)]
+#[kube(printcolumn = r#"{"name":"Replicas", "type":"string", "jsonPath":".status.replicasReady"}"#)]
+#[kube(printcolumn = r#"{"name":"Age", "type":"date", "jsonPath":".metadata.creationTimestamp"}"#)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDeploymentSpec {
     pub user_id: String,
@@ -30,6 +33,20 @@ pub struct UserDeploymentSpec {
     pub ttl_seconds: Option<u32>,
     #[serde(default)]
     pub health_check: Option<HealthCheckConfig>,
+    #[serde(default)]
+    pub storage: Option<StorageSpec>,
+    #[serde(default = "default_enable_billing")]
+    pub enable_billing: bool,
+    #[serde(default)]
+    pub queue_name: Option<String>,
+    #[serde(default)]
+    pub suspended: bool,
+    #[serde(default)]
+    pub priority: Option<String>,
+}
+
+fn default_enable_billing() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq, Eq)]
@@ -44,6 +61,74 @@ pub struct EnvVar {
 pub struct ResourceRequirements {
     pub cpu: String,
     pub memory: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpus: Option<GpuSpec>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq, Eq, Hash)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuSpec {
+    #[schemars(range(min = 1, max = 8))]
+    pub count: u32,
+    #[schemars(length(min = 1, max = 10))]
+    pub model: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(regex(pattern = r"^\d+\.\d+$"))]
+    pub min_cuda_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 256))]
+    pub min_gpu_memory_gb: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageSpec {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ephemeral: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent: Option<PersistentStorageSpec>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageBackend {
+    R2,
+    S3,
+    GCS,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentStorageSpec {
+    pub enabled: bool,
+    pub backend: StorageBackend,
+    pub bucket: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credentials_secret: Option<String>,
+    #[schemars(range(min = 100, max = 60000))]
+    #[serde(default = "default_sync_interval")]
+    pub sync_interval_ms: u64,
+    #[schemars(range(min = 512, max = 16384))]
+    #[serde(default = "default_cache_size")]
+    pub cache_size_mb: usize,
+    #[serde(default = "default_mount_path")]
+    pub mount_path: String,
+}
+
+fn default_sync_interval() -> u64 {
+    1000
+}
+
+fn default_cache_size() -> usize {
+    2048
+}
+
+fn default_mount_path() -> String {
+    "/data".to_string()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -108,6 +193,25 @@ pub struct UserDeploymentStatus {
     pub start_time: Option<String>,
     #[serde(default)]
     pub last_updated: String,
+    #[serde(default)]
+    pub suspended: bool,
+    #[serde(default)]
+    pub queued: bool,
+    #[serde(default)]
+    pub queue_position: Option<u32>,
+    #[serde(default)]
+    pub resource_usage: Option<ResourceUsage>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceUsage {
+    pub cpu_usage: f64,
+    pub memory_usage: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_usage: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_used: Option<u64>,
 }
 
 impl UserDeploymentSpec {
@@ -132,6 +236,11 @@ impl UserDeploymentSpec {
             path_prefix,
             ttl_seconds: None,
             health_check: None,
+            storage: None,
+            enable_billing: default_enable_billing(),
+            queue_name: None,
+            suspended: false,
+            priority: None,
         }
     }
 
@@ -164,6 +273,31 @@ impl UserDeploymentSpec {
         self.health_check = Some(health_check);
         self
     }
+
+    pub fn with_storage(mut self, storage: StorageSpec) -> Self {
+        self.storage = Some(storage);
+        self
+    }
+
+    pub fn with_queue(mut self, queue_name: String) -> Self {
+        self.queue_name = Some(queue_name);
+        self
+    }
+
+    pub fn with_priority(mut self, priority: String) -> Self {
+        self.priority = Some(priority);
+        self
+    }
+
+    pub fn suspended(mut self) -> Self {
+        self.suspended = true;
+        self
+    }
+
+    pub fn disable_billing(mut self) -> Self {
+        self.enable_billing = false;
+        self
+    }
 }
 
 impl UserDeploymentStatus {
@@ -179,6 +313,10 @@ impl UserDeploymentStatus {
             message: None,
             start_time: None,
             last_updated: String::new(),
+            suspended: false,
+            queued: false,
+            queue_position: None,
+            resource_usage: None,
         }
     }
 
@@ -218,6 +356,22 @@ impl UserDeploymentStatus {
         self
     }
 
+    pub fn with_suspended(mut self, suspended: bool) -> Self {
+        self.suspended = suspended;
+        self
+    }
+
+    pub fn with_queued(mut self, queued: bool, position: Option<u32>) -> Self {
+        self.queued = queued;
+        self.queue_position = position;
+        self
+    }
+
+    pub fn with_resource_usage(mut self, usage: ResourceUsage) -> Self {
+        self.resource_usage = Some(usage);
+        self
+    }
+
     pub fn is_pending(&self) -> bool {
         self.state == "Pending"
     }
@@ -232,6 +386,10 @@ impl UserDeploymentStatus {
 
     pub fn is_terminating(&self) -> bool {
         self.state == "Terminating"
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.suspended || self.state == "Suspended"
     }
 }
 
@@ -263,6 +421,8 @@ mod tests {
         assert_eq!(spec.command, vec!["/bin/sh"]);
         assert_eq!(spec.env.len(), 1);
         assert_eq!(spec.ttl_seconds, Some(3600));
+        assert!(spec.enable_billing);
+        assert!(!spec.suspended);
     }
 
     #[test]
@@ -315,6 +475,7 @@ mod tests {
         let resources = ResourceRequirements {
             cpu: "500m".to_string(),
             memory: "512Mi".to_string(),
+            gpus: None,
         };
 
         let spec = UserDeploymentSpec::new(
@@ -331,5 +492,174 @@ mod tests {
         let res = spec.resources.unwrap();
         assert_eq!(res.cpu, "500m");
         assert_eq!(res.memory, "512Mi");
+        assert!(res.gpus.is_none());
+    }
+
+    #[test]
+    fn test_gpu_spec() {
+        let gpu_spec = GpuSpec {
+            count: 2,
+            model: vec!["A100".to_string(), "H100".to_string()],
+            min_cuda_version: Some("12.0".to_string()),
+            min_gpu_memory_gb: Some(80),
+        };
+
+        let resources = ResourceRequirements {
+            cpu: "8".to_string(),
+            memory: "32Gi".to_string(),
+            gpus: Some(gpu_spec.clone()),
+        };
+
+        let spec = UserDeploymentSpec::new(
+            "user123".to_string(),
+            "ml-training".to_string(),
+            "pytorch/pytorch:2.0".to_string(),
+            1,
+            8080,
+            "/deployments/ml-training".to_string(),
+        )
+        .with_resources(resources);
+
+        assert!(spec.resources.is_some());
+        let res = spec.resources.unwrap();
+        assert!(res.gpus.is_some());
+        let gpus = res.gpus.unwrap();
+        assert_eq!(gpus.count, 2);
+        assert_eq!(gpus.model.len(), 2);
+        assert_eq!(gpus.min_cuda_version, Some("12.0".to_string()));
+        assert_eq!(gpus.min_gpu_memory_gb, Some(80));
+    }
+
+    #[test]
+    fn test_storage_spec() {
+        let storage = StorageSpec {
+            ephemeral: None,
+            persistent: Some(PersistentStorageSpec {
+                enabled: true,
+                backend: StorageBackend::R2,
+                bucket: "my-bucket".to_string(),
+                region: Some("auto".to_string()),
+                endpoint: Some("https://account.r2.cloudflarestorage.com".to_string()),
+                credentials_secret: Some("my-r2-creds".to_string()),
+                sync_interval_ms: 1000,
+                cache_size_mb: 2048,
+                mount_path: "/data".to_string(),
+            }),
+        };
+
+        let spec = UserDeploymentSpec::new(
+            "user123".to_string(),
+            "storage-test".to_string(),
+            "ubuntu:latest".to_string(),
+            1,
+            8080,
+            "/deployments/storage-test".to_string(),
+        )
+        .with_storage(storage.clone());
+
+        assert!(spec.storage.is_some());
+        let s = spec.storage.unwrap();
+        assert!(s.persistent.is_some());
+        let p = s.persistent.unwrap();
+        assert!(p.enabled);
+        assert_eq!(p.bucket, "my-bucket");
+        assert_eq!(p.mount_path, "/data");
+    }
+
+    #[test]
+    fn test_suspend_resume() {
+        let spec = UserDeploymentSpec::new(
+            "user123".to_string(),
+            "test".to_string(),
+            "nginx:latest".to_string(),
+            2,
+            80,
+            "/deployments/test".to_string(),
+        )
+        .suspended();
+
+        assert!(spec.suspended);
+
+        let status = UserDeploymentStatus::new()
+            .with_state("Suspended")
+            .with_suspended(true);
+
+        assert!(status.is_suspended());
+    }
+
+    #[test]
+    fn test_queue_and_priority() {
+        let spec = UserDeploymentSpec::new(
+            "user123".to_string(),
+            "test".to_string(),
+            "nginx:latest".to_string(),
+            2,
+            80,
+            "/deployments/test".to_string(),
+        )
+        .with_queue("default-queue".to_string())
+        .with_priority("high".to_string());
+
+        assert_eq!(spec.queue_name, Some("default-queue".to_string()));
+        assert_eq!(spec.priority, Some("high".to_string()));
+
+        let status = UserDeploymentStatus::new().with_queued(true, Some(5));
+
+        assert!(status.queued);
+        assert_eq!(status.queue_position, Some(5));
+    }
+
+    #[test]
+    fn test_billing_toggle() {
+        let spec = UserDeploymentSpec::new(
+            "user123".to_string(),
+            "test".to_string(),
+            "nginx:latest".to_string(),
+            1,
+            80,
+            "/deployments/test".to_string(),
+        );
+
+        assert!(spec.enable_billing);
+
+        let spec_no_billing = spec.disable_billing();
+        assert!(!spec_no_billing.enable_billing);
+    }
+
+    #[test]
+    fn test_resource_usage() {
+        let usage = ResourceUsage {
+            cpu_usage: 0.5,
+            memory_usage: 1024.0,
+            gpu_usage: Some(0.8),
+            storage_used: Some(1073741824),
+        };
+
+        let status = UserDeploymentStatus::new().with_resource_usage(usage.clone());
+
+        assert!(status.resource_usage.is_some());
+        let u = status.resource_usage.unwrap();
+        assert_eq!(u.cpu_usage, 0.5);
+        assert_eq!(u.memory_usage, 1024.0);
+        assert_eq!(u.gpu_usage, Some(0.8));
+        assert_eq!(u.storage_used, Some(1073741824));
+    }
+
+    #[test]
+    fn test_storage_backend_serialization() {
+        let backend_r2 = StorageBackend::R2;
+        let backend_s3 = StorageBackend::S3;
+        let backend_gcs = StorageBackend::GCS;
+
+        let json_r2 = serde_json::to_string(&backend_r2).unwrap();
+        let json_s3 = serde_json::to_string(&backend_s3).unwrap();
+        let json_gcs = serde_json::to_string(&backend_gcs).unwrap();
+
+        assert_eq!(json_r2, "\"r2\"");
+        assert_eq!(json_s3, "\"s3\"");
+        assert_eq!(json_gcs, "\"gcs\"");
+
+        let deserialized_r2: StorageBackend = serde_json::from_str(&json_r2).unwrap();
+        assert!(matches!(deserialized_r2, StorageBackend::R2));
     }
 }
