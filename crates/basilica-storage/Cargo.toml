@@ -21,6 +21,9 @@ tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
+parking_lot = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
 
 # Object storage - AWS SDK for R2 compatibility
 aws-config = "1.1"

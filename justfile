@@ -18,13 +18,13 @@ fmt:
 fmt-check:
     cargo fmt --all -- --check
 
-# Fix linting issues and format code (excludes basilica-storage which requires system FUSE libs)
+# Fix linting issues and format code
 fix:
     #!/usr/bin/env bash
     # First run with --fix to auto-fix what we can
-    cargo clippy --fix --allow-dirty --workspace --exclude basilica-storage --all-targets
+    cargo clippy --fix --allow-dirty --workspace --all-targets
     # Then run without --fix to catch remaining issues (like CI does)
-    cargo clippy --workspace --exclude basilica-storage --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets -- -D warnings
     cargo fmt --all
 
 # Fix linting issues including basilica-storage (requires libfuse3-dev system package)

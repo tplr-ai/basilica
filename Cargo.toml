@@ -98,6 +98,7 @@ url = "2.5"
 once_cell = "1.19"
 libc = "0.2"
 semver = "1.0"
+parking_lot = "0.12"
 
 # Additional crypto dependencies
 sp-core = "34.0.0"
