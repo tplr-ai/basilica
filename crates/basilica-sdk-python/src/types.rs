@@ -714,6 +714,7 @@ impl From<ResourceRequirements> for SdkResourceRequirements {
         Self {
             cpu: res.cpu,
             memory: res.memory,
+            gpus: None,
         }
     }
 }
@@ -843,6 +844,11 @@ impl From<CreateDeploymentRequest> for SdkCreateDeploymentRequest {
             resources: req.resources.map(Into::into),
             ttl_seconds: req.ttl_seconds,
             public: req.public,
+            storage: None,
+            enable_billing: true,
+            queue_name: None,
+            suspended: false,
+            priority: None,
         }
     }
 }

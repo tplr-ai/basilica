@@ -569,6 +569,70 @@ pub struct EnvVar {
 pub struct ResourceRequirements {
     pub cpu: String,
     pub memory: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpus: Option<GpuRequirementsSpec>,
+}
+
+/// GPU requirements specification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuRequirementsSpec {
+    pub count: u32,
+    pub model: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_cuda_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_gpu_memory_gb: Option<u32>,
+}
+
+/// Storage specification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageSpec {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub persistent: Option<PersistentStorageSpec>,
+}
+
+/// Persistent storage specification
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PersistentStorageSpec {
+    pub enabled: bool,
+    pub backend: StorageBackend,
+    pub bucket: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credentials_secret: Option<String>,
+    #[serde(default = "default_sync_interval")]
+    pub sync_interval_ms: u64,
+    #[serde(default = "default_cache_size")]
+    pub cache_size_mb: usize,
+    #[serde(default = "default_mount_path")]
+    pub mount_path: String,
+}
+
+/// Storage backend types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageBackend {
+    R2,
+    S3,
+    GCS,
+}
+
+fn default_sync_interval() -> u64 {
+    1000
+}
+
+fn default_cache_size() -> usize {
+    1024
+}
+
+fn default_mount_path() -> String {
+    "/mnt/storage".to_string()
 }
 
 fn default_public() -> bool {
@@ -595,6 +659,20 @@ pub struct CreateDeploymentRequest {
     pub ttl_seconds: Option<u32>,
     #[serde(default = "default_public")]
     pub public: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage: Option<StorageSpec>,
+    #[serde(default = "default_enable_billing")]
+    pub enable_billing: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue_name: Option<String>,
+    #[serde(default)]
+    pub suspended: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<String>,
+}
+
+fn default_enable_billing() -> bool {
+    true
 }
 
 /// Replica status for deployments
