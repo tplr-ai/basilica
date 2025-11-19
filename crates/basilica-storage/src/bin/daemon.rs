@@ -7,7 +7,9 @@ use anyhow::{Context, Result};
 use basilica_storage::{
     backend::{S3Backend, StorageBackend},
     config::StorageConfig,
-    fuse::BasilicaFS,
+    fuse::{BasilicaFS, SharedBasilicaFS},
+    http::HttpServer,
+    StorageMetrics,
 };
 use clap::Parser;
 use fuser::MountOption;
@@ -60,6 +62,10 @@ struct Args {
     #[arg(long, default_value = "2048", env = "CACHE_SIZE_MB")]
     cache_size_mb: usize,
 
+    /// Storage quota in GB
+    #[arg(long, default_value = "100", env = "QUOTA_GB")]
+    quota_gb: u64,
+
     /// Allow other users to access the filesystem
     #[arg(long)]
     allow_other: bool,
@@ -67,6 +73,10 @@ struct Args {
     /// Automatically unmount on process exit
     #[arg(long, default_value = "false")]
     auto_unmount: bool,
+
+    /// HTTP server port for health and metrics endpoints
+    #[arg(long, default_value = "9090", env = "HTTP_PORT")]
+    http_port: u16,
 }
 
 #[tokio::main]
@@ -139,17 +149,43 @@ async fn main() -> Result<()> {
 
     info!("Storage backend initialized successfully");
 
+    // Create metrics
+    let metrics = Arc::new(StorageMetrics::new());
+
+    // Convert quota from GB to bytes
+    let quota_bytes = args.quota_gb * 1024 * 1024 * 1024;
+
     // Create FUSE filesystem
     let fs = BasilicaFS::new(
         args.experiment_id.clone(),
         storage,
         args.sync_interval_ms,
         args.cache_size_mb,
+        quota_bytes,
+        metrics.clone(),
     );
 
     // Start background sync worker
     info!("Starting background sync worker...");
     fs.start_sync_worker().await;
+
+    // Wrap filesystem for sharing
+    let shared_fs = SharedBasilicaFS::new(fs);
+
+    // Keep reference for shutdown
+    let shared_fs_for_shutdown = shared_fs.clone();
+
+    // Start HTTP server for health and metrics endpoints
+    let http_addr = format!("0.0.0.0:{}", args.http_port);
+    info!("Starting HTTP server at: {}", http_addr);
+
+    let http_server = HttpServer::new(metrics, shared_fs.arc());
+    let http_addr_clone = http_addr.clone();
+    tokio::spawn(async move {
+        if let Err(e) = http_server.serve(&http_addr_clone).await {
+            eprintln!("HTTP server error: {}", e);
+        }
+    });
 
     // Prepare mount options
     let mut mount_options = vec![
@@ -174,7 +210,7 @@ async fn main() -> Result<()> {
 
     // Mount the filesystem
     // Note: This is a blocking call that will run until unmounted
-    let session = fuser::spawn_mount2(fs, &args.mount_point, &mount_options)
+    let session = fuser::spawn_mount2(shared_fs, &args.mount_point, &mount_options)
         .context("Failed to mount filesystem")?;
 
     info!("Filesystem mounted successfully");
@@ -189,12 +225,44 @@ async fn main() -> Result<()> {
 
     info!("Press Ctrl+C to unmount and exit");
 
-    // Wait for Ctrl+C
-    tokio::signal::ctrl_c()
-        .await
-        .context("Failed to listen for Ctrl+C")?;
+    // Wait for shutdown signal (SIGINT or SIGTERM)
+    let shutdown = async {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm =
+                signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
 
-    info!("Received shutdown signal, unmounting filesystem...");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    info!("Received SIGINT");
+                }
+                _ = sigterm.recv() => {
+                    info!("Received SIGTERM");
+                }
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to listen for Ctrl+C");
+            info!("Received SIGINT");
+        }
+    };
+
+    shutdown.await;
+    info!("Received shutdown signal, flushing dirty pages...");
+
+    // Flush dirty pages before unmounting
+    if let Err(e) = shared_fs_for_shutdown.shutdown().await {
+        eprintln!("Warning: Failed to flush dirty pages: {}", e);
+    } else {
+        info!("All dirty pages flushed successfully");
+    }
+
+    info!("Unmounting filesystem...");
 
     // Unmount
     drop(session);
