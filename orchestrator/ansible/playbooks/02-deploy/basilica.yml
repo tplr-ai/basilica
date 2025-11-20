@@ -139,6 +139,22 @@
       changed_when: true
       run_once: true
 
+    - name: Deploy FUSE kernel module loader DaemonSet
+      ansible.builtin.command: kubectl apply -f /opt/basilica/k8s/core/fuse-module-loader.yaml
+      changed_when: true
+      run_once: true
+      tags: ["fuse", "core"]
+
+    - name: Wait for FUSE module loader to be ready
+      ansible.builtin.shell: |
+        set -euo pipefail
+        kubectl rollout status daemonset/fuse-module-loader -n kube-system --timeout=120s
+      args:
+        executable: /bin/bash
+      changed_when: false
+      run_once: true
+      tags: ["fuse", "core"]
+
     - name: Apply CRDs
       ansible.builtin.command: kubectl apply -f /opt/basilica/basilica-crds.yaml
       changed_when: true
