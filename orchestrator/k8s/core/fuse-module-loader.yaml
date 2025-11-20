@@ -26,17 +26,34 @@ spec:
           # Load FUSE module
           if ! lsmod | grep -q '^fuse '; then
             echo "Loading FUSE kernel module..."
-            modprobe fuse
+            if modprobe fuse; then
+              echo "✓ FUSE kernel module loaded successfully"
+            else
+              echo "✗ FAILED to load FUSE kernel module"
+              exit 1
+            fi
           else
-            echo "FUSE module already loaded"
+            echo "✓ FUSE module already loaded"
+          fi
+
+          # Verify /dev/fuse exists
+          if [ -c /dev/fuse ]; then
+            echo "✓ /dev/fuse device is available"
+          else
+            echo "⚠ /dev/fuse device not found"
           fi
 
           # Keep container running
+          echo "FUSE loader running, sleeping indefinitely..."
           while true; do
             sleep 3600
           done
         securityContext:
           privileged: true
+        volumeMounts:
+        - name: lib-modules
+          mountPath: /lib/modules
+          readOnly: true
         resources:
           requests:
             memory: "32Mi"
@@ -44,5 +61,10 @@ spec:
           limits:
             memory: "64Mi"
             cpu: "50m"
+      volumes:
+      - name: lib-modules
+        hostPath:
+          path: /lib/modules
+          type: Directory
       tolerations:
       - operator: Exists
