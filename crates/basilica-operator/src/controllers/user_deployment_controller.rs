@@ -18,6 +18,7 @@ use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::controllers::storage_utils;
 use crate::crd::user_deployment::{EnvVar as CrdEnvVar, UserDeployment, UserDeploymentStatus};
 use crate::k8s_client::K8sClient;
 use anyhow::Result;
@@ -313,6 +314,10 @@ fn build_fuse_sidecar(storage: &crate::crd::user_deployment::PersistentStorageSp
         });
     }
 
+    let cache_size_mb = storage.cache_size_mb as u32;
+    let (startup_probe, liveness_probe, readiness_probe) =
+        storage_utils::build_fuse_health_probes();
+
     Container {
         name: "fuse-storage".to_string(),
         image: Some("basilica/storage-daemon:latest".to_string()),
@@ -335,28 +340,15 @@ fn build_fuse_sidecar(storage: &crate::crd::user_deployment::PersistentStorageSp
                 ..Default::default()
             },
         ]),
-        security_context: Some(SecurityContext {
-            run_as_user: Some(1000),
-            run_as_group: Some(1000),
-            privileged: Some(true),
-            allow_privilege_escalation: Some(false),
-            capabilities: Some(Capabilities {
-                drop: Some(vec!["ALL".to_string()]),
-                add: None,
-            }),
-            read_only_root_filesystem: Some(true),
-            seccomp_profile: Some(k8s_openapi::api::core::v1::SeccompProfile {
-                type_: "RuntimeDefault".to_string(),
-                localhost_profile: None,
-            }),
-            ..Default::default()
-        }),
-        resources: Some(build_resources_with_storage(
-            "100m",
-            "256Mi",
-            None,
-            Some(&format!("{}Mi", storage.cache_size_mb * 2)),
-        )),
+        security_context: Some(storage_utils::build_fuse_security_context()),
+        resources: Some(
+            storage_utils::build_fuse_sidecar_resources(cache_size_mb, false)
+                .expect("Valid cache size"),
+        ),
+        lifecycle: Some(storage_utils::build_fuse_lifecycle_hook(120)),
+        startup_probe,
+        liveness_probe,
+        readiness_probe,
         ..Default::default()
     }
 }
@@ -557,6 +549,7 @@ pub fn render_deployment(
             containers,
             init_containers,
             security_context: pod_sc,
+            termination_grace_period_seconds: Some(120),
             node_selector: Some(build_node_selector()),
             tolerations: Some(build_tolerations()),
             affinity: node_affinity,
@@ -1243,14 +1236,27 @@ mod tests {
         );
 
         let fuse_sc = fuse_container.security_context.as_ref().unwrap();
-        assert_eq!(fuse_sc.run_as_user, Some(1000));
-        assert_eq!(fuse_sc.run_as_group, Some(1000));
-        assert_eq!(fuse_sc.privileged, Some(true));
-        assert_eq!(fuse_sc.allow_privilege_escalation, Some(false));
+        assert_eq!(fuse_sc.run_as_user, Some(0), "Should run as root for FUSE");
+        assert_eq!(fuse_sc.run_as_non_root, Some(false));
+        assert_eq!(fuse_sc.privileged, Some(false), "Should NOT be privileged");
+        assert_eq!(
+            fuse_sc.allow_privilege_escalation,
+            Some(true),
+            "Required with CAP_SYS_ADMIN"
+        );
         assert_eq!(fuse_sc.read_only_root_filesystem, Some(true));
         let caps = fuse_sc.capabilities.as_ref().unwrap();
         assert_eq!(caps.drop, Some(vec!["ALL".to_string()]));
-        assert_eq!(caps.add, None);
+        assert_eq!(
+            caps.add,
+            Some(vec!["SYS_ADMIN".to_string()]),
+            "Should have CAP_SYS_ADMIN for FUSE"
+        );
+        let seccomp = fuse_sc.seccomp_profile.as_ref().unwrap();
+        assert_eq!(
+            seccomp.type_, "RuntimeDefault",
+            "Should use RuntimeDefault (now actually enforced!)"
+        );
 
         let fuse_env = fuse_container.env.as_ref().unwrap();
         assert!(fuse_env
@@ -1282,6 +1288,86 @@ mod tests {
         let volumes = pod_spec.volumes.as_ref().unwrap();
         assert!(volumes.iter().any(|v| v.name == "basilica-storage"));
         assert!(volumes.iter().any(|v| v.name == "fuse-device"));
+
+        let fuse_lifecycle = fuse_container
+            .lifecycle
+            .as_ref()
+            .expect("Lifecycle hook missing");
+        let pre_stop = fuse_lifecycle
+            .pre_stop
+            .as_ref()
+            .expect("PreStop hook missing");
+        let exec = pre_stop.exec.as_ref().expect("PreStop exec missing");
+        let command = exec.command.as_ref().expect("PreStop command missing");
+        assert_eq!(command.len(), 3);
+        assert_eq!(command[0], "sh");
+        assert_eq!(command[1], "-c");
+        assert!(command[2].contains("timeout 120"));
+        assert!(command[2].contains("kill -TERM 1"));
+        assert!(command[2].contains("while kill -0 1"));
+
+        assert_eq!(
+            pod_spec.termination_grace_period_seconds,
+            Some(120),
+            "terminationGracePeriodSeconds should be 120 for storage flush"
+        );
+
+        let fuse_resources = fuse_container
+            .resources
+            .as_ref()
+            .expect("Resources missing");
+        let limits = fuse_resources.limits.as_ref().expect("Limits missing");
+        let requests = fuse_resources.requests.as_ref().expect("Requests missing");
+        assert_eq!(
+            limits.get("memory").unwrap().0,
+            "512Mi",
+            "Memory should be 512Mi for UserDeployment"
+        );
+        assert_eq!(requests.get("memory").unwrap().0, "512Mi");
+        assert_eq!(limits.get("cpu").unwrap().0, "500m");
+        assert_eq!(requests.get("cpu").unwrap().0, "500m");
+        assert_eq!(
+            limits.get("ephemeral-storage").unwrap().0,
+            "4096Mi",
+            "Should be 2x cache size"
+        );
+
+        let startup_probe = fuse_container
+            .startup_probe
+            .as_ref()
+            .expect("Startup probe missing");
+        let startup_http = startup_probe
+            .http_get
+            .as_ref()
+            .expect("Startup HTTP missing");
+        assert_eq!(startup_http.path.as_ref().unwrap(), "/ready");
+        assert_eq!(startup_probe.initial_delay_seconds, Some(10));
+        assert_eq!(startup_probe.period_seconds, Some(5));
+        assert_eq!(startup_probe.failure_threshold, Some(30));
+
+        let liveness_probe = fuse_container
+            .liveness_probe
+            .as_ref()
+            .expect("Liveness probe missing");
+        let liveness_http = liveness_probe
+            .http_get
+            .as_ref()
+            .expect("Liveness HTTP missing");
+        assert_eq!(liveness_http.path.as_ref().unwrap(), "/health");
+        assert_eq!(liveness_probe.period_seconds, Some(10));
+        assert_eq!(liveness_probe.failure_threshold, Some(3));
+
+        let readiness_probe = fuse_container
+            .readiness_probe
+            .as_ref()
+            .expect("Readiness probe missing");
+        let readiness_http = readiness_probe
+            .http_get
+            .as_ref()
+            .expect("Readiness HTTP missing");
+        assert_eq!(readiness_http.path.as_ref().unwrap(), "/ready");
+        assert_eq!(readiness_probe.period_seconds, Some(5));
+        assert_eq!(readiness_probe.failure_threshold, Some(1));
     }
 
     #[test]
