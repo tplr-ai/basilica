@@ -320,7 +320,7 @@ fn build_fuse_sidecar(storage: &crate::crd::user_deployment::PersistentStorageSp
 
     Container {
         name: "fuse-storage".to_string(),
-        image: Some("basilica/storage-daemon:latest".to_string()),
+        image: Some("ghcr.io/one-covenant/basilica/storage-daemon:latest".to_string()),
         env: Some(env),
         volume_mounts: Some(vec![
             VolumeMount {
@@ -361,7 +361,7 @@ fn build_init_container(storage: &crate::crd::user_deployment::PersistentStorage
 timeout={timeout};
 elapsed=0;
 while [ $timeout -gt 0 ]; do
-  if [ -f {mount_path}/.ready ]; then
+  if [ -f {mount_path}/.fuse_ready ]; then
     echo 'Storage ready marker found';
     exit 0;
   fi;
@@ -1232,7 +1232,7 @@ mod tests {
         assert_eq!(fuse_container.name, "fuse-storage");
         assert_eq!(
             fuse_container.image,
-            Some("basilica/storage-daemon:latest".to_string())
+            Some("ghcr.io/one-covenant/basilica/storage-daemon:latest".to_string())
         );
 
         let fuse_sc = fuse_container.security_context.as_ref().unwrap();

@@ -895,6 +895,33 @@ impl Filesystem for BasilicaFS {
                 let old_size = inode.size;
                 inode.size = s;
                 self.remove_usage(old_size - s);
+
+                drop(inodes);
+
+                let path = {
+                    let inodes_read = self.inodes.read();
+                    self.compute_path_locked(&inodes_read, ino)
+                };
+
+                if let Some(path) = path {
+                    let cache = self.cache.clone();
+                    let dirty_tracker = self.dirty_tracker.clone();
+                    let runtime_handle = self.runtime_handle.clone();
+
+                    runtime_handle.block_on(async {
+                        let mut cache = cache.write().await;
+                        if let Err(e) = cache.truncate(&path, s).await {
+                            error!("Failed to truncate cache: {}", e);
+                        }
+                        dirty_tracker.mark_dirty(&path, 0, 1).await;
+                    });
+                }
+
+                let inodes = self.inodes.read();
+                let inode = inodes.get(&ino).unwrap();
+                let ttl = Duration::from_secs(1);
+                reply.attr(&ttl, &inode.to_file_attr());
+                return;
             } else if s > inode.size {
                 let additional = s - inode.size;
                 if let Err(errno) = self.check_quota(additional) {
@@ -903,6 +930,28 @@ impl Filesystem for BasilicaFS {
                 }
                 inode.size = s;
                 self.add_usage(additional);
+
+                drop(inodes);
+
+                let path = {
+                    let inodes_read = self.inodes.read();
+                    self.compute_path_locked(&inodes_read, ino)
+                };
+
+                if let Some(path) = path {
+                    let dirty_tracker = self.dirty_tracker.clone();
+                    let runtime_handle = self.runtime_handle.clone();
+
+                    runtime_handle.block_on(async {
+                        dirty_tracker.mark_dirty(&path, 0, 1).await;
+                    });
+                }
+
+                let inodes = self.inodes.read();
+                let inode = inodes.get(&ino).unwrap();
+                let ttl = Duration::from_secs(1);
+                reply.attr(&ttl, &inode.to_file_attr());
+                return;
             }
         }
 
@@ -1449,6 +1498,19 @@ mod tests {
         fs.add_usage(1000);
 
         {
+            let mut cache = fs.cache.write().await;
+            cache
+                .write("/test.txt", 0, &vec![b'x'; 1000])
+                .await
+                .unwrap();
+        }
+
+        storage
+            .put("/test.txt", Bytes::from(vec![b'x'; 1000]))
+            .await
+            .unwrap();
+
+        {
             let mut inodes = fs.inodes.write();
             if let Some(inode) = inodes.get_mut(&file_ino) {
                 let old_size = inode.size;
@@ -1459,12 +1521,26 @@ mod tests {
             }
         }
 
-        let inodes = fs.inodes.read();
-        let inode = inodes.get(&file_ino).unwrap();
-        assert_eq!(inode.size, 500);
+        {
+            let mut cache = fs.cache.write().await;
+            cache.truncate("/test.txt", 500).await.unwrap();
+        }
+
+        {
+            let inodes = fs.inodes.read();
+            let inode = inodes.get(&file_ino).unwrap();
+            assert_eq!(inode.size, 500);
+        }
 
         let used_bytes = fs.used_bytes.load(Ordering::Relaxed);
         assert_eq!(used_bytes, 500);
+
+        let cache = fs.cache.read().await;
+        let cached_size = cache.get_size("/test.txt").await;
+        assert_eq!(cached_size, Some(500));
+
+        let stored_data = storage.get("/test.txt").await.unwrap();
+        assert_eq!(stored_data.len(), 1000);
     }
 
     #[tokio::test]

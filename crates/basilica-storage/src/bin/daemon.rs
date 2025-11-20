@@ -152,8 +152,8 @@ async fn main() -> Result<()> {
     // Create metrics
     let metrics = Arc::new(StorageMetrics::new());
 
-    // Convert quota from GB to bytes
-    let quota_bytes = args.quota_gb * 1024 * 1024 * 1024;
+    // Convert quota from GB to bytes (with overflow protection)
+    let quota_bytes = args.quota_gb.saturating_mul(1024 * 1024 * 1024);
 
     // Create FUSE filesystem
     let fs = BasilicaFS::new(

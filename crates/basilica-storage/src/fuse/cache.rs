@@ -166,11 +166,20 @@ impl PageCache {
             let page_end = (page_start + remaining).min(PAGE_SIZE);
             let chunk_size = page_end - page_start;
 
+            // Check if page already exists to track size correctly
+            let page_exists = file.pages.contains_key(&page_offset);
+
             // Get or create page
-            let page = file.pages.entry(page_offset).or_insert_with(|| Page {
-                data: Bytes::from(vec![0u8; PAGE_SIZE]),
-                dirty: false,
-                last_access: std::time::Instant::now(),
+            let page = file.pages.entry(page_offset).or_insert_with(|| {
+                let new_page = Page {
+                    data: Bytes::from(vec![0u8; PAGE_SIZE]),
+                    dirty: false,
+                    last_access: std::time::Instant::now(),
+                };
+                if !page_exists {
+                    self.current_size += PAGE_SIZE;
+                }
+                new_page
             });
 
             // Copy data into page
@@ -183,7 +192,6 @@ impl PageCache {
             page.last_access = std::time::Instant::now();
 
             data_offset += chunk_size;
-            self.current_size += chunk_size;
         }
 
         // Update file size
@@ -199,17 +207,20 @@ impl PageCache {
         let mut file = file.write().await;
 
         let page_offset = (offset / PAGE_SIZE as u64) * PAGE_SIZE as u64;
+        let data_len = data.len();
 
-        file.pages.insert(
+        if let Some(old_page) = file.pages.insert(
             page_offset,
             Page {
                 data,
                 dirty: false,
                 last_access: std::time::Instant::now(),
             },
-        );
+        ) {
+            self.current_size = self.current_size.saturating_sub(old_page.data.len());
+        }
 
-        self.current_size += PAGE_SIZE;
+        self.current_size += data_len;
     }
 
     /// Get file metadata
@@ -231,12 +242,52 @@ impl PageCache {
         self.files.keys().cloned().collect()
     }
 
+    /// Truncate a file to the specified size
+    pub async fn truncate(&mut self, path: &str, new_size: u64) -> Result<(), String> {
+        let file = self.files.get(path).ok_or("File not found")?;
+        let mut file = file.write().await;
+
+        let old_size = file.size;
+        file.size = new_size;
+        file.metadata.mtime = std::time::SystemTime::now();
+
+        if new_size < old_size {
+            let new_last_page = new_size / PAGE_SIZE as u64;
+            let pages_to_remove: Vec<u64> = file
+                .pages
+                .keys()
+                .filter(|&&offset| offset / PAGE_SIZE as u64 > new_last_page)
+                .copied()
+                .collect();
+
+            for offset in pages_to_remove {
+                if let Some(page) = file.pages.remove(&offset) {
+                    self.current_size = self.current_size.saturating_sub(page.data.len());
+                }
+            }
+
+            if new_size % PAGE_SIZE as u64 != 0 {
+                let last_page_offset = new_last_page * PAGE_SIZE as u64;
+                if let Some(page) = file.pages.get_mut(&last_page_offset) {
+                    let new_page_size = (new_size % PAGE_SIZE as u64) as usize;
+                    let mut page_data = page.data.to_vec();
+                    page_data.truncate(new_page_size);
+                    page_data.resize(PAGE_SIZE, 0);
+                    page.data = Bytes::from(page_data);
+                    page.dirty = true;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Remove a file from cache
     pub async fn remove_file(&mut self, path: &str) -> Option<()> {
         if let Some(file_lock) = self.files.remove(path) {
             let file = file_lock.read().await;
             for page in file.pages.values() {
-                self.current_size -= page.data.len();
+                self.current_size = self.current_size.saturating_sub(page.data.len());
             }
             Some(())
         } else {
@@ -272,7 +323,7 @@ impl PageCache {
                 let mut file = file_lock.write().await;
                 if let Some(page) = file.pages.remove(&offset) {
                     freed += page.data.len();
-                    self.current_size -= page.data.len();
+                    self.current_size = self.current_size.saturating_sub(page.data.len());
                 }
             }
         }

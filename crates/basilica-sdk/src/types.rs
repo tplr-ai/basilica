@@ -628,11 +628,11 @@ fn default_sync_interval() -> u64 {
 }
 
 fn default_cache_size() -> usize {
-    1024
+    2048
 }
 
 fn default_mount_path() -> String {
-    "/mnt/storage".to_string()
+    "/data".to_string()
 }
 
 fn default_public() -> bool {

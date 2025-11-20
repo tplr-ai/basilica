@@ -354,7 +354,7 @@ pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
 
                 let storage_sidecar = Container {
                     name: format!("basilica-storage-{}", name),
-                    image: Some("ghcr.io/one-covenant/basilica/storage-daemon:k3_sdk_fix".into()),
+                    image: Some("ghcr.io/one-covenant/basilica/storage-daemon:latest".into()),
                     command: Some(vec!["/usr/local/bin/basilica-storage-daemon".into()]),
                     args: None,
                     env: Some(env),
@@ -898,7 +898,7 @@ mod tests {
             .expect("Storage sidecar should exist");
         assert_eq!(
             sidecar.image.as_ref().unwrap(),
-            "ghcr.io/one-covenant/basilica/storage-daemon:k3_sdk_fix"
+            "ghcr.io/one-covenant/basilica/storage-daemon:latest"
         );
 
         // Verify env vars
