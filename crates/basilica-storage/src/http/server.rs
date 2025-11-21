@@ -175,6 +175,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage,
             1000,
@@ -207,6 +208,7 @@ mod tests {
         metrics.cache_misses.store(25, Ordering::Relaxed);
 
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage,
             1000,

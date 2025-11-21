@@ -12,6 +12,9 @@ const STORAGE_OP_TIMEOUT_SECS: u64 = 30;
 
 /// Background worker for syncing dirty pages
 pub struct SyncWorker {
+    /// Namespace (used as prefix in object storage)
+    namespace: String,
+
     /// Experiment ID (used as prefix in object storage)
     experiment_id: String,
 
@@ -34,6 +37,7 @@ pub struct SyncWorker {
 impl SyncWorker {
     /// Create a new sync worker
     pub fn new(
+        namespace: String,
         experiment_id: String,
         storage: Arc<dyn StorageBackend>,
         cache: Arc<RwLock<PageCache>>,
@@ -41,6 +45,7 @@ impl SyncWorker {
         sync_interval_ms: u64,
     ) -> Self {
         Self {
+            namespace,
             experiment_id,
             storage,
             cache,
@@ -52,6 +57,7 @@ impl SyncWorker {
 
     /// Start the sync worker
     pub async fn start(&self) -> tokio::task::JoinHandle<()> {
+        let namespace = self.namespace.clone();
         let experiment_id = self.experiment_id.clone();
         let storage = self.storage.clone();
         let cache = self.cache.clone();
@@ -79,9 +85,15 @@ impl SyncWorker {
 
                 // Sync each region
                 for region in dirty_regions {
-                    if let Err(e) =
-                        Self::sync_region(&experiment_id, &storage, &cache, &dirty_tracker, &region)
-                            .await
+                    if let Err(e) = Self::sync_region(
+                        &namespace,
+                        &experiment_id,
+                        &storage,
+                        &cache,
+                        &dirty_tracker,
+                        &region,
+                    )
+                    .await
                     {
                         error!(
                             "Failed to sync region {} @ {}: {}",
@@ -102,6 +114,7 @@ impl SyncWorker {
 
     /// Sync a single region to object storage
     async fn sync_region(
+        namespace: &str,
         experiment_id: &str,
         storage: &Arc<dyn StorageBackend>,
         cache: &Arc<RwLock<PageCache>>,
@@ -123,7 +136,7 @@ impl SyncWorker {
         drop(cache); // Release cache lock before I/O
 
         // Generate storage key
-        let key = region.storage_key(experiment_id);
+        let key = region.storage_key(namespace, experiment_id);
 
         // Upload to object storage with timeout to prevent blocking forever
         let timeout = Duration::from_secs(STORAGE_OP_TIMEOUT_SECS);
@@ -165,6 +178,7 @@ impl SyncWorker {
 
         for region in dirty_regions {
             Self::sync_region(
+                &self.namespace,
                 &self.experiment_id,
                 &self.storage,
                 &self.cache,
@@ -276,6 +290,7 @@ mod tests {
 
         // Create and start sync worker
         let worker = SyncWorker::new(
+            "u-test".to_string(),
             "exp-123".to_string(),
             storage.clone(),
             cache.clone(),
@@ -293,7 +308,7 @@ mod tests {
         handle.abort();
 
         // Verify data was synced
-        let synced_data = storage.get_data("exp-123/test.txt").await;
+        let synced_data = storage.get_data("u-test/exp-123/test.txt").await;
         assert!(synced_data.is_some());
         assert_eq!(&synced_data.unwrap()[..], data);
 
@@ -325,6 +340,7 @@ mod tests {
 
         // Create worker (don't start)
         let worker = SyncWorker::new(
+            "u-test".to_string(),
             "exp-123".to_string(),
             storage.clone(),
             cache.clone(),
@@ -337,7 +353,7 @@ mod tests {
 
         // Verify all files were synced
         for i in 0..5 {
-            let key = format!("exp-123/file-{}.txt", i);
+            let key = format!("u-test/exp-123/file-{}.txt", i);
             let data = storage.get_data(&key).await;
             assert!(data.is_some(), "File {} not synced", i);
         }

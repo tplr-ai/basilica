@@ -22,6 +22,10 @@ use tracing::info;
 #[command(name = "basilica-storage-daemon")]
 #[command(about = "FUSE filesystem daemon with transparent object storage", long_about = None)]
 struct Args {
+    /// Kubernetes namespace (used as prefix in object storage)
+    #[arg(short = 'n', long, env = "NAMESPACE")]
+    namespace: String,
+
     /// Experiment ID (used as prefix in object storage)
     #[arg(short, long, env = "EXPERIMENT_ID")]
     experiment_id: String,
@@ -157,6 +161,7 @@ async fn main() -> Result<()> {
 
     // Create FUSE filesystem
     let fs = BasilicaFS::new(
+        args.namespace.clone(),
         args.experiment_id.clone(),
         storage,
         args.sync_interval_ms,

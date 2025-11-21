@@ -36,9 +36,9 @@ impl std::hash::Hash for DirtyRegion {
 
 impl DirtyRegion {
     /// Get the object storage key for this region
-    pub fn storage_key(&self, experiment_id: &str) -> String {
+    pub fn storage_key(&self, namespace: &str, experiment_id: &str) -> String {
         let path = self.path.trim_start_matches('/');
-        format!("{}/{}", experiment_id, path)
+        format!("{}/{}/{}", namespace, experiment_id, path)
     }
 
     /// Get the end offset of this region

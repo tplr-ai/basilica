@@ -59,6 +59,7 @@ impl Inode {
 }
 
 pub struct BasilicaFS {
+    namespace: String,
     experiment_id: String,
     storage: Arc<dyn StorageBackend>,
 
@@ -80,6 +81,7 @@ pub struct BasilicaFS {
 
 impl BasilicaFS {
     pub fn new(
+        namespace: String,
         experiment_id: String,
         storage: Arc<dyn StorageBackend>,
         sync_interval_ms: u64,
@@ -91,6 +93,7 @@ impl BasilicaFS {
         let dirty_tracker = Arc::new(DirtyPageTracker::new());
 
         let sync_worker = Arc::new(SyncWorker::new(
+            namespace.clone(),
             experiment_id.clone(),
             storage.clone(),
             cache.clone(),
@@ -139,6 +142,7 @@ impl BasilicaFS {
         path_to_ino.insert("/".to_string(), ROOT_INO);
 
         Self {
+            namespace,
             experiment_id,
             storage,
             cache,
@@ -301,7 +305,12 @@ impl Filesystem for BasilicaFS {
 
             self.metrics.cache_misses.fetch_add(1, Ordering::Relaxed);
 
-            let key = format!("{}/{}", self.experiment_id, path.trim_start_matches('/'));
+            let key = format!(
+                "{}/{}/{}",
+                self.namespace,
+                self.experiment_id,
+                path.trim_start_matches('/')
+            );
 
             match self.storage.exists(&key).await {
                 Ok(true) => match self.storage.get(&key).await {
@@ -630,11 +639,17 @@ impl Filesystem for BasilicaFS {
             let storage = self.storage.clone();
             let cache = self.cache.clone();
             let path = path.clone();
+            let namespace = self.namespace.clone();
             let experiment_id = self.experiment_id.clone();
             async move {
                 cache.write().await.remove_file(&path).await;
 
-                let key = format!("{}/{}", experiment_id, path.trim_start_matches('/'));
+                let key = format!(
+                    "{}/{}/{}",
+                    namespace,
+                    experiment_id,
+                    path.trim_start_matches('/')
+                );
                 if let Err(e) = storage.delete(&key).await {
                     error!(path = %path, error = %e, "Failed to delete from storage");
                 }
@@ -700,11 +715,17 @@ impl Filesystem for BasilicaFS {
             let storage = self.storage.clone();
             let cache = self.cache.clone();
             let path = path.clone();
+            let namespace = self.namespace.clone();
             let experiment_id = self.experiment_id.clone();
             async move {
                 cache.write().await.remove_file(&path).await;
 
-                let key = format!("{}/{}", experiment_id, path.trim_start_matches('/'));
+                let key = format!(
+                    "{}/{}/{}",
+                    namespace,
+                    experiment_id,
+                    path.trim_start_matches('/')
+                );
                 if let Err(e) = storage.delete(&key).await {
                     error!(path = %path, error = %e, "Failed to delete directory from storage");
                 }
@@ -849,10 +870,21 @@ impl Filesystem for BasilicaFS {
             let storage = self.storage.clone();
             let old_path = old_path.clone();
             let new_path = new_path.clone();
+            let namespace = self.namespace.clone();
             let experiment_id = self.experiment_id.clone();
             async move {
-                let old_key = format!("{}/{}", experiment_id, old_path.trim_start_matches('/'));
-                let new_key = format!("{}/{}", experiment_id, new_path.trim_start_matches('/'));
+                let old_key = format!(
+                    "{}/{}/{}",
+                    namespace,
+                    experiment_id,
+                    old_path.trim_start_matches('/')
+                );
+                let new_key = format!(
+                    "{}/{}/{}",
+                    namespace,
+                    experiment_id,
+                    new_path.trim_start_matches('/')
+                );
 
                 match storage.get(&old_key).await {
                     Ok(data) => {
@@ -1247,6 +1279,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage,
             1000,
@@ -1265,6 +1298,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage,
             1000,
@@ -1286,6 +1320,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage.clone(),
             1000,
@@ -1355,6 +1390,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage.clone(),
             1000,
@@ -1423,6 +1459,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage.clone(),
             1000,
@@ -1492,6 +1529,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage.clone(),
             1000,
@@ -1584,6 +1622,7 @@ mod tests {
         let storage = Arc::new(MockStorage::new());
         let metrics = Arc::new(StorageMetrics::new());
         let fs = BasilicaFS::new(
+            "u-test".to_string(),
             "exp-test".to_string(),
             storage.clone(),
             1000,
