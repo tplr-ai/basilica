@@ -1,46 +1,64 @@
-#!/usr/bin/env bash
-# Push the storage daemon Docker image to registry
+#!/bin/bash
+set -e
 
-set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Defaults
-SOURCE_IMAGE="${SOURCE_IMAGE:-basilica/storage-daemon}"
-TARGET_IMAGE="${TARGET_IMAGE:-basilica/storage-daemon}"
-TAG="${TAG:-latest}"
+SOURCE_IMAGE="basilica/storage-daemon"
+TARGET_IMAGE="ghcr.io/one-covenant/basilica-storage-daemon"
+IMAGE_TAG="latest"
 
-# Parse command-line arguments
 while [[ $# -gt 0 ]]; do
-  case $1 in
-    --source-image)
-      SOURCE_IMAGE="$2"
-      shift 2
-      ;;
-    --target-image)
-      TARGET_IMAGE="$2"
-      shift 2
-      ;;
-    --tag)
-      TAG="$2"
-      shift 2
-      ;;
-    *)
-      echo "Unknown option: $1"
-      exit 1
-      ;;
-  esac
+    case $1 in
+        --source-image)
+            SOURCE_IMAGE="$2"
+            shift 2
+            ;;
+        --target-image)
+            TARGET_IMAGE="$2"
+            shift 2
+            ;;
+        --tag)
+            IMAGE_TAG="$2"
+            shift 2
+            ;;
+        --help)
+            echo "Usage: $0 [--source-image SOURCE] [--target-image TARGET] [--tag TAG]"
+            echo ""
+            echo "Options:"
+            echo "  --source-image SOURCE     Source Docker image (default: basilica/storage-daemon)"
+            echo "  --target-image TARGET     Target Docker image (default: ghcr.io/one-covenant/basilica-storage-daemon)"
+            echo "  --tag TAG                 Image tag (default: latest)"
+            echo "  --help                    Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
 done
 
-SOURCE="${SOURCE_IMAGE}:${TAG}"
-TARGET="${TARGET_IMAGE}:${TAG}"
+cd "$PROJECT_ROOT"
 
-echo "Pushing storage daemon image: ${SOURCE} -> ${TARGET}"
+SOURCE_IMAGE_FULL="${SOURCE_IMAGE}:${IMAGE_TAG}"
+TARGET_IMAGE_FULL="${TARGET_IMAGE}:${IMAGE_TAG}"
 
-# Tag if source != target
-if [[ "$SOURCE" != "$TARGET" ]]; then
-  echo "Tagging ${SOURCE} as ${TARGET}"
-  docker tag "$SOURCE" "$TARGET"
+echo "Tagging and pushing storage-daemon image..."
+echo "  Source: $SOURCE_IMAGE_FULL"
+echo "  Target: $TARGET_IMAGE_FULL"
+
+if ! docker images --format "table {{.Repository}}:{{.Tag}}" | grep -q "^${SOURCE_IMAGE_FULL}$"; then
+    echo "Error: Source image $SOURCE_IMAGE_FULL not found"
+    echo "Please build the image first using: ./scripts/storage-daemon/build.sh"
+    exit 1
 fi
 
-docker push "$TARGET"
+echo "Tagging image..."
+docker tag "$SOURCE_IMAGE_FULL" "$TARGET_IMAGE_FULL"
 
-echo "✓ Pushed ${TARGET}"
+echo "Pushing image to registry..."
+docker push "$TARGET_IMAGE_FULL"
+
+echo "Successfully pushed $TARGET_IMAGE_FULL"

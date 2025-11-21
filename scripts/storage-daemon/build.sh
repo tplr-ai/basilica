@@ -1,51 +1,94 @@
-#!/usr/bin/env bash
-# Build the storage daemon Docker image
-
-set -euo pipefail
+#!/bin/bash
+set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Defaults
-IMAGE_NAME="${IMAGE_NAME:-basilica/storage-daemon}"
-TAG="${TAG:-latest}"
-BUILD_MODE="${BUILD_MODE:-release}"
+IMAGE_NAME="basilica/storage-daemon"
+IMAGE_TAG="latest"
+EXTRACT_BINARY=false
+BUILD_IMAGE=true
+RELEASE_MODE=true
+FEATURES=""
 
-# Parse command-line arguments
 while [[ $# -gt 0 ]]; do
-  case $1 in
-    --image-name)
-      IMAGE_NAME="$2"
-      shift 2
-      ;;
-    --image-tag)
-      TAG="$2"
-      shift 2
-      ;;
-    --build-mode)
-      BUILD_MODE="$2"
-      shift 2
-      ;;
-    --no-extract)
-      # Ignored for compatibility with other build scripts
-      shift
-      ;;
-    *)
-      echo "Unknown option: $1"
-      exit 1
-      ;;
-  esac
+    case $1 in
+        --image-name)
+            IMAGE_NAME="$2"
+            shift 2
+            ;;
+        --image-tag)
+            IMAGE_TAG="$2"
+            shift 2
+            ;;
+        --no-extract)
+            EXTRACT_BINARY=false
+            shift
+            ;;
+        --no-image)
+            BUILD_IMAGE=false
+            shift
+            ;;
+        --debug)
+            RELEASE_MODE=false
+            shift
+            ;;
+        --features)
+            FEATURES="$2"
+            shift 2
+            ;;
+        --help)
+            echo "Usage: $0 [--image-name NAME] [--image-tag TAG] [--no-extract] [--no-image] [--debug] [--features FEATURES]"
+            echo ""
+            echo "Options:"
+            echo "  --image-name NAME     Docker image name (default: basilica/storage-daemon)"
+            echo "  --image-tag TAG       Docker image tag (default: latest)"
+            echo "  --no-extract          Don't extract binary to local filesystem"
+            echo "  --no-image            Skip Docker image creation"
+            echo "  --debug               Build in debug mode"
+            echo "  --features FEATURES   Additional cargo features to enable"
+            echo "  --help                Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
 done
 
-echo "Building storage daemon image: ${IMAGE_NAME}:${TAG}"
-echo "Build mode: ${BUILD_MODE}"
+cd "$PROJECT_ROOT"
 
-cd "$REPO_ROOT"
+BUILD_ARGS=""
+if [[ "$RELEASE_MODE" == "true" ]]; then
+    BUILD_ARGS="--build-arg BUILD_MODE=release"
+else
+    BUILD_ARGS="--build-arg BUILD_MODE=debug"
+fi
 
-docker build \
-    --build-arg BUILD_MODE="$BUILD_MODE" \
-    -f scripts/storage-daemon/Dockerfile \
-    -t "${IMAGE_NAME}:${TAG}" \
-    .
+if [[ -n "$FEATURES" ]]; then
+    BUILD_ARGS="$BUILD_ARGS --build-arg FEATURES=$FEATURES"
+fi
 
-echo "✓ Built ${IMAGE_NAME}:${TAG}"
+if [[ "$BUILD_IMAGE" == "true" ]]; then
+    echo "Building Docker image: $IMAGE_NAME:$IMAGE_TAG"
+    docker build \
+        --platform linux/amd64 \
+        $BUILD_ARGS \
+        -f scripts/storage-daemon/Dockerfile \
+        -t "$IMAGE_NAME:$IMAGE_TAG" \
+        .
+    echo "Docker image built successfully"
+fi
+
+if [[ "$EXTRACT_BINARY" == "true" ]]; then
+    echo "Extracting basilica-storage-daemon binary..."
+    container_id=$(docker create "$IMAGE_NAME:$IMAGE_TAG")
+    docker cp "$container_id:/usr/local/bin/basilica-storage-daemon" ./basilica-storage-daemon
+    docker rm "$container_id"
+    chmod +x ./basilica-storage-daemon
+    echo "Binary extracted to: ./basilica-storage-daemon"
+fi
+
+echo "Build completed successfully!"
