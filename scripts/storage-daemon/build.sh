@@ -6,7 +6,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 IMAGE_NAME="basilica/storage-daemon"
 IMAGE_TAG="latest"
-EXTRACT_BINARY=false
+EXTRACT_BINARY=true
 BUILD_IMAGE=true
 RELEASE_MODE=true
 FEATURES=""
