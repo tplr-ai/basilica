@@ -76,6 +76,7 @@ pub trait K8sClient: Send + Sync {
     ) -> Result<Vec<Service>>;
 
     async fn create_network_policy(&self, ns: &str, np: &NetworkPolicy) -> Result<NetworkPolicy>;
+    async fn get_network_policy(&self, ns: &str, name: &str) -> Result<NetworkPolicy>;
     async fn create_pvc(
         &self,
         ns: &str,
@@ -88,6 +89,14 @@ pub trait K8sClient: Send + Sync {
 
     async fn create_deployment(&self, ns: &str, dep: &Deployment) -> Result<Deployment>;
     async fn get_deployment(&self, ns: &str, name: &str) -> Result<Deployment>;
+    async fn patch_deployment(&self, ns: &str, name: &str, dep: &Deployment) -> Result<Deployment>;
+    async fn patch_service(&self, ns: &str, name: &str, svc: &Service) -> Result<Service>;
+    async fn patch_network_policy(
+        &self,
+        ns: &str,
+        name: &str,
+        np: &NetworkPolicy,
+    ) -> Result<NetworkPolicy>;
 
     // Queues
     async fn create_basilica_queue(&self, ns: &str, obj: &BasilicaQueue) -> Result<BasilicaQueue>;
@@ -403,6 +412,14 @@ impl K8sClient for MockK8sClient {
         Ok(np.clone())
     }
 
+    async fn get_network_policy(&self, ns: &str, name: &str) -> Result<NetworkPolicy> {
+        let map = self.network_policies.read().await;
+        map.get(&key(ns))
+            .and_then(|m| m.get(name))
+            .cloned()
+            .ok_or_else(|| anyhow!("NetworkPolicy {} not found in namespace {}", name, ns))
+    }
+
     async fn create_pvc(
         &self,
         ns: &str,
@@ -469,6 +486,43 @@ impl K8sClient for MockK8sClient {
             .and_then(|m| m.get(name))
             .cloned()
             .ok_or_else(|| anyhow!("Deployment not found: {}/{}", ns, name))
+    }
+
+    async fn patch_deployment(
+        &self,
+        ns: &str,
+        _name: &str,
+        dep: &Deployment,
+    ) -> Result<Deployment> {
+        let name = dep.name_any();
+        let mut map = self.deployments.write().await;
+        map.entry(ns.to_string())
+            .or_default()
+            .insert(name.clone(), dep.clone());
+        Ok(dep.clone())
+    }
+
+    async fn patch_service(&self, ns: &str, _name: &str, svc: &Service) -> Result<Service> {
+        let name = svc.name_any();
+        let mut map = self.services.write().await;
+        map.entry(ns.to_string())
+            .or_default()
+            .insert(name.clone(), svc.clone());
+        Ok(svc.clone())
+    }
+
+    async fn patch_network_policy(
+        &self,
+        ns: &str,
+        _name: &str,
+        np: &NetworkPolicy,
+    ) -> Result<NetworkPolicy> {
+        let name = np.name_any();
+        let mut map = self.network_policies.write().await;
+        map.entry(ns.to_string())
+            .or_default()
+            .insert(name.clone(), np.clone());
+        Ok(np.clone())
     }
 
     async fn create_basilica_queue(&self, ns: &str, obj: &BasilicaQueue) -> Result<BasilicaQueue> {
@@ -867,6 +921,11 @@ impl K8sClient for KubeClient {
         }
     }
 
+    async fn get_network_policy(&self, ns: &str, name: &str) -> Result<NetworkPolicy> {
+        let api: kube::Api<NetworkPolicy> = self.api(ns);
+        api.get(name).await.map_err(|e| anyhow!(e))
+    }
+
     async fn create_pvc(
         &self,
         ns: &str,
@@ -919,6 +978,71 @@ impl K8sClient for KubeClient {
     async fn get_deployment(&self, ns: &str, name: &str) -> Result<Deployment> {
         let api: kube::Api<Deployment> = self.api(ns);
         api.get(name).await.map_err(|e| anyhow!(e))
+    }
+
+    async fn patch_deployment(&self, ns: &str, name: &str, dep: &Deployment) -> Result<Deployment> {
+        use kube::api::{Patch, PatchParams};
+        let api: kube::Api<Deployment> = self.api(ns);
+        let dep_json = serde_json::to_value(dep)?;
+        let patch_params = PatchParams::apply("basilica-operator");
+        match api
+            .patch(name, &patch_params, &Patch::Apply(&dep_json))
+            .await
+        {
+            Ok(result) => Ok(result),
+            Err(kube::Error::Api(ae)) if ae.code == 409 => {
+                let force_params = patch_params.force();
+                api.patch(name, &force_params, &Patch::Apply(&dep_json))
+                    .await
+                    .map_err(|e| anyhow!(e))
+            }
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    async fn patch_service(&self, ns: &str, name: &str, svc: &Service) -> Result<Service> {
+        use kube::api::{Patch, PatchParams};
+        let api: kube::Api<Service> = self.api(ns);
+        let svc_json = serde_json::to_value(svc)?;
+        let patch_params = PatchParams::apply("basilica-operator");
+        match api
+            .patch(name, &patch_params, &Patch::Apply(&svc_json))
+            .await
+        {
+            Ok(result) => Ok(result),
+            Err(kube::Error::Api(ae)) if ae.code == 409 => {
+                let force_params = patch_params.force();
+                api.patch(name, &force_params, &Patch::Apply(&svc_json))
+                    .await
+                    .map_err(|e| anyhow!(e))
+            }
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    async fn patch_network_policy(
+        &self,
+        ns: &str,
+        name: &str,
+        np: &NetworkPolicy,
+    ) -> Result<NetworkPolicy> {
+        use kube::api::{Patch, PatchParams};
+        let api: kube::Api<NetworkPolicy> = self.api(ns);
+        let np_json = serde_json::to_value(np)?;
+        let patch_params = PatchParams::apply("basilica-operator");
+        match api
+            .patch(name, &patch_params, &Patch::Apply(&np_json))
+            .await
+        {
+            Ok(result) => Ok(result),
+            Err(kube::Error::Api(ae)) if ae.code == 409 => {
+                let force_params = patch_params.force();
+                api.patch(name, &force_params, &Patch::Apply(&np_json))
+                    .await
+                    .map_err(|e| anyhow!(e))
+            }
+            Err(e) => Err(anyhow!(e)),
+        }
     }
 
     async fn create_basilica_queue(&self, ns: &str, obj: &BasilicaQueue) -> Result<BasilicaQueue> {
