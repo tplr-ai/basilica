@@ -8,6 +8,8 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
+const STORAGE_OP_TIMEOUT_SECS: u64 = 30;
+
 /// Background worker for syncing dirty pages
 pub struct SyncWorker {
     /// Experiment ID (used as prefix in object storage)
@@ -123,19 +125,29 @@ impl SyncWorker {
         // Generate storage key
         let key = region.storage_key(experiment_id);
 
-        // Upload to object storage
-        match storage.put(&key, data).await {
-            Ok(_) => {
+        // Upload to object storage with timeout to prevent blocking forever
+        let timeout = Duration::from_secs(STORAGE_OP_TIMEOUT_SECS);
+        let put_result = tokio::time::timeout(timeout, storage.put(&key, data)).await;
+
+        match put_result {
+            Ok(Ok(_)) => {
                 debug!("Successfully synced: {} @ {}", region.path, region.offset);
-
-                // Mark as clean
                 dirty_tracker.mark_clean(region).await;
-
                 Ok(())
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 warn!("Failed to sync {} @ {}: {}", region.path, region.offset, e);
                 Err(format!("Storage error: {}", e))
+            }
+            Err(_) => {
+                warn!(
+                    "Timeout syncing {} @ {} after {}s",
+                    region.path, region.offset, STORAGE_OP_TIMEOUT_SECS
+                );
+                Err(format!(
+                    "Storage timeout after {}s",
+                    STORAGE_OP_TIMEOUT_SECS
+                ))
             }
         }
     }

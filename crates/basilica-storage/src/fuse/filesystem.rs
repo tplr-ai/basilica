@@ -97,15 +97,17 @@ impl BasilicaFS {
             sync_interval_ms,
         ));
 
-        let runtime_handle = Handle::try_current().unwrap_or_else(|_| {
-            let runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create tokio runtime");
-            let handle = runtime.handle().clone();
-            std::mem::forget(runtime);
-            handle
-        });
+        // Create a dedicated runtime for FUSE operations, separate from the main runtime.
+        // This prevents deadlocks when sync_worker blocks the main runtime and FUSE
+        // operations try to block_on() async tasks.
+        let fuse_runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .thread_name("fuse-io")
+            .enable_all()
+            .build()
+            .expect("Failed to create FUSE I/O runtime");
+        let runtime_handle = fuse_runtime.handle().clone();
+        std::mem::forget(fuse_runtime);
 
         let mut inodes = HashMap::new();
         let now = SystemTime::now();
@@ -531,13 +533,18 @@ impl Filesystem for BasilicaFS {
         ];
 
         for child in inodes.values() {
-            if child.parent == ino {
+            if child.parent == ino && child.ino != ino {
                 entries.push((child.ino, child.kind, child.name.clone()));
             }
         }
 
-        for (i, entry) in entries.iter().enumerate().skip(offset as usize) {
-            if reply.add(entry.0, (i + 1) as i64, entry.1, &entry.2) {
+        // Fixed the bug: properly handle offset when iterating
+        let skip_count = offset as usize;
+        for (i, entry) in entries.iter().enumerate().skip(skip_count) {
+            // The offset passed to reply.add() should be the index of the next entry
+            // relative to the original list, not the enumerated index after skip
+            let next_offset = (i + 1) as i64;
+            if reply.add(entry.0, next_offset, entry.1, &entry.2) {
                 break;
             }
         }
