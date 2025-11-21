@@ -16,6 +16,9 @@ pub enum StorageUtilsError {
     CacheSizeTooSmall(u32, u32),
 }
 
+/// Wrapped container command and args for FUSE wait integration.
+pub type WrappedCommand = (Option<Vec<String>>, Option<Vec<String>>);
+
 fn to_quantity(value: &str) -> Quantity {
     Quantity(value.to_string())
 }
@@ -166,7 +169,7 @@ pub fn wrap_command_with_fuse_wait(
     user_command: Option<Vec<String>>,
     user_args: Option<Vec<String>>,
     mount_path: &str,
-) -> Result<(Option<Vec<String>>, Option<Vec<String>>), CommandWrapError> {
+) -> Result<WrappedCommand, CommandWrapError> {
     const WAIT_TIMEOUT_SECS: i32 = 60;
 
     let wait_script = format!(
@@ -380,7 +383,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.0, Some(vec!["/bin/sh".to_string(), "-c".to_string()]));
+        assert_eq!(
+            result.0,
+            Some(vec!["/bin/sh".to_string(), "-c".to_string()])
+        );
         let script = &result.1.unwrap()[0];
         assert!(script.contains("Waiting for FUSE mount at /data"));
         assert!(script.contains("python main.py --verbose"));
