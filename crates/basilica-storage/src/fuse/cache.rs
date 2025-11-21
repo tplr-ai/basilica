@@ -295,6 +295,20 @@ impl PageCache {
         }
     }
 
+    /// Rename a file in cache (updates internal path references)
+    pub async fn rename(&mut self, old_path: &str, new_path: &str) -> Option<()> {
+        let file_lock = self.files.remove(old_path)?;
+
+        {
+            let mut file = file_lock.write().await;
+            file.path = new_path.to_string();
+            file.metadata.mtime = std::time::SystemTime::now();
+        }
+
+        self.files.insert(new_path.to_string(), file_lock);
+        Some(())
+    }
+
     /// Evict least recently used pages to make room
     async fn evict_pages(&mut self, needed: usize) {
         // Simple LRU eviction
