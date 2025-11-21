@@ -37,6 +37,7 @@ pub mod ssh;
 pub mod storage;
 pub mod types;
 pub mod utils;
+pub mod validation;
 
 // Re-export commonly used types at the crate root for convenience
 pub use auth_constants::*;
