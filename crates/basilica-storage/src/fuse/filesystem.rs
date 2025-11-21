@@ -817,6 +817,16 @@ impl Filesystem for BasilicaFS {
         }
 
         self.runtime_handle.spawn({
+            let cache = self.cache.clone();
+            let old_path_for_cache = old_path.clone();
+            let new_path_for_cache = new_path.clone();
+            async move {
+                let mut cache = cache.write().await;
+                cache.rename(&old_path_for_cache, &new_path_for_cache).await;
+            }
+        });
+
+        self.runtime_handle.spawn({
             let storage = self.storage.clone();
             let old_path = old_path.clone();
             let new_path = new_path.clone();
