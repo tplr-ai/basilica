@@ -771,6 +771,36 @@ impl ApiK8sClient for K8sClient {
             spec["healthCheck"] = health_check_obj;
         }
 
+        if let Some(ref storage) = req.storage {
+            if let Some(ref persistent) = storage.persistent {
+                let backend_str = match persistent.backend {
+                    crate::api::routes::deployments::types::StorageBackend::R2 => "r2",
+                    crate::api::routes::deployments::types::StorageBackend::S3 => "s3",
+                    crate::api::routes::deployments::types::StorageBackend::GCS => "gcs",
+                };
+                let mut persistent_obj = json!({
+                    "enabled": persistent.enabled,
+                    "backend": backend_str,
+                    "bucket": persistent.bucket,
+                    "syncIntervalMs": persistent.sync_interval_ms,
+                    "cacheSizeMb": persistent.cache_size_mb,
+                    "mountPath": persistent.mount_path,
+                });
+                if let Some(ref region) = persistent.region {
+                    persistent_obj["region"] = json!(region);
+                }
+                if let Some(ref endpoint) = persistent.endpoint {
+                    persistent_obj["endpoint"] = json!(endpoint);
+                }
+                if let Some(ref credentials_secret) = persistent.credentials_secret {
+                    persistent_obj["credentialsSecret"] = json!(credentials_secret);
+                }
+                spec["storage"] = json!({
+                    "persistent": persistent_obj
+                });
+            }
+        }
+
         let obj = json!({
             "apiVersion": "basilica.ai/v1",
             "kind": "UserDeployment",
