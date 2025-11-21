@@ -114,3 +114,149 @@ pub fn log_cleanup_operation(
         "Cleanup operation completed"
     );
 }
+
+/// Log storage file operations
+pub fn log_storage_operation(
+    namespace: &str,
+    operation: &str,
+    path: &str,
+    bytes: u64,
+    success: bool,
+    error_message: Option<&str>,
+    metadata: HashMap<String, String>,
+) {
+    if success {
+        info!(
+            namespace = %namespace,
+            operation = %operation,
+            path = %path,
+            bytes = bytes,
+            ?metadata,
+            "Storage operation completed"
+        );
+    } else {
+        error!(
+            namespace = %namespace,
+            operation = %operation,
+            path = %path,
+            bytes = bytes,
+            error = error_message,
+            ?metadata,
+            "Storage operation failed"
+        );
+    }
+}
+
+/// Log storage synchronization to object storage backend
+pub fn log_storage_sync(
+    namespace: &str,
+    path: &str,
+    bytes: u64,
+    success: bool,
+    duration_ms: u64,
+    error_message: Option<&str>,
+    metadata: HashMap<String, String>,
+) {
+    if success {
+        info!(
+            namespace = %namespace,
+            path = %path,
+            bytes = bytes,
+            duration_ms = duration_ms,
+            ?metadata,
+            "Storage sync completed"
+        );
+    } else {
+        warn!(
+            namespace = %namespace,
+            path = %path,
+            bytes = bytes,
+            duration_ms = duration_ms,
+            error = error_message,
+            ?metadata,
+            "Storage sync failed"
+        );
+    }
+}
+
+/// Log storage quota violations
+pub fn log_storage_quota_exceeded(
+    namespace: &str,
+    quota_type: &str,
+    current: u64,
+    limit: u64,
+    operation: &str,
+    metadata: HashMap<String, String>,
+) {
+    warn!(
+        namespace = %namespace,
+        quota_type = %quota_type,
+        current = current,
+        limit = limit,
+        operation = %operation,
+        ?metadata,
+        "Storage quota exceeded"
+    );
+}
+
+/// Log storage path validation failures (security)
+pub fn log_storage_path_validation_failure(
+    namespace: &str,
+    path: &str,
+    reason: &str,
+    severity: SecuritySeverity,
+    metadata: HashMap<String, String>,
+) {
+    match severity {
+        SecuritySeverity::Low | SecuritySeverity::Medium => warn!(
+            namespace = %namespace,
+            path = %path,
+            reason = %reason,
+            severity = %severity,
+            ?metadata,
+            "Storage path validation failed"
+        ),
+        SecuritySeverity::High | SecuritySeverity::Critical => error!(
+            namespace = %namespace,
+            path = %path,
+            reason = %reason,
+            severity = %severity,
+            ?metadata,
+            "Storage path validation failed - potential security violation"
+        ),
+    }
+}
+
+/// Log storage secret validation failures
+pub fn log_storage_secret_validation_failure(
+    namespace: &str,
+    secret_name: &str,
+    reason: &str,
+    metadata: HashMap<String, String>,
+) {
+    error!(
+        namespace = %namespace,
+        secret_name = %secret_name,
+        reason = %reason,
+        ?metadata,
+        "Storage secret validation failed"
+    );
+}
+
+/// Log storage rate limit exceeded
+pub fn log_storage_rate_limit_exceeded(
+    namespace: &str,
+    operation_type: &str,
+    current_rate: u32,
+    limit: u32,
+    metadata: HashMap<String, String>,
+) {
+    warn!(
+        namespace = %namespace,
+        operation_type = %operation_type,
+        current_rate = current_rate,
+        limit = limit,
+        ?metadata,
+        "Storage rate limit exceeded"
+    );
+}
