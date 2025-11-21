@@ -561,6 +561,7 @@ pub fn render_deployment(
             },
             &storage.mount_path,
         )
+        .expect("shell escape should not fail for valid UTF-8 strings")
     } else {
         (
             if spec.command.is_empty() {
