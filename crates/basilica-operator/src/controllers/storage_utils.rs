@@ -146,11 +146,27 @@ pub fn build_fuse_security_context() -> SecurityContext {
     }
 }
 
+/// Error type for command wrapping failures
+#[derive(Debug, thiserror::Error)]
+pub enum CommandWrapError {
+    #[error("Failed to shell-escape command: {0}")]
+    ShellEscapeError(String),
+}
+
+/// Wraps user command with FUSE wait script.
+///
+/// Handles four input combinations:
+/// - command Some, args Some: exec command with args
+/// - command Some, args None: exec command alone
+/// - command None, args Some: exec with args (passes args to image entrypoint)
+/// - command None, args None: just wait for FUSE, then exit (container uses image entrypoint)
+///
+/// Returns error if shell escaping fails (e.g., null bytes in strings).
 pub fn wrap_command_with_fuse_wait(
     user_command: Option<Vec<String>>,
     user_args: Option<Vec<String>>,
     mount_path: &str,
-) -> (Option<Vec<String>>, Option<Vec<String>>) {
+) -> Result<(Option<Vec<String>>, Option<Vec<String>>), CommandWrapError> {
     const WAIT_TIMEOUT_SECS: i32 = 60;
 
     let wait_script = format!(
@@ -171,32 +187,44 @@ done
         timeout = WAIT_TIMEOUT_SECS
     );
 
-    let user_cmd_str = if let Some(cmd) = user_command {
-        if let Some(args) = user_args {
-            format!(
-                "{} {}",
-                shlex::try_join(cmd.iter().map(|s| s.as_str())).unwrap_or_default(),
-                shlex::try_join(args.iter().map(|s| s.as_str())).unwrap_or_default()
-            )
-        } else {
-            shlex::try_join(cmd.iter().map(|s| s.as_str())).unwrap_or_default()
+    // Build the exec portion based on what's provided
+    let exec_portion = match (user_command, user_args) {
+        // Case 1: Both command and args provided
+        (Some(cmd), Some(args)) => {
+            let cmd_str = shlex::try_join(cmd.iter().map(|s| s.as_str()))
+                .map_err(|e| CommandWrapError::ShellEscapeError(e.to_string()))?;
+            let args_str = shlex::try_join(args.iter().map(|s| s.as_str()))
+                .map_err(|e| CommandWrapError::ShellEscapeError(e.to_string()))?;
+            Some(format!("{} {}", cmd_str, args_str))
         }
-    } else if let Some(args) = user_args {
-        shlex::try_join(args.iter().map(|s| s.as_str())).unwrap_or_default()
-    } else {
-        String::new()
+        // Case 2: Only command provided
+        (Some(cmd), None) => {
+            let cmd_str = shlex::try_join(cmd.iter().map(|s| s.as_str()))
+                .map_err(|e| CommandWrapError::ShellEscapeError(e.to_string()))?;
+            Some(cmd_str)
+        }
+        // Case 3: Only args provided - pass to image entrypoint via exec "$@"
+        (None, Some(args)) => {
+            let args_str = shlex::try_join(args.iter().map(|s| s.as_str()))
+                .map_err(|e| CommandWrapError::ShellEscapeError(e.to_string()))?;
+            // Use exec "$@" pattern to preserve entrypoint behavior
+            Some(format!("exec {}", args_str))
+        }
+        // Case 4: Neither command nor args - just wait, no exec needed
+        // The container will exit after wait script completes; if user wants
+        // to run image entrypoint, they should not use FUSE wrapper or provide explicit command
+        (None, None) => None,
     };
 
-    let wrapped_script = if user_cmd_str.is_empty() {
-        wait_script
-    } else {
-        format!("{}\nexec {}", wait_script, user_cmd_str)
+    let wrapped_script = match exec_portion {
+        Some(exec_cmd) => format!("{}\n{}", wait_script, exec_cmd),
+        None => wait_script,
     };
 
-    (
+    Ok((
         Some(vec!["/bin/sh".to_string(), "-c".to_string()]),
         Some(vec![wrapped_script]),
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -341,5 +369,56 @@ mod tests {
             Some(true),
             "Should have read-only root filesystem"
         );
+    }
+
+    #[test]
+    fn test_wrap_command_both_command_and_args() {
+        let result = wrap_command_with_fuse_wait(
+            Some(vec!["python".to_string(), "main.py".to_string()]),
+            Some(vec!["--verbose".to_string()]),
+            "/data",
+        )
+        .unwrap();
+
+        assert_eq!(result.0, Some(vec!["/bin/sh".to_string(), "-c".to_string()]));
+        let script = &result.1.unwrap()[0];
+        assert!(script.contains("Waiting for FUSE mount at /data"));
+        assert!(script.contains("python main.py --verbose"));
+    }
+
+    #[test]
+    fn test_wrap_command_only_command() {
+        let result = wrap_command_with_fuse_wait(
+            Some(vec!["sleep".to_string(), "infinity".to_string()]),
+            None,
+            "/mnt/storage",
+        )
+        .unwrap();
+
+        let script = &result.1.unwrap()[0];
+        assert!(script.contains("Waiting for FUSE mount at /mnt/storage"));
+        assert!(script.contains("sleep infinity"));
+    }
+
+    #[test]
+    fn test_wrap_command_only_args() {
+        let result = wrap_command_with_fuse_wait(
+            None,
+            Some(vec!["--config".to_string(), "/etc/app.yaml".to_string()]),
+            "/data",
+        )
+        .unwrap();
+
+        let script = &result.1.unwrap()[0];
+        assert!(script.contains("exec --config /etc/app.yaml"));
+    }
+
+    #[test]
+    fn test_wrap_command_neither_command_nor_args() {
+        let result = wrap_command_with_fuse_wait(None, None, "/data").unwrap();
+
+        let script = &result.1.unwrap()[0];
+        assert!(script.contains("Waiting for FUSE mount at /data"));
+        assert!(!script.contains("exec"));
     }
 }
