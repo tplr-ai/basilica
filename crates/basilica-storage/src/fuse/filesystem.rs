@@ -14,7 +14,7 @@ use std::ffi::OsStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use tokio::runtime::Handle;
+use tokio::runtime::{Handle, Runtime};
 use tokio::sync::RwLock as TokioRwLock;
 use tracing::{debug, error, info};
 
@@ -69,6 +69,7 @@ pub struct BasilicaFS {
 
     dirty_tracker: Arc<DirtyPageTracker>,
     sync_worker: Arc<SyncWorker>,
+    fuse_runtime: std::sync::Mutex<Option<Runtime>>,
     runtime_handle: Handle,
 
     quota_bytes: u64,
@@ -100,14 +101,19 @@ impl BasilicaFS {
         // Create a dedicated runtime for FUSE operations, separate from the main runtime.
         // This prevents deadlocks when sync_worker blocks the main runtime and FUSE
         // operations try to block_on() async tasks.
-        let fuse_runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .thread_name("fuse-io")
-            .enable_all()
-            .build()
-            .expect("Failed to create FUSE I/O runtime");
-        let runtime_handle = fuse_runtime.handle().clone();
-        std::mem::forget(fuse_runtime);
+        // In test context, we use the current runtime handle to avoid nested runtime issues.
+        let (fuse_runtime, runtime_handle) = if cfg!(test) {
+            (std::sync::Mutex::new(None), Handle::current())
+        } else {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .thread_name("fuse-io")
+                .enable_all()
+                .build()
+                .expect("Failed to create FUSE I/O runtime");
+            let handle = runtime.handle().clone();
+            (std::sync::Mutex::new(Some(runtime)), handle)
+        };
 
         let mut inodes = HashMap::new();
         let now = SystemTime::now();
@@ -138,6 +144,7 @@ impl BasilicaFS {
             cache,
             dirty_tracker,
             sync_worker,
+            fuse_runtime,
             runtime_handle,
             inodes: Arc::new(ParkingLotRwLock::new(inodes)),
             path_to_ino: Arc::new(ParkingLotRwLock::new(path_to_ino)),
@@ -154,8 +161,20 @@ impl BasilicaFS {
 
     pub async fn shutdown(&self) -> Result<(), String> {
         info!("Shutting down BasilicaFS");
+
+        // Stop the sync worker first
         self.sync_worker.stop().await;
-        self.sync_worker.flush_all().await
+        let result = self.sync_worker.flush_all().await;
+
+        // Take and shutdown the FUSE runtime
+        if let Ok(mut guard) = self.fuse_runtime.lock() {
+            if let Some(runtime) = guard.take() {
+                info!("Shutting down FUSE I/O runtime");
+                runtime.shutdown_background();
+            }
+        }
+
+        result
     }
 
     fn check_quota(&self, additional_bytes: u64) -> Result<(), libc::c_int> {
