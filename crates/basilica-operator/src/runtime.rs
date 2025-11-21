@@ -5,6 +5,7 @@ use anyhow::Result as AnyResult;
 use futures::StreamExt;
 use kube::{Api, Client, ResourceExt};
 use kube_runtime::controller::{Action, Controller};
+use kube_runtime::watcher;
 use tracing::{error, info, warn};
 
 use crate::billing::{BillingClient, HttpBillingClient, MockBillingClient};
@@ -151,8 +152,8 @@ pub async fn run() -> AnyResult<()> {
     let ud_api: Api<UserDeployment> = Api::all(client.clone());
     let node_api: Api<Node> = Api::all(client.clone());
 
-    // Run controllers as streams
-    let jobs = Controller::new(bj_api, Default::default())
+    // Run controllers as streams with explicit watcher configuration
+    let jobs = Controller::new(bj_api, watcher::Config::default().any_semantic())
         .run(
             reconcile_job,
             error_policy_job,
@@ -161,11 +162,13 @@ pub async fn run() -> AnyResult<()> {
         .for_each(|res| async move {
             match res {
                 Ok(_o) => {}
-                Err(e) => error!("job controller stream error: {}", e),
+                Err(e) => {
+                    error!("job controller stream error: {}", e);
+                }
             }
         });
 
-    let rentals = Controller::new(gr_api, Default::default())
+    let rentals = Controller::new(gr_api, watcher::Config::default().any_semantic())
         .run(
             reconcile_rental,
             error_policy_rental,
@@ -174,11 +177,13 @@ pub async fn run() -> AnyResult<()> {
         .for_each(|res| async move {
             match res {
                 Ok(_o) => {}
-                Err(e) => error!("rental controller stream error: {}", e),
+                Err(e) => {
+                    error!("rental controller stream error: {}", e);
+                }
             }
         });
 
-    let node_removal = Controller::new(np_api, Default::default())
+    let node_removal = Controller::new(np_api, watcher::Config::default().any_semantic())
         .run(
             |obj, _| {
                 let ctrl = node_removal_ctrl.clone();
@@ -198,11 +203,13 @@ pub async fn run() -> AnyResult<()> {
         .for_each(|res| async move {
             match res {
                 Ok(_o) => {}
-                Err(e) => error!("node removal controller stream error: {}", e),
+                Err(e) => {
+                    error!("node removal controller stream error: {}", e);
+                }
             }
         });
 
-    let node_profile = Controller::new(node_api, Default::default())
+    let node_profile = Controller::new(node_api, watcher::Config::default().any_semantic())
         .run(
             |obj, _| {
                 let ctrl = node_profile_ctrl.clone();
@@ -222,11 +229,13 @@ pub async fn run() -> AnyResult<()> {
         .for_each(|res| async move {
             match res {
                 Ok(_o) => {}
-                Err(e) => error!("node profile controller stream error: {}", e),
+                Err(e) => {
+                    error!("node profile controller stream error: {}", e);
+                }
             }
         });
 
-    let user_deployments = Controller::new(ud_api, Default::default())
+    let user_deployments = Controller::new(ud_api, watcher::Config::default().any_semantic())
         .run(
             reconcile_user_deployment,
             error_policy_user_deployment,
@@ -237,7 +246,9 @@ pub async fn run() -> AnyResult<()> {
         .for_each(|res| async move {
             match res {
                 Ok(_o) => {}
-                Err(e) => error!("user deployment controller stream error: {}", e),
+                Err(e) => {
+                    error!("user deployment controller stream error: {}", e);
+                }
             }
         });
 

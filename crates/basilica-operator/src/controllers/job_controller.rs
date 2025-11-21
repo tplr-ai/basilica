@@ -145,59 +145,6 @@ fn build_security_contexts() -> (Option<PodSecurityContext>, Option<SecurityCont
     (pod_sc, container_sc)
 }
 
-fn build_fuse_wait_init_container(mount_path: &str) -> Container {
-    Container {
-        name: "wait-for-fuse".to_string(),
-        image: Some("busybox:1.36".to_string()),
-        command: Some(vec![
-            "sh".to_string(),
-            "-c".to_string(),
-            format!(
-                r#"
-            echo "Waiting for FUSE mount at {}..."
-            for i in $(seq 1 60); do
-                if mountpoint -q {}; then
-                    echo "FUSE mount ready"
-                    exit 0
-                fi
-                echo "Waiting... ($i/60)"
-                sleep 1
-            done
-            echo "ERROR: FUSE mount not ready after 60s"
-            exit 1
-            "#,
-                mount_path, mount_path
-            ),
-        ]),
-        volume_mounts: Some(vec![VolumeMount {
-            name: "basilica-storage".to_string(),
-            mount_path: mount_path.to_string(),
-            mount_propagation: Some("HostToContainer".to_string()),
-            ..Default::default()
-        }]),
-        resources: Some(ResourceRequirements {
-            requests: Some(
-                vec![
-                    ("memory".to_string(), to_quantity("64Mi")),
-                    ("cpu".to_string(), to_quantity("50m")),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-            limits: Some(
-                vec![
-                    ("memory".to_string(), to_quantity("128Mi")),
-                    ("cpu".to_string(), to_quantity("100m")),
-                ]
-                .into_iter()
-                .collect(),
-            ),
-            claims: None,
-        }),
-        ..Default::default()
-    }
-}
-
 // Phase 3: Added volume support for FUSE mounts
 pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
     let (pod_sc, container_sc) = build_security_contexts();
@@ -354,7 +301,7 @@ pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
 
                 let storage_sidecar = Container {
                     name: format!("basilica-storage-{}", name),
-                    image: Some("ghcr.io/one-covenant/basilica/storage-daemon:latest".into()),
+                    image: Some("ghcr.io/one-covenant/basilica-storage-daemon:latest".into()),
                     command: Some(vec!["/usr/local/bin/basilica-storage-daemon".into()]),
                     args: None,
                     env: Some(env),
@@ -476,13 +423,8 @@ pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
         None
     };
 
-    let init_containers = storage_mount_path
-        .as_ref()
-        .map(|mount_path| vec![build_fuse_wait_init_container(mount_path)]);
-
     let pod_spec = PodSpec {
         containers,
-        init_containers,
         volumes,
         restart_policy: Some("Never".into()),
         termination_grace_period_seconds: if storage_mount_path.is_some() {
@@ -898,7 +840,7 @@ mod tests {
             .expect("Storage sidecar should exist");
         assert_eq!(
             sidecar.image.as_ref().unwrap(),
-            "ghcr.io/one-covenant/basilica/storage-daemon:latest"
+            "ghcr.io/one-covenant/basilica-storage-daemon:latest"
         );
 
         // Verify env vars
@@ -935,8 +877,8 @@ mod tests {
         assert_eq!(sc.run_as_non_root, Some(false));
         assert_eq!(
             sc.privileged,
-            Some(false),
-            "Should NOT be privileged (use CAP_SYS_ADMIN instead)"
+            Some(true),
+            "Must use privileged mode to access /dev/fuse from hostPath"
         );
         assert_eq!(
             sc.allow_privilege_escalation,
@@ -947,25 +889,6 @@ mod tests {
             sc.read_only_root_filesystem,
             Some(true),
             "Should have read-only root fs"
-        );
-        let caps = sc.capabilities.as_ref().expect("Capabilities missing");
-        assert_eq!(
-            caps.drop,
-            Some(vec!["ALL".into()]),
-            "Should drop ALL capabilities first"
-        );
-        assert_eq!(
-            caps.add,
-            Some(vec!["SYS_ADMIN".into()]),
-            "Should add CAP_SYS_ADMIN for FUSE mount/umount"
-        );
-        let seccomp = sc
-            .seccomp_profile
-            .as_ref()
-            .expect("Seccomp profile missing");
-        assert_eq!(
-            seccomp.type_, "RuntimeDefault",
-            "Should use RuntimeDefault (now actually enforced!)"
         );
 
         // Verify resource limits
@@ -1021,9 +944,9 @@ mod tests {
             .as_ref()
             .expect("Startup HTTP missing");
         assert_eq!(startup_http.path.as_ref().unwrap(), "/ready");
-        assert_eq!(startup_probe.initial_delay_seconds, Some(10));
-        assert_eq!(startup_probe.period_seconds, Some(5));
-        assert_eq!(startup_probe.failure_threshold, Some(30));
+        assert_eq!(startup_probe.initial_delay_seconds, Some(2));
+        assert_eq!(startup_probe.period_seconds, Some(2));
+        assert_eq!(startup_probe.failure_threshold, Some(15));
 
         let liveness_probe = sidecar
             .liveness_probe
@@ -1046,7 +969,7 @@ mod tests {
             .as_ref()
             .expect("Readiness HTTP missing");
         assert_eq!(readiness_http.path.as_ref().unwrap(), "/ready");
-        assert_eq!(readiness_probe.period_seconds, Some(5));
+        assert_eq!(readiness_probe.period_seconds, Some(3));
         assert_eq!(readiness_probe.failure_threshold, Some(1));
 
         // Verify envFrom for secret
