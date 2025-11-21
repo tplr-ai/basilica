@@ -314,6 +314,7 @@ fn build_storage_volumes(
 }
 
 fn build_fuse_sidecar(
+    namespace: &str,
     instance_name: &str,
     storage: &crate::crd::user_deployment::PersistentStorageSpec,
 ) -> Container {
@@ -399,6 +400,8 @@ fn build_fuse_sidecar(
         storage_utils::build_fuse_health_probes();
 
     let args = vec![
+        "--namespace".to_string(),
+        namespace.to_string(),
         "--experiment-id".to_string(),
         instance_name.to_string(),
         "--bucket".to_string(),
@@ -600,7 +603,7 @@ pub fn render_deployment(
     let mut pod_annotations = BTreeMap::new();
 
     if let Some(storage) = storage_config {
-        containers.push(build_fuse_sidecar(instance_name, storage));
+        containers.push(build_fuse_sidecar(namespace, instance_name, storage));
         pod_annotations.insert(
             "container.apparmor.security.beta.kubernetes.io/fuse-storage".to_string(),
             "unconfined".to_string(),

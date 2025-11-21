@@ -146,7 +146,7 @@ fn build_security_contexts() -> (Option<PodSecurityContext>, Option<SecurityCont
 }
 
 // Phase 3: Added volume support for FUSE mounts
-pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
+pub fn render_job(namespace: &str, name: &str, spec: &BasilicaJobSpec) -> Job {
     let (pod_sc, container_sc) = build_security_contexts();
 
     // Track persistent storage config for volume mounts
@@ -234,6 +234,13 @@ pub fn render_job(name: &str, spec: &BasilicaJobSpec) -> Job {
         if let Some(persistent) = &storage.persistent {
             if persistent.enabled {
                 let mut env = Vec::new();
+
+                // Namespace (used as prefix in object storage)
+                env.push(EnvVar {
+                    name: "NAMESPACE".into(),
+                    value: Some(namespace.to_string()),
+                    ..Default::default()
+                });
 
                 // Experiment ID (use job name as unique identifier)
                 env.push(EnvVar {
@@ -553,7 +560,7 @@ impl<C: K8sClient> JobController<C> {
 
         // Ensure Job exists
         let created = if self.client.get_job(ns, &name).await.is_err() {
-            let job = render_job(&name, &spec);
+            let job = render_job(ns, &name, &spec);
             self.client.create_job(ns, &job).await?;
             true
         } else {
@@ -681,7 +688,7 @@ mod tests {
     #[test]
     fn render_includes_resources_and_security() {
         let spec = sample_spec();
-        let job = render_job("job-abc", &spec);
+        let job = render_job("test-namespace", "job-abc", &spec);
         let tmpl = job.spec.unwrap().template;
         let pod = tmpl.spec.unwrap();
         assert_eq!(pod.restart_policy.unwrap(), "Never");
@@ -724,7 +731,7 @@ mod tests {
     #[test]
     fn render_includes_affinity_tolerations_and_ttl() {
         let spec = sample_spec();
-        let job = render_job("job-abc", &spec);
+        let job = render_job("test-namespace", "job-abc", &spec);
         let jobspec = job.spec.as_ref().unwrap();
         assert_eq!(jobspec.active_deadline_seconds, Some(3600));
         let pod = jobspec.template.spec.as_ref().unwrap();
@@ -771,7 +778,7 @@ mod tests {
             credentials_secret: None,
             enabled: true,
         });
-        let job = render_job("job-artifacts", &spec);
+        let job = render_job("test-namespace", "job-artifacts", &spec);
         let pod = job.spec.unwrap().template.spec.unwrap();
         assert!(pod
             .containers
@@ -804,7 +811,7 @@ mod tests {
                 mount_path: String::new(),
             }),
         });
-        let job = render_job("storage-job", &spec);
+        let job = render_job("test-namespace", "storage-job", &spec);
         let pod = job.spec.unwrap().template.spec.unwrap();
         assert_eq!(
             pod.containers.len(),
