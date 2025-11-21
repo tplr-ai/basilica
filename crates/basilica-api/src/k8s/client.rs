@@ -608,10 +608,16 @@ impl ApiK8sClient for K8sClient {
             Ok(_) => {
                 if name.starts_with("u-") {
                     helpers::create_reference_grant_for_namespace(&self.client, name).await?;
+                    helpers::copy_default_storage_secret(&self.client, name).await?;
                 }
                 Ok(())
             }
-            Err(kube::Error::Api(ae)) if ae.code == 409 => Ok(()),
+            Err(kube::Error::Api(ae)) if ae.code == 409 => {
+                if name.starts_with("u-") {
+                    helpers::copy_default_storage_secret(&self.client, name).await?;
+                }
+                Ok(())
+            }
             Err(e) => Err(ApiError::Internal {
                 message: format!("create namespace failed: {e}"),
             }),

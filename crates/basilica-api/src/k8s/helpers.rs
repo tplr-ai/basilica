@@ -121,6 +121,68 @@ pub async fn create_reference_grant_for_namespace(
     }
 }
 
+pub async fn copy_default_storage_secret(
+    client: &kube::Client,
+    user_namespace: &str,
+) -> Result<()> {
+    use k8s_openapi::api::core::v1::Secret;
+    use kube::api::{Api, PostParams};
+
+    let source_namespace = "basilica-system";
+    let secret_name = "basilica-r2-credentials";
+
+    let source_api: Api<Secret> = Api::namespaced(client.clone(), source_namespace);
+    let dest_api: Api<Secret> = Api::namespaced(client.clone(), user_namespace);
+
+    match source_api.get(secret_name).await {
+        Ok(mut source_secret) => {
+            source_secret.metadata.namespace = Some(user_namespace.to_string());
+            source_secret.metadata.resource_version = None;
+            source_secret.metadata.uid = None;
+            source_secret.metadata.creation_timestamp = None;
+            source_secret.metadata.owner_references = None;
+
+            match dest_api
+                .create(&PostParams::default(), &source_secret)
+                .await
+            {
+                Ok(_) => {
+                    tracing::info!(
+                        user_namespace = %user_namespace,
+                        secret_name = %secret_name,
+                        "Default storage secret copied to user namespace"
+                    );
+                    Ok(())
+                }
+                Err(kube::Error::Api(ae)) if ae.code == 409 => {
+                    tracing::debug!(
+                        user_namespace = %user_namespace,
+                        "Storage secret already exists in namespace"
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        user_namespace = %user_namespace,
+                        "Failed to copy storage secret to user namespace"
+                    );
+                    Ok(())
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                source_namespace = %source_namespace,
+                secret_name = %secret_name,
+                "Default storage secret not found, skipping copy"
+            );
+            Ok(())
+        }
+    }
+}
+
 pub fn create_temp_kubeconfig(kubeconfig_content: &str) -> anyhow::Result<tempfile::NamedTempFile> {
     use std::io::Write;
 
