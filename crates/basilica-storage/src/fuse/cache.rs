@@ -182,7 +182,7 @@ impl PageCache {
                 new_page
             });
 
-            // Copy data into page
+            // Pages are guaranteed to be PAGE_SIZE by insert_page() and or_insert_with()
             let mut page_data = page.data.to_vec();
             page_data[page_start..page_end]
                 .copy_from_slice(&data[data_offset..data_offset + chunk_size]);
@@ -202,17 +202,26 @@ impl PageCache {
     }
 
     /// Insert a page from object storage (for lazy loading)
+    /// Always pads to PAGE_SIZE to ensure write() can safely index
     pub async fn insert_page(&mut self, path: &str, offset: u64, data: Bytes) {
         let file = self.get_or_create_file(path);
         let mut file = file.write().await;
 
         let page_offset = (offset / PAGE_SIZE as u64) * PAGE_SIZE as u64;
-        let data_len = data.len();
+
+        // Always pad to PAGE_SIZE so write() can safely assume page.data.len() >= PAGE_SIZE
+        let page_data = if data.len() < PAGE_SIZE {
+            let mut buf = data.to_vec();
+            buf.resize(PAGE_SIZE, 0);
+            Bytes::from(buf)
+        } else {
+            data
+        };
 
         if let Some(old_page) = file.pages.insert(
             page_offset,
             Page {
-                data,
+                data: page_data,
                 dirty: false,
                 last_access: std::time::Instant::now(),
             },
@@ -220,7 +229,7 @@ impl PageCache {
             self.current_size = self.current_size.saturating_sub(old_page.data.len());
         }
 
-        self.current_size += data_len;
+        self.current_size += PAGE_SIZE;
     }
 
     /// Get file metadata
@@ -388,5 +397,27 @@ mod tests {
         let result = cache.read("/test.txt", 0, 11).await.unwrap();
         assert_eq!(&result[..5], b"Hello");
         assert_eq!(&result[6..11], b"World");
+    }
+
+    #[tokio::test]
+    async fn test_write_to_short_page() {
+        let mut cache = PageCache::new(10);
+
+        // Insert a short page (simulating what happens when loading from object storage)
+        let short_data = Bytes::from(vec![1u8; 1024]); // 1KB page, much less than PAGE_SIZE
+        cache.insert_page("/test.txt", 0, short_data.clone()).await;
+
+        // Now try to write at an offset within this page but beyond the short data
+        let write_data = b"test";
+        cache.write("/test.txt", 1020, write_data).await.unwrap(); // Write near the end
+
+        // Verify the write succeeded and data is correct
+        let result = cache.read("/test.txt", 1020, 4).await.unwrap();
+        assert_eq!(&result[..], write_data);
+
+        // Also verify writing past the original short page size
+        cache.write("/test.txt", 2000, write_data).await.unwrap();
+        let result = cache.read("/test.txt", 2000, 4).await.unwrap();
+        assert_eq!(&result[..], write_data);
     }
 }
