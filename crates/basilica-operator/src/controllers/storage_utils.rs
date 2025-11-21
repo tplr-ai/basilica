@@ -1,6 +1,6 @@
 use k8s_openapi::api::core::v1::{
-    Capabilities, ExecAction, HTTPGetAction, Lifecycle, LifecycleHandler, Probe,
-    ResourceRequirements, SeccompProfile, SecurityContext,
+    ExecAction, HTTPGetAction, Lifecycle, LifecycleHandler, Probe, ResourceRequirements,
+    SecurityContext,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use std::collections::BTreeMap;
@@ -89,9 +89,9 @@ pub fn build_fuse_health_probes() -> (Option<Probe>, Option<Probe>, Option<Probe
             port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(9090),
             ..Default::default()
         }),
-        initial_delay_seconds: Some(10),
-        period_seconds: Some(5),
-        failure_threshold: Some(30),
+        initial_delay_seconds: Some(2),
+        period_seconds: Some(2),
+        failure_threshold: Some(15),
         ..Default::default()
     });
 
@@ -112,7 +112,7 @@ pub fn build_fuse_health_probes() -> (Option<Probe>, Option<Probe>, Option<Probe
             port: k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(9090),
             ..Default::default()
         }),
-        period_seconds: Some(5),
+        period_seconds: Some(3),
         failure_threshold: Some(1),
         ..Default::default()
     });
@@ -122,38 +122,81 @@ pub fn build_fuse_health_probes() -> (Option<Probe>, Option<Probe>, Option<Probe
 
 /// Builds security context for FUSE filesystem daemon.
 ///
-/// FUSE requires the mount() syscall which is restricted by default.
-/// We grant CAP_SYS_ADMIN (minimum capability for FUSE) rather than
-/// privileged=true to enable seccomp filtering while allowing FUSE.
+/// FUSE requires privileged mode to access /dev/fuse and perform mount operations.
+/// Kubernetes blocks hostPath device mounts unless the container is privileged.
 ///
 /// Security model:
 /// - Runs as root (UID 0) - required for mount()
-/// - CAP_SYS_ADMIN only - minimum capability for FUSE mount/umount
-/// - RuntimeDefault seccomp - filters dangerous syscalls
-/// - Read-only root filesystem - prevents tampering
-/// - allowPrivilegeEscalation=true - required by K8s with CAP_SYS_ADMIN
+/// - Privileged mode - required to access /dev/fuse device from hostPath
+/// - Read-only root filesystem - prevents tampering with container files
 ///
-/// This is more restrictive than privileged=true which:
-/// - Grants ALL capabilities (not just SYS_ADMIN)
-/// - Runs as Unconfined seccomp (no syscall filtering)
-/// - Allows access to all host devices
+/// Note: We use privileged mode because:
+/// 1. Kubernetes blocks hostPath device mounts without it
+/// 2. FUSE needs to open /dev/fuse and call mount() syscall
+/// 3. Even with CAP_SYS_ADMIN + Unconfined seccomp + Unconfined AppArmor,
+///    K8s still blocks device access without privileged mode
 pub fn build_fuse_security_context() -> SecurityContext {
     SecurityContext {
         run_as_user: Some(0),
         run_as_non_root: Some(false),
-        privileged: Some(false),
+        privileged: Some(true),
         allow_privilege_escalation: Some(true),
-        capabilities: Some(Capabilities {
-            drop: Some(vec!["ALL".into()]),
-            add: Some(vec!["SYS_ADMIN".into()]),
-        }),
         read_only_root_filesystem: Some(true),
-        seccomp_profile: Some(SeccompProfile {
-            type_: "RuntimeDefault".into(),
-            localhost_profile: None,
-        }),
         ..Default::default()
     }
+}
+
+pub fn wrap_command_with_fuse_wait(
+    user_command: Option<Vec<String>>,
+    user_args: Option<Vec<String>>,
+    mount_path: &str,
+) -> (Option<Vec<String>>, Option<Vec<String>>) {
+    const WAIT_TIMEOUT_SECS: i32 = 60;
+
+    let wait_script = format!(
+        r#"echo 'Waiting for FUSE mount at {mount_path}...'
+for i in $(seq 1 {timeout}); do
+  if [ -f {mount_path}/.fuse_ready ]; then
+    echo 'FUSE mount ready, starting application'
+    break
+  fi
+  if [ $i -eq {timeout} ]; then
+    echo 'ERROR: FUSE mount timeout after {timeout}s'
+    exit 1
+  fi
+  sleep 1
+done
+"#,
+        mount_path = mount_path,
+        timeout = WAIT_TIMEOUT_SECS
+    );
+
+    let user_cmd_str = if let Some(cmd) = user_command {
+        if let Some(args) = user_args {
+            format!(
+                "{} {}",
+                shlex::try_join(cmd.iter().map(|s| s.as_str())).unwrap_or_default(),
+                shlex::try_join(args.iter().map(|s| s.as_str())).unwrap_or_default()
+            )
+        } else {
+            shlex::try_join(cmd.iter().map(|s| s.as_str())).unwrap_or_default()
+        }
+    } else if let Some(args) = user_args {
+        shlex::try_join(args.iter().map(|s| s.as_str())).unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let wrapped_script = if user_cmd_str.is_empty() {
+        wait_script
+    } else {
+        format!("{}\nexec {}", wait_script, user_cmd_str)
+    };
+
+    (
+        Some(vec!["/bin/sh".to_string(), "-c".to_string()]),
+        Some(vec![wrapped_script]),
+    )
 }
 
 #[cfg(test)]
@@ -242,9 +285,9 @@ mod tests {
             http_get.port,
             k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(9090)
         );
-        assert_eq!(probe.initial_delay_seconds, Some(10));
-        assert_eq!(probe.period_seconds, Some(5));
-        assert_eq!(probe.failure_threshold, Some(30));
+        assert_eq!(probe.initial_delay_seconds, Some(2));
+        assert_eq!(probe.period_seconds, Some(2));
+        assert_eq!(probe.failure_threshold, Some(15));
     }
 
     #[test]
@@ -273,7 +316,7 @@ mod tests {
             http_get.port,
             k8s_openapi::apimachinery::pkg::util::intstr::IntOrString::Int(9090)
         );
-        assert_eq!(probe.period_seconds, Some(5));
+        assert_eq!(probe.period_seconds, Some(3));
         assert_eq!(probe.failure_threshold, Some(1));
     }
 
@@ -283,41 +326,20 @@ mod tests {
 
         assert_eq!(sc.run_as_user, Some(0), "Must run as root for FUSE mount");
         assert_eq!(sc.run_as_non_root, Some(false));
-        assert_eq!(sc.privileged, Some(false), "Should not use privileged mode");
+        assert_eq!(
+            sc.privileged,
+            Some(true),
+            "Must use privileged mode to access /dev/fuse from hostPath"
+        );
         assert_eq!(
             sc.allow_privilege_escalation,
             Some(true),
-            "Required by K8s with CAP_SYS_ADMIN"
+            "Required with privileged mode"
         );
         assert_eq!(
             sc.read_only_root_filesystem,
             Some(true),
             "Should have read-only root filesystem"
-        );
-
-        let caps = sc.capabilities.as_ref().expect("Capabilities missing");
-        assert_eq!(
-            caps.drop,
-            Some(vec!["ALL".into()]),
-            "Should drop all capabilities first"
-        );
-        assert_eq!(
-            caps.add,
-            Some(vec!["SYS_ADMIN".into()]),
-            "Should add only CAP_SYS_ADMIN for FUSE"
-        );
-
-        let seccomp = sc
-            .seccomp_profile
-            .as_ref()
-            .expect("Seccomp profile missing");
-        assert_eq!(
-            seccomp.type_, "RuntimeDefault",
-            "Should use RuntimeDefault seccomp (now actually enforced!)"
-        );
-        assert_eq!(
-            seccomp.localhost_profile, None,
-            "Should not use custom seccomp profile"
         );
     }
 }
