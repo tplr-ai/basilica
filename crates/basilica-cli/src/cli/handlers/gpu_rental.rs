@@ -94,11 +94,7 @@ async fn fetch_and_filter_secure_cloud(
     gpu_category: Option<GpuCategory>,
     filters: &ListFilters,
 ) -> Result<Vec<basilica_aggregator::GpuOffering>, CliError> {
-    let spinner = create_spinner("Fetching available GPUs...");
-    let secure_result = api_client.list_secure_cloud_gpus().await;
-    complete_spinner_and_clear(spinner);
-
-    let gpus = secure_result.map_err(|e| -> CliError {
+    let gpus = api_client.list_secure_cloud_gpus().await.map_err(|e| -> CliError {
         CliError::Internal(
             eyre!(e)
                 .suggestion("Check your internet connection and try again")
@@ -173,22 +169,17 @@ async fn fetch_and_filter_community_cloud(
         }),
     };
 
-    let spinner = create_spinner("Fetching available GPUs...");
-
     // Fetch available nodes
     let response = api_client
         .list_available_nodes(Some(query))
         .await
         .map_err(|e| -> CliError {
-            complete_spinner_error(spinner.clone(), "Failed to fetch nodes");
             CliError::Internal(
                 eyre!(e)
                     .suggestion("Check your internet connection and try again")
                     .note("If this persists, nodes may be temporarily unavailable"),
             )
         })?;
-
-    complete_spinner_and_clear(spinner);
 
     // Build pricing map from nodes' hourly_rate_cents field
     // Map GPU type -> hourly rate string (e.g., "h100" -> "2.50")
@@ -280,8 +271,11 @@ pub async fn handle_ls(
     match compute_category {
         Some(ComputeCategory::SecureCloud) => {
             // Fetch and filter secure cloud GPUs
+            let spinner = create_spinner("Fetching available GPUs...");
             let filtered_gpus =
-                fetch_and_filter_secure_cloud(&api_client, gpu_category, &filters).await?;
+                fetch_and_filter_secure_cloud(&api_client, gpu_category, &filters).await;
+            complete_spinner_and_clear(spinner);
+            let filtered_gpus = filtered_gpus?;
 
             if json {
                 json_output(&filtered_gpus)?;
@@ -291,8 +285,11 @@ pub async fn handle_ls(
         }
         Some(ComputeCategory::CommunityCloud) => {
             // Fetch and filter community cloud nodes
-            let (nodes, pricing_map) =
-                fetch_and_filter_community_cloud(&api_client, gpu_category, &filters).await?;
+            let spinner = create_spinner("Fetching available GPUs...");
+            let result =
+                fetch_and_filter_community_cloud(&api_client, gpu_category, &filters).await;
+            complete_spinner_and_clear(spinner);
+            let (nodes, pricing_map) = result?;
 
             if json {
                 // Create a simple response structure for JSON output
@@ -311,6 +308,9 @@ pub async fn handle_ls(
         None => {
             // Display both tables when --compute flag is not specified
 
+            // Single unified spinner for parallel fetch
+            let spinner = create_spinner("Fetching available GPUs...");
+
             // Fetch both in parallel with 5-second timeout for community cloud
             let community_future =
                 fetch_and_filter_community_cloud(&api_client, gpu_category.clone(), &filters);
@@ -327,6 +327,8 @@ pub async fn handle_ls(
                     }
                 }
             );
+
+            complete_spinner_and_clear(spinner);
 
             let secure_gpus = secure_result?;
             let (community_nodes, pricing_map) = community_result?;

@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Simplified `balance` command output to show single balance value instead of separate "available" and "total" fields
 
+### Fixed
+- Fixed duplicate "Fetching available GPUs..." spinner in `basilica ls`
+
 ## [0.6.0-alpha.1]
 
 ### Added
