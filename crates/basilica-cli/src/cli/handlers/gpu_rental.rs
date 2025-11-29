@@ -94,13 +94,16 @@ async fn fetch_and_filter_secure_cloud(
     gpu_category: Option<GpuCategory>,
     filters: &ListFilters,
 ) -> Result<Vec<basilica_aggregator::GpuOffering>, CliError> {
-    let gpus = api_client.list_secure_cloud_gpus().await.map_err(|e| -> CliError {
-        CliError::Internal(
-            eyre!(e)
-                .suggestion("Check your internet connection and try again")
-                .note("If this persists, GPUs may be temporarily unavailable"),
-        )
-    })?;
+    let gpus = api_client
+        .list_secure_cloud_gpus()
+        .await
+        .map_err(|e| -> CliError {
+            CliError::Internal(
+                eyre!(e)
+                    .suggestion("Check your internet connection and try again")
+                    .note("If this persists, GPUs may be temporarily unavailable"),
+            )
+        })?;
 
     // Apply filters
     let mut filtered_gpus: Vec<_> = gpus
