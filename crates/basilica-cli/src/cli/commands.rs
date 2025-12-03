@@ -137,22 +137,6 @@ pub enum Commands {
         destination: String,
     },
 
-    /// Run validator (delegates to basilica-validator)
-    #[command(disable_help_flag = true)]
-    Validator {
-        /// Arguments to pass to basilica-validator
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
-
-    /// Run miner (delegates to basilica-miner)
-    #[command(disable_help_flag = true)]
-    Miner {
-        /// Arguments to pass to basilica-miner
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
-
     /// Log in to Basilica
     Login {
         /// Use device authorization flow (for WSL, SSH, containers)
@@ -295,12 +279,8 @@ impl Commands {
             | Commands::Fund { .. }
             | Commands::Balance { .. } => true,
 
-            // Authentication and delegation commands don't require auth
-            Commands::Login { .. }
-            | Commands::Logout
-            | Commands::Validator { .. }
-            | Commands::Miner { .. }
-            | Commands::Upgrade { .. } => false,
+            // Authentication commands don't require auth
+            Commands::Login { .. } | Commands::Logout | Commands::Upgrade { .. } => false,
 
             // Test auth command requires authentication
             #[cfg(debug_assertions)]

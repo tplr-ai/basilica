@@ -41,10 +41,6 @@ GPU RENTAL:
   basilica ssh <uid>                # SSH into instance
   basilica cp <src> <dst>           # Copy files
 
-NETWORK COMPONENTS:
-  basilica validator                # Run validator
-  basilica miner                    # Run miner
-
 AUTHENTICATION:
   basilica login                    # Log in to Basilica
   basilica login --device-code      # Log in using device flow
@@ -201,10 +197,6 @@ impl Args {
             } => {
                 handlers::gpu_rental::handle_cp(source.clone(), destination.clone(), config).await?
             }
-
-            // Network component delegation
-            Commands::Validator { args } => handlers::external::handle_validator(args.clone())?,
-            Commands::Miner { args } => handlers::external::handle_miner(args.clone())?,
 
             // Token management
             Commands::Tokens { action } => {

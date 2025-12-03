@@ -18,10 +18,6 @@ pub enum CliError {
     #[error(transparent)]
     Auth(#[from] crate::auth::AuthError),
 
-    /// External component delegation
-    #[error("Failed to execute external component")]
-    DelegationComponent(#[from] std::io::Error),
-
     /// Everything else (using color-eyre's Report for rich errors)
     #[error(transparent)]
     Internal(#[from] Report),
