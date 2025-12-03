@@ -13,7 +13,7 @@ use crate::output::{
     compress_path, json_output, print_error, print_info, print_success, table_output,
 };
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
-use crate::ssh::{parse_ssh_credentials, SshClient};
+use crate::ssh::{find_private_key_for_public_key, parse_ssh_credentials, SshClient};
 use crate::CliError;
 use basilica_common::types::{ComputeCategory, GpuCategory};
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
@@ -1264,8 +1264,31 @@ pub async fn handle_status(
                 if let Some(stopped_at) = &rental.stopped_at {
                     println!("  Stopped: {}", stopped_at);
                 }
-                if let Some(ssh_cmd) = &rental.ssh_command {
-                    println!("  SSH: {}", ssh_cmd);
+                // Show SSH command with private key path if available locally
+                if let Some(ip) = &rental.ip_address {
+                    if let Some(ref ssh_public_key) = rental.ssh_public_key {
+                        if let Ok(private_key_path) =
+                            find_private_key_for_public_key(ssh_public_key)
+                        {
+                            // Full SSH command with private key
+                            println!(
+                                "  SSH: {}",
+                                style(format!(
+                                    "ssh -i {} ubuntu@{}",
+                                    compress_path(&private_key_path),
+                                    ip
+                                ))
+                                .cyan()
+                            );
+                        } else {
+                            // Key not found locally, show basic command
+                            println!("  SSH: ssh ubuntu@{}", ip);
+                            println!("  SSH Key: {}", style("Not found locally").yellow());
+                        }
+                    } else {
+                        // No public key info, show basic command
+                        println!("  SSH: ssh ubuntu@{}", ip);
+                    }
                 }
             }
         }

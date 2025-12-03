@@ -102,6 +102,59 @@ pub fn find_private_key_for_public_key(registered_public_key: &str) -> Result<Pa
     }
 }
 
+/// Find the local public key file that corresponds to a given public key string
+///
+/// This function searches ~/.ssh/ for .pub files and compares their content
+/// with the provided public key. When a match is found, it returns the path
+/// to the public key file.
+///
+/// # Arguments
+/// * `registered_public_key` - The public key string to search for
+///
+/// # Returns
+/// Some(PathBuf) to the matching public key file, or None if:
+/// - No ~/.ssh directory exists
+/// - No matching .pub file found
+/// - The public key is malformed
+pub fn find_local_public_key_path(registered_public_key: &str) -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let ssh_dir = PathBuf::from(home).join(".ssh");
+
+    if !ssh_dir.exists() {
+        return None;
+    }
+
+    let registered_key_parts = parse_public_key(registered_public_key).ok()?;
+
+    let entries = fs::read_dir(&ssh_dir).ok()?;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("pub") {
+            continue;
+        }
+
+        let content = match fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        let file_key_parts = match parse_public_key(&content) {
+            Ok(parts) => parts,
+            Err(_) => continue,
+        };
+
+        if file_key_parts.key_type == registered_key_parts.key_type
+            && file_key_parts.key_data == registered_key_parts.key_data
+        {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
 /// Parsed components of an SSH public key
 #[derive(Debug, PartialEq)]
 struct PublicKeyParts {

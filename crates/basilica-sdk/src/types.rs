@@ -539,6 +539,10 @@ pub struct SecureCloudRentalListItem {
     /// SSH connection info
     pub ssh_command: Option<String>,
 
+    /// SSH public key associated with this rental (for local key matching)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_public_key: Option<String>,
+
     /// Number of vCPU cores
     pub vcpu_count: Option<u32>,
 

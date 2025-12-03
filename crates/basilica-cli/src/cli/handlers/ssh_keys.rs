@@ -1,7 +1,8 @@
 //! SSH key management handlers for the Basilica CLI
 
 use crate::error::CliError;
-use crate::output::print_success;
+use crate::output::{compress_path, print_success};
+use crate::ssh::find_local_public_key_path;
 use basilica_sdk::BasilicaClient;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input};
@@ -420,6 +421,17 @@ pub async fn handle_list_ssh_keys(client: &BasilicaClient) -> Result<(), CliErro
                 "  Created:    {}",
                 key.created_at.format("%Y-%m-%d %H:%M:%S")
             );
+
+            // Show local path if the key exists on this machine
+            if let Some(local_path) = find_local_public_key_path(&key.public_key) {
+                println!(
+                    "  Local Path: {}",
+                    style(compress_path(&local_path)).green()
+                );
+            } else {
+                println!("  Local Path: {}", style("Not found locally").yellow());
+            }
+
             println!();
             println!(
                 "{}",
