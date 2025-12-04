@@ -22,15 +22,6 @@ pub fn routes(state: AppState) -> Router<AppState> {
         // Metrics endpoint - no authentication required for Prometheus scraping
         .route("/metrics", get(routes::metrics::metrics_handler));
 
-    // Routes that require balance validation
-    let _rental_creation_route = Router::new()
-        .route("/rentals", post(routes::rentals::start_rental))
-        // Balance validation (after auth, before handler)
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            middleware::balance_validation_middleware,
-        ));
-
     // Protected routes with unified authentication and scope validation
     let protected_routes = Router::new()
         .route("/jobs", post(routes::jobs::create_job))
