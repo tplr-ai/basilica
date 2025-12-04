@@ -419,6 +419,56 @@ pub async fn start_rental(
     Ok(Json(validator_response))
 }
 
+/// Internal function to stop a community cloud rental.
+/// Handles validator termination, billing finalization, and archiving.
+/// This can be called from both HTTP handlers and background tasks.
+pub async fn stop_community_rental_internal(
+    validator_client: &basilica_validator::ValidatorClient,
+    billing_client: Option<&basilica_billing::BillingClient>,
+    db: &sqlx::PgPool,
+    rental_id: &str,
+    reason: &str,
+) -> Result<()> {
+    let request = TerminateRentalRequest {
+        reason: Some(reason.to_string()),
+    };
+
+    validator_client
+        .terminate_rental(rental_id, request.clone())
+        .await?;
+
+    // Finalize rental in billing service (calculate final cost and mark completed)
+    if let Some(billing_client) = billing_client {
+        use basilica_protocol::billing::FinalizeRentalRequest;
+
+        let now = chrono::Utc::now();
+        let end_timestamp = prost_types::Timestamp {
+            seconds: now.timestamp(),
+            nanos: now.timestamp_subsec_nanos() as i32,
+        };
+
+        let finalize_request = FinalizeRentalRequest {
+            rental_id: rental_id.to_string(),
+            end_time: Some(end_timestamp),
+            termination_reason: reason.to_string(),
+        };
+
+        if let Err(e) = billing_client.finalize_rental(finalize_request).await {
+            error!(
+                "Failed to finalize rental in billing service for {}: {}",
+                rental_id, e
+            );
+        }
+    }
+
+    // Archive ownership record to terminated_user_rentals table
+    if let Err(e) = archive_rental_ownership(db, rental_id, Some(reason)).await {
+        error!("Failed to archive rental ownership record: {}", e);
+    }
+
+    Ok(())
+}
+
 /// Stop a rental (with ownership validation)
 pub async fn stop_rental(
     State(state): State<AppState>,
@@ -429,52 +479,14 @@ pub async fn stop_rental(
         owned_rental.user_id, owned_rental.rental_id
     );
 
-    let request = TerminateRentalRequest {
-        reason: Some("User requested stop".to_string()),
-    };
-
-    state
-        .validator_client
-        .terminate_rental(&owned_rental.rental_id, request.clone())
-        .await?;
-
-    // Finalize rental in billing service (calculate final cost and mark completed)
-    if let Some(billing_client) = &state.billing_client {
-        use basilica_protocol::billing::FinalizeRentalRequest;
-
-        let now = chrono::Utc::now();
-        let end_timestamp = prost_types::Timestamp {
-            seconds: now.timestamp(),
-            nanos: now.timestamp_subsec_nanos() as i32,
-        };
-
-        let finalize_request = FinalizeRentalRequest {
-            rental_id: owned_rental.rental_id.clone(),
-            end_time: Some(end_timestamp),
-            termination_reason: request
-                .reason
-                .clone()
-                .unwrap_or_else(|| "user_requested".to_string()),
-        };
-
-        if let Err(e) = billing_client.finalize_rental(finalize_request).await {
-            error!(
-                "Failed to finalize rental in billing service for {}: {}",
-                owned_rental.rental_id, e
-            );
-        }
-    }
-
-    // Archive ownership record to terminated_user_rentals table
-    if let Err(e) = archive_rental_ownership(
+    stop_community_rental_internal(
+        &state.validator_client,
+        state.billing_client.as_deref(),
         &state.db,
         &owned_rental.rental_id,
-        request.reason.as_deref(),
+        "User requested stop",
     )
-    .await
-    {
-        error!("Failed to archive rental ownership record: {}", e);
-    }
+    .await?;
 
     Ok(axum::http::StatusCode::NO_CONTENT.into_response())
 }

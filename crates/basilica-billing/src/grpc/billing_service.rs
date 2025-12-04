@@ -16,11 +16,11 @@ use basilica_protocol::billing::{
     billing_service_server::BillingService, ActiveRental, ApplyCreditsRequest,
     ApplyCreditsResponse, FinalizeRentalRequest, FinalizeRentalResponse, GetActiveRentalsRequest,
     GetActiveRentalsResponse, GetBalanceRequest, GetBalanceResponse, GetMinerRevenueSummaryRequest,
-    GetMinerRevenueSummaryResponse, GetRentalStatusRequest, GetRentalStatusResponse, IngestResponse,
-    RefreshMinerRevenueSummaryRequest, RefreshMinerRevenueSummaryResponse, RentalStatus,
-    TelemetryData, TrackRentalRequest, TrackRentalResponse, UpdateRentalStatusRequest,
-    UpdateRentalStatusResponse, UsageDataPoint, UsageReportRequest, UsageReportResponse,
-    UsageSummary,
+    GetMinerRevenueSummaryResponse, GetRentalStatusRequest, GetRentalStatusResponse,
+    IngestResponse, RefreshMinerRevenueSummaryRequest, RefreshMinerRevenueSummaryResponse,
+    RentalStatus, TelemetryData, TrackRentalRequest, TrackRentalResponse,
+    UpdateRentalStatusRequest, UpdateRentalStatusResponse, UsageDataPoint, UsageReportRequest,
+    UsageReportResponse, UsageSummary,
 };
 
 use rust_decimal::prelude::*;
