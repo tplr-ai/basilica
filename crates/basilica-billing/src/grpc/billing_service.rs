@@ -2,7 +2,7 @@ use crate::domain::events::EventStore;
 use crate::domain::idempotency::generate_idempotency_key;
 use crate::domain::{
     credits::{CreditManager, CreditOperations},
-    rentals::{CloudType, Rental, RentalManager, RentalOperations},
+    rentals::{finalize_rental_core, CloudType, Rental, RentalManager, RentalOperations},
     types::{CreditBalance, GpuSpec, RentalId, RentalState, ResourceSpec, UserId},
 };
 use crate::error::BillingError;
@@ -693,86 +693,39 @@ impl BillingService for BillingServiceImpl {
             );
 
             let duration = end_time - rental.started_at;
-            let final_cost_decimal = rental.actual_cost.as_decimal();
 
-            // Update rental status to completed
-            let mut rental = rental.clone();
-            rental.state = crate::domain::types::RentalState::Completed;
-            rental.last_updated = end_time;
-            rental.ended_at = Some(end_time);
-
-            self.rental_repository
-                .update_rental(&rental)
-                .await
-                .map_err(|e| {
-                    error!("Failed to update rental status to completed: {}", e);
-                    Status::internal(format!("Failed to update rental status: {}", e))
-                })?;
-
-            info!(
-                "Updated {} rental {} state to completed with total_cost: {}",
-                rental.cloud_type, rental_id, final_cost_decimal
-            );
-
-            // Publish rental_end event for audit purposes
-            let rental_end_data = crate::domain::processor::RentalEndData {
-                end_time,
-                final_cost: final_cost_decimal,
-                termination_reason: if req.termination_reason.is_empty() {
-                    None
-                } else {
-                    Some(req.termination_reason.clone())
-                },
+            // Determine target state from request, defaulting to Completed for backward compatibility
+            let target_state = match req.target_status {
+                x if x == RentalStatus::FailedInsufficientCredits as i32 => {
+                    RentalState::FailedInsufficientCredits
+                }
+                x if x == RentalStatus::Failed as i32 => RentalState::Failed,
+                _ => RentalState::Completed, // Default for STOPPED, UNSPECIFIED, or missing
             };
 
-            let mut event_data = serde_json::to_value(&rental_end_data).map_err(|e| {
-                Status::internal(format!("Failed to serialize rental end data: {}", e))
+            let termination_reason = if req.termination_reason.is_empty() {
+                None
+            } else {
+                Some(req.termination_reason.as_str())
+            };
+
+            // Use shared finalization logic
+            let mut rental = rental.clone();
+            let final_cost_decimal = finalize_rental_core(
+                &mut rental,
+                target_state,
+                end_time,
+                termination_reason,
+                self.rental_repository.as_ref(),
+                self.event_store.event_repository(),
+            )
+            .await
+            .map_err(|e| {
+                error!("Failed to finalize rental: {}", e);
+                Status::internal(format!("Failed to finalize rental: {}", e))
             })?;
 
-            if let serde_json::Value::Object(ref mut map) = event_data {
-                map.insert(
-                    "timestamp".to_string(),
-                    serde_json::Value::String(chrono::Utc::now().timestamp_millis().to_string()),
-                );
-                map.insert(
-                    "cloud_type".to_string(),
-                    serde_json::Value::String(rental.cloud_type.to_string()),
-                );
-            }
-
-            let idempotency_key = generate_idempotency_key(rental.id.as_uuid(), &event_data);
-
-            // Extract node_id and validator_id from metadata for events
-            let node_id = rental.node_id().unwrap_or("").to_string();
-            let validator_id = rental.validator_id().map(|s| s.to_string());
-
-            let usage_event = crate::storage::UsageEvent {
-                event_id: uuid::Uuid::new_v4(),
-                rental_id: rental.id.as_uuid(),
-                user_id: rental.user_id.as_str().to_string(),
-                node_id,
-                validator_id,
-                event_type: crate::storage::EventType::RentalEnd,
-                event_data,
-                timestamp: chrono::Utc::now(),
-                processed: false,
-                processed_at: None,
-                batch_id: None,
-                idempotency_key: Some(idempotency_key),
-            };
-
-            self.event_store
-                .append_usage_event(&usage_event)
-                .await
-                .map_err(|e| {
-                    Status::internal(format!("Failed to append rental end event: {}", e))
-                })?;
-
-            info!(
-                "Published rental_end event for rental {} for audit purposes",
-                rental_id
-            );
-
+            // Record metrics
             if let Some(ref metrics) = self.metrics {
                 metrics
                     .billing_metrics()

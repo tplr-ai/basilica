@@ -204,6 +204,7 @@ async fn test_event_timestamps_ordered() {
         rental_id: track_response.tracking_id.clone(),
         end_time: None,
         termination_reason: String::new(),
+        target_status: basilica_protocol::billing::RentalStatus::Stopped.into(),
     };
 
     context

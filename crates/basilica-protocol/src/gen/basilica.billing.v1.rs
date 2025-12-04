@@ -261,6 +261,9 @@ pub struct FinalizeRentalRequest {
     pub end_time: ::core::option::Option<::prost_types::Timestamp>,
     #[prost(string, tag = "4")]
     pub termination_reason: ::prost::alloc::string::String,
+    /// Desired final rental state. Defaults to STOPPED if not specified.
+    #[prost(enumeration = "RentalStatus", tag = "5")]
+    pub target_status: i32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

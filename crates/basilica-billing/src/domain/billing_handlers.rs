@@ -1,7 +1,7 @@
 use crate::domain::processor::{
     CostUpdateData, EventHandlers, RentalEndData, StatusChangeData, TelemetryData,
 };
-use crate::domain::rentals::Rental;
+use crate::domain::rentals::{finalize_rental_core, Rental};
 use crate::domain::types::{
     CreditBalance, RentalId, RentalState, ResourceSpec, UsageMetrics, UserId,
 };
@@ -115,6 +115,27 @@ impl BillingEventHandlers {
             .append_billing_event(&billing_event)
             .await?;
 
+        Ok(())
+    }
+
+    /// Finalize a rental - set terminal state, update timestamps, and emit rental_end event.
+    /// This is called when a rental reaches a terminal state (e.g., insufficient credits).
+    pub async fn finalize_rental_internal(
+        &self,
+        rental: &mut Rental,
+        target_state: RentalState,
+        end_time: chrono::DateTime<Utc>,
+        termination_reason: Option<&str>,
+    ) -> Result<()> {
+        finalize_rental_core(
+            rental,
+            target_state,
+            end_time,
+            termination_reason,
+            self.rental_repository.as_ref(),
+            self.event_repository.as_ref(),
+        )
+        .await?;
         Ok(())
     }
 }
@@ -243,20 +264,33 @@ impl EventHandlers for BillingEventHandlers {
                 );
 
                 // Use specific state for insufficient credits to enable targeted handling
-                let (new_state, event_type) =
+                let (new_state, event_type, termination_reason) =
                     if matches!(&e, BillingError::InsufficientCredits { .. }) {
                         (
                             RentalState::FailedInsufficientCredits,
                             "rental_failed_insufficient_credits",
+                            "insufficient_credits",
                         )
                     } else {
-                        (RentalState::Failed, "telemetry_billing_failed")
+                        (
+                            RentalState::Failed,
+                            "telemetry_billing_failed",
+                            "billing_error",
+                        )
                     };
 
-                rental.state = new_state;
-                rental.actual_end_time = Some(Utc::now());
-                self.rental_repository.update_rental(&rental).await?;
+                let end_time = Utc::now();
 
+                // Fully finalize the rental - sets state, timestamps, and emits rental_end event
+                self.finalize_rental_internal(
+                    &mut rental,
+                    new_state,
+                    end_time,
+                    Some(termination_reason),
+                )
+                .await?;
+
+                // Also record the billing event with error details for audit
                 self.record_billing_event(
                     event_type,
                     &rental_id.to_string(),

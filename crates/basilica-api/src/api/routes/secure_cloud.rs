@@ -430,8 +430,11 @@ pub async fn start_secure_cloud_rental(
 }
 
 /// Internal function to stop a secure cloud rental.
-/// Handles aggregator deletion, billing finalization, and archiving.
+/// Handles aggregator deletion, billing finalization (unless skipped), and archiving.
 /// This can be called from both HTTP handlers and background tasks.
+///
+/// Set `skip_billing_finalize` to true when billing has already finalized the rental
+/// (e.g., credit exhaustion detected by billing service).
 ///
 /// Returns Ok(total_cost) on success, where total_cost is the accumulated rental cost.
 /// Returns an error if the deployment could not be deleted.
@@ -442,6 +445,8 @@ pub async fn stop_secure_cloud_rental_internal(
     db: &sqlx::PgPool,
     rental_id: &str,
     termination_reason: &str,
+    target_status: basilica_protocol::billing::RentalStatus,
+    skip_billing_finalize: bool,
 ) -> Result<f64, ApiError> {
     use chrono::Utc;
 
@@ -480,34 +485,37 @@ pub async fn stop_secure_cloud_rental_internal(
         (termination_reason, "stopped", termination_reason)
     };
 
-    // 2. Finalize rental in billing service
+    // 2. Finalize rental in billing service (skip if billing already handled it)
     let mut total_cost = 0.0;
-    if let Some(billing_client) = billing_client {
-        use basilica_protocol::billing::FinalizeRentalRequest;
-        use prost_types::Timestamp;
+    if !skip_billing_finalize {
+        if let Some(billing_client) = billing_client {
+            use basilica_protocol::billing::FinalizeRentalRequest;
+            use prost_types::Timestamp;
 
-        let stop_time = Utc::now();
-        let end_timestamp = Timestamp {
-            seconds: stop_time.timestamp(),
-            nanos: stop_time.timestamp_subsec_nanos() as i32,
-        };
+            let stop_time = Utc::now();
+            let end_timestamp = Timestamp {
+                seconds: stop_time.timestamp(),
+                nanos: stop_time.timestamp_subsec_nanos() as i32,
+            };
 
-        let finalize_request = FinalizeRentalRequest {
-            rental_id: rental_id.to_string(),
-            end_time: Some(end_timestamp),
-            termination_reason: billing_reason.to_string(),
-        };
+            let finalize_request = FinalizeRentalRequest {
+                rental_id: rental_id.to_string(),
+                end_time: Some(end_timestamp),
+                termination_reason: billing_reason.to_string(),
+                target_status: target_status.into(),
+            };
 
-        match billing_client.finalize_rental(finalize_request).await {
-            Ok(response) => {
-                total_cost = response.total_cost.parse::<f64>().unwrap_or(0.0);
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Failed to finalize rental {} in billing service: {}",
-                    rental_id,
-                    e
-                );
+            match billing_client.finalize_rental(finalize_request).await {
+                Ok(response) => {
+                    total_cost = response.total_cost.parse::<f64>().unwrap_or(0.0);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to finalize rental {} in billing service: {}",
+                        rental_id,
+                        e
+                    );
+                }
             }
         }
     }
@@ -565,6 +573,8 @@ pub async fn stop_secure_cloud_rental(
         &state.db,
         &rental_id,
         "user_requested",
+        basilica_protocol::billing::RentalStatus::Stopped,
+        false, // Don't skip billing finalize for user-initiated stops
     )
     .await?;
 

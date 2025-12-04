@@ -180,6 +180,8 @@ message FinalizeRentalRequest {
     reserved 3;
     reserved "final_cost";
     string termination_reason = 4;
+    // Desired final rental state. Defaults to STOPPED if not specified.
+    RentalStatus target_status = 5;
 }
 
 message FinalizeRentalResponse {

@@ -1,7 +1,12 @@
+use crate::domain::idempotency::generate_idempotency_key;
+use crate::domain::processor::RentalEndData;
 use crate::domain::types::{
     CostBreakdown, CreditBalance, RentalId, RentalState, ResourceSpec, UsageMetrics, UserId,
 };
 use crate::error::{BillingError, Result};
+use crate::storage::events::EventType;
+use crate::storage::rentals::RentalRepository;
+use crate::storage::{EventRepository, UsageEvent};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::FromPrimitive;
@@ -9,6 +14,8 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use tracing::info;
+use uuid::Uuid;
 
 /// Type of cloud for rental
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -459,4 +466,93 @@ impl RentalOperations for RentalManager {
         self.repository.update_rental(&rental).await?;
         Ok(rental)
     }
+}
+
+/// Core rental finalization logic - shared between BillingEventHandlers and BillingServiceImpl.
+///
+/// This function:
+/// 1. Updates rental state, ended_at, and last_updated
+/// 2. Persists the rental to the database
+/// 3. Emits a rental_end usage event for audit
+///
+/// Returns the final cost as a Decimal.
+pub async fn finalize_rental_core(
+    rental: &mut Rental,
+    target_state: RentalState,
+    end_time: DateTime<Utc>,
+    termination_reason: Option<&str>,
+    rental_repository: &dyn RentalRepository,
+    event_repository: &dyn EventRepository,
+) -> Result<Decimal> {
+    info!(
+        "Finalizing rental {} to state {:?} (reason: {:?})",
+        rental.id, target_state, termination_reason
+    );
+
+    // Update rental state and timestamps
+    rental.state = target_state;
+    rental.ended_at = Some(end_time);
+    rental.last_updated = end_time;
+
+    // Persist the updated rental
+    rental_repository.update_rental(rental).await?;
+
+    // Create rental_end event for audit
+    let final_cost = rental.actual_cost.as_decimal();
+    let rental_end_data = RentalEndData {
+        end_time,
+        final_cost,
+        termination_reason: termination_reason.map(|s| s.to_string()),
+    };
+
+    let mut event_data =
+        serde_json::to_value(&rental_end_data).map_err(|e| BillingError::ValidationError {
+            field: "rental_end_data".to_string(),
+            message: format!("Failed to serialize rental end data: {}", e),
+        })?;
+
+    // Add metadata to event
+    if let serde_json::Value::Object(ref mut map) = event_data {
+        map.insert(
+            "timestamp".to_string(),
+            serde_json::Value::String(Utc::now().timestamp_millis().to_string()),
+        );
+        map.insert(
+            "cloud_type".to_string(),
+            serde_json::Value::String(rental.cloud_type.to_string()),
+        );
+        map.insert(
+            "target_state".to_string(),
+            serde_json::Value::String(format!("{:?}", target_state)),
+        );
+    }
+
+    let idempotency_key = generate_idempotency_key(rental.id.as_uuid(), &event_data);
+
+    let node_id = rental.node_id().unwrap_or("").to_string();
+    let validator_id = rental.validator_id().map(|s| s.to_string());
+
+    let usage_event = UsageEvent {
+        event_id: Uuid::new_v4(),
+        rental_id: rental.id.as_uuid(),
+        user_id: rental.user_id.as_str().to_string(),
+        node_id,
+        validator_id,
+        event_type: EventType::RentalEnd,
+        event_data,
+        timestamp: Utc::now(),
+        processed: false,
+        processed_at: None,
+        batch_id: None,
+        idempotency_key: Some(idempotency_key),
+    };
+
+    event_repository.append_usage_event(&usage_event).await?;
+
+    info!(
+        "Rental {} finalized to {:?} with total_cost: {}",
+        rental.id, target_state, final_cost
+    );
+
+    Ok(final_cost)
 }

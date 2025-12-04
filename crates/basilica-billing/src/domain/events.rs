@@ -32,6 +32,11 @@ impl EventStore {
         }
     }
 
+    /// Get a reference to the underlying event repository
+    pub fn event_repository(&self) -> &dyn EventRepository {
+        self.event_repository.as_ref()
+    }
+
     /// Append a usage event to the store
     pub async fn append_usage_event(&self, event: &UsageEvent) -> Result<Uuid> {
         debug!("Appending usage event: {}", event.event_id);

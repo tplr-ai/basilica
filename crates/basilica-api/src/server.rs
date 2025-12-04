@@ -251,13 +251,16 @@ async fn process_credit_exhaustion_check(
                         rental_id
                     );
 
-                    // Use the shared stop logic to terminate, finalize billing, and archive
+                    // Use the shared stop logic to terminate infrastructure and archive
+                    // Skip billing finalize since billing already handled it when detecting insufficient credits
                     match api::routes::rentals::stop_community_rental_internal(
                         validator_client,
                         Some(billing_client),
                         db,
                         &rental_id,
                         "insufficient_credits",
+                        BillingRentalStatus::FailedInsufficientCredits,
+                        true, // Skip billing finalize - already done by billing service
                     )
                     .await
                     {
@@ -297,13 +300,16 @@ async fn process_credit_exhaustion_check(
                         rental_id
                     );
 
-                    // Use the shared stop logic to delete deployment, finalize billing, and archive
+                    // Use the shared stop logic to delete deployment and archive
+                    // Skip billing finalize since billing already handled it when detecting insufficient credits
                     match api::routes::secure_cloud::stop_secure_cloud_rental_internal(
                         aggregator_service,
                         Some(billing_client),
                         db,
                         &rental_id,
                         "insufficient_credits",
+                        BillingRentalStatus::FailedInsufficientCredits,
+                        true, // Skip billing finalize - already done by billing service
                     )
                     .await
                     {
@@ -382,7 +388,7 @@ async fn process_secure_cloud_health_check(
 
             // Finalize billing before archiving
             if let Some(billing_client) = billing_client {
-                use basilica_protocol::billing::FinalizeRentalRequest;
+                use basilica_protocol::billing::{FinalizeRentalRequest, RentalStatus};
                 use prost_types::Timestamp;
 
                 let now = chrono::Utc::now();
@@ -395,6 +401,7 @@ async fn process_secure_cloud_health_check(
                     rental_id: rental_id.to_string(),
                     end_time: Some(end_timestamp),
                     termination_reason: "vm_deleted_externally".to_string(),
+                    target_status: RentalStatus::Stopped.into(),
                 };
 
                 if let Err(e) = billing_client.finalize_rental(finalize_request).await {

@@ -336,6 +336,7 @@ async fn test_finalize_rental_charges_correct_amount() {
         rental_id: track_response.tracking_id.clone(),
         end_time: None,
         termination_reason: String::new(),
+        target_status: basilica_protocol::billing::RentalStatus::Stopped.into(),
     };
 
     let finalize_response = context
