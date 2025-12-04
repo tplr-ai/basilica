@@ -9,18 +9,15 @@ use basilica_billing::BillingClient;
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-/// Minimum balance required to start a rental (in USD)
-const MIN_BALANCE_USD: f64 = 10.0;
-
 /// Validates that a user has sufficient balance to start a rental.
 ///
 /// # Arguments
 /// * `billing_client` - Client for billing service
 /// * `user_id` - The user's ID
-/// * `_hourly_cost` - The hourly cost of the rental (for future: require balance >= 1hr cost)
+/// * `hourly_cost` - The total hourly cost of the rental (GPU price × GPU count)
 ///
 /// # Returns
-/// * `Ok(())` if the user has sufficient balance
+/// * `Ok(())` if the user has sufficient balance to cover at least 1 hour
 /// * `Err(ApiError::InsufficientBalance)` if balance is too low
 ///
 /// # Graceful Degradation
@@ -29,46 +26,44 @@ const MIN_BALANCE_USD: f64 = 10.0;
 pub async fn validate_balance_for_rental(
     billing_client: &BillingClient,
     user_id: &str,
-    _hourly_cost: Option<Decimal>,
+    hourly_cost: Decimal,
 ) -> Result<(), ApiError> {
     match billing_client.get_balance(user_id).await {
-        Ok(balance_response) => {
-            match Decimal::from_str(&balance_response.available_balance) {
-                Ok(available_balance) => {
-                    let min_balance =
-                        Decimal::from_f64_retain(MIN_BALANCE_USD).unwrap_or(Decimal::ZERO);
-
-                    if available_balance < min_balance {
-                        tracing::warn!(
-                            "Blocking rental for user {} with insufficient balance: {} < {}",
-                            user_id,
-                            available_balance,
-                            min_balance
-                        );
-                        return Err(ApiError::InsufficientBalance {
-                            message: "Your account balance is below the minimum required to create rentals".to_string(),
-                            current_balance: balance_response.available_balance.clone(),
-                            required: MIN_BALANCE_USD.to_string(),
-                        });
-                    }
-
-                    tracing::debug!(
-                        "User {} has sufficient balance: {} >= {}",
+        Ok(balance_response) => match Decimal::from_str(&balance_response.available_balance) {
+            Ok(available_balance) => {
+                if available_balance < hourly_cost {
+                    tracing::warn!(
+                        "Blocking rental for user {} with insufficient balance: {} < {}",
                         user_id,
                         available_balance,
-                        min_balance
+                        hourly_cost
                     );
-                    Ok(())
+                    return Err(ApiError::InsufficientBalance {
+                        message: format!(
+                            "Insufficient balance to cover 1 hour of rental (${:.2}/hr)",
+                            hourly_cost
+                        ),
+                        current_balance: balance_response.available_balance.clone(),
+                        required: format!("{:.2}", hourly_cost),
+                    });
                 }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to parse balance as Decimal: {}. Allowing request to proceed.",
-                        e
-                    );
-                    Ok(())
-                }
+
+                tracing::debug!(
+                    "User {} has sufficient balance: {} >= {}",
+                    user_id,
+                    available_balance,
+                    hourly_cost
+                );
+                Ok(())
             }
-        }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse balance as Decimal: {}. Allowing request to proceed.",
+                    e
+                );
+                Ok(())
+            }
+        },
         Err(e) => {
             tracing::warn!(
                 "Balance check failed for user {}: {}. Allowing request to proceed (graceful degradation).",

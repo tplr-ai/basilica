@@ -314,10 +314,9 @@ pub async fn start_secure_cloud_rental(
 
     // 2.5. Validate user has sufficient balance before creating rental
     if let Some(billing_client) = &state.billing_client {
-        let hourly_cost = offering
-            .hourly_rate_per_gpu
-            .to_f64()
-            .and_then(Decimal::from_f64);
+        let rate_per_gpu = Decimal::from_f64(offering.hourly_rate_per_gpu.to_f64().unwrap_or(0.0))
+            .unwrap_or(Decimal::ZERO);
+        let hourly_cost = rate_per_gpu * Decimal::from(offering.gpu_count.max(1));
         crate::api::middleware::validate_balance_for_rental(
             billing_client,
             &auth.user_id,

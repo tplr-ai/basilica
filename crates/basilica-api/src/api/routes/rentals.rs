@@ -109,8 +109,8 @@ pub async fn start_rental(
     let memory_mb = request.resources.memory_mb;
     let storage_mb = request.resources.storage_mb;
 
-    // Determine node_id and pricing based on the selection strategy
-    let (node_id, node_hourly_rate_cents) = match &request.node_selection {
+    // Determine node_id, pricing, and GPU count based on the selection strategy
+    let (node_id, node_hourly_rate_cents, gpu_count) = match &request.node_selection {
         NodeSelection::NodeId { node_id } => {
             info!("Starting rental with specified node: {}", node_id);
 
@@ -130,13 +130,15 @@ pub async fn start_rental(
                     message: format!("Failed to query node pricing: {}", e),
                 })?;
 
-            let pricing = nodes_response
+            let node = nodes_response
                 .available_nodes
                 .iter()
-                .find(|n| n.node.id == *node_id)
-                .and_then(|n| n.node.hourly_rate_cents);
+                .find(|n| n.node.id == *node_id);
 
-            (node_id.clone(), pricing)
+            let pricing = node.and_then(|n| n.node.hourly_rate_cents);
+            let gpu_count = node.map(|n| n.node.gpu_specs.len() as u32).unwrap_or(1);
+
+            (node_id.clone(), pricing, gpu_count)
         }
         NodeSelection::ExactGpuConfiguration { gpu_requirements } => {
             info!(
@@ -190,8 +192,13 @@ pub async fn start_rental(
                 selected_node.node.id, exact_count
             );
 
-            // Capture both node_id and pricing from the selected node (no second fetch needed!)
-            (selected_node.node.id, selected_node.node.hourly_rate_cents)
+            // Capture node_id, pricing, and GPU count from the selected node
+            let gpu_count = gpu_requirements.gpu_count;
+            (
+                selected_node.node.id,
+                selected_node.node.hourly_rate_cents,
+                gpu_count,
+            )
         }
     };
 
@@ -211,8 +218,9 @@ pub async fn start_rental(
 
     // Validate user has sufficient balance before creating rental
     if let Some(billing_client) = &state.billing_client {
-        let hourly_cost = node_hourly_rate_cents
-            .map(|cents| rust_decimal::Decimal::from(cents) / rust_decimal::Decimal::from(100));
+        let cents = node_hourly_rate_cents.expect("pricing validated before rental creation");
+        let per_gpu = rust_decimal::Decimal::from(cents) / rust_decimal::Decimal::from(100);
+        let hourly_cost = per_gpu * rust_decimal::Decimal::from(gpu_count);
         crate::api::middleware::validate_balance_for_rental(billing_client, user_id, hourly_cost)
             .await?;
     }
