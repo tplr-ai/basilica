@@ -252,7 +252,7 @@ async fn process_credit_exhaustion_check(
                     );
 
                     // Use the shared stop logic to terminate, finalize billing, and archive
-                    if let Err(e) = api::routes::rentals::stop_community_rental_internal(
+                    match api::routes::rentals::stop_community_rental_internal(
                         validator_client,
                         Some(billing_client),
                         db,
@@ -261,16 +261,19 @@ async fn process_credit_exhaustion_check(
                     )
                     .await
                     {
-                        tracing::error!(
-                            "Failed to stop rental {} due to credit exhaustion: {}",
-                            rental_id,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Successfully stopped rental {} due to credit exhaustion",
-                            rental_id
-                        );
+                        Ok(_total_cost) => {
+                            tracing::info!(
+                                "Successfully stopped rental {} due to credit exhaustion",
+                                rental_id
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to stop rental {} due to credit exhaustion: {}",
+                                rental_id,
+                                e
+                            );
+                        }
                     }
                 }
             }
@@ -295,7 +298,7 @@ async fn process_credit_exhaustion_check(
                     );
 
                     // Use the shared stop logic to delete deployment, finalize billing, and archive
-                    if let Err(e) = api::routes::secure_cloud::stop_secure_cloud_rental_internal(
+                    match api::routes::secure_cloud::stop_secure_cloud_rental_internal(
                         aggregator_service,
                         Some(billing_client),
                         db,
@@ -304,16 +307,19 @@ async fn process_credit_exhaustion_check(
                     )
                     .await
                     {
-                        tracing::error!(
-                            "Failed to stop secure cloud rental {} due to credit exhaustion: {}",
-                            rental_id,
-                            e
-                        );
-                    } else {
-                        tracing::info!(
-                            "Successfully stopped secure cloud rental {} due to credit exhaustion",
-                            rental_id
-                        );
+                        Ok(_total_cost) => {
+                            tracing::info!(
+                                "Successfully stopped secure cloud rental {} due to credit exhaustion",
+                                rental_id
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to stop secure cloud rental {} due to credit exhaustion: {}",
+                                rental_id,
+                                e
+                            );
+                        }
                     }
                 }
             }

@@ -433,7 +433,8 @@ pub async fn start_secure_cloud_rental(
 /// Handles aggregator deletion, billing finalization, and archiving.
 /// This can be called from both HTTP handlers and background tasks.
 ///
-/// Returns Ok(()) on success, or an error if the deployment could not be deleted.
+/// Returns Ok(total_cost) on success, where total_cost is the accumulated rental cost.
+/// Returns an error if the deployment could not be deleted.
 /// Note: Billing and archiving failures are logged but don't cause the function to fail.
 pub async fn stop_secure_cloud_rental_internal(
     aggregator_service: &basilica_aggregator::service::AggregatorService,
@@ -441,7 +442,7 @@ pub async fn stop_secure_cloud_rental_internal(
     db: &sqlx::PgPool,
     rental_id: &str,
     termination_reason: &str,
-) -> Result<(), ApiError> {
+) -> Result<f64, ApiError> {
     use chrono::Utc;
 
     // 1. Delete deployment via aggregator (rental_id IS the deployment_id)
@@ -480,6 +481,7 @@ pub async fn stop_secure_cloud_rental_internal(
     };
 
     // 2. Finalize rental in billing service
+    let mut total_cost = 0.0;
     if let Some(billing_client) = billing_client {
         use basilica_protocol::billing::FinalizeRentalRequest;
         use prost_types::Timestamp;
@@ -496,12 +498,17 @@ pub async fn stop_secure_cloud_rental_internal(
             termination_reason: billing_reason.to_string(),
         };
 
-        if let Err(e) = billing_client.finalize_rental(finalize_request).await {
-            tracing::warn!(
-                "Failed to finalize rental {} in billing service: {}",
-                rental_id,
-                e
-            );
+        match billing_client.finalize_rental(finalize_request).await {
+            Ok(response) => {
+                total_cost = response.total_cost.parse::<f64>().unwrap_or(0.0);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to finalize rental {} in billing service: {}",
+                    rental_id,
+                    e
+                );
+            }
         }
     }
 
@@ -512,7 +519,7 @@ pub async fn stop_secure_cloud_rental_internal(
         tracing::error!("Failed to archive secure cloud rental {}: {}", rental_id, e);
     }
 
-    Ok(())
+    Ok(total_cost)
 }
 
 /// Stop a secure cloud rental and calculate final cost
@@ -552,7 +559,7 @@ pub async fn stop_secure_cloud_rental(
     let duration_hours = duration.num_seconds() as f64 / 3600.0;
 
     // 2. Stop the rental using internal function
-    stop_secure_cloud_rental_internal(
+    let total_cost = stop_secure_cloud_rental_internal(
         &state.aggregator_service,
         state.billing_client.as_deref(),
         &state.db,
@@ -560,12 +567,6 @@ pub async fn stop_secure_cloud_rental(
         "user_requested",
     )
     .await?;
-
-    // Note: We don't have access to total_cost from the internal function
-    // as it doesn't return billing response. For the HTTP endpoint, we could
-    // query billing service separately if needed, but for now return 0.0
-    // since the cost is already tracked in billing service history.
-    let total_cost = 0.0;
 
     tracing::info!(
         "Rental {} stopped. Duration: {} hours",

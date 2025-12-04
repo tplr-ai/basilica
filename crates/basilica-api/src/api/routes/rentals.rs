@@ -422,13 +422,15 @@ pub async fn start_rental(
 /// Internal function to stop a community cloud rental.
 /// Handles validator termination, billing finalization, and archiving.
 /// This can be called from both HTTP handlers and background tasks.
+///
+/// Returns Ok(total_cost) on success, where total_cost is the accumulated rental cost.
 pub async fn stop_community_rental_internal(
     validator_client: &basilica_validator::ValidatorClient,
     billing_client: Option<&basilica_billing::BillingClient>,
     db: &sqlx::PgPool,
     rental_id: &str,
     reason: &str,
-) -> Result<()> {
+) -> Result<f64> {
     let request = TerminateRentalRequest {
         reason: Some(reason.to_string()),
     };
@@ -438,6 +440,7 @@ pub async fn stop_community_rental_internal(
         .await?;
 
     // Finalize rental in billing service (calculate final cost and mark completed)
+    let mut total_cost = 0.0;
     if let Some(billing_client) = billing_client {
         use basilica_protocol::billing::FinalizeRentalRequest;
 
@@ -453,11 +456,16 @@ pub async fn stop_community_rental_internal(
             termination_reason: reason.to_string(),
         };
 
-        if let Err(e) = billing_client.finalize_rental(finalize_request).await {
-            error!(
-                "Failed to finalize rental in billing service for {}: {}",
-                rental_id, e
-            );
+        match billing_client.finalize_rental(finalize_request).await {
+            Ok(response) => {
+                total_cost = response.total_cost.parse::<f64>().unwrap_or(0.0);
+            }
+            Err(e) => {
+                error!(
+                    "Failed to finalize rental in billing service for {}: {}",
+                    rental_id, e
+                );
+            }
         }
     }
 
@@ -466,7 +474,7 @@ pub async fn stop_community_rental_internal(
         error!("Failed to archive rental ownership record: {}", e);
     }
 
-    Ok(())
+    Ok(total_cost)
 }
 
 /// Stop a rental (with ownership validation)
@@ -479,7 +487,7 @@ pub async fn stop_rental(
         owned_rental.user_id, owned_rental.rental_id
     );
 
-    stop_community_rental_internal(
+    let _ = stop_community_rental_internal(
         &state.validator_client,
         state.billing_client.as_deref(),
         &state.db,
