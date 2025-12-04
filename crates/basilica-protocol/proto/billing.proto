@@ -24,6 +24,9 @@ service BillingService {
     // Miner revenue reconciliation
     rpc RefreshMinerRevenueSummary(RefreshMinerRevenueSummaryRequest) returns (RefreshMinerRevenueSummaryResponse);
     rpc GetMinerRevenueSummary(GetMinerRevenueSummaryRequest) returns (GetMinerRevenueSummaryResponse);
+
+    // Rental status lookup (for credit exhaustion monitoring)
+    rpc GetRentalStatus(GetRentalStatusRequest) returns (GetRentalStatusResponse);
 }
 
 // Credit Management Messages
@@ -121,12 +124,23 @@ enum RentalStatus {
     RENTAL_STATUS_STOPPING = 3;
     RENTAL_STATUS_STOPPED = 4;
     RENTAL_STATUS_FAILED = 5;
+    RENTAL_STATUS_FAILED_INSUFFICIENT_CREDITS = 6;
 }
 
 message UpdateRentalStatusResponse {
     bool success = 1;
     string current_cost = 2; // Decimal string
     google.protobuf.Timestamp updated_at = 3;
+}
+
+message GetRentalStatusRequest {
+    string rental_id = 1;
+}
+
+message GetRentalStatusResponse {
+    string rental_id = 1;
+    RentalStatus status = 2;
+    string user_id = 3;
 }
 
 message GetActiveRentalsRequest {

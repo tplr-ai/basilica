@@ -16,10 +16,11 @@ use basilica_protocol::billing::{
     billing_service_server::BillingService, ActiveRental, ApplyCreditsRequest,
     ApplyCreditsResponse, FinalizeRentalRequest, FinalizeRentalResponse, GetActiveRentalsRequest,
     GetActiveRentalsResponse, GetBalanceRequest, GetBalanceResponse, GetMinerRevenueSummaryRequest,
-    GetMinerRevenueSummaryResponse, IngestResponse, RefreshMinerRevenueSummaryRequest,
-    RefreshMinerRevenueSummaryResponse, RentalStatus, TelemetryData, TrackRentalRequest,
-    TrackRentalResponse, UpdateRentalStatusRequest, UpdateRentalStatusResponse, UsageDataPoint,
-    UsageReportRequest, UsageReportResponse, UsageSummary,
+    GetMinerRevenueSummaryResponse, GetRentalStatusRequest, GetRentalStatusResponse, IngestResponse,
+    RefreshMinerRevenueSummaryRequest, RefreshMinerRevenueSummaryResponse, RentalStatus,
+    TelemetryData, TrackRentalRequest, TrackRentalResponse, UpdateRentalStatusRequest,
+    UpdateRentalStatusResponse, UsageDataPoint, UsageReportRequest, UsageReportResponse,
+    UsageSummary,
 };
 
 use rust_decimal::prelude::*;
@@ -125,6 +126,7 @@ impl BillingServiceImpl {
             RentalStatus::Stopping => RentalState::Terminating,
             RentalStatus::Stopped => RentalState::Completed,
             RentalStatus::Failed => RentalState::Failed,
+            RentalStatus::FailedInsufficientCredits => RentalState::FailedInsufficientCredits,
             RentalStatus::Unspecified => RentalState::Pending,
         }
     }
@@ -137,6 +139,7 @@ impl BillingServiceImpl {
             RentalState::Terminating => RentalStatus::Stopping,
             RentalState::Completed => RentalStatus::Stopped,
             RentalState::Failed => RentalStatus::Failed,
+            RentalState::FailedInsufficientCredits => RentalStatus::FailedInsufficientCredits,
         }
     }
 
@@ -1249,5 +1252,30 @@ impl BillingService for BillingServiceImpl {
         };
 
         Ok(Response::new(response))
+    }
+
+    async fn get_rental_status(
+        &self,
+        request: Request<GetRentalStatusRequest>,
+    ) -> std::result::Result<Response<GetRentalStatusResponse>, Status> {
+        let req = request.into_inner();
+
+        let rental_id = RentalId::from_str(&req.rental_id)
+            .map_err(|_| Status::invalid_argument("Invalid rental ID format"))?;
+
+        let rental = self
+            .rental_repository
+            .get_rental(&rental_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to get rental: {}", e)))?
+            .ok_or_else(|| Status::not_found("Rental not found"))?;
+
+        let status = Self::domain_status_to_proto(rental.state);
+
+        Ok(Response::new(GetRentalStatusResponse {
+            rental_id: req.rental_id,
+            status: status.into(),
+            user_id: rental.user_id.to_string(),
+        }))
     }
 }

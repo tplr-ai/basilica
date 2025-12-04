@@ -178,6 +178,22 @@ pub struct UpdateRentalStatusResponse {
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetRentalStatusRequest {
+    #[prost(string, tag = "1")]
+    pub rental_id: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetRentalStatusResponse {
+    #[prost(string, tag = "1")]
+    pub rental_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "RentalStatus", tag = "2")]
+    pub status: i32,
+    #[prost(string, tag = "3")]
+    pub user_id: ::prost::alloc::string::String,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetActiveRentalsRequest {
     #[prost(string, tag = "1")]
     pub user_id: ::prost::alloc::string::String,
@@ -512,6 +528,7 @@ pub enum RentalStatus {
     Stopping = 3,
     Stopped = 4,
     Failed = 5,
+    FailedInsufficientCredits = 6,
 }
 impl RentalStatus {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -526,6 +543,9 @@ impl RentalStatus {
             RentalStatus::Stopping => "RENTAL_STATUS_STOPPING",
             RentalStatus::Stopped => "RENTAL_STATUS_STOPPED",
             RentalStatus::Failed => "RENTAL_STATUS_FAILED",
+            RentalStatus::FailedInsufficientCredits => {
+                "RENTAL_STATUS_FAILED_INSUFFICIENT_CREDITS"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -537,6 +557,9 @@ impl RentalStatus {
             "RENTAL_STATUS_STOPPING" => Some(Self::Stopping),
             "RENTAL_STATUS_STOPPED" => Some(Self::Stopped),
             "RENTAL_STATUS_FAILED" => Some(Self::Failed),
+            "RENTAL_STATUS_FAILED_INSUFFICIENT_CREDITS" => {
+                Some(Self::FailedInsufficientCredits)
+            }
             _ => None,
         }
     }
@@ -951,6 +974,37 @@ pub mod billing_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Rental status lookup (for credit exhaustion monitoring)
+        pub async fn get_rental_status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetRentalStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetRentalStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/basilica.billing.v1.BillingService/GetRentalStatus",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "basilica.billing.v1.BillingService",
+                        "GetRentalStatus",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1029,6 +1083,14 @@ pub mod billing_service_server {
             request: tonic::Request<super::GetMinerRevenueSummaryRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetMinerRevenueSummaryResponse>,
+            tonic::Status,
+        >;
+        /// Rental status lookup (for credit exhaustion monitoring)
+        async fn get_rental_status(
+            &self,
+            request: tonic::Request<super::GetRentalStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetRentalStatusResponse>,
             tonic::Status,
         >;
     }
@@ -1575,6 +1637,53 @@ pub mod billing_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetMinerRevenueSummarySvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/basilica.billing.v1.BillingService/GetRentalStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetRentalStatusSvc<T: BillingService>(pub Arc<T>);
+                    impl<
+                        T: BillingService,
+                    > tonic::server::UnaryService<super::GetRentalStatusRequest>
+                    for GetRentalStatusSvc<T> {
+                        type Response = super::GetRentalStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetRentalStatusRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as BillingService>::get_rental_status(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetRentalStatusSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

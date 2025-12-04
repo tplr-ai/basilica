@@ -242,19 +242,30 @@ impl EventHandlers for BillingEventHandlers {
                     rental_id, e
                 );
 
-                rental.state = RentalState::Failed;
+                // Use specific state for insufficient credits to enable targeted handling
+                let (new_state, event_type) =
+                    if matches!(&e, BillingError::InsufficientCredits { .. }) {
+                        (
+                            RentalState::FailedInsufficientCredits,
+                            "rental_failed_insufficient_credits",
+                        )
+                    } else {
+                        (RentalState::Failed, "telemetry_billing_failed")
+                    };
+
+                rental.state = new_state;
                 rental.actual_end_time = Some(Utc::now());
                 self.rental_repository.update_rental(&rental).await?;
 
                 self.record_billing_event(
-                    "telemetry_billing_failed",
+                    event_type,
                     &rental_id.to_string(),
                     rental.user_id.as_uuid().ok(),
                     serde_json::json!({
                         "usage_metrics": usage_metrics,
                         "attempted_cost": incremental_cost.to_string(),
                         "error": e.to_string(),
-                        "rental_state": "failed",
+                        "rental_state": rental.state.to_string(),
                         "timestamp": event.timestamp,
                     }),
                 )

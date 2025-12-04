@@ -131,6 +131,8 @@ pub enum RentalState {
     Terminating,
     Completed,
     Failed,
+    /// Rental failed specifically due to insufficient credits during billing
+    FailedInsufficientCredits,
 }
 
 impl RentalState {
@@ -142,7 +144,10 @@ impl RentalState {
     }
 
     pub fn is_terminal(&self) -> bool {
-        matches!(self, RentalState::Completed | RentalState::Failed)
+        matches!(
+            self,
+            RentalState::Completed | RentalState::Failed | RentalState::FailedInsufficientCredits
+        )
     }
 
     pub fn can_transition_to(&self, next: RentalState) -> bool {
@@ -152,6 +157,7 @@ impl RentalState {
                 | (RentalState::Pending, RentalState::Failed)
                 | (RentalState::Active, RentalState::Suspended)
                 | (RentalState::Active, RentalState::Terminating)
+                | (RentalState::Active, RentalState::FailedInsufficientCredits)
                 | (RentalState::Suspended, RentalState::Active)
                 | (RentalState::Suspended, RentalState::Terminating)
                 | (RentalState::Terminating, RentalState::Completed)
@@ -169,6 +175,7 @@ impl fmt::Display for RentalState {
             RentalState::Terminating => write!(f, "terminating"),
             RentalState::Completed => write!(f, "completed"),
             RentalState::Failed => write!(f, "failed"),
+            RentalState::FailedInsufficientCredits => write!(f, "failed_insufficient_credits"),
         }
     }
 }

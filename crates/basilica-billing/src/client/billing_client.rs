@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use basilica_protocol::billing::{
     billing_service_client::BillingServiceClient, GetActiveRentalsRequest,
-    GetActiveRentalsResponse, GetBalanceRequest, GetBalanceResponse, IngestResponse, RentalStatus,
-    TelemetryData, UsageAggregation, UsageReportRequest, UsageReportResponse,
+    GetActiveRentalsResponse, GetBalanceRequest, GetBalanceResponse, GetRentalStatusRequest,
+    GetRentalStatusResponse, IngestResponse, RentalStatus, TelemetryData, UsageAggregation,
+    UsageReportRequest, UsageReportResponse,
 };
 use futures::stream;
 use std::time::Duration;
@@ -275,6 +276,28 @@ impl BillingClient {
             .ingest_telemetry(stream)
             .await
             .context("Failed to ingest telemetry batch")?;
+
+        Ok(response.into_inner())
+    }
+
+    /// Get the status of a specific rental from the billing service.
+    /// This is used for credit exhaustion monitoring.
+    pub async fn get_rental_status(
+        &self,
+        rental_id: impl Into<String>,
+    ) -> Result<GetRentalStatusResponse> {
+        let rental_id = rental_id.into();
+        let request = GetRentalStatusRequest {
+            rental_id: rental_id.clone(),
+        };
+
+        debug!("Getting rental status for: {}", rental_id);
+
+        let mut client = self.client.clone();
+        let response = client
+            .get_rental_status(request)
+            .await
+            .with_context(|| format!("Failed to get rental status for: {}", rental_id))?;
 
         Ok(response.into_inner())
     }

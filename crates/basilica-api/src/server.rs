@@ -201,6 +201,173 @@ async fn process_secure_cloud_billing(billing_client: &BillingClient, db: &PgPoo
     }
 }
 
+/// Process credit exhaustion check for active rentals.
+/// Polls billing service for rental status and terminates rentals when credits are exhausted.
+async fn process_credit_exhaustion_check(
+    billing_client: &BillingClient,
+    validator_client: &ValidatorClient,
+    aggregator_service: &basilica_aggregator::service::AggregatorService,
+    db: &PgPool,
+) {
+    use basilica_protocol::billing::RentalStatus as BillingRentalStatus;
+
+    // Query all active community cloud rentals
+    let community_rentals: Vec<(String,)> = match sqlx::query_as(
+        "SELECT rental_id FROM user_rentals",
+    )
+    .fetch_all(db)
+    .await
+    {
+        Ok(records) => records,
+        Err(e) => {
+            tracing::error!("Failed to query community rentals for credit check: {}", e);
+            return;
+        }
+    };
+
+    // Query all active secure cloud rentals
+    let secure_rentals: Vec<(String,)> = match sqlx::query_as(
+        "SELECT id FROM secure_cloud_rentals WHERE status = 'running'",
+    )
+    .fetch_all(db)
+    .await
+    {
+        Ok(records) => records,
+        Err(e) => {
+            tracing::error!("Failed to query secure cloud rentals for credit check: {}", e);
+            return;
+        }
+    };
+
+    // Check community cloud rentals
+    for (rental_id,) in community_rentals {
+        match billing_client.get_rental_status(&rental_id).await {
+            Ok(response) => {
+                if response.status == BillingRentalStatus::FailedInsufficientCredits as i32 {
+                    tracing::info!(
+                        "Rental {} failed due to insufficient credits, terminating",
+                        rental_id
+                    );
+
+                    // Terminate via validator
+                    let terminate_request =
+                        basilica_validator::api::types::TerminateRentalRequest {
+                            reason: Some("Insufficient credits".to_string()),
+                        };
+                    if let Err(e) = validator_client
+                        .terminate_rental(&rental_id, terminate_request)
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to terminate rental {} on validator: {}",
+                            rental_id,
+                            e
+                        );
+                        continue;
+                    }
+
+                    // Archive the rental
+                    if let Err(e) = crate::api::extractors::ownership::archive_rental_ownership(
+                        db,
+                        &rental_id,
+                        Some("Credits exhausted"),
+                    )
+                    .await
+                    {
+                        tracing::error!("Failed to archive rental {}: {}", rental_id, e);
+                    } else {
+                        tracing::info!("Archived rental {} due to credit exhaustion", rental_id);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "Failed to get billing status for rental {}: {}",
+                    rental_id,
+                    e
+                );
+            }
+        }
+    }
+
+    // Check secure cloud rentals
+    for (rental_id,) in secure_rentals {
+        match billing_client.get_rental_status(&rental_id).await {
+            Ok(response) => {
+                if response.status == BillingRentalStatus::FailedInsufficientCredits as i32 {
+                    tracing::info!(
+                        "Secure cloud rental {} failed due to insufficient credits, terminating",
+                        rental_id
+                    );
+
+                    // Terminate via aggregator
+                    if let Err(e) = aggregator_service.delete_deployment(&rental_id).await {
+                        tracing::error!(
+                            "Failed to delete secure cloud deployment {}: {}",
+                            rental_id,
+                            e
+                        );
+                        continue;
+                    }
+
+                    // Finalize billing
+                    use basilica_protocol::billing::FinalizeRentalRequest;
+                    use prost_types::Timestamp;
+
+                    let now = chrono::Utc::now();
+                    let end_timestamp = Timestamp {
+                        seconds: now.timestamp(),
+                        nanos: now.timestamp_subsec_nanos() as i32,
+                    };
+
+                    let finalize_request = FinalizeRentalRequest {
+                        rental_id: rental_id.clone(),
+                        end_time: Some(end_timestamp),
+                        termination_reason: "insufficient_credits".to_string(),
+                    };
+
+                    if let Err(e) = billing_client.finalize_rental(finalize_request).await {
+                        tracing::error!(
+                            "Failed to finalize billing for rental {}: {}",
+                            rental_id,
+                            e
+                        );
+                    }
+
+                    // Archive the rental
+                    if let Err(e) =
+                        crate::api::extractors::ownership::archive_secure_cloud_rental(
+                            db,
+                            &rental_id,
+                            Some("Credits exhausted"),
+                            Some("stopped"),
+                        )
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to archive secure cloud rental {}: {}",
+                            rental_id,
+                            e
+                        );
+                    } else {
+                        tracing::info!(
+                            "Archived secure cloud rental {} due to credit exhaustion",
+                            rental_id
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    "Failed to get billing status for secure cloud rental {}: {}",
+                    rental_id,
+                    e
+                );
+            }
+        }
+    }
+}
+
 /// Process health check for a single secure cloud rental
 async fn process_secure_cloud_health_check(
     rental_id: &str,
@@ -813,6 +980,34 @@ impl Server {
             );
         } else {
             tracing::info!("Secure Cloud billing task not started (billing service disabled)");
+        }
+
+        // Start credit exhaustion check task (polls billing for insufficient credits)
+        if let Some(billing_client) = state.billing_client.clone() {
+            let credit_check_db = state.db.clone();
+            let credit_check_validator = state.validator_client.clone();
+            let credit_check_aggregator = state.aggregator_service.clone();
+            let credit_check_billing = billing_client.clone();
+            let credit_check_interval = std::time::Duration::from_secs(30);
+
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(credit_check_interval);
+                loop {
+                    interval.tick().await;
+                    process_credit_exhaustion_check(
+                        &credit_check_billing,
+                        &credit_check_validator,
+                        &credit_check_aggregator,
+                        &credit_check_db,
+                    )
+                    .await;
+                }
+            });
+
+            tracing::info!(
+                "Started credit exhaustion check task (interval: {} seconds)",
+                credit_check_interval.as_secs()
+            );
         }
 
         // Start node token cleanup task
