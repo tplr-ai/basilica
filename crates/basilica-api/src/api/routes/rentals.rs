@@ -211,9 +211,8 @@ pub async fn start_rental(
 
     // Validate user has sufficient balance before creating rental
     if let Some(billing_client) = &state.billing_client {
-        let hourly_cost = node_hourly_rate_cents.map(|cents| {
-            rust_decimal::Decimal::from(cents) / rust_decimal::Decimal::from(100)
-        });
+        let hourly_cost = node_hourly_rate_cents
+            .map(|cents| rust_decimal::Decimal::from(cents) / rust_decimal::Decimal::from(100));
         crate::api::middleware::validate_balance_for_rental(billing_client, user_id, hourly_cost)
             .await?;
     }
