@@ -171,7 +171,11 @@ impl BillingClient {
             user_id,
             limit,
             offset,
-            vec![RentalStatus::Stopped as i32, RentalStatus::Failed as i32],
+            vec![
+                RentalStatus::Stopped as i32,
+                RentalStatus::Failed as i32,
+                RentalStatus::FailedInsufficientCredits as i32,
+            ],
         )
         .await
     }
