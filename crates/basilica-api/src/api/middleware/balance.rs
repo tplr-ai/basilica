@@ -1,9 +1,3 @@
-//! Balance validation for rental creation
-//!
-//! This module provides a validation function to check if a user has sufficient
-//! balance before creating a rental. It's called from route handlers rather than
-//! as middleware because it needs access to pricing information from the request body.
-
 use crate::error::ApiError;
 use basilica_billing::BillingClient;
 use rust_decimal::Decimal;
@@ -19,10 +13,7 @@ use std::str::FromStr;
 /// # Returns
 /// * `Ok(())` if the user has sufficient balance to cover at least 1 hour
 /// * `Err(ApiError::InsufficientBalance)` if balance is too low
-///
-/// # Graceful Degradation
-/// If the billing service is unreachable or returns an error, the request is allowed
-/// to proceed (fail open). This prevents billing service outages from blocking all rentals.
+/// * `Err(ApiError::Internal)` if the billing service fails or balance cannot be parsed
 pub async fn validate_balance_for_rental(
     billing_client: &BillingClient,
     user_id: &str,
@@ -57,20 +48,17 @@ pub async fn validate_balance_for_rental(
                 Ok(())
             }
             Err(e) => {
-                tracing::warn!(
-                    "Failed to parse balance as Decimal: {}. Allowing request to proceed.",
-                    e
-                );
-                Ok(())
+                tracing::error!("Failed to parse balance as Decimal: {}", e);
+                Err(ApiError::Internal {
+                    message: "Failed to parse balance".to_string(),
+                })
             }
         },
         Err(e) => {
-            tracing::warn!(
-                "Balance check failed for user {}: {}. Allowing request to proceed (graceful degradation).",
-                user_id,
-                e
-            );
-            Ok(())
+            tracing::error!("Balance check failed for user {}: {}", user_id, e);
+            Err(ApiError::Internal {
+                message: "Balance check failed".to_string(),
+            })
         }
     }
 }
