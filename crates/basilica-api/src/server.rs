@@ -245,7 +245,7 @@ async fn process_credit_exhaustion_check(
     for (rental_id,) in community_rentals {
         match billing_client.get_rental_status(&rental_id).await {
             Ok(response) => {
-                if let Some(status) = BillingRentalStatus::from_i32(response.status) {
+                if let Ok(status) = BillingRentalStatus::try_from(response.status) {
                     // Stop rental if billing reports any terminal/failure status
                     let should_stop = !matches!(
                         status,
@@ -346,7 +346,7 @@ async fn process_credit_exhaustion_check(
     for (rental_id,) in secure_rentals {
         match billing_client.get_rental_status(&rental_id).await {
             Ok(response) => {
-                if let Some(status) = BillingRentalStatus::from_i32(response.status) {
+                if let Ok(status) = BillingRentalStatus::try_from(response.status) {
                     // Stop rental if billing reports any terminal/failure status
                     let should_stop = !matches!(
                         status,
