@@ -29,7 +29,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid;
 
 pub struct BillingServiceImpl {
@@ -168,7 +168,15 @@ impl BillingServiceImpl {
                     basilica_protocol::billing::CommunityCloudData {
                         node_id: rental.node_id().unwrap_or("").to_string(),
                         validator_id: rental.validator_id().unwrap_or("").to_string(),
-                        base_price_per_gpu: rental.base_price_per_gpu.to_f64().unwrap_or(0.0),
+                        base_price_per_gpu: rental.base_price_per_gpu.to_f64().unwrap_or_else(
+                            || {
+                                error!(
+                                    "Failed to convert base_price_per_gpu {} to f64 for rental {}",
+                                    rental.base_price_per_gpu, rental.id
+                                );
+                                0.0
+                            },
+                        ),
                         gpu_count: rental.gpu_count,
                         miner_uid: rental.miner_uid().unwrap_or(0),
                     },
@@ -183,7 +191,15 @@ impl BillingServiceImpl {
                             .to_string(),
                         provider: rental.provider().unwrap_or("").to_string(),
                         offering_id: rental.offering_id().unwrap_or("").to_string(),
-                        base_price_per_gpu: rental.base_price_per_gpu.to_f64().unwrap_or(0.0),
+                        base_price_per_gpu: rental.base_price_per_gpu.to_f64().unwrap_or_else(
+                            || {
+                                error!(
+                                    "Failed to convert base_price_per_gpu {} to f64 for rental {}",
+                                    rental.base_price_per_gpu, rental.id
+                                );
+                                0.0
+                            },
+                        ),
                         gpu_count: rental.gpu_count,
                     },
                 ),
@@ -236,9 +252,16 @@ impl BillingService for BillingServiceImpl {
                 .map_err(|e| Status::internal(format!("Failed to apply credits: {}", e)))?;
 
             if let Some(ref metrics) = self.metrics {
+                let amount_f64 = amount.to_f64().unwrap_or_else(|| {
+                    warn!(
+                        "Failed to convert credit amount {} to f64 for metrics, using 0.0",
+                        amount
+                    );
+                    0.0
+                });
                 metrics
                     .billing_metrics()
-                    .record_credit_applied(amount.to_f64().unwrap_or(0.0), user_id.as_str())
+                    .record_credit_applied(amount_f64, user_id.as_str())
                     .await;
             }
 
@@ -727,12 +750,16 @@ impl BillingService for BillingServiceImpl {
 
             // Record metrics
             if let Some(ref metrics) = self.metrics {
+                let final_cost_f64 = final_cost_decimal.to_f64().unwrap_or_else(|| {
+                    warn!(
+                        "Failed to convert final_cost {} to f64 for metrics on rental {}, using 0.0",
+                        final_cost_decimal, rental_id
+                    );
+                    0.0
+                });
                 metrics
                     .billing_metrics()
-                    .record_rental_finalized(
-                        &rental_id.to_string(),
-                        final_cost_decimal.to_f64().unwrap_or(0.0),
-                    )
+                    .record_rental_finalized(&rental_id.to_string(), final_cost_f64)
                     .await;
             }
 

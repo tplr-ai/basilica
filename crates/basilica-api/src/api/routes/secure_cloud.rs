@@ -228,13 +228,30 @@ pub async fn list_secure_cloud_rentals(
                     if let Some(offering) = offerings_map.get(offering_id.as_str()) {
                         let gpu_count = offering.gpu_count;
                         // Total hourly cost = per-GPU price × markup × number of GPUs
-                        let hourly_cost = hourly_cost_with_markup(
+                        let hourly_cost = match hourly_cost_with_markup(
                             offering.hourly_rate_per_gpu,
                             gpu_count,
                             state.pricing_config.secure_cloud_markup_percent,
-                        )
-                        .map(|d| d.to_f64().unwrap_or(0.0))
-                        .unwrap_or(0.0);
+                        ) {
+                            Ok(decimal) => decimal.to_f64().unwrap_or_else(|| {
+                                tracing::error!(
+                                    "Failed to convert hourly_cost {} to f64 for offering {} rental {} display",
+                                    decimal,
+                                    offering_id,
+                                    rental_id
+                                );
+                                0.0
+                            }),
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to calculate hourly_cost for offering {} rental {}: {}",
+                                    offering_id,
+                                    rental_id,
+                                    e
+                                );
+                                0.0
+                            }
+                        };
 
                         (offering.gpu_type.to_string(), gpu_count, hourly_cost)
                     } else {

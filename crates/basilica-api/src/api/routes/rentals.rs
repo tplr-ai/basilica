@@ -341,12 +341,19 @@ pub async fn start_rental(
 
         // Apply markup to the base price before sending to billing (same as balance check)
         // Billing service will use this as the final price
-        let marked_up_price = apply_markup(
+        let marked_up_decimal = apply_markup(
             base_price_per_gpu_decimal,
             state.pricing_config.community_markup_percent,
-        )?
-        .to_f64()
-        .unwrap_or(0.0);
+        )?;
+        let marked_up_price = marked_up_decimal.to_f64().ok_or_else(|| {
+            tracing::error!(
+                "Failed to convert marked_up_price {} to f64 for billing",
+                marked_up_decimal
+            );
+            crate::error::ApiError::Internal {
+                message: "Failed to calculate billing rate: price conversion error".to_string(),
+            }
+        })?;
 
         // Get total GPU count from the resource spec (each GPU is a separate entry with count=1)
         let gpu_count = resource_spec
