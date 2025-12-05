@@ -1924,7 +1924,8 @@ async fn poll_rental_status(
     loop {
         // Check if we've exceeded the maximum wait time
         if start_time.elapsed() > MAX_WAIT_TIME {
-            complete_spinner_error(spinner, "Timeout waiting for rental to become active");
+            complete_spinner_and_clear(spinner);
+            println!("The rental is not yet up. Please wait for a while and SSH manually using `basilica ssh`.");
             return Ok(false);
         }
 
@@ -2000,7 +2001,7 @@ async fn poll_secure_cloud_rental_status(
     rental_id: &str,
     api_client: &basilica_sdk::BasilicaClient,
 ) -> Result<Option<basilica_sdk::types::SecureCloudRentalListItem>, CliError> {
-    const MAX_WAIT_TIME: Duration = Duration::from_secs(180);
+    const MAX_WAIT_TIME: Duration = Duration::from_secs(300);
     const INITIAL_INTERVAL: Duration = Duration::from_secs(5);
     const MAX_INTERVAL: Duration = Duration::from_secs(15);
 
@@ -2012,7 +2013,8 @@ async fn poll_secure_cloud_rental_status(
     loop {
         // Check if we've exceeded the maximum wait time
         if start_time.elapsed() > MAX_WAIT_TIME {
-            complete_spinner_error(spinner, "Timeout waiting for rental to become active");
+            complete_spinner_and_clear(spinner);
+            println!("The rental is not yet up. Please wait for a while and SSH manually using `basilica ssh`.");
             return Ok(None);
         }
 
@@ -2032,10 +2034,9 @@ async fn poll_secure_cloud_rental_status(
                                 if let Ok((host, _, _)) = parse_ssh_credentials(ssh_cmd) {
                                     if is_private_ip(&host) {
                                         // Still has private IP, continue polling
-                                        spinner.set_message(format!(
-                                            "Rental running but waiting for public IP... ({}s elapsed)",
-                                            start_time.elapsed().as_secs()
-                                        ));
+                                        spinner.set_message(
+                                            "Rental running but waiting for public IP...",
+                                        );
                                         // Continue to next iteration
                                     } else {
                                         // Has public IP, return success
@@ -2067,19 +2068,11 @@ async fn poll_secure_cloud_rental_status(
                         }
                         "pending" | "provisioning" => {
                             // Still starting, continue polling
-                            spinner.set_message(format!(
-                                "Rental is {}... ({}s elapsed)",
-                                rental.status,
-                                start_time.elapsed().as_secs()
-                            ));
+                            spinner.set_message(format!("Rental is {}...", rental.status));
                         }
                         _ => {
                             // Unknown status, continue polling
-                            spinner.set_message(format!(
-                                "Rental status: {}... ({}s elapsed)",
-                                rental.status,
-                                start_time.elapsed().as_secs()
-                            ));
+                            spinner.set_message(format!("Rental status: {}...", rental.status));
                         }
                     }
                 } else {
