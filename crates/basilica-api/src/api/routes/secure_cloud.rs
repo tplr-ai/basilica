@@ -2,7 +2,7 @@
 //! These routes proxy requests to the aggregator service
 
 use crate::api::extractors::ownership::archive_secure_cloud_rental;
-use crate::api::middleware::AuthContext;
+use crate::api::middleware::{apply_markup, AuthContext};
 use crate::api::query::GpuPriceQuery;
 use crate::error::ApiError;
 use crate::server::AppState;
@@ -16,7 +16,7 @@ use basilica_sdk::types::{
     ListSecureCloudRentalsResponse, SecureCloudRentalListItem, SecureCloudRentalResponse,
     StartSecureCloudRentalRequest, StopSecureCloudRentalResponse,
 };
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde_json::json;
 
@@ -98,12 +98,11 @@ pub async fn list_gpu_prices(
             }
 
             // Apply secure cloud markup to prices
-            let markup_multiplier = rust_decimal::Decimal::from_f64(
-                1.0 + (state.pricing_config.secure_cloud_markup_percent / 100.0),
-            )
-            .unwrap_or(rust_decimal::Decimal::ONE);
             for offering in &mut offerings {
-                offering.hourly_rate_per_gpu *= markup_multiplier;
+                offering.hourly_rate_per_gpu = apply_markup(
+                    offering.hourly_rate_per_gpu,
+                    state.pricing_config.secure_cloud_markup_percent,
+                );
             }
 
             // raw_metadata is automatically excluded via #[serde(skip)]
@@ -317,9 +316,15 @@ pub async fn start_secure_cloud_rental(
             message: format!("Offering {} not found", request.offering_id),
         })?;
 
+    // Pre-compute marked-up per-GPU rate so balance checks, billing, and responses stay in sync
+    let marked_up_rate = apply_markup(
+        offering.hourly_rate_per_gpu,
+        state.pricing_config.secure_cloud_markup_percent,
+    );
+
     // 2.5. Validate user has sufficient balance before creating rental
     if let Some(billing_client) = &state.billing_client {
-        let hourly_cost = offering.hourly_rate_per_gpu * Decimal::from(offering.gpu_count.max(1));
+        let hourly_cost = marked_up_rate * Decimal::from(offering.gpu_count.max(1));
         crate::api::middleware::validate_balance_for_rental(
             billing_client,
             &auth.user_id,
@@ -366,14 +371,9 @@ pub async fn start_secure_cloud_rental(
 
     let timestamp = prost_types::Timestamp::from(std::time::SystemTime::now());
 
-    // Apply markup to the per-GPU price before sending to billing
+    // Apply markup to the per-GPU price before sending to billing (keep consistent with balance check)
     // Note: offering.hourly_rate_per_gpu is already normalized to per-GPU rate by the aggregator
-    let markup_multiplier =
-        Decimal::from_f64(1.0 + (state.pricing_config.secure_cloud_markup_percent / 100.0))
-            .unwrap_or(Decimal::ONE);
-    let base_price_per_gpu = (offering.hourly_rate_per_gpu * markup_multiplier)
-        .to_f64()
-        .unwrap_or(0.0);
+    let base_price_per_gpu = marked_up_rate.to_f64().unwrap_or(0.0);
 
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),

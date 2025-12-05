@@ -6,7 +6,7 @@ use crate::{
             archive_rental_ownership, get_user_rentals_with_details, store_rental_ownership,
             OwnedRental,
         },
-        middleware::AuthContext,
+        middleware::{apply_markup, hourly_cost_with_markup, AuthContext},
     },
     country_mapping::normalize_country_code,
     error::Result,
@@ -33,6 +33,7 @@ use basilica_validator::{
 };
 use futures::stream::Stream;
 use rand::seq::SliceRandom;
+use rust_decimal::prelude::ToPrimitive;
 use serde::Deserialize;
 use sqlx::Row;
 use tracing::{debug, error, info};
@@ -216,11 +217,15 @@ pub async fn start_rental(
         });
     }
 
-    // Validate user has sufficient balance before creating rental
+    // Validate user has sufficient balance before creating rental (use marked-up price)
     if let Some(billing_client) = &state.billing_client {
         let cents = node_hourly_rate_cents.expect("pricing validated before rental creation");
         let per_gpu = rust_decimal::Decimal::from(cents) / rust_decimal::Decimal::from(100);
-        let hourly_cost = per_gpu * rust_decimal::Decimal::from(gpu_count);
+        let hourly_cost = hourly_cost_with_markup(
+            per_gpu,
+            gpu_count,
+            state.pricing_config.community_markup_percent,
+        );
         crate::api::middleware::validate_balance_for_rental(billing_client, user_id, hourly_cost)
             .await?;
     }
@@ -330,14 +335,18 @@ pub async fn start_rental(
         });
 
         // Use pricing from node selection (validated earlier before rental creation)
-        let base_price_per_gpu =
-            node_hourly_rate_cents.expect("pricing validated before rental creation") as f64
-                / 100.0;
+        let base_price_per_gpu_decimal = rust_decimal::Decimal::from(
+            node_hourly_rate_cents.expect("pricing validated before rental creation"),
+        ) / rust_decimal::Decimal::from(100);
 
-        // Apply markup to the base price before sending to billing
+        // Apply markup to the base price before sending to billing (same as balance check)
         // Billing service will use this as the final price
-        let markup_multiplier = 1.0 + (state.pricing_config.community_markup_percent / 100.0);
-        let marked_up_price = base_price_per_gpu * markup_multiplier;
+        let marked_up_price = apply_markup(
+            base_price_per_gpu_decimal,
+            state.pricing_config.community_markup_percent,
+        )
+        .to_f64()
+        .unwrap_or(0.0);
 
         // Get total GPU count from the resource spec (each GPU is a separate entry with count=1)
         let gpu_count = resource_spec
@@ -876,10 +885,15 @@ pub async fn list_available_nodes(
         .await?;
 
     // Apply community cloud markup to prices
-    let markup_multiplier = 1.0 + (state.pricing_config.community_markup_percent / 100.0);
     for available_node in &mut response.available_nodes {
         if let Some(hourly_rate_cents) = available_node.node.hourly_rate_cents {
-            let marked_up_rate = (hourly_rate_cents as f64 * markup_multiplier).round() as i32;
+            let rate_decimal = rust_decimal::Decimal::from(hourly_rate_cents);
+            let marked_up_decimal =
+                apply_markup(rate_decimal, state.pricing_config.community_markup_percent);
+            let marked_up_rate = marked_up_decimal
+                .round()
+                .to_i32()
+                .unwrap_or(hourly_rate_cents);
             available_node.node.hourly_rate_cents = Some(marked_up_rate);
         }
     }
