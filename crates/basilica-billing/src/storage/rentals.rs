@@ -41,6 +41,7 @@ impl SqlRentalRepository {
             "terminating" => RentalState::Terminating,
             "completed" => RentalState::Completed,
             "failed" => RentalState::Failed,
+            "failed_insufficient_credits" => RentalState::FailedInsufficientCredits,
             _ => RentalState::Failed,
         }
     }

@@ -83,6 +83,7 @@ dashmap = { workspace = true }
 # Additional dependencies
 rust_decimal = { workspace = true }
 sqlx = { workspace = true }
+tonic = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 clap-verbosity-flag = { workspace = true }

@@ -245,47 +245,99 @@ async fn process_credit_exhaustion_check(
     for (rental_id,) in community_rentals {
         match billing_client.get_rental_status(&rental_id).await {
             Ok(response) => {
-                if response.status == BillingRentalStatus::FailedInsufficientCredits as i32 {
-                    tracing::info!(
-                        "Rental {} failed due to insufficient credits, terminating",
-                        rental_id
+                if let Some(status) = BillingRentalStatus::from_i32(response.status) {
+                    // Stop rental if billing reports any terminal/failure status
+                    let should_stop = !matches!(
+                        status,
+                        BillingRentalStatus::Unspecified
+                            | BillingRentalStatus::Pending
+                            | BillingRentalStatus::Active
+                            | BillingRentalStatus::Stopping
                     );
 
-                    // Use the shared stop logic to terminate infrastructure and archive
-                    // Skip billing finalize since billing already handled it when detecting insufficient credits
-                    match api::routes::rentals::stop_community_rental_internal(
-                        validator_client,
-                        Some(billing_client),
-                        db,
-                        &rental_id,
-                        "insufficient_credits",
-                        BillingRentalStatus::FailedInsufficientCredits,
-                        true, // Skip billing finalize - already done by billing service
-                    )
-                    .await
-                    {
-                        Ok(_total_cost) => {
-                            tracing::info!(
-                                "Successfully stopped rental {} due to credit exhaustion",
-                                rental_id
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to stop rental {} due to credit exhaustion: {}",
-                                rental_id,
-                                e
-                            );
+                    if should_stop {
+                        let stop_reason = match status {
+                            BillingRentalStatus::FailedInsufficientCredits => {
+                                "insufficient_credits"
+                            }
+                            BillingRentalStatus::Stopped => "billing_stopped",
+                            _ => "billing_failed",
+                        };
+                        tracing::info!(
+                            "Rental {} reported {:?} by billing, terminating",
+                            rental_id,
+                            status
+                        );
+
+                        // Use the shared stop logic to terminate infrastructure and archive
+                        // Skip billing finalize since billing already handled it
+                        match api::routes::rentals::stop_community_rental_internal(
+                            validator_client,
+                            Some(billing_client),
+                            db,
+                            &rental_id,
+                            stop_reason,
+                            status,
+                            true, // Skip billing finalize - already done by billing service
+                        )
+                        .await
+                        {
+                            Ok(_total_cost) => {
+                                tracing::info!(
+                                    "Successfully stopped rental {} due to billing status {:?}",
+                                    rental_id,
+                                    status
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to stop rental {} due to billing status: {}",
+                                    rental_id,
+                                    e
+                                );
+                            }
                         }
                     }
                 }
             }
             Err(e) => {
-                tracing::debug!(
-                    "Failed to get billing status for rental {}: {}",
-                    rental_id,
-                    e
-                );
+                // If billing no longer has a record for this rental, assume unsafe to keep running
+                let not_found = e
+                    .chain()
+                    .find_map(|cause| cause.downcast_ref::<tonic::Status>())
+                    .map(|s| s.code() == tonic::Code::NotFound)
+                    .unwrap_or(false);
+
+                if not_found {
+                    tracing::warn!(
+                        "Billing missing rental {}; stopping to avoid orphaned compute",
+                        rental_id
+                    );
+
+                    if let Err(stop_err) = api::routes::rentals::stop_community_rental_internal(
+                        validator_client,
+                        Some(billing_client),
+                        db,
+                        &rental_id,
+                        "billing_not_found",
+                        BillingRentalStatus::Failed,
+                        true, // Skip billing finalize - billing has no record
+                    )
+                    .await
+                    {
+                        tracing::error!(
+                            "Failed to stop rental {} after billing missing: {}",
+                            rental_id,
+                            stop_err
+                        );
+                    }
+                } else {
+                    tracing::debug!(
+                        "Failed to get billing status for rental {}: {}",
+                        rental_id,
+                        e
+                    );
+                }
             }
         }
     }
@@ -294,47 +346,99 @@ async fn process_credit_exhaustion_check(
     for (rental_id,) in secure_rentals {
         match billing_client.get_rental_status(&rental_id).await {
             Ok(response) => {
-                if response.status == BillingRentalStatus::FailedInsufficientCredits as i32 {
-                    tracing::info!(
-                        "Secure cloud rental {} failed due to insufficient credits, terminating",
-                        rental_id
+                if let Some(status) = BillingRentalStatus::from_i32(response.status) {
+                    // Stop rental if billing reports any terminal/failure status
+                    let should_stop = !matches!(
+                        status,
+                        BillingRentalStatus::Unspecified
+                            | BillingRentalStatus::Pending
+                            | BillingRentalStatus::Active
+                            | BillingRentalStatus::Stopping
                     );
 
-                    // Use the shared stop logic to delete deployment and archive
-                    // Skip billing finalize since billing already handled it when detecting insufficient credits
-                    match api::routes::secure_cloud::stop_secure_cloud_rental_internal(
-                        aggregator_service,
-                        Some(billing_client),
-                        db,
-                        &rental_id,
-                        "insufficient_credits",
-                        BillingRentalStatus::FailedInsufficientCredits,
-                        true, // Skip billing finalize - already done by billing service
-                    )
-                    .await
-                    {
-                        Ok(_total_cost) => {
-                            tracing::info!(
-                                "Successfully stopped secure cloud rental {} due to credit exhaustion",
-                                rental_id
-                            );
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to stop secure cloud rental {} due to credit exhaustion: {}",
-                                rental_id,
-                                e
-                            );
+                    if should_stop {
+                        let stop_reason = match status {
+                            BillingRentalStatus::FailedInsufficientCredits => {
+                                "insufficient_credits"
+                            }
+                            BillingRentalStatus::Stopped => "billing_stopped",
+                            _ => "billing_failed",
+                        };
+                        tracing::info!(
+                            "Secure cloud rental {} reported {:?} by billing, terminating",
+                            rental_id,
+                            status
+                        );
+
+                        // Use the shared stop logic to delete deployment and archive
+                        // Skip billing finalize since billing already handled it
+                        match api::routes::secure_cloud::stop_secure_cloud_rental_internal(
+                            aggregator_service,
+                            Some(billing_client),
+                            db,
+                            &rental_id,
+                            stop_reason,
+                            status,
+                            true, // Skip billing finalize - already done by billing service
+                        )
+                        .await
+                        {
+                            Ok(_total_cost) => {
+                                tracing::info!(
+                                    "Successfully stopped secure cloud rental {} due to billing status {:?}",
+                                    rental_id,
+                                    status
+                                );
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    "Failed to stop secure cloud rental {} due to billing status: {}",
+                                    rental_id,
+                                    e
+                                );
+                            }
                         }
                     }
                 }
             }
             Err(e) => {
-                tracing::debug!(
-                    "Failed to get billing status for secure cloud rental {}: {}",
-                    rental_id,
-                    e
-                );
+                let not_found = e
+                    .chain()
+                    .find_map(|cause| cause.downcast_ref::<tonic::Status>())
+                    .map(|s| s.code() == tonic::Code::NotFound)
+                    .unwrap_or(false);
+
+                if not_found {
+                    tracing::warn!(
+                        "Billing missing secure cloud rental {}; stopping to avoid orphaned compute",
+                        rental_id
+                    );
+
+                    if let Err(stop_err) =
+                        api::routes::secure_cloud::stop_secure_cloud_rental_internal(
+                            aggregator_service,
+                            Some(billing_client),
+                            db,
+                            &rental_id,
+                            "billing_not_found",
+                            BillingRentalStatus::Failed,
+                            true,
+                        )
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to stop secure cloud rental {} after billing missing: {}",
+                            rental_id,
+                            stop_err
+                        );
+                    }
+                } else {
+                    tracing::debug!(
+                        "Failed to get billing status for secure cloud rental {}: {}",
+                        rental_id,
+                        e
+                    );
+                }
             }
         }
     }
