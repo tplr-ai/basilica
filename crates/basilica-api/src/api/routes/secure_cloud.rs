@@ -386,7 +386,15 @@ pub async fn start_secure_cloud_rental(
 
     // Apply markup to the per-GPU price before sending to billing (keep consistent with balance check)
     // Note: offering.hourly_rate_per_gpu is already normalized to per-GPU rate by the aggregator
-    let base_price_per_gpu = marked_up_rate.to_f64().unwrap_or(0.0);
+    let base_price_per_gpu = marked_up_rate.to_f64().ok_or_else(|| {
+        tracing::error!(
+            "Failed to convert marked_up_rate {} to f64 for billing",
+            marked_up_rate
+        );
+        ApiError::Internal {
+            message: "Failed to calculate billing rate: price conversion error".to_string(),
+        }
+    })?;
 
     let track_request = TrackRentalRequest {
         rental_id: rental_id.clone(),
