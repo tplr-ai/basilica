@@ -2,7 +2,7 @@
 //! These routes proxy requests to the aggregator service
 
 use crate::api::extractors::ownership::archive_secure_cloud_rental;
-use crate::api::middleware::{apply_markup, AuthContext};
+use crate::api::middleware::{apply_markup, hourly_cost_with_markup, AuthContext};
 use crate::api::query::GpuPriceQuery;
 use crate::error::ApiError;
 use crate::server::AppState;
@@ -99,10 +99,22 @@ pub async fn list_gpu_prices(
 
             // Apply secure cloud markup to prices
             for offering in &mut offerings {
-                offering.hourly_rate_per_gpu = apply_markup(
+                match apply_markup(
                     offering.hourly_rate_per_gpu,
                     state.pricing_config.secure_cloud_markup_percent,
-                );
+                ) {
+                    Ok(marked_up) => offering.hourly_rate_per_gpu = marked_up,
+                    Err(e) => {
+                        tracing::error!("Failed to apply markup: {}", e);
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(json!({
+                                "error": "Failed to calculate GPU prices",
+                                "message": e.to_string()
+                            })),
+                        );
+                    }
+                }
             }
 
             // raw_metadata is automatically excluded via #[serde(skip)]
@@ -211,28 +223,29 @@ pub async fn list_secure_cloud_rentals(
                 db_region,
                 ssh_public_key,
             )| {
-                let markup_multiplier =
-                    1.0 + (state.pricing_config.secure_cloud_markup_percent / 100.0);
-
                 // Try to find the offering to get GPU details and pricing
-                let (gpu_type, gpu_count, hourly_cost) = if let Some(offering) =
-                    offerings_map.get(offering_id.as_str())
-                {
-                    let base_rate = offering.hourly_rate_per_gpu.to_f64().unwrap_or(0.0);
-                    let gpu_count = offering.gpu_count;
-                    // Total hourly cost = per-GPU price × markup × number of GPUs
-                    let hourly_cost = base_rate * markup_multiplier * f64::from(gpu_count.max(1));
+                let (gpu_type, gpu_count, hourly_cost) =
+                    if let Some(offering) = offerings_map.get(offering_id.as_str()) {
+                        let gpu_count = offering.gpu_count;
+                        // Total hourly cost = per-GPU price × markup × number of GPUs
+                        let hourly_cost = hourly_cost_with_markup(
+                            offering.hourly_rate_per_gpu,
+                            gpu_count,
+                            state.pricing_config.secure_cloud_markup_percent,
+                        )
+                        .map(|d| d.to_f64().unwrap_or(0.0))
+                        .unwrap_or(0.0);
 
-                    (offering.gpu_type.to_string(), gpu_count, hourly_cost)
-                } else {
-                    // Fallback if offering not found (e.g., offering expired)
-                    tracing::warn!(
-                        "Offering {} not found for rental {}, using defaults",
-                        offering_id,
-                        rental_id
-                    );
-                    ("unknown".to_string(), 0, 0.0)
-                };
+                        (offering.gpu_type.to_string(), gpu_count, hourly_cost)
+                    } else {
+                        // Fallback if offering not found (e.g., offering expired)
+                        tracing::warn!(
+                            "Offering {} not found for rental {}, using defaults",
+                            offering_id,
+                            rental_id
+                        );
+                        ("unknown".to_string(), 0, 0.0)
+                    };
 
                 // Use resource specs from database JOIN (already available)
                 let vcpu_count = db_vcpu_count.map(|v| v as u32);
@@ -320,7 +333,7 @@ pub async fn start_secure_cloud_rental(
     let marked_up_rate = apply_markup(
         offering.hourly_rate_per_gpu,
         state.pricing_config.secure_cloud_markup_percent,
-    );
+    )?;
 
     // 2.5. Validate user has sufficient balance before creating rental
     if let Some(billing_client) = &state.billing_client {

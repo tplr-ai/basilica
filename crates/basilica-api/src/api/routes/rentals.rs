@@ -225,7 +225,7 @@ pub async fn start_rental(
             per_gpu,
             gpu_count,
             state.pricing_config.community_markup_percent,
-        );
+        )?;
         crate::api::middleware::validate_balance_for_rental(billing_client, user_id, hourly_cost)
             .await?;
     }
@@ -344,7 +344,7 @@ pub async fn start_rental(
         let marked_up_price = apply_markup(
             base_price_per_gpu_decimal,
             state.pricing_config.community_markup_percent,
-        )
+        )?
         .to_f64()
         .unwrap_or(0.0);
 
@@ -889,7 +889,7 @@ pub async fn list_available_nodes(
         if let Some(hourly_rate_cents) = available_node.node.hourly_rate_cents {
             let rate_decimal = rust_decimal::Decimal::from(hourly_rate_cents);
             let marked_up_decimal =
-                apply_markup(rate_decimal, state.pricing_config.community_markup_percent);
+                apply_markup(rate_decimal, state.pricing_config.community_markup_percent)?;
             let marked_up_rate = marked_up_decimal
                 .round()
                 .to_i32()
