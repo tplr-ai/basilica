@@ -591,7 +591,10 @@ impl EventHandlers for BillingEventHandlers {
                 id: rental_id.to_string(),
             })?;
 
-        if rental.state == RentalState::Completed || rental.state == RentalState::Failed {
+        if rental.state == RentalState::Completed
+            || rental.state == RentalState::Failed
+            || rental.state == RentalState::FailedInsufficientCredits
+        {
             debug!("Rental {} already ended, skipping", rental_id);
             return Ok(());
         }

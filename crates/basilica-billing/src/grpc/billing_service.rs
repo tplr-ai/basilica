@@ -594,7 +594,14 @@ impl BillingService for BillingServiceImpl {
         let idempotency_key = generate_idempotency_key(rental_id.as_uuid(), &event_data);
 
         // Extract node_id and validator_id from metadata for events
-        let node_id = rental.node_id().unwrap_or("").to_string();
+        let node_id = rental
+            .event_node_id()
+            .ok_or_else(|| {
+                Status::failed_precondition(
+                    "rental is missing node_id/provider_instance_id for status event",
+                )
+            })?
+            .to_string();
         let validator_id = rental.validator_id().map(|s| s.to_string());
 
         let status_change_event = UsageEvent {

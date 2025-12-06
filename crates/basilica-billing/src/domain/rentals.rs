@@ -217,6 +217,14 @@ impl Rental {
             .map(|s| s.as_str())
     }
 
+    /// Node identifier to use when emitting events.
+    /// For community rentals this is the node_id; for secure rentals we
+    /// fall back to provider_instance_id so validation passes and events
+    /// stay consistent with rental_start/telemetry.
+    pub fn event_node_id(&self) -> Option<&str> {
+        self.node_id().or_else(|| self.provider_instance_id())
+    }
+
     /// Get offering_id (secure cloud only)
     pub fn offering_id(&self) -> Option<&str> {
         self.metadata.get("offering_id").map(|s| s.as_str())
@@ -529,7 +537,14 @@ pub async fn finalize_rental_core(
 
     let idempotency_key = generate_idempotency_key(rental.id.as_uuid(), &event_data);
 
-    let node_id = rental.node_id().unwrap_or("").to_string();
+    // Secure cloud rentals do not carry node_id; use provider_instance_id instead.
+    let node_id = rental
+        .event_node_id()
+        .ok_or_else(|| BillingError::ValidationError {
+            field: "node_id".to_string(),
+            message: "node_id or provider_instance_id is required for usage event".to_string(),
+        })?
+        .to_string();
     let validator_id = rental.validator_id().map(|s| s.to_string());
 
     let usage_event = UsageEvent {
