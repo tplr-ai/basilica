@@ -19,6 +19,7 @@ use axum::{
     Json,
 };
 use basilica_common::utils::validate_docker_image;
+use basilica_protocol::billing::RentalStatus as BillingRentalStatus;
 use basilica_sdk::types::{
     ApiListRentalsResponse, ApiRentalListItem, HistoricalRentalItem, HistoricalRentalsResponse,
     ListRentalsQuery, LogStreamQuery, NodeSelection, RentalStatusWithSshResponse,
@@ -760,6 +761,18 @@ pub struct HistoricalRentalsQuery {
     pub limit: Option<u32>,
 }
 
+fn format_billing_status(status: BillingRentalStatus) -> &'static str {
+    match status {
+        BillingRentalStatus::Unspecified => "Unknown",
+        BillingRentalStatus::Pending => "Pending",
+        BillingRentalStatus::Active => "Active",
+        BillingRentalStatus::Stopping => "Stopping",
+        BillingRentalStatus::Stopped => "Stopped",
+        BillingRentalStatus::Failed => "Failed",
+        BillingRentalStatus::FailedInsufficientCredits => "Failed (Insufficient Credits)",
+    }
+}
+
 /// List historical (completed/failed) rentals from billing service
 pub async fn list_rental_history(
     State(state): State<AppState>,
@@ -834,11 +847,9 @@ pub async fn list_rental_history(
             };
 
             // Map status to string
-            let status = match basilica_protocol::billing::RentalStatus::try_from(r.status) {
-                Ok(basilica_protocol::billing::RentalStatus::Stopped) => "Stopped",
-                Ok(basilica_protocol::billing::RentalStatus::Failed) => "Failed",
-                _ => "Unknown",
-            };
+            let status = BillingRentalStatus::try_from(r.status)
+                .map(format_billing_status)
+                .unwrap_or("Unknown");
 
             Some(HistoricalRentalItem {
                 rental_id: format!("rental-{}", r.rental_id),
