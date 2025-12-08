@@ -74,7 +74,7 @@ echo "Request: $REQUEST"
 echo ""
 
 # Call gRPC endpoint
-grpcurl -plaintext \
+grpcurl \
     -import-path "$PROTO_PATH" \
     -proto billing.proto \
     -d "$REQUEST" \
