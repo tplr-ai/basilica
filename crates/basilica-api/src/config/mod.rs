@@ -247,6 +247,10 @@ impl Config {
         if let Some(path) = path_override {
             if path.exists() {
                 figment = figment.merge(Toml::file(&path));
+            } else {
+                return Err(ConfigError::FileNotFound {
+                    path: path.display().to_string(),
+                });
             }
         } else {
             let default_path = PathBuf::from("basilica-api.toml");
