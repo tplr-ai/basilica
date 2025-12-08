@@ -55,5 +55,8 @@ async-trait = { workspace = true }
 # Random number generation
 rand = { workspace = true }
 
+# SSH key parsing
+ssh-key = { workspace = true }
+
 [features]
 default = []

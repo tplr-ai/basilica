@@ -14,7 +14,6 @@ pub mod package_manager;
 pub mod simple;
 pub mod traits;
 pub mod types;
-pub mod validation;
 
 #[cfg(test)]
 mod tests;
@@ -26,4 +25,3 @@ pub use package_manager::*;
 pub use simple::*;
 pub use traits::*;
 pub use types::*;
-pub use validation::*;

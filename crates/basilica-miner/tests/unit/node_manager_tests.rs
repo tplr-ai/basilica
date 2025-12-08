@@ -184,7 +184,8 @@ async fn test_deploy_validator_keys_without_nodes() {
     let manager = NodeManager::new(NodeSshConfig::default());
 
     let validator_hotkey = "validator-no-nodes";
-    let ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey validator@example.com";
+    // Valid ed25519 test key
+    let ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl validator@example.com";
 
     // Deploy keys without any registered nodes should succeed (no-op)
     let result = manager

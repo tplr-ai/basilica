@@ -1,7 +1,5 @@
 //! SSH key management handlers for the Basilica CLI
 
-use basilica_common::ssh::is_valid_ssh_public_key;
-
 use crate::error::CliError;
 use crate::output::{compress_path, print_success};
 use crate::ssh::find_local_public_key_path;
@@ -9,6 +7,7 @@ use basilica_sdk::BasilicaClient;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input};
 use etcetera::{choose_base_strategy, BaseStrategy};
+use ssh_key::PublicKey;
 use std::fs;
 use std::path::PathBuf;
 
@@ -153,7 +152,7 @@ pub fn validate_ssh_public_key(content: &str) -> Result<(), String> {
     }
 
     // Check if it starts with a known key type
-    if !is_valid_ssh_public_key(trimmed) {
+    if PublicKey::from_openssh(trimmed).is_err() {
         return Err("Invalid SSH public key format".to_string());
     }
 
@@ -224,7 +223,7 @@ pub async fn select_and_read_ssh_key() -> Result<SelectedSshKey, CliError> {
 
     Ok(SelectedSshKey {
         path: key_path,
-        content,
+        content: content.trim().to_string(),
     })
 }
 
@@ -386,7 +385,7 @@ pub async fn handle_add_ssh_key(
 
     // Step 5: Register the new SSH key
     let response = client
-        .register_ssh_key(&name, &public_key)
+        .register_ssh_key(&name, public_key.trim())
         .await
         .map_err(CliError::Api)?;
 

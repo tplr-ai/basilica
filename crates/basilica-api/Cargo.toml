@@ -95,6 +95,9 @@ tempfile = "3"
 # Load balancing algorithms
 rand = { workspace = true }
 
+# SSH key parsing
+ssh-key = { workspace = true }
+
 [dev-dependencies]
 wiremock = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }

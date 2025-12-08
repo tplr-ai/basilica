@@ -5,10 +5,10 @@
 
 use anyhow::Result;
 use basilica_common::ssh::{
-    is_valid_ssh_public_key, SshConnectionConfig, SshConnectionDetails, SshConnectionManager,
-    StandardSshClient,
+    SshConnectionConfig, SshConnectionDetails, SshConnectionManager, StandardSshClient,
 };
 use serde::{Deserialize, Serialize};
+use ssh_key::PublicKey;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -194,7 +194,7 @@ impl NodeManager {
         ssh_public_key: &str,
     ) -> Result<()> {
         // Validate SSH public key format
-        if !is_valid_ssh_public_key(ssh_public_key) {
+        if PublicKey::from_openssh(ssh_public_key).is_err() {
             return Err(anyhow::anyhow!("Invalid SSH public key format"));
         }
 
@@ -434,7 +434,8 @@ mod tests {
         let manager = NodeManager::new(NodeSshConfig::default());
 
         let validator_key = "validator-123";
-        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2E...";
+        // Valid ed25519 test key
+        let ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl test@example";
 
         // Without any nodes, this should succeed but not deploy anywhere
         let result = manager.deploy_validator_keys(validator_key, ssh_key).await;

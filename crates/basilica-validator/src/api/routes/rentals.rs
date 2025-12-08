@@ -9,10 +9,10 @@ use axum::{
     response::{sse::Event, IntoResponse, Sse},
     Json,
 };
-use basilica_common::ssh::is_valid_ssh_public_key;
 use basilica_common::utils::validate_docker_image;
 use futures::stream::Stream;
 use serde::Deserialize;
+use ssh_key::PublicKey;
 use tracing::{error, info};
 
 use crate::{
@@ -220,7 +220,8 @@ pub async fn start_rental(
         "[RENTAL_FLOW] Starting rental for node {} on miner {}", node_id, miner_id
     );
 
-    if !is_valid_ssh_public_key(&request.ssh_public_key) {
+    let ssh_public_key = request.ssh_public_key.trim();
+    if PublicKey::from_openssh(ssh_public_key).is_err() {
         error!(
             miner_uid = miner_uid,
             node_id = %node_id,
@@ -291,7 +292,7 @@ pub async fn start_rental(
                 extra_hosts: std::collections::HashMap::new(),
             },
         },
-        ssh_public_key: request.ssh_public_key,
+        ssh_public_key: ssh_public_key.to_string(),
         metadata: std::collections::HashMap::new(),
     };
 
