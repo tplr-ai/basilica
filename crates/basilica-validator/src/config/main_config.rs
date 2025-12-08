@@ -956,6 +956,27 @@ impl ConfigValidation for ValidatorConfig {
             }
         }
 
+        // Validate binary validation configuration
+        if self.verification.binary_validation.enabled {
+            let validator_path = &self.verification.binary_validation.validator_binary_path;
+            if !validator_path.exists() {
+                return Err(ConfigurationError::InvalidValue {
+                    key: "verification.binary_validation.validator_binary_path".to_string(),
+                    value: validator_path.display().to_string(),
+                    reason: "Validator binary path does not exist".to_string(),
+                });
+            }
+
+            let executor_path = &self.verification.binary_validation.executor_binary_path;
+            if !executor_path.exists() {
+                return Err(ConfigurationError::InvalidValue {
+                    key: "verification.binary_validation.executor_binary_path".to_string(),
+                    value: executor_path.display().to_string(),
+                    reason: "Executor binary path does not exist".to_string(),
+                });
+            }
+        }
+
         Ok(())
     }
 
