@@ -194,12 +194,13 @@ impl NodeManager {
         ssh_public_key: &str,
     ) -> Result<()> {
         // Validate SSH public key format
-        if PublicKey::from_openssh(ssh_public_key).is_err() {
+        let trimmed_key = ssh_public_key.trim();
+        if PublicKey::from_openssh(trimmed_key).is_err() {
             return Err(anyhow::anyhow!("Invalid SSH public key format"));
         }
 
         // Normalize the key with our identifier
-        let normalized_key = Self::normalize_ssh_key(ssh_public_key, validator_hotkey);
+        let normalized_key = Self::normalize_ssh_key(trimmed_key, validator_hotkey);
 
         // Get all nodes
         let nodes = self.list_nodes().await?;
