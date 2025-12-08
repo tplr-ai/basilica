@@ -1,5 +1,7 @@
 //! SSH key management handlers for the Basilica CLI
 
+use basilica_common::ssh::is_valid_ssh_public_key;
+
 use crate::error::CliError;
 use crate::output::{compress_path, print_success};
 use crate::ssh::find_local_public_key_path;
@@ -143,31 +145,16 @@ pub fn validate_ssh_public_key(content: &str) -> Result<(), String> {
         return Err("SSH public key is empty".to_string());
     }
 
-    // Check if it starts with a known key type
-    if !trimmed.starts_with("ssh-rsa ")
-        && !trimmed.starts_with("ssh-ed25519 ")
-        && !trimmed.starts_with("ecdsa-sha2-")
-    {
-        return Err(
-            "Invalid SSH public key format. Expected ssh-rsa, ssh-ed25519, or ecdsa-sha2-*"
-                .to_string(),
-        );
-    }
-
-    // Basic structure check (should have at least: key-type key-data)
-    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-    if parts.len() < 2 {
-        return Err(
-            "Invalid SSH public key structure. Expected: <key-type> <key-data> [comment]"
-                .to_string(),
-        );
-    }
-
     // Check if it looks like a private key (common mistake)
     if trimmed.contains("PRIVATE KEY") {
         return Err(
             "This appears to be a private key. Please use the public key file (*.pub)".to_string(),
         );
+    }
+
+    // Check if it starts with a known key type
+    if !is_valid_ssh_public_key(trimmed) {
+        return Err("Invalid SSH public key format".to_string());
     }
 
     Ok(())

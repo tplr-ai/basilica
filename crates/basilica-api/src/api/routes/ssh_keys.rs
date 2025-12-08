@@ -6,6 +6,7 @@ use crate::{
     server::AppState,
 };
 use axum::{extract::State, http::StatusCode, Json};
+use basilica_common::ssh::is_valid_ssh_public_key;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
@@ -99,14 +100,9 @@ pub async fn register_ssh_key(
 
     // Basic SSH public key format check
     let trimmed_key = request.public_key.trim();
-    if !trimmed_key.starts_with("ssh-rsa ")
-        && !trimmed_key.starts_with("ssh-ed25519 ")
-        && !trimmed_key.starts_with("ecdsa-sha2-")
-    {
+    if !is_valid_ssh_public_key(trimmed_key) {
         return Err(ApiError::BadRequest {
-            message:
-                "Invalid SSH public key format. Expected ssh-rsa, ssh-ed25519, or ecdsa-sha2-*"
-                    .to_string(),
+            message: "Invalid SSH public key format".to_string(),
         });
     }
 

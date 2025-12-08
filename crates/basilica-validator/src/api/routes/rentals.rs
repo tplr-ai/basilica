@@ -9,6 +9,7 @@ use axum::{
     response::{sse::Event, IntoResponse, Sse},
     Json,
 };
+use basilica_common::ssh::is_valid_ssh_public_key;
 use basilica_common::utils::validate_docker_image;
 use futures::stream::Stream;
 use serde::Deserialize;
@@ -186,26 +187,6 @@ pub struct ListRentalsQuery {
     pub gpu_type: Option<String>,
     pub min_gpu_count: Option<u32>,
     pub max_cost_per_hour: Option<f64>,
-}
-
-/// Validate SSH public key
-fn is_valid_ssh_public_key(key: &str) -> bool {
-    if key.trim().is_empty() {
-        return false;
-    }
-
-    // Must start with ssh- prefix (all SSH keys do)
-    if !key.starts_with("ssh-") {
-        return false;
-    }
-
-    // Must have at least 2 parts (algorithm and key data)
-    let parts: Vec<&str> = key.split_whitespace().collect();
-    if parts.len() < 2 {
-        return false;
-    }
-
-    true
 }
 
 /// Start a new rental

@@ -5,7 +5,8 @@
 
 use anyhow::Result;
 use basilica_common::ssh::{
-    SshConnectionConfig, SshConnectionDetails, SshConnectionManager, StandardSshClient,
+    is_valid_ssh_public_key, SshConnectionConfig, SshConnectionDetails, SshConnectionManager,
+    StandardSshClient,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -193,7 +194,7 @@ impl NodeManager {
         ssh_public_key: &str,
     ) -> Result<()> {
         // Validate SSH public key format
-        if !self.is_valid_ssh_public_key(ssh_public_key) {
+        if !is_valid_ssh_public_key(ssh_public_key) {
             return Err(anyhow::anyhow!("Invalid SSH public key format"));
         }
 
@@ -309,14 +310,6 @@ impl NodeManager {
     pub async fn is_validator_authorized(&self, validator_hotkey: &str) -> bool {
         let current = self.current_assigned_validator.read().await;
         current.as_deref() == Some(validator_hotkey)
-    }
-
-    /// Validate SSH public key format
-    fn is_valid_ssh_public_key(&self, public_key: &str) -> bool {
-        public_key.starts_with("ssh-rsa ")
-            || public_key.starts_with("ssh-ed25519 ")
-            || public_key.starts_with("ecdsa-sha2-")
-            || public_key.starts_with("ssh-dss ")
     }
 
     /// Get the SSH private key path from config with tilde expansion
