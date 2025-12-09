@@ -397,9 +397,6 @@ impl BillingService for BillingServiceImpl {
                     if community_data.validator_id.is_empty() {
                         return Err(Status::invalid_argument("validator_id is required for community rentals"));
                     }
-                    if community_data.miner_uid == 0 {
-                        return Err(Status::invalid_argument("miner_uid is required for community rentals"));
-                    }
                     if community_data.miner_hotkey.is_empty() {
                         return Err(Status::invalid_argument("miner_hotkey is required for community rentals"));
                     }
