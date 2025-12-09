@@ -17,7 +17,7 @@ pub async fn handle_login(device_code: bool, config: &CliConfig) -> Result<(), C
 /// Handle login with configurable options
 pub async fn handle_login_with_options(
     device_code: bool,
-    _config: &CliConfig,
+    config: &CliConfig,
     show_suggestions: bool,
 ) -> Result<(), CliError> {
     debug!("Starting login process, device_code: {}", device_code);
@@ -91,6 +91,12 @@ pub async fn handle_login_with_options(
     }
 
     complete_spinner_and_clear(spinner);
+
+    // Trigger billing service to create user entry
+    // We don't need the result - the call itself ensures the user exists in billing
+    if let Ok(client) = crate::client::create_authenticated_client(config).await {
+        let _ = client.get_balance().await;
+    }
 
     print_success("⛪ Login successful!");
     println!();
