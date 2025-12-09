@@ -25,6 +25,7 @@ async fn test_get_usage_report_for_rental() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -122,6 +123,7 @@ async fn test_usage_report_empty_for_new_rental() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -176,6 +178,7 @@ async fn test_ingest_telemetry_stream() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -249,6 +252,7 @@ async fn test_usage_aggregation_in_report() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -347,6 +351,7 @@ async fn test_usage_report_calculates_cost() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -438,6 +443,7 @@ async fn test_single_gpu_rental_cost() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -500,6 +506,7 @@ async fn test_multi_gpu_rental_with_volume_discount() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -562,6 +569,7 @@ async fn test_gpu_count_extracted_from_telemetry() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -635,6 +643,7 @@ async fn test_cost_breakdown_includes_volume_discount() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 

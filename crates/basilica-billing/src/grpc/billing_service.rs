@@ -2,7 +2,10 @@ use crate::domain::events::EventStore;
 use crate::domain::idempotency::generate_idempotency_key;
 use crate::domain::{
     credits::{CreditManager, CreditOperations},
-    rentals::{finalize_rental_core, CloudType, Rental, RentalManager, RentalOperations},
+    rentals::{
+        finalize_rental_core, CloudType, CreateCommunityRentalParams, Rental, RentalManager,
+        RentalOperations,
+    },
     types::{CreditBalance, GpuSpec, RentalId, RentalState, ResourceSpec, UserId},
 };
 use crate::error::BillingError;
@@ -406,16 +409,16 @@ impl BillingService for BillingServiceImpl {
                         rental_id, user_id, base_price_per_gpu, gpu_count, community_data.miner_uid, community_data.miner_hotkey
                     );
 
-                    let mut rental = Rental::new_community(
-                        user_id.clone(),
-                        community_data.node_id.clone(),
-                        community_data.validator_id.clone(),
-                        community_data.miner_uid,
-                        community_data.miner_hotkey.clone(),
-                        resource_spec.clone(),
+                    let mut rental = Rental::new_community(CreateCommunityRentalParams {
+                        user_id: user_id.clone(),
+                        node_id: community_data.node_id.clone(),
+                        validator_id: community_data.validator_id.clone(),
+                        miner_uid: community_data.miner_uid,
+                        miner_hotkey: community_data.miner_hotkey.clone(),
+                        resource_spec: resource_spec.clone(),
                         base_price_per_gpu,
                         gpu_count,
-                    );
+                    });
                     rental.id = rental_id;
 
                     self.rental_repository

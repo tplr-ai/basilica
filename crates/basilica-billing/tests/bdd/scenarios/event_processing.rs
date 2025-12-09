@@ -25,6 +25,7 @@ async fn test_rental_start_event_created() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -90,6 +91,7 @@ async fn test_status_change_events_tracked() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -173,6 +175,7 @@ async fn test_event_timestamps_ordered() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -255,6 +258,7 @@ async fn test_event_processing_flags() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -318,6 +322,7 @@ async fn test_event_metadata_preserved() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -380,6 +385,7 @@ async fn test_concurrent_event_creation() {
                     base_price_per_gpu: 2.5,
                     gpu_count: 1,
                     miner_uid: 1,
+                    miner_hotkey: "test_hotkey".to_string(),
                 })),
             };
 

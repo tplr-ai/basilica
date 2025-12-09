@@ -38,6 +38,7 @@ async fn test_track_rental_creates_new_rental() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -83,6 +84,7 @@ async fn test_track_rental_fails_with_insufficient_balance() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -134,6 +136,7 @@ async fn test_update_rental_status_transitions() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 
@@ -218,6 +221,7 @@ async fn test_get_active_rentals_by_user() {
                 base_price_per_gpu: 2.5,
                 gpu_count: 1,
                 miner_uid: 1,
+                miner_hotkey: "test_hotkey".to_string(),
             })),
         };
 
@@ -305,6 +309,7 @@ async fn test_finalize_rental_charges_correct_amount() {
             base_price_per_gpu: 2.5,
             gpu_count: 1,
             miner_uid: 1,
+            miner_hotkey: "test_hotkey".to_string(),
         })),
     };
 

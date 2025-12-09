@@ -1,7 +1,7 @@
 use crate::domain::processor::{
     CostUpdateData, EventHandlers, RentalEndData, StatusChangeData, TelemetryData,
 };
-use crate::domain::rentals::{finalize_rental_core, Rental};
+use crate::domain::rentals::{finalize_rental_core, CreateCommunityRentalParams, Rental};
 use crate::domain::types::{
     CreditBalance, RentalId, RentalState, ResourceSpec, UsageMetrics, UserId,
 };
@@ -522,12 +522,14 @@ impl EventHandlers for BillingEventHandlers {
         };
 
         // Extract and validate required fields for community rentals
-        let validator_id = event.validator_id.clone().ok_or_else(|| {
-            BillingError::ValidationError {
-                field: "validator_id".to_string(),
-                message: "validator_id is required for community rentals".to_string(),
-            }
-        })?;
+        let validator_id =
+            event
+                .validator_id
+                .clone()
+                .ok_or_else(|| BillingError::ValidationError {
+                    field: "validator_id".to_string(),
+                    message: "validator_id is required for community rentals".to_string(),
+                })?;
 
         let miner_uid = event
             .event_data
@@ -549,16 +551,16 @@ impl EventHandlers for BillingEventHandlers {
                 message: "miner_hotkey is required for community rentals".to_string(),
             })?;
 
-        let mut rental = Rental::new_community(
-            user_id.clone(),
-            event.node_id.clone(),
+        let mut rental = Rental::new_community(CreateCommunityRentalParams {
+            user_id: user_id.clone(),
+            node_id: event.node_id.clone(),
             validator_id,
             miner_uid,
             miner_hotkey,
             resource_spec,
             base_price_per_gpu,
             gpu_count,
-        );
+        });
         rental.id = rental_id;
 
         rental.state = RentalState::Active;
