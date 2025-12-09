@@ -390,30 +390,28 @@ impl BillingService for BillingServiceImpl {
                         return Err(Status::invalid_argument("gpu_count must be greater than 0"));
                     }
                     let gpu_count = community_data.gpu_count;
-                    // miner_uid of 0 means unknown/not provided
-                    let miner_uid = if community_data.miner_uid > 0 {
-                        Some(community_data.miner_uid)
-                    } else {
-                        None
-                    };
-                    // miner_hotkey empty means unknown/not provided
-                    let miner_hotkey = if !community_data.miner_hotkey.is_empty() {
-                        Some(community_data.miner_hotkey.clone())
-                    } else {
-                        None
-                    };
+                    // Validate required fields for community rentals
+                    if community_data.validator_id.is_empty() {
+                        return Err(Status::invalid_argument("validator_id is required for community rentals"));
+                    }
+                    if community_data.miner_uid == 0 {
+                        return Err(Status::invalid_argument("miner_uid is required for community rentals"));
+                    }
+                    if community_data.miner_hotkey.is_empty() {
+                        return Err(Status::invalid_argument("miner_hotkey is required for community rentals"));
+                    }
 
                     info!(
-                        "Tracking community rental {} for user {} at ${}/GPU/hour × {} GPUs (miner_uid: {:?}, miner_hotkey: {:?})",
-                        rental_id, user_id, base_price_per_gpu, gpu_count, miner_uid, miner_hotkey
+                        "Tracking community rental {} for user {} at ${}/GPU/hour × {} GPUs (miner_uid: {}, miner_hotkey: {})",
+                        rental_id, user_id, base_price_per_gpu, gpu_count, community_data.miner_uid, community_data.miner_hotkey
                     );
 
                     let mut rental = Rental::new_community(
                         user_id.clone(),
                         community_data.node_id.clone(),
-                        Some(community_data.validator_id.clone()),
-                        miner_uid,
-                        miner_hotkey.clone(),
+                        community_data.validator_id.clone(),
+                        community_data.miner_uid,
+                        community_data.miner_hotkey.clone(),
                         resource_spec.clone(),
                         base_price_per_gpu,
                         gpu_count,
@@ -429,8 +427,8 @@ impl BillingService for BillingServiceImpl {
                         "cloud_type": "community",
                         "node_id": community_data.node_id,
                         "validator_id": community_data.validator_id,
-                        "miner_uid": miner_uid,
-                        "miner_hotkey": miner_hotkey,
+                        "miner_uid": community_data.miner_uid,
+                        "miner_hotkey": community_data.miner_hotkey,
                         "base_price_per_gpu": base_price_per_gpu.to_string(),
                         "gpu_count": gpu_count,
                         "resource_spec": resource_spec_value,

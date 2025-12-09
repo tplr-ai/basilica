@@ -98,9 +98,9 @@ impl Rental {
     pub fn new_community(
         user_id: UserId,
         node_id: String,
-        validator_id: Option<String>,
-        miner_uid: Option<u32>,
-        miner_hotkey: Option<String>,
+        validator_id: String,
+        miner_uid: u32,
+        miner_hotkey: String,
         resource_spec: ResourceSpec,
         base_price_per_gpu: Decimal,
         gpu_count: u32,
@@ -108,15 +108,9 @@ impl Rental {
         let now = Utc::now();
         let mut metadata = HashMap::new();
         metadata.insert("node_id".to_string(), node_id);
-        if let Some(vid) = validator_id {
-            metadata.insert("validator_id".to_string(), vid);
-        }
-        if let Some(uid) = miner_uid {
-            metadata.insert("miner_uid".to_string(), uid.to_string());
-        }
-        if let Some(hotkey) = miner_hotkey {
-            metadata.insert("miner_hotkey".to_string(), hotkey);
-        }
+        metadata.insert("validator_id".to_string(), validator_id);
+        metadata.insert("miner_uid".to_string(), miner_uid.to_string());
+        metadata.insert("miner_hotkey".to_string(), miner_hotkey);
 
         Self {
             id: RentalId::new(),
@@ -378,9 +372,9 @@ impl RentalOperations for RentalManager {
             CreateRentalParams::Community(p) => Rental::new_community(
                 p.user_id,
                 p.node_id,
-                Some(p.validator_id),
-                Some(p.miner_uid),
-                Some(p.miner_hotkey),
+                p.validator_id,
+                p.miner_uid,
+                p.miner_hotkey,
                 p.resource_spec,
                 p.base_price_per_gpu,
                 p.gpu_count,

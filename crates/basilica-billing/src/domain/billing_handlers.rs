@@ -521,23 +521,38 @@ impl EventHandlers for BillingEventHandlers {
             network_bandwidth_mbps: 100,
         };
 
-        // Extract miner_uid from event_data if available
+        // Extract and validate required fields for community rentals
+        let validator_id = event.validator_id.clone().ok_or_else(|| {
+            BillingError::ValidationError {
+                field: "validator_id".to_string(),
+                message: "validator_id is required for community rentals".to_string(),
+            }
+        })?;
+
         let miner_uid = event
             .event_data
             .get("miner_uid")
             .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
+            .map(|v| v as u32)
+            .ok_or_else(|| BillingError::ValidationError {
+                field: "miner_uid".to_string(),
+                message: "miner_uid is required for community rentals".to_string(),
+            })?;
 
         let miner_hotkey = event
             .event_data
             .get("miner_hotkey")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .map(|s| s.to_string())
+            .ok_or_else(|| BillingError::ValidationError {
+                field: "miner_hotkey".to_string(),
+                message: "miner_hotkey is required for community rentals".to_string(),
+            })?;
 
         let mut rental = Rental::new_community(
             user_id.clone(),
             event.node_id.clone(),
-            event.validator_id.clone(),
+            validator_id,
             miner_uid,
             miner_hotkey,
             resource_spec,
