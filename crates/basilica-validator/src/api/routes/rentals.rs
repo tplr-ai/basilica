@@ -367,6 +367,24 @@ pub async fn get_rental_status(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    // Get miner_hotkey from database
+    let miner_hotkey = state
+        .persistence
+        .get_miner_hotkey_by_id(&rental_info.miner_id)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                "Failed to get miner hotkey for miner {}: {}",
+                rental_info.miner_id,
+                e
+            );
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?
+        .ok_or_else(|| {
+            tracing::error!("Miner hotkey not found for miner {}", rental_info.miner_id);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
     let response = RentalStatusResponse {
         rental_id: status.rental_id,
         status: match status.state {
@@ -378,6 +396,7 @@ pub async fn get_rental_status(
         },
         node,
         miner_uid,
+        miner_hotkey,
         created_at: status.created_at,
         updated_at: status.created_at, // Use created_at for now
     };

@@ -528,11 +528,18 @@ impl EventHandlers for BillingEventHandlers {
             .and_then(|v| v.as_u64())
             .map(|v| v as u32);
 
+        let miner_hotkey = event
+            .event_data
+            .get("miner_hotkey")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         let mut rental = Rental::new_community(
             user_id.clone(),
             event.node_id.clone(),
             event.validator_id.clone(),
             miner_uid,
+            miner_hotkey,
             resource_spec,
             base_price_per_gpu,
             gpu_count,

@@ -100,6 +100,7 @@ impl Rental {
         node_id: String,
         validator_id: Option<String>,
         miner_uid: Option<u32>,
+        miner_hotkey: Option<String>,
         resource_spec: ResourceSpec,
         base_price_per_gpu: Decimal,
         gpu_count: u32,
@@ -112,6 +113,9 @@ impl Rental {
         }
         if let Some(uid) = miner_uid {
             metadata.insert("miner_uid".to_string(), uid.to_string());
+        }
+        if let Some(hotkey) = miner_hotkey {
+            metadata.insert("miner_hotkey".to_string(), hotkey);
         }
 
         Self {
@@ -205,6 +209,11 @@ impl Rental {
         self.metadata.get("miner_uid").and_then(|s| s.parse().ok())
     }
 
+    /// Get miner_hotkey (community cloud only) - Bittensor miner hotkey
+    pub fn miner_hotkey(&self) -> Option<&str> {
+        self.metadata.get("miner_hotkey").map(|s| s.as_str())
+    }
+
     /// Get provider (secure cloud only)
     pub fn provider(&self) -> Option<&str> {
         self.metadata.get("provider").map(|s| s.as_str())
@@ -296,7 +305,9 @@ pub struct CreateCommunityRentalParams {
     pub node_id: String,
     pub validator_id: String,
     /// Bittensor miner UID for payment reconciliation
-    pub miner_uid: Option<u32>,
+    pub miner_uid: u32,
+    /// Bittensor miner hotkey for payment reconciliation
+    pub miner_hotkey: String,
     pub resource_spec: ResourceSpec,
     pub base_price_per_gpu: Decimal,
     pub gpu_count: u32,
@@ -368,7 +379,8 @@ impl RentalOperations for RentalManager {
                 p.user_id,
                 p.node_id,
                 Some(p.validator_id),
-                p.miner_uid,
+                Some(p.miner_uid),
+                Some(p.miner_hotkey),
                 p.resource_spec,
                 p.base_price_per_gpu,
                 p.gpu_count,

@@ -95,6 +95,8 @@ pub struct RentalStatusResponse {
     pub node: NodeDetails,
     /// The Bittensor UID of the miner that owns this node
     pub miner_uid: u16,
+    /// The Bittensor hotkey of the miner that owns this node
+    pub miner_hotkey: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }

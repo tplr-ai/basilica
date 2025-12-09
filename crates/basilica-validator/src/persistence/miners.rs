@@ -42,6 +42,18 @@ impl SimplePersistence {
         Ok(result.map(|row| row.get("id")))
     }
 
+    /// Get the hotkey for a miner by their ID
+    pub async fn get_miner_hotkey_by_id(&self, miner_id: &str) -> Result<Option<String>> {
+        let query = "SELECT hotkey FROM miners WHERE id = ?";
+        let result = sqlx::query(query)
+            .bind(miner_id)
+            .fetch_optional(self.pool())
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get miner hotkey: {}", e))?;
+
+        Ok(result.map(|row| row.get("hotkey")))
+    }
+
     /// Create a new miner record
     pub async fn create_new_miner(
         &self,
