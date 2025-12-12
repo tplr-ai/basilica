@@ -1,8 +1,8 @@
 //! Multi-cluster API gateway implementation
 
 mod gateway;
-mod handler;
-mod router;
+pub mod handler;
+pub mod router;
 
 pub use gateway::FederationGateway;
 pub use handler::FederationHandler;

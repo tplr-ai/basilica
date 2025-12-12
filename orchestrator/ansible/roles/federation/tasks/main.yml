@@ -1,0 +1,80 @@
+---
+# Federation role tasks
+
+- name: Create federation namespace
+  kubernetes.core.k8s:
+    name: "{{ federation_namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+  when: kubeconfig is defined
+
+- name: Create federation config directory
+  file:
+    path: "{{ federation_config_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Generate federation configuration
+  template:
+    src: federation.toml.j2
+    dest: "{{ federation_config_path }}"
+    mode: '0644'
+  vars:
+    clusters: "{{ federated_clusters | default([]) }}"
+
+- name: Validate federation configuration
+  command: basilica-federation --config {{ federation_config_path }} --validate
+  register: validation_result
+  changed_when: false
+  failed_when: validation_result.rc != 0
+
+- name: Create federation ConfigMap
+  kubernetes.core.k8s:
+    name: federation-config
+    namespace: "{{ federation_namespace }}"
+    api_version: v1
+    kind: ConfigMap
+    state: present
+    definition:
+      data:
+        federation.toml: "{{ lookup('file', federation_config_path) }}"
+  when: kubeconfig is defined
+
+- name: Create federation Secret for kubeconfigs
+  kubernetes.core.k8s:
+    name: federation-kubeconfigs
+    namespace: "{{ federation_namespace }}"
+    api_version: v1
+    kind: Secret
+    state: present
+    definition:
+      type: Opaque
+      string_data:
+        "{{ item.id }}.kubeconfig": "{{ item.kubeconfig }}"
+  loop: "{{ federated_clusters | default([]) }}"
+  when: kubeconfig is defined
+  no_log: true
+
+- name: Wait for federation deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: basilica-federation
+    namespace: "{{ federation_namespace }}"
+  register: deployment_info
+  until: deployment_info.resources[0].status.readyReplicas == deployment_info.resources[0].spec.replicas
+  retries: 30
+  delay: 10
+  when: kubeconfig is defined
+
+- name: Verify federation health endpoint
+  uri:
+    url: "http://localhost:8080/health"
+    method: GET
+    status_code: 200
+  register: health_check
+  retries: 5
+  delay: 5
+  when: kubeconfig is defined
+

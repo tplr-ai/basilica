@@ -1,0 +1,24 @@
+feat(federation): add K3s multi-cluster federation system
+
+Implement comprehensive multi-cluster federation for managing multiple K3s
+clusters with geographic distribution and high availability.
+
+Components:
+- Multi-cluster API gateway with unified REST API
+- Cross-cluster service discovery with caching
+- Cluster health aggregation and monitoring
+- Cross-cluster load balancing (5 algorithms)
+- Federated resource management
+
+Implementation:
+- New basilica-federation crate (~1,655 lines Rust)
+- Ansible playbook for federation setup
+- Kubernetes deployment manifests
+- Integration with basilica-api
+
+Features:
+- Health-aware and region-aware routing
+- Automatic service discovery across clusters
+- Real-time cluster health monitoring
+- Request proxying to target clusters
+- Prometheus metrics support

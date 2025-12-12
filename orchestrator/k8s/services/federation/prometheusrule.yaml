@@ -1,0 +1,48 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: basilica-federation-alerts
+  namespace: basilica-federation
+  labels:
+    app: basilica-federation
+spec:
+  groups:
+  - name: federation.rules
+    interval: 30s
+    rules:
+    - alert: FederationClusterUnhealthy
+      expr: federation_clusters_unhealthy > 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Federation cluster is unhealthy"
+        description: "Cluster {{ $labels.cluster_id }} has been unhealthy for more than 5 minutes"
+    
+    - alert: FederationHighErrorRate
+      expr: rate(federation_requests_by_status{status=~"5.."}[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate in federation API"
+        description: "Error rate is {{ $value }} errors per second"
+    
+    - alert: FederationDiscoveryErrors
+      expr: rate(federation_discovery_errors_total[5m]) > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High service discovery error rate"
+        description: "Discovery error rate is {{ $value }} errors per second"
+    
+    - alert: FederationHealthCheckFailures
+      expr: rate(federation_health_check_errors_total[5m]) > 0.1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High health check failure rate"
+        description: "Health check error rate is {{ $value }} errors per second"
+

@@ -12,12 +12,16 @@
 //! - **Cross-cluster Load Balancing**: Intelligent load balancing across clusters
 
 pub mod api;
+pub mod cache;
 pub mod config;
 pub mod discovery;
 pub mod error;
+pub mod events;
 pub mod health;
 pub mod load_balancer;
+pub mod metrics;
 pub mod resource_manager;
+pub mod retry;
 mod utils;
 
 pub use config::FederationConfig;
