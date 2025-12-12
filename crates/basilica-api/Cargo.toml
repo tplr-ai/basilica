@@ -16,6 +16,7 @@ basilica-billing = { path = "../basilica-billing" }
 basilica-payments = { path = "../basilica-payments" }
 basilica-protocol = { path = "../basilica-protocol" }
 basilica-aggregator = { path = "../basilica-aggregator" }
+basilica-federation = { path = "../basilica-federation" }
 
 # Async runtime
 tokio = { workspace = true }

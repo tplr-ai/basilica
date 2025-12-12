@@ -1,0 +1,71 @@
+---
+# Federation setup playbook
+# Configures multi-cluster federation for K3s clusters
+
+- name: Setup Basilica Federation
+  hosts: federation_servers
+  become: yes
+  vars:
+    federation_namespace: basilica-federation
+    federation_config_path: /etc/basilica/federation.toml
+    
+  tasks:
+    - name: Create federation namespace
+      kubernetes.core.k8s:
+        name: "{{ federation_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+      when: kubeconfig is defined
+      
+    - name: Create federation config directory
+      file:
+        path: /etc/basilica
+        state: directory
+        mode: '0755'
+        
+    - name: Generate federation configuration
+      template:
+        src: federation.toml.j2
+        dest: "{{ federation_config_path }}"
+        mode: '0644'
+      vars:
+        clusters: "{{ federated_clusters | default([]) }}"
+        
+    - name: Create federation ConfigMap
+      kubernetes.core.k8s:
+        name: federation-config
+        namespace: "{{ federation_namespace }}"
+        api_version: v1
+        kind: ConfigMap
+        state: present
+        definition:
+          data:
+            federation.toml: "{{ lookup('file', federation_config_path) }}"
+      when: kubeconfig is defined
+      
+    - name: Create federation Secret for kubeconfigs
+      kubernetes.core.k8s:
+        name: federation-kubeconfigs
+        namespace: "{{ federation_namespace }}"
+        api_version: v1
+        kind: Secret
+        state: present
+        definition:
+          type: Opaque
+          string_data:
+            "{{ item.id }}.kubeconfig": "{{ item.kubeconfig }}"
+      loop: "{{ federated_clusters | default([]) }}"
+      when: kubeconfig is defined
+      no_log: true
+      
+    - name: Verify federation configuration
+      command: basilica-federation --config {{ federation_config_path }} --dry-run
+      register: federation_check
+      changed_when: false
+      failed_when: federation_check.rc != 0
+      
+    - name: Display federation status
+      debug:
+        msg: "Federation configured with {{ federated_clusters | default([]) | length }} clusters"
+

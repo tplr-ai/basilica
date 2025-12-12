@@ -1,0 +1,131 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basilica-federation
+  namespace: basilica-federation
+  labels:
+    app: basilica-federation
+    component: gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: basilica-federation
+  template:
+    metadata:
+      labels:
+        app: basilica-federation
+        component: gateway
+    spec:
+      serviceAccountName: basilica-federation
+      containers:
+      - name: federation
+        image: ghcr.io/one-covenant/basilica-federation:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: FEDERATION_NAME
+          value: "basilica-federation"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: FEDERATION_CONFIG_PATH
+          value: "/etc/federation/federation.toml"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/federation
+          readOnly: true
+        - name: kubeconfigs
+          mountPath: /etc/federation/kubeconfigs
+          readOnly: true
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+      volumes:
+      - name: config
+        configMap:
+          name: federation-config
+      - name: kubeconfigs
+        secret:
+          secretName: federation-kubeconfigs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: basilica-federation
+  namespace: basilica-federation
+  labels:
+    app: basilica-federation
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: basilica-federation
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: basilica-federation
+  namespace: basilica-federation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: basilica-federation
+rules:
+- apiGroups: [""]
+  resources: ["pods", "services", "nodes", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps", "secrets"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: basilica-federation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: basilica-federation
+subjects:
+- kind: ServiceAccount
+  name: basilica-federation
+  namespace: basilica-federation
+

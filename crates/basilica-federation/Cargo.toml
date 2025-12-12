@@ -1,0 +1,78 @@
+[package]
+name = "basilica-federation"
+version = "0.1.0"
+edition = "2021"
+description = "Basilica multi-cluster federation: federated K3s cluster management"
+authors = ["Basilica Team"]
+license = "MIT"
+
+[[bin]]
+name = "basilica-federation"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+tracing-subscriber = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+
+# Kubernetes
+kube = { version = "0.88", features = ["derive", "rustls-tls", "runtime"] }
+kube-runtime = "0.88"
+k8s-openapi = { version = "0.21", default-features = false, features = ["v1_29"] }
+schemars = { version = "0.8", features = ["chrono"] }
+
+# HTTP and networking
+http = "0.2"
+hyper = { version = "0.14", features = ["client", "http1", "http2"] }
+url = { workspace = true }
+
+# Configuration
+figment = { workspace = true }
+toml = { workspace = true }
+
+# Caching
+moka = { workspace = true }
+dashmap = { workspace = true }
+
+# Time and scheduling
+parking_lot = { workspace = true }
+
+# Internal crates
+basilica-common = { path = "../basilica-common" }
+basilica-api = { path = "../basilica-api" }
+
+# Health checks
+tonic-health = "0.10.2"
+
+# Rate limiting
+governor = { workspace = true }
+
+# Error handling
+once_cell = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+mockall = "0.12"
+tokio-test = "0.4"
+tempfile = { workspace = true }
+wiremock = { workspace = true }
+
