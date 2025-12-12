@@ -90,6 +90,9 @@ pub struct GatewayConfig {
     /// Maximum concurrent requests
     pub max_concurrent_requests: usize,
     
+    /// Maximum request body size in bytes (default: 10MB)
+    pub max_body_size: usize,
+    
     /// Enable request logging
     pub enable_logging: bool,
     
@@ -229,6 +232,7 @@ impl Default for FederationConfig {
                 port: 8080,
                 request_timeout: Duration::from_secs(30),
                 max_concurrent_requests: 1000,
+                max_body_size: 10 * 1024 * 1024, // 10MB default
                 enable_logging: true,
                 rate_limit: Some(RateLimitConfig {
                     requests_per_second: 100,

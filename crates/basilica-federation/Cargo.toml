@@ -41,9 +41,10 @@ k8s-openapi = { version = "0.21", default-features = false, features = ["v1_29"]
 schemars = { version = "0.8", features = ["chrono"] }
 
 # HTTP and networking
-http = "0.2"
-hyper = { version = "0.14", features = ["client", "http1", "http2"] }
+# http is provided transitively by axum, but we use http::Error and http::HeaderName directly
+http = "1.1"
 url = { workspace = true }
+urlencoding = "2.1"
 
 # Configuration
 figment = { workspace = true }

@@ -8,7 +8,7 @@ use crate::load_balancer::LoadBalancer;
 use crate::resource_manager::ResourceManager;
 use axum::{
     extract::{Path, Query, State},
-    http::{HeaderMap, Method, StatusCode, Uri},
+    http::{HeaderMap, Method, StatusCode},
     response::Response,
     routing::{get, post, put, delete},
     Router,
@@ -41,12 +41,18 @@ impl FederationGateway {
         load_balancer: Arc<LoadBalancer>,
         resource_manager: Arc<ResourceManager>,
     ) -> Result<Self> {
+        let http_client = reqwest::Client::builder()
+            .timeout(config.gateway.request_timeout)
+            .build()
+            .map_err(|e| FederationError::Config(format!("Failed to create HTTP client: {}", e)))?;
+        
         let router = Self::build_router(
             config.clone(),
             discovery.clone(),
             health.clone(),
             load_balancer.clone(),
             resource_manager.clone(),
+            http_client.clone(),
         );
         
         Ok(Self {
@@ -65,6 +71,7 @@ impl FederationGateway {
         health: Arc<HealthAggregator>,
         load_balancer: Arc<LoadBalancer>,
         resource_manager: Arc<ResourceManager>,
+        http_client: reqwest::Client,
     ) -> Router {
         Router::new()
             .route("/health", get(Self::health_handler))
@@ -89,6 +96,7 @@ impl FederationGateway {
                 health,
                 load_balancer,
                 resource_manager,
+                http_client,
             })
     }
     
@@ -225,8 +233,9 @@ impl FederationGateway {
         headers: HeaderMap,
         body: axum::body::Body,
     ) -> Result<Response, StatusCode> {
-        let body_bytes = axum::body::to_bytes(body, usize::MAX).await
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let max_body_size = state.config.gateway.max_body_size;
+        let body_bytes = axum::body::to_bytes(body, max_body_size).await
+            .map_err(|_| StatusCode::from_u16(413).unwrap_or(StatusCode::BAD_REQUEST))?;
         
         Self::proxy_request(
             state,
@@ -246,8 +255,9 @@ impl FederationGateway {
         headers: HeaderMap,
         body: axum::body::Body,
     ) -> Result<Response, StatusCode> {
-        let body_bytes = axum::body::to_bytes(body, usize::MAX).await
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let max_body_size = state.config.gateway.max_body_size;
+        let body_bytes = axum::body::to_bytes(body, max_body_size).await
+            .map_err(|_| StatusCode::from_u16(413).unwrap_or(StatusCode::BAD_REQUEST))?;
         
         Self::proxy_request(
             state,
@@ -281,7 +291,7 @@ impl FederationGateway {
         state: GatewayState,
         method: Method,
         path: String,
-        _params: HashMap<String, String>,
+        params: HashMap<String, String>,
         headers: HeaderMap,
         body: Option<Vec<u8>>,
     ) -> Result<Response, StatusCode> {
@@ -289,32 +299,61 @@ impl FederationGateway {
         let cluster = state.load_balancer.select_cluster().await
             .ok_or_else(|| StatusCode::SERVICE_UNAVAILABLE)?;
         
-        // Build target URL
-        let target_url = format!("{}/{}", cluster.api_server, path);
-        let uri: Uri = target_url.parse()
-            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        // Build target URL with query parameters
+        let mut target_url = format!("{}/{}", cluster.api_server, path);
+        if !params.is_empty() {
+            let query_string: Vec<String> = params
+                .iter()
+                .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
+                .collect();
+            target_url.push('?');
+            target_url.push_str(&query_string.join("&"));
+        }
         
-        // Create request
-        let mut request = reqwest::Request::new(method, uri);
+        // Parse as reqwest::Url (not http::Uri)
+        let url: reqwest::Url = target_url.parse()
+            .map_err(|e| {
+                error!(error = %e, "Invalid target URL");
+                StatusCode::BAD_REQUEST
+            })?;
         
-        // Copy headers (excluding host)
+        // Convert http::Method to reqwest::Method
+        let reqwest_method = match method.as_str() {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            "PUT" => reqwest::Method::PUT,
+            "DELETE" => reqwest::Method::DELETE,
+            _ => {
+                error!(method = %method, "Unsupported HTTP method");
+                return Err(StatusCode::METHOD_NOT_ALLOWED);
+            }
+        };
+        
+        // Create request builder
+        let mut request_builder = state.http_client.request(reqwest_method, url);
+        
+        // Copy headers (excluding host and hop-by-hop headers)
+        let hop_by_hop_headers = [
+            "connection", "keep-alive", "proxy-authenticate",
+            "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade",
+        ];
+        
         for (key, value) in headers.iter() {
-            if key.as_str() != "host" {
-                request.headers_mut().insert(
-                    key.clone(),
-                    value.clone(),
-                );
+            let header_name_lower = key.as_str().to_lowercase();
+            if header_name_lower != "host" && !hop_by_hop_headers.contains(&header_name_lower.as_str()) {
+                if let Ok(header_value) = value.to_str() {
+                    request_builder = request_builder.header(key.as_str(), header_value);
+                }
             }
         }
         
         // Set body if provided
         if let Some(body_data) = body {
-            *request.body_mut() = Some(reqwest::Body::from(body_data));
+            request_builder = request_builder.body(body_data);
         }
         
         // Execute request
-        let client = reqwest::Client::new();
-        let response = client.execute(request).await
+        let response = request_builder.send().await
             .map_err(|e| {
                 error!(error = %e, "Proxy request failed");
                 StatusCode::BAD_GATEWAY
@@ -327,10 +366,15 @@ impl FederationGateway {
         let mut response_builder = Response::builder()
             .status(status);
         
-        // Copy response headers
+        // Copy response headers (excluding hop-by-hop headers)
         for (key, value) in response.headers() {
-            if let Ok(header_name) = http::HeaderName::from_bytes(key.as_str().as_bytes()) {
-                response_builder = response_builder.header(header_name, value.as_bytes());
+            let header_name_lower = key.as_str().to_lowercase();
+            if !hop_by_hop_headers.contains(&header_name_lower.as_str()) {
+                if let Ok(header_name) = http::HeaderName::from_bytes(key.as_str().as_bytes()) {
+                    if let Ok(header_value) = value.to_str() {
+                        response_builder = response_builder.header(header_name, header_value);
+                    }
+                }
             }
         }
         
@@ -383,5 +427,6 @@ struct GatewayState {
     health: Arc<HealthAggregator>,
     load_balancer: Arc<LoadBalancer>,
     resource_manager: Arc<ResourceManager>,
+    http_client: reqwest::Client,
 }
 
