@@ -213,18 +213,22 @@ pub async fn get_user_rentals_with_details(
     db: &PgPool,
     user_id: &str,
 ) -> Result<Vec<RentalWithDetails>, sqlx::Error> {
-    let records: Vec<(String, Option<String>, Option<sqlx::types::JsonValue>, Option<String>)> =
-        sqlx::query_as(
-            r#"
+    let records: Vec<(
+        String,
+        Option<String>,
+        Option<sqlx::types::JsonValue>,
+        Option<String>,
+    )> = sqlx::query_as(
+        r#"
         SELECT rental_id, ssh_credentials, port_mappings, ssh_public_key
         FROM user_rentals
         WHERE user_id = $1
         ORDER BY created_at DESC
         "#,
-        )
-        .bind(user_id)
-        .fetch_all(db)
-        .await?;
+    )
+    .bind(user_id)
+    .fetch_all(db)
+    .await?;
 
     Ok(records
         .into_iter()

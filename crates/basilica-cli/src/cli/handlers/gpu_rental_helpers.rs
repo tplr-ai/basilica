@@ -683,9 +683,7 @@ pub async fn resolve_rental_with_ssh(
             ComputeCategory::CommunityCloud => {
                 fetch_community_ssh_info(&rental_id, api_client).await?
             }
-            ComputeCategory::SecureCloud => {
-                fetch_secure_ssh_info(&rental_id, api_client).await?
-            }
+            ComputeCategory::SecureCloud => fetch_secure_ssh_info(&rental_id, api_client).await?,
         };
 
         Ok(RentalWithSsh {
