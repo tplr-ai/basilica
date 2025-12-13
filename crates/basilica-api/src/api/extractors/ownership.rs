@@ -182,6 +182,15 @@ pub struct RentalWithDetails {
     pub ssh_public_key: Option<String>,
 }
 
+/// Database row structure for rental details query
+#[derive(Debug, FromRow)]
+struct RentalDetailsRow {
+    rental_id: String,
+    ssh_credentials: Option<String>,
+    port_mappings: Option<sqlx::types::JsonValue>,
+    ssh_public_key: Option<String>,
+}
+
 /// Get all rentals owned by a specific user with SSH availability status
 pub async fn get_user_rentals_with_ssh(
     db: &PgPool,
@@ -213,12 +222,7 @@ pub async fn get_user_rentals_with_details(
     db: &PgPool,
     user_id: &str,
 ) -> Result<Vec<RentalWithDetails>, sqlx::Error> {
-    let records: Vec<(
-        String,
-        Option<String>,
-        Option<sqlx::types::JsonValue>,
-        Option<String>,
-    )> = sqlx::query_as(
+    let records = sqlx::query_as::<_, RentalDetailsRow>(
         r#"
         SELECT rental_id, ssh_credentials, port_mappings, ssh_public_key
         FROM user_rentals
@@ -232,14 +236,12 @@ pub async fn get_user_rentals_with_details(
 
     Ok(records
         .into_iter()
-        .map(
-            |(rental_id, ssh_credentials, port_mappings, ssh_public_key)| RentalWithDetails {
-                rental_id,
-                has_ssh: ssh_credentials.is_some(),
-                port_mappings,
-                ssh_public_key,
-            },
-        )
+        .map(|row| RentalWithDetails {
+            rental_id: row.rental_id,
+            has_ssh: row.ssh_credentials.is_some(),
+            port_mappings: row.port_mappings,
+            ssh_public_key: row.ssh_public_key,
+        })
         .collect())
 }
 

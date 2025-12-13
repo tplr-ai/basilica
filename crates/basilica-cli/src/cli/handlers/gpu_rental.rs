@@ -1707,9 +1707,9 @@ pub async fn handle_exec(
     let private_key_path = {
         let public_key = ssh_public_key.ok_or_else(|| {
             CliError::Internal(
-                eyre!("No SSH public key stored for this rental")
-                    .suggestion("The rental was created without an SSH key")
-                    .note("Create a new rental with an SSH key to enable SSH access"),
+                eyre!("No SSH public key available for this rental")
+                    .suggestion("The rental may have been created without SSH, or the required SSH key is not on this machine")
+                    .note("SSH access requires the original key used during rental creation"),
             )
         })?;
 
@@ -1769,9 +1769,9 @@ pub async fn handle_ssh(
     let private_key_path = {
         let public_key = ssh_public_key.ok_or_else(|| {
             CliError::Internal(
-                eyre!("No SSH public key stored for this rental")
-                    .suggestion("The rental was created without an SSH key")
-                    .note("Create a new rental with an SSH key to enable SSH access"),
+                eyre!("No SSH public key available for this rental")
+                    .suggestion("The rental may have been created without SSH, or the required SSH key is not on this machine")
+                    .note("SSH access requires the original key used during rental creation"),
             )
         })?;
 
@@ -1853,9 +1853,9 @@ pub async fn handle_cp(
     let private_key_path = {
         let public_key = ssh_public_key.ok_or_else(|| {
             CliError::Internal(
-                eyre!("No SSH public key stored for this rental")
-                    .suggestion("The rental was created without an SSH key")
-                    .note("Create a new rental with an SSH key to enable SSH access"),
+                eyre!("No SSH public key available for this rental")
+                    .suggestion("The rental may have been created without SSH, or the required SSH key is not on this machine")
+                    .note("SSH access requires the original key used during rental creation"),
             )
         })?;
 
