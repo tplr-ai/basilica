@@ -169,7 +169,7 @@ impl Database {
             r#"
             INSERT INTO secure_cloud_rentals
             (id, user_id, provider, provider_instance_id, offering_id, instance_type, location_code,
-             status, hostname, ssh_key_id, ip_address, connection_info, raw_response,
+             status, hostname, ssh_public_key, ip_address, connection_info, raw_response,
              error_message, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
             "#,
@@ -183,7 +183,7 @@ impl Database {
         .bind(&deployment.location_code)
         .bind(deployment.status.as_str())
         .bind(&deployment.hostname)
-        .bind(&deployment.ssh_key_id)
+        .bind(&deployment.ssh_public_key)
         .bind(&deployment.ip_address)
         .bind(&deployment.connection_info)
         .bind(&deployment.raw_response)
@@ -279,7 +279,7 @@ impl Database {
             location_code: row.get("location_code"),
             status,
             hostname: row.get("hostname"),
-            ssh_key_id: row.get("ssh_key_id"),
+            ssh_public_key: row.get("ssh_public_key"),
             ip_address: row.get("ip_address"),
             connection_info: row.get("connection_info"),
             raw_response: row.get("raw_response"),
@@ -294,7 +294,7 @@ impl Database {
         let row = sqlx::query(
             r#"
             SELECT id, user_id, provider, provider_instance_id, offering_id, instance_type, location_code,
-                   status, hostname, ssh_key_id, ip_address, connection_info, raw_response,
+                   status, hostname, ssh_public_key, ip_address, connection_info, raw_response,
                    error_message, created_at, updated_at
             FROM secure_cloud_rentals
             WHERE id = $1
@@ -316,7 +316,7 @@ impl Database {
         let row = sqlx::query(
             r#"
             SELECT id, user_id, provider, provider_instance_id, offering_id, instance_type, location_code,
-                   status, hostname, ssh_key_id, ip_address, connection_info, raw_response,
+                   status, hostname, ssh_public_key, ip_address, connection_info, raw_response,
                    error_message, created_at, updated_at
             FROM secure_cloud_rentals
             WHERE id = $1 AND user_id = $2
@@ -335,7 +335,7 @@ impl Database {
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, provider, provider_instance_id, offering_id, instance_type, location_code,
-                   status, hostname, ssh_key_id, ip_address, connection_info, raw_response,
+                   status, hostname, ssh_public_key, ip_address, connection_info, raw_response,
                    error_message, created_at, updated_at
             FROM secure_cloud_rentals
             WHERE user_id = $1
@@ -363,7 +363,7 @@ impl Database {
         let mut query_str = String::from(
             r#"
             SELECT id, user_id, provider, provider_instance_id, offering_id, instance_type, location_code,
-                   status, hostname, ssh_key_id, ip_address, connection_info, raw_response,
+                   status, hostname, ssh_public_key, ip_address, connection_info, raw_response,
                    error_message, created_at, updated_at
             FROM secure_cloud_rentals
             WHERE 1=1
@@ -420,7 +420,7 @@ impl Database {
         let rows = sqlx::query(
             r#"
             SELECT id, user_id, provider, provider_instance_id, offering_id, instance_type, location_code,
-                   status, hostname, ssh_key_id, ip_address, connection_info, raw_response,
+                   status, hostname, ssh_public_key, ip_address, connection_info, raw_response,
                    error_message, created_at, updated_at
             FROM secure_cloud_rentals
             WHERE status = ANY($1)

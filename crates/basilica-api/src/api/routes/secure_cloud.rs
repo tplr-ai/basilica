@@ -35,7 +35,7 @@ type RentalQueryRow = (
     Option<i32>,                           // vcpu_count (from gpu_offerings)
     Option<i32>,                           // system_memory_gb (from gpu_offerings)
     Option<String>,                        // region (from gpu_offerings)
-    Option<String>,                        // ssh_public_key (from ssh_keys)
+    Option<String>,                        // ssh_public_key (stored on rental)
 );
 
 /// Get SSH public key for user and validate ownership
@@ -147,14 +147,12 @@ pub async fn list_secure_cloud_rentals(
     Extension(auth): Extension<AuthContext>,
 ) -> Result<impl IntoResponse, ApiError> {
     // 1. Query secure_cloud_rentals table for this user, JOIN with gpu_offerings for resource specs
-    //    and ssh_keys for the public key (for local key matching in CLI)
     let rentals: Vec<RentalQueryRow> = sqlx::query_as(
         "SELECT r.id, r.provider, r.provider_instance_id, r.offering_id, r.instance_type, \
          r.location_code, r.status, r.ip_address, r.created_at, r.stopped_at, \
-         o.vcpu_count, o.system_memory_gb, o.region, k.public_key \
+         o.vcpu_count, o.system_memory_gb, o.region, r.ssh_public_key \
          FROM secure_cloud_rentals r \
          LEFT JOIN gpu_offerings o ON r.offering_id = o.id \
-         LEFT JOIN ssh_keys k ON r.ssh_key_id = k.id \
          WHERE r.user_id = $1 \
          ORDER BY r.created_at DESC",
     )

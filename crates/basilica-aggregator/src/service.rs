@@ -518,7 +518,7 @@ impl AggregatorService {
             status: self
                 .map_provider_status_to_deployment(&provider_deployment.status, provider_enum),
             hostname,
-            ssh_key_id: Some(ssh_key.id.clone()),
+            ssh_public_key: Some(ssh_key.public_key.clone()),
             ip_address: provider_deployment.ip_address,
             connection_info: provider_deployment.raw_data.clone(),
             raw_response: provider_deployment.raw_data,

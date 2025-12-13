@@ -607,6 +607,7 @@ pub struct RentalWithSsh {
     pub rental_id: String,
     pub compute_type: ComputeCategory,
     pub ssh_command: String,
+    pub ssh_public_key: Option<String>,
 }
 
 /// Resolve a rental ID to its compute category and fetch SSH credentials.
@@ -635,13 +636,14 @@ pub async fn resolve_rental_with_ssh(
         complete_spinner_and_clear(spinner);
 
         // Check community cloud first
-        if let Ok(community) = community_result {
-            if community.rentals.iter().any(|r| r.rental_id == target_id) {
-                let ssh_command = fetch_community_ssh_credentials(target_id, api_client).await?;
+        if let Ok(ref community) = community_result {
+            if let Some(rental) = community.rentals.iter().find(|r| r.rental_id == target_id) {
+                let (ssh_command, _) = fetch_community_ssh_info(target_id, api_client).await?;
                 return Ok(RentalWithSsh {
                     rental_id: target_id.to_string(),
                     compute_type: ComputeCategory::CommunityCloud,
                     ssh_command,
+                    ssh_public_key: rental.ssh_public_key.clone(),
                 });
             }
         }
@@ -663,6 +665,7 @@ pub async fn resolve_rental_with_ssh(
                     rental_id: target_id.to_string(),
                     compute_type: ComputeCategory::SecureCloud,
                     ssh_command,
+                    ssh_public_key: rental.ssh_public_key.clone(),
                 });
             }
         }
@@ -676,12 +679,12 @@ pub async fn resolve_rental_with_ssh(
         let (rental_id, compute_type) =
             resolve_target_rental_unified(None, None, api_client).await?;
 
-        let ssh_command = match compute_type {
+        let (ssh_command, ssh_public_key) = match compute_type {
             ComputeCategory::CommunityCloud => {
-                fetch_community_ssh_credentials(&rental_id, api_client).await?
+                fetch_community_ssh_info(&rental_id, api_client).await?
             }
             ComputeCategory::SecureCloud => {
-                fetch_secure_ssh_credentials(&rental_id, api_client).await?
+                fetch_secure_ssh_info(&rental_id, api_client).await?
             }
         };
 
@@ -689,21 +692,22 @@ pub async fn resolve_rental_with_ssh(
             rental_id,
             compute_type,
             ssh_command,
+            ssh_public_key,
         })
     }
 }
 
-/// Fetch SSH credentials for a community cloud rental
-async fn fetch_community_ssh_credentials(
+/// Fetch SSH info (credentials and public key) for a community cloud rental
+async fn fetch_community_ssh_info(
     rental_id: &str,
     api_client: &BasilicaClient,
-) -> Result<String, CliError> {
+) -> Result<(String, Option<String>), CliError> {
     let rental_status = api_client
         .get_rental_status(rental_id)
         .await
         .map_err(|e| CliError::Internal(eyre!(e)))?;
 
-    rental_status.ssh_credentials.ok_or_else(|| {
+    let ssh_credentials = rental_status.ssh_credentials.ok_or_else(|| {
         CliError::Internal(
             eyre!("SSH credentials not available")
                 .wrap_err(format!(
@@ -713,14 +717,16 @@ async fn fetch_community_ssh_credentials(
                 .note("Rentals created with --no-ssh flag cannot be accessed via SSH")
                 .note("Create a new rental without --no-ssh to enable SSH access"),
         )
-    })
+    })?;
+
+    Ok((ssh_credentials, rental_status.ssh_public_key))
 }
 
-/// Fetch SSH credentials for a secure cloud rental
-async fn fetch_secure_ssh_credentials(
+/// Fetch SSH info (command and public key) for a secure cloud rental
+async fn fetch_secure_ssh_info(
     rental_id: &str,
     api_client: &BasilicaClient,
-) -> Result<String, CliError> {
+) -> Result<(String, Option<String>), CliError> {
     let secure_rentals = api_client
         .list_secure_cloud_rentals()
         .await
@@ -732,7 +738,7 @@ async fn fetch_secure_ssh_credentials(
         .find(|r| r.rental_id == rental_id)
         .ok_or_else(|| CliError::Internal(eyre!("Rental '{}' not found", rental_id)))?;
 
-    rental.ssh_command.clone().ok_or_else(|| {
+    let ssh_command = rental.ssh_command.clone().ok_or_else(|| {
         CliError::Internal(
             eyre!("SSH command not available")
                 .wrap_err(format!(
@@ -741,5 +747,7 @@ async fn fetch_secure_ssh_credentials(
                 ))
                 .note("The rental may still be provisioning or SSH may not be enabled"),
         )
-    })
+    })?;
+
+    Ok((ssh_command, rental.ssh_public_key.clone()))
 }

@@ -136,7 +136,7 @@ pub struct Deployment {
     pub location_code: Option<String>,
     pub status: DeploymentStatus,
     pub hostname: String,
-    pub ssh_key_id: Option<String>,
+    pub ssh_public_key: Option<String>,
     pub ip_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connection_info: Option<serde_json::Value>,

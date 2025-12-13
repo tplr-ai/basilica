@@ -20,6 +20,7 @@ struct UserRentalRow {
     user_id: String,
     ssh_credentials: Option<String>,
     port_mappings: Option<sqlx::types::JsonValue>,
+    ssh_public_key: Option<String>,
     #[allow(dead_code)]
     created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -34,6 +35,7 @@ pub struct OwnedRental {
     pub user_id: String,
     pub ssh_credentials: Option<String>,
     pub port_mappings: Option<sqlx::types::JsonValue>,
+    pub ssh_public_key: Option<String>,
 }
 
 #[async_trait]
@@ -73,6 +75,7 @@ impl FromRequestParts<AppState> for OwnedRental {
                     user_id: row.user_id,
                     ssh_credentials: row.ssh_credentials,
                     port_mappings: row.port_mappings,
+                    ssh_public_key: row.ssh_public_key,
                 })
             }
             None => {
@@ -95,7 +98,7 @@ async fn get_rental_ownership(
 ) -> Result<Option<UserRentalRow>, sqlx::Error> {
     let row = sqlx::query_as::<_, UserRentalRow>(
         r#"
-        SELECT rental_id, user_id, ssh_credentials, port_mappings, created_at
+        SELECT rental_id, user_id, ssh_credentials, port_mappings, ssh_public_key, created_at
         FROM user_rentals
         WHERE rental_id = $1 AND user_id = $2
         "#,
@@ -113,24 +116,26 @@ fn get_auth_context_from_parts(parts: &Parts) -> Option<&AuthContext> {
     parts.extensions.get::<AuthContext>()
 }
 
-/// Store a new rental ownership record with optional SSH credentials and port mappings
+/// Store a new rental ownership record with optional SSH credentials, port mappings, and public key
 pub async fn store_rental_ownership(
     db: &PgPool,
     rental_id: &str,
     user_id: &str,
     ssh_credentials: Option<&str>,
     port_mappings: Option<sqlx::types::JsonValue>,
+    ssh_public_key: Option<&str>,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         r#"
-        INSERT INTO user_rentals (rental_id, user_id, ssh_credentials, port_mappings)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO user_rentals (rental_id, user_id, ssh_credentials, port_mappings, ssh_public_key)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
     )
     .bind(rental_id)
     .bind(user_id)
     .bind(ssh_credentials)
     .bind(port_mappings)
+    .bind(ssh_public_key)
     .execute(db)
     .await?;
 
@@ -168,12 +173,13 @@ pub struct RentalWithSshStatus {
     pub has_ssh: bool,
 }
 
-/// Struct to hold rental details including SSH status and port mappings
+/// Struct to hold rental details including SSH status, port mappings, and public key
 #[derive(Debug)]
 pub struct RentalWithDetails {
     pub rental_id: String,
     pub has_ssh: bool,
     pub port_mappings: Option<sqlx::types::JsonValue>,
+    pub ssh_public_key: Option<String>,
 }
 
 /// Get all rentals owned by a specific user with SSH availability status
@@ -202,30 +208,32 @@ pub async fn get_user_rentals_with_ssh(
         .collect())
 }
 
-/// Get all rentals owned by a specific user with SSH status and port mappings
+/// Get all rentals owned by a specific user with SSH status, port mappings, and public key
 pub async fn get_user_rentals_with_details(
     db: &PgPool,
     user_id: &str,
 ) -> Result<Vec<RentalWithDetails>, sqlx::Error> {
-    let records: Vec<(String, Option<String>, Option<sqlx::types::JsonValue>)> = sqlx::query_as(
-        r#"
-        SELECT rental_id, ssh_credentials, port_mappings
+    let records: Vec<(String, Option<String>, Option<sqlx::types::JsonValue>, Option<String>)> =
+        sqlx::query_as(
+            r#"
+        SELECT rental_id, ssh_credentials, port_mappings, ssh_public_key
         FROM user_rentals
         WHERE user_id = $1
         ORDER BY created_at DESC
         "#,
-    )
-    .bind(user_id)
-    .fetch_all(db)
-    .await?;
+        )
+        .bind(user_id)
+        .fetch_all(db)
+        .await?;
 
     Ok(records
         .into_iter()
         .map(
-            |(rental_id, ssh_credentials, port_mappings)| RentalWithDetails {
+            |(rental_id, ssh_credentials, port_mappings, ssh_public_key)| RentalWithDetails {
                 rental_id,
                 has_ssh: ssh_credentials.is_some(),
                 port_mappings,
+                ssh_public_key,
             },
         )
         .collect())
@@ -256,8 +264,8 @@ pub async fn archive_rental_ownership(
     // First, copy the rental to terminated_user_rentals table
     sqlx::query(
         r#"
-        INSERT INTO terminated_user_rentals (rental_id, user_id, ssh_credentials, port_mappings, created_at, stopped_at, stop_reason)
-        SELECT rental_id, user_id, ssh_credentials, port_mappings, created_at, NOW(), $2
+        INSERT INTO terminated_user_rentals (rental_id, user_id, ssh_credentials, port_mappings, ssh_public_key, created_at, stopped_at, stop_reason)
+        SELECT rental_id, user_id, ssh_credentials, port_mappings, ssh_public_key, created_at, NOW(), $2
         FROM user_rentals
         WHERE rental_id = $1
         "#,
@@ -312,12 +320,12 @@ pub async fn archive_secure_cloud_rental(
         r#"
         INSERT INTO terminated_secure_cloud_rentals (
             id, user_id, provider, provider_instance_id, offering_id, instance_type,
-            location_code, status, hostname, ssh_key_id, ip_address, connection_info,
+            location_code, status, hostname, ssh_public_key, ip_address, connection_info,
             raw_response, error_message, created_at, updated_at, stopped_at, stop_reason
         )
         SELECT
             id, user_id, provider, provider_instance_id, offering_id, instance_type,
-            location_code, COALESCE($3, status), hostname, ssh_key_id, ip_address, connection_info,
+            location_code, COALESCE($3, status), hostname, ssh_public_key, ip_address, connection_info,
             raw_response, error_message, created_at, updated_at, NOW(), $2
         FROM secure_cloud_rentals
         WHERE id = $1
@@ -466,7 +474,7 @@ mod tests {
             .is_none());
 
         // Store ownership with SSH credentials
-        store_rental_ownership(&db, rental_id, user_id, ssh_creds, None)
+        store_rental_ownership(&db, rental_id, user_id, ssh_creds, None, None)
             .await
             .expect("Failed to store ownership");
 

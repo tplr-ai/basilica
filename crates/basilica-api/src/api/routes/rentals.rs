@@ -54,11 +54,12 @@ pub async fn get_rental_status(
         serde_json::from_value::<Vec<basilica_validator::rental::PortMapping>>(json).ok()
     });
 
-    // Create extended response with SSH credentials and port mappings from database
+    // Create extended response with SSH credentials, port mappings, and public key from database
     let response_with_ssh = RentalStatusWithSshResponse::from_validator_response(
         validator_response,
         owned_rental.ssh_credentials,
         port_mappings,
+        owned_rental.ssh_public_key,
     );
 
     Ok(Json(response_with_ssh))
@@ -235,7 +236,7 @@ pub async fn start_rental(
     let validator_request = StartRentalRequest {
         node_id: node_id.clone(),
         container_image: request.container_image,
-        ssh_public_key,
+        ssh_public_key: ssh_public_key.clone(),
         environment: request.environment,
         ports: request.ports,
         resources: request.resources,
@@ -263,13 +264,19 @@ pub async fn start_rental(
         None
     };
 
-    // Store ownership record in database with SSH credentials and port mappings
+    // Store ownership record in database with SSH credentials, port mappings, and public key
+    let ssh_public_key_opt = if ssh_public_key.is_empty() {
+        None
+    } else {
+        Some(ssh_public_key.as_str())
+    };
     if let Err(e) = store_rental_ownership(
         &state.db,
         &validator_response.rental_id,
         user_id,
         validator_response.ssh_credentials.as_deref(),
         port_mappings_json.flatten(),
+        ssh_public_key_opt,
     )
     .await
     {
@@ -642,12 +649,14 @@ pub async fn list_rentals_validator(
             message: format!("Failed to get user rentals: {}", e),
         })?;
 
-    // Create maps for quick lookup of SSH status and port mappings
+    // Create maps for quick lookup of SSH status, port mappings, and public key
     let mut ssh_status_map = std::collections::HashMap::new();
     let mut port_mappings_map = std::collections::HashMap::new();
+    let mut ssh_public_key_map = std::collections::HashMap::new();
     for rental in &user_rentals_with_details {
         ssh_status_map.insert(rental.rental_id.clone(), rental.has_ssh);
         port_mappings_map.insert(rental.rental_id.clone(), rental.port_mappings.clone());
+        ssh_public_key_map.insert(rental.rental_id.clone(), rental.ssh_public_key.clone());
     }
 
     // Get all rentals from validator
@@ -715,6 +724,11 @@ pub async fn list_rentals_validator(
                     .ok()
             });
 
+        // Get SSH public key from database
+        let ssh_public_key = ssh_public_key_map
+            .get(&rental.rental_id)
+            .and_then(|opt| opt.clone());
+
         // Get cost info from billing (graceful degradation if unavailable)
         let (accumulated_cost, hourly_cost) = cost_map
             .get(&rental.rental_id)
@@ -738,6 +752,7 @@ pub async fn list_rentals_validator(
             port_mappings,
             hourly_cost,
             accumulated_cost,
+            ssh_public_key,
         });
     }
 

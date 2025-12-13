@@ -94,6 +94,10 @@ pub struct ApiRentalListItem {
     /// Accumulated cost from billing service
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accumulated_cost: Option<String>,
+
+    /// SSH public key associated with this rental (for local key matching)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_public_key: Option<String>,
 }
 
 /// API list rentals response with GPU information
@@ -206,6 +210,10 @@ pub struct RentalStatusWithSshResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub port_mappings: Option<Vec<basilica_validator::rental::PortMapping>>,
 
+    /// SSH public key used at rental creation (for local key matching)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssh_public_key: Option<String>,
+
     /// Creation timestamp
     pub created_at: chrono::DateTime<chrono::Utc>,
 
@@ -214,11 +222,12 @@ pub struct RentalStatusWithSshResponse {
 }
 
 impl RentalStatusWithSshResponse {
-    /// Create from validator response, database SSH credentials, and port mappings
+    /// Create from validator response, database SSH credentials, port mappings, and public key
     pub fn from_validator_response(
         response: ValidatorRentalStatusResponse,
         ssh_credentials: Option<String>,
         port_mappings: Option<Vec<basilica_validator::rental::PortMapping>>,
+        ssh_public_key: Option<String>,
     ) -> Self {
         Self {
             rental_id: response.rental_id,
@@ -226,6 +235,7 @@ impl RentalStatusWithSshResponse {
             node: response.node,
             ssh_credentials,
             port_mappings,
+            ssh_public_key,
             created_at: response.created_at,
             updated_at: response.updated_at,
         }

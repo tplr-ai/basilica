@@ -1683,6 +1683,7 @@ pub async fn handle_exec(
         rental_id,
         compute_type,
         ssh_command,
+        ssh_public_key,
     } = resolve_rental_with_ssh(target.as_deref(), &api_client).await?;
 
     debug!(
@@ -1702,22 +1703,17 @@ pub async fn handle_exec(
         username,
     };
 
-    // Fetch API-registered SSH key and find matching private key
+    // Find matching private key using the rental's stored public key
     let private_key_path = {
-        let ssh_key = api_client
-            .get_ssh_key()
-            .await
-            .map_err(|e| CliError::Internal(eyre!(e)))?
-            .ok_or_else(|| {
-                CliError::Internal(
-                    eyre!("No SSH key registered with Basilica")
-                        .suggestion("Run 'basilica ssh-keys add' to register your SSH key")
-                        .note("SSH keys are required to connect to rentals"),
-                )
-            })?;
+        let public_key = ssh_public_key.ok_or_else(|| {
+            CliError::Internal(
+                eyre!("No SSH public key stored for this rental")
+                    .suggestion("The rental was created without an SSH key")
+                    .note("Create a new rental with an SSH key to enable SSH access"),
+            )
+        })?;
 
-        crate::ssh::find_private_key_for_public_key(&ssh_key.public_key)
-            .map_err(CliError::Internal)?
+        crate::ssh::find_private_key_for_public_key(&public_key).map_err(CliError::Internal)?
     };
 
     debug!("Using private key for exec: {}", private_key_path.display());
@@ -1744,6 +1740,7 @@ pub async fn handle_ssh(
         rental_id,
         compute_type,
         ssh_command,
+        ssh_public_key,
     } = resolve_rental_with_ssh(target.as_deref(), &api_client).await?;
 
     debug!(
@@ -1768,22 +1765,17 @@ pub async fn handle_ssh(
         username,
     };
 
-    // Fetch API-registered SSH key and find matching private key
+    // Find matching private key using the rental's stored public key
     let private_key_path = {
-        let ssh_key = api_client
-            .get_ssh_key()
-            .await
-            .map_err(|e| CliError::Internal(eyre!(e)))?
-            .ok_or_else(|| {
-                CliError::Internal(
-                    eyre!("No SSH key registered with Basilica")
-                        .suggestion("Run 'basilica ssh-keys add' to register your SSH key")
-                        .note("SSH keys are required to connect to rentals"),
-                )
-            })?;
+        let public_key = ssh_public_key.ok_or_else(|| {
+            CliError::Internal(
+                eyre!("No SSH public key stored for this rental")
+                    .suggestion("The rental was created without an SSH key")
+                    .note("Create a new rental with an SSH key to enable SSH access"),
+            )
+        })?;
 
-        crate::ssh::find_private_key_for_public_key(&ssh_key.public_key)
-            .map_err(CliError::Internal)?
+        crate::ssh::find_private_key_for_public_key(&public_key).map_err(CliError::Internal)?
     };
 
     debug!("Using private key: {}", private_key_path.display());
@@ -1845,6 +1837,7 @@ pub async fn handle_cp(
     // Resolve rental and fetch SSH credentials
     let RentalWithSsh {
         ssh_command: ssh_credentials,
+        ssh_public_key,
         ..
     } = resolve_rental_with_ssh(rental_id.as_deref(), &api_client).await?;
 
@@ -1856,22 +1849,17 @@ pub async fn handle_cp(
         username,
     };
 
-    // Fetch API-registered SSH key and find matching private key
+    // Find matching private key using the rental's stored public key
     let private_key_path = {
-        let ssh_key = api_client
-            .get_ssh_key()
-            .await
-            .map_err(|e| CliError::Internal(eyre!(e)))?
-            .ok_or_else(|| {
-                CliError::Internal(
-                    eyre!("No SSH key registered with Basilica")
-                        .suggestion("Run 'basilica ssh-keys add' to register your SSH key")
-                        .note("SSH keys are required to connect to rentals"),
-                )
-            })?;
+        let public_key = ssh_public_key.ok_or_else(|| {
+            CliError::Internal(
+                eyre!("No SSH public key stored for this rental")
+                    .suggestion("The rental was created without an SSH key")
+                    .note("Create a new rental with an SSH key to enable SSH access"),
+            )
+        })?;
 
-        crate::ssh::find_private_key_for_public_key(&ssh_key.public_key)
-            .map_err(CliError::Internal)?
+        crate::ssh::find_private_key_for_public_key(&public_key).map_err(CliError::Internal)?
     };
 
     debug!(
