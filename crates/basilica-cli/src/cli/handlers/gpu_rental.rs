@@ -33,6 +33,9 @@ use std::str::FromStr;
 use std::time::Duration;
 use tracing::{debug, warn};
 
+/// Maximum time to wait for rental to become active and SSH to be ready
+const RENTAL_READY_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// Represents a GPU target for the `up` command
 #[derive(Debug, Clone)]
 pub struct GpuTarget(pub GpuCategory);
@@ -522,7 +525,7 @@ async fn handle_secure_cloud_rental_with_offering(
                 &ssh_client,
                 &ssh_access,
                 Some(private_key_path),
-                Duration::from_secs(120),
+                RENTAL_READY_TIMEOUT,
             )
             .await
             {
@@ -682,7 +685,7 @@ async fn handle_community_cloud_rental_with_selection(
                 &ssh_client,
                 &ssh_access,
                 Some(private_key_path),
-                Duration::from_secs(120),
+                RENTAL_READY_TIMEOUT,
             )
             .await
             {
@@ -1900,7 +1903,6 @@ async fn poll_rental_status(
     rental_id: &str,
     api_client: &basilica_sdk::BasilicaClient,
 ) -> Result<bool, CliError> {
-    const MAX_WAIT_TIME: Duration = Duration::from_secs(300);
     const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
     const MAX_INTERVAL: Duration = Duration::from_secs(10);
 
@@ -1911,7 +1913,7 @@ async fn poll_rental_status(
 
     loop {
         // Check if we've exceeded the maximum wait time
-        if start_time.elapsed() > MAX_WAIT_TIME {
+        if start_time.elapsed() > RENTAL_READY_TIMEOUT {
             complete_spinner_and_clear(spinner);
             println!("The rental is not yet up. Please wait for a while and SSH manually using `basilica ssh`.");
             return Ok(false);
@@ -1989,7 +1991,6 @@ async fn poll_secure_cloud_rental_status(
     rental_id: &str,
     api_client: &basilica_sdk::BasilicaClient,
 ) -> Result<Option<basilica_sdk::types::SecureCloudRentalListItem>, CliError> {
-    const MAX_WAIT_TIME: Duration = Duration::from_secs(300);
     const INITIAL_INTERVAL: Duration = Duration::from_secs(5);
     const MAX_INTERVAL: Duration = Duration::from_secs(15);
 
@@ -2000,7 +2001,7 @@ async fn poll_secure_cloud_rental_status(
 
     loop {
         // Check if we've exceeded the maximum wait time
-        if start_time.elapsed() > MAX_WAIT_TIME {
+        if start_time.elapsed() > RENTAL_READY_TIMEOUT {
             complete_spinner_and_clear(spinner);
             println!("The rental is not yet up. Please wait for a while and SSH manually using `basilica ssh`.");
             return Ok(None);
@@ -2109,7 +2110,7 @@ async fn retry_ssh_connection(
 
     loop {
         attempt += 1;
-        spinner.set_message("SSH not ready yet, retrying...");
+        spinner.set_message("Waiting for SSH...");
 
         // First test connectivity without starting an interactive session
         // This captures stderr so we don't print raw SSH errors
@@ -2130,15 +2131,15 @@ async fn retry_ssh_connection(
                 if start_time.elapsed() >= max_wait {
                     // Final attempt failed, return error
                     complete_spinner_error(spinner, "SSH connection failed");
+                    // Log the final error for debugging (raw SSH stderr preserved in logs)
+                    debug!("Final SSH connection attempt failed: {}", e);
                     return Err(CliError::Internal(
                         eyre!(
-                            "SSH connection failed after {} attempts over {}s: {}",
+                            "SSH connection failed after {} attempts over {}s",
                             attempt,
                             start_time.elapsed().as_secs(),
-                            e
                         )
-                        .suggestion("The SSH service may still be starting up")
-                        .note("Try connecting manually in a few moments"),
+                        .suggestion("The SSH service may not be ready yet. Wait a minute and try 'basilica ssh <rental_id>'"),
                     ));
                 }
 
