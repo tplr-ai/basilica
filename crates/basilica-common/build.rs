@@ -9,8 +9,10 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    // Tell Cargo to rerun this build script if .env files change
-    println!("cargo:rerun-if-changed=.env");
+    // Tell Cargo to rerun this build script if .env files change (only if file exists)
+    if Path::new(".env").exists() {
+        println!("cargo:rerun-if-changed=.env");
+    }
 
     // Tell Cargo to rerun this build script if these environment variables change
     println!("cargo:rerun-if-env-changed=BASILICA_AUTH0_DOMAIN");
