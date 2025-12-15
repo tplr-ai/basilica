@@ -526,6 +526,10 @@ install_binary() {
     # Directly overwrite existing binary
     mv -f "$TEMP_BINARY" "$INSTALL_DIR/$BINARY_NAME"
     chmod +x "$INSTALL_DIR/$BINARY_NAME"
+
+    # Create 'bs' alias symlink
+    print_step "Creating 'bs' alias..."
+    ln -sf "$INSTALL_DIR/$BINARY_NAME" "$INSTALL_DIR/bs"
 }
 
 # Setup shell completions
@@ -611,6 +615,7 @@ show_completion() {
 
     echo
     print_info "Basilica CLI installed successfully!"
+    print_info "You can use 'basilica' or the shorter 'bs' alias"
     echo
 
     # Inform about shell completions

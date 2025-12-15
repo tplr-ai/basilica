@@ -41,6 +41,9 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
     println!("Current version: {}", style(current_version).cyan());
     println!("Checking for updates...");
 
+    // Ensure alias symlink exists even when already up to date
+    ensure_alias_symlink();
+
     // Determine target tag
     let target_tag = if let Some(ref ver) = version {
         // User specified a version - use it directly
@@ -116,14 +119,46 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
                 style("✓").green().bold(),
                 style(v).green().bold()
             );
+
             println!(
-                "\nRun {} to verify the new version",
-                style("basilica --version").cyan()
+                "\nRun {} or {} to verify the new version",
+                style("basilica --version").cyan(),
+                style("bs --version").cyan()
             );
         }
     }
 
     Ok(())
+}
+
+/// Ensure the 'bs' alias symlink exists alongside the main binary
+#[cfg(unix)]
+fn ensure_alias_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let Ok(current_exe) = std::env::current_exe() else {
+        return;
+    };
+    let Some(parent) = current_exe.parent() else {
+        return;
+    };
+
+    let alias_path = parent.join("bs");
+
+    // Remove existing symlink/file if present (ignore errors)
+    let _ = std::fs::remove_file(&alias_path);
+
+    // Create new symlink
+    match symlink(&current_exe, &alias_path) {
+        Ok(_) => println!("Created 'bs' alias"),
+        Err(e) => eprintln!("Failed to create 'bs' alias: {}", e),
+    }
+}
+
+#[cfg(not(unix))]
+fn ensure_alias_symlink() {
+    // Symlinks on Windows require special permissions
+    // Skip for now - Windows not currently supported
 }
 
 /// Handle dry-run mode: check for updates without installing
