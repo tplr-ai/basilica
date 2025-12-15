@@ -9,19 +9,17 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    // Tell Cargo to rerun this build script if .env files change (only if file exists)
-    if Path::new(".env").exists() {
-        println!("cargo:rerun-if-changed=.env");
-    }
-
     // Tell Cargo to rerun this build script if these environment variables change
     println!("cargo:rerun-if-env-changed=BASILICA_AUTH0_DOMAIN");
     println!("cargo:rerun-if-env-changed=BASILICA_AUTH0_CLIENT_ID");
     println!("cargo:rerun-if-env-changed=BASILICA_AUTH0_AUDIENCE");
     println!("cargo:rerun-if-env-changed=BASILICA_AUTH0_ISSUER");
 
-    // Try to load .env file from project root (ignore if it doesn't exist)
-    let _ = dotenvy::dotenv();
+    // Try to load .env file (searches current dir and parents).
+    // If found, tell Cargo to rebuild when it changes.
+    if let Ok(path) = dotenvy::dotenv() {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
 
     // Default values (same as current hardcoded values)
     let defaults = [
