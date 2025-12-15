@@ -142,14 +142,17 @@ fn ensure_alias_symlink() {
     let Some(parent) = current_exe.parent() else {
         return;
     };
+    let Some(binary_name) = current_exe.file_name() else {
+        return;
+    };
 
     let alias_path = parent.join("bs");
 
     // Remove existing symlink/file if present (ignore errors)
     let _ = std::fs::remove_file(&alias_path);
 
-    // Create new symlink
-    match symlink(&current_exe, &alias_path) {
+    // Create new symlink (relative, so it survives directory moves)
+    match symlink(binary_name, &alias_path) {
         Ok(_) => println!("Created 'bs' alias"),
         Err(e) => eprintln!("Failed to create 'bs' alias: {}", e),
     }
