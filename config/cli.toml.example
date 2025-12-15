@@ -11,13 +11,8 @@ request_timeout = 120
 
 # SSH Configuration
 [ssh]
-# Path to your SSH public key for instance access
-# This key will be added to provisioned instances
-key_path = "~/.ssh/basilica.pub"
-
-# Path to your SSH private key for instance access
-# This key will be used to connect to provisioned instances
-private_key_path = "~/.ssh/basilica"
+# SSH connection timeout in seconds (default: 30)
+connection_timeout = 30
 
 # Docker Image Configuration
 [image]

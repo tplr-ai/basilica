@@ -476,10 +476,26 @@ async fn handle_secure_cloud_rental_with_offering(
 
     if options.detach {
         if let Some(ssh_cmd) = &response.ssh_command {
+            // Look up the private key for display
+            let private_key_path = {
+                let ssh_key = api_client
+                    .get_ssh_key()
+                    .await
+                    .map_err(|e| CliError::Internal(eyre!(e)))?
+                    .ok_or_else(|| {
+                        CliError::Internal(
+                            eyre!("No SSH key registered with Basilica")
+                                .suggestion("Run 'basilica ssh-keys add' to register your SSH key"),
+                        )
+                    })?;
+
+                crate::ssh::find_private_key_for_public_key(&ssh_key.public_key)
+                    .map_err(CliError::Internal)?
+            };
             display_secure_cloud_reconnection_instructions(
                 &response.rental_id,
                 ssh_cmd,
-                config,
+                &private_key_path,
                 "To connect to this rental:",
             )?;
         } else {
@@ -524,7 +540,7 @@ async fn handle_secure_cloud_rental_with_offering(
             match retry_ssh_connection(
                 &ssh_client,
                 &ssh_access,
-                Some(private_key_path),
+                private_key_path.clone(),
                 RENTAL_READY_TIMEOUT,
             )
             .await
@@ -534,7 +550,7 @@ async fn handle_secure_cloud_rental_with_offering(
                     display_secure_cloud_reconnection_instructions(
                         &response.rental_id,
                         ssh_cmd,
-                        config,
+                        &private_key_path,
                         "To reconnect to this rental:",
                     )?;
                 }
@@ -543,7 +559,7 @@ async fn handle_secure_cloud_rental_with_offering(
                     display_secure_cloud_reconnection_instructions(
                         &response.rental_id,
                         ssh_cmd,
-                        config,
+                        &private_key_path,
                         "Try manually connecting using:",
                     )?;
                 }
@@ -645,10 +661,26 @@ async fn handle_community_cloud_rental_with_selection(
     };
 
     if options.detach {
+        // Look up the private key for display
+        let private_key_path = {
+            let ssh_key = api_client
+                .get_ssh_key()
+                .await
+                .map_err(|e| CliError::Internal(eyre!(e)))?
+                .ok_or_else(|| {
+                    CliError::Internal(
+                        eyre!("No SSH key registered with Basilica")
+                            .suggestion("Run 'basilica ssh-keys add' to register your SSH key"),
+                    )
+                })?;
+
+            crate::ssh::find_private_key_for_public_key(&ssh_key.public_key)
+                .map_err(CliError::Internal)?
+        };
         display_ssh_connection_instructions(
             &response.rental_id,
             ssh_creds,
-            config,
+            &private_key_path,
             "SSH connection options:",
         )?;
     } else {
@@ -684,7 +716,7 @@ async fn handle_community_cloud_rental_with_selection(
             match retry_ssh_connection(
                 &ssh_client,
                 &ssh_access,
-                Some(private_key_path),
+                private_key_path.clone(),
                 RENTAL_READY_TIMEOUT,
             )
             .await
@@ -694,7 +726,7 @@ async fn handle_community_cloud_rental_with_selection(
                     display_ssh_connection_instructions(
                         &response.rental_id,
                         ssh_creds,
-                        config,
+                        &private_key_path,
                         "To reconnect to this rental:",
                     )?;
                 }
@@ -703,7 +735,7 @@ async fn handle_community_cloud_rental_with_selection(
                     display_ssh_connection_instructions(
                         &response.rental_id,
                         ssh_creds,
-                        config,
+                        &private_key_path,
                         "Try manually connecting using:",
                     )?;
                 }
@@ -1224,7 +1256,17 @@ pub async fn handle_status(
             if json {
                 json_output(&status)?;
             } else {
-                display_rental_status_with_details(&status, config);
+                // Try to find the private key for display
+                let private_key_path =
+                    api_client
+                        .get_ssh_key()
+                        .await
+                        .ok()
+                        .flatten()
+                        .and_then(|ssh_key| {
+                            crate::ssh::find_private_key_for_public_key(&ssh_key.public_key).ok()
+                        });
+                display_rental_status_with_details(&status, private_key_path.as_deref());
             }
         }
         ComputeCategory::SecureCloud => {
@@ -1724,7 +1766,7 @@ pub async fn handle_exec(
     // Use SSH client to execute command
     let ssh_client = SshClient::new(&config.ssh)?;
     ssh_client
-        .execute_command(&ssh_access, &command, Some(private_key_path))
+        .execute_command(&ssh_access, &command, private_key_path)
         .await?;
     Ok(())
 }
@@ -1788,7 +1830,7 @@ pub async fn handle_ssh(
 
     // Open interactive session with port forwarding options
     ssh_client
-        .interactive_session_with_options(&ssh_access, &options, Some(private_key_path))
+        .interactive_session_with_options(&ssh_access, &options, private_key_path)
         .await?;
     Ok(())
 }
@@ -1875,22 +1917,12 @@ pub async fn handle_cp(
 
     if is_upload {
         ssh_client
-            .upload_file(
-                &ssh_access,
-                &local_path,
-                &remote_path,
-                Some(private_key_path),
-            )
+            .upload_file(&ssh_access, &local_path, &remote_path, private_key_path)
             .await?;
         Ok(())
     } else {
         ssh_client
-            .download_file(
-                &ssh_access,
-                &remote_path,
-                &local_path,
-                Some(private_key_path),
-            )
+            .download_file(&ssh_access, &remote_path, &local_path, private_key_path)
             .await?;
         Ok(())
     }
@@ -2095,7 +2127,7 @@ async fn poll_secure_cloud_rental_status(
 async fn retry_ssh_connection(
     ssh_client: &SshClient,
     ssh_access: &SshAccess,
-    private_key_override: Option<PathBuf>,
+    private_key_path: PathBuf,
     max_wait: Duration,
 ) -> Result<(), CliError> {
     const INITIAL_INTERVAL: Duration = Duration::from_secs(2);
@@ -2115,14 +2147,14 @@ async fn retry_ssh_connection(
         // First test connectivity without starting an interactive session
         // This captures stderr so we don't print raw SSH errors
         match ssh_client
-            .test_connection(ssh_access, private_key_override.clone())
+            .test_connection(ssh_access, private_key_path.clone())
             .await
         {
             Ok(_) => {
                 // Connection test succeeded, now start the actual interactive session
                 complete_spinner_and_clear(spinner);
                 return ssh_client
-                    .interactive_session(ssh_access, private_key_override)
+                    .interactive_session(ssh_access, private_key_path)
                     .await
                     .map_err(|e| CliError::Internal(eyre!("SSH session failed: {}", e)));
             }
@@ -2166,14 +2198,11 @@ async fn retry_ssh_connection(
 fn display_ssh_connection_instructions(
     rental_id: &str,
     ssh_credentials: &str,
-    config: &CliConfig,
+    private_key_path: &std::path::Path,
     message: &str,
 ) -> Result<(), CliError> {
     // Parse SSH credentials to get components
     let (host, port, username) = parse_ssh_credentials(ssh_credentials)?;
-
-    // Get the private key path from config
-    let private_key_path = &config.ssh.private_key_path;
 
     println!();
     print_info(message);
@@ -2211,14 +2240,11 @@ fn display_ssh_connection_instructions(
 fn display_secure_cloud_reconnection_instructions(
     rental_id: &str,
     ssh_command: &str,
-    config: &CliConfig,
+    private_key_path: &std::path::Path,
     message: &str,
 ) -> Result<(), CliError> {
     // Parse SSH command to get components
     let (host, port, username) = parse_ssh_credentials(ssh_command)?;
-
-    // Get the private key path from config
-    let private_key_path = &config.ssh.private_key_path;
 
     println!();
     print_info(message);
@@ -2262,7 +2288,7 @@ fn split_remote_path(path: &str) -> (Option<String>, String) {
 
 fn display_rental_status_with_details(
     status: &basilica_sdk::types::RentalStatusWithSshResponse,
-    config: &CliConfig,
+    private_key_path: Option<&std::path::Path>,
 ) {
     println!("Rental Status: {}", status.rental_id);
     println!("  Status: {:?}", status.status);
@@ -2291,8 +2317,6 @@ fn display_rental_status_with_details(
     // Display SSH connection instructions if available
     if let Some(ref ssh_credentials) = status.ssh_credentials {
         if let Ok((host, port, username)) = parse_ssh_credentials(ssh_credentials) {
-            let private_key_path = &config.ssh.private_key_path;
-
             println!();
             print_info("SSH Connection:");
             println!();
@@ -2308,19 +2332,30 @@ fn display_rental_status_with_details(
             println!();
 
             // Option 2: Using standard SSH command
-            println!("  2. Using standard SSH:");
-            println!(
-                "     {}",
-                console::style(format!(
-                    "ssh -i {} -p {} {}@{}",
-                    compress_path(private_key_path),
-                    port,
-                    username,
-                    host
-                ))
-                .cyan()
-                .bold()
-            );
+            if let Some(key_path) = private_key_path {
+                println!("  2. Using standard SSH:");
+                println!(
+                    "     {}",
+                    console::style(format!(
+                        "ssh -i {} -p {} {}@{}",
+                        compress_path(key_path),
+                        port,
+                        username,
+                        host
+                    ))
+                    .cyan()
+                    .bold()
+                );
+            } else {
+                println!("  2. Using standard SSH:");
+                println!(
+                    "     {}",
+                    console::style(format!("ssh -p {} {}@{}", port, username, host))
+                        .cyan()
+                        .bold()
+                );
+                println!("     {}", style("(private key not found locally)").yellow());
+            }
         }
     }
 }

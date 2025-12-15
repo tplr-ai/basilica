@@ -56,10 +56,6 @@ impl Default for ApiConfig {
 /// SSH configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SshConfig {
-    /// Default SSH public key path
-    pub key_path: PathBuf,
-    /// SSH private key path
-    pub private_key_path: PathBuf,
     /// SSH connection timeout in seconds (default: 30)
     #[serde(default = "default_ssh_timeout")]
     pub connection_timeout: u64,
@@ -76,27 +72,8 @@ fn default_api_request_timeout() -> u64 {
 impl Default for SshConfig {
     fn default() -> Self {
         Self {
-            key_path: PathBuf::from("~/.ssh/basilica_ed25519.pub"),
-            private_key_path: PathBuf::from("~/.ssh/basilica_ed25519"),
             connection_timeout: 30,
         }
-    }
-}
-
-impl SshConfig {
-    /// Check if SSH keys exist at the configured paths
-    pub fn ssh_keys_exist(&self) -> bool {
-        self.key_path.exists() && self.private_key_path.exists()
-    }
-
-    /// Check if SSH keys are missing (neither exists)
-    pub fn ssh_keys_missing(&self) -> bool {
-        !self.key_path.exists() && !self.private_key_path.exists()
-    }
-
-    /// Check if SSH key pair is incomplete (only one exists)
-    pub fn ssh_keys_incomplete(&self) -> bool {
-        self.key_path.exists() != self.private_key_path.exists()
     }
 }
 
@@ -215,14 +192,6 @@ impl CliConfig {
 
     /// Expand tilde (~) in path fields
     fn expand_paths(&mut self) {
-        if let Some(path_str) = self.ssh.key_path.to_str() {
-            let expanded = shellexpand::tilde(path_str);
-            self.ssh.key_path = PathBuf::from(expanded.as_ref());
-        }
-        if let Some(path_str) = self.ssh.private_key_path.to_str() {
-            let expanded = shellexpand::tilde(path_str);
-            self.ssh.private_key_path = PathBuf::from(expanded.as_ref());
-        }
         if let Some(path_str) = self.wallet.base_wallet_path.to_str() {
             let expanded = shellexpand::tilde(path_str);
             self.wallet.base_wallet_path = PathBuf::from(expanded.as_ref());
@@ -238,10 +207,6 @@ impl CliConfig {
         };
 
         let mut config = self.clone();
-
-        // Compress SSH paths
-        config.ssh.key_path = Self::compress_path(&config.ssh.key_path, &home_dir);
-        config.ssh.private_key_path = Self::compress_path(&config.ssh.private_key_path, &home_dir);
 
         // Compress wallet path
         config.wallet.base_wallet_path =
@@ -300,27 +265,6 @@ impl CliConfig {
         };
 
         map.insert("api.base_url".to_string(), self.api.base_url.clone());
-
-        // Compress SSH key paths
-        let ssh_key_path = if let Some(ref home) = home_dir {
-            Self::compress_path(&self.ssh.key_path, home)
-        } else {
-            self.ssh.key_path.clone()
-        };
-        map.insert(
-            "ssh.key_path".to_string(),
-            ssh_key_path.to_string_lossy().to_string(),
-        );
-
-        let ssh_private_key_path = if let Some(ref home) = home_dir {
-            Self::compress_path(&self.ssh.private_key_path, home)
-        } else {
-            self.ssh.private_key_path.clone()
-        };
-        map.insert(
-            "ssh.private_key_path".to_string(),
-            ssh_private_key_path.to_string_lossy().to_string(),
-        );
 
         map.insert(
             "ssh.connection_timeout".to_string(),

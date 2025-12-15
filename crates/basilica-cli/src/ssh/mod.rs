@@ -53,12 +53,8 @@ impl SshClient {
     fn ssh_access_to_connection_details(
         &self,
         ssh_access: &SshAccess,
-        private_key_override: Option<std::path::PathBuf>,
+        private_key_path: std::path::PathBuf,
     ) -> Result<SshConnectionDetails> {
-        // Use override if provided, otherwise fall back to configured key
-        let private_key_path =
-            private_key_override.unwrap_or_else(|| self.config.private_key_path.clone());
-
         if !private_key_path.exists() {
             return Err(eyre!(
                 "SSH private key not found at: {}",
@@ -86,9 +82,9 @@ impl SshClient {
         &self,
         ssh_access: &SshAccess,
         command: &str,
-        private_key_override: Option<std::path::PathBuf>,
+        private_key_path: std::path::PathBuf,
     ) -> Result<()> {
-        let details = self.ssh_access_to_connection_details(ssh_access, private_key_override)?;
+        let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
 
         debug!(
             "Executing command via SSH: ssh -i {} -p {} {}@{} '{}'",
@@ -131,9 +127,9 @@ impl SshClient {
     pub async fn test_connection(
         &self,
         ssh_access: &SshAccess,
-        private_key_override: Option<std::path::PathBuf>,
+        private_key_path: std::path::PathBuf,
     ) -> Result<()> {
-        let details = self.ssh_access_to_connection_details(ssh_access, private_key_override)?;
+        let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
 
         debug!(
             "Testing SSH connectivity to {}@{}:{}",
@@ -174,9 +170,9 @@ impl SshClient {
     pub async fn interactive_session(
         &self,
         ssh_access: &SshAccess,
-        private_key_override: Option<std::path::PathBuf>,
+        private_key_path: std::path::PathBuf,
     ) -> Result<()> {
-        let details = self.ssh_access_to_connection_details(ssh_access, private_key_override)?;
+        let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
 
         info!(
             "Opening SSH session to {}@{}",
@@ -297,9 +293,9 @@ impl SshClient {
         &self,
         ssh_access: &SshAccess,
         options: &crate::cli::commands::SshOptions,
-        private_key_override: Option<std::path::PathBuf>,
+        private_key_path: std::path::PathBuf,
     ) -> Result<()> {
-        let details = self.ssh_access_to_connection_details(ssh_access, private_key_override)?;
+        let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
 
         info!(
             "Opening SSH session to {}@{}",
@@ -394,9 +390,9 @@ impl SshClient {
         ssh_access: &SshAccess,
         local_path: &str,
         remote_path: &str,
-        private_key_override: Option<std::path::PathBuf>,
+        private_key_path: std::path::PathBuf,
     ) -> Result<()> {
-        let details = self.ssh_access_to_connection_details(ssh_access, private_key_override)?;
+        let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
         let local = Path::new(local_path);
 
         info!("Uploading {} to {}", local_path, ssh_access.host);
@@ -420,9 +416,9 @@ impl SshClient {
         ssh_access: &SshAccess,
         remote_path: &str,
         local_path: &str,
-        private_key_override: Option<std::path::PathBuf>,
+        private_key_path: std::path::PathBuf,
     ) -> Result<()> {
-        let details = self.ssh_access_to_connection_details(ssh_access, private_key_override)?;
+        let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
         let local = Path::new(local_path);
 
         info!("Downloading {} from {}", remote_path, ssh_access.host);
