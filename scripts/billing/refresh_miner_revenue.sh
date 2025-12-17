@@ -2,8 +2,8 @@
 # Refresh miner revenue summary for a given time period
 #
 # Usage:
-#   ./refresh_miner_revenue.sh --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z"
-#   ./refresh_miner_revenue.sh --start "2024-01-01T00:00:00Z" --end "2024-02-01T00:00:00Z" --endpoint localhost:50051
+#   ./refresh_miner_revenue.sh --start "2024-01-01" --end "2024-01-31"
+#   ./refresh_miner_revenue.sh --start "2024-01-01" --end "2024-01-31" --endpoint localhost:50051
 #
 # Prerequisites:
 #   - grpcurl installed (brew install grpcurl on macOS)
@@ -28,16 +28,16 @@ while [[ $# -gt 0 ]]; do
         --endpoint) ENDPOINT="$2"; shift 2 ;;
         --version) COMPUTATION_VERSION="$2"; shift 2 ;;
         -h|--help)
-            echo "Usage: $0 --start <RFC3339> --end <RFC3339> [--endpoint host:port] [--version N]"
+            echo "Usage: $0 --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--endpoint host:port] [--version N]"
             echo ""
             echo "Options:"
-            echo "  --start     Period start timestamp (RFC3339, e.g., 2024-01-01T00:00:00Z)"
-            echo "  --end       Period end timestamp (RFC3339, e.g., 2024-02-01T00:00:00Z)"
+            echo "  --start     Period start date (YYYY-MM-DD, e.g., 2024-01-01)"
+            echo "  --end       Period end date (YYYY-MM-DD, must be before today, e.g., 2024-01-31)"
             echo "  --endpoint  gRPC endpoint (default: localhost:50051, or BILLING_GRPC_ENDPOINT env var)"
             echo "  --version   Computation version (default: 1)"
             echo ""
             echo "Example:"
-            echo "  $0 --start '2024-01-01T00:00:00Z' --end '2024-02-01T00:00:00Z'"
+            echo "  $0 --start '2024-01-01' --end '2024-01-31'"
             exit 0
             ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -47,8 +47,8 @@ done
 # Validate required args
 if [[ -z "${PERIOD_START:-}" || -z "${PERIOD_END:-}" ]]; then
     echo "Error: --start and --end are required"
-    echo "Usage: $0 --start <RFC3339> --end <RFC3339> [--endpoint host:port] [--version N]"
-    echo "Example: $0 --start '2024-01-01T00:00:00Z' --end '2024-02-01T00:00:00Z'"
+    echo "Usage: $0 --start <YYYY-MM-DD> --end <YYYY-MM-DD> [--endpoint host:port] [--version N]"
+    echo "Example: $0 --start '2024-01-01' --end '2024-01-31'"
     exit 1
 fi
 
