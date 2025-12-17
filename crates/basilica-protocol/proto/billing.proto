@@ -274,8 +274,8 @@ message ErrorDetail {
 // Miner Revenue Reconciliation Messages
 
 message RefreshMinerRevenueSummaryRequest {
-    google.protobuf.Timestamp period_start = 1; // Start of period (inclusive)
-    google.protobuf.Timestamp period_end = 2; // End of period (exclusive)
+    string period_start = 1; // Start date in YYYY-MM-DD format (inclusive)
+    string period_end = 2;   // End date in YYYY-MM-DD format (inclusive, must be before today)
     uint32 computation_version = 3; // Version of computation logic (default: 1)
 }
 

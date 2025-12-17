@@ -1052,25 +1052,47 @@ impl BillingService for BillingServiceImpl {
     ) -> std::result::Result<Response<RefreshMinerRevenueSummaryResponse>, Status> {
         let req = request.into_inner();
 
-        // Parse timestamps
-        let period_start = req
-            .period_start
-            .ok_or_else(|| Status::invalid_argument("period_start is required"))?;
-        let period_end = req
-            .period_end
-            .ok_or_else(|| Status::invalid_argument("period_end is required"))?;
+        // Parse date strings (YYYY-MM-DD format)
+        if req.period_start.is_empty() {
+            return Err(Status::invalid_argument("period_start is required"));
+        }
+        if req.period_end.is_empty() {
+            return Err(Status::invalid_argument("period_end is required"));
+        }
 
-        let period_start = chrono::DateTime::<chrono::Utc>::from_timestamp(
-            period_start.seconds,
-            period_start.nanos as u32,
-        )
-        .ok_or_else(|| Status::invalid_argument("Invalid period_start timestamp"))?;
+        let period_start_date = chrono::NaiveDate::parse_from_str(&req.period_start, "%Y-%m-%d")
+            .map_err(|_| Status::invalid_argument("period_start must be in YYYY-MM-DD format"))?;
 
-        let period_end = chrono::DateTime::<chrono::Utc>::from_timestamp(
-            period_end.seconds,
-            period_end.nanos as u32,
-        )
-        .ok_or_else(|| Status::invalid_argument("Invalid period_end timestamp"))?;
+        let period_end_date = chrono::NaiveDate::parse_from_str(&req.period_end, "%Y-%m-%d")
+            .map_err(|_| Status::invalid_argument("period_end must be in YYYY-MM-DD format"))?;
+
+        // Validate period_end is before today (yesterday or earlier)
+        // This is required because we set end to 23:59:59, which hasn't happened yet for today
+        let today = chrono::Utc::now().date_naive();
+        if period_end_date >= today {
+            return Err(Status::invalid_argument(
+                "period_end must be before today's date (yesterday or earlier)",
+            ));
+        }
+
+        // Convert dates to timestamps at day boundaries
+        // period_start: 00:00:00 UTC of the start day
+        // period_end: 23:59:59.999999 UTC of the end day
+        let period_start = period_start_date
+            .and_hms_opt(0, 0, 0)
+            .expect("valid time")
+            .and_utc();
+        let period_end = period_end_date
+            .and_hms_micro_opt(23, 59, 59, 999_999)
+            .expect("valid time")
+            .and_utc();
+
+        // Validate period_start <= period_end
+        if period_start > period_end {
+            return Err(Status::invalid_argument(
+                "period_start must be before or equal to period_end",
+            ));
+        }
 
         let computation_version = if req.computation_version == 0 {
             1 // Default to version 1

@@ -412,12 +412,12 @@ pub struct ErrorDetail {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RefreshMinerRevenueSummaryRequest {
-    /// Start of period (inclusive)
-    #[prost(message, optional, tag = "1")]
-    pub period_start: ::core::option::Option<::prost_types::Timestamp>,
-    /// End of period (exclusive)
-    #[prost(message, optional, tag = "2")]
-    pub period_end: ::core::option::Option<::prost_types::Timestamp>,
+    /// Start date in YYYY-MM-DD format (inclusive)
+    #[prost(string, tag = "1")]
+    pub period_start: ::prost::alloc::string::String,
+    /// End date in YYYY-MM-DD format (inclusive, must be before today)
+    #[prost(string, tag = "2")]
+    pub period_end: ::prost::alloc::string::String,
     /// Version of computation logic (default: 1)
     #[prost(uint32, tag = "3")]
     pub computation_version: u32,
