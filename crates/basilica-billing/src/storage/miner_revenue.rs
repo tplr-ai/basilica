@@ -39,6 +39,15 @@ pub struct MinerRevenueSummary {
     pub created_at: DateTime<Utc>,
 }
 
+/// Represents an existing period that overlaps with a requested calculation
+#[derive(Debug, Clone)]
+pub struct OverlappingPeriod {
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+    pub computed_at: DateTime<Utc>,
+    pub row_count: i64,
+}
+
 /// Filter criteria for querying miner revenue summaries
 #[derive(Debug, Clone, Default)]
 pub struct MinerRevenueSummaryFilter {
@@ -75,6 +84,13 @@ pub trait MinerRevenueRepository: Send + Sync {
 
     /// Get total count of summaries matching filter (for pagination)
     async fn count_summaries(&self, filter: &MinerRevenueSummaryFilter) -> Result<i64>;
+
+    /// Check for existing summaries that overlap with the requested period
+    async fn find_overlapping_periods(
+        &self,
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
+    ) -> Result<Vec<OverlappingPeriod>>;
 }
 
 pub struct SqlMinerRevenueRepository {
@@ -398,6 +414,41 @@ impl MinerRevenueRepository for SqlMinerRevenueRepository {
                 })?;
 
         Ok(count)
+    }
+
+    async fn find_overlapping_periods(
+        &self,
+        period_start: DateTime<Utc>,
+        period_end: DateTime<Utc>,
+    ) -> Result<Vec<OverlappingPeriod>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT period_start, period_end, computed_at, COUNT(*) as row_count
+            FROM billing.miner_revenue_summary
+            WHERE period_start <= $2
+              AND period_end >= $1
+            GROUP BY period_start, period_end, computed_at
+            ORDER BY period_start
+            "#,
+        )
+        .bind(period_start)
+        .bind(period_end)
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| BillingError::DatabaseError {
+            operation: "find_overlapping_periods".to_string(),
+            source: Box::new(e),
+        })?;
+
+        Ok(rows
+            .iter()
+            .map(|row| OverlappingPeriod {
+                period_start: row.get("period_start"),
+                period_end: row.get("period_end"),
+                computed_at: row.get("computed_at"),
+                row_count: row.get("row_count"),
+            })
+            .collect())
     }
 }
 

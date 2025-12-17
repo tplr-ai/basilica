@@ -79,6 +79,33 @@ impl MinerRevenueOperations for MinerRevenueService {
             });
         }
 
+        // Check for overlapping periods
+        let overlaps = self
+            .repository
+            .find_overlapping_periods(period_start, period_end)
+            .await?;
+        if !overlaps.is_empty() {
+            let overlap_details: Vec<String> = overlaps
+                .iter()
+                .map(|o| {
+                    format!(
+                        "{} to {} (computed {})",
+                        o.period_start.format("%Y-%m-%d"),
+                        o.period_end.format("%Y-%m-%d"),
+                        o.computed_at.format("%Y-%m-%d %H:%M:%S")
+                    )
+                })
+                .collect();
+            return Err(BillingError::InvalidState {
+                message: format!(
+                    "Cannot calculate for {} to {}: overlaps with existing periods: {}",
+                    period_start.format("%Y-%m-%d"),
+                    period_end.format("%Y-%m-%d"),
+                    overlap_details.join(", ")
+                ),
+            });
+        }
+
         info!(
             "Refreshing miner revenue summary for period {} to {} (version {})",
             period_start, period_end, computation_version

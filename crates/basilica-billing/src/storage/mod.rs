@@ -22,6 +22,6 @@ pub use events::{
 };
 
 pub use miner_revenue::{
-    MinerRevenueRepository, MinerRevenueSummary, MinerRevenueSummaryFilter,
+    MinerRevenueRepository, MinerRevenueSummary, MinerRevenueSummaryFilter, OverlappingPeriod,
     SqlMinerRevenueRepository,
 };
