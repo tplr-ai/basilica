@@ -71,7 +71,7 @@ BEGIN
       AND (be.event_data->>'credits_deducted')::boolean = true
       -- Attribute revenue by telemetry event timestamp (not rental end_time)
       AND (be.event_data->>'timestamp')::timestamptz >= p_period_start
-      AND (be.event_data->>'timestamp')::timestamptz < p_period_end
+      AND (be.event_data->>'timestamp')::timestamptz <= p_period_end
       -- Only community rentals (miners we need to pay)
       AND r.cloud_type = 'community'
       -- Only include rentals with miner hotkey
