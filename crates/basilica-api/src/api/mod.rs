@@ -101,6 +101,17 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route(
             "/v1/gpu-nodes/:node_id/wireguard-key",
             post(routes::gpu_nodes::register_wireguard_key),
+        )
+        // Training session lifecycle endpoints
+        // Note: Training operations (forward_backward, sample, etc.) are routed
+        // directly by Envoy Gateway via HTTPRoute - they don't go through this API
+        .route(
+            "/sessions",
+            post(routes::training::create_session).get(routes::training::list_sessions),
+        )
+        .route(
+            "/sessions/:session_id",
+            get(routes::training::get_session).delete(routes::training::delete_session),
         );
 
     // Add payment and billing service endpoints

@@ -126,4 +126,7 @@ pub trait ApiK8sClient {
         gpu_count: Option<u32>,
     ) -> Result<ClusterCapacityResult>;
     async fn get_image_pull_secrets(&self, ns: &str) -> Result<Vec<String>>;
+
+    // Note: Training Session CRD operations are handled by the operator.
+    // The API creates TrainingSession CRDs using the raw kube client.
 }

@@ -13,10 +13,12 @@ use crate::controllers::job_controller::JobController;
 use crate::controllers::node_profile_controller::NodeProfileController;
 use crate::controllers::node_removal_controller::NodeRemovalController;
 use crate::controllers::rental_controller::RentalController;
+use crate::controllers::training_session_controller::TrainingSessionController;
 use crate::controllers::user_deployment_controller::UserDeploymentController;
 use crate::crd::basilica_job::BasilicaJob;
 use crate::crd::basilica_node_profile::BasilicaNodeProfile;
 use crate::crd::gpu_rental::GpuRental;
+use crate::crd::training_session::TrainingSession;
 use crate::crd::user_deployment::UserDeployment;
 use crate::k8s_client::{K8sClient, RateLimitedKubeClient};
 use crate::metrics_provider::K8sMetricsProvider;
@@ -38,6 +40,12 @@ struct RentalCtx<C: K8sClient + Clone + 'static> {
 #[derive(Clone)]
 struct UserDeploymentCtx {
     ctrl: UserDeploymentController,
+    reconcile_config: ReconcileConfig,
+}
+
+#[derive(Clone)]
+struct TrainingSessionCtx<C: K8sClient + Clone + 'static> {
+    ctrl: TrainingSessionController<C>,
     reconcile_config: ReconcileConfig,
 }
 
@@ -124,6 +132,33 @@ fn error_policy_user_deployment(
     Action::requeue(ctx.reconcile_config.error_interval)
 }
 
+async fn reconcile_training_session<C: K8sClient + Clone + 'static>(
+    obj: Arc<TrainingSession>,
+    ctx: Arc<TrainingSessionCtx<C>>,
+) -> std::result::Result<Action, ReconcileError> {
+    let ns = obj.namespace().unwrap_or_else(|| "default".into());
+    if let Err(e) = ctx.ctrl.reconcile(&ns, &obj).await {
+        return Err(ReconcileError(e));
+    }
+    Ok(Action::requeue(ctx.reconcile_config.success_interval))
+}
+
+fn error_policy_training_session<C: K8sClient + Clone + 'static>(
+    obj: Arc<TrainingSession>,
+    err: &ReconcileError,
+    ctx: Arc<TrainingSessionCtx<C>>,
+) -> Action {
+    let ns = obj.namespace().unwrap_or_else(|| "unknown".into());
+    let name = obj.name_any();
+    error!(
+        namespace = %ns,
+        session = %name,
+        error = %err,
+        "TrainingSession reconciliation failed"
+    );
+    Action::requeue(ctx.reconcile_config.error_interval)
+}
+
 pub async fn run() -> AnyResult<()> {
     let config = OperatorConfig::from_env();
     info!(
@@ -147,6 +182,7 @@ pub async fn run() -> AnyResult<()> {
     let mut rent_ctrl = RentalController::new_with_arc(kube_client.clone(), billing_arc);
     let node_removal_ctrl = NodeRemovalController::new(kube_client.clone());
     let node_profile_ctrl = NodeProfileController::new(kube_client.clone());
+    let training_session_ctrl = TrainingSessionController::new(kube_client.clone());
 
     let public_ip =
         std::env::var("DEPLOYMENT_PUBLIC_IP").unwrap_or_else(|_| "localhost".to_string());
@@ -174,6 +210,7 @@ pub async fn run() -> AnyResult<()> {
     let gr_api: Api<GpuRental> = Api::all(client.clone());
     let np_api: Api<BasilicaNodeProfile> = Api::all(client.clone());
     let ud_api: Api<UserDeployment> = Api::all(client.clone());
+    let ts_api: Api<TrainingSession> = Api::all(client.clone());
     let deployment_api: Api<Deployment> = Api::all(client.clone());
     let node_api: Api<Node> = Api::all(client.clone());
 
@@ -293,7 +330,32 @@ pub async fn run() -> AnyResult<()> {
             }
         });
 
+    let training_sessions = Controller::new(ts_api, watcher::Config::default().any_semantic())
+        .run(
+            reconcile_training_session,
+            error_policy_training_session,
+            Arc::new(TrainingSessionCtx {
+                ctrl: training_session_ctrl,
+                reconcile_config: reconcile_config.clone(),
+            }),
+        )
+        .for_each(|res| async move {
+            match res {
+                Ok(_o) => {}
+                Err(e) => {
+                    error!("training session controller stream error: {}", e);
+                }
+            }
+        });
+
     info!("operator controllers started");
-    futures::future::join5(jobs, rentals, node_removal, node_profile, user_deployments).await;
+    futures::join!(
+        jobs,
+        rentals,
+        node_removal,
+        node_profile,
+        user_deployments,
+        training_sessions
+    );
     Ok(())
 }

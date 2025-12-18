@@ -1,0 +1,94 @@
+---
+# Example TrainingSession resource
+# Creates a LoRA training session for Llama-3.1-8B
+apiVersion: basilica.ai/v1
+kind: TrainingSession
+metadata:
+  name: example-training
+  namespace: default
+  labels:
+    app: basilica-training
+    user: example-user
+spec:
+  # User identifier
+  userId: "example-user-123"
+
+  # Base model to fine-tune
+  baseModel: "meta-llama/Llama-3.1-8B-Instruct"
+
+  # LoRA configuration
+  loraConfig:
+    rank: 32
+    alpha: 64
+    dropout: 0.05
+    targetModules:
+      - q_proj
+      - k_proj
+      - v_proj
+      - o_proj
+      - gate_proj
+      - up_proj
+      - down_proj
+
+  # Optimizer settings
+  optimizerConfig:
+    learningRate: 0.0001
+    weightDecay: 0.01
+    gradClip: 1.0
+
+  # Checkpoint storage
+  checkpointStorage:
+    backend: r2
+    bucket: training-checkpoints
+    path: example-user-123/example-training
+    credentialsSecret: r2-credentials
+
+  # GPU requirements
+  gpuResources:
+    count: 1
+    model:
+      - H100
+      - A100
+    minMemoryGb: 40
+
+  # Training service image
+  image: basilica/training:latest
+
+  # Session TTL (24 hours)
+  ttlSeconds: 86400
+
+  # Reproducibility
+  seed: 42
+
+  # Enable billing
+  enableBilling: true
+---
+# Example with larger model and more GPUs
+apiVersion: basilica.ai/v1
+kind: TrainingSession
+metadata:
+  name: llama-70b-training
+  namespace: default
+spec:
+  userId: "example-user-123"
+  baseModel: "meta-llama/Llama-3.1-70B-Instruct"
+  loraConfig:
+    rank: 64
+    alpha: 128
+    dropout: 0.05
+  optimizerConfig:
+    learningRate: 0.00005
+    weightDecay: 0.01
+    gradClip: 1.0
+  checkpointStorage:
+    backend: r2
+    bucket: training-checkpoints
+    path: example-user-123/llama-70b-training
+    credentialsSecret: r2-credentials
+  gpuResources:
+    count: 4
+    model:
+      - H100
+    minMemoryGb: 80
+  ttlSeconds: 172800  # 48 hours
+  seed: 42

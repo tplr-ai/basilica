@@ -934,25 +934,54 @@ k3s-kubeconfig-local:
 # Develop Python SDK (install in editable mode with auto-generated stubs)
 develop-python:
     #!/usr/bin/env bash
-    
+    set -euo pipefail
+
     # Create venv if needed
     if [ ! -d ".venv" ]; then
         echo "Creating virtual environment..."
-        uv venv
+        if command -v uv &> /dev/null; then
+            uv venv
+        else
+            python3 -m venv .venv
+        fi
     fi
-    
+
+    # Activate venv
+    source .venv/bin/activate
+
+    # Set Python explicitly for PyO3
+    export PYO3_PYTHON=$(which python3)
+    echo "Using Python: $PYO3_PYTHON"
+
+    # Install maturin if using standard venv
+    if ! command -v uv &> /dev/null; then
+        pip install --upgrade pip maturin
+    fi
+
     # Install Python SDK in editable mode
     echo "Installing Python SDK..."
-    uv pip install -e crates/basilica-sdk-python
-    
+    if command -v uv &> /dev/null; then
+        uv pip install -e crates/basilica-sdk-python
+    else
+        # Use maturin directly for standard venv
+        cd crates/basilica-sdk-python
+        maturin develop --release
+        cd ../..
+    fi
+
     # Generate type stubs
     echo "Generating type stubs..."
     cd crates/basilica-sdk-python
     cargo run --bin stub_gen --features stub-gen
-    
+    cd ../..
+
+    echo ""
     echo "✓ Python SDK installed with type stubs"
-    echo "✓ Stub file generated at: python/basilica/_basilica.pyi"
+    echo "✓ Stub file generated at: crates/basilica-sdk-python/python/basilica/_basilica.pyi"
     echo "✓ Virtual environment: .venv (root directory)"
+    echo ""
+    echo "To activate: source .venv/bin/activate"
+    echo "To test: python -c 'from basilica import BasilicaClient; print(\"OK\")'"
 
 # =============================================================================
 # INTEGRATION TESTS

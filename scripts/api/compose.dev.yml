@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: api_dev_password
       POSTGRES_DB: basilica_api
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Use 5433 to avoid conflict with local Postgres
     volumes:
       - api_postgres_data:/var/lib/postgresql/data
     healthcheck:

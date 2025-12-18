@@ -46,8 +46,14 @@ pub struct BittensorIntegrationConfig {
     /// Validator discovery interval in seconds
     pub discovery_interval: u64,
 
-    /// Validator hotkey to connect to (SS58 address) - REQUIRED
+    /// Validator hotkey to connect to (SS58 address) - REQUIRED in production
     pub validator_hotkey: String,
+
+    /// Dev mode - skip validator discovery for local development
+    /// When enabled, the API runs without connecting to a validator
+    /// Useful for testing training service and K8s-only routes
+    #[serde(default)]
+    pub dev_mode: bool,
 }
 
 impl Default for BittensorIntegrationConfig {
@@ -57,7 +63,8 @@ impl Default for BittensorIntegrationConfig {
             netuid: 42,
             chain_endpoint: None,
             discovery_interval: 60,
-            validator_hotkey: String::new(), // Must be provided in config
+            validator_hotkey: String::new(), // Must be provided in config (unless dev_mode)
+            dev_mode: false,
         }
     }
 }

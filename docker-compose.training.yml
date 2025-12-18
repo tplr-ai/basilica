@@ -1,0 +1,80 @@
+version: '3.8'
+
+# Docker Compose configuration for local training service development
+#
+# Usage:
+#   docker-compose -f docker-compose.training.yml up -d
+#
+# Prerequisites:
+#   - NVIDIA Container Toolkit installed
+#   - Docker configured with nvidia runtime
+
+services:
+  # Training service - handles model loading, forward-backward, inference
+  training-service:
+    build:
+      context: services/training-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      - MODEL_CACHE_DIR=/models
+      - CHECKPOINT_DIR=/checkpoints
+      - NVIDIA_VISIBLE_DEVICES=all
+      - TRANSFORMERS_CACHE=/models
+      - HF_HOME=/models
+    volumes:
+      # Model cache - persists downloaded models
+      - training-models:/models
+      # Checkpoint storage - persists training checkpoints
+      - training-checkpoints:/checkpoints
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s  # Model loading can take time
+    restart: unless-stopped
+
+  # Basilica API Gateway - routes training requests
+  basilica-api:
+    image: basilica/api:latest
+    build:
+      context: .
+      dockerfile: crates/basilica-api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - TRAINING_SERVICE_URL=http://training-service:8000
+      - RUST_LOG=info,basilica_api=debug
+      - DATABASE_URL=sqlite:///data/basilica.db
+    volumes:
+      - api-data:/data
+    depends_on:
+      training-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  training-models:
+    driver: local
+  training-checkpoints:
+    driver: local
+  api-data:
+    driver: local
+
+networks:
+  default:
+    name: basilica-training

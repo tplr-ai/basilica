@@ -177,6 +177,12 @@ fn get_required_scope(req: &Request) -> Option<String> {
             Some(String::new())
         }
 
+        // Training session endpoints - require "training:*" scopes
+        (&Method::POST, "/sessions") => Some("training:create".to_string()),
+        (&Method::GET, "/sessions") => Some("training:list".to_string()),
+        (&Method::GET, p) if p.starts_with("/sessions/") => Some("training:view".to_string()),
+        (&Method::DELETE, p) if p.starts_with("/sessions/") => Some("training:delete".to_string()),
+
         // Health check requires authentication but no specific scope
         // We use an empty string to indicate "authenticated but no specific scope required"
         (&Method::GET, "/health") => Some(String::new()),

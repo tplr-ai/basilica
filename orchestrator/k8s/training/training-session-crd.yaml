@@ -1,0 +1,183 @@
+---
+# TrainingSession Custom Resource Definition
+# Manages GPU training sessions for fine-tuning LLMs with LoRA
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trainingsessions.basilica.ai
+spec:
+  group: basilica.ai
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          required:
+            - spec
+          properties:
+            spec:
+              type: object
+              required:
+                - userId
+                - baseModel
+                - checkpointStorage
+              properties:
+                userId:
+                  type: string
+                  description: User ID owning this session
+                baseModel:
+                  type: string
+                  description: HuggingFace model ID to fine-tune
+                loraConfig:
+                  type: object
+                  properties:
+                    rank:
+                      type: integer
+                      minimum: 1
+                      maximum: 256
+                      default: 32
+                    alpha:
+                      type: integer
+                      minimum: 1
+                      maximum: 512
+                      default: 64
+                    dropout:
+                      type: number
+                      minimum: 0
+                      maximum: 0.5
+                      default: 0.05
+                    targetModules:
+                      type: array
+                      items:
+                        type: string
+                      default:
+                        - q_proj
+                        - k_proj
+                        - v_proj
+                        - o_proj
+                optimizerConfig:
+                  type: object
+                  properties:
+                    learningRate:
+                      type: number
+                      default: 0.0001
+                    weightDecay:
+                      type: number
+                      default: 0.01
+                    gradClip:
+                      type: number
+                      default: 1.0
+                checkpointStorage:
+                  type: object
+                  required:
+                    - backend
+                    - bucket
+                    - path
+                  properties:
+                    backend:
+                      type: string
+                      enum:
+                        - r2
+                        - s3
+                        - gcs
+                    bucket:
+                      type: string
+                    path:
+                      type: string
+                    credentialsSecret:
+                      type: string
+                    region:
+                      type: string
+                    endpoint:
+                      type: string
+                gpuResources:
+                  type: object
+                  properties:
+                    count:
+                      type: integer
+                      minimum: 0  # 0 = CPU-only mode for local testing
+                      maximum: 8
+                      default: 1
+                    model:
+                      type: array
+                      items:
+                        type: string
+                    minMemoryGb:
+                      type: integer
+                      minimum: 8
+                      maximum: 256
+                image:
+                  type: string
+                  default: basilica/training:latest
+                ttlSeconds:
+                  type: integer
+                  default: 86400
+                seed:
+                  type: integer
+                enableBilling:
+                  type: boolean
+                  default: true
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum:
+                    - pending
+                    - scheduling
+                    - initializing
+                    - loading_model
+                    - ready
+                    - suspended
+                    - failed
+                    - terminated
+                stepsCompleted:
+                  type: integer
+                  default: 0
+                tokensProcessed:
+                  type: integer
+                  default: 0
+                lastCheckpoint:
+                  type: string
+                lastCheckpointPath:
+                  type: string
+                podName:
+                  type: string
+                endpoint:
+                  type: string
+                lastActivity:
+                  type: string
+                  format: date-time
+                startTime:
+                  type: string
+                  format: date-time
+                error:
+                  type: string
+                lastUpdated:
+                  type: string
+                  format: date-time
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Steps
+          type: integer
+          jsonPath: .status.stepsCompleted
+        - name: Model
+          type: string
+          jsonPath: .spec.baseModel
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: trainingsessions
+    singular: trainingsession
+    kind: TrainingSession
+    shortNames:
+      - ts
+      - tsession

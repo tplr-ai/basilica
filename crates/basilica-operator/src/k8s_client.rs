@@ -20,6 +20,7 @@ use crate::crd::basilica_job::BasilicaJob;
 use crate::crd::basilica_node_profile::BasilicaNodeProfile;
 use crate::crd::basilica_queue::BasilicaQueue;
 use crate::crd::gpu_rental::GpuRental;
+use crate::crd::training_session::{TrainingSession, TrainingSessionStatus};
 use crate::crd::user_deployment::UserDeployment;
 
 #[async_trait]
@@ -72,6 +73,21 @@ pub trait K8sClient: Send + Sync {
         obj: &BasilicaNodeProfile,
     ) -> Result<BasilicaNodeProfile>;
     async fn get_node_profile(&self, ns: &str, name: &str) -> Result<BasilicaNodeProfile>;
+
+    // TrainingSession CRD methods
+    async fn create_training_session(
+        &self,
+        ns: &str,
+        obj: &TrainingSession,
+    ) -> Result<TrainingSession>;
+    async fn get_training_session(&self, ns: &str, name: &str) -> Result<TrainingSession>;
+    async fn delete_training_session(&self, ns: &str, name: &str) -> Result<()>;
+    async fn update_training_session_status(
+        &self,
+        ns: &str,
+        name: &str,
+        status: TrainingSessionStatus,
+    ) -> Result<()>;
 
     // Core
     async fn create_pod(&self, ns: &str, pod: &Pod) -> Result<Pod>;
@@ -164,6 +180,7 @@ pub struct MockK8sClient {
     queue_crds: Arc<RwLock<HashMap<String, HashMap<String, BasilicaQueue>>>>,
     user_deployment_crds: Arc<RwLock<HashMap<String, HashMap<String, UserDeployment>>>>,
     node_profile_crds: Arc<RwLock<HashMap<String, HashMap<String, BasilicaNodeProfile>>>>,
+    training_session_crds: Arc<RwLock<HashMap<String, HashMap<String, TrainingSession>>>>,
     deployments: Arc<RwLock<HashMap<String, HashMap<String, Deployment>>>>,
     nodes: Arc<RwLock<HashMap<String, Node>>>,
     evict_block: Arc<RwLock<std::collections::HashSet<String>>>,
@@ -341,6 +358,53 @@ impl K8sClient for MockK8sClient {
             .and_then(|m| m.get(name))
             .cloned()
             .ok_or_else(|| anyhow!("BasilicaNodeProfile not found: {}/{}", ns, name))
+    }
+
+    async fn create_training_session(
+        &self,
+        ns: &str,
+        obj: &TrainingSession,
+    ) -> Result<TrainingSession> {
+        let name = obj.name_any();
+        if name.is_empty() {
+            return Err(anyhow!("TrainingSession missing metadata.name"));
+        }
+        let mut map = self.training_session_crds.write().await;
+        map.entry(key(ns))
+            .or_default()
+            .insert(name.clone(), obj.clone());
+        Ok(obj.clone())
+    }
+
+    async fn get_training_session(&self, ns: &str, name: &str) -> Result<TrainingSession> {
+        let map = self.training_session_crds.read().await;
+        map.get(ns)
+            .and_then(|m| m.get(name))
+            .cloned()
+            .ok_or_else(|| anyhow!("TrainingSession not found: {}/{}", ns, name))
+    }
+
+    async fn delete_training_session(&self, ns: &str, name: &str) -> Result<()> {
+        let mut map = self.training_session_crds.write().await;
+        map.get_mut(ns).and_then(|m| m.remove(name));
+        Ok(())
+    }
+
+    async fn update_training_session_status(
+        &self,
+        ns: &str,
+        name: &str,
+        status: TrainingSessionStatus,
+    ) -> Result<()> {
+        let mut map = self.training_session_crds.write().await;
+        let ns_map = map
+            .get_mut(ns)
+            .ok_or_else(|| anyhow!("namespace not found: {}", ns))?;
+        let ts = ns_map
+            .get_mut(name)
+            .ok_or_else(|| anyhow!("TrainingSession not found: {}/{}", ns, name))?;
+        ts.status = Some(status);
+        Ok(())
     }
 
     async fn create_pod(&self, ns: &str, pod: &Pod) -> Result<Pod> {
@@ -971,6 +1035,54 @@ impl K8sClient for KubeClient {
         api.get(name).await.map_err(|e| anyhow!(e))
     }
 
+    async fn create_training_session(
+        &self,
+        ns: &str,
+        obj: &TrainingSession,
+    ) -> Result<TrainingSession> {
+        use kube::api::PostParams;
+        let api: kube::Api<TrainingSession> = self.api(ns);
+        match api.create(&PostParams::default(), obj).await {
+            Ok(o) => Ok(o),
+            Err(kube::Error::Api(ae)) if ae.code == 409 => Ok(obj.clone()),
+            Err(e) => Err(anyhow!(e)),
+        }
+    }
+
+    async fn get_training_session(&self, ns: &str, name: &str) -> Result<TrainingSession> {
+        let api: kube::Api<TrainingSession> = self.api(ns);
+        api.get(name).await.map_err(|e| anyhow!(e))
+    }
+
+    async fn delete_training_session(&self, ns: &str, name: &str) -> Result<()> {
+        use kube::api::DeleteParams;
+        let api: kube::Api<TrainingSession> = self.api(ns);
+        api.delete(name, &DeleteParams::default())
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow!(e))
+    }
+
+    async fn update_training_session_status(
+        &self,
+        ns: &str,
+        name: &str,
+        status: TrainingSessionStatus,
+    ) -> Result<()> {
+        use kube::api::{Patch, PatchParams};
+        let api: kube::Api<TrainingSession> = self.api(ns);
+        let patch = serde_json::json!({
+            "apiVersion": "basilica.ai/v1",
+            "kind": "TrainingSession",
+            "status": status
+        });
+        let params = PatchParams::apply("basilica-operator").force();
+        api.patch_status(name, &params, &Patch::Apply(&patch))
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow!(e))
+    }
+
     async fn create_pod(&self, ns: &str, pod: &Pod) -> Result<Pod> {
         use kube::api::PostParams;
         let api: kube::Api<Pod> = self.api(ns);
@@ -1547,6 +1659,37 @@ impl K8sClient for RateLimitedKubeClient {
     async fn get_node_profile(&self, ns: &str, name: &str) -> Result<BasilicaNodeProfile> {
         self.wait_for_permit().await;
         self.inner.get_node_profile(ns, name).await
+    }
+
+    async fn create_training_session(
+        &self,
+        ns: &str,
+        obj: &TrainingSession,
+    ) -> Result<TrainingSession> {
+        self.wait_for_permit().await;
+        self.inner.create_training_session(ns, obj).await
+    }
+
+    async fn get_training_session(&self, ns: &str, name: &str) -> Result<TrainingSession> {
+        self.wait_for_permit().await;
+        self.inner.get_training_session(ns, name).await
+    }
+
+    async fn delete_training_session(&self, ns: &str, name: &str) -> Result<()> {
+        self.wait_for_permit().await;
+        self.inner.delete_training_session(ns, name).await
+    }
+
+    async fn update_training_session_status(
+        &self,
+        ns: &str,
+        name: &str,
+        status: TrainingSessionStatus,
+    ) -> Result<()> {
+        self.wait_for_permit().await;
+        self.inner
+            .update_training_session_status(ns, name, status)
+            .await
     }
 
     async fn create_pod(&self, ns: &str, pod: &Pod) -> Result<Pod> {
