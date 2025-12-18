@@ -180,6 +180,7 @@ fn get_required_scope(req: &Request) -> Option<String> {
         // Training session endpoints - require "training:*" scopes
         (&Method::POST, "/sessions") => Some("training:create".to_string()),
         (&Method::GET, "/sessions") => Some("training:list".to_string()),
+        (&Method::POST, "/sessions/from_state") => Some("training:create".to_string()),
 
         // Training session proxy endpoints (forward to training pod via K8s Service)
         // POST /sessions/:session_id/internal - create internal session

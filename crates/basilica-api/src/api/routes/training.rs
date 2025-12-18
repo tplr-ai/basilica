@@ -182,6 +182,31 @@ pub struct CreateSessionResponse {
     pub endpoint: String,
 }
 
+/// Request to create a session from an existing checkpoint.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFromStateRequest {
+    /// Path to the checkpoint to load
+    pub path: String,
+    /// Whether to load optimizer state (default: false)
+    #[serde(default)]
+    pub load_optimizer: bool,
+    /// Optional user metadata for tracking
+    #[serde(default)]
+    pub user_metadata: Option<std::collections::HashMap<String, String>>,
+}
+
+/// Response for session created from state.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFromStateResponse {
+    pub session_id: String,
+    pub internal_id: String,
+    pub base_model: String,
+    pub status: String,
+    pub endpoint: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStatusResponse {
@@ -492,6 +517,164 @@ pub async fn create_session(
 
     Ok(Json(CreateSessionResponse {
         session_id,
+        status: "pending".to_string(),
+        endpoint,
+    }))
+}
+
+/// Create a training session from an existing checkpoint.
+///
+/// Loads weights (and optionally optimizer state) from a saved checkpoint
+/// to resume training. This looks up the checkpoint metadata to get the
+/// original training configuration.
+pub async fn create_session_from_state(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Json(req): Json<CreateFromStateRequest>,
+) -> Result<Json<CreateFromStateResponse>> {
+    let start = Instant::now();
+
+    info!(
+        user_id = %auth.user_id,
+        path = %req.path,
+        load_optimizer = %req.load_optimizer,
+        "Creating training session from checkpoint"
+    );
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    // Parse the checkpoint path to extract session info
+    // Expected format: user_id/session_id/checkpoint_name
+    let parts: Vec<&str> = req.path.split('/').collect();
+    if parts.len() < 3 {
+        apimetrics::record_request("training.from_state", "POST", start, false);
+        return Err(ApiError::BadRequest {
+            message: "Invalid checkpoint path format. Expected: user_id/session_id/checkpoint_name".to_string(),
+        });
+    }
+
+    let original_session_id = parts[1];
+
+    // Get the original session to extract configuration
+    let api = get_training_session_api(&kube_client, &namespace);
+    let original_session = api.get(original_session_id).await.map_err(|e| {
+        if e.to_string().contains("404") || e.to_string().contains("NotFound") {
+            ApiError::NotFound {
+                message: format!("Original session {} not found", original_session_id),
+            }
+        } else {
+            error!(error = %e, path = %req.path, "Failed to get original session");
+            ApiError::Internal {
+                message: format!("Failed to get original session: {}", e),
+            }
+        }
+    })?;
+
+    let spec = original_session.data.get("spec").cloned().unwrap_or_else(|| json!({}));
+
+    // Extract configuration from original session
+    let base_model = spec.get("baseModel")
+        .and_then(|v| v.as_str())
+        .unwrap_or("facebook/opt-125m")
+        .to_string();
+
+    let lora_config = spec.get("loraConfig").cloned().unwrap_or_else(|| json!({
+        "rank": 32,
+        "alpha": 64,
+        "dropout": 0.05,
+        "targetModules": ["q_proj", "k_proj", "v_proj", "o_proj"]
+    }));
+
+    let optimizer_config = spec.get("optimizerConfig").cloned().unwrap_or_else(|| json!({
+        "learningRate": 1e-4,
+        "weightDecay": 0.01,
+        "gradClip": 1.0
+    }));
+
+    let gpu_resources = spec.get("gpuResources").cloned().unwrap_or_else(|| json!({
+        "count": 1,
+        "model": [],
+        "minMemoryGb": null
+    }));
+
+    // Generate new session ID
+    let session_id = format!(
+        "ts-{}",
+        uuid::Uuid::new_v4()
+            .to_string()
+            .split('-')
+            .next()
+            .unwrap()
+    );
+
+    // Create the new TrainingSession CRD with checkpoint path
+    let crd_json = json!({
+        "apiVersion": format!("{}/{}", TRAINING_SESSION_GROUP, TRAINING_SESSION_VERSION),
+        "kind": TRAINING_SESSION_KIND,
+        "metadata": {
+            "name": session_id,
+            "labels": {
+                "app": "basilica-training",
+                "user": auth.user_id,
+                "resumed-from": original_session_id
+            }
+        },
+        "spec": {
+            "userId": auth.user_id,
+            "baseModel": base_model,
+            "loraConfig": lora_config,
+            "optimizerConfig": optimizer_config,
+            "checkpointStorage": spec.get("checkpointStorage").cloned().unwrap_or_else(|| json!({
+                "backend": "r2",
+                "bucket": "",
+                "path": ""
+            })),
+            "gpuResources": gpu_resources,
+            "ttlSeconds": 86400,
+            "seed": spec.get("seed"),
+            "enableBilling": true,
+            "resumeFromCheckpoint": req.path,
+            "loadOptimizer": req.load_optimizer,
+            "userMetadata": req.user_metadata
+        }
+    });
+
+    let crd: DynamicObject = serde_json::from_value(crd_json).map_err(|e| {
+        error!(error = %e, "Failed to build TrainingSession CRD for resume");
+        ApiError::Internal {
+            message: format!("Failed to build CRD: {}", e),
+        }
+    })?;
+
+    match api.create(&PostParams::default(), &crd).await {
+        Ok(_) => {
+            info!(
+                session_id = %session_id,
+                namespace = %namespace,
+                resumed_from = %original_session_id,
+                "Created TrainingSession CRD from checkpoint"
+            );
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to create TrainingSession CRD from checkpoint");
+            apimetrics::record_request("training.from_state", "POST", start, false);
+            return Err(ApiError::Internal {
+                message: format!("Failed to create session: {}", e),
+            });
+        }
+    }
+
+    let endpoint = format!("https://api.basilica.ai/sessions/{}/", session_id);
+    let internal_id = format!("train-{}", session_id);
+
+    apimetrics::record_request("training.from_state", "POST", start, true);
+
+    Ok(Json(CreateFromStateResponse {
+        session_id,
+        internal_id,
+        base_model,
         status: "pending".to_string(),
         endpoint,
     }))

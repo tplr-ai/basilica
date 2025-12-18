@@ -108,6 +108,10 @@ pub fn routes(state: AppState) -> Router<AppState> {
             post(routes::training::create_session).get(routes::training::list_sessions),
         )
         .route(
+            "/sessions/from_state",
+            post(routes::training::create_session_from_state),
+        )
+        .route(
             "/sessions/:session_id",
             get(routes::training::get_session).delete(routes::training::delete_session),
         )

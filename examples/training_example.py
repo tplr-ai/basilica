@@ -5,6 +5,9 @@ This example demonstrates the Basilica Training SDK for fine-tuning LLMs.
 
 Usage:
     python training_example.py
+    python training_example.py --rest      # RestClient demo
+    python training_example.py --sampling  # SamplingClient demo
+    python training_example.py --async     # Async API demo
 
 API Pattern:
     client = ServiceClient()
@@ -40,6 +43,18 @@ def main():
     endpoint = os.environ.get("BASILICA_API_URL", "http://localhost:8000")
 
     client = ServiceClient(api_key=api_key, endpoint=endpoint)
+
+    # === Phase 4: Check Server Capabilities ===
+    print("=== Server Capabilities ===")
+    try:
+        caps = client.get_server_capabilities()
+        print(f"Available models: {caps.models[:3]}...")
+        print(f"Max batch tokens: {caps.max_batch_tokens}")
+        print(f"GPU types: {caps.gpu_types}")
+        print(f"LoRA ranks: {caps.lora_ranks}")
+    except Exception as e:
+        print(f"Could not fetch capabilities: {e}")
+    print()
 
     # Create training session with LoRA module selection
     with client.create_lora_training_client(
@@ -164,6 +179,57 @@ def async_example():
     asyncio.run(train_async())
 
 
+def rest_client_example():
+    """Example using RestClient for checkpoint and run management."""
+    api_key = None
+    if os.path.exists("build/api-token.txt"):
+        api_key = open("build/api-token.txt").read().strip()
+
+    endpoint = os.environ.get("BASILICA_API_URL", "http://localhost:8000")
+    client = ServiceClient(api_key=api_key, endpoint=endpoint)
+
+    # Create RestClient for checkpoint management
+    rest = client.create_rest_client()
+
+    print("=== RestClient Demo ===\n")
+
+    # List training runs
+    print("--- Training Runs ---")
+    runs = rest.list_training_runs(limit=10).result()
+    print(f"Found {len(runs)} training runs:")
+    for run in runs:
+        print(f"  - {run.get('runId', 'N/A')}: {run.get('baseModel', 'N/A')} ({run.get('status', 'N/A')})")
+    print()
+
+    # List active sessions
+    print("--- Active Sessions ---")
+    sessions = rest.list_sessions(limit=10).result()
+    print(f"Found {len(sessions)} active sessions")
+    print()
+
+    # List checkpoints
+    print("--- Checkpoints ---")
+    checkpoints = rest.list_checkpoints(limit=10).result()
+    print(f"Found {len(checkpoints)} checkpoints")
+    for cp in checkpoints:
+        print(f"  - {cp.get('checkpointId', 'N/A')}: step {cp.get('step', 'N/A')}")
+    print()
+
+    # If we have a training run, get its details
+    if runs:
+        run_id = runs[0].get("runId")
+        if run_id:
+            print(f"--- Training Run Details: {run_id} ---")
+            run_detail = rest.get_training_run(run_id).result()
+            print(f"  Base model: {run_detail.get('baseModel', 'N/A')}")
+            print(f"  Status: {run_detail.get('status', 'N/A')}")
+            print(f"  Steps completed: {run_detail.get('stepsCompleted', 0)}")
+            print(f"  Tokens processed: {run_detail.get('tokensProcessed', 0)}")
+
+    rest.close()
+    print("\n=== RestClient Demo Complete ===")
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -174,11 +240,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--async", dest="run_async", action="store_true", help="Run async example"
     )
+    parser.add_argument(
+        "--rest", action="store_true", help="Run RestClient example"
+    )
     args = parser.parse_args()
 
     if args.sampling:
         sampling_example()
     elif args.run_async:
         async_example()
+    elif args.rest:
+        rest_client_example()
     else:
         main()
