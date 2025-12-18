@@ -134,3 +134,4 @@ crates/basilica-sdk-python/.venv/
 # docs/
 # build/
 build/
+.venv

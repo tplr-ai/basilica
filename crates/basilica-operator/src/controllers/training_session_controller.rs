@@ -4,6 +4,8 @@
 //! pods and services for the training workloads.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use k8s_openapi::api::core::v1::{
     Container, ContainerPort, EnvVar, Pod, PodSpec, ResourceRequirements, Service, ServicePort,
@@ -13,6 +15,7 @@ use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
 use k8s_openapi::apimachinery::pkg::util::intstr::IntOrString;
 use kube::core::DynamicObject;
+use serde::Deserialize;
 
 use crate::crd::training_session::{
     TrainingSession, TrainingSessionPhase, TrainingSessionStatus,
@@ -28,16 +31,120 @@ const DEFAULT_GATEWAY_NAMESPACE: &str = "envoy-gateway-system";
 
 const TRAINING_SERVICE_PORT: i32 = 8000;
 
+/// Response from training service /sessions endpoint (list)
+#[derive(Debug, Deserialize)]
+struct TrainingSessionListResponse {
+    sessions: Vec<String>,
+}
+
+/// Response from training service /sessions/{id} endpoint
+#[derive(Debug, Deserialize)]
+struct TrainingSessionStatusResponse {
+    session_id: String,
+    #[allow(dead_code)]
+    base_model: String,
+    step_count: u64,
+    tokens_processed: u64,
+    #[allow(dead_code)]
+    lora_rank: u32,
+    #[allow(dead_code)]
+    learning_rate: f64,
+}
+
 /// Controller for managing TrainingSession resources.
 #[derive(Clone)]
 pub struct TrainingSessionController<C: K8sClient> {
     pub client: C,
+    pub http_client: Arc<reqwest::Client>,
 }
 
 impl<C: K8sClient> TrainingSessionController<C> {
     /// Create a new TrainingSessionController.
     pub fn new(client: C) -> Self {
-        Self { client }
+        let http_client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to create HTTP client");
+        Self {
+            client,
+            http_client: Arc::new(http_client),
+        }
+    }
+
+    /// Fetch training status from the training service.
+    /// Returns (steps_completed, tokens_processed) if successful.
+    async fn fetch_training_status(
+        &self,
+        namespace: &str,
+        name: &str,
+    ) -> Option<(u64, u64)> {
+        let svc_name = format!("training-{}", name);
+        let internal_endpoint = format!(
+            "http://{}.{}.svc:{}",
+            svc_name, namespace, TRAINING_SERVICE_PORT
+        );
+
+        // First, list sessions to find active ones
+        let list_url = format!("{}/sessions", internal_endpoint);
+        let list_response = match self.http_client.get(&list_url).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                debug!(error = %e, "failed to connect to training service");
+                return None;
+            }
+        };
+
+        if !list_response.status().is_success() {
+            debug!(status = %list_response.status(), "training service returned error");
+            return None;
+        }
+
+        let sessions: TrainingSessionListResponse = match list_response.json().await {
+            Ok(s) => s,
+            Err(e) => {
+                debug!(error = %e, "failed to parse sessions list");
+                return None;
+            }
+        };
+
+        if sessions.sessions.is_empty() {
+            debug!("no active sessions in training service");
+            return None;
+        }
+
+        // Get status of the first session (typically there's only one per pod)
+        let session_id = &sessions.sessions[0];
+        let status_url = format!("{}/sessions/{}", internal_endpoint, session_id);
+
+        let status_response = match self.http_client.get(&status_url).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                debug!(error = %e, "failed to get session status");
+                return None;
+            }
+        };
+
+        if !status_response.status().is_success() {
+            debug!(status = %status_response.status(), "failed to get session status");
+            return None;
+        }
+
+        let status: TrainingSessionStatusResponse = match status_response.json().await {
+            Ok(s) => s,
+            Err(e) => {
+                debug!(error = %e, "failed to parse session status");
+                return None;
+            }
+        };
+
+        info!(
+            session = %session_id,
+            steps = status.step_count,
+            tokens = status.tokens_processed,
+            "fetched training status"
+        );
+
+        Some((status.step_count, status.tokens_processed))
     }
 
     /// Reconcile a TrainingSession resource.
@@ -96,6 +203,7 @@ impl<C: K8sClient> TrainingSessionController<C> {
         // Update status if changed
         if new_status.phase != current_status.phase
             || new_status.steps_completed != current_status.steps_completed
+            || new_status.tokens_processed != current_status.tokens_processed
             || new_status.error != current_status.error
         {
             self.client
@@ -152,6 +260,20 @@ impl<C: K8sClient> TrainingSessionController<C> {
                 Err(e) => {
                     error!(error = %e, "failed to create training service");
                     return Ok(status.with_error(format!("Failed to create service: {}", e)));
+                }
+            }
+        }
+
+        // Create NetworkPolicy to allow operator access (for status polling)
+        let np_name = format!("allow-operator-training-{}", name);
+        let existing_np = self.client.get_network_policy(namespace, &np_name).await;
+        if existing_np.is_err() {
+            let np = build_operator_access_network_policy(session, namespace, name)?;
+            match self.client.create_network_policy(namespace, &np).await {
+                Ok(_) => info!(policy = %np_name, "created operator access network policy"),
+                Err(e) => {
+                    // Non-fatal - operator can still function, just won't get status updates
+                    warn!(error = %e, "failed to create network policy for operator access");
                 }
             }
         }
@@ -292,7 +414,7 @@ impl<C: K8sClient> TrainingSessionController<C> {
         Ok(new_status)
     }
 
-    /// Handle ready state - monitor health and TTL.
+    /// Handle ready state - monitor health, TTL, and poll training status.
     async fn handle_ready(
         &self,
         session: &TrainingSession,
@@ -335,8 +457,22 @@ impl<C: K8sClient> TrainingSessionController<C> {
             }
         }
 
+        // Poll training service for status updates
+        let mut updated_status = status.clone();
+        if let Some((steps, tokens)) = self.fetch_training_status(namespace, name).await {
+            // Only update if there's actual progress
+            if steps != status.steps_completed || tokens != status.tokens_processed {
+                info!(
+                    session = %name,
+                    steps = steps,
+                    tokens = tokens,
+                    "updating training progress"
+                );
+                updated_status = updated_status.with_steps(steps, tokens);
+            }
+        }
+
         // Update last activity timestamp
-        let mut updated_status = status;
         updated_status.last_updated = chrono::Utc::now().to_rfc3339();
 
         Ok(updated_status)
@@ -596,6 +732,77 @@ fn build_training_http_route(
 
     let route: DynamicObject = serde_json::from_value(route_json)?;
     Ok(route)
+}
+
+/// Build a NetworkPolicy to allow the operator to access the training pod.
+///
+/// This enables the operator (running in basilica-system namespace) to poll
+/// the training service for status updates (steps, tokens processed).
+fn build_operator_access_network_policy(
+    session: &TrainingSession,
+    namespace: &str,
+    name: &str,
+) -> Result<k8s_openapi::api::networking::v1::NetworkPolicy> {
+    use k8s_openapi::api::networking::v1::{
+        NetworkPolicy, NetworkPolicyIngressRule, NetworkPolicyPeer, NetworkPolicyPort,
+        NetworkPolicySpec,
+    };
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::LabelSelector;
+
+    let policy_name = format!("allow-operator-training-{}", name);
+
+    // Create owner reference for garbage collection
+    let owner_ref = OwnerReference {
+        api_version: "basilica.ai/v1".into(),
+        kind: "TrainingSession".into(),
+        name: name.to_string(),
+        uid: session.metadata.uid.clone().unwrap_or_default(),
+        controller: Some(true),
+        block_owner_deletion: Some(true),
+    };
+
+    let np = NetworkPolicy {
+        metadata: ObjectMeta {
+            name: Some(policy_name),
+            namespace: Some(namespace.to_string()),
+            owner_references: Some(vec![owner_ref]),
+            labels: Some(BTreeMap::from([
+                ("app".to_string(), "basilica-training".to_string()),
+                ("session".to_string(), name.to_string()),
+            ])),
+            ..Default::default()
+        },
+        spec: Some(NetworkPolicySpec {
+            pod_selector: LabelSelector {
+                match_labels: Some(BTreeMap::from([
+                    ("app".to_string(), "basilica-training".to_string()),
+                    ("session".to_string(), name.to_string()),
+                ])),
+                ..Default::default()
+            },
+            policy_types: Some(vec!["Ingress".to_string()]),
+            ingress: Some(vec![NetworkPolicyIngressRule {
+                from: Some(vec![NetworkPolicyPeer {
+                    namespace_selector: Some(LabelSelector {
+                        match_labels: Some(BTreeMap::from([(
+                            "kubernetes.io/metadata.name".to_string(),
+                            "basilica-system".to_string(),
+                        )])),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }]),
+                ports: Some(vec![NetworkPolicyPort {
+                    protocol: Some("TCP".to_string()),
+                    port: Some(IntOrString::Int(TRAINING_SERVICE_PORT)),
+                    ..Default::default()
+                }]),
+            }]),
+            egress: None,
+        }),
+    };
+
+    Ok(np)
 }
 
 #[cfg(test)]

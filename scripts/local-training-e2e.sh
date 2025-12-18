@@ -285,8 +285,37 @@ gen_key() {
     echo "  curl -H \"Authorization: Bearer \$(cat build/api-token.txt)\" http://localhost:8000/sessions"
 }
 
+cleanup_existing_sessions() {
+    log_step "Cleaning up existing training sessions..."
+
+    export KUBECONFIG="$KUBECONFIG_PATH"
+
+    # Delete all training sessions in test namespace
+    EXISTING=$(kubectl get trainingsessions -n u-testuser -o name 2>/dev/null)
+    if [ -n "$EXISTING" ]; then
+        log_info "Found existing sessions, deleting..."
+        kubectl delete trainingsessions --all -n u-testuser --wait=true --timeout=60s 2>/dev/null || true
+
+        # Wait for pods to terminate
+        log_info "Waiting for training pods to terminate..."
+        for i in {1..30}; do
+            PODS=$(kubectl get pods -n u-testuser -l app=basilica-training --no-headers 2>/dev/null | wc -l)
+            if [ "$PODS" -eq 0 ]; then
+                log_info "All training pods terminated"
+                break
+            fi
+            sleep 2
+        done
+    else
+        log_info "No existing sessions found"
+    fi
+}
+
 run_test() {
     log_step "Running E2E test..."
+
+    # Clean up any existing test sessions first
+    cleanup_existing_sessions
 
     API_URL="http://localhost:8000"
 
@@ -628,6 +657,7 @@ Commands:
   gen-key       Generate API key and insert into Postgres
   reset-db      Reset Postgres database (delete volume)
   test          Run full E2E test with actual training steps
+  cleanup       Delete all existing training sessions
   status        Show cluster status
   logs          Show logs [operator|training|gateway]
   cluster-down  Delete the k3d cluster
@@ -680,6 +710,9 @@ case "${1:-help}" in
         ;;
     test)
         run_test
+        ;;
+    cleanup)
+        cleanup_existing_sessions
         ;;
     status)
         show_status
