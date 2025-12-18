@@ -224,6 +224,18 @@ fn get_required_scope(req: &Request) -> Option<String> {
         {
             Some("training:use".to_string())
         }
+        // POST /sessions/:session_id/internal/:internal_session_id/forward
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/forward") =>
+        {
+            Some("training:use".to_string())
+        }
+        // POST /sessions/:session_id/internal/:internal_session_id/compute_logprobs
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/compute_logprobs") =>
+        {
+            Some("training:use".to_string())
+        }
 
         // Regular session endpoints (view/delete CRD)
         (&Method::GET, p) if p.starts_with("/sessions/") => Some("training:view".to_string()),

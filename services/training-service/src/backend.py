@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import structlog
 import torch
@@ -56,6 +56,14 @@ class SessionState:
     optimizer_config: OptimizerConfiguration
     step_count: int = 0
     tokens_processed: int = 0
+
+
+@dataclass
+class ForwardResult:
+    """Result of forward-only pass (no gradients)."""
+
+    logprobs: List[List[float]]
+    tokens_processed: int
 
 
 @dataclass
@@ -290,6 +298,95 @@ class TrainingBackend:
             logprobs=logprobs.cpu().tolist(),
             tokens_processed=tokens_processed,
         )
+
+    def forward(
+        self,
+        session_id: str,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> ForwardResult:
+        """Forward pass without gradient computation.
+
+        Used for inference-only operations like computing logprobs
+        without updating gradients.
+        """
+        session = self._get_session(session_id)
+        model = session.model
+        model.eval()
+
+        # Move to device
+        input_ids = input_ids.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+
+        with torch.no_grad():
+            outputs = model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+            )
+
+            # Compute logprobs for each token
+            log_probs = torch.nn.functional.log_softmax(outputs.logits, dim=-1)
+
+            # Get logprobs for actual next tokens (shifted)
+            # For each position i, get logprob of token at position i+1
+            token_logprobs = torch.gather(
+                log_probs[:, :-1, :],
+                dim=-1,
+                index=input_ids[:, 1:].unsqueeze(-1),
+            ).squeeze(-1)
+
+        tokens_processed = int(attention_mask.sum().item())
+
+        logger.debug(
+            "forward_complete",
+            session_id=session_id,
+            tokens=tokens_processed,
+        )
+
+        return ForwardResult(
+            logprobs=token_logprobs.cpu().tolist(),
+            tokens_processed=tokens_processed,
+        )
+
+    def compute_logprobs(
+        self,
+        session_id: str,
+        token_ids: List[int],
+    ) -> List[Optional[float]]:
+        """Compute per-token log probabilities for a sequence.
+
+        Returns logprob for each token given its prefix.
+        First token returns None (no conditioning context).
+        """
+        session = self._get_session(session_id)
+        model = session.model
+        model.eval()
+
+        # Convert to tensor
+        input_ids = torch.tensor([token_ids], device=self.device)
+
+        with torch.no_grad():
+            outputs = model(input_ids=input_ids)
+
+            # Compute log probs
+            log_probs = torch.nn.functional.log_softmax(outputs.logits, dim=-1)
+
+            # Get logprob for each token given previous context
+            # Position i gives logprob of token at position i+1
+            result: List[Optional[float]] = [None]  # First token has no context
+
+            for i in range(len(token_ids) - 1):
+                token_id = token_ids[i + 1]
+                logprob = log_probs[0, i, token_id].item()
+                result.append(logprob)
+
+        logger.debug(
+            "compute_logprobs_complete",
+            session_id=session_id,
+            num_tokens=len(token_ids),
+        )
+
+        return result
 
     def optim_step(self, session_id: str) -> int:
         """Apply gradients and update weights."""

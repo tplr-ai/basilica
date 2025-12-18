@@ -309,6 +309,27 @@ cleanup_existing_sessions() {
     else
         log_info "No existing sessions found"
     fi
+
+    # Clean up orphaned HTTPRoutes (in case owner references weren't set)
+    ORPHANED_ROUTES=$(kubectl get httproutes -n u-testuser -o name 2>/dev/null)
+    if [ -n "$ORPHANED_ROUTES" ]; then
+        log_info "Cleaning up orphaned HTTPRoutes..."
+        kubectl delete httproutes --all -n u-testuser --wait=true --timeout=30s 2>/dev/null || true
+    fi
+
+    # Clean up orphaned services
+    ORPHANED_SVCS=$(kubectl get services -n u-testuser -l app=basilica-training -o name 2>/dev/null)
+    if [ -n "$ORPHANED_SVCS" ]; then
+        log_info "Cleaning up orphaned services..."
+        kubectl delete services -l app=basilica-training -n u-testuser --wait=true --timeout=30s 2>/dev/null || true
+    fi
+
+    # Clean up orphaned pods
+    ORPHANED_PODS=$(kubectl get pods -n u-testuser -l app=basilica-training -o name 2>/dev/null)
+    if [ -n "$ORPHANED_PODS" ]; then
+        log_info "Cleaning up orphaned pods..."
+        kubectl delete pods -l app=basilica-training -n u-testuser --wait=true --timeout=30s 2>/dev/null || true
+    fi
 }
 
 run_test() {
@@ -562,11 +583,47 @@ run_training_steps() {
         }')
     echo "$RESPONSE" | jq .
 
+    # === Phase 2: Test forward and compute_logprobs endpoints ===
+    log_info "Testing forward-only pass (no gradients)..."
+    RESPONSE=$(curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/forward" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "input_ids": [[2, 133, 2119, 6219, 23602]],
+            "attention_mask": [[1, 1, 1, 1, 1]]
+        }')
+
+    TOKENS=$(echo "$RESPONSE" | jq -r '.tokens_processed // "error"')
+    if [ "$TOKENS" = "error" ]; then
+        log_error "Forward-only pass failed"
+        echo "$RESPONSE" | jq .
+    else
+        log_info "  Forward pass successful, tokens processed: $TOKENS"
+        NUM_BATCHES=$(echo "$RESPONSE" | jq '.logprobs | length')
+        log_info "  Logprobs returned for $NUM_BATCHES batches"
+    fi
+
+    log_info "Testing compute_logprobs..."
+    RESPONSE=$(curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/compute_logprobs" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "token_ids": [2, 133, 2119, 6219, 23602]
+        }')
+
+    NUM_LOGPROBS=$(echo "$RESPONSE" | jq -r '.logprobs | length // "error"')
+    if [ "$NUM_LOGPROBS" = "error" ]; then
+        log_error "Compute logprobs failed"
+        echo "$RESPONSE" | jq .
+    else
+        log_info "  Compute logprobs successful, returned $NUM_LOGPROBS logprobs"
+        echo "$RESPONSE" | jq '.logprobs'
+    fi
+
     log_info "Training test completed successfully!"
     log_info "Steps completed: $NUM_STEPS"
 
-    # Cleanup port-forward
+    # Cleanup port-forward (wait suppresses "Terminated" message)
     kill $PF_PID 2>/dev/null
+    wait $PF_PID 2>/dev/null
     trap - EXIT
 }
 

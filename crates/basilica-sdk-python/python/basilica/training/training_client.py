@@ -14,6 +14,7 @@ from .types import (
     Datum,
     ForwardBackwardResult,
     ForwardResult,
+    ModelInput,
 )
 from .sampling_client import SamplingClient
 from .exceptions import TrainingError
@@ -129,6 +130,32 @@ class TrainingClient:
             )
 
         return APIFuture(self._executor.submit(_call), ForwardResult)
+
+    def compute_logprobs(self, token_ids: List[int]) -> APIFuture:
+        """Compute per-token log probabilities for a sequence.
+
+        Args:
+            token_ids: List of token IDs
+
+        Returns:
+            APIFuture resolving to List[Optional[float]]
+            First token has None (no prior context).
+
+        Example:
+            >>> logprobs = training.compute_logprobs([1, 2, 3, 4, 5]).result()
+            >>> print(f"Sequence logprob: {sum(lp for lp in logprobs if lp):.4f}")
+        """
+
+        def _call():
+            resp = self._client.post(
+                self._proxy("compute_logprobs"),
+                json={"token_ids": token_ids},
+            )
+            if not resp.is_success:
+                raise TrainingError(f"compute_logprobs failed: {resp.text}")
+            return resp.json()["logprobs"]
+
+        return APIFuture(self._executor.submit(_call), list)
 
     def forward_backward(
         self,
@@ -445,6 +472,10 @@ class TrainingClient:
     async def forward_async(self, data: List[Datum]) -> ForwardResult:
         """Forward pass (async)."""
         return await self.forward(data).result_async()
+
+    async def compute_logprobs_async(self, token_ids: List[int]) -> List[Optional[float]]:
+        """Compute logprobs (async)."""
+        return await self.compute_logprobs(token_ids).result_async()
 
     async def forward_backward_async(
         self, data: List[Datum], loss_fn: str = "cross_entropy"

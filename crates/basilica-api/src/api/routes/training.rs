@@ -901,3 +901,59 @@ pub async fn load_checkpoint(
     apimetrics::record_request("training.proxy.load", "POST", start, result.is_ok());
     result
 }
+
+/// Forward pass (inference only, no gradients).
+/// POST /sessions/{session_id}/internal/{internal_session_id}/forward
+pub async fn forward(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}/forward", internal_session_id),
+        http::Method::POST,
+        Some(body),
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.forward", "POST", start, result.is_ok());
+    result
+}
+
+/// Compute log probabilities for a token sequence.
+/// POST /sessions/{session_id}/internal/{internal_session_id}/compute_logprobs
+pub async fn compute_logprobs(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}/compute_logprobs", internal_session_id),
+        http::Method::POST,
+        Some(body),
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.compute_logprobs", "POST", start, result.is_ok());
+    result
+}

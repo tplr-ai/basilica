@@ -139,6 +139,14 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route(
             "/sessions/:session_id/internal/:internal_session_id/load",
             post(routes::training::load_checkpoint),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/forward",
+            post(routes::training::forward),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/compute_logprobs",
+            post(routes::training::compute_logprobs),
         );
 
     // Add payment and billing service endpoints

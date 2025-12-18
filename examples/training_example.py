@@ -56,10 +56,12 @@ def main():
         print(f"Model: {training.base_model}")
 
         # Training loop
+        # Using 10 tokens for stable gradients: "The quick brown fox jumps over the lazy dog"
+        train_tokens = [2, 133, 2119, 6219, 23602, 13855, 81, 5, 22414, 2335]
         for _ in range(5):
             # forward_backward returns APIFuture - call .result() to get value
             result = training.forward_backward(
-                [Datum(input_ids=[2, 133, 2119, 6219, 23602])],
+                [Datum(input_ids=train_tokens)],
                 loss_fn="cross_entropy",
             ).result()
 
@@ -72,9 +74,29 @@ def main():
         checkpoint_path = training.save_state("checkpoint-final").result()
         print(f"\nCheckpoint saved: {checkpoint_path}")
 
+        # === Phase 2: Logprobs Demo ===
+        print("\n--- Logprobs Demo ---")
+
+        # Forward-only pass (no gradients)
+        forward_result = training.forward(
+            [Datum(input_ids=train_tokens)]
+        ).result()
+        print(f"Forward logprobs shape: {len(forward_result.logprobs)}x{len(forward_result.logprobs[0]) if forward_result.logprobs else 0}")
+        print(f"Tokens processed: {forward_result.tokens_processed}")
+
+        # Compute per-token logprobs for a sequence
+        logprobs = training.compute_logprobs(train_tokens).result()
+        print(f"Per-token logprobs: {[f'{lp:.3f}' if lp else 'None' for lp in logprobs]}")
+
+        # Calculate sequence probability
+        valid_logprobs = [lp for lp in logprobs if lp is not None]
+        if valid_logprobs:
+            seq_logprob = sum(valid_logprobs)
+            print(f"Sequence log-probability: {seq_logprob:.4f}")
+
         # Generate sample using convenience method
         sample = training.sample("The quick brown", max_tokens=10)
-        print(f"Sample: {sample}")
+        print(f"\nSample: {sample}")
 
 
 def sampling_example():
@@ -125,9 +147,11 @@ def async_example():
 
         try:
             # Use async variants
+            # 10 tokens for stable gradients: "The quick brown fox jumps over the lazy dog"
+            train_tokens = [2, 133, 2119, 6219, 23602, 13855, 81, 5, 22414, 2335]
             for _ in range(3):
                 result = await training.forward_backward_async(
-                    [Datum(input_ids=[2, 133, 2119, 6219, 23602])]
+                    [Datum(input_ids=train_tokens)]
                 )
                 step = await training.optim_step_async()
                 print(f"Step {step}: loss={result.loss:.4f}")

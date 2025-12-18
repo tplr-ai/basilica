@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from .backend import (
     ForwardBackwardResult,
+    ForwardResult,
     LoraConfiguration,
     OptimizerConfiguration,
     SampleResult,
@@ -86,6 +87,20 @@ class CreateSessionResponse(BaseModel):
     status: str = "created"
 
 
+class ForwardRequest(BaseModel):
+    """Forward-only request (no gradients)."""
+
+    input_ids: List[List[int]]
+    attention_mask: List[List[int]]
+
+
+class ForwardResponse(BaseModel):
+    """Forward-only response."""
+
+    logprobs: List[List[float]]
+    tokens_processed: int
+
+
 class ForwardBackwardRequest(BaseModel):
     """Forward-backward request."""
 
@@ -101,6 +116,18 @@ class ForwardBackwardResponse(BaseModel):
     loss: float
     logprobs: List[List[float]]
     tokens_processed: int
+
+
+class ComputeLogprobsRequest(BaseModel):
+    """Compute logprobs request."""
+
+    token_ids: List[int]
+
+
+class ComputeLogprobsResponse(BaseModel):
+    """Compute logprobs response."""
+
+    logprobs: List[Optional[float]]
 
 
 class OptimStepResponse(BaseModel):
@@ -238,6 +265,58 @@ async def delete_session(session_id: str) -> Dict[str, str]:
 
 
 # === Training Operations ===
+
+
+@app.post("/sessions/{session_id}/forward", response_model=ForwardResponse)
+async def forward(session_id: str, request: ForwardRequest) -> ForwardResponse:
+    """Forward pass without gradient computation.
+
+    Used for inference-only operations like computing logprobs.
+    """
+    try:
+        input_ids = torch.tensor(request.input_ids)
+        attention_mask = torch.tensor(request.attention_mask)
+
+        result = backend.forward(
+            session_id=session_id,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+        )
+
+        return ForwardResponse(
+            logprobs=result.logprobs,
+            tokens_processed=result.tokens_processed,
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.exception("forward_failed", error=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@app.post("/sessions/{session_id}/compute_logprobs", response_model=ComputeLogprobsResponse)
+async def compute_logprobs(
+    session_id: str, request: ComputeLogprobsRequest
+) -> ComputeLogprobsResponse:
+    """Compute log probabilities for a token sequence.
+
+    Returns logprob for each token given its prefix.
+    First token returns None (no conditioning context).
+    """
+    try:
+        logprobs = backend.compute_logprobs(
+            session_id=session_id,
+            token_ids=request.token_ids,
+        )
+
+        return ComputeLogprobsResponse(logprobs=logprobs)
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.exception("compute_logprobs_failed", error=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 @app.post("/sessions/{session_id}/forward_backward", response_model=ForwardBackwardResponse)
