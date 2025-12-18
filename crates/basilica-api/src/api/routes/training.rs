@@ -6,9 +6,13 @@
 //! - Delete session
 //! - List sessions
 //!
-//! Note: Training operations (forward_backward, optim_step, sample, checkpoints)
-//! are NOT handled by this API. They are routed directly by Envoy Gateway via
-//! HTTPRoute to the Training Service pod.
+//! Also provides proxy endpoints for training operations that forward requests
+//! to the training pod via the K8s Service:
+//! - Create internal session
+//! - Forward-backward pass
+//! - Optimizer step
+//! - Sample generation
+//! - Checkpoint save/load
 
 use axum::{
     extract::{Path, State},
@@ -22,7 +26,7 @@ use kube::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::time::Instant;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::api::middleware::AuthContext;
 use crate::apimetrics;
@@ -581,6 +585,284 @@ pub async fn list_sessions(
     Ok(Json(responses))
 }
 
-// Note: Training operations (forward_backward, optim_step, sample, save, load)
-// are NOT handled by this API. They are routed directly by Envoy Gateway
-// via HTTPRoute to the Training Service pod.
+// === Training Operation Proxy Handlers ===
+//
+// These handlers proxy training operations to the training pod via the K8s Service.
+// This allows the SDK to route all traffic through the API instead of requiring
+// direct access to the Envoy Gateway.
+
+/// Proxy a request to the training service via the K8s API server proxy.
+///
+/// This uses the K8s API server's built-in service proxy feature, which allows
+/// reaching services from outside the cluster without needing cluster-local DNS.
+/// The proxy URL format is: /api/v1/namespaces/{namespace}/services/{service}:{port}/proxy/{path}
+async fn proxy_to_training_service(
+    kube_client: &kube::Client,
+    namespace: &str,
+    session_id: &str,
+    path: &str,
+    method: http::Method,
+    body: Option<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let service_name = format!("training-{}", session_id);
+
+    // Build the request
+    let mut request_builder = http::Request::builder()
+        .method(method.clone())
+        .uri(format!(
+            "/api/v1/namespaces/{}/services/{}:8000/proxy{}",
+            namespace, service_name, path
+        ));
+
+    // Add content-type header for POST requests with body
+    if body.is_some() {
+        request_builder = request_builder.header("content-type", "application/json");
+    }
+
+    let request = if let Some(json_body) = body {
+        let body_bytes = serde_json::to_vec(&json_body).map_err(|e| ApiError::Internal {
+            message: format!("Failed to serialize request body: {}", e),
+        })?;
+        request_builder
+            .body(body_bytes)
+            .map_err(|e| ApiError::Internal {
+                message: format!("Failed to build request: {}", e),
+            })?
+    } else {
+        request_builder
+            .body(vec![])
+            .map_err(|e| ApiError::Internal {
+                message: format!("Failed to build request: {}", e),
+            })?
+    };
+
+    debug!(
+        service = %service_name,
+        namespace = %namespace,
+        path = %path,
+        method = %method,
+        "Proxying request to training service via K8s API"
+    );
+
+    // Execute the request through the kube client
+    let response = kube_client
+        .request::<serde_json::Value>(request)
+        .await
+        .map_err(|e| {
+            error!(
+                error = %e,
+                service = %service_name,
+                namespace = %namespace,
+                path = %path,
+                "Failed to proxy request to training service"
+            );
+            ApiError::ServiceUnavailable
+        })?;
+
+    // Convert to axum response
+    let body_bytes = serde_json::to_vec(&response).map_err(|e| ApiError::Internal {
+        message: format!("Failed to serialize response: {}", e),
+    })?;
+
+    axum::response::Response::builder()
+        .status(200)
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(body_bytes))
+        .map_err(|e| ApiError::Internal {
+            message: format!("Failed to build response: {}", e),
+        })
+}
+
+/// Create a training session in the training pod.
+/// POST /sessions/{session_id}/internal
+pub async fn create_internal_session(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path(session_id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        "/sessions",
+        http::Method::POST,
+        Some(body),
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.create_internal", "POST", start, result.is_ok());
+    result
+}
+
+/// Get internal session status.
+/// GET /sessions/{session_id}/internal/{internal_session_id}
+pub async fn get_internal_session(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}", internal_session_id),
+        http::Method::GET,
+        None,
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.get_internal", "GET", start, result.is_ok());
+    result
+}
+
+/// Forward-backward pass.
+/// POST /sessions/{session_id}/internal/{internal_session_id}/forward_backward
+pub async fn forward_backward(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}/forward_backward", internal_session_id),
+        http::Method::POST,
+        Some(body),
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.forward_backward", "POST", start, result.is_ok());
+    result
+}
+
+/// Optimizer step.
+/// POST /sessions/{session_id}/internal/{internal_session_id}/optim_step
+pub async fn optim_step(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}/optim_step", internal_session_id),
+        http::Method::POST,
+        None,
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.optim_step", "POST", start, result.is_ok());
+    result
+}
+
+/// Generate text sample.
+/// POST /sessions/{session_id}/internal/{internal_session_id}/sample
+pub async fn sample(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}/sample", internal_session_id),
+        http::Method::POST,
+        Some(body),
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.sample", "POST", start, result.is_ok());
+    result
+}
+
+/// Save checkpoint.
+/// POST /sessions/{session_id}/internal/{internal_session_id}/save
+pub async fn save_checkpoint(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}/save", internal_session_id),
+        http::Method::POST,
+        Some(body),
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.save", "POST", start, result.is_ok());
+    result
+}
+
+/// Load checkpoint.
+/// POST /sessions/{session_id}/internal/{internal_session_id}/load
+pub async fn load_checkpoint(
+    State(state): State<AppState>,
+    Extension(auth): Extension<AuthContext>,
+    Path((session_id, internal_session_id)): Path<(String, String)>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<axum::response::Response> {
+    let start = Instant::now();
+
+    let k8s_client = state.k8s.as_ref().ok_or(ApiError::ServiceUnavailable)?;
+    let kube_client = k8s_client.kube_client();
+    let namespace = user_namespace(&auth.user_id);
+
+    let result = proxy_to_training_service(
+        &kube_client,
+        &namespace,
+        &session_id,
+        &format!("/sessions/{}/load", internal_session_id),
+        http::Method::POST,
+        Some(body),
+    )
+    .await;
+
+    apimetrics::record_request("training.proxy.load", "POST", start, result.is_ok());
+    result
+}

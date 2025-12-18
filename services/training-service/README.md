@@ -2,6 +2,51 @@
 
 GPU training service for fine-tuning LLMs with LoRA on Basilica.
 
+## Quick Start (Python SDK)
+
+```python
+from basilica.training import Client
+
+client = Client()
+with client.training("facebook/opt-125m", rank=8, gpu_count=0) as session:
+    loss = session.forward_backward([{"input_ids": [2, 133, 2119, 6219, 23602]}])
+    session.optim_step()
+    print(f"Loss: {loss:.4f}")
+    print(session.sample("The quick brown"))
+```
+
+## Local Development
+
+### 1. Start the cluster
+
+```bash
+./scripts/local-training-e2e.sh cluster-up
+./scripts/local-training-e2e.sh deploy
+./scripts/local-training-e2e.sh api      # Terminal 1
+./scripts/local-training-e2e.sh gen-key  # Terminal 2
+```
+
+### 2. Run the example
+
+```bash
+export BASILICA_API_URL="http://localhost:8000"
+python examples/training_example.py
+```
+
+### Example Output
+
+```
+=== Creating session for facebook/opt-125m ===
+Session: ts-a1b2c3d4
+
+=== Training (3 steps) ===
+Step 1: loss=6.2612
+Step 2: loss=5.7423
+Step 3: loss=5.7501
+
+Sample: The quick brown -> fox jumps over the lazy
+```
+
 ## Overview
 
 The training service provides a high-level API for:

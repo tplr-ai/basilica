@@ -1,39 +1,42 @@
 """
 Basilica Training SDK
 
-High-level Python SDK for training LLMs with LoRA on Basilica's GPU cloud.
+Fine-tune LLMs with LoRA on Basilica's GPU cloud.
 
 Quick Start:
-    >>> from basilica.training import TrainingClient
-    >>> client = TrainingClient()
+    >>> from basilica.training import Client
     >>>
-    >>> # Create a training session
-    >>> session = client.create_session(
-    ...     base_model="meta-llama/Llama-3.1-8B-Instruct",
-    ...     rank=32,
-    ...     learning_rate=1e-4,
-    ... )
-    >>>
-    >>> # Training loop
-    >>> for batch in dataloader:
-    ...     result = session.forward_backward(batch)
-    ...     print(f"Loss: {result.loss:.4f}")
+    >>> client = Client()
+    >>> with client.training("meta-llama/Llama-3.1-8B-Instruct", rank=32) as session:
+    ...     loss = session.forward_backward([{"input_ids": [1, 2, 3]}])
     ...     session.optim_step()
+    ...     print(session.sample("Hello!"))
+
+Loss Functions:
+    >>> # Standard cross-entropy (default)
+    >>> loss = session.forward_backward(data)
     >>>
-    >>> # Save checkpoint
-    >>> session.save_state("checkpoint-final")
+    >>> # Importance sampling (policy gradient)
+    >>> loss = session.forward_backward(data, loss_fn="importance_sampling")
+    >>>
+    >>> # PPO with clipping
+    >>> loss = session.forward_backward(data, loss_fn="ppo")
+    >>>
+    >>> # DPO (Direct Preference Optimization)
+    >>> loss = session.forward_backward(data, loss_fn="dpo")
+
+RL Training:
+    >>> data = [{"input_ids": tokens, "loss_inputs": {"old_logprobs": lp, "rewards": r}}]
+    >>> loss = session.forward_backward(data, loss_fn="importance_sampling")
 
 Authentication:
-    Set the BASILICA_API_TOKEN environment variable:
-        export BASILICA_API_TOKEN="basilica_..."
-
-    Or pass directly:
-        client = TrainingClient(api_key="basilica_...")
+    export BASILICA_API_TOKEN="basilica_..."
 """
 
 import os
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+import time
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Union
 
 import httpx
 
@@ -41,196 +44,163 @@ __version__ = "0.1.0"
 
 
 @dataclass
-class LoraConfig:
-    """LoRA adapter configuration."""
-
-    rank: int = 32
-    alpha: int = 64
-    dropout: float = 0.05
-    target_modules: List[str] = field(
-        default_factory=lambda: ["q_proj", "k_proj", "v_proj", "o_proj"]
-    )
-
-
-@dataclass
-class OptimizerConfig:
-    """Optimizer configuration."""
-
-    learning_rate: float = 1e-4
-    weight_decay: float = 0.01
-    grad_clip: Optional[float] = 1.0
-
-
-@dataclass
-class CheckpointStorage:
-    """Checkpoint storage configuration."""
-
-    backend: str = "r2"
-    bucket: str = ""
-    path: str = ""
-    credentials_secret: Optional[str] = None
-
-
-@dataclass
-class GpuResources:
-    """GPU resource requirements."""
-
-    count: int = 1
-    model: List[str] = field(default_factory=list)
-    min_memory_gb: Optional[int] = None
-
-
-@dataclass
 class Datum:
-    """Training example."""
+    """
+    Training example.
 
+    Attributes:
+        input_ids: Token IDs for the input sequence
+        labels: Target token IDs (defaults to input_ids for causal LM)
+        weights: Per-token loss weights
+        loss_inputs: Additional inputs for loss functions (e.g., rewards, old_logprobs)
+
+    Example:
+        >>> # Simple supervised learning
+        >>> Datum(input_ids=[1, 2, 3])
+
+        >>> # With custom loss weights
+        >>> Datum(input_ids=[1, 2, 3], weights=[0.0, 1.0, 1.0])
+
+        >>> # For RL (importance sampling)
+        >>> Datum(input_ids=[1, 2, 3], loss_inputs={"old_logprobs": [-1.2, -0.8], "rewards": [1.0]})
+    """
     input_ids: List[int]
-    labels: List[int]
-    loss_weights: Optional[List[float]] = None
-
-
-@dataclass
-class ForwardBackwardResult:
-    """Result of forward-backward pass."""
-
-    loss: float
-    logprobs: List[List[float]]
-    tokens_processed: int
-
-
-@dataclass
-class Sample:
-    """Generated sample."""
-
-    text: str
-    token_ids: List[int]
-    logprobs: Optional[List[float]] = None
-    finish_reason: str = "stop"
+    labels: Optional[List[int]] = None
+    weights: Optional[List[float]] = None
+    loss_inputs: Optional[Dict[str, Any]] = None
 
 
 class TrainingError(Exception):
-    """Base exception for training errors."""
-
-    pass
-
-
-class SessionNotFoundError(TrainingError):
-    """Session not found."""
-
-    pass
-
-
-class TrainingServiceError(TrainingError):
-    """Error from training service."""
-
+    """Training operation failed."""
     pass
 
 
 class TrainingSession:
     """
-    A training session for fine-tuning LLMs with LoRA.
+    Training session for fine-tuning LLMs with LoRA.
 
-    Do not instantiate directly. Use TrainingClient.create_session().
+    Created via Client.training(). All operations are synchronous
+    and route through the Basilica API.
 
     Example:
-        >>> session = client.create_session(
-        ...     base_model="meta-llama/Llama-3.1-8B-Instruct",
-        ...     rank=32,
-        ... )
+        >>> session = client.training("meta-llama/Llama-3.1-8B-Instruct")
         >>>
-        >>> # Training loop
         >>> for batch in dataloader:
-        ...     result = session.forward_backward(batch)
+        ...     loss = session.forward_backward(batch)
         ...     session.optim_step()
         >>>
-        >>> # Generate sample
-        >>> sample = session.sample("Hello!", max_tokens=50)
-        >>> print(sample.text)
+        >>> print(session.sample("Hello!"))
     """
 
     def __init__(
         self,
-        session_id: str,
         client: httpx.Client,
-        base_model: str,
+        session_id: str,
+        internal_id: str,
+        model: str,
     ):
-        self._session_id = session_id
         self._client = client
-        self._base_model = base_model
-        self._step_count = 0
+        self._session_id = session_id
+        self._internal_id = internal_id
+        self._model = model
+        self._step = 0
 
     @property
-    def session_id(self) -> str:
+    def id(self) -> str:
         """Session ID."""
         return self._session_id
 
     @property
-    def base_model(self) -> str:
+    def model(self) -> str:
         """Base model name."""
-        return self._base_model
+        return self._model
 
     @property
-    def step_count(self) -> int:
-        """Current training step count."""
-        return self._step_count
+    def step(self) -> int:
+        """Current training step."""
+        return self._step
+
+    def _proxy(self, op: str = "") -> str:
+        """Build proxy path."""
+        base = f"/sessions/{self._session_id}/internal/{self._internal_id}"
+        return f"{base}/{op}" if op else base
 
     def forward_backward(
         self,
-        data: List[Datum],
+        data: Union[List[Datum], List[Dict[str, Any]]],
         loss_fn: str = "cross_entropy",
-    ) -> ForwardBackwardResult:
+    ) -> float:
         """
         Compute forward pass and gradients.
 
         Args:
-            data: List of training examples
-            loss_fn: Loss function (currently only "cross_entropy")
+            data: List of training examples (Datum objects or dicts with
+                  'input_ids' and 'labels' keys)
+            loss_fn: Loss function to use. Options:
+                - "cross_entropy": Standard NLL loss (default)
+                - "importance_sampling": Policy gradient with importance weighting
+                - "ppo": Proximal Policy Optimization with clipping
+                - "dpo": Direct Preference Optimization
 
         Returns:
-            ForwardBackwardResult with loss and logprobs
+            Loss value
+
+        Example:
+            >>> # Standard supervised learning
+            >>> loss = session.forward_backward([{"input_ids": [1, 2, 3]}])
+
+            >>> # RL with importance sampling
+            >>> loss = session.forward_backward(data, loss_fn="importance_sampling")
         """
-        # Batch the data
-        input_ids = [d.input_ids for d in data]
-        labels = [d.labels for d in data]
-        loss_weights = (
-            [d.loss_weights for d in data] if data[0].loss_weights else None
-        )
+        # Normalize input
+        examples = []
+        for d in data:
+            if isinstance(d, Datum):
+                examples.append(d)
+            else:
+                examples.append(Datum(
+                    input_ids=d["input_ids"],
+                    labels=d.get("labels"),
+                    weights=d.get("weights"),
+                    loss_inputs=d.get("loss_inputs"),
+                ))
 
-        # Pad to same length
-        max_len = max(len(ids) for ids in input_ids)
-        padded_input_ids = [ids + [0] * (max_len - len(ids)) for ids in input_ids]
-        padded_labels = [lbl + [-100] * (max_len - len(lbl)) for lbl in labels]
-        attention_mask = [
-            [1] * len(ids) + [0] * (max_len - len(ids)) for ids in input_ids
-        ]
+        # Default labels to input_ids (causal LM)
+        for ex in examples:
+            if ex.labels is None:
+                ex.labels = ex.input_ids.copy()
 
-        padded_loss_weights = None
-        if loss_weights:
-            padded_loss_weights = [
-                w + [0.0] * (max_len - len(w)) for w in loss_weights
-            ]
+        # Pad sequences
+        max_len = max(len(ex.input_ids) for ex in examples)
+        input_ids = [ex.input_ids + [0] * (max_len - len(ex.input_ids)) for ex in examples]
+        labels = [ex.labels + [-100] * (max_len - len(ex.labels)) for ex in examples]
+        attention_mask = [[1] * len(ex.input_ids) + [0] * (max_len - len(ex.input_ids)) for ex in examples]
 
-        response = self._client.post(
-            f"/sessions/{self._session_id}/forward_backward",
+        weights = None
+        if examples[0].weights:
+            weights = [ex.weights + [0.0] * (max_len - len(ex.weights)) for ex in examples]
+
+        # Collect loss function inputs
+        loss_inputs = None
+        if examples[0].loss_inputs:
+            loss_inputs = [ex.loss_inputs for ex in examples]
+
+        resp = self._client.post(
+            self._proxy("forward_backward"),
             json={
-                "inputIds": padded_input_ids,
-                "attentionMask": attention_mask,
-                "labels": padded_labels,
-                "lossWeights": padded_loss_weights,
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "labels": labels,
+                "loss_weights": weights,
+                "loss_fn": loss_fn,
+                "loss_inputs": loss_inputs,
             },
         )
 
-        if response.status_code == 404:
-            raise SessionNotFoundError(f"Session {self._session_id} not found")
-        if not response.is_success:
-            raise TrainingServiceError(f"Forward-backward failed: {response.text}")
+        if not resp.is_success:
+            raise TrainingError(f"forward_backward failed: {resp.text}")
 
-        data = response.json()
-        return ForwardBackwardResult(
-            loss=data["loss"],
-            logprobs=data["logprobs"],
-            tokens_processed=data["tokensProcessed"],
-        )
+        return resp.json()["loss"]
 
     def optim_step(self) -> int:
         """
@@ -239,18 +209,13 @@ class TrainingSession:
         Returns:
             Current step count
         """
-        response = self._client.post(
-            f"/sessions/{self._session_id}/optim_step",
-        )
+        resp = self._client.post(self._proxy("optim_step"))
 
-        if response.status_code == 404:
-            raise SessionNotFoundError(f"Session {self._session_id} not found")
-        if not response.is_success:
-            raise TrainingServiceError(f"Optim step failed: {response.text}")
+        if not resp.is_success:
+            raise TrainingError(f"optim_step failed: {resp.text}")
 
-        data = response.json()
-        self._step_count = data["step"]
-        return self._step_count
+        self._step = resp.json()["step"]
+        return self._step
 
     def sample(
         self,
@@ -258,153 +223,106 @@ class TrainingSession:
         max_tokens: int = 256,
         temperature: float = 1.0,
         top_p: float = 1.0,
-        top_k: int = 0,
-        include_logprobs: bool = False,
-    ) -> Sample:
+    ) -> str:
         """
         Generate text completion.
 
         Args:
-            prompt: Input prompt
+            prompt: Input text
             max_tokens: Maximum tokens to generate
             temperature: Sampling temperature (0 = greedy)
             top_p: Nucleus sampling parameter
-            top_k: Top-k sampling parameter (0 = disabled)
-            include_logprobs: Whether to return log probabilities
 
         Returns:
-            Generated sample
+            Generated text
+
+        Example:
+            >>> print(session.sample("Once upon a time"))
         """
-        response = self._client.post(
-            f"/sessions/{self._session_id}/sample",
+        resp = self._client.post(
+            self._proxy("sample"),
             json={
                 "prompt": prompt,
-                "maxTokens": max_tokens,
+                "max_tokens": max_tokens,
                 "temperature": temperature,
-                "topP": top_p,
-                "topK": top_k,
-                "includeLogprobs": include_logprobs,
+                "top_p": top_p,
             },
         )
 
-        if response.status_code == 404:
-            raise SessionNotFoundError(f"Session {self._session_id} not found")
-        if not response.is_success:
-            raise TrainingServiceError(f"Sample failed: {response.text}")
+        if not resp.is_success:
+            raise TrainingError(f"sample failed: {resp.text}")
 
-        data = response.json()
-        return Sample(
-            text=data["text"],
-            token_ids=data["tokenIds"],
-            logprobs=data.get("logprobs"),
-            finish_reason=data["finishReason"],
-        )
+        return resp.json()["text"]
 
-    def save_state(
-        self,
-        checkpoint_name: str,
-        include_optimizer: bool = True,
-    ) -> str:
+    def save(self, name: str) -> str:
         """
         Save checkpoint.
 
         Args:
-            checkpoint_name: Name for the checkpoint
-            include_optimizer: Whether to save optimizer state
+            name: Checkpoint name
 
         Returns:
             Checkpoint path
         """
-        response = self._client.post(
-            f"/sessions/{self._session_id}/save",
-            json={
-                "checkpointName": checkpoint_name,
-                "includeOptimizer": include_optimizer,
-            },
+        resp = self._client.post(
+            self._proxy("save"),
+            json={"checkpoint_name": name, "include_optimizer": True},
         )
 
-        if response.status_code == 404:
-            raise SessionNotFoundError(f"Session {self._session_id} not found")
-        if not response.is_success:
-            raise TrainingServiceError(f"Save failed: {response.text}")
+        if not resp.is_success:
+            raise TrainingError(f"save failed: {resp.text}")
 
-        data = response.json()
-        return data["checkpointPath"]
+        return resp.json()["checkpoint_path"]
 
-    def load_state(
-        self,
-        checkpoint_path: str,
-        load_optimizer: bool = True,
-    ) -> None:
+    def load(self, path: str) -> None:
         """
         Load checkpoint.
 
         Args:
-            checkpoint_path: Path to checkpoint
-            load_optimizer: Whether to load optimizer state
+            path: Checkpoint path
         """
-        response = self._client.post(
-            f"/sessions/{self._session_id}/load",
-            json={
-                "checkpointPath": checkpoint_path,
-                "loadOptimizer": load_optimizer,
-            },
+        resp = self._client.post(
+            self._proxy("load"),
+            json={"checkpoint_path": path, "load_optimizer": True},
         )
 
-        if response.status_code == 404:
-            raise SessionNotFoundError(f"Session {self._session_id} not found")
-        if not response.is_success:
-            raise TrainingServiceError(f"Load failed: {response.text}")
+        if not resp.is_success:
+            raise TrainingError(f"load failed: {resp.text}")
 
-    def get_status(self) -> Dict[str, Any]:
-        """
-        Get session status.
+    def status(self) -> Dict[str, Any]:
+        """Get session status."""
+        resp = self._client.get(self._proxy())
 
-        Returns:
-            Status dictionary
-        """
-        response = self._client.get(
-            f"/sessions/{self._session_id}",
-        )
+        if not resp.is_success:
+            raise TrainingError(f"status failed: {resp.text}")
 
-        if response.status_code == 404:
-            raise SessionNotFoundError(f"Session {self._session_id} not found")
-        if not response.is_success:
-            raise TrainingServiceError(f"Get status failed: {response.text}")
-
-        return response.json()
+        return resp.json()
 
     def close(self) -> None:
-        """Delete the training session."""
-        response = self._client.delete(
-            f"/sessions/{self._session_id}",
-        )
-        # Ignore 404 - session may already be deleted
-        if response.status_code != 404 and not response.is_success:
-            raise TrainingServiceError(f"Delete failed: {response.text}")
+        """Delete the session."""
+        resp = self._client.delete(f"/sessions/{self._session_id}")
+        if resp.status_code != 404 and not resp.is_success:
+            raise TrainingError(f"close failed: {resp.text}")
+
+    def __enter__(self) -> "TrainingSession":
+        return self
+
+    def __exit__(self, *args) -> None:
+        self.close()
 
 
-class TrainingClient:
+class Client:
     """
-    Client for training LLMs on Basilica's GPU cloud.
+    Basilica API client.
 
     Example:
-        >>> from basilica.training import TrainingClient
-        >>> client = TrainingClient()
+        >>> import basilica
         >>>
-        >>> session = client.create_session(
-        ...     base_model="meta-llama/Llama-3.1-8B-Instruct",
-        ...     rank=32,
-        ...     learning_rate=1e-4,
-        ... )
+        >>> client = basilica.Client()
+        >>> session = client.training("meta-llama/Llama-3.1-8B-Instruct")
         >>>
-        >>> # Training loop
-        >>> for batch in dataloader:
-        ...     result = session.forward_backward(batch)
-        ...     print(f"Loss: {result.loss:.4f}")
-        ...     session.optim_step()
-        >>>
-        >>> session.save_state("checkpoint-final")
+        >>> loss = session.forward_backward(data)
+        >>> session.optim_step()
     """
 
     def __init__(
@@ -414,28 +332,18 @@ class TrainingClient:
         timeout: float = 300.0,
     ):
         """
-        Initialize the training client.
+        Initialize client.
 
         Args:
-            api_key: API key for authentication.
-                    Defaults to BASILICA_API_TOKEN env var.
-            endpoint: API endpoint URL.
-                     Defaults to BASILICA_API_URL env var or https://api.basilica.ai
+            api_key: API key (default: BASILICA_API_TOKEN env var)
+            endpoint: API endpoint (default: BASILICA_API_URL or https://api.basilica.ai)
             timeout: Request timeout in seconds
-
-        Raises:
-            ValueError: If no API key is provided
         """
         self._api_key = api_key or os.environ.get("BASILICA_API_TOKEN")
-        self._endpoint = endpoint or os.environ.get(
-            "BASILICA_API_URL", "https://api.basilica.ai"
-        )
-        self._timeout = timeout
+        self._endpoint = endpoint or os.environ.get("BASILICA_API_URL", "https://api.basilica.ai")
 
         if not self._api_key:
-            raise ValueError(
-                "API key required. Set BASILICA_API_TOKEN env var or pass api_key parameter."
-            )
+            raise ValueError("API key required. Set BASILICA_API_TOKEN or pass api_key=")
 
         self._client = httpx.Client(
             base_url=self._endpoint,
@@ -443,164 +351,163 @@ class TrainingClient:
             timeout=timeout,
         )
 
-    def create_session(
+    def training(
         self,
-        base_model: str,
+        model: str,
         rank: int = 32,
         alpha: int = 64,
+        lr: float = 1e-4,
         dropout: float = 0.05,
-        target_modules: Optional[List[str]] = None,
-        learning_rate: float = 1e-4,
-        weight_decay: float = 0.01,
-        grad_clip: Optional[float] = 1.0,
         gpu_count: int = 1,
-        gpu_models: Optional[List[str]] = None,
+        gpu_type: Optional[List[str]] = None,
         seed: Optional[int] = None,
-        ttl_seconds: int = 86400,
-        checkpoint_bucket: str = "",
-        checkpoint_path: str = "",
+        wait: float = 300.0,
     ) -> TrainingSession:
         """
-        Create a new training session with LoRA.
+        Create a training session.
 
         Args:
-            base_model: HuggingFace model ID
-                       (e.g., "meta-llama/Llama-3.1-8B-Instruct")
+            model: HuggingFace model ID (e.g., "meta-llama/Llama-3.1-8B-Instruct")
             rank: LoRA rank (default: 32)
-            alpha: LoRA alpha scaling factor (default: 64)
-            dropout: LoRA dropout rate (default: 0.05)
-            target_modules: Modules to apply LoRA to
-            learning_rate: Initial learning rate (default: 1e-4)
-            weight_decay: Weight decay (default: 0.01)
-            grad_clip: Gradient clipping (default: 1.0)
-            gpu_count: Number of GPUs (default: 1)
-            gpu_models: Acceptable GPU models (e.g., ["H100", "A100"])
-            seed: Random seed for reproducibility
-            ttl_seconds: Session TTL in seconds (default: 24 hours)
-            checkpoint_bucket: Storage bucket for checkpoints
-            checkpoint_path: Path prefix for checkpoints
+            alpha: LoRA alpha (default: 64)
+            lr: Learning rate (default: 1e-4)
+            dropout: Dropout rate (default: 0.05)
+            gpu_count: Number of GPUs (0 for CPU)
+            gpu_type: Acceptable GPU types (e.g., ["H100", "A100"])
+            seed: Random seed
+            wait: Seconds to wait for session ready
 
         Returns:
-            TrainingSession for the new session
+            TrainingSession
 
         Example:
-            >>> session = client.create_session(
-            ...     base_model="meta-llama/Llama-3.1-8B-Instruct",
+            >>> session = client.training(
+            ...     "meta-llama/Llama-3.1-8B-Instruct",
             ...     rank=64,
-            ...     alpha=128,
-            ...     learning_rate=2e-4,
-            ...     gpu_count=1,
-            ...     gpu_models=["H100"],
+            ...     lr=2e-4,
             ... )
         """
-        response = self._client.post(
+        # Create K8s session
+        resp = self._client.post(
             "/sessions",
             json={
-                "baseModel": base_model,
-                "checkpointStorage": {
-                    "backend": "r2",
-                    "bucket": checkpoint_bucket,
-                    "path": checkpoint_path,
-                },
+                "baseModel": model,
+                "checkpointStorage": {"backend": "r2", "bucket": "", "path": ""},
                 "loraConfig": {
                     "rank": rank,
                     "alpha": alpha,
                     "dropout": dropout,
-                    "targetModules": target_modules
-                    or ["q_proj", "k_proj", "v_proj", "o_proj"],
+                    "targetModules": ["q_proj", "k_proj", "v_proj", "o_proj"],
                 },
                 "optimizerConfig": {
-                    "learningRate": learning_rate,
-                    "weightDecay": weight_decay,
-                    "gradClip": grad_clip,
+                    "learningRate": lr,
+                    "weightDecay": 0.01,
+                    "gradClip": 1.0,
                 },
-                "gpuResources": {
-                    "count": gpu_count,
-                    "model": gpu_models or [],
-                },
+                "gpuResources": {"count": gpu_count, "model": gpu_type or []},
                 "seed": seed,
-                "ttlSeconds": ttl_seconds,
+                "ttlSeconds": 86400,
             },
         )
 
-        if not response.is_success:
-            raise TrainingServiceError(f"Failed to create session: {response.text}")
+        if not resp.is_success:
+            raise TrainingError(f"Failed to create session: {resp.text}")
 
-        data = response.json()
-        return TrainingSession(
-            session_id=data["sessionId"],
-            client=self._client,
-            base_model=base_model,
+        session_id = resp.json()["sessionId"]
+
+        # Wait for ready
+        start = time.time()
+        while time.time() - start < wait:
+            resp = self._client.get(f"/sessions/{session_id}")
+            if not resp.is_success:
+                raise TrainingError(f"Failed to get session: {resp.text}")
+
+            data = resp.json()
+            phase = data.get("phase", "pending")
+
+            if phase == "ready":
+                break
+            elif phase == "failed":
+                raise TrainingError(f"Session failed: {data.get('error')}")
+
+            time.sleep(5)
+        else:
+            raise TrainingError(f"Session not ready after {wait}s")
+
+        # Create internal session
+        internal_id = f"train-{session_id}"
+        resp = self._client.post(
+            f"/sessions/{session_id}/internal",
+            json={
+                "session_id": internal_id,
+                "base_model": model,
+                "lora_config": {"rank": rank, "alpha": alpha, "dropout": dropout},
+                "optimizer_config": {"learning_rate": lr, "weight_decay": 0.01},
+                "seed": seed,
+            },
         )
+
+        if not resp.is_success:
+            raise TrainingError(f"Failed to create internal session: {resp.text}")
+
+        return TrainingSession(self._client, session_id, internal_id, model)
 
     def get_session(self, session_id: str) -> TrainingSession:
         """
-        Get an existing training session.
+        Get existing session.
 
         Args:
             session_id: Session ID
 
         Returns:
-            TrainingSession for the existing session
-
-        Raises:
-            SessionNotFoundError: If session doesn't exist
+            TrainingSession
         """
-        response = self._client.get(f"/sessions/{session_id}")
+        resp = self._client.get(f"/sessions/{session_id}")
 
-        if response.status_code == 404:
-            raise SessionNotFoundError(f"Session {session_id} not found")
-        if not response.is_success:
-            raise TrainingServiceError(f"Failed to get session: {response.text}")
+        if resp.status_code == 404:
+            raise TrainingError(f"Session {session_id} not found")
+        if not resp.is_success:
+            raise TrainingError(f"Failed to get session: {resp.text}")
 
-        data = response.json()
+        data = resp.json()
+        if data.get("phase") != "ready":
+            raise TrainingError(f"Session not ready: {data.get('phase')}")
+
         return TrainingSession(
-            session_id=session_id,
-            client=self._client,
-            base_model=data.get("baseModel", "unknown"),
+            self._client,
+            session_id,
+            f"train-{session_id}",
+            data.get("baseModel", "unknown"),
         )
 
     def list_sessions(self) -> List[Dict[str, Any]]:
-        """
-        List all training sessions.
+        """List all sessions."""
+        resp = self._client.get("/sessions")
 
-        Returns:
-            List of session status dictionaries
-        """
-        response = self._client.get("/sessions")
+        if not resp.is_success:
+            raise TrainingError(f"Failed to list sessions: {resp.text}")
 
-        if not response.is_success:
-            raise TrainingServiceError(f"Failed to list sessions: {response.text}")
-
-        return response.json()
+        return resp.json()
 
     def close(self) -> None:
         """Close the client."""
         self._client.close()
 
-    def __enter__(self) -> "TrainingClient":
+    def __enter__(self) -> "Client":
         return self
 
     def __exit__(self, *args) -> None:
         self.close()
 
 
+# Convenience alias
+TrainingClient = Client
+
 # Export all public symbols
 __all__ = [
-    # Client
+    "Client",
     "TrainingClient",
     "TrainingSession",
-    # Config types
-    "LoraConfig",
-    "OptimizerConfig",
-    "CheckpointStorage",
-    "GpuResources",
-    # Data types
-    "Datum",
-    "ForwardBackwardResult",
-    "Sample",
-    # Exceptions
     "TrainingError",
-    "SessionNotFoundError",
-    "TrainingServiceError",
+    "Datum",
 ]

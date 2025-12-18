@@ -180,6 +180,52 @@ fn get_required_scope(req: &Request) -> Option<String> {
         // Training session endpoints - require "training:*" scopes
         (&Method::POST, "/sessions") => Some("training:create".to_string()),
         (&Method::GET, "/sessions") => Some("training:list".to_string()),
+
+        // Training session proxy endpoints (forward to training pod via K8s Service)
+        // POST /sessions/:session_id/internal - create internal session
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/internal") =>
+        {
+            Some("training:use".to_string())
+        }
+        // GET /sessions/:session_id/internal/:internal_session_id - get internal session status
+        (&Method::GET, p)
+            if p.starts_with("/sessions/") && p.contains("/internal/") =>
+        {
+            Some("training:view".to_string())
+        }
+        // POST /sessions/:session_id/internal/:internal_session_id/forward_backward
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/forward_backward") =>
+        {
+            Some("training:use".to_string())
+        }
+        // POST /sessions/:session_id/internal/:internal_session_id/optim_step
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/optim_step") =>
+        {
+            Some("training:use".to_string())
+        }
+        // POST /sessions/:session_id/internal/:internal_session_id/sample
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/sample") =>
+        {
+            Some("training:use".to_string())
+        }
+        // POST /sessions/:session_id/internal/:internal_session_id/save
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/save") =>
+        {
+            Some("training:use".to_string())
+        }
+        // POST /sessions/:session_id/internal/:internal_session_id/load
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/load") =>
+        {
+            Some("training:use".to_string())
+        }
+
+        // Regular session endpoints (view/delete CRD)
         (&Method::GET, p) if p.starts_with("/sessions/") => Some("training:view".to_string()),
         (&Method::DELETE, p) if p.starts_with("/sessions/") => Some("training:delete".to_string()),
 

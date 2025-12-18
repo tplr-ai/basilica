@@ -103,8 +103,6 @@ pub fn routes(state: AppState) -> Router<AppState> {
             post(routes::gpu_nodes::register_wireguard_key),
         )
         // Training session lifecycle endpoints
-        // Note: Training operations (forward_backward, sample, etc.) are routed
-        // directly by Envoy Gateway via HTTPRoute - they don't go through this API
         .route(
             "/sessions",
             post(routes::training::create_session).get(routes::training::list_sessions),
@@ -112,6 +110,35 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route(
             "/sessions/:session_id",
             get(routes::training::get_session).delete(routes::training::delete_session),
+        )
+        // Training operation proxy endpoints (proxies to training pod via K8s Service)
+        .route(
+            "/sessions/:session_id/internal",
+            post(routes::training::create_internal_session),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id",
+            get(routes::training::get_internal_session),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/forward_backward",
+            post(routes::training::forward_backward),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/optim_step",
+            post(routes::training::optim_step),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/sample",
+            post(routes::training::sample),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/save",
+            post(routes::training::save_checkpoint),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/load",
+            post(routes::training::load_checkpoint),
         );
 
     // Add payment and billing service endpoints

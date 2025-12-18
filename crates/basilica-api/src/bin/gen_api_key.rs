@@ -19,8 +19,8 @@ struct Args {
     #[arg(short = 'n', long = "name", default_value = "dev")]
     name: String,
 
-    /// Scopes (repeatable), e.g. rentals:* jobs:*
-    #[arg(long = "scopes", num_args = 0.., default_values = ["rentals:*", "jobs:*"])]
+    /// Scopes (repeatable), e.g. rentals:* jobs:* training:*
+    #[arg(long = "scopes", num_args = 0.., default_values = ["rentals:*", "jobs:*", "training:*"])]
     scopes: Vec<String>,
 }
 
