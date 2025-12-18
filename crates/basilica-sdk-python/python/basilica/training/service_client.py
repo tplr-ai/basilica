@@ -13,6 +13,7 @@ import httpx
 from .types import GetServerCapabilitiesResponse
 from .training_client import TrainingClient
 from .sampling_client import SamplingClient
+from .rest_client import RestClient
 from .exceptions import (
     TrainingError,
     SessionTimeoutError,
@@ -331,6 +332,20 @@ class ServiceClient:
             model_path=model_path,
             base_model=base_model,
         )
+
+    def create_rest_client(self) -> RestClient:
+        """Create REST client for checkpoint and run management.
+
+        Returns:
+            RestClient for managing training runs and checkpoints
+
+        Example:
+            >>> rest = client.create_rest_client()
+            >>> runs = rest.list_training_runs().result()
+            >>> checkpoints = rest.list_checkpoints(run_id="ts-abc").result()
+            >>> url = rest.get_checkpoint_archive_url("cp-xyz").result()
+        """
+        return RestClient(client=self._client)
 
     def get_session(self, session_id: str) -> TrainingClient:
         """Get existing training session.

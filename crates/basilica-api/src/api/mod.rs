@@ -147,6 +147,53 @@ pub fn routes(state: AppState) -> Router<AppState> {
         .route(
             "/sessions/:session_id/internal/:internal_session_id/compute_logprobs",
             post(routes::training::compute_logprobs),
+        )
+        .route(
+            "/sessions/:session_id/internal/:internal_session_id/save_for_sampler",
+            post(routes::training::save_for_sampler),
+        )
+        // Phase 3: Capabilities endpoint
+        .route(
+            "/capabilities",
+            get(routes::training::get_capabilities),
+        )
+        // Phase 3: Training runs management
+        .route(
+            "/training_runs",
+            get(routes::training::list_training_runs),
+        )
+        .route(
+            "/training_runs/by_path",
+            get(routes::training::get_training_run_by_path),
+        )
+        .route(
+            "/training_runs/:run_id",
+            get(routes::training::get_training_run),
+        )
+        // Phase 3: Checkpoint management
+        .route(
+            "/checkpoints",
+            get(routes::training::list_checkpoints),
+        )
+        .route(
+            "/checkpoints/info",
+            get(routes::training::get_checkpoint_info),
+        )
+        .route(
+            "/checkpoints/publish",
+            post(routes::training::publish_checkpoint),
+        )
+        .route(
+            "/checkpoints/unpublish",
+            post(routes::training::unpublish_checkpoint),
+        )
+        .route(
+            "/checkpoints/:checkpoint_id/download_url",
+            get(routes::training::get_checkpoint_download_url),
+        )
+        .route(
+            "/checkpoints/:checkpoint_id",
+            delete(routes::training::delete_checkpoint),
         );
 
     // Add payment and billing service endpoints

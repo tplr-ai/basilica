@@ -64,6 +64,7 @@ from .exceptions import (
 from .service_client import ServiceClient
 from .training_client import TrainingClient
 from .sampling_client import SamplingClient
+from .rest_client import RestClient
 
 # Export all public symbols
 __all__ = [
@@ -73,6 +74,7 @@ __all__ = [
     "ServiceClient",
     "TrainingClient",
     "SamplingClient",
+    "RestClient",
     # Types
     "Datum",
     "ModelInput",

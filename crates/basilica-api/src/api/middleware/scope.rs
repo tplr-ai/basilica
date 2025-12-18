@@ -236,10 +236,34 @@ fn get_required_scope(req: &Request) -> Option<String> {
         {
             Some("training:use".to_string())
         }
+        // POST /sessions/:session_id/internal/:internal_session_id/save_for_sampler
+        (&Method::POST, p)
+            if p.starts_with("/sessions/") && p.ends_with("/save_for_sampler") =>
+        {
+            Some("training:use".to_string())
+        }
 
         // Regular session endpoints (view/delete CRD)
         (&Method::GET, p) if p.starts_with("/sessions/") => Some("training:view".to_string()),
         (&Method::DELETE, p) if p.starts_with("/sessions/") => Some("training:delete".to_string()),
+
+        // Phase 3: Capabilities endpoint - authenticated but no specific scope
+        (&Method::GET, "/capabilities") => Some(String::new()),
+
+        // Phase 3: Training runs management
+        (&Method::GET, "/training_runs") => Some("training:list".to_string()),
+        (&Method::GET, "/training_runs/by_path") => Some("training:view".to_string()),
+        (&Method::GET, p) if p.starts_with("/training_runs/") => Some("training:view".to_string()),
+
+        // Phase 3: Checkpoint management
+        (&Method::GET, "/checkpoints") => Some("training:list".to_string()),
+        (&Method::GET, "/checkpoints/info") => Some("training:view".to_string()),
+        (&Method::POST, "/checkpoints/publish") => Some("training:use".to_string()),
+        (&Method::POST, "/checkpoints/unpublish") => Some("training:use".to_string()),
+        (&Method::GET, p) if p.starts_with("/checkpoints/") && p.ends_with("/download_url") => {
+            Some("training:view".to_string())
+        }
+        (&Method::DELETE, p) if p.starts_with("/checkpoints/") => Some("training:delete".to_string()),
 
         // Health check requires authentication but no specific scope
         // We use an empty string to indicate "authenticated but no specific scope required"
