@@ -52,6 +52,15 @@ pub struct LoraConfigRequest {
     pub dropout: f32,
     #[serde(default)]
     pub target_modules: Option<Vec<String>>,
+    /// Apply LoRA to MLP layers (gate_proj, up_proj, down_proj)
+    #[serde(default = "default_true")]
+    pub train_mlp: bool,
+    /// Apply LoRA to attention layers (q_proj, k_proj, v_proj, o_proj)
+    #[serde(default = "default_true")]
+    pub train_attn: bool,
+    /// Apply LoRA to unembedding layer (lm_head)
+    #[serde(default = "default_true")]
+    pub train_unembed: bool,
 }
 
 fn default_rank() -> u32 {
@@ -63,6 +72,9 @@ fn default_alpha() -> u32 {
 fn default_dropout() -> f32 {
     0.05
 }
+fn default_true() -> bool {
+    true
+}
 
 impl Default for LoraConfigRequest {
     fn default() -> Self {
@@ -71,6 +83,9 @@ impl Default for LoraConfigRequest {
             alpha: default_alpha(),
             dropout: default_dropout(),
             target_modules: None,
+            train_mlp: default_true(),
+            train_attn: default_true(),
+            train_unembed: default_true(),
         }
     }
 }
@@ -206,6 +221,25 @@ fn build_training_session_crd(
     let optimizer = req.optimizer_config.clone().unwrap_or_default();
     let gpu = req.gpu_resources.clone().unwrap_or_default();
 
+    // Build target_modules from flags if not explicitly provided
+    let target_modules = lora.target_modules.unwrap_or_else(|| {
+        let mut modules = Vec::new();
+        if lora.train_attn {
+            modules.extend(["q_proj", "k_proj", "v_proj", "o_proj"].map(String::from));
+        }
+        if lora.train_mlp {
+            modules.extend(["gate_proj", "up_proj", "down_proj"].map(String::from));
+        }
+        if lora.train_unembed {
+            modules.push("lm_head".to_string());
+        }
+        // Fallback to attention if nothing selected
+        if modules.is_empty() {
+            modules.extend(["q_proj", "k_proj", "v_proj", "o_proj"].map(String::from));
+        }
+        modules
+    });
+
     json!({
         "apiVersion": format!("{}/{}", TRAINING_SESSION_GROUP, TRAINING_SESSION_VERSION),
         "kind": TRAINING_SESSION_KIND,
@@ -223,9 +257,10 @@ fn build_training_session_crd(
                 "rank": lora.rank,
                 "alpha": lora.alpha,
                 "dropout": lora.dropout,
-                "targetModules": lora.target_modules.unwrap_or_else(|| vec![
-                    "q_proj".into(), "k_proj".into(), "v_proj".into(), "o_proj".into()
-                ])
+                "targetModules": target_modules,
+                "trainMlp": lora.train_mlp,
+                "trainAttn": lora.train_attn,
+                "trainUnembed": lora.train_unembed
             },
             "optimizerConfig": {
                 "learningRate": optimizer.learning_rate,
