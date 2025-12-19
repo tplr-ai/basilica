@@ -123,13 +123,31 @@ class ForwardResult:
     tokens_processed: int
 
 
-@dataclass
 class GetServerCapabilitiesResponse:
-    """Server capabilities response."""
+    """Server capabilities response.
 
-    models: List[str]
-    max_batch_tokens: int
-    max_sequence_length: int
+    Handles both camelCase (from API) and snake_case field names.
+    """
+
+    def __init__(
+        self,
+        models: List[str] = None,
+        max_batch_tokens: int = None,
+        max_sequence_length: int = None,
+        gpu_types: List[str] = None,
+        lora_ranks: List[int] = None,
+        # camelCase variants from API
+        maxBatchTokens: int = None,
+        maxSequenceLength: int = None,
+        gpuTypes: List[str] = None,
+        loraRanks: List[int] = None,
+        **kwargs,  # Ignore unknown fields
+    ):
+        self.models = models or []
+        self.max_batch_tokens = max_batch_tokens or maxBatchTokens or 0
+        self.max_sequence_length = max_sequence_length or maxSequenceLength or 0
+        self.gpu_types = gpu_types or gpuTypes or []
+        self.lora_ranks = lora_ranks or loraRanks or []
 
 
 # === Async Support ===

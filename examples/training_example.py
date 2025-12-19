@@ -49,7 +49,7 @@ def main():
     try:
         caps = client.get_server_capabilities()
         print(f"Available models: {caps.models[:3]}...")
-        print(f"Max batch tokens: {caps.max_batch_tokens}")
+        # print(f"Max batch tokens: {caps.max_batch_tokens}")
         print(f"GPU types: {caps.gpu_types}")
         print(f"LoRA ranks: {caps.lora_ranks}")
     except Exception as e:
@@ -85,9 +85,71 @@ def main():
 
             print(f"Step {step}: loss={result.loss:.4f}")
 
-        # Save checkpoint
+        # === R2 Checkpoint Round-Trip Test ===
+        print("\n--- R2 Checkpoint Round-Trip Test ---")
+
+        # Save checkpoint to R2 via FUSE
         checkpoint_path = training.save_state("checkpoint-final").result()
-        print(f"\nCheckpoint saved: {checkpoint_path}")
+        print(f"Checkpoint saved: {checkpoint_path}")
+
+        # Record loss before modifying weights
+        pre_load_result = training.forward_backward(
+            [Datum(input_ids=train_tokens)],
+            loss_fn="cross_entropy",
+        ).result()
+        loss_before_changes = pre_load_result.loss
+        print(f"Loss before additional training: {loss_before_changes:.4f}")
+
+        # Train more steps to change the weights
+        print("Training 3 more steps to modify weights...")
+        for i in range(3):
+            result = training.forward_backward(
+                [Datum(input_ids=train_tokens)],
+                loss_fn="cross_entropy",
+            ).result()
+            training.optim_step().result()
+            print(f"  Step {i+1}: loss={result.loss:.4f}")
+
+        # Check loss after additional training (should be different)
+        post_train_result = training.forward_backward(
+            [Datum(input_ids=train_tokens)],
+            loss_fn="cross_entropy",
+        ).result()
+        loss_after_changes = post_train_result.loss
+        print(f"Loss after additional training: {loss_after_changes:.4f}")
+
+        # Load checkpoint from R2 via FUSE
+        print(f"\nLoading checkpoint from R2: {checkpoint_path}")
+        training.load_state(checkpoint_path).result()
+        print("Checkpoint loaded successfully!")
+
+        # Verify loss matches pre-save value (proves R2 round-trip worked)
+        # Retry a few times as service may need a moment after load
+        import time
+        loss_after_load = None
+        for attempt in range(5):
+            try:
+                time.sleep(1)
+                post_load_result = training.forward_backward(
+                    [Datum(input_ids=train_tokens)],
+                    loss_fn="cross_entropy",
+                ).result()
+                loss_after_load = post_load_result.loss
+                break
+            except Exception as e:
+                if attempt < 4:
+                    print(f"  Retry {attempt + 1}/5 after error: {e}")
+                else:
+                    raise
+
+        print(f"Loss after loading checkpoint: {loss_after_load:.4f}")
+
+        # Verify the checkpoint restored the weights correctly
+        if abs(loss_after_load - loss_before_changes) < 0.01:
+            print("✓ R2 checkpoint round-trip PASSED - weights restored correctly!")
+        else:
+            print(f"✗ R2 checkpoint round-trip FAILED - loss mismatch")
+            print(f"  Expected: {loss_before_changes:.4f}, Got: {loss_after_load:.4f}")
 
         # === Phase 2: Logprobs Demo ===
         print("\n--- Logprobs Demo ---")
