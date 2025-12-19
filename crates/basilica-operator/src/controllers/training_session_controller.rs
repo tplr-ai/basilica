@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use k8s_openapi::api::core::v1::{
-    Container, ContainerPort, EnvVar, Pod, PodSpec, ResourceRequirements, Service, ServicePort,
-    ServiceSpec,
+    Container, ContainerPort, EnvVar, HostPathVolumeSource, Pod, PodSpec, ResourceRequirements,
+    Service, ServicePort, ServiceSpec, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, OwnerReference};
@@ -576,6 +576,63 @@ fn build_training_pod(session: &TrainingSession, namespace: &str, name: &str) ->
         });
     }
 
+    // FUSE storage configuration for checkpoints
+    // The checkpoint storage backend determines if FUSE mount should be used
+    let checkpoint_mount_path = "/checkpoints".to_string();
+    let use_fuse_storage = matches!(
+        spec.checkpoint_storage.backend,
+        crate::crd::user_deployment::StorageBackend::R2
+            | crate::crd::user_deployment::StorageBackend::S3
+            | crate::crd::user_deployment::StorageBackend::GCS
+    );
+
+    // Build container command - wrap with FUSE wait if storage is enabled
+    let (container_command, container_args) = if use_fuse_storage {
+        // Wait for FUSE mount to be ready before starting the training service
+        let wrapped_cmd = format!(
+            "echo 'Waiting for FUSE checkpoint mount...'; \
+             while [ ! -f {}/.fuse_ready ]; do sleep 0.5; done; \
+             echo 'FUSE checkpoint storage ready, starting training service...'; \
+             python -m uvicorn src.server:app --host 0.0.0.0 --port 8000",
+            checkpoint_mount_path
+        );
+        (
+            Some(vec!["sh".to_string(), "-c".to_string()]),
+            Some(vec![wrapped_cmd]),
+        )
+    } else {
+        // No FUSE, use default entrypoint
+        (None, None)
+    };
+
+    // Build volume mount for checkpoints
+    let volume_mounts = if use_fuse_storage {
+        Some(vec![VolumeMount {
+            name: "basilica-checkpoint-storage".to_string(),
+            mount_path: checkpoint_mount_path.clone(),
+            mount_propagation: Some("HostToContainer".to_string()),
+            ..Default::default()
+        }])
+    } else {
+        None
+    };
+
+    // Build volumes - FUSE storage is provided by DaemonSet via hostPath
+    // Each namespace gets its mount at /var/lib/basilica/fuse/{namespace}/
+    // The FUSE daemon handles bucket configuration and R2 sync
+    let volumes = if use_fuse_storage {
+        Some(vec![Volume {
+            name: "basilica-checkpoint-storage".to_string(),
+            host_path: Some(HostPathVolumeSource {
+                path: format!("/var/lib/basilica/fuse/{}", namespace),
+                type_: Some("Directory".to_string()),
+            }),
+            ..Default::default()
+        }])
+    } else {
+        None
+    };
+
     // Build labels
     let mut labels = BTreeMap::new();
     labels.insert("app".to_string(), "basilica-training".to_string());
@@ -605,13 +662,14 @@ fn build_training_pod(session: &TrainingSession, namespace: &str, name: &str) ->
                 name: "training".to_string(),
                 image: Some(image.clone()),
                 // Use Never for local images (when TRAINING_IMAGE env is set)
-                image_pull_policy: Some(
-                    if std::env::var("TRAINING_IMAGE").is_ok() {
-                        "Never".to_string()
-                    } else {
-                        "IfNotPresent".to_string()
-                    }
-                ),
+                image_pull_policy: Some(if std::env::var("TRAINING_IMAGE").is_ok() {
+                    "Never".to_string()
+                } else {
+                    "IfNotPresent".to_string()
+                }),
+                // Command and args are set when FUSE storage is enabled
+                command: container_command,
+                args: container_args,
                 ports: Some(vec![ContainerPort {
                     container_port: TRAINING_SERVICE_PORT,
                     name: Some("http".to_string()),
@@ -619,9 +677,15 @@ fn build_training_pod(session: &TrainingSession, namespace: &str, name: &str) ->
                 }]),
                 resources: Some(resources),
                 env: Some(env_vars),
+                // Volume mounts for FUSE checkpoint storage
+                volume_mounts,
                 ..Default::default()
             }],
+            // Volumes for FUSE checkpoint storage (provided by DaemonSet)
+            volumes,
             restart_policy: Some("Never".to_string()),
+            // Allow extra time for FUSE cleanup when storage is enabled
+            termination_grace_period_seconds: if use_fuse_storage { Some(120) } else { None },
             ..Default::default()
         }),
         ..Default::default()
@@ -869,6 +933,35 @@ mod tests {
         let resources = container.resources.as_ref().unwrap();
         let limits = resources.limits.as_ref().unwrap();
         assert_eq!(limits.get("nvidia.com/gpu"), Some(&Quantity("1".into())));
+
+        // Check FUSE volume mount for R2 checkpoint storage
+        let volume_mounts = container.volume_mounts.as_ref().unwrap();
+        assert_eq!(volume_mounts.len(), 1);
+        assert_eq!(volume_mounts[0].name, "basilica-checkpoint-storage");
+        assert_eq!(volume_mounts[0].mount_path, "/checkpoints");
+        assert_eq!(
+            volume_mounts[0].mount_propagation.as_deref(),
+            Some("HostToContainer")
+        );
+
+        // Check FUSE volume configuration
+        let volumes = spec.volumes.as_ref().unwrap();
+        assert_eq!(volumes.len(), 1);
+        assert_eq!(volumes[0].name, "basilica-checkpoint-storage");
+        let host_path = volumes[0].host_path.as_ref().unwrap();
+        assert_eq!(host_path.path, "/var/lib/basilica/fuse/default");
+        assert_eq!(host_path.type_.as_deref(), Some("Directory"));
+
+        // Check termination grace period for FUSE cleanup
+        assert_eq!(spec.termination_grace_period_seconds, Some(120));
+
+        // Check command is wrapped to wait for FUSE mount
+        assert!(container.command.is_some());
+        let command = container.command.as_ref().unwrap();
+        assert_eq!(command, &vec!["sh".to_string(), "-c".to_string()]);
+        let args = container.args.as_ref().unwrap();
+        assert!(args[0].contains("Waiting for FUSE"));
+        assert!(args[0].contains(".fuse_ready"));
     }
 
     #[test]

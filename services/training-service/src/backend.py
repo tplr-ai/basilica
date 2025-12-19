@@ -483,8 +483,16 @@ class TrainingBackend:
         checkpoint_name: str,
         include_optimizer: bool = True,
     ) -> str:
-        """Save LoRA weights and optimizer state."""
+        """Save LoRA weights and optimizer state locally.
 
+        Args:
+            session_id: Training session ID
+            checkpoint_name: Name for the checkpoint
+            include_optimizer: Whether to save optimizer state
+
+        Returns:
+            Local path to the checkpoint directory
+        """
         session = self._get_session(session_id)
 
         # Create checkpoint directory
@@ -515,6 +523,7 @@ class TrainingBackend:
                         "epsilon": session.optimizer_config.epsilon,
                         "grad_clip": session.optimizer_config.grad_clip,
                     },
+                    "base_model": session.base_model_name,
                 },
                 checkpoint_path / "training_state.pt",
             )
@@ -534,20 +543,25 @@ class TrainingBackend:
         checkpoint_path: str,
         load_optimizer: bool = True,
     ) -> None:
-        """Load LoRA weights and optimizer state."""
+        """Load LoRA weights and optimizer state from local path.
 
+        Args:
+            session_id: Training session ID
+            checkpoint_path: Local path to checkpoint directory
+            load_optimizer: Whether to load optimizer state
+        """
         session = self._get_session(session_id)
-        checkpoint_path = Path(checkpoint_path)
+        local_path = Path(checkpoint_path)
 
         # Load adapter weights
         session.model = PeftModel.from_pretrained(
             session.model.base_model,
-            checkpoint_path,
+            local_path,
         )
 
         # Load optimizer state
-        if load_optimizer and (checkpoint_path / "training_state.pt").exists():
-            state = torch.load(checkpoint_path / "training_state.pt", weights_only=False)
+        if load_optimizer and (local_path / "training_state.pt").exists():
+            state = torch.load(local_path / "training_state.pt", weights_only=False)
             session.optimizer.load_state_dict(state["optimizer_state_dict"])
             session.step_count = state["step_count"]
             session.tokens_processed = state["tokens_processed"]
@@ -555,7 +569,7 @@ class TrainingBackend:
         logger.info(
             "checkpoint_loaded",
             session_id=session_id,
-            path=str(checkpoint_path),
+            path=str(local_path),
         )
 
     def get_session_status(self, session_id: str) -> Dict[str, Any]:

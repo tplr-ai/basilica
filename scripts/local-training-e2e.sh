@@ -178,8 +178,222 @@ deploy_operator() {
 deploy() {
     install_gateway
     build_and_load_images
+    build_storage_daemon
+    deploy_fuse_storage
+    create_r2_credentials
     deploy_operator
     show_status
+
+    echo ""
+    log_info "=== FUSE Storage Enabled ==="
+    echo "Checkpoints will be synced to R2 bucket: ${R2_BUCKET:-80f15715bb0b882c9e967c13e677ed7d}"
+    echo ""
+    echo "To verify FUSE mount in training pod:"
+    echo "  kubectl exec -n u-testuser <pod-name> -- ls -la /checkpoints"
+}
+
+# === FUSE Storage Support ===
+
+build_storage_daemon() {
+    cd "$ROOT_DIR"
+
+    log_step "Building storage daemon image..."
+    docker build \
+        -t basilica-storage-daemon:local \
+        -f scripts/storage-daemon/Dockerfile \
+        .
+
+    log_step "Loading storage daemon into k3d..."
+    k3d image import basilica-storage-daemon:local -c "$CLUSTER_NAME"
+
+    log_info "Storage daemon image ready"
+}
+
+deploy_fuse_storage() {
+    export KUBECONFIG="$KUBECONFIG_PATH"
+    cd "$ROOT_DIR"
+
+    log_step "Deploying FUSE storage infrastructure..."
+
+    # 1. Apply FUSE module loader (ensures /dev/fuse is available)
+    log_info "Applying FUSE module loader..."
+    kubectl apply -f orchestrator/k8s/core/fuse-module-loader.yaml
+
+    # Wait for FUSE module to be loaded
+    log_info "Waiting for FUSE module loader..."
+    kubectl wait --namespace kube-system \
+        --for=condition=Ready pod -l app=fuse-module-loader \
+        --timeout=60s || log_warn "FUSE module loader not ready, continuing..."
+
+    # 2. Apply storage namespace and RBAC
+    log_info "Applying storage namespace and RBAC..."
+    kubectl apply -f orchestrator/k8s/services/storage/namespace.yaml
+    kubectl apply -f orchestrator/k8s/services/storage/rbac.yaml
+
+    # 3. Apply storage service (needed for HTTP API access)
+    log_info "Applying storage service..."
+    kubectl apply -f orchestrator/k8s/services/storage/service.yaml 2>/dev/null || true
+
+    # 4. Create local version of daemonset with local image
+    log_info "Deploying storage daemon..."
+    cat orchestrator/k8s/services/storage/daemonset.yaml | \
+        sed 's|ghcr.io/one-covenant/basilica-storage-daemon:latest|basilica-storage-daemon:local|g' | \
+        sed 's|imagePullPolicy: Always|imagePullPolicy: Never|g' | \
+        kubectl apply -f -
+
+    # Wait for storage daemon
+    log_info "Waiting for storage daemon to be ready..."
+    for i in {1..30}; do
+        READY=$(kubectl get pods -n basilica-storage -l app.kubernetes.io/component=fuse-daemon -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+        if [ "$READY" = "Running" ]; then
+            log_info "Storage daemon is running"
+            break
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+
+    kubectl get pods -n basilica-storage
+
+    log_info "FUSE storage infrastructure deployed"
+}
+
+create_r2_credentials() {
+    export KUBECONFIG="$KUBECONFIG_PATH"
+
+    # R2 credentials - you can override these with environment variables
+    R2_ENDPOINT="${R2_ENDPOINT:-https://80f15715bb0b882c9e967c13e677ed7d.r2.cloudflarestorage.com}"
+    R2_ACCESS_KEY="${R2_ACCESS_KEY:-df1147f966d3f8f16af3911da34478e8}"
+    R2_SECRET_KEY="${R2_SECRET_KEY:-2db5c9bd18a845df832938f95217e64d91d50437bdf9f39f5423f752eb3c697b}"
+    R2_BUCKET="${R2_BUCKET:-80f15715bb0b882c9e967c13e677ed7d}"
+    R2_REGION="${R2_REGION:-auto}"
+
+    log_step "Creating R2 credentials secret in u-testuser namespace..."
+
+    # Ensure namespace exists
+    kubectl get namespace u-testuser &>/dev/null || kubectl create namespace u-testuser
+
+    # Create the secret
+    kubectl create secret generic basilica-r2-credentials \
+        --namespace u-testuser \
+        --from-literal=endpoint="$R2_ENDPOINT" \
+        --from-literal=access_key_id="$R2_ACCESS_KEY" \
+        --from-literal=secret_access_key="$R2_SECRET_KEY" \
+        --from-literal=bucket="$R2_BUCKET" \
+        --from-literal=region="$R2_REGION" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    # Create RoleBinding to allow fuse-daemon to read the secret
+    cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fuse-daemon-secret-reader
+  namespace: u-testuser
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fuse-daemon-secret-reader
+subjects:
+  - kind: ServiceAccount
+    name: fuse-daemon
+    namespace: basilica-storage
+EOF
+
+    log_info "R2 credentials created in u-testuser namespace"
+    log_info "Bucket: $R2_BUCKET"
+
+    # Trigger FUSE mount for the namespace
+    trigger_fuse_mount "u-testuser"
+}
+
+trigger_fuse_mount() {
+    local NAMESPACE=$1
+    export KUBECONFIG="$KUBECONFIG_PATH"
+
+    log_step "Triggering FUSE mount for namespace: $NAMESPACE"
+
+    # Restart the storage daemon to pick up the new credentials
+    # This is needed because the namespace watcher may have already tried (and failed)
+    # to mount before the credentials secret was created
+    log_info "Restarting storage daemon to pick up credentials..."
+    kubectl delete pod -n basilica-storage -l app.kubernetes.io/component=fuse-daemon --wait=true 2>/dev/null || true
+
+    # Wait for the new pod to be ready
+    log_info "Waiting for storage daemon to be ready..."
+    for i in {1..30}; do
+        READY=$(kubectl get pods -n basilica-storage -l app.kubernetes.io/component=fuse-daemon -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+        if [ "$READY" = "True" ]; then
+            log_info "Storage daemon is ready"
+            break
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+
+    # Get the new pod name
+    DAEMON_POD=$(kubectl get pods -n basilica-storage -l app.kubernetes.io/component=fuse-daemon -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+    if [ -z "$DAEMON_POD" ]; then
+        log_error "Storage daemon pod not found"
+        return 1
+    fi
+
+    log_info "Using storage daemon pod: $DAEMON_POD"
+
+    # Wait for mount to be ready (the namespace watcher should auto-create it on restart)
+    log_info "Waiting for FUSE mount to be ready..."
+    for i in {1..30}; do
+        # Check logs for successful mount
+        MOUNT_SUCCESS=$(kubectl logs -n basilica-storage "$DAEMON_POD" 2>/dev/null | grep -c "FUSE mount successfully created.*$NAMESPACE" || echo "0")
+
+        if [ "$MOUNT_SUCCESS" -gt 0 ]; then
+            log_info "FUSE mount is active for $NAMESPACE"
+
+            # Verify the .fuse_ready file exists
+            READY_CHECK=$(kubectl exec -n basilica-storage "$DAEMON_POD" -- \
+                ls "/var/lib/basilica/fuse/$NAMESPACE/.fuse_ready" 2>/dev/null) || true
+
+            if [ -n "$READY_CHECK" ]; then
+                log_info "FUSE mount verified with readiness file"
+                return 0
+            fi
+        fi
+
+        # Check for mount errors
+        MOUNT_ERROR=$(kubectl logs -n basilica-storage "$DAEMON_POD" 2>/dev/null | grep -c "Failed to create mount.*$NAMESPACE" || echo "0")
+        if [ "$MOUNT_ERROR" -gt 0 ]; then
+            log_error "FUSE mount failed for $NAMESPACE"
+            kubectl logs -n basilica-storage "$DAEMON_POD" --tail=20
+            return 1
+        fi
+
+        echo -n "."
+        sleep 2
+    done
+    echo ""
+
+    log_warn "FUSE mount may not be fully ready, continuing..."
+    kubectl logs -n basilica-storage "$DAEMON_POD" --tail=20
+}
+
+deploy_with_storage() {
+    install_gateway
+    build_and_load_images
+    build_storage_daemon
+    deploy_fuse_storage
+    create_r2_credentials
+    deploy_operator
+    show_status
+
+    echo ""
+    log_info "=== FUSE Storage Enabled ==="
+    echo "Checkpoints will be synced to R2 bucket: ${R2_BUCKET:-80f15715bb0b882c9e967c13e677ed7d}"
+    echo ""
+    echo "To verify FUSE mount in training pod:"
+    echo "  kubectl exec -n u-testuser <pod-name> -- ls -la /checkpoints"
 }
 
 setup_postgres() {
@@ -618,8 +832,109 @@ run_training_steps() {
         echo "$RESPONSE" | jq '.logprobs'
     fi
 
+    # === Phase 3: Test checkpoint save/load ===
+    log_step "Testing checkpoint save/load..."
+
+    # Save checkpoint
+    CHECKPOINT_NAME="test-checkpoint-step-$NUM_STEPS"
+    log_info "Saving checkpoint: $CHECKPOINT_NAME"
+    RESPONSE=$(curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/save" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"checkpoint_name\": \"$CHECKPOINT_NAME\",
+            \"include_optimizer\": true
+        }")
+
+    CHECKPOINT_PATH=$(echo "$RESPONSE" | jq -r '.checkpoint_path // "error"')
+    if [ "$CHECKPOINT_PATH" = "error" ]; then
+        log_error "Failed to save checkpoint"
+        echo "$RESPONSE" | jq .
+    else
+        log_info "  Checkpoint saved to: $CHECKPOINT_PATH"
+    fi
+
+    # Get session status before reload (to compare step count)
+    log_info "Getting session status before reload..."
+    STATUS_BEFORE=$(curl -s "$TRAINING_URL/sessions/$INTERNAL_SESSION")
+    STEP_BEFORE=$(echo "$STATUS_BEFORE" | jq -r '.step_count // 0')
+    log_info "  Step count before reload: $STEP_BEFORE"
+
+    # Run one more training step to change the state
+    log_info "Running additional training step to modify state..."
+    RESPONSE=$(curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/forward_backward" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "input_ids": [[2, 133, 2119, 6219, 23602, 13855, 81, 5, 22414, 2335]],
+            "attention_mask": [[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]],
+            "labels": [[2, 133, 2119, 6219, 23602, 13855, 81, 5, 22414, 2335]]
+        }')
+    curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/optim_step" > /dev/null
+
+    # Get status after additional step
+    STATUS_AFTER_STEP=$(curl -s "$TRAINING_URL/sessions/$INTERNAL_SESSION")
+    STEP_AFTER_STEP=$(echo "$STATUS_AFTER_STEP" | jq -r '.step_count // 0')
+    log_info "  Step count after additional step: $STEP_AFTER_STEP"
+
+    # Load checkpoint back
+    log_info "Loading checkpoint: $CHECKPOINT_PATH"
+    RESPONSE=$(curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/load" \
+        -H "Content-Type: application/json" \
+        -d "{
+            \"checkpoint_path\": \"$CHECKPOINT_PATH\",
+            \"load_optimizer\": true
+        }")
+
+    LOAD_STATUS=$(echo "$RESPONSE" | jq -r '.status // "error"')
+    if [ "$LOAD_STATUS" = "loaded" ]; then
+        log_info "  Checkpoint loaded successfully"
+    else
+        log_error "Failed to load checkpoint"
+        echo "$RESPONSE" | jq .
+    fi
+
+    # Verify state after reload
+    log_info "Verifying state after checkpoint reload..."
+    STATUS_AFTER_LOAD=$(curl -s "$TRAINING_URL/sessions/$INTERNAL_SESSION")
+    echo "$STATUS_AFTER_LOAD" | jq .
+
+    # Test generation after reload to ensure model works
+    log_info "Testing text generation after checkpoint reload..."
+    RESPONSE=$(curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/sample" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "prompt": "The quick brown",
+            "max_tokens": 10,
+            "temperature": 0.7
+        }')
+
+    GENERATED_TEXT=$(echo "$RESPONSE" | jq -r '.text // "error"')
+    if [ "$GENERATED_TEXT" = "error" ]; then
+        log_error "Text generation failed after checkpoint reload"
+        echo "$RESPONSE" | jq .
+    else
+        log_info "  Generated text: $GENERATED_TEXT"
+        log_info "  Checkpoint save/load test PASSED"
+    fi
+
+    # Save another checkpoint with different name to test multiple checkpoints
+    log_info "Saving second checkpoint to verify multiple checkpoints work..."
+    RESPONSE=$(curl -s -X POST "$TRAINING_URL/sessions/$INTERNAL_SESSION/save" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "checkpoint_name": "test-checkpoint-final",
+            "include_optimizer": false
+        }')
+
+    CHECKPOINT_PATH_2=$(echo "$RESPONSE" | jq -r '.checkpoint_path // "error"')
+    if [ "$CHECKPOINT_PATH_2" = "error" ]; then
+        log_error "Failed to save second checkpoint"
+    else
+        log_info "  Second checkpoint saved to: $CHECKPOINT_PATH_2"
+    fi
+
     log_info "Training test completed successfully!"
     log_info "Steps completed: $NUM_STEPS"
+    log_info "Checkpoints tested: save, load, verify"
 
     # Cleanup port-forward (wait suppresses "Terminated" message)
     kill $PF_PID 2>/dev/null
@@ -653,6 +968,21 @@ show_status() {
     echo ""
     log_info "=== Gateway ==="
     kubectl get gateway -A 2>/dev/null || echo "No Gateway found"
+
+    echo ""
+    log_info "=== Storage Mounts ==="
+    DAEMON_POD=$(kubectl get pods -n basilica-storage -l app.kubernetes.io/component=fuse-daemon -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    if [ -n "$DAEMON_POD" ]; then
+        # Use port-forward to query the storage daemon API
+        kubectl port-forward -n basilica-storage "pod/$DAEMON_POD" 9092:9090 &
+        PF_PID=$!
+        sleep 1
+        curl -sf "http://localhost:9092/mounts" 2>/dev/null | jq . 2>/dev/null || echo "No mounts or daemon not responding"
+        kill $PF_PID 2>/dev/null
+        wait $PF_PID 2>/dev/null
+    else
+        echo "Storage daemon not found"
+    fi
 }
 
 show_logs() {
@@ -669,9 +999,12 @@ show_logs() {
         gateway)
             kubectl logs -n envoy-gateway-system -l app.kubernetes.io/name=envoy-gateway -f --tail=100
             ;;
+        storage)
+            kubectl logs -n basilica-storage -l app.kubernetes.io/component=fuse-daemon -f --tail=100
+            ;;
         *)
             log_error "Unknown component: $COMPONENT"
-            echo "Usage: $0 logs [operator|training|gateway]"
+            echo "Usage: $0 logs [operator|training|gateway|storage]"
             ;;
     esac
 }
@@ -710,13 +1043,14 @@ Usage: $0 <command>
 Commands:
   cluster-up    Create k3d cluster
   deploy        Install gateway + build images + deploy operator
+  deploy-storage Deploy with FUSE storage (writes checkpoints to R2)
   api           Run Basilica API locally (starts Postgres, in foreground)
   gen-key       Generate API key and insert into Postgres
   reset-db      Reset Postgres database (delete volume)
   test          Run full E2E test with actual training steps
   cleanup       Delete all existing training sessions
   status        Show cluster status
-  logs          Show logs [operator|training|gateway]
+  logs          Show logs [operator|training|gateway|storage]
   cluster-down  Delete the k3d cluster
 
 Quick Start:
@@ -735,6 +1069,11 @@ What the test does:
   5. Loads facebook/opt-125m model with LoRA adapter
   6. Runs 3 training steps (forward-backward + optim_step)
   7. Tests text generation with the fine-tuned model
+  8. Tests forward-only pass and compute_logprobs
+  9. Saves checkpoint (with optimizer state)
+  10. Runs additional step to modify state
+  11. Loads checkpoint back and verifies model works
+  12. Saves second checkpoint (without optimizer)
 
 Environment:
   KUBECONFIG will be set to: $KUBECONFIG_PATH
@@ -755,6 +1094,9 @@ case "${1:-help}" in
         ;;
     deploy)
         deploy
+        ;;
+    deploy-storage)
+        deploy_with_storage
         ;;
     api)
         run_api

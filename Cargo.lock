@@ -2362,6 +2362,7 @@ dependencies = [
  "basilica-payments",
  "basilica-protocol",
  "basilica-sdk",
+ "basilica-storage",
  "basilica-validator",
  "bittensor",
  "chrono",

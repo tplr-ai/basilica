@@ -117,6 +117,121 @@ export KUBECONFIG=$(pwd)/build/k3s-training.yaml
 5. Loads `facebook/opt-125m` model with LoRA adapter
 6. Runs 3 training steps (forward-backward + optim_step)
 7. Tests text generation with the fine-tuned model
+8. Saves/loads checkpoints (synced to R2 via FUSE storage)
+
+### R2 Checkpoint Storage (FUSE)
+
+The local e2e setup includes FUSE-based checkpoint storage that automatically syncs to Cloudflare R2. When you save a checkpoint, it's written to a FUSE mount that syncs to R2 in the background.
+
+#### How It Works
+
+```
+Training Pod                    Storage Daemon (DaemonSet)           R2 Bucket
+┌─────────────┐                ┌──────────────────────────┐         ┌─────────┐
+│ /checkpoints│ ──hostPath──▶  │ FUSE Mount               │         │         │
+│  (volume)   │                │ /var/lib/basilica/fuse/  │ ──sync──▶│ basilica│
+└─────────────┘                │ u-testuser/              │         │         │
+                               └──────────────────────────┘         └─────────┘
+```
+
+1. Training pod mounts `/checkpoints` from the host path `/var/lib/basilica/fuse/{namespace}/`
+2. Storage daemon runs as a DaemonSet with a FUSE filesystem mounted at that path
+3. When files are written, they're cached locally and synced to R2 in the background
+4. Sync happens every 1 second with a 500ms quiet period (to coalesce writes)
+
+#### Configure R2 Credentials
+
+By default, the e2e script uses test credentials. To use your own R2 bucket:
+
+```bash
+# Set environment variables before running deploy
+export R2_ENDPOINT="https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
+export R2_ACCESS_KEY="your-access-key-id"
+export R2_SECRET_KEY="your-secret-access-key"
+export R2_BUCKET="your-bucket-name"
+
+# Deploy with custom credentials
+./scripts/local-training-e2e.sh deploy
+```
+
+Or update the secret directly:
+
+```bash
+export KUBECONFIG=$(pwd)/build/k3s-training.yaml
+
+kubectl delete secret basilica-r2-credentials -n u-testuser
+kubectl create secret generic basilica-r2-credentials \
+    --namespace=u-testuser \
+    --from-literal=endpoint=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com \
+    --from-literal=access_key_id=your-access-key-id \
+    --from-literal=secret_access_key=your-secret-access-key \
+    --from-literal=bucket=your-bucket-name \
+    --from-literal=region=auto
+
+# Restart storage daemon to pick up new credentials
+kubectl delete pod -n basilica-storage -l app.kubernetes.io/component=fuse-daemon
+```
+
+#### Verify R2 Sync
+
+Check storage daemon logs to see files being synced:
+
+```bash
+./scripts/local-training-e2e.sh logs storage
+
+# Example output:
+# Syncing 3 files
+# Uploading 1779800 bytes to u-testuser/u-testuser/train-session-1/test-checkpoint-final/adapter_model.safetensors
+# Successfully synced: /train-session-1/test-checkpoint-final/adapter_model.safetensors
+```
+
+Check mount status:
+
+```bash
+./scripts/local-training-e2e.sh status
+
+# Shows active FUSE mounts under "=== Storage Mounts ==="
+```
+
+#### R2 Object Path
+
+Checkpoints are stored in R2 with the following path structure:
+
+```
+{bucket}/{namespace}/{namespace}/{checkpoint_path}
+
+Example:
+basilica/u-testuser/u-testuser/train-session-1/test-checkpoint-final/adapter_model.safetensors
+```
+
+#### Troubleshooting FUSE Storage
+
+**Mount not created:**
+```bash
+# Check storage daemon logs for credential errors
+kubectl logs -n basilica-storage -l app.kubernetes.io/component=fuse-daemon | grep -i error
+
+# Verify secret exists
+kubectl get secret basilica-r2-credentials -n u-testuser
+
+# Restart storage daemon after fixing credentials
+kubectl delete pod -n basilica-storage -l app.kubernetes.io/component=fuse-daemon
+```
+
+**Files not syncing:**
+```bash
+# Check if mount is active
+kubectl exec -n u-testuser <training-pod> -- ls -la /checkpoints/
+
+# Should show .fuse_ready file if mount is working
+```
+
+**Verify pod has FUSE volume:**
+```bash
+kubectl get pod -n u-testuser <training-pod> -o jsonpath='{.spec.volumes}' | jq .
+
+# Should include "basilica-checkpoint-storage" with hostPath
+```
 
 ### Available Commands
 
