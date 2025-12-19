@@ -187,7 +187,7 @@ async fn process_secure_cloud_billing(billing_client: &BillingClient, db: &PgPoo
     // Send telemetry batch to billing service
     match billing_client.ingest_telemetry(telemetry_batch).await {
         Ok(response) => {
-            tracing::debug!(
+            tracing::trace!(
                 "Secure cloud billing: sent {} telemetry records (received: {}, processed: {}, failed: {})",
                 batch_size,
                 response.events_received,
@@ -879,7 +879,7 @@ impl Server {
                 let health_url = format!("{health_endpoint}/health");
                 match health_http_client.get(&health_url).send().await {
                     Ok(response) if response.status().is_success() => {
-                        tracing::debug!("Validator health check passed");
+                        tracing::trace!("Validator health check passed");
                     }
                     Ok(response) => {
                         tracing::warn!(
@@ -966,13 +966,15 @@ impl Server {
             loop {
                 interval.tick().await;
 
-                tracing::debug!("Running periodic GPU offerings refresh...");
+                tracing::trace!("Running periodic GPU offerings refresh...");
                 match refresh_aggregator_service.refresh_all_providers().await {
                     Ok(count) => {
                         if count > 0 {
-                            tracing::info!("GPU offerings refresh: fetched {} offerings", count);
+                            tracing::debug!("GPU offerings refresh: fetched {} offerings", count);
                         } else {
-                            tracing::debug!("GPU offerings refresh: no new offerings (cooldown or no providers enabled)");
+                            tracing::trace!(
+                                "GPU offerings refresh: no new offerings (cooldown or no providers enabled)"
+                            );
                         }
                     }
                     Err(e) => {
@@ -1017,7 +1019,7 @@ impl Server {
                         }
 
                         if !rental_records.is_empty() {
-                            tracing::debug!(
+                            tracing::trace!(
                                 "Secure Cloud health check completed for {} rentals",
                                 rental_records.len()
                             );

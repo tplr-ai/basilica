@@ -9,7 +9,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use super::auth::get_auth_context;
 
@@ -63,7 +63,7 @@ pub async fn scope_validation_middleware(req: Request, next: Next) -> Result<Res
         return Err(StatusCode::FORBIDDEN);
     }
 
-    debug!(
+    trace!(
         "User {} authorized with scope '{}' for {} {}",
         auth_context.user_id,
         required_scope,

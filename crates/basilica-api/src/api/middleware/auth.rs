@@ -11,7 +11,7 @@ use axum::{
 };
 use basilica_common::{auth0_audience, auth0_domain, auth0_issuer};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::{
     api::auth::{
@@ -107,7 +107,7 @@ pub async fn auth_middleware(
         // API Key authentication
         match api_keys::verify_api_key(&state.db, token).await {
             Ok(verified) => {
-                debug!(
+                trace!(
                     "API key authentication successful for user: {}",
                     verified.user_id
                 );
