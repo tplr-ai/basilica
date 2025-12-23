@@ -80,6 +80,7 @@ prost = "0.12"
 prost-types = "0.12"
 
 # Crypto and security
+blake2 = "0.10"
 blake3 = "1.5"
 aes-gcm = "0.10"
 rand = "0.8"
@@ -103,6 +104,7 @@ parking_lot = "0.12"
 
 # Additional crypto dependencies
 sp-core = "34.0.0"
+sp-io = "34.0.0"
 ed25519-dalek = { version = "2.1", features = ["rand_core", "pem"] }
 p256 = { version = "0.13", features = ["ecdsa", "pkcs8", "pem"] }
 pbkdf2 = { version = "0.12", features = ["hmac"] }

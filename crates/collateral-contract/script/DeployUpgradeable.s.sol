@@ -26,6 +26,7 @@ contract DeployUpgradeableScript is Script {
             vm.envOr("DECISION_TIMEOUT", uint256(3600))
         ); // 1 hour
         address admin = vm.envOr("ADMIN_ADDRESS", msg.sender);
+        bytes32 alphaHotkey = vm.envOr("ALPHA_HOTKEY", bytes32(uint256(1)));
 
         console.log("Deploying Upgradeable Collateral contract with:");
         console.log("- NETUID:", netuid);
@@ -33,6 +34,7 @@ contract DeployUpgradeableScript is Script {
         console.log("- Min Collateral:", minCollateralIncrease);
         console.log("- Decision Timeout:", decisionTimeout);
         console.log("- Admin:", admin);
+        console.log("- Alpha Hotkey:", vm.toString(alphaHotkey));
 
         vm.startBroadcast();
 
@@ -47,7 +49,8 @@ contract DeployUpgradeableScript is Script {
             trustee,
             minCollateralIncrease,
             decisionTimeout,
-            admin
+            admin,
+            alphaHotkey
         );
 
         // Deploy the proxy with initialization
@@ -76,23 +79,9 @@ contract DeployUpgradeableScript is Script {
         );
         console.log("- DECISION_TIMEOUT:", collateral.DECISION_TIMEOUT());
         console.log("- VERSION:", collateral.getVersion());
-    }
-
-    /// @notice Deploy V2 implementation for upgrade testing
-    function deployV2Implementation() public {
-        console.log("Deploying V2 implementation...");
-
-        vm.startBroadcast();
-
-        CollateralUpgradeableV2 implementationV2 = new CollateralUpgradeableV2();
         console.log(
-            "V2 Implementation deployed at:",
-            address(implementationV2)
+            "- ALPHA_HOTKEY:",
+            vm.toString(collateral.CONTRACT_HOTKEY())
         );
-
-        vm.stopBroadcast();
-
-        console.log("V2 deployment completed!");
-        console.log("Use this address for upgrading existing proxy to V2");
     }
 }

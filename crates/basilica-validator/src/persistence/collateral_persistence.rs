@@ -4,7 +4,7 @@ use chrono::Utc;
 use collateral_contract::{Deposit, Reclaimed, Slashed};
 use hex::ToHex;
 use sqlx::Row;
-use tracing::warn;
+use tracing::error;
 
 impl SimplePersistence {
     pub async fn get_last_scanned_block_number(&self) -> Result<u64, anyhow::Error> {
@@ -37,8 +37,8 @@ impl SimplePersistence {
         &self,
         hotkey: &str,
         node_id: &str,
-    ) -> Result<Option<(i64, U256)>, anyhow::Error> {
-        let query = "SELECT id, collateral FROM collateral_status WHERE hotkey = ? AND node_id = ?";
+    ) -> Result<Option<(i64, U256, U256)>, anyhow::Error> {
+        let query = "SELECT id, collateral, alpha_collateral FROM collateral_status WHERE hotkey = ? AND node_id = ?";
 
         let row = sqlx::query(query)
             .bind(hotkey)
@@ -51,7 +51,10 @@ impl SimplePersistence {
             let collateral_str: String = row.get(1);
             let collateral = U256::from_str_radix(&collateral_str, 10)
                 .map_err(|_| anyhow::anyhow!("Invalid collateral"))?;
-            Ok(Some((id, collateral)))
+            let alpha_collateral_str: String = row.get(2);
+            let alpha_collateral = U256::from_str_radix(&alpha_collateral_str, 10)
+                .map_err(|_| anyhow::anyhow!("Invalid alpha collateral"))?;
+            Ok(Some((id, collateral, alpha_collateral)))
         } else {
             Ok(None)
         }
@@ -65,20 +68,25 @@ impl SimplePersistence {
             )
             .await?
         {
-            Some((id, collateral)) => {
+            Some((id, collateral, alpha_collateral)) => {
                 let now = Utc::now().to_rfc3339();
                 let query =
-                    "UPDATE collateral_status SET collateral = ?, updated_at = ? WHERE id = ?";
+                    "UPDATE collateral_status SET collateral = ?, alpha_collateral = ?, updated_at = ? WHERE id = ?";
                 let new_collateral = collateral.saturating_add(deposit.amount);
                 sqlx::query(query)
                     .bind(new_collateral.to_string())
+                    .bind(
+                        alpha_collateral
+                            .saturating_add(deposit.alphaAmount)
+                            .to_string(),
+                    )
                     .bind(now)
                     .bind(id)
                     .execute(self.pool())
                     .await?;
             }
             None => {
-                let query = "INSERT INTO collateral_status (hotkey, node_id, miner, collateral, updated_at) VALUES (?, ?, ?, ?, ?)";
+                let query = "INSERT INTO collateral_status (hotkey, node_id, miner, collateral, alpha_collateral, updated_at) VALUES (?, ?, ?, ?, ?, ?)";
                 sqlx::query(query)
                     .bind(deposit.hotkey.encode_hex::<String>())
                     .bind(deposit.nodeId.encode_hex::<String>())
@@ -87,6 +95,7 @@ impl SimplePersistence {
                         deposit.miner.as_slice().encode_hex::<String>()
                     ))
                     .bind(deposit.amount.to_string())
+                    .bind(deposit.alphaAmount.to_string()) // Initialize alpha_collateral to 0
                     .bind(Utc::now().to_rfc3339())
                     .execute(self.pool())
                     .await?;
@@ -104,13 +113,15 @@ impl SimplePersistence {
             )
             .await?
         {
-            Some((id, collateral)) => {
+            Some((id, collateral, alpha_collateral)) => {
                 let now = Utc::now().to_rfc3339();
                 let query =
-                    "UPDATE collateral_status SET collateral = ?, updated_at = ? WHERE id = ?";
+                    "UPDATE collateral_status SET collateral = ?, alpha_collateral = ?, updated_at = ? WHERE id = ?";
                 let new_collateral = collateral.saturating_sub(reclaimed.amount);
+                let new_alpha_collateral = alpha_collateral.saturating_sub(reclaimed.alphaAmount);
                 sqlx::query(query)
                     .bind(new_collateral.to_string())
+                    .bind(new_alpha_collateral.to_string())
                     .bind(now)
                     .bind(id)
                     .execute(self.pool())
@@ -129,18 +140,22 @@ impl SimplePersistence {
             )
             .await?
         {
-            Some((id, collateral)) => {
+            Some((id, collateral, alpha_collateral)) => {
                 let now = Utc::now().to_rfc3339();
-                let query = "UPDATE collateral_status SET collateral = ?, miner = ? , url = ? , url_content_md5_checksum = ?, updated_at = ? WHERE id = ?";
-                if slashed.amount != collateral {
-                    warn!(
-                        "Slashed amount {} does not match collateral {} in database",
-                        slashed.amount, collateral
+                let query = "UPDATE collateral_status SET collateral = collateral - ?, alpha_collateral = alpha_collateral - ?, miner = ? , url = ? , url_content_md5_checksum = ?, updated_at = ? WHERE id = ?";
+                if slashed.slashAmount > collateral || slashed.slashAlphaAmount > alpha_collateral {
+                    error!(
+                        "Slashed amount {} is greater than collateral {} or slashed alpha collateral {} is greater than alpha collateral {} in database",
+                        slashed.slashAmount, collateral, slashed.slashAlphaAmount, alpha_collateral
                     );
+                    return Err(anyhow::anyhow!(
+                        "Slashed amount is greater than collateral or alpha collateral in database"
+                    ));
                 }
 
                 sqlx::query(query)
-                    .bind("0".to_string())
+                    .bind(slashed.slashAmount.to_string())
+                    .bind(slashed.slashAlphaAmount.to_string())
                     .bind(format!(
                         "0x{}",
                         Address::ZERO.as_slice().encode_hex::<String>()
@@ -177,6 +192,8 @@ mod tests {
             nodeId: FixedBytes::from_slice(&ex),
             miner: Address::from_slice(&[0u8; 20]),
             amount: U256::from(amount),
+            alphaHotkey: FixedBytes::from_slice(&[0u8; 32]),
+            alphaAmount: U256::from(0u64),
         }
     }
     fn ev_reclaimed(hk: [u8; 32], ex: [u8; 16], amount: u64) -> Reclaimed {
@@ -186,6 +203,8 @@ mod tests {
             nodeId: FixedBytes::from_slice(&ex),
             miner: Address::from_slice(&[0u8; 20]),
             amount: U256::from(amount),
+            alphaColdkey: FixedBytes::from_slice(&[0u8; 32]),
+            alphaAmount: U256::from(0u64),
         }
     }
     fn ev_slashed(hk: [u8; 32], ex: [u8; 16], amount: u64) -> Slashed {
@@ -193,7 +212,8 @@ mod tests {
             hotkey: FixedBytes::from_slice(&hk),
             nodeId: FixedBytes::from_slice(&ex),
             miner: Address::from_slice(&[0u8; 20]),
-            amount: U256::from(amount),
+            slashAmount: U256::from(amount),
+            slashAlphaAmount: U256::from(0u64),
             url: String::new(),
             urlContentMd5Checksum: FixedBytes::from_slice(&[0u8; 16]),
         }
@@ -300,7 +320,7 @@ mod tests {
         .fetch_one(persistence.pool())
         .await
         .unwrap();
-        assert_eq!(coll_after_slash, "0");
+        assert_eq!(coll_after_slash, "100");
     }
 
     #[tokio::test]
@@ -321,9 +341,10 @@ mod tests {
             .unwrap();
 
         assert!(result.is_some());
-        let (id, collateral) = result.unwrap();
+        let (id, collateral, alpha_collateral) = result.unwrap();
         assert!(id > 0);
         assert_eq!(collateral, U256::from(999));
+        assert_eq!(alpha_collateral, U256::from(0));
     }
 
     #[tokio::test]
@@ -472,7 +493,7 @@ mod tests {
             .unwrap();
 
         assert!(result.is_some());
-        let (_, collateral) = result.unwrap();
+        let (_, collateral, _alpha_collateral) = result.unwrap();
         assert_eq!(collateral, U256::MAX);
     }
 
@@ -501,7 +522,7 @@ mod tests {
             .unwrap();
 
         assert!(result.is_some());
-        let (_, collateral) = result.unwrap();
+        let (_, collateral, _alpha_collateral) = result.unwrap();
         assert_eq!(collateral, U256::ZERO);
     }
 
@@ -566,6 +587,171 @@ mod tests {
         .unwrap();
 
         assert_eq!(initial_block as u64, CONTRACT_DEPLOYED_BLOCK_NUMBER);
+    }
+
+    #[tokio::test]
+    async fn test_alpha_collateral_deposit_and_update() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(50);
+        let ex = make_node_id(51);
+
+        // First deposit with alpha collateral
+        let mut d1 = ev_deposit(hk, ex, 100);
+        d1.alphaAmount = U256::from(50u64);
+        persistence.handle_deposit(&d1).await.unwrap();
+
+        let (_, collateral, alpha_collateral): (i64, U256, U256) = persistence
+            .get_collateral_status_id(
+                &d1.hotkey.encode_hex::<String>(),
+                &d1.nodeId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(collateral, U256::from(100));
+        assert_eq!(alpha_collateral, U256::from(50));
+
+        // Second deposit adds to both collateral and alpha_collateral
+        let mut d2 = ev_deposit(hk, ex, 200);
+        d2.alphaAmount = U256::from(75u64);
+        persistence.handle_deposit(&d2).await.unwrap();
+
+        let (_, collateral, alpha_collateral): (i64, U256, U256) = persistence
+            .get_collateral_status_id(
+                &d1.hotkey.encode_hex::<String>(),
+                &d1.nodeId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(collateral, U256::from(300));
+        assert_eq!(alpha_collateral, U256::from(125));
+    }
+
+    #[tokio::test]
+    async fn test_alpha_collateral_reclaim() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(52);
+        let ex = make_node_id(53);
+
+        // Setup with deposit
+        let mut d = ev_deposit(hk, ex, 500);
+        d.alphaAmount = U256::from(250u64);
+        persistence.handle_deposit(&d).await.unwrap();
+
+        // Reclaim some collateral and alpha collateral
+        let mut r = ev_reclaimed(hk, ex, 100);
+        r.alphaAmount = U256::from(50u64);
+        persistence.handle_reclaimed(&r).await.unwrap();
+
+        let (_, collateral, alpha_collateral): (i64, U256, U256) = persistence
+            .get_collateral_status_id(
+                &d.hotkey.encode_hex::<String>(),
+                &d.nodeId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(collateral, U256::from(400));
+        assert_eq!(alpha_collateral, U256::from(200));
+    }
+
+    #[tokio::test]
+    async fn test_alpha_collateral_slash() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(54);
+        let ex = make_node_id(55);
+
+        // Setup with deposit
+        let mut d = ev_deposit(hk, ex, 1000);
+        d.alphaAmount = U256::from(500u64);
+        persistence.handle_deposit(&d).await.unwrap();
+
+        // Slash some collateral and alpha collateral
+        let mut s = ev_slashed(hk, ex, 300);
+        s.slashAlphaAmount = U256::from(150u64);
+        persistence.handle_slashed(&s).await.unwrap();
+
+        let (_, collateral, alpha_collateral): (i64, U256, U256) = persistence
+            .get_collateral_status_id(
+                &d.hotkey.encode_hex::<String>(),
+                &d.nodeId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(collateral, U256::from(700));
+        assert_eq!(alpha_collateral, U256::from(350));
+    }
+
+    #[tokio::test]
+    async fn test_alpha_collateral_slash_exceeds_available() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(56);
+        let ex = make_node_id(57);
+
+        // Setup with deposit
+        let mut d = ev_deposit(hk, ex, 1000);
+        d.alphaAmount = U256::from(100u64);
+        persistence.handle_deposit(&d).await.unwrap();
+
+        // Try to slash more alpha collateral than available
+        let mut s = ev_slashed(hk, ex, 500);
+        s.slashAlphaAmount = U256::from(200u64);
+        let result = persistence.handle_slashed(&s).await;
+
+        // Should fail because slashAlphaAmount > alpha_collateral
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Slashed amount is greater than collateral or alpha collateral"));
+    }
+
+    #[tokio::test]
+    async fn test_alpha_collateral_saturating_operations() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(58);
+        let ex = make_node_id(59);
+
+        // Test saturating add on alpha_collateral
+        let mut d1 = ev_deposit(hk, ex, 100);
+        d1.alphaAmount = U256::MAX - U256::from(50u64);
+        persistence.handle_deposit(&d1).await.unwrap();
+
+        let mut d2 = ev_deposit(hk, ex, 100);
+        d2.alphaAmount = U256::from(100u64);
+        persistence.handle_deposit(&d2).await.unwrap();
+
+        let (_, _, alpha_collateral): (i64, U256, U256) = persistence
+            .get_collateral_status_id(
+                &d1.hotkey.encode_hex::<String>(),
+                &d1.nodeId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(alpha_collateral, U256::MAX);
+
+        // Test saturating sub on alpha_collateral
+        let mut r = ev_reclaimed(hk, ex, 50);
+        r.alphaAmount = U256::MAX;
+        persistence.handle_reclaimed(&r).await.unwrap();
+
+        let (_, _, alpha_collateral): (i64, U256, U256) = persistence
+            .get_collateral_status_id(
+                &d1.hotkey.encode_hex::<String>(),
+                &d1.nodeId.encode_hex::<String>(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(alpha_collateral, U256::ZERO);
     }
 
     #[tokio::test]

@@ -297,13 +297,6 @@ contract Collateral {
             revert TransferFailed();
         }
         nodeToMiner[hotkey][nodeId] = address(0);
-        emit Slashed(
-            hotkey,
-            nodeId,
-            miner,
-            amount,
-            url,
-            urlContentMd5Checksum
-        );
+        emit Slashed(hotkey, nodeId, miner, amount, url, urlContentMd5Checksum);
     }
 }

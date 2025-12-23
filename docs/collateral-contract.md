@@ -2,7 +2,7 @@
 
 This contract is derived from the upstream project at [Datura-ai/celium-collateral-contracts](https://github.com/Datura-ai/celium-collateral-contracts/) and adapted for Basilica. It enables subnet owners to require miners to lock collateral as assurance of service quality.
 
-> **Terminology Note**: This contract uses "executor" terminology to refer to **GPU nodes** (individual GPU machines). The Basilica executor binary has been deprecated and replaced with direct SSH access to GPU nodes. When you see "executor UUID" or "executor ID" in this document, it refers to the UUID/ID of a specific GPU node, not the deprecated executor software.
+> **Terminology Note**: This contract uses "node" terminology to refer to **GPU nodes** (individual GPU machines). The Basilica node binary has been deprecated and replaced with direct SSH access to GPU nodes. When you see "node UUID" or "node ID" in this document, it refers to the UUID/ID of a specific GPU node, not the deprecated node software.
 
 > **Purpose**: Manage miner collateral in the Bittensor ecosystem and enable the subnet owner (contract admin)—or an explicitly authorized slasher—to penalize misbehavior. Slashing authority is currently centralized to the admin; future upgrades may delegate or decentralize this capability.
 
@@ -11,6 +11,13 @@ This contract is derived from the upstream project at [Datura-ai/celium-collater
 This smart contract is **generic** and works with **any Bittensor subnet**.
 
 We provide the CLI to interact with collateral contract, the details could be found in [`README.md`](/crates/collateral-contract/README.md)
+
+Main adaptations:
+
+- Extends `nodeToMiner` to a double map keyed by (`hotkey`, `nodeId`).
+- Adopts OpenZeppelin’s `UUPSUpgradeable` pattern so the collateral contract can be upgraded without losing state.
+- Introduces partial slashing: `slashCollateral(miner, nodeId, slashAmount, ...)` validates and applies `slashAmount` (cannot exceed the node’s current collateral). The (`hotkey`, `nodeId`) entry is cleared only when the remaining collateral reaches zero.
+- Support the Alpha in subnet 39 as collateral
 
 ## ⚖️ A Note on Slashing Philosophy
 
@@ -40,7 +47,7 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
 - **Miners Lock Collateral**
 
-  Miners demonstrate their commitment by staking collateral into the validator's contract. Miners can now specify a **GPU node UUID** (referred to as "executor UUID" in the contract) during deposit to associate their collateral with specific GPU nodes.
+  Miners demonstrate their commitment by staking collateral into the validator's contract. Miners can now specify a **GPU node UUID** (referred to as "node UUID" in the contract) during deposit to associate their collateral with specific GPU nodes.
 
 - **Collateral-Based Prioritization**
 
@@ -101,18 +108,30 @@ Below is a typical sequence for integrating and using this collateral contract w
   - The owner **publishes the contract address** on-chain, allowing miners to discover and verify it.
   - Once ready, the owner **enables collateral-required mode** and prioritizes miners based on their locked amounts.
 
-- **Miner Deposit**
+- **Set the contract coldkey**
+
+  - Retrieve the deployed proxy contract address.
+  - Convert the contract address to a Substrate account public key.
+  - Call **setContractColdkey(...)** to set the coldkey in the contract.
+
+- **Register the neuron (burnedRegister)**
+
+  - Call **burnedRegister(...)** to register the neuron with the configured hotkey and the coldkey stored in the contract.
+  - After successful registration, the proxy becomes the owner (coldkey) of the hotkey in the Bittensor network.
+  - The contract can later perform **transferStake** via the precompile.
+
+* **Miner Deposit**
 
   - Each miner **creates an Ethereum (H160) wallet**, links it to their hotkey, and funds it with enough TAO for transaction fees.
   - Miners **retrieve** the owner's contract address from the chain or another trusted source.
-  - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(executorUuid)` function, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract interface) to associate the collateral with specific GPU nodes.
+  - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(nodeUuid)` function, specifying the **GPU node UUID** (labeled as "node UUID" in the contract interface) to associate the collateral with specific GPU nodes.
   - Confirm on-chain that your collateral has been successfully locked for that GPU node
 
-- **Slashing Misbehaving Miners**
-  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and justification details to reduce the miner’s collateral.
+* **Slashing Misbehaving Miners**
+  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` with the `miner`, `slashAmount`, `nodeUuid`, and justification details to reduce the miner’s collateral.
 
-- **Reclaiming Collateral**
-  - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract) associated with the collateral.
+* **Reclaiming Collateral**
+  - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **GPU node UUID** (labeled as "node UUID" in the contract) associated with the collateral.
   - If the validator does not deny the request before the deadline, miners (or anyone) can **finalize** it using `finalizeReclaim()`, thus unlocking and returning the collateral.
 
 ## Usage Guides
@@ -153,18 +172,21 @@ You need replace the variable with the correct value like contract address.
   export NETWORK=local
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
-  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export ALPHA_HOTKEY=0x
+  export node_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
   # WARNING: never commit or paste real keys in scripts
   export PRIVATE_KEY=0x
   # deposit
   collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
   --private-key "$PRIVATE_KEY" \
   --hotkey "$HOTKEY" \
-  --amount 10 \
-  --executor-id "$EXECUTOR_ID"
+  --slash-amount 10 \
+  --alpha-hotkey "$ALPHA_HOTKEY" \
+  --slash-alpha-amount 10 \
+  --node-id "$node_ID"
   ```
 
-  - Confirm on-chain that your collateral has been successfully locked for that validator. running `collateral-cli query executor-to-miner` and `collateral-cli query collaterals`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh)
+  - Confirm on-chain that your collateral has been successfully locked for that validator. running `collateral-cli query node-to-miner` and `collateral-cli query collaterals`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh)
 
   ```shell
   #!/usr/bin/env bash
@@ -172,20 +194,26 @@ You need replace the variable with the correct value like contract address.
   export NETWORK=local
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
-  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export node_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
 
-  # check the executor to miner, miner is not zero if deposit is successful
+  # check the node to miner, miner is not zero if deposit is successful
 
-  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query executor-to-miner \
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query node-to-miner \
   --hotkey "$HOTKEY" \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$node_ID"
 
   # check the collaterals should be amount you deposit
 
   collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query collaterals \
   --hotkey "$HOTKEY" \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$node_ID"
+
+  # check the alpha collaterals should be amount you deposit
+
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query alpha-collaterals \
+  --hotkey "$HOTKEY" \
+  --node-id "$node_ID"
   ```
 
 - **Reclaim Collateral**
@@ -196,7 +224,7 @@ You need replace the variable with the correct value like contract address.
 
 ### As a validator.
 
-The validators won't evaluate or list the miners' executors as available, if the miner hasn't backed their executors with a collateral stake. Thus, the miner will only receive weights, based on the available executors.
+The validators won't evaluate or list the miners' nodes as available, if the miner hasn't backed their nodes with a collateral stake. Thus, the miner will only receive weights, based on the available nodes.
 
 ### As a Owner, you can:
 
@@ -233,6 +261,7 @@ export TRUSTEE_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
 export MIN_COLLATERAL=1
 export DECISION_TIMEOUT=1
 export ADMIN_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
+export ALPHA_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000001
 # WARNING: never commit or paste real keys in scripts
 export PRIVATE_KEY=0x
 # export RPC_URL=https://lite.chain.opentensor.ai:443
@@ -261,5 +290,7 @@ Subnet owner will slash when miner stops providing GPU node access or fails to m
 Miner's reclaim request will be declined when their GPU node is rented by a customer on the platform.
 
 ### What will happen when a miner's deposit is slashed?
+
+The miner loses `slashAmount` of collateral tied to the specified `nodeId`. Any remaining collateral stays locked for that (`hotkey`, `nodeId`) and continues to count toward eligibility/prioritization; the mapping entry is cleared only when the remaining collateral becomes zero.
 
 Miner will lose the deposited amount for the violating GPU node; the miner needs to deposit for that GPU node again if they want to keep getting rewards for it.

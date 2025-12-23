@@ -195,6 +195,7 @@ collateral-cli tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 123 \
+  --slash-amount 1000000000000000000 \
   --url "https://evidence.example.com/slash-proof" \
   --url-content-md5-checksum aab03e786183b16c8a0b15f6b40ff607
 
@@ -203,6 +204,7 @@ collateral-cli --network testnet tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
   --node-id 999 \
+  --slash-amount 1000000000000000000 \
   --url "https://audit.testnet.com/violations/999" \
   --url-content-md5-checksum 098f6bcd4621d373cade4e832627b4f6
 ```
@@ -268,67 +270,4 @@ collateral-cli --network testnet events scan --from-block 0 --to-block 1000 --fo
 
 # Scan events with custom contract
 collateral-cli --contract-address 0x8464135c8F25Da09e49BC8782676a84730C318bC events scan --from-block 0 --to-block 1000
-```
-
-## Testing Commands
-
-### Unit Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run library tests only
-cargo test --lib
-
-# Run CLI binary tests only
-cargo test --bin collateral-cli
-
-# Run specific test
-cargo test test_parse_hotkey
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Run tests in release mode
-cargo test --release
-```
-
-### Integration Tests
-
-```bash
-# Test CLI help system
-cargo run --bin collateral-cli -- --help
-cargo run --bin collateral-cli -- tx --help
-cargo run --bin collateral-cli -- query --help
-cargo run --bin collateral-cli -- events --help
-
-# Test CLI argument validation
-cargo run --bin collateral-cli -- --network invalid_network query netuid  # Should fail
-cargo run --bin collateral-cli -- --contract-address "invalid" query netuid  # Should fail
-cargo run --bin collateral-cli -- tx deposit  # Should fail (missing args)
-
-# Test different networks
-cargo run --bin collateral-cli -- --network mainnet query netuid   # Default network
-cargo run --bin collateral-cli -- --network testnet query netuid   # Testnet
-cargo run --bin collateral-cli -- --network local query netuid     # Local (will fail without local node)
-```
-
-### Contract Tests
-
-```bash
-# Run Solidity tests
-forge test
-
-# Run specific contract test
-forge test --match-test testDeposit
-
-# Run tests with verbosity
-forge test -vvv
-
-# Run tests with gas reporting
-forge test --gas-report
-
-# Test contract deployment
-forge script script/DeployUpgradeable.s.sol
 ```
