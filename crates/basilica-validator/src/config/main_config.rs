@@ -136,6 +136,73 @@ pub struct VerificationConfig {
     /// Node group assignment configuration
     #[serde(default)]
     pub node_groups: NodeGroupConfig,
+    /// TEE (Trusted Execution Environment) validation configuration
+    #[serde(default)]
+    pub tee: TeeValidationConfig,
+}
+
+/// TEE (Trusted Execution Environment) validation configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeeValidationConfig {
+    /// Whether TEE verification is enabled
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Whether to require TEE (reject non-TEE nodes)
+    #[serde(default)]
+    pub require_tee: bool,
+
+    /// Expected MRTD measurement (hex encoded, 48 bytes / 96 hex chars)
+    #[serde(default)]
+    pub expected_mrtd: Option<String>,
+
+    /// Expected RTMR[0] (firmware/initrd)
+    #[serde(default)]
+    pub expected_rtmr0: Option<String>,
+
+    /// Expected RTMR[1] (OS kernel)
+    #[serde(default)]
+    pub expected_rtmr1: Option<String>,
+
+    /// Expected RTMR[2] (application)
+    #[serde(default)]
+    pub expected_rtmr2: Option<String>,
+
+    /// Expected RTMR[3] (reserved)
+    #[serde(default)]
+    pub expected_rtmr3: Option<String>,
+
+    /// Whether GPU CC mode is required
+    #[serde(default)]
+    pub require_gpu_cc: bool,
+
+    /// Allowed GPU models for CC mode
+    #[serde(default = "default_allowed_gpu_models")]
+    pub allowed_gpu_models: Vec<String>,
+}
+
+impl Default for TeeValidationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            require_tee: false,
+            expected_mrtd: None,
+            expected_rtmr0: None,
+            expected_rtmr1: None,
+            expected_rtmr2: None,
+            expected_rtmr3: None,
+            require_gpu_cc: false,
+            allowed_gpu_models: default_allowed_gpu_models(),
+        }
+    }
+}
+
+fn default_allowed_gpu_models() -> Vec<String> {
+    vec![
+        "H100 PCIe".to_string(),
+        "H100 SXM".to_string(),
+        "H200".to_string(),
+    ]
 }
 
 /// Configuration for node group assignment strategy
@@ -230,6 +297,7 @@ impl VerificationConfig {
             enable_worker_queue: false,
             storage_validation: StorageValidationConfig::default(),
             node_groups: NodeGroupConfig::default(),
+            tee: TeeValidationConfig::default(),
         }
     }
 }
@@ -824,6 +892,7 @@ impl Default for ValidatorConfig {
                 gpu_assignment_cleanup_ttl: default_gpu_assignment_cleanup_ttl(),
                 enable_worker_queue: default_enable_worker_queue(),
                 node_groups: NodeGroupConfig::default(),
+                tee: TeeValidationConfig::default(),
             },
             automatic_verification: AutomaticVerificationConfig::default(),
             storage: StorageConfig {

@@ -482,6 +482,7 @@ mod tests {
             enable_worker_queue: false,
             storage_validation: crate::config::StorageValidationConfig::default(),
             node_groups: crate::config::NodeGroupConfig::default(),
+            tee: crate::config::TeeValidationConfig::default(),
         };
 
         let automatic_verification_config = AutomaticVerificationConfig {

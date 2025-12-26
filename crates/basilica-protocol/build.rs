@@ -54,6 +54,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ResourceLimits",
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
+        // Add serde support for TEE types
+        .type_attribute(
+            "TeeAttestationRequest",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "TeeAttestationResponse",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "GpuCcAttestation",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "NodeTeeStatus",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "GpuCcStatus",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "ExpectedMeasurements",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "TeeNodeConfig",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
         .compile(
             &[
                 "proto/common.proto",
@@ -63,6 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/billing.proto",
                 "proto/payments.proto",
                 "proto/rental.proto",
+                "proto/tee.proto",
             ],
             &["proto"],
         )?;

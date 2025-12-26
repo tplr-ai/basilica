@@ -17,6 +17,7 @@ pub mod validation_speedtest;
 pub mod validation_states;
 pub mod validation_storage;
 pub mod validation_strategy;
+pub mod validation_tee;
 pub mod validation_worker;
 pub mod verification;
 pub mod verification_engine_builder;

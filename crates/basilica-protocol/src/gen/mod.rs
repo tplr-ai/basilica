@@ -37,4 +37,9 @@ pub mod basilica {
             include!("basilica.rental.v1.rs");
         }
     }
+    pub mod tee {
+        pub mod v1 {
+            include!("basilica.tee.v1.rs");
+        }
+    }
 }

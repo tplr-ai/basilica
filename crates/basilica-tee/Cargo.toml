@@ -1,0 +1,54 @@
+[package]
+name = "basilica-tee"
+version = "0.1.0"
+edition = "2021"
+description = "TEE support for Basilica - Intel TDX and NVIDIA GPU attestation"
+license = "MIT"
+authors = ["Basilica Team"]
+
+[features]
+default = ["server"]
+server = ["axum", "tower", "tower-http"]
+nvml = ["nvml-wrapper"]
+
+[dependencies]
+# Async runtime
+tokio = { workspace = true }
+async-trait = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Crypto
+sha2 = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+
+# HTTP server (optional)
+axum = { workspace = true, optional = true }
+tower = { version = "0.5", optional = true }
+tower-http = { workspace = true, optional = true }
+
+# NVIDIA NVML bindings (optional)
+nvml-wrapper = { workspace = true, optional = true }
+
+# Process execution
+tempfile = { workspace = true }
+
+# UUID and time
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+tempfile = { workspace = true }
+
