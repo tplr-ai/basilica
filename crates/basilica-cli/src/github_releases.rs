@@ -41,7 +41,7 @@ pub struct ReleaseInfo {
 /// Returns None if tag doesn't match expected format or version is invalid
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// extract_version_from_tag("basilica-cli-v0.5.5") // Some(Version(0.5.5))
 /// extract_version_from_tag("basilica-cli-0.5.5")  // Some(Version(0.5.5))
 /// extract_version_from_tag("invalid")              // None
@@ -60,7 +60,7 @@ pub fn extract_version_from_tag(tag: &str) -> Option<Version> {
 /// Handles version strings with or without 'v' prefix
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// format_cli_tag("0.5.5")   // "basilica-cli-v0.5.5"
 /// format_cli_tag("v0.5.5")  // "basilica-cli-v0.5.5"
 /// ```

@@ -69,6 +69,7 @@ tempfile = { workspace = true }
 rand = { workspace = true }
 hex = { workspace = true }
 fastrand = { workspace = true }
+getrandom = "0.2"
 
 # System information and process management
 sysinfo = { workspace = true }
@@ -79,6 +80,7 @@ ssh-key = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+basilica-tee = { path = "../basilica-tee" }
 
 [features]
 default = ["client"]

@@ -10,6 +10,7 @@ authors = ["Basilica Team"]
 default = ["server"]
 server = ["axum", "tower", "tower-http"]
 nvml = ["nvml-wrapper"]
+remote-attestation = ["reqwest"]
 
 [dependencies]
 # Async runtime
@@ -41,6 +42,9 @@ tower-http = { workspace = true, optional = true }
 # NVIDIA NVML bindings (optional)
 nvml-wrapper = { workspace = true, optional = true }
 
+# HTTP client for remote attestation (optional)
+reqwest = { workspace = true, optional = true }
+
 # Process execution
 tempfile = { workspace = true }
 
@@ -51,4 +55,3 @@ chrono = { workspace = true }
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "macros"] }
 tempfile = { workspace = true }
-

@@ -1,6 +1,5 @@
-[env]
-# Required for building library crates that use k8s-openapi when running commands
-# that do not compile dev-dependencies (e.g., `cargo check`, `cargo doc`).
-# Must match the Kubernetes version feature used in dev-dependencies/tests.
-K8S_OPENAPI_ENABLED_VERSION = "1.29"
+# Cargo configuration for basilica workspace
 
+[env]
+# Use system Python for PyO3 builds (supports Python 3.10+)
+PYO3_PYTHON = "/opt/homebrew/bin/python3"

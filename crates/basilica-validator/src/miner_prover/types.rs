@@ -92,6 +92,27 @@ pub struct NodeVerificationResult {
     pub gpu_count: u64,
     pub validation_type: ValidationType,
     pub hourly_rate_cents: u32,
+    /// TEE verification result (if TEE validation was performed)
+    pub tee_verification: Option<TeeVerificationStatus>,
+}
+
+/// TEE (Trusted Execution Environment) verification status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TeeVerificationStatus {
+    /// Whether TEE verification was performed
+    pub verified: bool,
+    /// TDX quote verification passed
+    pub tdx_verified: bool,
+    /// GPU CC mode verification passed
+    pub gpu_cc_verified: bool,
+    /// MRTD measurement (hex encoded)
+    pub mrtd_hex: Option<String>,
+    /// Whether GPU is in Confidential Compute mode
+    pub gpu_cc_mode_enabled: bool,
+    /// GPU model (if GPU CC was checked)
+    pub gpu_model: Option<String>,
+    /// Error message if verification failed
+    pub error: Option<String>,
 }
 
 /// Detailed validation timing and scoring information

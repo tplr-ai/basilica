@@ -85,7 +85,9 @@ impl TdxQuoteProvider {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .map_err(|e| TeeError::CommandExecution(format!("Failed to spawn openssl pkey: {}", e)))?;
+            .map_err(|e| {
+                TeeError::CommandExecution(format!("Failed to spawn openssl pkey: {}", e))
+            })?;
 
         // Write pubkey to stdin and get output
         let mut child = der_output;
@@ -95,14 +97,13 @@ impl TdxQuoteProvider {
                 stdin
                     .write_all(&pubkey_output.stdout)
                     .await
-                    .map_err(|e| TeeError::Io(e))?;
+                    .map_err(TeeError::Io)?;
             }
         }
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| TeeError::CommandExecution(format!("Failed to get openssl output: {}", e)))?;
+        let output = child.wait_with_output().await.map_err(|e| {
+            TeeError::CommandExecution(format!("Failed to get openssl output: {}", e))
+        })?;
 
         if !output.status.success() {
             return Err(TeeError::Certificate("openssl pkey failed".into()));
@@ -156,8 +157,7 @@ impl TdxQuoteProvider {
         );
 
         // Create temp file for output
-        let output_file = NamedTempFile::new()
-            .map_err(|e| TeeError::Io(e))?;
+        let output_file = NamedTempFile::new().map_err(TeeError::Io)?;
         let output_path = output_file.path().to_string_lossy().to_string();
 
         // Run quote generator
@@ -180,9 +180,9 @@ impl TdxQuoteProvider {
             );
 
             // Read quote from file
-            let quote_content = tokio::fs::read(output_file.path())
-                .await
-                .map_err(|e| TeeError::TdxQuoteGeneration(format!("Failed to read quote file: {}", e)))?;
+            let quote_content = tokio::fs::read(output_file.path()).await.map_err(|e| {
+                TeeError::TdxQuoteGeneration(format!("Failed to read quote file: {}", e))
+            })?;
 
             Ok(quote_content)
         } else {
@@ -251,7 +251,10 @@ mod tests {
     #[test]
     fn test_provider_new() {
         let provider = TdxQuoteProvider::new();
-        assert_eq!(provider.quote_generator_path, "/usr/bin/tdx-quote-generator");
+        assert_eq!(
+            provider.quote_generator_path,
+            "/usr/bin/tdx-quote-generator"
+        );
         assert!(provider.server_cert_path.is_none());
     }
 
@@ -282,7 +285,7 @@ mod tests {
     async fn test_mock_provider_success() {
         let test_quote = vec![1, 2, 3, 4, 5];
         let provider = MockTdxQuoteProvider::new(test_quote.clone());
-        
+
         let result = provider.get_quote("test_nonce").await.unwrap();
         assert_eq!(result, test_quote);
     }
@@ -290,9 +293,8 @@ mod tests {
     #[tokio::test]
     async fn test_mock_provider_failure() {
         let provider = MockTdxQuoteProvider::failing();
-        
+
         let result = provider.get_quote("test_nonce").await;
         assert!(result.is_err());
     }
 }
-

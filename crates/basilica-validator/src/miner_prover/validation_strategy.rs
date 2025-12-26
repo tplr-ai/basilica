@@ -5,7 +5,8 @@
 //! of different validation strategies (lightweight vs full validation).
 
 use super::types::{
-    NodeInfoDetailed, NodeResult, NodeVerificationResult, ValidationDetails, ValidationType,
+    NodeInfoDetailed, NodeResult, NodeVerificationResult, TeeVerificationStatus, ValidationDetails,
+    ValidationType,
 };
 use super::validation_binary::BinaryValidator;
 use super::validation_docker::DockerCollector;
@@ -16,6 +17,7 @@ use super::validation_network::NetworkProfileCollector;
 use super::validation_speedtest::NetworkSpeedCollector;
 use super::validation_states::{StateResult, ValidationState};
 use super::validation_storage::StorageCollector;
+use super::validation_tee::{TeeValidator, TeeValidatorConfig};
 use crate::config::VerificationConfig;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::SimplePersistence;
@@ -61,6 +63,8 @@ pub struct ValidationNode {
     storage_collector: StorageCollector,
     misbehaviour_collector: Misbehaviour,
     metrics: Option<Arc<ValidatorMetrics>>,
+    /// TEE validator for TDX quote and GPU CC verification
+    tee_validator: Option<TeeValidator>,
 }
 
 impl ValidationStrategySelector {
@@ -357,6 +361,27 @@ impl ValidationNode {
         let prometheus_metrics = metrics.as_ref().map(|m| m.prometheus());
         let misbehaviour_collector = Misbehaviour::new(persistence.clone(), prometheus_metrics);
 
+        // Create TEE validator if enabled
+        let tee_validator = if config.tee.enabled {
+            let tee_config = TeeValidatorConfig {
+                enabled: config.tee.enabled,
+                require_tee: config.tee.require_tee,
+                expected_measurements: super::validation_tee::ExpectedMeasurements::from_hex(
+                    config.tee.expected_mrtd.as_deref(),
+                    config.tee.expected_rtmr0.as_deref(),
+                    config.tee.expected_rtmr1.as_deref(),
+                    config.tee.expected_rtmr2.as_deref(),
+                    config.tee.expected_rtmr3.as_deref(),
+                )
+                .unwrap_or_default(),
+                require_gpu_cc: config.tee.require_gpu_cc,
+                allowed_gpu_models: config.tee.allowed_gpu_models.clone(),
+            };
+            Some(TeeValidator::new(tee_config, ssh_client.clone()))
+        } else {
+            None
+        };
+
         Self {
             ssh_client,
             binary_validator,
@@ -368,6 +393,7 @@ impl ValidationNode {
             storage_collector,
             misbehaviour_collector,
             metrics,
+            tee_validator,
         }
     }
 
@@ -682,6 +708,7 @@ impl ValidationNode {
             gpu_count,
             validation_type: ValidationType::Lightweight,
             hourly_rate_cents: node_info.hourly_rate_cents,
+            tee_verification: None, // TEE verification not performed in lightweight validation
         })
     }
 
@@ -1013,6 +1040,77 @@ impl ValidationNode {
         validation_details.binary_score = binary_score;
         validation_details.total_validation_duration = total_start.elapsed();
 
+        // Phase TEE: TEE Verification (if enabled)
+        let tee_verification = if let Some(ref tee_validator) = self.tee_validator {
+            if tee_validator.is_enabled() {
+                info!(
+                    miner_uid = miner_uid,
+                    node_id = %node_info.id,
+                    "[EVAL_FLOW] Performing TEE verification"
+                );
+
+                match tee_validator.verify_full(ssh_details).await {
+                    Ok(tee_result) => {
+                        let status = TeeVerificationStatus {
+                            verified: tee_result.tee_verified,
+                            tdx_verified: tee_result
+                                .tdx
+                                .as_ref()
+                                .is_some_and(|t| t.quote_valid && t.mrtd_matches),
+                            gpu_cc_verified: tee_result
+                                .gpu_cc
+                                .as_ref()
+                                .is_some_and(|g| g.cc_mode_enabled),
+                            mrtd_hex: tee_result.tdx.as_ref().map(|t| t.mrtd_hex.clone()),
+                            gpu_cc_mode_enabled: tee_result
+                                .gpu_cc
+                                .as_ref()
+                                .is_some_and(|g| g.cc_mode_enabled),
+                            gpu_model: tee_result.gpu_cc.as_ref().map(|g| g.gpu_model.clone()),
+                            error: None,
+                        };
+
+                        if tee_result.tee_verified {
+                            info!(
+                                miner_uid = miner_uid,
+                                node_id = %node_info.id,
+                                "[EVAL_FLOW] TEE verification passed"
+                            );
+                        } else {
+                            warn!(
+                                miner_uid = miner_uid,
+                                node_id = %node_info.id,
+                                "[EVAL_FLOW] TEE verification failed"
+                            );
+                        }
+
+                        Some(status)
+                    }
+                    Err(e) => {
+                        warn!(
+                            miner_uid = miner_uid,
+                            node_id = %node_info.id,
+                            error = %e,
+                            "[EVAL_FLOW] TEE verification error"
+                        );
+                        Some(TeeVerificationStatus {
+                            verified: false,
+                            tdx_verified: false,
+                            gpu_cc_verified: false,
+                            mrtd_hex: None,
+                            gpu_cc_mode_enabled: false,
+                            gpu_model: None,
+                            error: Some(e.to_string()),
+                        })
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // Record overall validation status
         let overall_success = pre_validations_successful && binary_validation_successful;
 
@@ -1044,6 +1142,7 @@ impl ValidationNode {
             gpu_count,
             validation_type: ValidationType::Full,
             hourly_rate_cents: node_info.hourly_rate_cents,
+            tee_verification,
         })
     }
 

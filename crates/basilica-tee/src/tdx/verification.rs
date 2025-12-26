@@ -68,7 +68,7 @@ impl TdxQuoteVerifier {
             .map(|i| {
                 let matches = self.expected.matches_rtmr(i, &rtmrs[i]);
                 if !matches {
-                    warn!("[TDX] RTMR[{}] mismatch: got {}", i, hex::encode(&rtmrs[i]));
+                    warn!("[TDX] RTMR[{}] mismatch: got {}", i, hex::encode(rtmrs[i]));
                 }
                 matches
             })
@@ -238,8 +238,10 @@ mod tests {
 
     #[test]
     fn test_verifier_from_config() {
-        let mut config = crate::config::TdxConfig::default();
-        config.expected_mrtd = Some("aa".repeat(48));
+        let config = crate::config::TdxConfig {
+            expected_mrtd: Some("aa".repeat(48)),
+            ..Default::default()
+        };
 
         let verifier = TdxQuoteVerifier::from_config(&config);
 

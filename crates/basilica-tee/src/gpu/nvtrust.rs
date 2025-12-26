@@ -85,7 +85,9 @@ impl NvEvidenceProvider {
             .current_dir(&self.output_dir)
             .output()
             .await
-            .map_err(|e| TeeError::GpuAttestation(format!("Failed to execute nvevidence: {}", e)))?;
+            .map_err(|e| {
+                TeeError::GpuAttestation(format!("Failed to execute nvevidence: {}", e))
+            })?;
 
         if result.status.success() {
             let output_str = String::from_utf8_lossy(&result.stdout);
@@ -94,8 +96,10 @@ impl NvEvidenceProvider {
             let evidence_json = output_str
                 .lines()
                 .filter(|line| !line.trim().is_empty())
-                .last()
-                .ok_or_else(|| TeeError::GpuAttestation("No output from evidence command".into()))?;
+                .next_back()
+                .ok_or_else(|| {
+                    TeeError::GpuAttestation("No output from evidence command".into())
+                })?;
 
             info!("[NvEvidence] Successfully generated evidence");
 
@@ -268,10 +272,7 @@ mod tests {
 
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed.len(), 1);
-        assert_eq!(
-            parsed[0]["gpu_uuid"].as_str().unwrap(),
-            "GPU-123"
-        );
+        assert_eq!(parsed[0]["gpu_uuid"].as_str().unwrap(), "GPU-123");
     }
 
     #[test]
@@ -305,4 +306,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-

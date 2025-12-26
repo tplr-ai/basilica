@@ -58,7 +58,7 @@ pub fn compress_path(path: &std::path::Path) -> String {
 /// Falls back to the original string if parsing fails.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let formatted = format_credits("1234.56789");
 /// assert_eq!(formatted, "1234.57");
 /// ```

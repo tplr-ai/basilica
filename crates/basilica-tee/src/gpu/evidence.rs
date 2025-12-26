@@ -277,14 +277,16 @@ mod tests {
     #[test]
     fn test_cc_mode_detection() {
         // With attestation report = CC mode enabled
-        let with_report = GpuEvidenceParser::parse(r#"{"gpu_uuid": "GPU-1", "attestation_report": "report"}"#).unwrap();
+        let with_report =
+            GpuEvidenceParser::parse(r#"{"gpu_uuid": "GPU-1", "attestation_report": "report"}"#)
+                .unwrap();
         let result = GpuEvidenceParser::verify(&with_report[0], None).unwrap();
         assert!(result.cc_mode_enabled);
 
         // Without attestation report = CC mode not detected
-        let without_report = GpuEvidenceParser::parse(r#"{"gpu_uuid": "GPU-2", "attestation_report": ""}"#).unwrap();
+        let without_report =
+            GpuEvidenceParser::parse(r#"{"gpu_uuid": "GPU-2", "attestation_report": ""}"#).unwrap();
         let result = GpuEvidenceParser::verify(&without_report[0], None).unwrap();
         assert!(!result.cc_mode_enabled);
     }
 }
-

@@ -5,7 +5,6 @@
 
 use anyhow::{Context, Result};
 use basilica_common::ssh::SshConnectionDetails;
-use rand::Rng;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -139,7 +138,10 @@ impl TeeValidator {
             .context("Failed to generate TDX quote")?;
 
         // Check if the command succeeded
-        if quote_hex.trim().is_empty() || quote_hex.contains("error") || quote_hex.contains("not found") {
+        if quote_hex.trim().is_empty()
+            || quote_hex.contains("error")
+            || quote_hex.contains("not found")
+        {
             warn!("[TEE] TDX quote generation not available on this node");
             return Ok(TdxVerificationResult {
                 quote_valid: false,
@@ -151,8 +153,7 @@ impl TeeValidator {
             });
         }
 
-        let quote_bytes = hex::decode(quote_hex.trim())
-            .context("Invalid quote hex")?;
+        let quote_bytes = hex::decode(quote_hex.trim()).context("Invalid quote hex")?;
 
         // Parse TDX quote structure
         let parse_result = self.parse_tdx_quote(&quote_bytes)?;
@@ -187,7 +188,7 @@ impl TeeValidator {
         if !mrtd_matches {
             warn!(
                 "[TEE] MRTD mismatch: got {}",
-                hex::encode(&parse_result.mrtd)
+                hex::encode(parse_result.mrtd)
             );
         }
 
@@ -196,7 +197,7 @@ impl TeeValidator {
             mrtd_matches,
             rtmr_matches,
             report_data_matches,
-            mrtd_hex: hex::encode(&parse_result.mrtd),
+            mrtd_hex: hex::encode(parse_result.mrtd),
             raw_quote: quote_bytes,
         })
     }
@@ -251,14 +252,21 @@ impl TeeValidator {
             .unwrap_or_default();
 
         let parts: Vec<&str> = gpu_info_output.split(',').map(|s| s.trim()).collect();
-        let gpu_model = parts.get(0).unwrap_or(&"Unknown").to_string();
+        let gpu_model = parts.first().unwrap_or(&"Unknown").to_string();
         let gpu_uuid = parts.get(1).unwrap_or(&"Unknown").to_string();
         let driver_version = parts.get(2).unwrap_or(&"Unknown").to_string();
 
         // Check if GPU model is allowed for CC
-        let model_allowed = self.config.allowed_gpu_models.iter().any(|m| gpu_model.contains(m));
+        let model_allowed = self
+            .config
+            .allowed_gpu_models
+            .iter()
+            .any(|m| gpu_model.contains(m));
         if !model_allowed {
-            warn!("[TEE] GPU model {} is not in allowed list for CC", gpu_model);
+            warn!(
+                "[TEE] GPU model {} is not in allowed list for CC",
+                gpu_model
+            );
         }
 
         // Generate GPU attestation with nonce
@@ -275,8 +283,8 @@ impl TeeValidator {
             .context("Failed to generate GPU attestation")?;
 
         // Parse attestation JSON
-        let attestation: serde_json::Value = serde_json::from_str(&attestation_json)
-            .unwrap_or(serde_json::json!({}));
+        let attestation: serde_json::Value =
+            serde_json::from_str(&attestation_json).unwrap_or(serde_json::json!({}));
 
         // Verify attestation signature (stub - always returns true for now)
         // TODO: Implement actual verification using NVIDIA attestation service
@@ -310,11 +318,11 @@ impl TeeValidator {
 
         info!("[TEE] Starting full TEE verification");
 
-        // Generate random nonces
-        let mut rng = rand::thread_rng();
+        // Generate random nonces using Send-safe approach
         let mut tdx_nonce = [0u8; 64];
-        rng.fill(&mut tdx_nonce);
-        let gpu_nonce: [u8; 32] = rand::random();
+        getrandom::getrandom(&mut tdx_nonce).unwrap_or_default();
+        let mut gpu_nonce = [0u8; 32];
+        getrandom::getrandom(&mut gpu_nonce).unwrap_or_default();
 
         // Verify TDX quote
         let tdx_result = match self.verify_tdx_quote(connection, &tdx_nonce).await {
@@ -448,8 +456,7 @@ impl ExpectedMeasurements {
         fn parse_measurement(hex_str: Option<&str>) -> Result<Option<[u8; 48]>> {
             match hex_str {
                 Some(s) if !s.is_empty() => {
-                    let bytes = hex::decode(s)
-                        .context("Invalid hex string")?;
+                    let bytes = hex::decode(s).context("Invalid hex string")?;
                     let arr: [u8; 48] = bytes
                         .try_into()
                         .map_err(|_| anyhow::anyhow!("Measurement must be 48 bytes"))?;
@@ -509,4 +516,3 @@ mod tests {
         assert!(!result.tee_verified);
     }
 }
-

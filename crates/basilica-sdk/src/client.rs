@@ -496,10 +496,10 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// use basilica_sdk::{BasilicaClient, CreateDeploymentRequest};
+    /// use basilica_sdk::{ClientBuilder, CreateDeploymentRequest};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = BasilicaClient::builder()
+    /// let client = ClientBuilder::default()
     ///     .with_api_key("your-api-key")
     ///     .build()?;
     ///
@@ -555,9 +555,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let deployment = client.get_deployment("my-nginx").await?;
     /// println!("State: {}, Ready: {}/{}",
     ///     deployment.state,
@@ -593,9 +593,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let result = client.delete_deployment("my-nginx").await?;
     /// println!("Deletion initiated: {}", result.message);
     /// # Ok(())
@@ -621,9 +621,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let deployments = client.list_deployments().await?;
     /// println!("Total deployments: {}", deployments.total);
     /// for deployment in deployments.deployments {
@@ -653,9 +653,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().build().await?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let logs = client.get_deployment_logs("my-app", false, Some(100)).await?;
     /// let body = logs.text().await?;
     /// println!("Logs: {}", body);
@@ -738,9 +738,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let result = client.scale_deployment("my-app", 3).await?;
     /// println!("Scaled to {} replicas", result.replicas.desired);
     /// # Ok(())

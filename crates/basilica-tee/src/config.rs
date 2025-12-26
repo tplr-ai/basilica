@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// TEE Configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TeeConfig {
     /// Enable TEE verification
     #[serde(default)]
@@ -147,18 +147,6 @@ pub struct TlsConfig {
     pub client_ca_path: Option<PathBuf>,
 }
 
-impl Default for TeeConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            require_tee: false,
-            tdx: TdxConfig::default(),
-            gpu: GpuCcConfig::default(),
-            attestation_server: None,
-        }
-    }
-}
-
 impl Default for TdxConfig {
     fn default() -> Self {
         Self {
@@ -207,11 +195,9 @@ impl TeeConfig {
 impl TdxConfig {
     /// Parse expected MRTD from hex string to bytes
     pub fn expected_mrtd_bytes(&self) -> Option<[u8; 48]> {
-        self.expected_mrtd.as_ref().and_then(|s| {
-            hex::decode(s)
-                .ok()
-                .and_then(|v| v.try_into().ok())
-        })
+        self.expected_mrtd
+            .as_ref()
+            .and_then(|s| hex::decode(s).ok().and_then(|v| v.try_into().ok()))
     }
 
     /// Parse expected RTMR from hex string to bytes
@@ -224,11 +210,9 @@ impl TdxConfig {
             _ => return None,
         };
 
-        rtmr_hex.as_ref().and_then(|s| {
-            hex::decode(s)
-                .ok()
-                .and_then(|v| v.try_into().ok())
-        })
+        rtmr_hex
+            .as_ref()
+            .and_then(|s| hex::decode(s).ok().and_then(|v| v.try_into().ok()))
     }
 }
 
@@ -292,9 +276,11 @@ mod tests {
 
     #[test]
     fn test_tdx_rtmr_bytes_parsing() {
-        let mut config = TdxConfig::default();
-        config.expected_rtmr0 = Some("01".repeat(48));
-        config.expected_rtmr1 = Some("02".repeat(48));
+        let config = TdxConfig {
+            expected_rtmr0: Some("01".repeat(48)),
+            expected_rtmr1: Some("02".repeat(48)),
+            ..Default::default()
+        };
 
         let rtmr0 = config.expected_rtmr_bytes(0).unwrap();
         assert_eq!(rtmr0, [0x01u8; 48]);
@@ -337,4 +323,3 @@ mod tests {
         assert_eq!(gpu.nvevidence_path, PathBuf::from("chutes-nvevidence"));
     }
 }
-

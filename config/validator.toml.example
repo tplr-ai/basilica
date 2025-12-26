@@ -132,3 +132,35 @@ weight_version_key = 0
 A100 = { weight = 8.0, min_gpu_count = 1, min_gpu_vram = 1 }
 H100 = { weight = 12.0, min_gpu_count = 1, min_gpu_vram = 1 }
 B200 = { weight = 80.0, min_gpu_count = 8, min_gpu_vram = 1 }
+
+# TEE (Trusted Execution Environment) configuration
+# Intel TDX and NVIDIA GPU Confidential Computing attestation
+[verification.tee]
+# Enable TEE verification (requires TDX-enabled executor nodes)
+enabled = false
+
+# Require TEE verification to pass (reject non-TEE nodes)
+# Set to true for production deployments requiring confidential computing
+require_tee = false
+
+# Expected MRTD measurement (48 bytes, hex encoded - 96 characters)
+# Leave commented/empty to accept any MRTD
+# expected_mrtd = "abc123..."
+
+# Expected RTMR measurements (48 bytes each, hex encoded)
+# RTMR[0]: Firmware/initrd measurements
+# expected_rtmr0 = ""
+# RTMR[1]: OS kernel measurements
+# expected_rtmr1 = ""
+# RTMR[2]: Application measurements
+# expected_rtmr2 = ""
+# RTMR[3]: Reserved
+# expected_rtmr3 = ""
+
+# GPU Confidential Computing mode configuration
+# Require H100/H200 GPUs to be in CC mode
+require_gpu_cc = false
+
+# Allowed GPU models for Confidential Computing
+# Only these models support GPU CC mode
+allowed_gpu_models = ["H100 PCIe", "H100 SXM", "H200"]

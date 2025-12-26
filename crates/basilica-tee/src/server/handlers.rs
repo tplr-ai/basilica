@@ -235,4 +235,3 @@ mod tests {
         assert!(json.contains("Test error"));
     }
 }
-
