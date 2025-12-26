@@ -3,7 +3,6 @@
 mod input;
 mod tick;
 
-
 use anyhow::Result;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::StreamExt;

@@ -143,7 +143,8 @@ fn render_validator_list(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
     // Sample validator data
-    let validators = [(
+    let validators = [
+        (
             "Val-001",
             "5Abc...xyz",
             "1,500,000",
@@ -168,7 +169,8 @@ fn render_validator_list(frame: &mut Frame, app: &App, area: Rect) {
             "node-005, node-007",
         ),
         ("Val-004", "5Jkl...opq", "500,000", "Pending", "0", "-"),
-        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-")];
+        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-"),
+    ];
 
     let rows: Vec<Row> = validators
         .iter()
@@ -361,7 +363,8 @@ fn render_assignment_info_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area:
 fn render_validator_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    let validators = [(
+    let validators = [
+        (
             "Val-001",
             "5Abc...xyz",
             "1,500,000",
@@ -386,7 +389,8 @@ fn render_validator_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect)
             "node-005, node-007",
         ),
         ("Val-004", "5Jkl...opq", "500,000", "Pending", "0", "-"),
-        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-")];
+        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-"),
+    ];
 
     let rows: Vec<Row> = validators
         .iter()

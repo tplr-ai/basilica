@@ -85,7 +85,11 @@ fn render_balance_info(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         vec![
             Line::from(""),
             Line::from(vec![Span::styled(
-                if ctx.connected { "  Loading..." } else { "  Not connected" },
+                if ctx.connected {
+                    "  Loading..."
+                } else {
+                    "  Not connected"
+                },
                 theme.text_muted(),
             )]),
         ]

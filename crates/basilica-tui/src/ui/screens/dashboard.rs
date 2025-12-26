@@ -13,7 +13,7 @@ use crate::ui::components::{footer, header};
 
 /// Render with context
 pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
-    let theme = ctx.theme;
+    let _theme = ctx.theme; // Used by helper functions via ctx
     let area = frame.area();
 
     let chunks = Layout::default()
@@ -50,7 +50,10 @@ fn render_rentals_overview(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let user_data = ctx.user_data;
 
     let rows: Vec<Row> = if user_data.rentals.is_empty() {
-        vec![Row::new(vec![Cell::from("No active rentals. Press 'm' for marketplace.")]).style(theme.text_muted())]
+        vec![Row::new(vec![Cell::from(
+            "No active rentals. Press 'm' for marketplace.",
+        )])
+        .style(theme.text_muted())]
     } else {
         user_data
             .rentals
@@ -72,7 +75,7 @@ fn render_rentals_overview(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 
                 // Format uptime
                 let uptime = format_uptime(rental.uptime_minutes);
-                
+
                 // Format GPU
                 let gpu = format!("{} x {}", rental.gpu_type, rental.gpu_count);
 
@@ -148,7 +151,11 @@ fn render_balance_widget(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             Line::from(Span::styled("Loading balance...", theme.text_muted())),
             Line::from(""),
             Line::from(Span::styled(
-                if ctx.connected { "Fetching from API..." } else { "Not connected" },
+                if ctx.connected {
+                    "Fetching from API..."
+                } else {
+                    "Not connected"
+                },
                 theme.text_muted(),
             )),
         ]
@@ -176,12 +183,23 @@ fn render_status_widget(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let offerings = user_data.offerings.len();
 
     let status_icon = if ctx.connected { "🟢" } else { "🔴" };
-    let status_text = if ctx.connected { "Connected" } else { "Offline" };
+    let status_text = if ctx.connected {
+        "Connected"
+    } else {
+        "Offline"
+    };
 
     let items = vec![
         ListItem::new(Line::from(vec![
             Span::styled(format!("{} ", status_icon), theme.text()),
-            Span::styled(status_text, if ctx.connected { theme.text_success() } else { theme.text_error() }),
+            Span::styled(
+                status_text,
+                if ctx.connected {
+                    theme.text_success()
+                } else {
+                    theme.text_error()
+                },
+            ),
         ])),
         ListItem::new(Line::from("")),
         ListItem::new(Line::from(vec![

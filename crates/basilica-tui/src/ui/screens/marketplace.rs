@@ -52,7 +52,10 @@ fn render_filters(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         Line::from(vec![
             Span::raw("  "),
             Span::styled("●", theme.text_accent()),
-            Span::styled(format!(" All ({})", user_data.offerings.len()), theme.text()),
+            Span::styled(
+                format!(" All ({})", user_data.offerings.len()),
+                theme.text(),
+            ),
         ]),
     ];
 
@@ -97,9 +100,15 @@ fn render_gpu_list(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         if user_data.loading.offerings {
             vec![Row::new(vec![Cell::from("Loading available GPUs...")]).style(theme.text_muted())]
         } else if !ctx.connected {
-            vec![Row::new(vec![Cell::from("Not connected. Run 'basilica login' first.")]).style(theme.text_warning())]
+            vec![Row::new(vec![Cell::from(
+                "Not connected. Run 'basilica login' first.",
+            )])
+            .style(theme.text_warning())]
         } else {
-            vec![Row::new(vec![Cell::from("No GPUs available at this time.")]).style(theme.text_muted())]
+            vec![
+                Row::new(vec![Cell::from("No GPUs available at this time.")])
+                    .style(theme.text_muted()),
+            ]
         }
     } else {
         user_data
@@ -123,7 +132,8 @@ fn render_gpu_list(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
                     Cell::from(offering.gpu_type.clone()),
                     Cell::from(format!("{}x", offering.gpu_count)),
                     Cell::from(format!("{}GB", offering.memory_gb)),
-                    Cell::from(format!("${:.2}/hr", offering.price_per_hour)).style(theme.text_accent()),
+                    Cell::from(format!("${:.2}/hr", offering.price_per_hour))
+                        .style(theme.text_accent()),
                     Cell::from(offering.source.clone()).style(source_style),
                     Cell::from(format!("{}", offering.available)),
                 ])
@@ -132,8 +142,8 @@ fn render_gpu_list(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             .collect()
     };
 
-    let header_row = Row::new(vec!["GPU", "Count", "Memory", "Price", "Source", "Avail"])
-        .style(theme.header());
+    let header_row =
+        Row::new(vec!["GPU", "Count", "Memory", "Price", "Source", "Avail"]).style(theme.header());
 
     let title = format!(" Available GPUs ({}) ", user_data.offerings.len());
 
@@ -160,7 +170,10 @@ fn render_gpu_list(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 
     let mut state = TableState::default();
     if !user_data.offerings.is_empty() {
-        state.select(Some(ctx.selected_index.min(user_data.offerings.len().saturating_sub(1))));
+        state.select(Some(
+            ctx.selected_index
+                .min(user_data.offerings.len().saturating_sub(1)),
+        ));
     }
 
     frame.render_stateful_widget(table, area, &mut state);

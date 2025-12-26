@@ -49,7 +49,8 @@ fn render_node_list(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
     // Sample node configuration data
-    let nodes = [(
+    let nodes = [
+        (
             "node-001",
             "192.168.1.10",
             "22",
@@ -112,7 +113,8 @@ fn render_node_list(frame: &mut Frame, app: &App, area: Rect) {
             "gpu-user",
             "L40S x 2",
             "Healthy",
-        )];
+        ),
+    ];
 
     let rows: Vec<Row> = nodes
         .iter()
@@ -276,7 +278,8 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
 fn render_node_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    let nodes = [(
+    let nodes = [
+        (
             "node-001",
             "192.168.1.10",
             "22",
@@ -339,7 +342,8 @@ fn render_node_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             "gpu-user",
             "L40S x 2",
             "Healthy",
-        )];
+        ),
+    ];
 
     let rows: Vec<Row> = nodes
         .iter()

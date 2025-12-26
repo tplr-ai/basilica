@@ -158,7 +158,8 @@ fn render_node_grid(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
     // Sample node data
-    let nodes = [(
+    let nodes = [
+        (
             "node-001",
             "192.168.1.10",
             "H100 x 4",
@@ -229,7 +230,8 @@ fn render_node_grid(frame: &mut Frame, app: &App, area: Rect) {
             40.0,
             35.0,
             "1/2 assigned",
-        )];
+        ),
+    ];
 
     let rows: Vec<Row> = nodes
         .iter()
@@ -424,7 +426,8 @@ fn render_stat_box_ctx(
 fn render_node_grid_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    let nodes = [(
+    let nodes = [
+        (
             "node-001",
             "192.168.1.10",
             "H100 x 4",
@@ -495,7 +498,8 @@ fn render_node_grid_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             40.0,
             35.0,
             "1/2 assigned",
-        )];
+        ),
+    ];
 
     let rows: Vec<Row> = nodes
         .iter()

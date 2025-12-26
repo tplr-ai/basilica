@@ -262,17 +262,15 @@ impl UserData {
                 self.deployments = response
                     .deployments
                     .into_iter()
-                    .map(|d| {
-                        DeploymentInfo {
-                            name: d.instance_name,
-                            deployment_type: "deployment".to_string(),
-                            status: d.state,
-                            replicas_ready: d.replicas.ready,
-                            replicas_desired: d.replicas.desired,
-                            gpu_type: String::new(),
-                            gpu_count: 0,
-                            url: Some(d.url),
-                        }
+                    .map(|d| DeploymentInfo {
+                        name: d.instance_name,
+                        deployment_type: "deployment".to_string(),
+                        status: d.state,
+                        replicas_ready: d.replicas.ready,
+                        replicas_desired: d.replicas.desired,
+                        gpu_type: String::new(),
+                        gpu_count: 0,
+                        url: Some(d.url),
                     })
                     .collect();
                 self.loading.deployments = false;
@@ -358,102 +356,96 @@ impl UserData {
 // Standalone fetch functions for parallel execution
 async fn fetch_rentals_data(client: &Arc<BasilicaClient>) -> Result<Vec<RentalInfo>> {
     match client.list_rentals(None).await {
-        Ok(response) => {
-            Ok(response
-                .rentals
-                .into_iter()
-                .map(|r| {
-                    let uptime_minutes = chrono::DateTime::parse_from_rfc3339(&r.created_at)
-                        .map(|start| {
-                            let now = chrono::Utc::now();
-                            let duration = now.signed_duration_since(start);
-                            duration.num_minutes().max(0) as u64
-                        })
-                        .unwrap_or(0);
+        Ok(response) => Ok(response
+            .rentals
+            .into_iter()
+            .map(|r| {
+                let uptime_minutes = chrono::DateTime::parse_from_rfc3339(&r.created_at)
+                    .map(|start| {
+                        let now = chrono::Utc::now();
+                        let duration = now.signed_duration_since(start);
+                        duration.num_minutes().max(0) as u64
+                    })
+                    .unwrap_or(0);
 
-                    let (gpu_type, gpu_count) = if let Some(spec) = r.gpu_specs.first() {
-                        (spec.name.clone(), r.gpu_specs.len() as u32)
-                    } else {
-                        ("Unknown".to_string(), 0)
-                    };
+                let (gpu_type, gpu_count) = if let Some(spec) = r.gpu_specs.first() {
+                    (spec.name.clone(), r.gpu_specs.len() as u32)
+                } else {
+                    ("Unknown".to_string(), 0)
+                };
 
-                    RentalInfo {
-                        id: r.rental_id,
-                        gpu_type,
-                        gpu_count,
-                        status: format!("{:?}", r.state),
-                        uptime_minutes,
-                        cost: 0.0,
-                        container_image: r.container_image,
-                        ssh_host: None,
-                        ssh_port: None,
-                        ssh_user: None,
-                    }
-                })
-                .collect())
-        }
+                RentalInfo {
+                    id: r.rental_id,
+                    gpu_type,
+                    gpu_count,
+                    status: format!("{:?}", r.state),
+                    uptime_minutes,
+                    cost: 0.0,
+                    container_image: r.container_image,
+                    ssh_host: None,
+                    ssh_port: None,
+                    ssh_user: None,
+                }
+            })
+            .collect()),
         Err(e) => Err(anyhow::anyhow!("Failed to list rentals: {}", e)),
     }
 }
 
 async fn fetch_offerings_data(client: &Arc<BasilicaClient>) -> Result<Vec<GpuOffering>> {
     match client.list_available_nodes(None).await {
-        Ok(response) => {
-            Ok(response
-                .available_nodes
-                .into_iter()
-                .map(|n| {
-                    let (gpu_type, memory_gb, gpu_count) =
-                        if let Some(spec) = n.node.gpu_specs.first() {
-                            (
-                                spec.name.clone(),
-                                spec.memory_gb,
-                                n.node.gpu_specs.len() as u32,
-                            )
-                        } else {
-                            ("Unknown".to_string(), 0, 0)
-                        };
+        Ok(response) => Ok(response
+            .available_nodes
+            .into_iter()
+            .map(|n| {
+                let (gpu_type, memory_gb, gpu_count) = if let Some(spec) = n.node.gpu_specs.first()
+                {
+                    (
+                        spec.name.clone(),
+                        spec.memory_gb,
+                        n.node.gpu_specs.len() as u32,
+                    )
+                } else {
+                    ("Unknown".to_string(), 0, 0)
+                };
 
-                    let price_per_hour = n
-                        .node
-                        .hourly_rate_cents
-                        .map(|c| c as f64 / 100.0)
-                        .unwrap_or(0.0);
+                let price_per_hour = n
+                    .node
+                    .hourly_rate_cents
+                    .map(|c| c as f64 / 100.0)
+                    .unwrap_or(0.0);
 
-                    GpuOffering {
-                        gpu_type,
-                        gpu_count,
-                        memory_gb,
-                        price_per_hour,
-                        source: "basilica".to_string(),
-                        available: 1,
-                        node_id: Some(n.node.id),
-                    }
-                })
-                .collect())
-        }
+                GpuOffering {
+                    gpu_type,
+                    gpu_count,
+                    memory_gb,
+                    price_per_hour,
+                    source: "basilica".to_string(),
+                    available: 1,
+                    node_id: Some(n.node.id),
+                }
+            })
+            .collect()),
         Err(e) => Err(anyhow::anyhow!("Failed to list offerings: {}", e)),
     }
 }
 
 async fn fetch_deployments_data(client: &Arc<BasilicaClient>) -> Result<Vec<DeploymentInfo>> {
     match client.list_deployments().await {
-        Ok(response) => {
-            Ok(response
-                .deployments
-                .into_iter()
-                .map(|d| DeploymentInfo {
-                    name: d.instance_name,
-                    deployment_type: "deployment".to_string(),
-                    status: d.state,
-                    replicas_ready: d.replicas.ready,
-                    replicas_desired: d.replicas.desired,
-                    gpu_type: String::new(),
-                    gpu_count: 0,
-                    url: Some(d.url),
-                })
-                .collect())
-        }
+        Ok(response) => Ok(response
+            .deployments
+            .into_iter()
+            .map(|d| DeploymentInfo {
+                name: d.instance_name,
+                deployment_type: "deployment".to_string(),
+                status: d.state,
+                replicas_ready: d.replicas.ready,
+                replicas_desired: d.replicas.desired,
+                gpu_type: String::new(),
+                gpu_count: 0,
+                url: Some(d.url),
+            })
+            .collect()),
         Err(e) => Err(anyhow::anyhow!("Failed to list deployments: {}", e)),
     }
 }

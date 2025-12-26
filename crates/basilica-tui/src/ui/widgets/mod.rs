@@ -7,4 +7,3 @@ pub mod gauge;
 pub mod logs;
 pub mod sparkline;
 pub mod table;
-

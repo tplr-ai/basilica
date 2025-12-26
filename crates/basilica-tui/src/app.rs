@@ -204,6 +204,7 @@ pub struct App {
 
 /// Screen-specific state storage
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct ScreenStates {
     pub rentals: RentalsScreenState,
     pub marketplace: MarketplaceScreenState,
@@ -212,6 +213,7 @@ pub struct ScreenStates {
 }
 
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct RentalsScreenState {
     pub selected: usize,
     pub show_logs: bool,
@@ -219,6 +221,7 @@ pub struct RentalsScreenState {
 }
 
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct MarketplaceScreenState {
     pub selected: usize,
     pub filter_gpu_type: Option<String>,
@@ -226,12 +229,14 @@ pub struct MarketplaceScreenState {
 }
 
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct DeploymentsScreenState {
     pub selected: usize,
     pub show_logs: bool,
 }
 
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct FleetScreenState {
     pub selected_node: usize,
     pub show_details: bool,
@@ -759,6 +764,7 @@ fn render_app(frame: &mut ratatui::Frame, ctx: &RenderContext) {
 }
 
 /// Render context for passing to render functions
+#[allow(dead_code)]
 pub struct RenderContext<'a> {
     pub mode: AppMode,
     pub user_screen: UserScreen,

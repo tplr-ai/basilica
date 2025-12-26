@@ -41,6 +41,7 @@ jobs:
       billing: ${{ steps.changes.outputs.billing }}
       payments: ${{ steps.changes.outputs.payments }}
       basilica-cli: ${{ steps.changes.outputs.basilica-cli }}
+      basilica-tui: ${{ steps.changes.outputs.basilica-tui }}
       basilica-sdk-python: ${{ steps.changes.outputs.basilica-sdk-python }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
@@ -82,6 +83,12 @@ jobs:
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/cli/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            basilica-tui:
+              - 'crates/basilica-tui/**'
+              - 'crates/basilica-sdk/**'
+              - 'crates/basilica-common/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             billing:
@@ -185,6 +192,8 @@ jobs:
           cargo clippy -p basilica-payments --all-targets --all-features -- -D warnings
           # Run clippy on basilica-cli
           cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
+          # Run clippy on basilica-tui
+          cargo clippy -p basilica-tui --all-targets --all-features -- -D warnings
 
   # Build and test validator
   build-validator:
@@ -466,6 +475,45 @@ jobs:
           cargo build -p basilica-cli
           cargo nextest run -p basilica-cli --all-features --no-fail-fast
           ./target/debug/basilica --help
+
+  # Build and test basilica-tui
+  build-tui:
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    needs: changes
+    if: needs.changes.outputs.basilica-tui == 'true' || needs.changes.outputs.workspace == 'true'
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang python3-dev
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Build and test basilica-tui
+        run: |
+          # Build once for both tests and CLI check
+          cargo build -p basilica-tui
+          cargo nextest run -p basilica-tui --all-features --no-fail-fast
+          ./target/debug/basilica-tui --help
 
   # Build and test billing
   build-billing:
@@ -767,6 +815,7 @@ jobs:
       - build-billing
       - build-payments
       - build-cli
+      - build-tui
       - test-python-sdk
     if: always()
     steps:
@@ -781,6 +830,7 @@ jobs:
                 ("${{ needs.build-billing.result }}" == "success" || "${{ needs.build-billing.result }}" == "skipped") && \
                 ("${{ needs.build-payments.result }}" == "success" || "${{ needs.build-payments.result }}" == "skipped") && \
                 ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") && \
+                ("${{ needs.build-tui.result }}" == "success" || "${{ needs.build-tui.result }}" == "skipped") && \
                 ("${{ needs.test-python-sdk.result }}" == "success" || "${{ needs.test-python-sdk.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0

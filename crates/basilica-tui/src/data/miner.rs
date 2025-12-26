@@ -95,8 +95,7 @@ pub struct NodeInfo {
     pub uptime_hours: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum NodeStatus {
     Healthy,
     Warning,
@@ -104,7 +103,6 @@ pub enum NodeStatus {
     #[default]
     Unknown,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorInfo {
@@ -116,15 +114,13 @@ pub struct ValidatorInfo {
     pub assigned_nodes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ValidatorStatus {
     Active,
     Pending,
     #[default]
     Inactive,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinerInfo {

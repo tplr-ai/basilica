@@ -134,7 +134,10 @@ fn render_rentals_table(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 
     let mut state = TableState::default();
     if !user_data.rentals.is_empty() {
-        state.select(Some(ctx.selected_index.min(user_data.rentals.len().saturating_sub(1))));
+        state.select(Some(
+            ctx.selected_index
+                .min(user_data.rentals.len().saturating_sub(1)),
+        ));
     }
 
     frame.render_stateful_widget(table, area, &mut state);

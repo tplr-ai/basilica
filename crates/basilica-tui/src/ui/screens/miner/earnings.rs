@@ -173,7 +173,8 @@ fn render_payment_history(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
     // Sample payment data
-    let payments = [(
+    let payments = [
+        (
             "2024-01-15",
             "Val-001",
             "24h rental",
@@ -210,7 +211,8 @@ fn render_payment_history(frame: &mut Frame, app: &App, area: Rect) {
             "+$140.00",
             "Completed",
         ),
-        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed")];
+        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed"),
+    ];
 
     let rows: Vec<Row> = payments
         .iter()
@@ -408,7 +410,8 @@ fn render_projections_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rec
 fn render_payment_history_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    let payments = [(
+    let payments = [
+        (
             "2024-01-15",
             "Val-001",
             "24h rental",
@@ -445,7 +448,8 @@ fn render_payment_history_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect
             "+$140.00",
             "Completed",
         ),
-        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed")];
+        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed"),
+    ];
 
     let rows: Vec<Row> = payments
         .iter()
