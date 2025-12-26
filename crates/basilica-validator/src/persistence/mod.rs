@@ -13,6 +13,7 @@ pub mod rentals;
 pub mod simple_persistence;
 pub mod speedtest_profile;
 pub mod storage_profile;
+pub mod tee_profile;
 pub mod types;
 pub mod validator_persistence;
 pub mod verification;

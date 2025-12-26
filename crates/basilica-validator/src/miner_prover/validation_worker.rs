@@ -392,6 +392,7 @@ impl ValidationWorkerQueue {
             gpu_count: 0,
             validation_type,
             hourly_rate_cents: item.node_info.hourly_rate_cents,
+            tee_verification: None,
         };
 
         // Attempt to store the failed result

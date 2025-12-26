@@ -94,22 +94,16 @@ impl GpuDeviceProvider {
                 .device_by_index(i)
                 .map_err(|e| TeeError::Nvml(e.to_string()))?;
 
-            let name = device
-                .name()
-                .map_err(|e| TeeError::Nvml(e.to_string()))?;
+            let name = device.name().map_err(|e| TeeError::Nvml(e.to_string()))?;
 
-            let uuid = sanitize_gpu_id(
-                &device
-                    .uuid()
-                    .map_err(|e| TeeError::Nvml(e.to_string()))?,
-            );
+            let uuid = sanitize_gpu_id(&device.uuid().map_err(|e| TeeError::Nvml(e.to_string()))?);
 
             let memory = device
                 .memory_info()
                 .map_err(|e| TeeError::Nvml(e.to_string()))?
                 .total;
 
-            let (major, minor) = device
+            let cc = device
                 .cuda_compute_capability()
                 .map_err(|e| TeeError::Nvml(e.to_string()))?;
 
@@ -118,7 +112,10 @@ impl GpuDeviceProvider {
                 .map(|c| c as f64 * 1000.0)
                 .unwrap_or(0.0);
 
-            let ecc = device.is_ecc_enabled().ok();
+            let ecc = device
+                .is_ecc_enabled()
+                .ok()
+                .map(|state| state.currently_enabled);
 
             // Extract short model reference (last word of name)
             let model_short_ref = name
@@ -135,8 +132,8 @@ impl GpuDeviceProvider {
                 uuid,
                 name,
                 memory,
-                major: Some(major as u32),
-                minor: Some(minor as u32),
+                major: Some(cc.major as u32),
+                minor: Some(cc.minor as u32),
                 clock_rate,
                 ecc,
                 model_short_ref,
@@ -181,7 +178,7 @@ impl GpuDeviceProvider {
 
 impl Default for GpuDeviceProvider {
     fn default() -> Self {
-        Self::new().unwrap_or_else(|_| {
+        Self::new().unwrap_or({
             #[cfg(feature = "nvml")]
             {
                 Self { nvml: None }
@@ -253,10 +250,10 @@ mod tests {
 
     #[test]
     fn test_provider_default() {
-        let provider = GpuDeviceProvider::default();
+        let _provider = GpuDeviceProvider::default();
         // Without NVML feature, should not be available
         #[cfg(not(feature = "nvml"))]
-        assert!(!provider.is_available());
+        assert!(!_provider.is_available());
     }
 
     #[test]
@@ -280,4 +277,3 @@ mod tests {
         assert_eq!(info.name, parsed.name);
     }
 }
-

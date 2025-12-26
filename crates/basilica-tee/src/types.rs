@@ -125,7 +125,7 @@ impl ExpectedMeasurements {
 
     /// Check if MRTD matches
     pub fn matches_mrtd(&self, mrtd: &[u8; 48]) -> bool {
-        self.mrtd.as_ref().map_or(true, |expected| expected == mrtd)
+        self.mrtd.as_ref().is_none_or(|expected| expected == mrtd)
     }
 
     /// Check if RTMR at index matches
@@ -137,7 +137,7 @@ impl ExpectedMeasurements {
             3 => &self.rtmr3,
             _ => return true,
         };
-        expected.as_ref().map_or(true, |e| e == rtmr)
+        expected.as_ref().is_none_or(|e| e == rtmr)
     }
 }
 
@@ -298,4 +298,3 @@ mod tests {
         assert_eq!(parsed.raw_quote, vec![0xDE, 0xAD, 0xBE, 0xEF]);
     }
 }
-

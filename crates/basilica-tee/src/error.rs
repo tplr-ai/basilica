@@ -106,4 +106,3 @@ mod tests {
         assert!(matches!(tee_err, TeeError::HexDecode(_)));
     }
 }
-

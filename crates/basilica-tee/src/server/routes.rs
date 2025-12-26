@@ -2,10 +2,7 @@
 
 use super::handlers::AttestationHandlers;
 use super::ServerState;
-use axum::{
-    routing::get,
-    Router,
-};
+use axum::{routing::get, Router};
 use std::sync::Arc;
 
 /// Create the attestation server router
@@ -15,7 +12,10 @@ pub fn create_router(state: Arc<ServerState>) -> Router {
         .route("/attest", get(AttestationHandlers::attest))
         .route("/devices", get(AttestationHandlers::get_devices))
         .route("/tdx/quote", get(AttestationHandlers::get_tdx_quote))
-        .route("/nvtrust/evidence", get(AttestationHandlers::get_nvtrust_evidence))
+        .route(
+            "/nvtrust/evidence",
+            get(AttestationHandlers::get_nvtrust_evidence),
+        )
         .with_state(state)
 }
 
@@ -43,7 +43,12 @@ mod tests {
         let router = create_router(state);
 
         let response = router
-            .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -57,7 +62,12 @@ mod tests {
 
         // Without nonce parameter
         let response = router
-            .oneshot(Request::builder().uri("/attest").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/attest")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -71,13 +81,20 @@ mod tests {
         let router = create_router(state);
 
         let response = router
-            .oneshot(Request::builder().uri("/devices").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/devices")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
         // May succeed or fail depending on NVML availability
         // Just check it doesn't panic
-        assert!(response.status() == StatusCode::OK || response.status() == StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            response.status() == StatusCode::OK
+                || response.status() == StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 }
-

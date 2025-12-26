@@ -39,7 +39,9 @@ impl AttestationServer {
         let bind_addr = if let Some(ref server_config) = config.attestation_server {
             format!("{}:{}", server_config.bind_host, server_config.bind_port)
                 .parse()
-                .map_err(|e| crate::error::TeeError::InvalidConfig(format!("Invalid bind address: {}", e)))?
+                .map_err(|e| {
+                    crate::error::TeeError::InvalidConfig(format!("Invalid bind address: {}", e))
+                })?
         } else {
             "0.0.0.0:8443".parse().unwrap()
         };
@@ -101,11 +103,11 @@ impl AttestationServer {
 
         let listener = tokio::net::TcpListener::bind(bind_addr)
             .await
-            .map_err(|e| crate::error::TeeError::Io(e))?;
+            .map_err(crate::error::TeeError::Io)?;
 
         axum::serve(listener, router)
             .await
-            .map_err(|e| crate::error::TeeError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            .map_err(|e| crate::error::TeeError::Io(std::io::Error::other(e)))?;
 
         Ok(())
     }
@@ -144,4 +146,3 @@ mod tests {
         assert_eq!(server.bind_addr().port(), 8443);
     }
 }
-

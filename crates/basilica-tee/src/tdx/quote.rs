@@ -124,7 +124,9 @@ impl TdxQuoteV4 {
         let signature_data_len = u32::from_le_bytes(
             data[sig_len_offset..sig_len_offset + 4]
                 .try_into()
-                .map_err(|_| TeeError::TdxQuoteParsing("Failed to parse signature length".into()))?,
+                .map_err(|_| {
+                    TeeError::TdxQuoteParsing("Failed to parse signature length".into())
+                })?,
         );
 
         // Extract signature data
@@ -299,11 +301,7 @@ impl TdReport {
 
 /// Create a minimal valid TDX quote for testing (public for use in other test modules)
 #[cfg(test)]
-pub fn create_test_quote(
-    mrtd: [u8; 48],
-    rtmr0: [u8; 48],
-    report_data: [u8; 64],
-) -> Vec<u8> {
+pub fn create_test_quote(mrtd: [u8; 48], rtmr0: [u8; 48], report_data: [u8; 64]) -> Vec<u8> {
     let mut quote = vec![0u8; MIN_QUOTE_SIZE + 100]; // Add some signature data
 
     // Header (48 bytes)
@@ -379,7 +377,10 @@ mod tests {
 
         let result = TdxQuoteV4::parse(&quote_bytes);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unsupported quote version"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported quote version"));
     }
 
     #[test]
@@ -472,4 +473,3 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("truncated"));
     }
 }
-
