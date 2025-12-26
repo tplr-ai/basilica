@@ -115,6 +115,7 @@ async fn test_dynamic_discovery_config() {
         enable_worker_queue: false,
         storage_validation: crate::config::StorageValidationConfig::default(),
         node_groups: crate::config::NodeGroupConfig::default(),
+        tee: crate::config::TeeValidationConfig::default(),
     };
 
     // Verify configuration

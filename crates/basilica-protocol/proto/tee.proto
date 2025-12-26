@@ -1,0 +1,202 @@
+// TEE (Trusted Execution Environment) attestation messages
+// Version: 1.0
+//
+// This file defines the protocol buffer messages for Intel TDX and NVIDIA GPU CC attestation.
+
+syntax = "proto3";
+
+package basilica.tee.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// TEE attestation request from validator to executor
+message TeeAttestationRequest {
+    // Node identifier
+    string node_id = 1;
+    
+    // Nonce for freshness (64 bytes, hex encoded)
+    bytes nonce = 2;
+    
+    // Request GPU CC attestation
+    bool include_gpu_attestation = 3;
+    
+    // Optional: Specific GPU IDs to attest (empty = all GPUs)
+    repeated string gpu_ids = 4;
+}
+
+// TEE attestation response from executor
+message TeeAttestationResponse {
+    // TDX quote (raw bytes)
+    bytes tdx_quote = 1;
+    
+    // GPU CC attestation (if requested)
+    repeated GpuCcAttestation gpu_attestations = 2;
+    
+    // Timestamp of attestation
+    google.protobuf.Timestamp timestamp = 3;
+    
+    // Error message if attestation failed
+    string error_message = 4;
+}
+
+// GPU Confidential Computing attestation
+message GpuCcAttestation {
+    // GPU UUID
+    string gpu_uuid = 1;
+    
+    // CC mode enabled
+    bool cc_mode_enabled = 2;
+    
+    // Raw attestation report (hex encoded)
+    bytes attestation_report = 3;
+    
+    // Attestation signature (hex encoded)
+    bytes signature = 4;
+    
+    // Certificate chain for verification
+    repeated bytes cert_chain = 5;
+    
+    // Driver version
+    string driver_version = 6;
+    
+    // GPU model name
+    string gpu_model = 7;
+    
+    // Nonce included in attestation (for verification)
+    bytes nonce = 8;
+}
+
+// TDX Quote verification result
+message TdxVerificationResult {
+    // Whether the quote signature is valid
+    bool quote_valid = 1;
+    
+    // Whether MRTD matches expected value
+    bool mrtd_matches = 2;
+    
+    // Whether each RTMR matches expected value (4 elements)
+    repeated bool rtmr_matches = 3;
+    
+    // Whether report data contains expected nonce
+    bool report_data_matches = 4;
+    
+    // MRTD value from quote (hex encoded)
+    string mrtd_hex = 5;
+    
+    // Verification timestamp
+    google.protobuf.Timestamp verified_at = 6;
+}
+
+// GPU CC verification result
+message GpuCcVerificationResult {
+    // Whether CC mode is enabled on the GPU
+    bool cc_mode_enabled = 1;
+    
+    // Whether attestation signature is valid
+    bool attestation_valid = 2;
+    
+    // GPU UUID
+    string gpu_uuid = 3;
+    
+    // Whether nonce in attestation matches
+    bool nonce_verified = 4;
+    
+    // GPU model name
+    string gpu_model = 5;
+    
+    // Driver version
+    string driver_version = 6;
+    
+    // Verification timestamp
+    google.protobuf.Timestamp verified_at = 7;
+}
+
+// Combined TEE verification result
+message TeeVerificationResult {
+    // TDX verification result
+    TdxVerificationResult tdx = 1;
+    
+    // GPU CC verification results (one per GPU)
+    repeated GpuCcVerificationResult gpu_cc = 2;
+    
+    // Overall TEE verification passed
+    bool tee_verified = 3;
+}
+
+// Node TEE status
+message NodeTeeStatus {
+    enum Status {
+        UNKNOWN = 0;
+        DISABLED = 1;
+        PENDING = 2;
+        VERIFIED = 3;
+        FAILED = 4;
+    }
+    
+    // Current TEE status
+    Status status = 1;
+    
+    // MRTD hash if verified (48 bytes, hex encoded)
+    bytes mrtd = 2;
+    
+    // Last verification timestamp
+    google.protobuf.Timestamp last_verified = 3;
+    
+    // Failure reason if failed
+    string failure_reason = 4;
+    
+    // GPU CC mode status for each GPU
+    repeated GpuCcStatus gpu_cc_status = 5;
+}
+
+// GPU CC mode status
+message GpuCcStatus {
+    // GPU UUID
+    string gpu_uuid = 1;
+    
+    // CC mode enabled
+    bool cc_mode_enabled = 2;
+    
+    // GPU model name
+    string gpu_model = 3;
+    
+    // Last attestation timestamp
+    google.protobuf.Timestamp last_attested = 4;
+}
+
+// Expected measurements for TEE verification
+message ExpectedMeasurements {
+    // Expected MRTD (48 bytes, hex encoded)
+    bytes mrtd = 1;
+    
+    // Expected RTMR[0] - firmware/initrd (optional)
+    bytes rtmr0 = 2;
+    
+    // Expected RTMR[1] - OS kernel (optional)
+    bytes rtmr1 = 3;
+    
+    // Expected RTMR[2] - application (optional)
+    bytes rtmr2 = 4;
+    
+    // Expected RTMR[3] - reserved (optional)
+    bytes rtmr3 = 5;
+}
+
+// TEE configuration for a node
+message TeeNodeConfig {
+    // TEE is enabled
+    bool enabled = 1;
+    
+    // TEE is required (reject if verification fails)
+    bool required = 2;
+    
+    // Expected measurements
+    ExpectedMeasurements expected_measurements = 3;
+    
+    // GPU CC is required
+    bool gpu_cc_required = 4;
+    
+    // Allowed GPU models for CC
+    repeated string allowed_gpu_models = 5;
+}
+

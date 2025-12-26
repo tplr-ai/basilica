@@ -37,6 +37,7 @@ jobs:
       miner: ${{ steps.changes.outputs.miner }}
       basilica-cli: ${{ steps.changes.outputs.basilica-cli }}
       basilica-sdk-python: ${{ steps.changes.outputs.basilica-sdk-python }}
+      basilica-tee: ${{ steps.changes.outputs.basilica-tee }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +49,7 @@ jobs:
               - 'crates/basilica-validator/**'
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
+              - 'crates/basilica-tee/**'
               - 'scripts/validator/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
@@ -68,6 +70,11 @@ jobs:
             basilica-sdk-python:
               - 'crates/basilica-sdk-python/**'
               - 'crates/basilica-sdk/**'
+              - 'crates/basilica-common/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            basilica-tee:
+              - 'crates/basilica-tee/**'
               - 'crates/basilica-common/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
@@ -105,10 +112,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Quick check builds
         run: |
-          cargo check -p basilica-common -p basilica-protocol
+          cargo check -p basilica-common -p basilica-protocol -p basilica-tee
       - name: Run clippy on core packages
         run: |
-          cargo clippy -p basilica-common -p basilica-protocol --all-targets -- -D warnings
+          cargo clippy -p basilica-common -p basilica-protocol -p basilica-tee --all-targets -- -D warnings
 
   # Lint complex packages
   lint-complex:
@@ -143,6 +150,45 @@ jobs:
           cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
           cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
           cargo clippy -p basilica-sdk --all-targets --all-features -- -D warnings
+          # Run clippy on basilica-tee
+          cargo clippy -p basilica-tee --all-targets --all-features -- -D warnings
+
+  # Build and test basilica-tee
+  build-tee:
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    needs: changes
+    if: needs.changes.outputs.basilica-tee == 'true' || needs.changes.outputs.workspace == 'true'
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - name: Build and test basilica-tee
+        run: |
+          cargo build -p basilica-tee
+          cargo nextest run -p basilica-tee --all-features --no-fail-fast
 
   # Build and test validator
   build-validator:
@@ -379,6 +425,7 @@ jobs:
     needs:
       - quick-checks
       - lint-complex
+      - build-tee
       - build-validator
       - build-miner
       - build-cli
@@ -389,6 +436,7 @@ jobs:
         run: |
           if [[ "${{ needs.quick-checks.result }}" == "success" && \
                 "${{ needs.lint-complex.result }}" == "success" && \
+                ("${{ needs.build-tee.result }}" == "success" || "${{ needs.build-tee.result }}" == "skipped") && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
                 ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") && \
