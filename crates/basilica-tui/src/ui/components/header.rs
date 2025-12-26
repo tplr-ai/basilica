@@ -149,4 +149,3 @@ pub fn render_header_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 pub fn header_height() -> u16 {
     2
 }
-

@@ -81,21 +81,71 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
     let logs = vec![
         ("14:32:15", "INFO", "node-001", "Health check passed"),
         ("14:32:14", "INFO", "node-002", "Health check passed"),
-        ("14:32:10", "INFO", "validator", "Validator discovery completed, found 3 validators"),
+        (
+            "14:32:10",
+            "INFO",
+            "validator",
+            "Validator discovery completed, found 3 validators",
+        ),
         ("14:32:05", "INFO", "node-003", "Health check passed"),
-        ("14:32:00", "WARN", "node-004", "High memory utilization: 95%"),
+        (
+            "14:32:00",
+            "WARN",
+            "node-004",
+            "High memory utilization: 95%",
+        ),
         ("14:31:55", "INFO", "node-005", "Health check passed"),
-        ("14:31:50", "ERROR", "node-006", "SSH connection failed: Connection refused"),
+        (
+            "14:31:50",
+            "ERROR",
+            "node-006",
+            "SSH connection failed: Connection refused",
+        ),
         ("14:31:45", "INFO", "node-007", "Health check passed"),
         ("14:31:40", "INFO", "node-008", "Health check passed"),
-        ("14:31:30", "INFO", "validator", "Received assignment request from Val-001"),
-        ("14:31:25", "INFO", "node-001", "GPU 0-3 assigned to Val-001"),
-        ("14:31:20", "INFO", "metrics", "Metrics collection completed"),
-        ("14:31:15", "INFO", "node-002", "Container started for rental abc123"),
-        ("14:31:10", "INFO", "validator", "Node assignment successful"),
-        ("14:31:05", "INFO", "bittensor", "Chain registration verified"),
+        (
+            "14:31:30",
+            "INFO",
+            "validator",
+            "Received assignment request from Val-001",
+        ),
+        (
+            "14:31:25",
+            "INFO",
+            "node-001",
+            "GPU 0-3 assigned to Val-001",
+        ),
+        (
+            "14:31:20",
+            "INFO",
+            "metrics",
+            "Metrics collection completed",
+        ),
+        (
+            "14:31:15",
+            "INFO",
+            "node-002",
+            "Container started for rental abc123",
+        ),
+        (
+            "14:31:10",
+            "INFO",
+            "validator",
+            "Node assignment successful",
+        ),
+        (
+            "14:31:05",
+            "INFO",
+            "bittensor",
+            "Chain registration verified",
+        ),
         ("14:31:00", "INFO", "main", "Miner tick completed"),
-        ("14:30:55", "WARN", "node-004", "GPU 2 temperature high: 82°C"),
+        (
+            "14:30:55",
+            "WARN",
+            "node-004",
+            "GPU 2 temperature high: 82°C",
+        ),
         ("14:30:50", "INFO", "node-003", "Container logs rotated"),
         ("14:30:45", "INFO", "validator", "Heartbeat sent to Val-002"),
         ("14:30:40", "INFO", "metrics", "Prometheus scrape completed"),
@@ -187,7 +237,12 @@ fn render_filter_bar_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rect
 
     frame.render_widget(
         Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).border_style(theme.border()).title(Span::styled(" Filters ", theme.block_title())))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.border())
+                    .title(Span::styled(" Filters ", theme.block_title())),
+            )
             .style(theme.text()),
         area,
     );
@@ -197,21 +252,71 @@ fn render_logs_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rect) {
     let logs = vec![
         ("14:32:15", "INFO", "node-001", "Health check passed"),
         ("14:32:14", "INFO", "node-002", "Health check passed"),
-        ("14:32:10", "INFO", "validator", "Validator discovery completed, found 3 validators"),
+        (
+            "14:32:10",
+            "INFO",
+            "validator",
+            "Validator discovery completed, found 3 validators",
+        ),
         ("14:32:05", "INFO", "node-003", "Health check passed"),
-        ("14:32:00", "WARN", "node-004", "High memory utilization: 95%"),
+        (
+            "14:32:00",
+            "WARN",
+            "node-004",
+            "High memory utilization: 95%",
+        ),
         ("14:31:55", "INFO", "node-005", "Health check passed"),
-        ("14:31:50", "ERROR", "node-006", "SSH connection failed: Connection refused"),
+        (
+            "14:31:50",
+            "ERROR",
+            "node-006",
+            "SSH connection failed: Connection refused",
+        ),
         ("14:31:45", "INFO", "node-007", "Health check passed"),
         ("14:31:40", "INFO", "node-008", "Health check passed"),
-        ("14:31:30", "INFO", "validator", "Received assignment request from Val-001"),
-        ("14:31:25", "INFO", "node-001", "GPU 0-3 assigned to Val-001"),
-        ("14:31:20", "INFO", "metrics", "Metrics collection completed"),
-        ("14:31:15", "INFO", "node-002", "Container started for rental abc123"),
-        ("14:31:10", "INFO", "validator", "Node assignment successful"),
-        ("14:31:05", "INFO", "bittensor", "Chain registration verified"),
+        (
+            "14:31:30",
+            "INFO",
+            "validator",
+            "Received assignment request from Val-001",
+        ),
+        (
+            "14:31:25",
+            "INFO",
+            "node-001",
+            "GPU 0-3 assigned to Val-001",
+        ),
+        (
+            "14:31:20",
+            "INFO",
+            "metrics",
+            "Metrics collection completed",
+        ),
+        (
+            "14:31:15",
+            "INFO",
+            "node-002",
+            "Container started for rental abc123",
+        ),
+        (
+            "14:31:10",
+            "INFO",
+            "validator",
+            "Node assignment successful",
+        ),
+        (
+            "14:31:05",
+            "INFO",
+            "bittensor",
+            "Chain registration verified",
+        ),
         ("14:31:00", "INFO", "main", "Miner tick completed"),
-        ("14:30:55", "WARN", "node-004", "GPU 2 temperature high: 82°C"),
+        (
+            "14:30:55",
+            "WARN",
+            "node-004",
+            "GPU 2 temperature high: 82°C",
+        ),
         ("14:30:50", "INFO", "node-003", "Container logs rotated"),
         ("14:30:45", "INFO", "validator", "Heartbeat sent to Val-002"),
         ("14:30:40", "INFO", "metrics", "Prometheus scrape completed"),
@@ -255,4 +360,3 @@ fn render_logs_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rect) {
 
     frame.render_stateful_widget(list, area, &mut state);
 }
-

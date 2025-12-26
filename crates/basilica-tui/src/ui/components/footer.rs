@@ -68,10 +68,7 @@ pub fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Create a key hint span
 fn key_hint<'a>(key: &'a str, desc: &'a str, theme: &crate::ui::Theme) -> Span<'a> {
-    Span::styled(
-        format!("[{}] {}", key, desc),
-        theme.text_muted(),
-    )
+    Span::styled(format!("[{}] {}", key, desc), theme.text_muted())
 }
 
 /// Render footer with context
@@ -133,4 +130,3 @@ pub fn render_footer_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 pub fn footer_height() -> u16 {
     1
 }
-

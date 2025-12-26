@@ -1,4 +1,7 @@
 //! Command execution and actions
+//!
+//! These functions are scaffolding for future TUI features.
+#![allow(dead_code)]
 
 use anyhow::Result;
 use std::process::Command;
@@ -7,15 +10,15 @@ use std::process::Command;
 pub async fn ssh_connect(host: &str, port: u16, user: &str) -> Result<()> {
     // Build SSH command
     let ssh_cmd = format!("ssh -p {} {}@{}", port, user, host);
-    
+
     tracing::info!("Connecting via SSH: {}", ssh_cmd);
-    
+
     // Note: In a real TUI, we'd need to:
     // 1. Exit the TUI temporarily
     // 2. Run SSH
     // 3. Re-enter the TUI when SSH exits
     // For now, just log the intent
-    
+
     Ok(())
 }
 
@@ -23,7 +26,8 @@ pub async fn ssh_connect(host: &str, port: u16, user: &str) -> Result<()> {
 pub async fn ssh_exec(host: &str, port: u16, user: &str, command: &str) -> Result<String> {
     let output = Command::new("ssh")
         .args([
-            "-p", &port.to_string(),
+            "-p",
+            &port.to_string(),
             &format!("{}@{}", user, host),
             command,
         ])
@@ -49,18 +53,19 @@ pub async fn scp_copy(
     to_remote: bool,
 ) -> Result<()> {
     let (src, dst) = if to_remote {
-        (source.to_string(), format!("{}@{}:{}", user, host, destination))
+        (
+            source.to_string(),
+            format!("{}@{}:{}", user, host, destination),
+        )
     } else {
-        (format!("{}@{}:{}", user, host, source), destination.to_string())
+        (
+            format!("{}@{}:{}", user, host, source),
+            destination.to_string(),
+        )
     };
 
     let output = Command::new("scp")
-        .args([
-            "-P", &port.to_string(),
-            "-r",
-            &src,
-            &dst,
-        ])
+        .args(["-P", &port.to_string(), "-r", &src, &dst])
         .output()?;
 
     if output.status.success() {
@@ -117,4 +122,3 @@ pub fn copy_to_clipboard(text: &str) -> Result<()> {
     }
     Ok(())
 }
-

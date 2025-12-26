@@ -1,4 +1,5 @@
 //! Theme and color definitions
+#![allow(dead_code)]
 
 use ratatui::style::{Color, Modifier, Style};
 
@@ -35,36 +36,36 @@ impl Theme {
     /// Create a dark theme (default)
     pub fn dark() -> Self {
         Self {
-            bg: Color::Rgb(17, 17, 27),           // Deep dark blue-black
-            fg: Color::Rgb(205, 214, 244),         // Light lavender
-            fg_muted: Color::Rgb(108, 112, 134),   // Muted gray
-            accent: Color::Rgb(137, 180, 250),     // Blue accent
+            bg: Color::Rgb(17, 17, 27),                  // Deep dark blue-black
+            fg: Color::Rgb(205, 214, 244),               // Light lavender
+            fg_muted: Color::Rgb(108, 112, 134),         // Muted gray
+            accent: Color::Rgb(137, 180, 250),           // Blue accent
             accent_secondary: Color::Rgb(203, 166, 247), // Mauve
-            success: Color::Rgb(166, 227, 161),    // Green
-            warning: Color::Rgb(249, 226, 175),    // Yellow/peach
-            error: Color::Rgb(243, 139, 168),      // Red/pink
-            info: Color::Rgb(148, 226, 213),       // Teal
-            border: Color::Rgb(69, 71, 90),        // Surface border
-            selection_bg: Color::Rgb(49, 50, 68),  // Surface selection
-            header_bg: Color::Rgb(30, 30, 46),     // Slightly lighter bg
+            success: Color::Rgb(166, 227, 161),          // Green
+            warning: Color::Rgb(249, 226, 175),          // Yellow/peach
+            error: Color::Rgb(243, 139, 168),            // Red/pink
+            info: Color::Rgb(148, 226, 213),             // Teal
+            border: Color::Rgb(69, 71, 90),              // Surface border
+            selection_bg: Color::Rgb(49, 50, 68),        // Surface selection
+            header_bg: Color::Rgb(30, 30, 46),           // Slightly lighter bg
         }
     }
 
     /// Create a light theme
     pub fn light() -> Self {
         Self {
-            bg: Color::Rgb(239, 241, 245),         // Light gray
-            fg: Color::Rgb(76, 79, 105),           // Dark text
-            fg_muted: Color::Rgb(140, 143, 161),   // Muted text
-            accent: Color::Rgb(30, 102, 245),      // Blue
+            bg: Color::Rgb(239, 241, 245),              // Light gray
+            fg: Color::Rgb(76, 79, 105),                // Dark text
+            fg_muted: Color::Rgb(140, 143, 161),        // Muted text
+            accent: Color::Rgb(30, 102, 245),           // Blue
             accent_secondary: Color::Rgb(136, 57, 239), // Purple
-            success: Color::Rgb(64, 160, 43),      // Green
-            warning: Color::Rgb(223, 142, 29),     // Orange
-            error: Color::Rgb(210, 15, 57),        // Red
-            info: Color::Rgb(23, 146, 153),        // Teal
-            border: Color::Rgb(172, 176, 190),     // Border
-            selection_bg: Color::Rgb(204, 208, 218), // Selection
-            header_bg: Color::Rgb(220, 224, 232),  // Header
+            success: Color::Rgb(64, 160, 43),           // Green
+            warning: Color::Rgb(223, 142, 29),          // Orange
+            error: Color::Rgb(210, 15, 57),             // Red
+            info: Color::Rgb(23, 146, 153),             // Teal
+            border: Color::Rgb(172, 176, 190),          // Border
+            selection_bg: Color::Rgb(204, 208, 218),    // Selection
+            header_bg: Color::Rgb(220, 224, 232),       // Header
         }
     }
 
@@ -82,7 +83,10 @@ impl Theme {
 
     /// Bold text style
     pub fn text_bold(&self) -> Style {
-        Style::default().fg(self.fg).bg(self.bg).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.fg)
+            .bg(self.bg)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Accent text style
@@ -112,7 +116,9 @@ impl Theme {
 
     /// Block title style
     pub fn block_title(&self) -> Style {
-        Style::default().fg(self.accent).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(self.accent)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Border style
@@ -127,7 +133,9 @@ impl Theme {
 
     /// Selected row style
     pub fn selected_row(&self) -> Style {
-        Style::default().bg(self.selection_bg).add_modifier(Modifier::BOLD)
+        Style::default()
+            .bg(self.selection_bg)
+            .add_modifier(Modifier::BOLD)
     }
 
     /// Header style
@@ -187,4 +195,3 @@ impl Default for Theme {
         Self::dark()
     }
 }
-

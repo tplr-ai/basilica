@@ -89,20 +89,14 @@ fn render_assignment_info(frame: &mut Frame, app: &App, area: Rect) {
     // Assignment strategy
     let strategy_info = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Strategy: ", theme.text_muted()),
-        ]),
-        Line::from(vec![
-            Span::styled("  highest_stake", theme.text_accent()),
-        ]),
+        Line::from(vec![Span::styled("  Strategy: ", theme.text_muted())]),
+        Line::from(vec![Span::styled("  highest_stake", theme.text_accent())]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  Assigned to: ", theme.text_muted()),
             Span::styled("3", theme.text_success().add_modifier(Modifier::BOLD)),
         ]),
-        Line::from(vec![
-            Span::styled("  validators", theme.text_muted()),
-        ]),
+        Line::from(vec![Span::styled("  validators", theme.text_muted())]),
     ];
 
     let strategy_block = Paragraph::new(strategy_info)
@@ -119,12 +113,8 @@ fn render_assignment_info(frame: &mut Frame, app: &App, area: Rect) {
     // Discovery status
     let discovery_info = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Last discovery:", theme.text_muted()),
-        ]),
-        Line::from(vec![
-            Span::styled("  2 min ago", theme.text()),
-        ]),
+        Line::from(vec![Span::styled("  Last discovery:", theme.text_muted())]),
+        Line::from(vec![Span::styled("  2 min ago", theme.text())]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  Next in: ", theme.text_muted()),
@@ -153,13 +143,32 @@ fn render_validator_list(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
     // Sample validator data
-    let validators = vec![
-        ("Val-001", "5Abc...xyz", "1,500,000", "Active", "12", "node-001, node-002"),
-        ("Val-002", "5Def...uvw", "850,000", "Active", "8", "node-003"),
-        ("Val-003", "5Ghi...rst", "720,000", "Active", "4", "node-005, node-007"),
+    let validators = [(
+            "Val-001",
+            "5Abc...xyz",
+            "1,500,000",
+            "Active",
+            "12",
+            "node-001, node-002",
+        ),
+        (
+            "Val-002",
+            "5Def...uvw",
+            "850,000",
+            "Active",
+            "8",
+            "node-003",
+        ),
+        (
+            "Val-003",
+            "5Ghi...rst",
+            "720,000",
+            "Active",
+            "4",
+            "node-005, node-007",
+        ),
         ("Val-004", "5Jkl...opq", "500,000", "Pending", "0", "-"),
-        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-"),
-    ];
+        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-")];
 
     let rows: Vec<Row> = validators
         .iter()
@@ -190,8 +199,15 @@ fn render_validator_list(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let header = Row::new(vec!["Validator", "Hotkey", "Stake", "Status", "GPUs", "Nodes"])
-        .style(theme.header());
+    let header = Row::new(vec![
+        "Validator",
+        "Hotkey",
+        "Stake",
+        "Status",
+        "GPUs",
+        "Nodes",
+    ])
+    .style(theme.header());
 
     let table = Table::new(
         rows,
@@ -250,7 +266,11 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
 fn render_assignment_info_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(8), Constraint::Length(10), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(8),
+            Constraint::Length(10),
+            Constraint::Min(0),
+        ])
         .split(area);
 
     let miner_info = vec![
@@ -275,7 +295,12 @@ fn render_assignment_info_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area:
 
     frame.render_widget(
         Paragraph::new(miner_info)
-            .block(Block::default().borders(Borders::ALL).border_style(theme.border()).title(Span::styled(" Miner ", theme.block_title())))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.border())
+                    .title(Span::styled(" Miner ", theme.block_title())),
+            )
             .style(theme.text()),
         chunks[0],
     );
@@ -294,7 +319,12 @@ fn render_assignment_info_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area:
 
     frame.render_widget(
         Paragraph::new(strategy_info)
-            .block(Block::default().borders(Borders::ALL).border_style(theme.border()).title(Span::styled(" Assignment ", theme.block_title())))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.border())
+                    .title(Span::styled(" Assignment ", theme.block_title())),
+            )
             .style(theme.text()),
         chunks[1],
     );
@@ -317,7 +347,12 @@ fn render_assignment_info_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area:
 
     frame.render_widget(
         Paragraph::new(discovery_info)
-            .block(Block::default().borders(Borders::ALL).border_style(theme.border()).title(Span::styled(" Discovery ", theme.block_title())))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.border())
+                    .title(Span::styled(" Discovery ", theme.block_title())),
+            )
             .style(theme.text()),
         chunks[2],
     );
@@ -326,13 +361,32 @@ fn render_assignment_info_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area:
 fn render_validator_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    let validators = vec![
-        ("Val-001", "5Abc...xyz", "1,500,000", "Active", "12", "node-001, node-002"),
-        ("Val-002", "5Def...uvw", "850,000", "Active", "8", "node-003"),
-        ("Val-003", "5Ghi...rst", "720,000", "Active", "4", "node-005, node-007"),
+    let validators = [(
+            "Val-001",
+            "5Abc...xyz",
+            "1,500,000",
+            "Active",
+            "12",
+            "node-001, node-002",
+        ),
+        (
+            "Val-002",
+            "5Def...uvw",
+            "850,000",
+            "Active",
+            "8",
+            "node-003",
+        ),
+        (
+            "Val-003",
+            "5Ghi...rst",
+            "720,000",
+            "Active",
+            "4",
+            "node-005, node-007",
+        ),
         ("Val-004", "5Jkl...opq", "500,000", "Pending", "0", "-"),
-        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-"),
-    ];
+        ("Val-005", "5Mno...lmn", "350,000", "Inactive", "0", "-")];
 
     let rows: Vec<Row> = validators
         .iter()
@@ -363,8 +417,15 @@ fn render_validator_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect)
         })
         .collect();
 
-    let header_row = Row::new(vec!["Validator", "Hotkey", "Stake", "Status", "GPUs", "Nodes"])
-        .style(theme.header());
+    let header_row = Row::new(vec![
+        "Validator",
+        "Hotkey",
+        "Stake",
+        "Status",
+        "GPUs",
+        "Nodes",
+    ])
+    .style(theme.header());
 
     let table = Table::new(
         rows,
@@ -392,4 +453,3 @@ fn render_validator_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect)
 
     frame.render_stateful_widget(table, area, &mut state);
 }
-

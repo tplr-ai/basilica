@@ -7,12 +7,12 @@ use anyhow::Result;
 use clap::Parser;
 use clap_verbosity_flag::Verbosity;
 
+mod actions;
 mod app;
 mod config;
+mod data;
 mod events;
 mod ui;
-mod data;
-mod actions;
 
 use app::App;
 
@@ -59,4 +59,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-

@@ -32,10 +32,10 @@ impl Tui {
     pub fn enter(&mut self) -> Result<()> {
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen)?;
-        
+
         // Enable mouse capture
         execute!(io::stdout(), crossterm::event::EnableMouseCapture)?;
-        
+
         self.terminal.hide_cursor()?;
         self.terminal.clear()?;
         Ok(())
@@ -45,7 +45,7 @@ impl Tui {
     pub fn exit(&mut self) -> Result<()> {
         // Disable mouse capture
         execute!(io::stdout(), crossterm::event::DisableMouseCapture)?;
-        
+
         disable_raw_mode()?;
         execute!(io::stdout(), LeaveAlternateScreen)?;
         self.terminal.show_cursor()?;
@@ -67,4 +67,3 @@ impl Drop for Tui {
         let _ = self.exit();
     }
 }
-

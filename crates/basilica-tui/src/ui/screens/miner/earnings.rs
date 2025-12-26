@@ -61,15 +61,11 @@ fn render_earnings_summary(frame: &mut Frame, app: &App, area: Rect) {
 
     let content = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Current Rate", theme.text_muted()),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                "  $12.50/hr",
-                theme.text_success().add_modifier(Modifier::BOLD),
-            ),
-        ]),
+        Line::from(vec![Span::styled("  Current Rate", theme.text_muted())]),
+        Line::from(vec![Span::styled(
+            "  $12.50/hr",
+            theme.text_success().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  Today: ", theme.text_muted()),
@@ -98,16 +94,14 @@ fn render_revenue_chart(frame: &mut Frame, app: &App, area: Rect) {
 
     // Sample revenue data for last 14 days
     let revenue_data: Vec<f64> = vec![
-        120.0, 145.0, 132.0, 158.0, 142.0, 168.0, 155.0,
-        175.0, 162.0, 180.0, 170.0, 195.0, 145.0, 145.0,
+        120.0, 145.0, 132.0, 158.0, 142.0, 168.0, 155.0, 175.0, 162.0, 180.0, 170.0, 195.0, 145.0,
+        145.0,
     ];
     let sparkline = text_sparkline(&revenue_data);
 
     let content = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  Last 14 days:", theme.text_muted()),
-        ]),
+        Line::from(vec![Span::styled("  Last 14 days:", theme.text_muted())]),
         Line::from(vec![
             Span::styled("  ", theme.text()),
             Span::styled(sparkline, theme.text_accent()),
@@ -179,16 +173,44 @@ fn render_payment_history(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
     // Sample payment data
-    let payments = vec![
-        ("2024-01-15", "Val-001", "24h rental", "+$280.00", "Completed"),
-        ("2024-01-14", "Val-002", "12h rental", "+$135.00", "Completed"),
+    let payments = [(
+            "2024-01-15",
+            "Val-001",
+            "24h rental",
+            "+$280.00",
+            "Completed",
+        ),
+        (
+            "2024-01-14",
+            "Val-002",
+            "12h rental",
+            "+$135.00",
+            "Completed",
+        ),
         ("2024-01-14", "Val-001", "8h rental", "+$95.00", "Completed"),
         ("2024-01-13", "Val-003", "4h rental", "+$45.00", "Completed"),
-        ("2024-01-13", "Val-001", "16h rental", "+$190.00", "Completed"),
-        ("2024-01-12", "Val-002", "24h rental", "+$310.00", "Completed"),
-        ("2024-01-11", "Val-001", "12h rental", "+$140.00", "Completed"),
-        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed"),
-    ];
+        (
+            "2024-01-13",
+            "Val-001",
+            "16h rental",
+            "+$190.00",
+            "Completed",
+        ),
+        (
+            "2024-01-12",
+            "Val-002",
+            "24h rental",
+            "+$310.00",
+            "Completed",
+        ),
+        (
+            "2024-01-11",
+            "Val-001",
+            "12h rental",
+            "+$140.00",
+            "Completed",
+        ),
+        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed")];
 
     let rows: Vec<Row> = payments
         .iter()
@@ -261,7 +283,11 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
 
     let left_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(8), Constraint::Length(10), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(8),
+            Constraint::Length(10),
+            Constraint::Min(0),
+        ])
         .split(columns[0]);
 
     render_earnings_summary_ctx(frame, theme, left_chunks[0]);
@@ -274,36 +300,67 @@ fn render_earnings_summary_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area
     let content = vec![
         Line::from(""),
         Line::from(vec![Span::styled("  Current Rate", theme.text_muted())]),
-        Line::from(vec![Span::styled("  $12.50/hr", theme.text_success().add_modifier(Modifier::BOLD))]),
+        Line::from(vec![Span::styled(
+            "  $12.50/hr",
+            theme.text_success().add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
-        Line::from(vec![Span::styled("  Today: ", theme.text_muted()), Span::styled("$145.20", theme.text_accent())]),
-        Line::from(vec![Span::styled("  This Week: ", theme.text_muted()), Span::styled("$1,234.50", theme.text())]),
+        Line::from(vec![
+            Span::styled("  Today: ", theme.text_muted()),
+            Span::styled("$145.20", theme.text_accent()),
+        ]),
+        Line::from(vec![
+            Span::styled("  This Week: ", theme.text_muted()),
+            Span::styled("$1,234.50", theme.text()),
+        ]),
     ];
 
     frame.render_widget(
         Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).border_style(theme.border()).title(Span::styled(" Earnings ", theme.block_title())))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.border())
+                    .title(Span::styled(" Earnings ", theme.block_title())),
+            )
             .style(theme.text()),
         area,
     );
 }
 
 fn render_revenue_chart_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rect) {
-    let revenue_data: Vec<f64> = vec![120.0, 145.0, 132.0, 158.0, 142.0, 168.0, 155.0, 175.0, 162.0, 180.0, 170.0, 195.0, 145.0, 145.0];
+    let revenue_data: Vec<f64> = vec![
+        120.0, 145.0, 132.0, 158.0, 142.0, 168.0, 155.0, 175.0, 162.0, 180.0, 170.0, 195.0, 145.0,
+        145.0,
+    ];
     let sparkline = text_sparkline(&revenue_data);
 
     let content = vec![
         Line::from(""),
         Line::from(vec![Span::styled("  Last 14 days:", theme.text_muted())]),
-        Line::from(vec![Span::styled("  ", theme.text()), Span::styled(sparkline, theme.text_accent())]),
+        Line::from(vec![
+            Span::styled("  ", theme.text()),
+            Span::styled(sparkline, theme.text_accent()),
+        ]),
         Line::from(""),
-        Line::from(vec![Span::styled("  Avg: ", theme.text_muted()), Span::styled("$156.64/day", theme.text())]),
-        Line::from(vec![Span::styled("  Total: ", theme.text_muted()), Span::styled("$2,193.00", theme.text_success())]),
+        Line::from(vec![
+            Span::styled("  Avg: ", theme.text_muted()),
+            Span::styled("$156.64/day", theme.text()),
+        ]),
+        Line::from(vec![
+            Span::styled("  Total: ", theme.text_muted()),
+            Span::styled("$2,193.00", theme.text_success()),
+        ]),
     ];
 
     frame.render_widget(
         Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).border_style(theme.border()).title(Span::styled(" Revenue ", theme.block_title())))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.border())
+                    .title(Span::styled(" Revenue ", theme.block_title())),
+            )
             .style(theme.text()),
         area,
     );
@@ -314,18 +371,35 @@ fn render_projections_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rec
         Line::from(""),
         Line::from(Span::styled("  Projections", theme.text_bold())),
         Line::from(""),
-        Line::from(vec![Span::styled("  This Month: ", theme.text_muted()), Span::styled("~$4,700", theme.text())]),
-        Line::from(vec![Span::styled("  Annual: ", theme.text_muted()), Span::styled("~$56,400", theme.text_accent())]),
+        Line::from(vec![
+            Span::styled("  This Month: ", theme.text_muted()),
+            Span::styled("~$4,700", theme.text()),
+        ]),
+        Line::from(vec![
+            Span::styled("  Annual: ", theme.text_muted()),
+            Span::styled("~$56,400", theme.text_accent()),
+        ]),
         Line::from(""),
         Line::from(Span::styled("  GPU Utilization", theme.text_bold())),
         Line::from(""),
-        Line::from(vec![Span::styled("  Average: ", theme.text_muted()), Span::styled("78%", theme.text_success())]),
-        Line::from(vec![Span::styled("  Peak: ", theme.text_muted()), Span::styled("95%", theme.text())]),
+        Line::from(vec![
+            Span::styled("  Average: ", theme.text_muted()),
+            Span::styled("78%", theme.text_success()),
+        ]),
+        Line::from(vec![
+            Span::styled("  Peak: ", theme.text_muted()),
+            Span::styled("95%", theme.text()),
+        ]),
     ];
 
     frame.render_widget(
         Paragraph::new(content)
-            .block(Block::default().borders(Borders::ALL).border_style(theme.border()).title(Span::styled(" Projections ", theme.block_title())))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(theme.border())
+                    .title(Span::styled(" Projections ", theme.block_title())),
+            )
             .style(theme.text()),
         area,
     );
@@ -334,16 +408,44 @@ fn render_projections_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Rec
 fn render_payment_history_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    let payments = vec![
-        ("2024-01-15", "Val-001", "24h rental", "+$280.00", "Completed"),
-        ("2024-01-14", "Val-002", "12h rental", "+$135.00", "Completed"),
+    let payments = [(
+            "2024-01-15",
+            "Val-001",
+            "24h rental",
+            "+$280.00",
+            "Completed",
+        ),
+        (
+            "2024-01-14",
+            "Val-002",
+            "12h rental",
+            "+$135.00",
+            "Completed",
+        ),
         ("2024-01-14", "Val-001", "8h rental", "+$95.00", "Completed"),
         ("2024-01-13", "Val-003", "4h rental", "+$45.00", "Completed"),
-        ("2024-01-13", "Val-001", "16h rental", "+$190.00", "Completed"),
-        ("2024-01-12", "Val-002", "24h rental", "+$310.00", "Completed"),
-        ("2024-01-11", "Val-001", "12h rental", "+$140.00", "Completed"),
-        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed"),
-    ];
+        (
+            "2024-01-13",
+            "Val-001",
+            "16h rental",
+            "+$190.00",
+            "Completed",
+        ),
+        (
+            "2024-01-12",
+            "Val-002",
+            "24h rental",
+            "+$310.00",
+            "Completed",
+        ),
+        (
+            "2024-01-11",
+            "Val-001",
+            "12h rental",
+            "+$140.00",
+            "Completed",
+        ),
+        ("2024-01-10", "Val-003", "8h rental", "+$92.00", "Completed")];
 
     let rows: Vec<Row> = payments
         .iter()
@@ -390,4 +492,3 @@ fn render_payment_history_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect
 
     frame.render_widget(table, area);
 }
-

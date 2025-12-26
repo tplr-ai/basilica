@@ -2,7 +2,6 @@
 
 use ratatui::{
     layout::Constraint,
-    style::Style,
     widgets::{Block, Borders, Cell, Row, Table, TableState},
 };
 
@@ -63,4 +62,3 @@ pub fn status_cell<'a>(status: &'a str, theme: &Theme) -> Cell<'a> {
 
     Cell::from(format!("● {}", status)).style(style)
 }
-

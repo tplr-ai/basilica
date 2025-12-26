@@ -1,4 +1,5 @@
 //! Input handling utilities
+#![allow(dead_code)]
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -57,4 +58,3 @@ pub fn parse_key_action(key: KeyEvent) -> Option<KeyAction> {
 pub fn format_key(key: &str) -> String {
     format!("[{}]", key)
 }
-

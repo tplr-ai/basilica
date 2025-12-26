@@ -1,4 +1,5 @@
 //! TUI configuration management
+#![allow(dead_code)]
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -143,4 +144,3 @@ impl TuiConfig {
             .map(|dirs| dirs.config_dir().join("config.toml"))
     }
 }
-

@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Notification, NotificationLevel, RenderContext};
+use crate::app::{App, NotificationLevel, RenderContext};
 
 /// Render notifications as toasts in the top-right corner
 pub fn render_notifications(frame: &mut Frame, app: &App) {
@@ -116,4 +116,3 @@ pub fn render_notifications_ctx(frame: &mut Frame, ctx: &RenderContext) {
         frame.render_widget(paragraph, toast_area);
     }
 }
-

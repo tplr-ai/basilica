@@ -59,14 +59,8 @@ pub fn render_logs(
         .iter()
         .map(|log| {
             let line = Line::from(vec![
-                Span::styled(
-                    format!("{} ", log.timestamp),
-                    theme.text_muted(),
-                ),
-                Span::styled(
-                    format!("[{}] ", log.level.prefix()),
-                    log.level.style(theme),
-                ),
+                Span::styled(format!("{} ", log.timestamp), theme.text_muted()),
+                Span::styled(format!("[{}] ", log.level.prefix()), log.level.style(theme)),
                 Span::styled(&log.message, theme.text()),
             ]);
             ListItem::new(line)
@@ -92,13 +86,7 @@ pub fn render_logs(
 }
 
 /// Render raw log text (for streaming)
-pub fn render_raw_logs(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    content: &str,
-    theme: &Theme,
-) {
+pub fn render_raw_logs(frame: &mut Frame, area: Rect, title: &str, content: &str, theme: &Theme) {
     let paragraph = Paragraph::new(content)
         .block(
             Block::default()
@@ -112,4 +100,3 @@ pub fn render_raw_logs(
 
     frame.render_widget(paragraph, area);
 }
-

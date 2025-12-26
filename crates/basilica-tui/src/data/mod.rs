@@ -6,4 +6,3 @@ pub mod user;
 
 pub use miner::MinerData;
 pub use user::UserData;
-

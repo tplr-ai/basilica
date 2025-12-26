@@ -1,9 +1,12 @@
 //! Real-time streaming support for logs and events
+//!
+//! Scaffolding for SSE/WebSocket log streaming. Will be fully implemented next.
+#![allow(dead_code)]
 
 use anyhow::Result;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Log stream manager for multiplexing logs from multiple sources
 pub struct LogStreamManager {
@@ -166,13 +169,8 @@ impl LogStreamManager {
             }
         });
 
-        self.streams.insert(
-            key.clone(),
-            LogStreamHandle {
-                id: key,
-                cancel_tx,
-            },
-        );
+        self.streams
+            .insert(key.clone(), LogStreamHandle { id: key, cancel_tx });
 
         Ok(())
     }
@@ -269,4 +267,3 @@ impl Default for EventStream {
         Self::new(100)
     }
 }
-

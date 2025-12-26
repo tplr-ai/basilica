@@ -77,10 +77,7 @@ pub fn render_help_overlay(frame: &mut Frame, app: &App) {
 
     lines.extend(vec![
         Line::from(""),
-        Line::from(Span::styled(
-            "Press ? or Esc to close",
-            theme.text_muted(),
-        )),
+        Line::from(Span::styled("Press ? or Esc to close", theme.text_muted())),
     ]);
 
     let paragraph = Paragraph::new(lines)
@@ -176,10 +173,7 @@ pub fn render_help_overlay_ctx(frame: &mut Frame, ctx: &RenderContext) {
 
     lines.extend(vec![
         Line::from(""),
-        Line::from(Span::styled(
-            "Press ? or Esc to close",
-            theme.text_muted(),
-        )),
+        Line::from(Span::styled("Press ? or Esc to close", theme.text_muted())),
     ]);
 
     let paragraph = Paragraph::new(lines)
@@ -189,4 +183,3 @@ pub fn render_help_overlay_ctx(frame: &mut Frame, ctx: &RenderContext) {
 
     frame.render_widget(paragraph, popup_area);
 }
-

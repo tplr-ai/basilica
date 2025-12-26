@@ -49,16 +49,70 @@ fn render_node_list(frame: &mut Frame, app: &App, area: Rect) {
     let theme = &app.theme;
 
     // Sample node configuration data
-    let nodes = vec![
-        ("node-001", "192.168.1.10", "22", "root", "H100 x 4", "Healthy"),
-        ("node-002", "192.168.1.11", "22", "root", "H100 x 4", "Healthy"),
-        ("node-003", "192.168.1.12", "22", "admin", "A100 x 8", "Healthy"),
-        ("node-004", "192.168.1.13", "2222", "ubuntu", "A100 x 8", "Warning"),
-        ("node-005", "192.168.1.14", "22", "root", "RTX 4090 x 4", "Healthy"),
-        ("node-006", "192.168.1.15", "22", "root", "RTX 4090 x 4", "Offline"),
-        ("node-007", "192.168.1.16", "22", "gpu-user", "L40S x 2", "Healthy"),
-        ("node-008", "192.168.1.17", "22", "gpu-user", "L40S x 2", "Healthy"),
-    ];
+    let nodes = [(
+            "node-001",
+            "192.168.1.10",
+            "22",
+            "root",
+            "H100 x 4",
+            "Healthy",
+        ),
+        (
+            "node-002",
+            "192.168.1.11",
+            "22",
+            "root",
+            "H100 x 4",
+            "Healthy",
+        ),
+        (
+            "node-003",
+            "192.168.1.12",
+            "22",
+            "admin",
+            "A100 x 8",
+            "Healthy",
+        ),
+        (
+            "node-004",
+            "192.168.1.13",
+            "2222",
+            "ubuntu",
+            "A100 x 8",
+            "Warning",
+        ),
+        (
+            "node-005",
+            "192.168.1.14",
+            "22",
+            "root",
+            "RTX 4090 x 4",
+            "Healthy",
+        ),
+        (
+            "node-006",
+            "192.168.1.15",
+            "22",
+            "root",
+            "RTX 4090 x 4",
+            "Offline",
+        ),
+        (
+            "node-007",
+            "192.168.1.16",
+            "22",
+            "gpu-user",
+            "L40S x 2",
+            "Healthy",
+        ),
+        (
+            "node-008",
+            "192.168.1.17",
+            "22",
+            "gpu-user",
+            "L40S x 2",
+            "Healthy",
+        )];
 
     let rows: Vec<Row> = nodes
         .iter()
@@ -87,8 +141,8 @@ fn render_node_list(frame: &mut Frame, app: &App, area: Rect) {
         })
         .collect();
 
-    let header = Row::new(vec!["Node ID", "SSH Connection", "GPUs", "Status"])
-        .style(theme.header());
+    let header =
+        Row::new(vec!["Node ID", "SSH Connection", "GPUs", "Status"]).style(theme.header());
 
     let table = Table::new(
         rows,
@@ -169,9 +223,10 @@ fn render_node_details(frame: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(""),
         Line::from(Span::styled("  Actions", theme.text_bold())),
-        Line::from(vec![
-            Span::styled("    [t] Test SSH  [r] Restart  [d] Remove", theme.text_muted()),
-        ]),
+        Line::from(vec![Span::styled(
+            "    [t] Test SSH  [r] Restart  [d] Remove",
+            theme.text_muted(),
+        )]),
     ];
 
     let paragraph = Paragraph::new(details)
@@ -221,16 +276,70 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
 fn render_node_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    let nodes = vec![
-        ("node-001", "192.168.1.10", "22", "root", "H100 x 4", "Healthy"),
-        ("node-002", "192.168.1.11", "22", "root", "H100 x 4", "Healthy"),
-        ("node-003", "192.168.1.12", "22", "admin", "A100 x 8", "Healthy"),
-        ("node-004", "192.168.1.13", "2222", "ubuntu", "A100 x 8", "Warning"),
-        ("node-005", "192.168.1.14", "22", "root", "RTX 4090 x 4", "Healthy"),
-        ("node-006", "192.168.1.15", "22", "root", "RTX 4090 x 4", "Offline"),
-        ("node-007", "192.168.1.16", "22", "gpu-user", "L40S x 2", "Healthy"),
-        ("node-008", "192.168.1.17", "22", "gpu-user", "L40S x 2", "Healthy"),
-    ];
+    let nodes = [(
+            "node-001",
+            "192.168.1.10",
+            "22",
+            "root",
+            "H100 x 4",
+            "Healthy",
+        ),
+        (
+            "node-002",
+            "192.168.1.11",
+            "22",
+            "root",
+            "H100 x 4",
+            "Healthy",
+        ),
+        (
+            "node-003",
+            "192.168.1.12",
+            "22",
+            "admin",
+            "A100 x 8",
+            "Healthy",
+        ),
+        (
+            "node-004",
+            "192.168.1.13",
+            "2222",
+            "ubuntu",
+            "A100 x 8",
+            "Warning",
+        ),
+        (
+            "node-005",
+            "192.168.1.14",
+            "22",
+            "root",
+            "RTX 4090 x 4",
+            "Healthy",
+        ),
+        (
+            "node-006",
+            "192.168.1.15",
+            "22",
+            "root",
+            "RTX 4090 x 4",
+            "Offline",
+        ),
+        (
+            "node-007",
+            "192.168.1.16",
+            "22",
+            "gpu-user",
+            "L40S x 2",
+            "Healthy",
+        ),
+        (
+            "node-008",
+            "192.168.1.17",
+            "22",
+            "gpu-user",
+            "L40S x 2",
+            "Healthy",
+        )];
 
     let rows: Vec<Row> = nodes
         .iter()
@@ -259,8 +368,8 @@ fn render_node_list_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         })
         .collect();
 
-    let header_row = Row::new(vec!["Node ID", "SSH Connection", "GPUs", "Status"])
-        .style(theme.header());
+    let header_row =
+        Row::new(vec!["Node ID", "SSH Connection", "GPUs", "Status"]).style(theme.header());
 
     let table = Table::new(
         rows,
@@ -338,9 +447,10 @@ fn render_node_details_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Re
         ]),
         Line::from(""),
         Line::from(Span::styled("  Actions", theme.text_bold())),
-        Line::from(vec![
-            Span::styled("    [t] Test SSH  [r] Restart  [d] Remove", theme.text_muted()),
-        ]),
+        Line::from(vec![Span::styled(
+            "    [t] Test SSH  [r] Restart  [d] Remove",
+            theme.text_muted(),
+        )]),
     ];
 
     let paragraph = Paragraph::new(details)
@@ -354,4 +464,3 @@ fn render_node_details_ctx(frame: &mut Frame, theme: &crate::ui::Theme, area: Re
 
     frame.render_widget(paragraph, area);
 }
-

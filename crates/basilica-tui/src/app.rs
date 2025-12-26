@@ -1,9 +1,11 @@
 //! Core application state machine
 
 use anyhow::Result;
+use basilica_sdk::{BasilicaClient, ClientBuilder};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{debug, error, info};
 
 use crate::config::TuiConfig;
 use crate::data::streams::LogStreamManager;
@@ -165,6 +167,9 @@ pub struct App {
     /// Theme
     pub theme: Theme,
 
+    /// API client for data fetching
+    client: Option<Arc<BasilicaClient>>,
+
     /// User mode data
     pub user_data: Arc<RwLock<UserData>>,
 
@@ -187,6 +192,7 @@ pub struct App {
     pub screens: ScreenStates,
 
     /// Log stream manager for real-time logs
+    #[allow(dead_code)]
     log_streams: LogStreamManager,
 
     /// Last data refresh time
@@ -197,7 +203,7 @@ pub struct App {
 }
 
 /// Screen-specific state storage
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ScreenStates {
     pub rentals: RentalsScreenState,
     pub marketplace: MarketplaceScreenState,
@@ -205,27 +211,27 @@ pub struct ScreenStates {
     pub fleet: FleetScreenState,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RentalsScreenState {
     pub selected: usize,
     pub show_logs: bool,
     pub log_follow: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MarketplaceScreenState {
     pub selected: usize,
     pub filter_gpu_type: Option<String>,
     pub sort_by_price: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct DeploymentsScreenState {
     pub selected: usize,
     pub show_logs: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct FleetScreenState {
     pub selected_node: usize,
     pub show_details: bool,
@@ -244,6 +250,21 @@ impl App {
 
         let log_streams = LogStreamManager::new(config.api_url.clone());
 
+        // Try to create API client with file-based auth
+        let client = match Self::create_client(&config.api_url).await {
+            Ok(c) => {
+                info!("API client initialized successfully");
+                Some(Arc::new(c))
+            }
+            Err(e) => {
+                error!(
+                    "Failed to initialize API client: {}. Running in offline mode.",
+                    e
+                );
+                None
+            }
+        };
+
         Ok(Self {
             running: true,
             mode: if miner_mode {
@@ -256,6 +277,7 @@ impl App {
             show_help: false,
             config,
             theme,
+            client,
             user_data,
             miner_data,
             notifications: Vec::new(),
@@ -267,6 +289,20 @@ impl App {
             last_refresh: std::time::Instant::now(),
             tick_count: 0,
         })
+    }
+
+    /// Create API client with authentication
+    async fn create_client(api_url: &str) -> Result<BasilicaClient> {
+        // Try to use file-based auth (reads from ~/.local/share/basilica/)
+        let client = ClientBuilder::default()
+            .base_url(api_url)
+            .with_file_auth()
+            .build()?;
+
+        // Verify connection with health check
+        client.health_check().await?;
+
+        Ok(client)
     }
 
     /// Run the main application loop
@@ -284,21 +320,29 @@ impl App {
             let show_help = self.show_help;
             let theme = self.theme.clone();
             let selected_index = self.selected_index;
-            let screens = &self.screens;
+            let screens = self.screens.clone();
             let notifications = self.notifications.clone();
+            let connected = self.client.is_some();
+
+            // Clone data for rendering (quick read lock)
+            let user_data = self.user_data.read().await.clone();
+            let miner_data = self.miner_data.read().await.clone();
 
             self.tui.draw(|frame| {
-                render_app(
-                    frame,
+                let ctx = RenderContext {
                     mode,
                     user_screen,
                     miner_screen,
                     show_help,
-                    &theme,
+                    theme: &theme,
                     selected_index,
-                    screens,
-                    &notifications,
-                );
+                    screens: &screens,
+                    notifications: &notifications,
+                    user_data: &user_data,
+                    miner_data: &miner_data,
+                    connected,
+                };
+                render_app(frame, &ctx);
             })?;
 
             // Handle events
@@ -320,37 +364,6 @@ impl App {
 
         self.tui.exit()?;
         Ok(())
-    }
-
-    /// Render the application
-    fn render(&self, frame: &mut ratatui::Frame) {
-        use crate::ui::screens;
-
-        // Render based on current mode and screen
-        match self.mode {
-            AppMode::User => match self.user_screen {
-                UserScreen::Dashboard => screens::dashboard::render(frame, self),
-                UserScreen::Rentals => screens::rentals::render(frame, self),
-                UserScreen::Marketplace => screens::marketplace::render(frame, self),
-                UserScreen::Deployments => screens::deployments::render(frame, self),
-                UserScreen::Billing => screens::billing::render(frame, self),
-            },
-            AppMode::Miner => match self.miner_screen {
-                MinerScreen::Fleet => screens::miner::fleet::render(frame, self),
-                MinerScreen::Validators => screens::miner::validators::render(frame, self),
-                MinerScreen::Nodes => screens::miner::nodes::render(frame, self),
-                MinerScreen::Earnings => screens::miner::earnings::render(frame, self),
-                MinerScreen::Logs => screens::miner::logs::render(frame, self),
-            },
-        }
-
-        // Render help overlay if active
-        if self.show_help {
-            crate::ui::components::help::render_help_overlay(frame, self);
-        }
-
-        // Render notifications
-        crate::ui::components::notifications::render_notifications(frame, self);
     }
 
     /// Handle keyboard input
@@ -383,7 +396,7 @@ impl App {
             // Number keys for direct screen access
             (_, KeyCode::Char(c)) if !self.show_help && c.is_ascii_digit() => {
                 if let Some(idx) = c.to_digit(10) {
-                    if idx >= 1 && idx <= 5 {
+                    if (1..=5).contains(&idx) {
                         self.goto_screen((idx - 1) as usize);
                     }
                 }
@@ -521,12 +534,12 @@ impl App {
 
         // Periodic data refresh (every 30 seconds based on default 250ms tick rate)
         let refresh_interval_ticks = (self.config.refresh.balance * 1000) / 250;
-        if self.tick_count % refresh_interval_ticks == 0 {
-            if self.last_refresh.elapsed().as_secs() >= self.config.refresh.balance {
-                self.last_refresh = std::time::Instant::now();
-                // Auto-refresh data in background
-                // self.refresh_data().await;
-            }
+        if self.tick_count.is_multiple_of(refresh_interval_ticks)
+            && self.last_refresh.elapsed().as_secs() >= self.config.refresh.balance
+        {
+            self.last_refresh = std::time::Instant::now();
+            // Auto-refresh data in background
+            // self.refresh_data().await;
         }
     }
 
@@ -624,13 +637,52 @@ impl App {
 
     /// Refresh data from API
     async fn refresh_data(&mut self) {
+        let client = match &self.client {
+            Some(c) => c.clone(),
+            None => {
+                self.add_notification(
+                    "Not connected to API. Run 'basilica login' first.",
+                    NotificationLevel::Warning,
+                );
+                return;
+            }
+        };
+
         self.add_notification("Refreshing data...", NotificationLevel::Info);
+        debug!("Starting data refresh...");
 
-        // TODO: Implement actual data fetching
-        // For now, just simulate a refresh
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        match self.mode {
+            AppMode::User => {
+                let mut user_data = self.user_data.write().await;
+                if let Err(e) = user_data.refresh_all(&client).await {
+                    error!("Failed to refresh user data: {}", e);
+                    drop(user_data);
+                    self.add_notification(
+                        &format!("Refresh failed: {}", e),
+                        NotificationLevel::Error,
+                    );
+                    return;
+                }
 
-        self.add_notification("Data refreshed", NotificationLevel::Success);
+                // Update notification with summary
+                let msg = format!(
+                    "Loaded {} rentals, {} GPUs available",
+                    user_data.rentals.len(),
+                    user_data.offerings.len()
+                );
+                drop(user_data);
+                self.add_notification(&msg, NotificationLevel::Success);
+            }
+            AppMode::Miner => {
+                // TODO: Implement miner data refresh when miner APIs are available
+                self.add_notification(
+                    "Miner mode data refresh not yet implemented",
+                    NotificationLevel::Warning,
+                );
+            }
+        }
+
+        self.last_refresh = std::time::Instant::now();
     }
 
     /// Add a notification
@@ -673,63 +725,37 @@ impl App {
     }
 }
 
-/// Standalone render function that takes individual state pieces
-fn render_app(
-    frame: &mut ratatui::Frame,
-    mode: AppMode,
-    user_screen: UserScreen,
-    miner_screen: MinerScreen,
-    show_help: bool,
-    theme: &crate::ui::Theme,
-    selected_index: usize,
-    screens: &ScreenStates,
-    notifications: &[Notification],
-) {
-    // Create a temporary render context
-    let ctx = RenderContext {
-        mode,
-        user_screen,
-        miner_screen,
-        show_help,
-        theme,
-        selected_index,
-        screens,
-        notifications,
-    };
-
+/// Standalone render function that takes a render context
+fn render_app(frame: &mut ratatui::Frame, ctx: &RenderContext) {
     // Render based on current mode and screen
-    match mode {
-        AppMode::User => match user_screen {
-            UserScreen::Dashboard => crate::ui::screens::dashboard::render_with_ctx(frame, &ctx),
-            UserScreen::Rentals => crate::ui::screens::rentals::render_with_ctx(frame, &ctx),
-            UserScreen::Marketplace => {
-                crate::ui::screens::marketplace::render_with_ctx(frame, &ctx)
-            }
-            UserScreen::Deployments => {
-                crate::ui::screens::deployments::render_with_ctx(frame, &ctx)
-            }
-            UserScreen::Billing => crate::ui::screens::billing::render_with_ctx(frame, &ctx),
+    match ctx.mode {
+        AppMode::User => match ctx.user_screen {
+            UserScreen::Dashboard => crate::ui::screens::dashboard::render_with_ctx(frame, ctx),
+            UserScreen::Rentals => crate::ui::screens::rentals::render_with_ctx(frame, ctx),
+            UserScreen::Marketplace => crate::ui::screens::marketplace::render_with_ctx(frame, ctx),
+            UserScreen::Deployments => crate::ui::screens::deployments::render_with_ctx(frame, ctx),
+            UserScreen::Billing => crate::ui::screens::billing::render_with_ctx(frame, ctx),
         },
-        AppMode::Miner => match miner_screen {
-            MinerScreen::Fleet => crate::ui::screens::miner::fleet::render_with_ctx(frame, &ctx),
+        AppMode::Miner => match ctx.miner_screen {
+            MinerScreen::Fleet => crate::ui::screens::miner::fleet::render_with_ctx(frame, ctx),
             MinerScreen::Validators => {
-                crate::ui::screens::miner::validators::render_with_ctx(frame, &ctx)
+                crate::ui::screens::miner::validators::render_with_ctx(frame, ctx)
             }
-            MinerScreen::Nodes => crate::ui::screens::miner::nodes::render_with_ctx(frame, &ctx),
+            MinerScreen::Nodes => crate::ui::screens::miner::nodes::render_with_ctx(frame, ctx),
             MinerScreen::Earnings => {
-                crate::ui::screens::miner::earnings::render_with_ctx(frame, &ctx)
+                crate::ui::screens::miner::earnings::render_with_ctx(frame, ctx)
             }
-            MinerScreen::Logs => crate::ui::screens::miner::logs::render_with_ctx(frame, &ctx),
+            MinerScreen::Logs => crate::ui::screens::miner::logs::render_with_ctx(frame, ctx),
         },
     }
 
     // Render help overlay if active
-    if show_help {
-        crate::ui::components::help::render_help_overlay_ctx(frame, &ctx);
+    if ctx.show_help {
+        crate::ui::components::help::render_help_overlay_ctx(frame, ctx);
     }
 
     // Render notifications
-    crate::ui::components::notifications::render_notifications_ctx(frame, &ctx);
+    crate::ui::components::notifications::render_notifications_ctx(frame, ctx);
 }
 
 /// Render context for passing to render functions
@@ -742,4 +768,7 @@ pub struct RenderContext<'a> {
     pub selected_index: usize,
     pub screens: &'a ScreenStates,
     pub notifications: &'a [Notification],
+    pub user_data: &'a crate::data::UserData,
+    pub miner_data: &'a crate::data::MinerData,
+    pub connected: bool,
 }

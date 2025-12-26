@@ -2,8 +2,6 @@
 
 use ratatui::{
     layout::Rect,
-    style::Style,
-    symbols,
     widgets::{Block, Borders, Sparkline as RatatuiSparkline},
     Frame,
 };
@@ -11,13 +9,7 @@ use ratatui::{
 use crate::ui::Theme;
 
 /// Render a sparkline chart
-pub fn render_sparkline(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    data: &[u64],
-    theme: &Theme,
-) {
+pub fn render_sparkline(frame: &mut Frame, area: Rect, title: &str, data: &[u64], theme: &Theme) {
     let sparkline = RatatuiSparkline::default()
         .block(
             Block::default()
@@ -33,12 +25,7 @@ pub fn render_sparkline(
 }
 
 /// Render an inline sparkline (no border)
-pub fn render_inline_sparkline(
-    frame: &mut Frame,
-    area: Rect,
-    data: &[u64],
-    theme: &Theme,
-) {
+pub fn render_inline_sparkline(frame: &mut Frame, area: Rect, data: &[u64], theme: &Theme) {
     let sparkline = RatatuiSparkline::default()
         .data(data)
         .style(theme.text_accent());
@@ -70,4 +57,3 @@ pub fn text_sparkline(data: &[f64]) -> String {
         })
         .collect()
 }
-

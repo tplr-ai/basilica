@@ -1,10 +1,13 @@
 //! Miner mode data fetching
+//!
+//! Data structures for miner mode. Will be connected to miner metrics in future.
+#![allow(dead_code)]
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// Miner mode data state
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MinerData {
     /// Registered nodes
     pub nodes: Vec<NodeInfo>,
@@ -23,7 +26,7 @@ pub struct MinerData {
 }
 
 /// Historical metrics data for visualization
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct MetricsHistory {
     /// GPU utilization history (last N samples)
     pub gpu_utilization: Vec<f64>,
@@ -70,7 +73,7 @@ impl MetricsHistory {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct LoadingState {
     pub nodes: bool,
     pub validators: bool,
@@ -93,18 +96,15 @@ pub struct NodeInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum NodeStatus {
     Healthy,
     Warning,
     Offline,
+    #[default]
     Unknown,
 }
 
-impl Default for NodeStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidatorInfo {
@@ -117,17 +117,14 @@ pub struct ValidatorInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum ValidatorStatus {
     Active,
     Pending,
+    #[default]
     Inactive,
 }
 
-impl Default for ValidatorStatus {
-    fn default() -> Self {
-        Self::Inactive
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MinerInfo {
@@ -227,7 +224,10 @@ impl MinerData {
 
     /// Get count of healthy nodes
     pub fn healthy_nodes(&self) -> usize {
-        self.nodes.iter().filter(|n| n.status == NodeStatus::Healthy).count()
+        self.nodes
+            .iter()
+            .filter(|n| n.status == NodeStatus::Healthy)
+            .count()
     }
 
     /// Get count of assigned GPUs
@@ -251,4 +251,3 @@ impl MinerData {
         self.nodes.iter().map(|n| n.memory_utilization).sum::<f64>() / self.nodes.len() as f64
     }
 }
-

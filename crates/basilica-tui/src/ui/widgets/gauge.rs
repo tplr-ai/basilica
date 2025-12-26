@@ -2,8 +2,6 @@
 
 use ratatui::{
     layout::Rect,
-    style::Style,
-    symbols,
     widgets::{Block, Borders, Gauge},
     Frame,
 };
@@ -11,13 +9,7 @@ use ratatui::{
 use crate::ui::Theme;
 
 /// Render a colored gauge based on percentage
-pub fn render_gauge(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    percent: f64,
-    theme: &Theme,
-) {
+pub fn render_gauge(frame: &mut Frame, area: Rect, title: &str, percent: f64, theme: &Theme) {
     let percent_u16 = (percent.clamp(0.0, 100.0) as u16).min(100);
 
     // Color based on value
@@ -45,12 +37,7 @@ pub fn render_gauge(
 }
 
 /// Render a mini gauge (single line, no border)
-pub fn render_mini_gauge(
-    frame: &mut Frame,
-    area: Rect,
-    percent: f64,
-    theme: &Theme,
-) {
+pub fn render_mini_gauge(frame: &mut Frame, area: Rect, percent: f64, theme: &Theme) {
     let percent_u16 = (percent.clamp(0.0, 100.0) as u16).min(100);
 
     let gauge_style = if percent < 50.0 {
@@ -74,10 +61,5 @@ pub fn mini_bar(percent: f64, width: usize) -> String {
     let filled = ((percent / 100.0) * width as f64) as usize;
     let empty = width.saturating_sub(filled);
 
-    format!(
-        "{}{}",
-        "█".repeat(filled),
-        "░".repeat(empty)
-    )
+    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
 }
-

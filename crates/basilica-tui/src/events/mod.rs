@@ -3,8 +3,6 @@
 mod input;
 mod tick;
 
-pub use input::*;
-pub use tick::*;
 
 use anyhow::Result;
 use crossterm::event::{Event as CrosstermEvent, KeyEvent, MouseEvent};
@@ -82,4 +80,3 @@ impl EventHandler {
             .ok_or_else(|| anyhow::anyhow!("Event channel closed"))
     }
 }
-
