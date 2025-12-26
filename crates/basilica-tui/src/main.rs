@@ -29,6 +29,10 @@ pub struct Args {
     #[arg(short, long)]
     pub miner: bool,
 
+    /// Dev mode - use mock data without API connection
+    #[arg(long)]
+    pub dev: bool,
+
     /// Configuration file path
     #[arg(short, long)]
     pub config: Option<std::path::PathBuf>,
@@ -54,7 +58,7 @@ async fn main() -> Result<()> {
     let config = config::TuiConfig::load(args.config.as_deref())?;
 
     // Create and run the application
-    let mut app = App::new(config, args.miner, args.tick_rate).await?;
+    let mut app = App::new(config, args.miner, args.dev, args.tick_rate).await?;
     app.run().await?;
 
     Ok(())

@@ -152,6 +152,9 @@ pub struct App {
     /// Current mode (user or miner)
     pub mode: AppMode,
 
+    /// Dev mode - use mock data
+    pub dev_mode: bool,
+
     /// Active user screen
     pub user_screen: UserScreen,
 
@@ -244,31 +247,60 @@ pub struct FleetScreenState {
 
 impl App {
     /// Create a new application
-    pub async fn new(config: TuiConfig, miner_mode: bool, tick_rate: u64) -> Result<Self> {
+    pub async fn new(
+        config: TuiConfig,
+        miner_mode: bool,
+        dev_mode: bool,
+        tick_rate: u64,
+    ) -> Result<Self> {
         let theme = Theme::dark(); // TODO: Respect config.theme preference
 
         let event_handler = EventHandler::new(tick_rate);
         let tui = Tui::new()?;
 
-        let user_data = Arc::new(RwLock::new(UserData::default()));
-        let miner_data = Arc::new(RwLock::new(MinerData::default()));
+        let user_data = if dev_mode {
+            Arc::new(RwLock::new(Self::create_mock_user_data()))
+        } else {
+            Arc::new(RwLock::new(UserData::default()))
+        };
+
+        let miner_data = if dev_mode {
+            Arc::new(RwLock::new(Self::create_mock_miner_data()))
+        } else {
+            Arc::new(RwLock::new(MinerData::default()))
+        };
 
         let log_streams = LogStreamManager::new(config.api_url.clone());
 
-        // Try to create API client with file-based auth
-        let client = match Self::create_client(&config.api_url).await {
-            Ok(c) => {
-                info!("API client initialized successfully");
-                Some(Arc::new(c))
-            }
-            Err(e) => {
-                error!(
-                    "Failed to initialize API client: {}. Running in offline mode.",
-                    e
-                );
-                None
+        // Skip API client in dev mode
+        let client = if dev_mode {
+            info!("Dev mode enabled - using mock data");
+            None
+        } else {
+            // Try to create API client with file-based auth
+            match Self::create_client(&config.api_url).await {
+                Ok(c) => {
+                    info!("API client initialized successfully");
+                    Some(Arc::new(c))
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to initialize API client: {}. Running in offline mode.",
+                        e
+                    );
+                    None
+                }
             }
         };
+
+        let mut notifications = Vec::new();
+        if dev_mode {
+            notifications.push(Notification {
+                message: "🔧 Dev mode active - using mock data".to_string(),
+                level: NotificationLevel::Info,
+                timestamp: chrono::Utc::now(),
+            });
+        }
 
         Ok(Self {
             running: true,
@@ -277,6 +309,7 @@ impl App {
             } else {
                 AppMode::User
             },
+            dev_mode,
             user_screen: UserScreen::default(),
             miner_screen: MinerScreen::default(),
             show_help: false,
@@ -285,7 +318,7 @@ impl App {
             client,
             user_data,
             miner_data,
-            notifications: Vec::new(),
+            notifications,
             event_handler,
             tui,
             selected_index: 0,
@@ -308,6 +341,338 @@ impl App {
         client.health_check().await?;
 
         Ok(client)
+    }
+
+    /// Create mock user data for dev mode
+    #[allow(clippy::field_reassign_with_default)]
+    fn create_mock_user_data() -> UserData {
+        use crate::data::user::{BalanceInfo, DeploymentInfo, GpuOffering, RentalInfo};
+
+        let mut data = UserData::default();
+
+        // Mock rentals
+        data.rentals = vec![
+            RentalInfo {
+                id: "rental-abc123".to_string(),
+                gpu_type: "NVIDIA RTX 4090".to_string(),
+                gpu_count: 1,
+                status: "running".to_string(),
+                uptime_minutes: 300, // 5 hours
+                cost: 4.25,
+                container_image: "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime".to_string(),
+                ssh_host: Some("gpu-001.basilica.cloud".to_string()),
+                ssh_port: Some(22),
+                ssh_user: Some("root".to_string()),
+            },
+            RentalInfo {
+                id: "rental-def456".to_string(),
+                gpu_type: "NVIDIA A100 80GB".to_string(),
+                gpu_count: 2,
+                status: "running".to_string(),
+                uptime_minutes: 720, // 12 hours
+                cost: 30.00,
+                container_image: "nvcr.io/nvidia/pytorch:23.10-py3".to_string(),
+                ssh_host: Some("gpu-002.basilica.cloud".to_string()),
+                ssh_port: Some(22),
+                ssh_user: Some("root".to_string()),
+            },
+            RentalInfo {
+                id: "rental-ghi789".to_string(),
+                gpu_type: "NVIDIA H100".to_string(),
+                gpu_count: 1,
+                status: "pending".to_string(),
+                uptime_minutes: 0,
+                cost: 0.0,
+                container_image: "vllm/vllm-openai:latest".to_string(),
+                ssh_host: None,
+                ssh_port: None,
+                ssh_user: None,
+            },
+        ];
+
+        // Mock offerings
+        data.offerings = vec![
+            GpuOffering {
+                gpu_type: "NVIDIA RTX 4090".to_string(),
+                gpu_count: 1,
+                memory_gb: 24,
+                price_per_hour: 0.85,
+                source: "hyperstack".to_string(),
+                available: 12,
+                node_id: Some("node-001".to_string()),
+            },
+            GpuOffering {
+                gpu_type: "NVIDIA RTX 4090".to_string(),
+                gpu_count: 4,
+                memory_gb: 24,
+                price_per_hour: 3.20,
+                source: "miner".to_string(),
+                available: 3,
+                node_id: Some("node-002".to_string()),
+            },
+            GpuOffering {
+                gpu_type: "NVIDIA A100 80GB".to_string(),
+                gpu_count: 1,
+                memory_gb: 80,
+                price_per_hour: 2.50,
+                source: "miner".to_string(),
+                available: 8,
+                node_id: Some("node-003".to_string()),
+            },
+            GpuOffering {
+                gpu_type: "NVIDIA A100 80GB".to_string(),
+                gpu_count: 8,
+                memory_gb: 80,
+                price_per_hour: 18.00,
+                source: "hyperstack".to_string(),
+                available: 2,
+                node_id: None,
+            },
+            GpuOffering {
+                gpu_type: "NVIDIA H100".to_string(),
+                gpu_count: 1,
+                memory_gb: 80,
+                price_per_hour: 4.00,
+                source: "miner".to_string(),
+                available: 0, // Sold out
+                node_id: Some("node-005".to_string()),
+            },
+            GpuOffering {
+                gpu_type: "NVIDIA L40S".to_string(),
+                gpu_count: 2,
+                memory_gb: 48,
+                price_per_hour: 1.80,
+                source: "hyperstack".to_string(),
+                available: 5,
+                node_id: None,
+            },
+        ];
+
+        // Mock deployments
+        data.deployments = vec![
+            DeploymentInfo {
+                name: "llama-inference".to_string(),
+                deployment_type: "inference".to_string(),
+                status: "running".to_string(),
+                replicas_ready: 2,
+                replicas_desired: 2,
+                gpu_type: "NVIDIA RTX 4090".to_string(),
+                gpu_count: 2,
+                url: Some("https://llama.basilica.cloud/v1".to_string()),
+            },
+            DeploymentInfo {
+                name: "stable-diffusion-xl".to_string(),
+                deployment_type: "inference".to_string(),
+                status: "running".to_string(),
+                replicas_ready: 1,
+                replicas_desired: 1,
+                gpu_type: "NVIDIA A100 80GB".to_string(),
+                gpu_count: 1,
+                url: Some("https://sdxl.basilica.cloud/generate".to_string()),
+            },
+            DeploymentInfo {
+                name: "training-job-42".to_string(),
+                deployment_type: "training".to_string(),
+                status: "pending".to_string(),
+                replicas_ready: 0,
+                replicas_desired: 1,
+                gpu_type: "NVIDIA H100".to_string(),
+                gpu_count: 4,
+                url: None,
+            },
+        ];
+
+        // Mock balance
+        data.balance = Some(BalanceInfo {
+            available_tao: 125.75,
+            available_usd: 628.75, // Assuming $5/TAO
+            spent_today: 12.50,
+            spent_this_month: 245.80,
+            active_spend_rate: 3.35, // Current hourly spend
+        });
+
+        data
+    }
+
+    /// Create mock miner data for dev mode
+    #[allow(clippy::field_reassign_with_default)]
+    fn create_mock_miner_data() -> MinerData {
+        use crate::data::miner::{
+            EarningsData, LogEntry, LogLevel, MinerInfo, NodeInfo, NodeStatus, PaymentInfo,
+            ValidatorInfo, ValidatorStatus,
+        };
+
+        let mut data = MinerData::new();
+
+        // Mock nodes
+        data.nodes = vec![
+            NodeInfo {
+                id: "node-001".to_string(),
+                host: "gpu-server-1.local".to_string(),
+                port: 50051,
+                username: "miner".to_string(),
+                gpu_type: "NVIDIA RTX 4090".to_string(),
+                gpu_count: 4,
+                status: NodeStatus::Healthy,
+                gpu_utilization: 78.5,
+                memory_utilization: 75.0,
+                assigned_gpus: 3,
+                uptime_hours: 720.5,
+            },
+            NodeInfo {
+                id: "node-002".to_string(),
+                host: "gpu-server-2.local".to_string(),
+                port: 50051,
+                username: "miner".to_string(),
+                gpu_type: "NVIDIA A100 80GB".to_string(),
+                gpu_count: 8,
+                status: NodeStatus::Healthy,
+                gpu_utilization: 95.2,
+                memory_utilization: 90.6,
+                assigned_gpus: 8,
+                uptime_hours: 1440.0,
+            },
+            NodeInfo {
+                id: "node-003".to_string(),
+                host: "gpu-server-3.local".to_string(),
+                port: 50051,
+                username: "miner".to_string(),
+                gpu_type: "NVIDIA RTX 3090".to_string(),
+                gpu_count: 2,
+                status: NodeStatus::Offline,
+                gpu_utilization: 0.0,
+                memory_utilization: 0.0,
+                assigned_gpus: 0,
+                uptime_hours: 0.0,
+            },
+            NodeInfo {
+                id: "node-004".to_string(),
+                host: "gpu-server-4.local".to_string(),
+                port: 50051,
+                username: "miner".to_string(),
+                gpu_type: "NVIDIA H100".to_string(),
+                gpu_count: 4,
+                status: NodeStatus::Warning,
+                gpu_utilization: 45.0,
+                memory_utilization: 30.0,
+                assigned_gpus: 2,
+                uptime_hours: 168.0,
+            },
+        ];
+
+        // Mock validators
+        data.validators = vec![
+            ValidatorInfo {
+                hotkey: "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string(),
+                name: "TaoStats".to_string(),
+                stake: 50000.0,
+                status: ValidatorStatus::Active,
+                assigned_gpus: 8,
+                assigned_nodes: vec!["node-001".to_string(), "node-002".to_string()],
+            },
+            ValidatorInfo {
+                hotkey: "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty".to_string(),
+                name: "Foundry".to_string(),
+                stake: 35000.0,
+                status: ValidatorStatus::Active,
+                assigned_gpus: 3,
+                assigned_nodes: vec!["node-001".to_string()],
+            },
+            ValidatorInfo {
+                hotkey: "5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy".to_string(),
+                name: "Subnet42".to_string(),
+                stake: 12000.0,
+                status: ValidatorStatus::Pending,
+                assigned_gpus: 0,
+                assigned_nodes: vec![],
+            },
+        ];
+
+        // Mock miner info
+        data.miner_info = Some(MinerInfo {
+            uid: 42,
+            hotkey: "5CiPPseXPECbkjWCa6MnjNokrgYjMqmKndv2rSnekmSK2DjL".to_string(),
+            stake: 1250.5,
+            netuid: 64,
+            network: "finney".to_string(),
+            axon_port: 8080,
+        });
+
+        // Mock earnings
+        data.earnings = EarningsData {
+            current_rate_per_hour: 0.53,
+            today: 12.75,
+            this_week: 89.20,
+            this_month: 385.50,
+            revenue_history: vec![8.5, 10.2, 12.1, 9.8, 11.5, 13.2, 12.75],
+            payments: vec![
+                PaymentInfo {
+                    date: "2024-12-25".to_string(),
+                    validator: "TaoStats".to_string(),
+                    description: "GPU rental payment".to_string(),
+                    amount: 45.30,
+                    status: "completed".to_string(),
+                },
+                PaymentInfo {
+                    date: "2024-12-24".to_string(),
+                    validator: "Foundry".to_string(),
+                    description: "GPU rental payment".to_string(),
+                    amount: 32.15,
+                    status: "completed".to_string(),
+                },
+                PaymentInfo {
+                    date: "2024-12-23".to_string(),
+                    validator: "TaoStats".to_string(),
+                    description: "GPU rental payment".to_string(),
+                    amount: 28.90,
+                    status: "completed".to_string(),
+                },
+            ],
+        };
+
+        // Mock logs
+        data.logs = vec![
+            LogEntry {
+                timestamp: "2024-12-26 10:15:32".to_string(),
+                level: LogLevel::Info,
+                source: "miner".to_string(),
+                message: "New rental started on node-001 (GPU 0-2)".to_string(),
+            },
+            LogEntry {
+                timestamp: "2024-12-26 10:14:28".to_string(),
+                level: LogLevel::Info,
+                source: "executor".to_string(),
+                message: "Container started: llama-inference-abc123".to_string(),
+            },
+            LogEntry {
+                timestamp: "2024-12-26 10:12:15".to_string(),
+                level: LogLevel::Warn,
+                source: "node-003".to_string(),
+                message: "Node health check failed - attempting reconnect".to_string(),
+            },
+            LogEntry {
+                timestamp: "2024-12-26 10:10:00".to_string(),
+                level: LogLevel::Info,
+                source: "validator".to_string(),
+                message: "Heartbeat from TaoStats validator".to_string(),
+            },
+            LogEntry {
+                timestamp: "2024-12-26 10:05:45".to_string(),
+                level: LogLevel::Error,
+                source: "node-003".to_string(),
+                message: "Connection lost to gpu-server-3.local".to_string(),
+            },
+        ];
+
+        // Populate metrics history with sample data
+        for i in 0..20 {
+            let gpu = 60.0 + (i as f64 * 1.5) + (fastrand::f64() * 10.0);
+            let mem = 50.0 + (i as f64 * 2.0) + (fastrand::f64() * 15.0);
+            data.metrics_history.push_gpu_util(gpu.min(100.0));
+            data.metrics_history.push_memory_util(mem.min(100.0));
+        }
+
+        data
     }
 
     /// Run the main application loop
@@ -642,6 +1007,12 @@ impl App {
 
     /// Refresh data from API
     async fn refresh_data(&mut self) {
+        // In dev mode, data is already mocked - just update last refresh time
+        if self.dev_mode {
+            self.last_refresh = std::time::Instant::now();
+            return;
+        }
+
         let client = match &self.client {
             Some(c) => c.clone(),
             None => {
