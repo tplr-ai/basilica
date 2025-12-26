@@ -13,10 +13,12 @@
 //! - [`tdx`]: Intel TDX quote parsing, generation, and verification
 //! - [`gpu`]: NVIDIA GPU device info and CC attestation
 //! - [`server`]: HTTP attestation server (requires `server` feature)
+//! - [`bootstrap`]: Remote TEE setup for executor nodes
 //! - [`config`]: Configuration types for TEE settings
 //! - [`error`]: Error types for TEE operations
 //! - [`types`]: Shared data types
 
+pub mod bootstrap;
 pub mod config;
 pub mod error;
 pub mod gpu;
