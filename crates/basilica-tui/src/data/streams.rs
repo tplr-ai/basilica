@@ -84,7 +84,7 @@ impl LogStreamManager {
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
         let tx = self.tx.clone();
         let id = rental_id.to_string();
-        let url = format!("{}/rentals/{}/logs", self.api_url, rental_id);
+        let _url = format!("{}/rentals/{}/logs", self.api_url, rental_id); // TODO: Use for SSE connection
 
         debug!("Starting log stream for rental {}", rental_id);
 

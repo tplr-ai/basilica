@@ -26,6 +26,7 @@ pub struct UserData {
 }
 
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct LoadingState {
     pub rentals: bool,
     pub offerings: bool,
@@ -88,6 +89,7 @@ pub struct Transaction {
     pub is_credit: bool,
 }
 
+#[allow(dead_code)]
 impl UserData {
     /// Create new user data instance
     pub fn new() -> Self {
