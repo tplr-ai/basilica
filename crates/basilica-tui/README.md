@@ -31,10 +31,10 @@ cargo build -p basilica-tui --release
 ## Usage
 
 ```bash
-# Start in user mode (default)
+# Launch TUI (shows startup screen to choose mode)
 basilica-tui
 
-# Start in miner mode
+# Skip startup and go directly to miner mode
 basilica-tui --miner
 
 # Dev mode with mock data (no API connection required)
@@ -47,7 +47,25 @@ basilica-tui --config /path/to/config.toml
 basilica-tui -vvv
 ```
 
+## Startup Screen
+
+When launching without flags, the TUI shows a welcome screen where you can choose:
+- **User Mode** - Rent GPUs, deploy applications, manage billing
+- **Miner Mode** - Manage fleet, track earnings, monitor validators
+
+Use arrow keys or `j`/`k` to select, `Enter` to confirm, or press `u`/`m` for quick selection.
+
 ## Keybindings
+
+### Startup Screen
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` / `←` / `→` | Navigate selection |
+| `Tab` | Toggle selection |
+| `Enter` / `Space` | Confirm selection |
+| `u` / `1` | Quick select User mode |
+| `m` / `2` | Quick select Miner mode |
+| `q` / `Esc` | Quit |
 
 ### Global
 | Key | Action |

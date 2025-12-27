@@ -162,13 +162,18 @@ fn render_auth_section(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             Line::from(""),
             Line::from(vec![
                 Span::styled("Status: ", theme.text_muted()),
-                Span::styled("● Logged In", theme.text_success().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "● Logged In",
+                    theme.text_success().add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Email: ", theme.text_muted()),
                 Span::styled(
-                    auth.user_email.clone().unwrap_or_else(|| "Unknown".to_string()),
+                    auth.user_email
+                        .clone()
+                        .unwrap_or_else(|| "Unknown".to_string()),
                     theme.text(),
                 ),
             ]),
@@ -176,23 +181,25 @@ fn render_auth_section(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             Line::from(vec![
                 Span::styled("Token Expires: ", theme.text_muted()),
                 Span::styled(
-                    auth.token_expiry.clone().unwrap_or_else(|| "Unknown".to_string()),
+                    auth.token_expiry
+                        .clone()
+                        .unwrap_or_else(|| "Unknown".to_string()),
                     theme.text(),
                 ),
             ]),
             Line::from(""),
             Line::from(""),
-            Line::from(Span::styled(
-                "Press [o] to logout",
-                theme.text_muted(),
-            )),
+            Line::from(Span::styled("Press [o] to logout", theme.text_muted())),
         ]
     } else {
         vec![
             Line::from(""),
             Line::from(vec![
                 Span::styled("Status: ", theme.text_muted()),
-                Span::styled("● Not Logged In", theme.text_error().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "● Not Logged In",
+                    theme.text_error().add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(""),
             Line::from(""),
@@ -231,8 +238,10 @@ fn render_tokens_section(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 
     // Tokens table
     let rows: Vec<Row> = if state.tokens.is_empty() {
-        vec![Row::new(vec![Cell::from("No API tokens. Press [a] to create one.")])
-            .style(theme.text_muted())]
+        vec![
+            Row::new(vec![Cell::from("No API tokens. Press [a] to create one.")])
+                .style(theme.text_muted()),
+        ]
     } else {
         state
             .tokens
@@ -249,7 +258,12 @@ fn render_tokens_section(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
                     Cell::from(token.name.clone()),
                     Cell::from(format!("{}...", token.prefix)),
                     Cell::from(token.created_at.clone()),
-                    Cell::from(token.last_used.clone().unwrap_or_else(|| "Never".to_string())),
+                    Cell::from(
+                        token
+                            .last_used
+                            .clone()
+                            .unwrap_or_else(|| "Never".to_string()),
+                    ),
                 ])
                 .style(row_style)
             })
@@ -291,7 +305,11 @@ fn render_tokens_section(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         Span::styled("[Enter] ", theme.keybind()),
         Span::styled("Copy Token", theme.text_muted()),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(theme.border()));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    );
 
     frame.render_widget(actions, chunks[1]);
 }
@@ -365,7 +383,11 @@ fn render_ssh_keys_section(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         Span::styled("[d] ", theme.keybind()),
         Span::styled("Delete  ", theme.text_muted()),
     ]))
-    .block(Block::default().borders(Borders::ALL).border_style(theme.border()));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    );
 
     frame.render_widget(actions, chunks[1]);
 }
@@ -423,9 +445,11 @@ fn render_settings_footer(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         Span::styled("Quit", theme.text_muted()),
     ]);
 
-    let paragraph = Paragraph::new(content)
-        .block(Block::default().borders(Borders::TOP).border_style(theme.border()));
+    let paragraph = Paragraph::new(content).block(
+        Block::default()
+            .borders(Borders::TOP)
+            .border_style(theme.border()),
+    );
 
     frame.render_widget(paragraph, area);
 }
-

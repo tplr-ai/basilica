@@ -62,7 +62,7 @@ impl Tui {
     }
 
     /// Suspend the TUI temporarily to run an external process
-    /// 
+    ///
     /// Returns the terminal to normal mode, runs the provided closure,
     /// then restores the TUI. Use this for interactive SSH sessions, etc.
     pub fn suspend_and_run<F, R>(&mut self, f: F) -> Result<R>

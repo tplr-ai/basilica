@@ -49,15 +49,50 @@ fn render_action_bar(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 
     let actions = Line::from(vec![
         Span::styled(" Actions: ", theme.text_muted()),
-        Span::styled("[s] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[s] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("SSH  ", theme.text_muted()),
-        Span::styled("[e] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[e] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Exec  ", theme.text_muted()),
-        Span::styled("[c] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[c] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Copy  ", theme.text_muted()),
-        Span::styled("[r] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[r] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Restart  ", theme.text_muted()),
-        Span::styled("[d] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[d] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Down  ", theme.text_muted()),
         Span::styled("[l] ", theme.keybind()),
         Span::styled("Logs  ", theme.text_muted()),
@@ -68,8 +103,11 @@ fn render_action_bar(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         Span::styled("History", theme.text_muted()),
     ]);
 
-    let paragraph = Paragraph::new(actions)
-        .block(Block::default().borders(Borders::ALL).border_style(theme.border()));
+    let paragraph = Paragraph::new(actions).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    );
 
     frame.render_widget(paragraph, area);
 }

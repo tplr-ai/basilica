@@ -24,7 +24,7 @@ pub use simple_manager::TokenManager;
 pub use token_store::TokenStore;
 pub use types::{get_sdk_data_dir, AuthConfig, AuthError, AuthMethod, AuthResult, TokenSet};
 
-/// Environment detection utilities for determining authentication flow
+// Environment detection utilities for determining authentication flow
 
 /// Detect if running in Windows Subsystem for Linux (WSL)
 pub fn is_wsl_environment() -> bool {

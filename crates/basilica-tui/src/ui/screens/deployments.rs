@@ -56,16 +56,40 @@ fn render_action_bar(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         Span::styled("[g] ", theme.keybind()),
         Span::styled("SGLang  ", theme.text_muted()),
         Span::raw("│ "),
-        Span::styled("[d] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[d] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Delete  ", theme.text_muted()),
-        Span::styled("[s] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[s] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Scale  ", theme.text_muted()),
-        Span::styled("[l] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[l] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Logs", theme.text_muted()),
     ]);
 
-    let paragraph = Paragraph::new(actions)
-        .block(Block::default().borders(Borders::ALL).border_style(theme.border()));
+    let paragraph = Paragraph::new(actions).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    );
 
     frame.render_widget(paragraph, area);
 }

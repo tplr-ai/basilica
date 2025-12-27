@@ -151,9 +151,13 @@ fn render_deposit_info(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     } else {
         "Login to get deposit address"
     };
-    
+
     let address_short = if deposit_address.len() > 16 && ctx.connected {
-        format!("{}...{}", &deposit_address[..8], &deposit_address[deposit_address.len()-8..])
+        format!(
+            "{}...{}",
+            &deposit_address[..8],
+            &deposit_address[deposit_address.len() - 8..]
+        )
     } else {
         deposit_address.to_string()
     };

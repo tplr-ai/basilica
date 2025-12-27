@@ -149,10 +149,26 @@ pub enum NotificationLevel {
     Error,
 }
 
+/// Application phase
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AppPhase {
+    /// Startup screen with mode selection
+    #[default]
+    Startup,
+    /// Main application running
+    Running,
+}
+
 /// Main application state
 pub struct App {
     /// Application running state
     pub running: bool,
+
+    /// Current phase (startup or running)
+    pub phase: AppPhase,
+
+    /// Startup screen selection
+    pub startup_selection: crate::ui::screens::startup::StartupSelection,
 
     /// Current mode (user or miner)
     pub mode: AppMode,
@@ -357,8 +373,25 @@ impl App {
             }
         }
 
+        // Determine initial phase - skip startup if mode specified via CLI
+        let (phase, startup_selection) = if miner_mode {
+            // --miner flag passed, skip startup
+            (
+                AppPhase::Running,
+                crate::ui::screens::startup::StartupSelection::Miner,
+            )
+        } else {
+            // Show startup screen to let user choose
+            (
+                AppPhase::Startup,
+                crate::ui::screens::startup::StartupSelection::default(),
+            )
+        };
+
         Ok(Self {
             running: true,
+            phase,
+            startup_selection,
             mode: if miner_mode {
                 AppMode::Miner
             } else {
@@ -776,10 +809,31 @@ impl App {
     pub async fn run(&mut self) -> Result<()> {
         self.tui.enter()?;
 
-        // Initial data fetch
-        self.refresh_data().await;
+        // Initial data fetch (only if not in startup phase)
+        if self.phase == AppPhase::Running {
+            self.refresh_data().await;
+        }
 
         while self.running {
+            // Handle startup phase separately
+            if self.phase == AppPhase::Startup {
+                let theme = self.theme.clone();
+                let selection = self.startup_selection;
+
+                self.tui.draw(|frame| {
+                    crate::ui::screens::startup::render_startup(frame, selection, &theme);
+                })?;
+
+                // Handle startup events
+                match self.event_handler.next().await? {
+                    Event::Key(key) => {
+                        self.handle_startup_key(key).await;
+                    }
+                    Event::Tick | Event::Mouse(_) | Event::Resize(_, _) => {}
+                }
+                continue;
+            }
+
             // Render UI - extract what we need before the mutable borrow
             let mode = self.mode;
             let user_screen = self.user_screen;
@@ -835,6 +889,71 @@ impl App {
 
         self.tui.exit()?;
         Ok(())
+    }
+
+    /// Handle keyboard input during startup phase
+    async fn handle_startup_key(&mut self, key: KeyEvent) {
+        use crate::ui::screens::startup::StartupSelection;
+
+        match key.code {
+            // Quit
+            KeyCode::Char('q') | KeyCode::Esc => {
+                self.running = false;
+            }
+            // Navigate selection
+            KeyCode::Up | KeyCode::Char('k') | KeyCode::Left | KeyCode::Char('h') => {
+                self.startup_selection = StartupSelection::User;
+            }
+            KeyCode::Down | KeyCode::Char('j') | KeyCode::Right | KeyCode::Char('l') => {
+                self.startup_selection = StartupSelection::Miner;
+            }
+            KeyCode::Tab => {
+                self.startup_selection.toggle();
+            }
+            // Confirm selection
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                // Set mode based on selection
+                self.mode = match self.startup_selection {
+                    StartupSelection::User => AppMode::User,
+                    StartupSelection::Miner => AppMode::Miner,
+                };
+                // Transition to running phase
+                self.phase = AppPhase::Running;
+                // Initial data fetch
+                self.refresh_data().await;
+                // Welcome notification
+                let mode_name = match self.mode {
+                    AppMode::User => "User",
+                    AppMode::Miner => "Miner",
+                };
+                self.add_notification(
+                    &format!("⛪ Welcome to Basilica - {} Mode", mode_name),
+                    NotificationLevel::Success,
+                );
+            }
+            // Quick select with number keys
+            KeyCode::Char('1') | KeyCode::Char('u') => {
+                self.startup_selection = StartupSelection::User;
+                self.mode = AppMode::User;
+                self.phase = AppPhase::Running;
+                self.refresh_data().await;
+                self.add_notification(
+                    "⛪ Welcome to Basilica - User Mode",
+                    NotificationLevel::Success,
+                );
+            }
+            KeyCode::Char('2') | KeyCode::Char('m') => {
+                self.startup_selection = StartupSelection::Miner;
+                self.mode = AppMode::Miner;
+                self.phase = AppPhase::Running;
+                self.refresh_data().await;
+                self.add_notification(
+                    "⛪ Welcome to Basilica - Miner Mode",
+                    NotificationLevel::Success,
+                );
+            }
+            _ => {}
+        }
     }
 
     /// Handle keyboard input
@@ -1762,8 +1881,8 @@ impl App {
 
     async fn handle_login(&mut self) {
         use basilica_sdk::auth::{
-            create_auth_config_with_port, get_sdk_data_dir, should_use_device_flow,
-            CallbackServer, DeviceFlow, OAuthFlow, TokenStore,
+            create_auth_config_with_port, get_sdk_data_dir, should_use_device_flow, CallbackServer,
+            DeviceFlow, OAuthFlow, TokenStore,
         };
 
         self.add_notification("Starting authentication...", NotificationLevel::Info);
@@ -1791,10 +1910,7 @@ impl App {
         let data_dir = match get_sdk_data_dir() {
             Ok(dir) => dir,
             Err(e) => {
-                self.add_notification(
-                    &format!("Data dir error: {}", e),
-                    NotificationLevel::Error,
-                );
+                self.add_notification(&format!("Data dir error: {}", e), NotificationLevel::Error);
                 return;
             }
         };
@@ -1921,10 +2037,7 @@ impl App {
         let data_dir = match get_sdk_data_dir() {
             Ok(dir) => dir,
             Err(e) => {
-                self.add_notification(
-                    &format!("Data dir error: {}", e),
-                    NotificationLevel::Error,
-                );
+                self.add_notification(&format!("Data dir error: {}", e), NotificationLevel::Error);
                 return;
             }
         };

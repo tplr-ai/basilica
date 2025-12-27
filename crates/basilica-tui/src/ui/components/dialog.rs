@@ -240,7 +240,15 @@ pub fn render_dialog(frame: &mut Frame, dialog: &DialogState, theme: &Theme) {
             confirm_label,
             cancel_label,
         } => {
-            render_confirm_dialog(frame, dialog_area, title, message, confirm_label, cancel_label, theme);
+            render_confirm_dialog(
+                frame,
+                dialog_area,
+                title,
+                message,
+                confirm_label,
+                cancel_label,
+                theme,
+            );
         }
         DialogKind::Input {
             title,
@@ -249,7 +257,16 @@ pub fn render_dialog(frame: &mut Frame, dialog: &DialogState, theme: &Theme) {
             cursor_pos,
             placeholder,
         } => {
-            render_input_dialog(frame, dialog_area, title, prompt, value, *cursor_pos, placeholder.as_deref(), theme);
+            render_input_dialog(
+                frame,
+                dialog_area,
+                title,
+                prompt,
+                value,
+                *cursor_pos,
+                placeholder.as_deref(),
+                theme,
+            );
         }
         DialogKind::Select {
             title,
@@ -286,10 +303,7 @@ fn render_confirm_dialog(
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(3),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
         .margin(1)
         .split(area);
 
@@ -308,7 +322,10 @@ fn render_confirm_dialog(
 
     // Buttons
     let buttons = Line::from(vec![
-        Span::styled(format!(" [Enter] {} ", confirm_label), theme.text_accent().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" [Enter] {} ", confirm_label),
+            theme.text_accent().add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  "),
         Span::styled(format!("[Esc] {} ", cancel_label), theme.text_muted()),
     ]);
@@ -361,7 +378,11 @@ fn render_input_dialog(
     };
     let input = Paragraph::new(format!("{}_", display_value))
         .style(input_style)
-        .block(Block::default().borders(Borders::ALL).border_style(theme.border_selected()));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(theme.border_selected()),
+        );
     frame.render_widget(input, chunks[1]);
 
     // Hints
@@ -385,10 +406,7 @@ fn render_select_dialog(
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(3),
-            Constraint::Length(2),
-        ])
+        .constraints([Constraint::Min(3), Constraint::Length(2)])
         .margin(1)
         .split(area);
 
@@ -405,10 +423,7 @@ fn render_select_dialog(
                 theme.text()
             };
             let prefix = if i == selected { "▶ " } else { "  " };
-            let mut spans = vec![
-                Span::raw(prefix),
-                Span::styled(&item.label, style),
-            ];
+            let mut spans = vec![Span::raw(prefix), Span::styled(&item.label, style)];
             if let Some(desc) = &item.description {
                 spans.push(Span::styled(format!(" - {}", desc), theme.text_muted()));
             }
@@ -416,13 +431,12 @@ fn render_select_dialog(
         })
         .collect();
 
-    let list = List::new(list_items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(theme.border())
-                .title(Span::styled(format!(" {} ", title), theme.block_title())),
-        );
+    let list = List::new(list_items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.border())
+            .title(Span::styled(format!(" {} ", title), theme.block_title())),
+    );
     frame.render_widget(list, area);
 
     // Hints
@@ -448,10 +462,7 @@ fn render_form_dialog(
 ) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(3),
-            Constraint::Length(2),
-        ])
+        .constraints([Constraint::Min(3), Constraint::Length(2)])
         .margin(1)
         .split(area);
 
@@ -463,11 +474,8 @@ fn render_form_dialog(
     frame.render_widget(block, area);
 
     // Form fields - create constraints for each field
-    let field_constraints: Vec<Constraint> = fields
-        .iter()
-        .map(|_| Constraint::Length(3))
-        .collect();
-    
+    let field_constraints: Vec<Constraint> = fields.iter().map(|_| Constraint::Length(3)).collect();
+
     let inner = Layout::default()
         .direction(Direction::Vertical)
         .constraints(field_constraints)
@@ -517,14 +525,12 @@ fn render_form_dialog(
             display_value
         };
 
-        let field_widget = Paragraph::new(content)
-            .style(value_style)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(border_style)
-                    .title(Span::styled(format!(" {} ", label), label_style)),
-            );
+        let field_widget = Paragraph::new(content).style(value_style).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(Span::styled(format!(" {} ", label), label_style)),
+        );
         frame.render_widget(field_widget, inner[i]);
     }
 
@@ -571,7 +577,10 @@ fn render_alert_dialog(
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(theme.border())
-                .title(Span::styled(format!(" {}{} ", icon, title), title_style.add_modifier(Modifier::BOLD))),
+                .title(Span::styled(
+                    format!(" {}{} ", icon, title),
+                    title_style.add_modifier(Modifier::BOLD),
+                )),
         );
     frame.render_widget(msg, area);
 }
@@ -599,10 +608,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 
 /// Handle key events for dialogs
 /// Returns true if the key was handled
-pub fn handle_dialog_key(
-    dialog: &mut DialogState,
-    key: crossterm::event::KeyEvent,
-) -> bool {
+pub fn handle_dialog_key(dialog: &mut DialogState, key: crossterm::event::KeyEvent) -> bool {
     use crossterm::event::KeyCode;
 
     if !dialog.active {
@@ -627,7 +633,9 @@ pub fn handle_dialog_key(
                     dialog.result = Some(DialogResult::Input(value.clone()));
                     dialog.close();
                 }
-                DialogKind::Select { items, selected, .. } => {
+                DialogKind::Select {
+                    items, selected, ..
+                } => {
                     if let Some(item) = items.get(*selected) {
                         if !item.disabled {
                             dialog.result = Some(DialogResult::Selected(item.id.clone()));
@@ -646,54 +654,60 @@ pub fn handle_dialog_key(
             }
             true
         }
-        KeyCode::Up => {
-            match kind {
-                DialogKind::Select { selected, items, .. } => {
-                    if *selected > 0 {
-                        *selected -= 1;
-                    } else {
-                        *selected = items.len().saturating_sub(1);
-                    }
-                    true
+        KeyCode::Up => match kind {
+            DialogKind::Select {
+                selected, items, ..
+            } => {
+                if *selected > 0 {
+                    *selected -= 1;
+                } else {
+                    *selected = items.len().saturating_sub(1);
                 }
-                _ => false,
+                true
             }
-        }
-        KeyCode::Down => {
-            match kind {
-                DialogKind::Select { selected, items, .. } => {
-                    if *selected < items.len().saturating_sub(1) {
-                        *selected += 1;
-                    } else {
-                        *selected = 0;
-                    }
-                    true
+            _ => false,
+        },
+        KeyCode::Down => match kind {
+            DialogKind::Select {
+                selected, items, ..
+            } => {
+                if *selected < items.len().saturating_sub(1) {
+                    *selected += 1;
+                } else {
+                    *selected = 0;
                 }
-                _ => false,
+                true
             }
-        }
-        KeyCode::Backspace => {
-            match kind {
-                DialogKind::Input { value, cursor_pos, .. } => {
-                    if *cursor_pos > 0 {
-                        *cursor_pos -= 1;
-                        value.remove(*cursor_pos);
-                    }
-                    true
+            _ => false,
+        },
+        KeyCode::Backspace => match kind {
+            DialogKind::Input {
+                value, cursor_pos, ..
+            } => {
+                if *cursor_pos > 0 {
+                    *cursor_pos -= 1;
+                    value.remove(*cursor_pos);
                 }
-                DialogKind::Form { fields, selected_field, .. } => {
-                    if let Some(field) = fields.get_mut(*selected_field) {
-                        field.value.pop();
-                    }
-                    true
-                }
-                _ => false,
+                true
             }
-        }
+            DialogKind::Form {
+                fields,
+                selected_field,
+                ..
+            } => {
+                if let Some(field) = fields.get_mut(*selected_field) {
+                    field.value.pop();
+                }
+                true
+            }
+            _ => false,
+        },
         KeyCode::Char('k') => {
             // k for up navigation in select dialogs
             match kind {
-                DialogKind::Select { selected, items, .. } => {
+                DialogKind::Select {
+                    selected, items, ..
+                } => {
                     if *selected > 0 {
                         *selected -= 1;
                     } else {
@@ -702,12 +716,18 @@ pub fn handle_dialog_key(
                     true
                 }
                 // For input/form dialogs, treat 'k' as a character
-                DialogKind::Input { value, cursor_pos, .. } => {
+                DialogKind::Input {
+                    value, cursor_pos, ..
+                } => {
                     value.insert(*cursor_pos, 'k');
                     *cursor_pos += 1;
                     true
                 }
-                DialogKind::Form { fields, selected_field, .. } => {
+                DialogKind::Form {
+                    fields,
+                    selected_field,
+                    ..
+                } => {
                     if let Some(field) = fields.get_mut(*selected_field) {
                         field.value.push('k');
                     }
@@ -719,7 +739,9 @@ pub fn handle_dialog_key(
         KeyCode::Char('j') => {
             // j for down navigation in select dialogs
             match kind {
-                DialogKind::Select { selected, items, .. } => {
+                DialogKind::Select {
+                    selected, items, ..
+                } => {
                     if *selected < items.len().saturating_sub(1) {
                         *selected += 1;
                     } else {
@@ -728,12 +750,18 @@ pub fn handle_dialog_key(
                     true
                 }
                 // For input/form dialogs, treat 'j' as a character
-                DialogKind::Input { value, cursor_pos, .. } => {
+                DialogKind::Input {
+                    value, cursor_pos, ..
+                } => {
                     value.insert(*cursor_pos, 'j');
                     *cursor_pos += 1;
                     true
                 }
-                DialogKind::Form { fields, selected_field, .. } => {
+                DialogKind::Form {
+                    fields,
+                    selected_field,
+                    ..
+                } => {
                     if let Some(field) = fields.get_mut(*selected_field) {
                         field.value.push('j');
                     }
@@ -742,49 +770,56 @@ pub fn handle_dialog_key(
                 _ => false,
             }
         }
-        KeyCode::Char(c) => {
-            match kind {
-                DialogKind::Input { value, cursor_pos, .. } => {
-                    value.insert(*cursor_pos, c);
-                    *cursor_pos += 1;
-                    true
-                }
-                DialogKind::Form { fields, selected_field, .. } => {
-                    if let Some(field) = fields.get_mut(*selected_field) {
-                        field.value.push(c);
-                    }
-                    true
-                }
-                _ => false,
+        KeyCode::Char(c) => match kind {
+            DialogKind::Input {
+                value, cursor_pos, ..
+            } => {
+                value.insert(*cursor_pos, c);
+                *cursor_pos += 1;
+                true
             }
-        }
-        KeyCode::Tab => {
-            match kind {
-                DialogKind::Form { fields, selected_field, .. } => {
-                    if *selected_field < fields.len().saturating_sub(1) {
-                        *selected_field += 1;
-                    } else {
-                        *selected_field = 0;
-                    }
-                    true
+            DialogKind::Form {
+                fields,
+                selected_field,
+                ..
+            } => {
+                if let Some(field) = fields.get_mut(*selected_field) {
+                    field.value.push(c);
                 }
-                _ => false,
+                true
             }
-        }
-        KeyCode::BackTab => {
-            match kind {
-                DialogKind::Form { fields, selected_field, .. } => {
-                    if *selected_field > 0 {
-                        *selected_field -= 1;
-                    } else {
-                        *selected_field = fields.len().saturating_sub(1);
-                    }
-                    true
+            _ => false,
+        },
+        KeyCode::Tab => match kind {
+            DialogKind::Form {
+                fields,
+                selected_field,
+                ..
+            } => {
+                if *selected_field < fields.len().saturating_sub(1) {
+                    *selected_field += 1;
+                } else {
+                    *selected_field = 0;
                 }
-                _ => false,
+                true
             }
-        }
+            _ => false,
+        },
+        KeyCode::BackTab => match kind {
+            DialogKind::Form {
+                fields,
+                selected_field,
+                ..
+            } => {
+                if *selected_field > 0 {
+                    *selected_field -= 1;
+                } else {
+                    *selected_field = fields.len().saturating_sub(1);
+                }
+                true
+            }
+            _ => false,
+        },
         _ => false,
     }
 }
-

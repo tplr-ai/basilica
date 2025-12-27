@@ -197,7 +197,9 @@ impl DeviceFlow {
                     ));
                 }
                 "expired_token" => {
-                    return Err(AuthError::DeviceFlowError("Device code expired".to_string()));
+                    return Err(AuthError::DeviceFlowError(
+                        "Device code expired".to_string(),
+                    ));
                 }
                 _ => {
                     return Err(AuthError::DeviceFlowError(format!(
@@ -249,4 +251,3 @@ impl DeviceFlowPending {
             .await
     }
 }
-

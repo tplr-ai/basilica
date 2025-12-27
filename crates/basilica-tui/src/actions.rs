@@ -14,17 +14,13 @@ pub struct SpawnResult {
 }
 
 /// Execute SSH connection to a rental
-/// 
+///
 /// This spawns an interactive SSH session. The caller must suspend the TUI first.
 pub fn ssh_connect_sync(host: &str, port: u16, user: &str) -> Result<SpawnResult> {
     tracing::info!("Connecting via SSH to {}@{}:{}", user, host, port);
 
     let status = Command::new("ssh")
-        .args([
-            "-p",
-            &port.to_string(),
-            &format!("{}@{}", user, host),
-        ])
+        .args(["-p", &port.to_string(), &format!("{}@{}", user, host)])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -45,13 +41,13 @@ pub async fn ssh_connect(host: &str, port: u16, user: &str) -> Result<()> {
     // Build SSH command
     let ssh_cmd = format!("ssh -p {} {}@{}", port, user, host);
     tracing::info!("SSH command: {}", ssh_cmd);
-    
+
     // Note: For interactive SSH, caller must suspend TUI and use ssh_connect_sync
     Ok(())
 }
 
 /// Execute a command on a rental via SSH (interactive mode)
-/// 
+///
 /// The caller must suspend the TUI first for interactive commands.
 pub fn ssh_exec_sync(host: &str, port: u16, user: &str, command: &str) -> Result<SpawnResult> {
     tracing::info!("Executing on {}@{}:{}: {}", user, host, port, command);
@@ -101,7 +97,7 @@ pub async fn ssh_exec(host: &str, port: u16, user: &str, command: &str) -> Resul
 }
 
 /// Copy files to/from a rental (interactive, shows progress)
-/// 
+///
 /// The caller must suspend the TUI first.
 pub fn scp_copy_sync(
     source: &str,

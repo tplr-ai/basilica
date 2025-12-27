@@ -114,8 +114,9 @@ impl OAuthFlow {
             AuthUrl::new(self.config.auth_endpoint.clone())
                 .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
             Some(
-                TokenUrl::new(self.config.token_endpoint.clone())
-                    .map_err(|e| AuthError::ConfigError(format!("Invalid token endpoint: {}", e)))?,
+                TokenUrl::new(self.config.token_endpoint.clone()).map_err(|e| {
+                    AuthError::ConfigError(format!("Invalid token endpoint: {}", e))
+                })?,
             ),
         )
         .set_redirect_uri(
@@ -212,8 +213,9 @@ impl OAuthFlow {
             AuthUrl::new(self.config.auth_endpoint.clone())
                 .map_err(|e| AuthError::ConfigError(format!("Invalid auth endpoint: {}", e)))?,
             Some(
-                TokenUrl::new(self.config.token_endpoint.clone())
-                    .map_err(|e| AuthError::ConfigError(format!("Invalid token endpoint: {}", e)))?,
+                TokenUrl::new(self.config.token_endpoint.clone()).map_err(|e| {
+                    AuthError::ConfigError(format!("Invalid token endpoint: {}", e))
+                })?,
             ),
         )
         .set_redirect_uri(
@@ -258,9 +260,10 @@ impl OAuthFlow {
     pub async fn revoke_token(&self, token_set: &TokenSet) -> AuthResult<()> {
         debug!("Starting token revocation");
 
-        let revoke_endpoint = self.config.revoke_endpoint.as_ref().ok_or_else(|| {
-            AuthError::ConfigError("Revoke endpoint not configured".to_string())
-        })?;
+        let revoke_endpoint =
+            self.config.revoke_endpoint.as_ref().ok_or_else(|| {
+                AuthError::ConfigError("Revoke endpoint not configured".to_string())
+            })?;
 
         let token_to_revoke = &token_set.refresh_token;
 
@@ -299,4 +302,3 @@ impl OAuthFlow {
         }
     }
 }
-

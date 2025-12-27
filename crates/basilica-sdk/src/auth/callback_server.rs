@@ -405,4 +405,3 @@ async fn handle_callback(
         Html(response_html),
     )
 }
-

@@ -47,7 +47,14 @@ fn render_action_bar(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 
     let actions = Line::from(vec![
         Span::styled(" Actions: ", theme.text_muted()),
-        Span::styled("[Enter] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled(
+            "[Enter] ",
+            if has_selection {
+                theme.keybind()
+            } else {
+                theme.text_muted()
+            },
+        ),
         Span::styled("Rent GPU  ", theme.text_muted()),
         Span::styled("[/] ", theme.keybind()),
         Span::styled("Filter  ", theme.text_muted()),
@@ -63,8 +70,11 @@ fn render_action_bar(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
         Span::styled("Refresh", theme.text_muted()),
     ]);
 
-    let paragraph = Paragraph::new(actions)
-        .block(Block::default().borders(Borders::ALL).border_style(theme.border()));
+    let paragraph = Paragraph::new(actions).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(theme.border()),
+    );
 
     frame.render_widget(paragraph, area);
 }
