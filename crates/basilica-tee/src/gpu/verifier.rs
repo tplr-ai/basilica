@@ -1,11 +1,15 @@
 //! GPU Evidence Verification
 //!
 //! Verifies GPU attestation evidence for Confidential Computing.
+//!
+//! Provides both local verification (stub) and remote verification via
+//! NVIDIA Remote Attestation Service (NRAS).
 
 use async_trait::async_trait;
-use tracing::{debug, warn};
+use serde::{Deserialize, Serialize};
+use tracing::{debug, error, info, warn};
 
-use crate::error::TeeResult;
+use crate::error::{TeeError, TeeResult};
 use crate::traits::GpuVerifier;
 use crate::types::{GpuAttestationEvidence, GpuCcVerificationResult};
 
@@ -116,6 +120,252 @@ pub async fn verify_all_evidence(
     LocalGpuVerifier::new()
         .verify_all(evidence_list, expected_nonce)
         .await
+}
+
+// ============================================================================
+// NVIDIA Remote Attestation Service (NRAS) Verifier
+// ============================================================================
+
+/// Configuration for NVIDIA Remote Attestation Service
+#[derive(Debug, Clone)]
+pub struct NrasConfig {
+    /// NRAS API endpoint URL
+    pub api_url: String,
+    /// API key for authentication (if required)
+    pub api_key: Option<String>,
+    /// Request timeout in seconds
+    pub timeout_secs: u64,
+}
+
+impl Default for NrasConfig {
+    fn default() -> Self {
+        Self {
+            // NVIDIA's attestation verification service
+            // Note: This URL may change - check NVIDIA's documentation
+            api_url: "https://nras.attestation.nvidia.com/v1/attest".to_string(),
+            api_key: None,
+            timeout_secs: 30,
+        }
+    }
+}
+
+/// Request body for NRAS verification
+#[derive(Debug, Serialize)]
+struct NrasVerifyRequest {
+    /// Base64-encoded attestation evidence (EAT token)
+    evidence: String,
+    /// Optional nonce for freshness verification
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nonce: Option<String>,
+}
+
+/// Response from NRAS verification
+#[derive(Debug, Deserialize)]
+struct NrasVerifyResponse {
+    /// Verification result
+    #[serde(default)]
+    result: String,
+    /// Whether attestation is valid
+    #[serde(default)]
+    attested: bool,
+    /// Error message if verification failed
+    #[serde(default)]
+    error: Option<String>,
+    /// Detailed claims from the attestation (optional)
+    #[serde(default)]
+    claims: Option<NrasClaims>,
+}
+
+/// Claims extracted from the attestation
+#[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
+struct NrasClaims {
+    /// GPU device ID
+    #[serde(default)]
+    device_id: Option<String>,
+    /// Driver version
+    #[serde(default)]
+    driver_version: Option<String>,
+    /// VBIOS version
+    #[serde(default)]
+    vbios_version: Option<String>,
+    /// Whether CC mode is enabled
+    #[serde(default)]
+    cc_mode: Option<bool>,
+}
+
+/// NVIDIA Remote Attestation Service verifier
+///
+/// Verifies GPU attestation evidence using NVIDIA's cloud-based
+/// attestation verification service.
+#[cfg(feature = "remote-attestation")]
+pub struct NrasVerifier {
+    config: NrasConfig,
+    client: reqwest::Client,
+}
+
+#[cfg(feature = "remote-attestation")]
+impl NrasVerifier {
+    /// Create a new NRAS verifier with the given configuration
+    pub fn new(config: NrasConfig) -> TeeResult<Self> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(config.timeout_secs))
+            .build()
+            .map_err(|e| TeeError::Configuration(format!("Failed to create HTTP client: {}", e)))?;
+
+        Ok(Self { config, client })
+    }
+
+    /// Create with default configuration
+    pub fn with_defaults() -> TeeResult<Self> {
+        Self::new(NrasConfig::default())
+    }
+
+    /// Verify attestation evidence with NRAS
+    async fn verify_with_nras(
+        &self,
+        evidence: &GpuAttestationEvidence,
+        nonce: Option<&str>,
+    ) -> TeeResult<(bool, Option<NrasClaims>)> {
+        info!("[NRAS] Verifying GPU attestation for {}", evidence.gpu_uuid);
+
+        // Build the EAT token from evidence
+        let eat_token = self.build_eat_token(evidence)?;
+
+        let request = NrasVerifyRequest {
+            evidence: eat_token,
+            nonce: nonce.map(String::from),
+        };
+
+        let mut req = self.client.post(&self.config.api_url).json(&request);
+
+        // Add API key if configured
+        if let Some(ref api_key) = self.config.api_key {
+            req = req.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        let response = req
+            .send()
+            .await
+            .map_err(|e| TeeError::GpuCcVerification(format!("NRAS request failed: {}", e)))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            error!(
+                "[NRAS] Verification request failed: status={}, body={}",
+                status, error_text
+            );
+            return Err(TeeError::GpuCcVerification(format!(
+                "NRAS returned status {}: {}",
+                status, error_text
+            )));
+        }
+
+        let result: NrasVerifyResponse = response.json().await.map_err(|e| {
+            TeeError::GpuCcVerification(format!("Failed to parse NRAS response: {}", e))
+        })?;
+
+        if let Some(ref err) = result.error {
+            warn!("[NRAS] Verification error: {}", err);
+            return Ok((false, None));
+        }
+
+        let verified = result.attested || result.result.to_lowercase() == "success";
+
+        if verified {
+            info!("[NRAS] GPU attestation verified successfully");
+        } else {
+            warn!(
+                "[NRAS] GPU attestation verification failed: result={}",
+                result.result
+            );
+        }
+
+        Ok((verified, result.claims))
+    }
+
+    /// Build an EAT (Entity Attestation Token) from evidence
+    ///
+    /// Note: This is a simplified implementation. Real EAT tokens have a specific
+    /// CBOR/COSE structure defined in the IETF draft specification.
+    fn build_eat_token(&self, evidence: &GpuAttestationEvidence) -> TeeResult<String> {
+        // For NVIDIA attestation, the evidence typically comes as a JSON structure
+        // that can be base64-encoded for transport
+        let evidence_json = serde_json::json!({
+            "attestation_report": evidence.attestation_report,
+            "signature": evidence.signature,
+            "cert_chain": evidence.cert_chain,
+            "nonce": evidence.nonce,
+        });
+
+        let json_string = serde_json::to_string(&evidence_json).map_err(|e| {
+            TeeError::GpuCcVerification(format!("Failed to serialize evidence: {}", e))
+        })?;
+
+        Ok(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            json_string.as_bytes(),
+        ))
+    }
+}
+
+#[cfg(feature = "remote-attestation")]
+#[async_trait]
+impl GpuVerifier for NrasVerifier {
+    async fn verify(
+        &self,
+        evidence: &GpuAttestationEvidence,
+        expected_nonce: Option<&str>,
+    ) -> TeeResult<GpuCcVerificationResult> {
+        // First verify with NRAS
+        let (attestation_valid, claims) = self.verify_with_nras(evidence, expected_nonce).await?;
+
+        // Check nonce
+        let nonce_verified = expected_nonce.map(|n| evidence.nonce == n).unwrap_or(true);
+
+        // Determine CC mode from claims or evidence
+        let cc_mode_enabled = claims
+            .as_ref()
+            .and_then(|c| c.cc_mode)
+            .unwrap_or(!evidence.attestation_report.is_empty());
+
+        Ok(GpuCcVerificationResult {
+            cc_mode_enabled,
+            attestation_valid,
+            gpu_uuid: evidence.gpu_uuid.clone(),
+            nonce_verified,
+            gpu_model: evidence.gpu_model.clone(),
+            driver_version: claims
+                .and_then(|c| c.driver_version)
+                .unwrap_or_else(|| evidence.driver_version.clone()),
+            verified_at: chrono::Utc::now(),
+        })
+    }
+}
+
+/// Verify evidence using NVIDIA Remote Attestation Service
+///
+/// Returns an error if the remote-attestation feature is not enabled.
+#[cfg(feature = "remote-attestation")]
+pub async fn verify_evidence_remote(
+    evidence: &GpuAttestationEvidence,
+    expected_nonce: Option<&str>,
+    config: Option<NrasConfig>,
+) -> TeeResult<GpuCcVerificationResult> {
+    let verifier = NrasVerifier::new(config.unwrap_or_default())?;
+    verifier.verify(evidence, expected_nonce).await
+}
+
+#[cfg(not(feature = "remote-attestation"))]
+pub async fn verify_evidence_remote(
+    _evidence: &GpuAttestationEvidence,
+    _expected_nonce: Option<&str>,
+    _config: Option<NrasConfig>,
+) -> TeeResult<GpuCcVerificationResult> {
+    Err(TeeError::GpuCcVerification(
+        "Remote attestation feature not enabled. Compile with --features remote-attestation".into(),
+    ))
 }
 
 #[cfg(test)]

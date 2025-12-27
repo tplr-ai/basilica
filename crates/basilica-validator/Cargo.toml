@@ -50,6 +50,7 @@ regex = { workspace = true }
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
 basilica-protocol = { path = "../basilica-protocol" }
+basilica-tee = { path = "../basilica-tee" }
 bittensor = { workspace = true }
 collateral-contract = { path = "../collateral-contract" }
 
@@ -81,7 +82,6 @@ ssh-key = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-basilica-tee = { path = "../basilica-tee" }
 
 [features]
 default = ["client"]

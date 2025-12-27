@@ -8,9 +8,11 @@ pub mod config;
 pub mod node_manager;
 pub mod persistence;
 // pub mod request_verification;
+pub mod tee;
 pub mod validator_comms;
 pub mod validator_discovery;
 
 // Re-export commonly used types
 pub use config::{MinerConfig, SecurityConfig};
 pub use node_manager::NodeManager;
+pub use tee::TeeStatusManager;

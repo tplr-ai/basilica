@@ -233,6 +233,36 @@ impl ValidatorPrometheusMetrics {
             "End-to-end latency from collection to successful send"
         );
 
+        // TEE (Trusted Execution Environment) metrics
+        describe_counter!(
+            "basilica_validator_tee_verifications_total",
+            "Total TEE verification attempts"
+        );
+        describe_counter!(
+            "basilica_validator_tee_verifications_success_total",
+            "Successful TEE verifications"
+        );
+        describe_counter!(
+            "basilica_validator_tee_verifications_failed_total",
+            "Failed TEE verifications"
+        );
+        describe_gauge!(
+            "basilica_validator_tee_verified_nodes",
+            "Number of nodes with verified TEE"
+        );
+        describe_gauge!(
+            "basilica_validator_tdx_verified_nodes",
+            "Number of nodes with verified TDX"
+        );
+        describe_gauge!(
+            "basilica_validator_gpu_cc_enabled_nodes",
+            "Number of nodes with GPU CC mode enabled"
+        );
+        describe_histogram!(
+            "basilica_validator_tee_verification_duration_seconds",
+            "Duration of TEE verification operations"
+        );
+
         Ok(Self {
             last_collection: Arc::new(RwLock::new(SystemTime::now())),
             persistence,
@@ -754,5 +784,73 @@ impl ValidatorPrometheusMetrics {
     pub fn record_billing_telemetry_latency(&self, latency: Duration) {
         histogram!("basilica_validator_billing_telemetry_latency_seconds")
             .record(latency.as_secs_f64());
+    }
+
+    // =========================================================================
+    // TEE (Trusted Execution Environment) Metrics
+    // =========================================================================
+
+    /// Record a TEE verification attempt
+    pub fn record_tee_verification(
+        &self,
+        node_id: &str,
+        success: bool,
+        tdx_verified: bool,
+        gpu_cc_enabled: bool,
+        duration: Duration,
+    ) {
+        counter!("basilica_validator_tee_verifications_total",
+            "node_id" => node_id.to_string()
+        )
+        .increment(1);
+
+        if success {
+            counter!("basilica_validator_tee_verifications_success_total",
+                "node_id" => node_id.to_string()
+            )
+            .increment(1);
+        } else {
+            counter!("basilica_validator_tee_verifications_failed_total",
+                "node_id" => node_id.to_string()
+            )
+            .increment(1);
+        }
+
+        histogram!("basilica_validator_tee_verification_duration_seconds")
+            .record(duration.as_secs_f64());
+
+        debug!(
+            "Recorded TEE verification: node={}, success={}, tdx={}, gpu_cc={}, duration={:?}",
+            node_id, success, tdx_verified, gpu_cc_enabled, duration
+        );
+    }
+
+    /// Update the count of TEE-verified nodes
+    pub fn set_tee_verified_nodes_count(&self, count: u64) {
+        gauge!("basilica_validator_tee_verified_nodes").set(count as f64);
+    }
+
+    /// Update the count of TDX-verified nodes
+    pub fn set_tdx_verified_nodes_count(&self, count: u64) {
+        gauge!("basilica_validator_tdx_verified_nodes").set(count as f64);
+    }
+
+    /// Update the count of GPU CC enabled nodes
+    pub fn set_gpu_cc_enabled_nodes_count(&self, count: u64) {
+        gauge!("basilica_validator_gpu_cc_enabled_nodes").set(count as f64);
+    }
+
+    /// Collect TEE metrics from database
+    pub async fn collect_tee_metrics(&self) {
+        match self.persistence.get_tee_status_summary().await {
+            Ok(summary) => {
+                self.set_tee_verified_nodes_count(summary.tee_verified_count);
+                self.set_tdx_verified_nodes_count(summary.tdx_verified_count);
+                self.set_gpu_cc_enabled_nodes_count(summary.gpu_cc_enabled_count);
+            }
+            Err(e) => {
+                debug!("Failed to collect TEE metrics from database: {}", e);
+            }
+        }
     }
 }
