@@ -90,7 +90,9 @@ fn default_allowed_models() -> Vec<String> {
 }
 
 fn default_nvevidence_path() -> PathBuf {
-    PathBuf::from("chutes-nvevidence")
+    // Default to nvidia-smi which is always available with NVIDIA drivers
+    // The NvEvidenceProvider will auto-detect better tools if available
+    PathBuf::from("nvidia-smi")
 }
 
 fn default_evidence_output_dir() -> PathBuf {
@@ -320,6 +322,7 @@ mod tests {
         );
 
         let gpu = GpuCcConfig::default();
-        assert_eq!(gpu.nvevidence_path, PathBuf::from("chutes-nvevidence"));
+        // Default to nvidia-smi, NvEvidenceProvider auto-detects better tools
+        assert_eq!(gpu.nvevidence_path, PathBuf::from("nvidia-smi"));
     }
 }

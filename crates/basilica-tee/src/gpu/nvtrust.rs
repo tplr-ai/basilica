@@ -1,6 +1,7 @@
 //! NvEvidence Provider
 //!
-//! Generates GPU attestation evidence using the chutes-nvevidence CLI tool.
+//! Generates GPU attestation evidence using NVIDIA's official attestation tools
+//! or nvidia-smi for basic CC mode verification.
 
 use crate::config::GpuCcConfig;
 use crate::error::{TeeError, TeeResult};
@@ -10,9 +11,11 @@ use tracing::{debug, error, info};
 
 /// NVIDIA Evidence Provider
 ///
-/// Wraps the chutes-nvevidence CLI tool to generate GPU attestation evidence.
+/// Wraps NVIDIA's official attestation tools to generate GPU attestation evidence.
+/// Supports: nv-attestation-tool, nvidia-attestation, or falls back to nvidia-smi
+/// for basic CC mode verification.
 pub struct NvEvidenceProvider {
-    /// Path to the nvevidence binary
+    /// Path to the attestation binary
     binary_path: String,
     /// Output directory for evidence files
     output_dir: String,
@@ -20,11 +23,41 @@ pub struct NvEvidenceProvider {
 
 impl NvEvidenceProvider {
     /// Create a new NvEvidenceProvider with default paths
+    /// Tries to find NVIDIA's official attestation tools
     pub fn new() -> Self {
+        // Try to find an available attestation tool
+        let binary_path = Self::find_attestation_tool().unwrap_or_else(|| "nvidia-smi".to_string());
+
         Self {
-            binary_path: "chutes-nvevidence".to_string(),
+            binary_path,
             output_dir: "/var/log/attestation-service".to_string(),
         }
+    }
+
+    /// Find available NVIDIA attestation tool
+    fn find_attestation_tool() -> Option<String> {
+        let tools = [
+            "nv-attestation-tool",
+            "nvidia-attestation",
+            "/usr/bin/nvidia-attestation",
+            "/usr/local/bin/nv-attestation-tool",
+        ];
+
+        for tool in tools {
+            if Path::new(tool).exists() {
+                return Some(tool.to_string());
+            }
+            // Check if it's in PATH
+            if std::process::Command::new("which")
+                .arg(tool)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return Some(tool.to_string());
+            }
+        }
+        None
     }
 
     /// Create a new NvEvidenceProvider from config
@@ -239,7 +272,15 @@ mod tests {
     #[test]
     fn test_provider_new() {
         let provider = NvEvidenceProvider::new();
-        assert_eq!(provider.binary_path, "chutes-nvevidence");
+        // Auto-detects available tool, falls back to nvidia-smi
+        assert!(!provider.binary_path.is_empty());
+        // Should be one of the known tools or nvidia-smi
+        let valid_tools = ["nvidia-smi", "nv-attestation-tool", "nvidia-attestation"];
+        assert!(
+            valid_tools.iter().any(|t| provider.binary_path.contains(t)),
+            "Expected valid attestation tool, got: {}",
+            provider.binary_path
+        );
     }
 
     #[test]
