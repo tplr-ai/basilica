@@ -2,14 +2,17 @@
 //!
 //! Generates TDX quotes by invoking the tdx-quote-generator CLI tool.
 
-use crate::config::TdxConfig;
-use crate::error::{TeeError, TeeResult};
-use sha2::{Digest, Sha256};
+use async_trait::async_trait;
 use std::path::Path;
-use std::process::Stdio;
+use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tokio::process::Command;
 use tracing::{debug, error, info};
+
+use crate::config::TdxConfig;
+use crate::crypto::OpenSslCertHasher;
+use crate::error::{TeeError, TeeResult};
+use crate::traits::{CertificateHasher, QuoteProvider};
 
 /// Async TDX quote provider with cert hash binding.
 ///
@@ -21,6 +24,8 @@ pub struct TdxQuoteProvider {
     quote_generator_path: String,
     /// Path to the server certificate
     server_cert_path: Option<String>,
+    /// Certificate hasher for computing cert hash
+    cert_hasher: Arc<dyn CertificateHasher>,
 }
 
 impl TdxQuoteProvider {
@@ -29,6 +34,7 @@ impl TdxQuoteProvider {
         Self {
             quote_generator_path: "/usr/bin/tdx-quote-generator".to_string(),
             server_cert_path: None,
+            cert_hasher: Arc::new(OpenSslCertHasher::new()),
         }
     }
 
@@ -40,6 +46,7 @@ impl TdxQuoteProvider {
                 .server_cert_path
                 .as_ref()
                 .map(|p| p.to_string_lossy().to_string()),
+            cert_hasher: Arc::new(OpenSslCertHasher::new()),
         }
     }
 
@@ -48,74 +55,32 @@ impl TdxQuoteProvider {
         Self {
             quote_generator_path: quote_generator.to_string(),
             server_cert_path: server_cert.map(|s| s.to_string()),
+            cert_hasher: Arc::new(OpenSslCertHasher::new()),
         }
     }
 
-    /// Check if the quote generator binary exists
-    pub fn is_available(&self) -> bool {
-        Path::new(&self.quote_generator_path).exists()
+    /// Create a new TdxQuoteProvider with a custom certificate hasher
+    pub fn with_cert_hasher(
+        quote_generator: &str,
+        server_cert: Option<&str>,
+        cert_hasher: Arc<dyn CertificateHasher>,
+    ) -> Self {
+        Self {
+            quote_generator_path: quote_generator.to_string(),
+            server_cert_path: server_cert.map(|s| s.to_string()),
+            cert_hasher,
+        }
     }
 
-    /// Compute SHA-256 hash of the server certificate's public key.
-    ///
-    /// This binds the quote to the specific certificate being used.
-    /// Returns 64-character hex string (SHA-256 hash).
+    /// Get the certificate hash using the configured hasher.
     async fn get_cert_hash(&self) -> TeeResult<String> {
         let cert_path = self.server_cert_path.as_ref().ok_or_else(|| {
             TeeError::Certificate("Server certificate path not configured".into())
         })?;
 
-        // Extract public key from certificate
-        let pubkey_output = Command::new("openssl")
-            .args(["x509", "-in", cert_path, "-pubkey", "-noout"])
-            .output()
+        self.cert_hasher
+            .hash_certificate_hex(Path::new(cert_path))
             .await
-            .map_err(|e| TeeError::CommandExecution(format!("Failed to run openssl: {}", e)))?;
-
-        if !pubkey_output.status.success() {
-            return Err(TeeError::Certificate(format!(
-                "openssl x509 failed: {}",
-                String::from_utf8_lossy(&pubkey_output.stderr)
-            )));
-        }
-
-        // Convert public key to DER format
-        let der_output = Command::new("openssl")
-            .args(["pkey", "-pubin", "-outform", "der"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                TeeError::CommandExecution(format!("Failed to spawn openssl pkey: {}", e))
-            })?;
-
-        // Write pubkey to stdin and get output
-        let mut child = der_output;
-        {
-            use tokio::io::AsyncWriteExt;
-            if let Some(ref mut stdin) = child.stdin {
-                stdin
-                    .write_all(&pubkey_output.stdout)
-                    .await
-                    .map_err(TeeError::Io)?;
-            }
-        }
-
-        let output = child.wait_with_output().await.map_err(|e| {
-            TeeError::CommandExecution(format!("Failed to get openssl output: {}", e))
-        })?;
-
-        if !output.status.success() {
-            return Err(TeeError::Certificate("openssl pkey failed".into()));
-        }
-
-        // Compute SHA-256 hash
-        let mut hasher = Sha256::new();
-        hasher.update(&output.stdout);
-        let cert_hash = hex::encode(hasher.finalize());
-
-        debug!("Computed cert hash: {}", cert_hash);
-        Ok(cert_hash)
     }
 
     /// Generate a TDX quote with nonce and optional certificate hash in report data.
@@ -202,11 +167,32 @@ impl TdxQuoteProvider {
         let quote = self.get_quote(&nonce_hex).await?;
         Ok((quote, nonce))
     }
+
+    /// Check if the quote generator binary exists
+    pub fn is_available(&self) -> bool {
+        Path::new(&self.quote_generator_path).exists()
+    }
 }
 
 impl Default for TdxQuoteProvider {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[async_trait]
+impl QuoteProvider for TdxQuoteProvider {
+    async fn generate_quote(&self, report_data: &[u8]) -> TeeResult<Vec<u8>> {
+        let report_data_hex = hex::encode(report_data);
+        self.get_quote(&report_data_hex).await
+    }
+
+    async fn generate_quote_with_nonce(&self, nonce_hex: &str) -> TeeResult<Vec<u8>> {
+        self.get_quote(nonce_hex).await
+    }
+
+    fn is_available(&self) -> bool {
+        TdxQuoteProvider::is_available(self)
     }
 }
 

@@ -1,20 +1,47 @@
 //! HTTP Request Handlers for Attestation Server
 
-use super::ServerState;
-use crate::types::GpuDeviceInfo;
+use std::sync::Arc;
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::Json,
 };
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tracing::{error, info};
+
+use super::ServerState;
+use crate::service::TeeAttestationResult;
+use crate::types::GpuDeviceInfo;
 
 /// Attestation response
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AttestationResponse {
+    /// Base64-encoded TDX quote
+    pub tdx_quote: Option<String>,
+    /// JSON string containing NVIDIA trust evidence
+    pub nvtrust_evidence: Option<String>,
+    /// Nonce used for attestation
+    pub nonce_hex: String,
+    /// Hostname of the attesting node
+    pub hostname: String,
+}
+
+impl From<TeeAttestationResult> for AttestationResponse {
+    fn from(result: TeeAttestationResult) -> Self {
+        Self {
+            tdx_quote: result.tdx_quote,
+            nvtrust_evidence: result.gpu_evidence,
+            nonce_hex: result.nonce_hex,
+            hostname: result.hostname,
+        }
+    }
+}
+
+/// Legacy attestation response (for backward compatibility)
+#[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
+pub struct LegacyAttestationResponse {
     /// Base64-encoded TDX quote
     pub tdx_quote: String,
     /// JSON string containing NVIDIA trust evidence
@@ -72,7 +99,7 @@ impl AttestationHandlers {
 
     /// Combined attestation endpoint
     ///
-    /// Returns both TDX quote and NVTrust evidence
+    /// Returns both TDX quote and NVTrust evidence using TeeService
     pub async fn attest(
         State(state): State<Arc<ServerState>>,
         Query(params): Query<AttestationQuery>,
@@ -85,40 +112,21 @@ impl AttestationHandlers {
                 .collect::<Vec<_>>()
         });
 
-        // Generate TDX quote
-        let quote_content = state
-            .tdx_provider
-            .get_quote(&params.nonce)
+        let result = state
+            .service
+            .attest(&params.nonce, gpu_ids.as_deref())
             .await
             .map_err(|e| {
-                error!("[Attestation] Failed to generate TDX quote: {}", e);
+                error!("[Attestation] Failed to generate attestation: {}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(ErrorResponse {
-                        error: format!("TDX quote generation failed: {}", e),
+                        error: format!("Attestation failed: {}", e),
                     }),
                 )
             })?;
 
-        // Generate NVTrust evidence
-        let nvtrust_evidence = state
-            .nv_provider
-            .get_evidence(&state.hostname, &params.nonce, gpu_ids.as_deref())
-            .await
-            .map_err(|e| {
-                error!("[Attestation] Failed to generate NVTrust evidence: {}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(ErrorResponse {
-                        error: format!("NVTrust evidence generation failed: {}", e),
-                    }),
-                )
-            })?;
-
-        Ok(Json(AttestationResponse {
-            tdx_quote: BASE64_STANDARD.encode(&quote_content),
-            nvtrust_evidence,
-        }))
+        Ok(Json(AttestationResponse::from(result)))
     }
 
     /// Get GPU devices
@@ -153,9 +161,9 @@ impl AttestationHandlers {
         State(state): State<Arc<ServerState>>,
         Query(params): Query<TdxQuoteQuery>,
     ) -> Result<String, (StatusCode, Json<ErrorResponse>)> {
-        let quote = state
-            .tdx_provider
-            .get_quote(&params.nonce)
+        let result = state
+            .service
+            .attest(&params.nonce, None)
             .await
             .map_err(|e| {
                 error!("[TDX] Failed to generate quote: {}", e);
@@ -167,7 +175,14 @@ impl AttestationHandlers {
                 )
             })?;
 
-        Ok(BASE64_STANDARD.encode(&quote))
+        result.tdx_quote.ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "TDX quote not available".to_string(),
+                }),
+            )
+        })
     }
 
     /// Get NVTrust evidence only
@@ -181,13 +196,11 @@ impl AttestationHandlers {
                 .collect::<Vec<_>>()
         });
 
-        let evidence = state
-            .nv_provider
-            .get_evidence(
-                params.name.as_deref().unwrap_or("unknown"),
-                params.nonce.as_deref().unwrap_or(""),
-                gpu_ids.as_deref(),
-            )
+        let nonce = params.nonce.as_deref().unwrap_or("");
+
+        let result = state
+            .service
+            .attest(nonce, gpu_ids.as_deref())
             .await
             .map_err(|e| {
                 error!("[NVTrust] Failed to generate evidence: {}", e);
@@ -199,7 +212,14 @@ impl AttestationHandlers {
                 )
             })?;
 
-        Ok(evidence)
+        result.gpu_evidence.ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: "NVTrust evidence not available".to_string(),
+                }),
+            )
+        })
     }
 }
 
@@ -216,8 +236,10 @@ mod tests {
     #[test]
     fn test_attestation_response_serialization() {
         let response = AttestationResponse {
-            tdx_quote: "base64data".to_string(),
-            nvtrust_evidence: r#"{"gpu": "data"}"#.to_string(),
+            tdx_quote: Some("base64data".to_string()),
+            nvtrust_evidence: Some(r#"{"gpu": "data"}"#.to_string()),
+            nonce_hex: "deadbeef".to_string(),
+            hostname: "test-host".to_string(),
         };
 
         let json = serde_json::to_string(&response).unwrap();
@@ -233,5 +255,19 @@ mod tests {
 
         let json = serde_json::to_string(&error).unwrap();
         assert!(json.contains("Test error"));
+    }
+
+    #[test]
+    fn test_from_tee_attestation_result() {
+        let tee_result = TeeAttestationResult {
+            tdx_quote: Some("quote".to_string()),
+            gpu_evidence: Some("evidence".to_string()),
+            nonce_hex: "nonce".to_string(),
+            hostname: "host".to_string(),
+        };
+
+        let response = AttestationResponse::from(tee_result);
+        assert_eq!(response.tdx_quote, Some("quote".to_string()));
+        assert_eq!(response.hostname, "host");
     }
 }

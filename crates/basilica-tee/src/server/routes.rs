@@ -1,9 +1,11 @@
 //! HTTP Routes for Attestation Server
 
+use std::sync::Arc;
+
+use axum::{routing::get, Router};
+
 use super::handlers::AttestationHandlers;
 use super::ServerState;
-use axum::{routing::get, Router};
-use std::sync::Arc;
 
 /// Create the attestation server router
 pub fn create_router(state: Arc<ServerState>) -> Router {
@@ -22,17 +24,21 @@ pub fn create_router(state: Arc<ServerState>) -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gpu::{GpuDeviceProvider, NvEvidenceProvider};
-    use crate::tdx::TdxQuoteProvider;
+    use crate::gpu::GpuDeviceProvider;
+    use crate::service::TeeService;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
     fn create_test_state() -> Arc<ServerState> {
+        let service = TeeService::builder("test-host".to_string())
+            .enable_tdx(false)
+            .enable_gpu(false)
+            .build()
+            .unwrap();
+
         Arc::new(ServerState {
-            hostname: "test-host".to_string(),
-            tdx_provider: TdxQuoteProvider::new(),
-            nv_provider: NvEvidenceProvider::new(),
+            service: Arc::new(service),
             gpu_provider: GpuDeviceProvider::default(),
         })
     }
@@ -96,5 +102,24 @@ mod tests {
             response.status() == StatusCode::OK
                 || response.status() == StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[tokio::test]
+    async fn test_attest_with_nonce() {
+        let state = create_test_state();
+        let router = create_router(state);
+
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/attest?nonce=deadbeef")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // With mocked service (disabled providers), should return OK
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }

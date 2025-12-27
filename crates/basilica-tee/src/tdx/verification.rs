@@ -3,10 +3,13 @@
 //! Provides verification of TDX quotes against expected measurements.
 //! Note: Full cryptographic verification requires Intel's Quote Verification Library (QVL).
 
+use async_trait::async_trait;
+use tracing::{debug, info, warn};
+
 use crate::error::{TeeError, TeeResult};
 use crate::tdx::TdxQuoteV4;
+use crate::traits::TdxVerifier;
 use crate::types::{ExpectedMeasurements, TdxVerificationResult};
-use tracing::{debug, info, warn};
 
 /// TDX Quote Verifier
 ///
@@ -148,6 +151,18 @@ impl TdxQuoteVerifier {
 impl Default for TdxQuoteVerifier {
     fn default() -> Self {
         Self::new(ExpectedMeasurements::default())
+    }
+}
+
+#[async_trait]
+impl TdxVerifier for TdxQuoteVerifier {
+    async fn verify(
+        &self,
+        quote_bytes: &[u8],
+        expected_nonce: Option<&[u8]>,
+    ) -> TeeResult<TdxVerificationResult> {
+        // Call the synchronous verify method
+        TdxQuoteVerifier::verify(self, quote_bytes, expected_nonce)
     }
 }
 
