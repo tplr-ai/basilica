@@ -97,6 +97,9 @@ pub struct NodeVerificationResult {
 }
 
 /// TEE (Trusted Execution Environment) verification status
+///
+/// This is the validator's view of TEE status, derived from
+/// `basilica_tee::types::TeeVerificationResult`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TeeVerificationStatus {
     /// Whether TEE verification was performed
@@ -113,6 +116,57 @@ pub struct TeeVerificationStatus {
     pub gpu_model: Option<String>,
     /// Error message if verification failed
     pub error: Option<String>,
+}
+
+impl TeeVerificationStatus {
+    /// Create from basilica-tee verification result
+    pub fn from_tee_result(result: &basilica_tee::types::TeeVerificationResult) -> Self {
+        let (tdx_verified, mrtd_hex) = result
+            .tdx
+            .as_ref()
+            .map(|tdx| {
+                (
+                    tdx.quote_valid && tdx.mrtd_matches,
+                    Some(tdx.mrtd_hex.clone()),
+                )
+            })
+            .unwrap_or((false, None));
+
+        let (gpu_cc_verified, gpu_cc_mode_enabled, gpu_model) = result
+            .gpu_cc
+            .as_ref()
+            .map(|gpu| {
+                (
+                    gpu.attestation_valid,
+                    gpu.cc_mode_enabled,
+                    Some(gpu.gpu_model.clone()),
+                )
+            })
+            .unwrap_or((false, false, None));
+
+        Self {
+            verified: result.tee_verified,
+            tdx_verified,
+            gpu_cc_verified,
+            mrtd_hex,
+            gpu_cc_mode_enabled,
+            gpu_model,
+            error: None,
+        }
+    }
+
+    /// Create a failed status with error message
+    pub fn failed(error: String) -> Self {
+        Self {
+            verified: false,
+            tdx_verified: false,
+            gpu_cc_verified: false,
+            mrtd_hex: None,
+            gpu_cc_mode_enabled: false,
+            gpu_model: None,
+            error: Some(error),
+        }
+    }
 }
 
 /// Detailed validation timing and scoring information

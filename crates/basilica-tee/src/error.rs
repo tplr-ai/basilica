@@ -26,8 +26,14 @@ pub enum TeeError {
     #[error("GPU attestation failed: {0}")]
     GpuAttestation(String),
 
+    #[error("GPU CC verification failed: {0}")]
+    GpuCcVerification(String),
+
     #[error("GPU not in Confidential Compute mode")]
     GpuNotInCcMode,
+
+    #[error("Configuration error: {0}")]
+    Configuration(String),
 
     #[error("NVML error: {0}")]
     Nvml(String),

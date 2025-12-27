@@ -32,6 +32,39 @@ impl ExpectedMeasurements {
         }
     }
 
+    /// Create measurements from hex strings.
+    ///
+    /// Each hex string should be 96 characters (48 bytes).
+    /// Returns `Ok(Self)` with the parsed measurements.
+    pub fn from_hex(
+        mrtd: Option<&str>,
+        rtmr0: Option<&str>,
+        rtmr1: Option<&str>,
+        rtmr2: Option<&str>,
+        rtmr3: Option<&str>,
+    ) -> Result<Self, String> {
+        fn parse_hex(hex: Option<&str>) -> Result<Option<[u8; 48]>, String> {
+            match hex {
+                None | Some("") => Ok(None),
+                Some(s) => {
+                    let bytes = hex::decode(s).map_err(|e| format!("Invalid hex: {}", e))?;
+                    bytes
+                        .try_into()
+                        .map(Some)
+                        .map_err(|v: Vec<u8>| format!("Expected 48 bytes, got {}", v.len()))
+                }
+            }
+        }
+
+        Ok(Self {
+            mrtd: parse_hex(mrtd)?,
+            rtmr0: parse_hex(rtmr0)?,
+            rtmr1: parse_hex(rtmr1)?,
+            rtmr2: parse_hex(rtmr2)?,
+            rtmr3: parse_hex(rtmr3)?,
+        })
+    }
+
     /// Check if MRTD matches expected value.
     ///
     /// Returns `true` if no expected MRTD is set or if it matches.

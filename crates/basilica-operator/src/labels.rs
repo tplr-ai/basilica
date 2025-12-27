@@ -107,6 +107,22 @@ pub mod basilica {
 
     /// NFD version detected on node
     pub const NFD_VERSION: &str = "basilica.ai/nfd-version";
+
+    // TEE (Trusted Execution Environment) labels
+    /// Whether node is TEE verified
+    pub const TEE_VERIFIED: &str = "basilica.ai/tee-verified";
+
+    /// Whether Intel TDX is available on the node
+    pub const TDX_AVAILABLE: &str = "basilica.ai/tdx-available";
+
+    /// Whether GPU Confidential Compute mode is enabled
+    pub const GPU_CC_ENABLED: &str = "basilica.ai/gpu-cc-enabled";
+
+    /// MRTD measurement (build-time TD measurement)
+    pub const TDX_MRTD: &str = "basilica.ai/tdx-mrtd";
+
+    /// Last TEE verification timestamp
+    pub const TEE_VERIFIED_AT: &str = "basilica.ai/tee-verified-at";
 }
 
 /// Known GPU model patterns for extraction.

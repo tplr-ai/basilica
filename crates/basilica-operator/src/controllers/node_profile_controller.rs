@@ -324,6 +324,7 @@ impl<C: K8sClient> NodeProfileController<C> {
                     model: gpu_model.to_string(),
                     count: gpu_count,
                     memory_gb: gpu_memory_gb,
+                    cc_capable: false, // TODO: Detect GPU CC capability from node labels
                 },
                 cpu: NodeCpu {
                     model: cpu_model.to_string(),
@@ -332,11 +333,14 @@ impl<C: K8sClient> NodeProfileController<C> {
                 memory_gb,
                 storage_gb,
                 network_gbps: 10,
+                tee: None, // TEE status populated by validator after attestation
             },
             status: Some(BasilicaNodeProfileStatus {
                 kube_node_name: Some(node_name.clone()),
                 last_validated: Some(Utc::now().to_rfc3339()),
                 health: Some("Active".to_string()),
+                tee_verified: false,
+                tee_error: None,
             }),
         };
 

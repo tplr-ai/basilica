@@ -129,6 +129,14 @@ pub fn routes(state: AppState) -> Router<AppState> {
             "/secure-cloud/rentals/:rental_id/stop",
             post(routes::secure_cloud::stop_secure_cloud_rental),
         )
+        // TEE (Trusted Execution Environment) status endpoints
+        .route("/tee/status", get(routes::tee::get_tee_status_summary))
+        .route("/tee/nodes", get(routes::tee::list_tee_verified_nodes))
+        .route("/tee/nodes/:node_id", get(routes::tee::get_node_tee_status))
+        .route(
+            "/tee/availability",
+            post(routes::tee::check_tee_availability),
+        )
         // Apply middleware layers
         // Apply scope validation AFTER auth middleware
         .layer(axum::middleware::from_fn(
