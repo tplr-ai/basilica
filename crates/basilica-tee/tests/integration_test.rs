@@ -4,7 +4,7 @@
 
 use basilica_tee::{
     config::{GpuCcConfig, TdxConfig, TeeConfig},
-    gpu::GpuEvidenceParser,
+    gpu::{parse_evidence, verify_evidence},
     tdx::TdxQuoteVerifier,
     types::ExpectedMeasurements,
 };
@@ -116,15 +116,15 @@ mod gpu_integration {
         }])
         .to_string();
 
-        let evidence = GpuEvidenceParser::parse(&json).unwrap();
+        let evidence = parse_evidence(&json).unwrap();
 
         assert_eq!(evidence.len(), 1);
         assert_eq!(evidence[0].gpu_uuid, "GPU-test-123");
         assert_eq!(evidence[0].nonce, "my_nonce");
     }
 
-    #[test]
-    fn test_gpu_evidence_verify_nonce() {
+    #[tokio::test]
+    async fn test_gpu_evidence_verify_nonce() {
         let json = serde_json::json!({
             "gpu_uuid": "GPU-1",
             "nonce": "expected_nonce",
@@ -132,19 +132,23 @@ mod gpu_integration {
         })
         .to_string();
 
-        let evidence = GpuEvidenceParser::parse(&json).unwrap();
+        let evidence = parse_evidence(&json).unwrap();
 
         // Correct nonce
-        let result = GpuEvidenceParser::verify(&evidence[0], Some("expected_nonce")).unwrap();
+        let result = verify_evidence(&evidence[0], Some("expected_nonce"))
+            .await
+            .unwrap();
         assert!(result.nonce_verified);
 
         // Wrong nonce
-        let result = GpuEvidenceParser::verify(&evidence[0], Some("wrong_nonce")).unwrap();
+        let result = verify_evidence(&evidence[0], Some("wrong_nonce"))
+            .await
+            .unwrap();
         assert!(!result.nonce_verified);
     }
 
-    #[test]
-    fn test_gpu_cc_mode_detection() {
+    #[tokio::test]
+    async fn test_gpu_cc_mode_detection() {
         // With attestation report = CC mode
         let with_report = serde_json::json!({
             "gpu_uuid": "GPU-1",
@@ -152,8 +156,8 @@ mod gpu_integration {
         })
         .to_string();
 
-        let evidence = GpuEvidenceParser::parse(&with_report).unwrap();
-        let result = GpuEvidenceParser::verify(&evidence[0], None).unwrap();
+        let evidence = parse_evidence(&with_report).unwrap();
+        let result = verify_evidence(&evidence[0], None).await.unwrap();
         assert!(result.cc_mode_enabled);
 
         // Without attestation report = no CC mode
@@ -163,8 +167,8 @@ mod gpu_integration {
         })
         .to_string();
 
-        let evidence = GpuEvidenceParser::parse(&without_report).unwrap();
-        let result = GpuEvidenceParser::verify(&evidence[0], None).unwrap();
+        let evidence = parse_evidence(&without_report).unwrap();
+        let result = verify_evidence(&evidence[0], None).await.unwrap();
         assert!(!result.cc_mode_enabled);
     }
 }

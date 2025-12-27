@@ -4,16 +4,9 @@
 //! Feature-gated behind the `nvml` feature flag.
 
 use crate::error::{TeeError, TeeResult};
+#[cfg(feature = "nvml")]
+use crate::gpu::utils::sanitize_gpu_id;
 use crate::types::GpuDeviceInfo;
-
-/// Sanitize GPU ID - remove 'GPU-' prefix and all hyphens
-#[allow(dead_code)]
-fn sanitize_gpu_id(gpu_id: &str) -> String {
-    gpu_id
-        .replace("GPU-", "")
-        .replace("gpu-", "")
-        .replace('-', "")
-}
 
 /// GPU Device Provider using NVML
 ///
@@ -230,13 +223,7 @@ impl MockGpuDeviceProvider {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_sanitize_gpu_id() {
-        assert_eq!(sanitize_gpu_id("GPU-abc-def-123"), "abcdef123");
-        assert_eq!(sanitize_gpu_id("gpu-xyz"), "xyz");
-        assert_eq!(sanitize_gpu_id("no-prefix"), "noprefix");
-        assert_eq!(sanitize_gpu_id("plain"), "plain");
-    }
+    // sanitize_gpu_id tests are in utils.rs
 
     #[test]
     fn test_mock_provider() {

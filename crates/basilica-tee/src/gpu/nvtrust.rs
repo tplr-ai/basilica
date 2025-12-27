@@ -3,11 +3,15 @@
 //! Generates GPU attestation evidence using NVIDIA's official attestation tools
 //! or nvidia-smi for basic CC mode verification.
 
-use crate::config::GpuCcConfig;
-use crate::error::{TeeError, TeeResult};
+use async_trait::async_trait;
 use std::path::Path;
 use tokio::process::Command;
 use tracing::{debug, error, info};
+
+use crate::config::GpuCcConfig;
+use crate::error::{TeeError, TeeResult};
+use crate::gpu::utils::{gpu_id_contains_any, normalize_gpu_id};
+use crate::traits::EvidenceProvider;
 
 /// NVIDIA Evidence Provider
 ///
@@ -164,17 +168,9 @@ impl NvEvidenceProvider {
             return Ok(evidence.to_string());
         }
 
-        // Format target IDs
-        let formatted_targets: Vec<String> = target_ids
-            .iter()
-            .map(|id| {
-                if id.starts_with("GPU") {
-                    id.clone()
-                } else {
-                    format!("GPU-{}", id)
-                }
-            })
-            .collect();
+        // Format target IDs with GPU- prefix
+        let formatted_targets: Vec<String> =
+            target_ids.iter().map(|id| normalize_gpu_id(id)).collect();
 
         // Parse evidence as JSON array
         let evidence_list: serde_json::Value = serde_json::from_str(evidence)?;
@@ -184,7 +180,7 @@ impl NvEvidenceProvider {
                 .iter()
                 .filter(|item| {
                     if let Some(gpu_id) = item.get("gpu_uuid").and_then(|v| v.as_str()) {
-                        formatted_targets.iter().any(|t| gpu_id.contains(t))
+                        gpu_id_contains_any(gpu_id, &formatted_targets)
                     } else {
                         false
                     }
@@ -214,6 +210,22 @@ impl NvEvidenceProvider {
 impl Default for NvEvidenceProvider {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[async_trait]
+impl EvidenceProvider for NvEvidenceProvider {
+    async fn generate_evidence(
+        &self,
+        name: &str,
+        nonce: &str,
+        gpu_ids: Option<&[String]>,
+    ) -> TeeResult<String> {
+        self.get_evidence(name, nonce, gpu_ids).await
+    }
+
+    fn is_available(&self) -> bool {
+        NvEvidenceProvider::is_available(self)
     }
 }
 

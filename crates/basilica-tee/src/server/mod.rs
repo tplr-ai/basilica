@@ -9,25 +9,23 @@ mod routes;
 pub use handlers::AttestationHandlers;
 pub use routes::create_router;
 
-use crate::config::TeeConfig;
-use crate::error::TeeResult;
-use crate::gpu::{GpuDeviceProvider, NvEvidenceProvider};
-use crate::tdx::TdxQuoteProvider;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
 
+use crate::config::TeeConfig;
+use crate::error::TeeResult;
+use crate::gpu::GpuDeviceProvider;
+use crate::service::TeeService;
+
 /// Attestation Server
 ///
 /// HTTP server providing attestation endpoints for TDX quotes and GPU evidence.
+/// Uses [`TeeService`] for attestation operations.
 pub struct AttestationServer {
-    /// Server hostname for identification
-    hostname: String,
-    /// TDX quote provider
-    tdx_provider: TdxQuoteProvider,
-    /// NVIDIA evidence provider
-    nv_provider: NvEvidenceProvider,
-    /// GPU device provider
+    /// TEE service for attestation operations
+    service: Arc<TeeService>,
+    /// GPU device provider for device info
     gpu_provider: GpuDeviceProvider,
     /// Server bind address
     bind_addr: SocketAddr,
@@ -46,27 +44,23 @@ impl AttestationServer {
             "0.0.0.0:8443".parse().unwrap()
         };
 
+        let service = TeeService::from_tee_config(config, hostname)?;
+
         Ok(Self {
-            hostname,
-            tdx_provider: TdxQuoteProvider::from_config(&config.tdx),
-            nv_provider: NvEvidenceProvider::from_config(&config.gpu),
+            service: Arc::new(service),
             gpu_provider: GpuDeviceProvider::new()?,
             bind_addr,
         })
     }
 
-    /// Create a server with custom providers (for testing)
-    pub fn with_providers(
-        hostname: String,
-        tdx_provider: TdxQuoteProvider,
-        nv_provider: NvEvidenceProvider,
+    /// Create a server with a custom TeeService (for testing)
+    pub fn with_service(
+        service: Arc<TeeService>,
         gpu_provider: GpuDeviceProvider,
         bind_addr: SocketAddr,
     ) -> Self {
         Self {
-            hostname,
-            tdx_provider,
-            nv_provider,
+            service,
             gpu_provider,
             bind_addr,
         }
@@ -74,7 +68,7 @@ impl AttestationServer {
 
     /// Get the server's hostname
     pub fn hostname(&self) -> &str {
-        &self.hostname
+        self.service.hostname()
     }
 
     /// Get the bind address
@@ -82,12 +76,15 @@ impl AttestationServer {
         self.bind_addr
     }
 
+    /// Get a reference to the TEE service
+    pub fn service(&self) -> &Arc<TeeService> {
+        &self.service
+    }
+
     /// Create the Axum router
     pub fn router(self) -> axum::Router {
         let state = Arc::new(ServerState {
-            hostname: self.hostname,
-            tdx_provider: self.tdx_provider,
-            nv_provider: self.nv_provider,
+            service: self.service,
             gpu_provider: self.gpu_provider,
         });
 
@@ -115,14 +112,38 @@ impl AttestationServer {
 
 /// Shared server state
 pub struct ServerState {
-    /// Server hostname
-    pub hostname: String,
-    /// TDX quote provider
-    pub tdx_provider: TdxQuoteProvider,
-    /// NVIDIA evidence provider
-    pub nv_provider: NvEvidenceProvider,
-    /// GPU device provider
+    /// TEE service for attestation operations
+    pub service: Arc<TeeService>,
+    /// GPU device provider for device info
     pub gpu_provider: GpuDeviceProvider,
+}
+
+impl ServerState {
+    /// Get the hostname from the service
+    pub fn hostname(&self) -> &str {
+        self.service.hostname()
+    }
+}
+
+// Deprecated constructors for backward compatibility
+impl AttestationServer {
+    /// Create with custom providers (deprecated, use with_service instead)
+    #[deprecated(note = "Use with_service instead")]
+    pub fn with_providers(
+        hostname: String,
+        _tdx_provider: crate::tdx::TdxQuoteProvider,
+        _nv_provider: crate::gpu::NvEvidenceProvider,
+        gpu_provider: GpuDeviceProvider,
+        bind_addr: SocketAddr,
+    ) -> Self {
+        // Create a service with default providers
+        let service = TeeService::new(hostname).unwrap();
+        Self {
+            service: Arc::new(service),
+            gpu_provider,
+            bind_addr,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -144,5 +165,23 @@ mod tests {
         let config = TeeConfig::default();
         let server = AttestationServer::new("test".to_string(), &config).unwrap();
         assert_eq!(server.bind_addr().port(), 8443);
+    }
+
+    #[test]
+    fn test_with_service() {
+        let service = TeeService::builder("test-host".to_string())
+            .enable_tdx(false)
+            .enable_gpu(false)
+            .build()
+            .unwrap();
+
+        let server = AttestationServer::with_service(
+            Arc::new(service),
+            GpuDeviceProvider::default(),
+            "127.0.0.1:8080".parse().unwrap(),
+        );
+
+        assert_eq!(server.hostname(), "test-host");
+        assert_eq!(server.bind_addr().port(), 8080);
     }
 }
