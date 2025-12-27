@@ -21,20 +21,31 @@ fmt-check:
 # Fix linting issues and format code
 fix:
     #!/usr/bin/env bash
-    # First run with --fix to auto-fix what we can
-    cargo clippy --fix --allow-dirty --workspace --all-targets
-    # Then run without --fix to catch remaining issues (like CI does)
-    cargo clippy --workspace --all-targets -- -D warnings
+    set -e
+    # Format first (fast)
     cargo fmt --all
+    # Run clippy with fix - also applies -D warnings to catch unfixable issues
+    # Using --allow-dirty since we just formatted
+    cargo clippy --fix --allow-dirty --allow-staged --workspace --all-targets -- -D warnings
+    echo "✓ All checks passed"
+
+# Fix with verification (runs clippy twice to ensure all issues caught)
+fix-verify:
+    #!/usr/bin/env bash
+    set -e
+    cargo fmt --all
+    cargo clippy --fix --allow-dirty --allow-staged --workspace --all-targets
+    # Verification pass - should be fast if no files changed
+    cargo clippy --workspace --all-targets -- -D warnings
+    echo "✓ All checks passed"
 
 # Fix linting issues including basilica-storage (requires libfuse3-dev system package)
 fix-all:
     #!/usr/bin/env bash
-    # First run with --fix to auto-fix what we can
-    cargo clippy --fix --allow-dirty --workspace --all-targets --all-features
-    # Then run without --fix to catch remaining issues (like CI does)
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    set -e
     cargo fmt --all
+    cargo clippy --fix --allow-dirty --allow-staged --workspace --all-targets --all-features -- -D warnings
+    echo "✓ All checks passed"
 
 # Lint workspace packages
 lint: fmt-check

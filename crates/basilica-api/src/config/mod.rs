@@ -205,6 +205,11 @@ pub struct Config {
     /// Server configuration
     pub server: ServerConfig,
 
+    /// Dev mode - bypasses Bittensor/Validator with mock data
+    /// Useful for local development and TUI testing
+    #[serde(default)]
+    pub dev_mode: bool,
+
     /// Bittensor network configuration
     pub bittensor: BittensorIntegrationConfig,
 

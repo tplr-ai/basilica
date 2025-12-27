@@ -18,6 +18,11 @@ struct Args {
     #[arg(long)]
     gen_config: bool,
 
+    /// Dev mode - bypasses Bittensor/Validator with mock data
+    /// Useful for local development and TUI testing
+    #[arg(long)]
+    dev: bool,
+
     #[command(flatten)]
     verbosity: Verbosity<InfoLevel>,
 }
@@ -75,7 +80,17 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration
-    let config = Config::load(args.config)?;
+    let mut config = Config::load(args.config)?;
+
+    // CLI flag overrides config file
+    if args.dev {
+        config.dev_mode = true;
+    }
+
+    if config.dev_mode {
+        info!("🔧 Running in DEV MODE - Bittensor/Validator bypassed with mock data");
+    }
+
     info!(
         "Configuration loaded, binding to {}",
         config.server.bind_address

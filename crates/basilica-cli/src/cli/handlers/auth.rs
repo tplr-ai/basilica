@@ -58,21 +58,70 @@ pub async fn handle_login_with_options(
         let spinner = create_spinner("Requesting device code...");
         let device_flow = DeviceFlow::new(auth_config);
 
-        match device_flow.start_flow().await {
-            Ok(tokens) => {
+        let (instructions, pending) = match device_flow.start_flow().await {
+            Ok(result) => {
                 complete_spinner_and_clear(spinner);
-                tokens
+                result
             }
             Err(e) => {
                 complete_spinner_error(spinner, "Authentication failed");
+                return Err(e.into());
+            }
+        };
+
+        // Display instructions to user
+        println!(
+            "1. Visit: {}",
+            console::style(&instructions.verification_uri).dim()
+        );
+        println!(
+            "2. Enter code: {}",
+            console::style(&instructions.user_code).bold()
+        );
+        if let Some(ref complete_uri) = instructions.verification_uri_complete {
+            println!(
+                "\n   Or visit this direct link: {}",
+                console::style(complete_uri).dim()
+            );
+        }
+        println!();
+        crate::output::print_info("Waiting for authentication...");
+        crate::output::print_info("Press Ctrl+C to cancel");
+
+        // Wait for user to complete authentication
+        match pending.wait_for_completion().await {
+            Ok(tokens) => {
+                // Clear the instructions from terminal
+                let term = console::Term::stdout();
+                let lines_to_clear = if instructions.verification_uri_complete.is_some() {
+                    8
+                } else {
+                    6
+                };
+                let _ = term.clear_last_lines(lines_to_clear);
+                tokens
+            }
+            Err(e) => {
                 return Err(e.into());
             }
         }
     } else {
         let mut oauth_flow = OAuthFlow::new(auth_config);
 
+        // Print info before opening browser
+        crate::output::print_info("Opening browser for sign in...");
+        crate::output::print_info("Browser didn't open? Use the URL below to sign in:");
+        let auth_url = oauth_flow.get_auth_url().map_err(|e| eyre!(e))?;
+        println!("{}", console::style(&auth_url).dim());
+        crate::output::print_info("Waiting for authentication...");
+
         match oauth_flow.start_flow().await {
-            Ok(tokens) => tokens,
+            Ok(tokens) => {
+                // Clear the browser instructions
+                let term = console::Term::stdout();
+                let _ = term.clear_last_lines(6);
+                tokens
+            }
             Err(e) => {
                 return Err(e.into());
             }

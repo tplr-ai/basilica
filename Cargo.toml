@@ -11,6 +11,7 @@ members = [
   "crates/basilica-cli",
   "crates/basilica-sdk",
   "crates/basilica-sdk-python",
+  "crates/basilica-tui",
   "crates/integration-tests",
   "crates/collateral-contract",
   "crates/basilica-aggregator",

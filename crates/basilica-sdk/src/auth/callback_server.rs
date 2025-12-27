@@ -16,7 +16,6 @@ use std::net::{SocketAddr, TcpListener};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 use tokio::net::TcpListener as TokioTcpListener;
-// CORS not needed for localhost callback server
 
 /// Authorization callback data received from OAuth provider
 #[derive(Debug, Clone)]
@@ -64,7 +63,6 @@ impl CallbackServer {
             match TcpListener::bind(("127.0.0.1", port)) {
                 Ok(listener) => {
                     let actual_port = listener.local_addr()?.port();
-
                     drop(listener); // Release the port immediately
                     tracing::debug!("Found available callback port: {}", actual_port);
                     return Ok(actual_port);
@@ -92,7 +90,7 @@ impl CallbackServer {
             expected_state: expected_state.to_string(),
         }));
 
-        // Create the router - CORS not needed for localhost
+        // Create the router
         let app = Router::new()
             .route("/callback", get(handle_callback))
             .route("/auth/callback", get(handle_callback))
@@ -143,7 +141,7 @@ impl CallbackServer {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authorization Successful - Basilica CLI</title>
+    <title>Authorization Successful - Basilica</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -205,8 +203,8 @@ impl CallbackServer {
     <div class="container">
         <img src="https://www.synapz.org/assets/basilica/basilica_logo200x200.png" alt="Basilica" class="logo">
         <div class="success-icon">✓</div>
-        <h1>Welcome to Basilica CLI</h1>
-        <p class="close-instruction">You can now close this window and return to the CLI.</p>
+        <h1>Welcome to Basilica</h1>
+        <p class="close-instruction">You can now close this window and return to the application.</p>
     </div>
 </body>
 </html>
@@ -223,7 +221,7 @@ impl CallbackServer {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Authorization Failed - Basilica CLI</title>
+    <title>Authorization Failed - Basilica</title>
     <style>
         body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -299,7 +297,7 @@ impl CallbackServer {
         <div class="error-icon">✗</div>
         <h1>Authorization Failed</h1>
         <div class="error-details">{}</div>
-        <p class="close-instruction">Please close this window and try again in the CLI.</p>
+        <p class="close-instruction">Please close this window and try again.</p>
     </div>
 </body>
 </html>
@@ -325,13 +323,10 @@ async fn handle_callback(
         error_description: params.error_description.clone(),
     };
 
-    // If we need to notify the waiting task (errors), fill this and send after building HTML.
     let mut data_to_send: Option<CallbackData> = None;
 
     let response_html = if let Some(error) = &params.error {
-        // Generate error page
         let error_msg = params.error_description.as_deref().unwrap_or(error);
-        // Notify waiter with an error (no code)
         data_to_send = Some(CallbackData {
             code: None,
             state: params.state.clone(),
@@ -340,7 +335,6 @@ async fn handle_callback(
         });
         CallbackServer::generate_error_page(error_msg)
     } else if params.code.is_some() {
-        // Validate state parameter
         let expected_state = match state.lock() {
             Ok(g) => g.expected_state.clone(),
             Err(_) => {
@@ -350,7 +344,6 @@ async fn handle_callback(
                     error: Some("internal_error".to_string()),
                     error_description: Some("Internal state unavailable".to_string()),
                 };
-                // Try to send error even if mutex is poisoned - there might be other senders
                 if let Ok(state_guard) = state.lock() {
                     let _ = state_guard.sender.send(error_data);
                 }
@@ -376,7 +369,6 @@ async fn handle_callback(
                 });
                 CallbackServer::generate_error_page(&error_msg)
             } else {
-                // Send the callback data through the channel
                 if let Ok(state_guard) = state.lock() {
                     let _ = state_guard.sender.send(callback_data);
                 }
