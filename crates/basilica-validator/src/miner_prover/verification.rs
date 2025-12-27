@@ -937,6 +937,31 @@ impl VerificationEngine {
             }
         }
 
+        // Store TEE verification status if available
+        if let Some(ref tee_status) = node_result.tee_verification {
+            if let Err(e) = self
+                .persistence
+                .store_node_tee_status(miner_uid, &node_result.node_id.to_string(), tee_status)
+                .await
+            {
+                warn!(
+                    miner_uid = miner_uid,
+                    node_id = %node_result.node_id,
+                    error = %e,
+                    "Failed to store TEE verification status (non-fatal)"
+                );
+            } else {
+                info!(
+                    miner_uid = miner_uid,
+                    node_id = %node_result.node_id,
+                    tee_verified = tee_status.verified,
+                    tdx_verified = tee_status.tdx_verified,
+                    gpu_cc_enabled = tee_status.gpu_cc_mode_enabled,
+                    "Stored TEE verification status"
+                );
+            }
+        }
+
         info!(
             miner_uid = miner_uid,
             node_id = %node_result.node_id,

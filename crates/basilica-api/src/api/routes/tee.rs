@@ -1,15 +1,19 @@
 //! TEE (Trusted Execution Environment) status routes
 //!
 //! Provides endpoints for querying TEE verification status of nodes.
+//! These endpoints proxy to the validator API which maintains TEE state.
 
 use axum::{
     extract::{Path, State},
     Json,
 };
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{debug, info, warn};
 
-use crate::{error::Result, server::AppState};
+use crate::{
+    error::{ApiError, Result},
+    server::AppState,
+};
 
 /// TEE status summary for a node
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,65 +53,97 @@ pub struct TeeStatusSummary {
 
 /// Get TEE status summary across all nodes
 ///
-/// Returns aggregate TEE verification statistics.
+/// Returns aggregate TEE verification statistics from the validator.
 pub async fn get_tee_status_summary(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
 ) -> Result<Json<TeeStatusSummary>> {
-    info!("[TEE] Fetching TEE status summary from validator");
+    debug!("[TEE] Fetching TEE status summary from validator");
 
-    // Query validator for TEE status summary
-    // TODO: Implement actual validator endpoint call when available
-    // The validator needs to expose a TEE summary endpoint
+    let validator_response = state
+        .validator_client
+        .get_tee_status_summary()
+        .await
+        .map_err(|e| {
+            warn!(
+                "[TEE] Failed to fetch TEE status summary from validator: {}",
+                e
+            );
+            ApiError::ValidatorCommunication {
+                message: format!("Failed to fetch TEE status: {}", e),
+            }
+        })?;
 
-    let summary = TeeStatusSummary {
-        total_nodes: 0,
-        tee_verified_count: 0,
-        tdx_verified_count: 0,
-        gpu_cc_enabled_count: 0,
-        timestamp: chrono::Utc::now(),
-    };
-
-    Ok(Json(summary))
+    Ok(Json(TeeStatusSummary {
+        total_nodes: validator_response.total_nodes,
+        tee_verified_count: validator_response.tee_verified_count,
+        tdx_verified_count: validator_response.tdx_verified_count,
+        gpu_cc_enabled_count: validator_response.gpu_cc_enabled_count,
+        timestamp: validator_response.timestamp,
+    }))
 }
 
 /// Get TEE status for a specific node
 ///
 /// Returns detailed TEE verification status for a single node.
 pub async fn get_node_tee_status(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Path(node_id): Path<String>,
 ) -> Result<Json<NodeTeeStatus>> {
     info!("[TEE] Fetching TEE status for node: {}", node_id);
 
-    // Query validator for node TEE status
-    // TODO: Implement actual validator endpoint call when available
-    // The validator needs to expose a per-node TEE status endpoint
+    let validator_response = state
+        .validator_client
+        .get_node_tee_status(&node_id)
+        .await
+        .map_err(|e| {
+            warn!(
+                "[TEE] Failed to fetch node TEE status from validator: {}",
+                e
+            );
+            ApiError::ValidatorCommunication {
+                message: format!("Failed to fetch node TEE status: {}", e),
+            }
+        })?;
 
-    let status = NodeTeeStatus {
-        node_id: node_id.clone(),
-        tee_verified: false,
-        tdx_verified: false,
-        gpu_cc_enabled: false,
-        gpu_model: None,
-        mrtd_hex: None,
-        last_verified_at: None,
-        error: Some("TEE status not yet implemented".to_string()),
-    };
+    // Parse the last_verified_at timestamp
+    let last_verified_at =
+        chrono::DateTime::parse_from_rfc3339(&validator_response.last_verified_at)
+            .ok()
+            .map(|dt| dt.with_timezone(&chrono::Utc));
 
-    Ok(Json(status))
+    Ok(Json(NodeTeeStatus {
+        node_id: validator_response.node_id,
+        tee_verified: validator_response.tee_verified,
+        tdx_verified: validator_response.tdx_verified,
+        gpu_cc_enabled: validator_response.gpu_cc_enabled,
+        gpu_model: validator_response.gpu_model,
+        mrtd_hex: validator_response.mrtd_hex,
+        last_verified_at,
+        error: validator_response.error,
+    }))
 }
 
 /// List all TEE-verified nodes
 ///
 /// Returns a list of node IDs that have passed TEE verification.
-pub async fn list_tee_verified_nodes(State(_state): State<AppState>) -> Result<Json<Vec<String>>> {
-    info!("[TEE] Listing TEE-verified nodes");
+pub async fn list_tee_verified_nodes(State(state): State<AppState>) -> Result<Json<Vec<String>>> {
+    debug!("[TEE] Listing TEE-verified nodes");
 
-    // Query validator for TEE-verified nodes
-    // TODO: Implement actual validator endpoint call when available
-    // The validator needs to expose a TEE-verified nodes list endpoint
+    let nodes = state
+        .validator_client
+        .list_tee_verified_nodes()
+        .await
+        .map_err(|e| {
+            warn!(
+                "[TEE] Failed to list TEE-verified nodes from validator: {}",
+                e
+            );
+            ApiError::ValidatorCommunication {
+                message: format!("Failed to list TEE-verified nodes: {}", e),
+            }
+        })?;
 
-    Ok(Json(vec![]))
+    Ok(Json(nodes))
 }
 
 /// TEE requirements for a rental request
@@ -138,20 +174,35 @@ pub struct TeeAvailabilityResponse {
 }
 
 pub async fn check_tee_availability(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     Json(requirements): Json<TeeRequirements>,
 ) -> Result<Json<TeeAvailabilityResponse>> {
     info!("[TEE] Checking TEE availability: {:?}", requirements);
 
-    // Query validator for matching nodes
-    // TODO: Implement actual validator endpoint call when available
-    // The validator needs to expose a TEE availability check endpoint
-
-    let response = TeeAvailabilityResponse {
-        available: false,
-        matching_nodes: 0,
-        message: "TEE availability check not yet implemented".to_string(),
+    // Convert to validator's TeeRequirements format
+    let validator_requirements = basilica_validator::api::routes::tee::TeeRequirements {
+        require_tdx: requirements.require_tdx,
+        require_gpu_cc: requirements.require_gpu_cc,
+        expected_mrtd_hex: requirements.expected_mrtd_hex,
     };
 
-    Ok(Json(response))
+    let validator_response = state
+        .validator_client
+        .check_tee_availability(validator_requirements)
+        .await
+        .map_err(|e| {
+            warn!(
+                "[TEE] Failed to check TEE availability from validator: {}",
+                e
+            );
+            ApiError::ValidatorCommunication {
+                message: format!("Failed to check TEE availability: {}", e),
+            }
+        })?;
+
+    Ok(Json(TeeAvailabilityResponse {
+        available: validator_response.available,
+        matching_nodes: validator_response.matching_nodes,
+        message: validator_response.message,
+    }))
 }

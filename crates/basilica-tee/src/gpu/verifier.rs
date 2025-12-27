@@ -6,8 +6,11 @@
 //! NVIDIA Remote Attestation Service (NRAS).
 
 use async_trait::async_trait;
+#[cfg(feature = "remote-attestation")]
 use serde::{Deserialize, Serialize};
-use tracing::{debug, error, info, warn};
+#[cfg(feature = "remote-attestation")]
+use tracing::{error, info};
+use tracing::{debug, warn};
 
 use crate::error::{TeeError, TeeResult};
 use crate::traits::GpuVerifier;
@@ -150,6 +153,7 @@ impl Default for NrasConfig {
 }
 
 /// Request body for NRAS verification
+#[cfg(feature = "remote-attestation")]
 #[derive(Debug, Serialize)]
 struct NrasVerifyRequest {
     /// Base64-encoded attestation evidence (EAT token)
@@ -160,6 +164,7 @@ struct NrasVerifyRequest {
 }
 
 /// Response from NRAS verification
+#[cfg(feature = "remote-attestation")]
 #[derive(Debug, Deserialize)]
 struct NrasVerifyResponse {
     /// Verification result
@@ -177,6 +182,7 @@ struct NrasVerifyResponse {
 }
 
 /// Claims extracted from the attestation
+#[cfg(feature = "remote-attestation")]
 #[derive(Debug, Deserialize, Default)]
 #[allow(dead_code)]
 struct NrasClaims {

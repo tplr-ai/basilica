@@ -22,6 +22,17 @@ pub use basilica_tee::types::{
     GpuCcVerificationResult, TdxVerificationResult, TeeVerificationResult,
 };
 
+/// Result of TDX setup/installation check
+#[derive(Debug)]
+struct TdxSetupResult {
+    /// Whether TDX hardware is available (device present)
+    tdx_available: bool,
+    /// Whether TDX tools are available (quote generator installed)
+    tools_available: bool,
+    /// Whether tools were installed during this check
+    installed_tools: bool,
+}
+
 /// TEE Validator configuration
 #[derive(Debug, Clone)]
 pub struct TeeValidatorConfig {
@@ -104,12 +115,423 @@ impl TeeValidator {
         self.config.enabled && self.config.require_tee
     }
 
+    /// Ensure TDX attestation tools are installed on the executor
+    ///
+    /// Checks for TDX device availability and installs tdx-quote-generator if missing.
+    async fn ensure_tdx_tools_installed(
+        &self,
+        connection: &SshConnectionDetails,
+    ) -> Result<TdxSetupResult> {
+        // Check if TDX device is present
+        let tdx_check = self
+            .ssh_client
+            .execute_command(
+                connection,
+                "[ -c /dev/tdx_guest ] || [ -c /dev/tdx-guest ] && echo 'TDX_PRESENT' || echo 'TDX_NOT_PRESENT'",
+                true,
+            )
+            .await
+            .unwrap_or_else(|_| "TDX_NOT_PRESENT".to_string());
+
+        if !tdx_check.contains("TDX_PRESENT") {
+            debug!("[TEE] TDX device not present on node");
+            return Ok(TdxSetupResult {
+                tdx_available: false,
+                tools_available: false,
+                installed_tools: false,
+            });
+        }
+
+        // Check if tdx-quote-generator is already installed
+        let tool_check = self
+            .ssh_client
+            .execute_command(
+                connection,
+                "command -v tdx-quote-generator &>/dev/null && echo 'INSTALLED' || echo 'NOT_INSTALLED'",
+                true,
+            )
+            .await
+            .unwrap_or_else(|_| "NOT_INSTALLED".to_string());
+
+        if tool_check.contains("INSTALLED") {
+            debug!("[TEE] tdx-quote-generator already installed");
+            return Ok(TdxSetupResult {
+                tdx_available: true,
+                tools_available: true,
+                installed_tools: false,
+            });
+        }
+
+        // Install TDX attestation tools
+        info!("[TEE] Installing TDX attestation tools on executor");
+
+        let install_script = r#"
+set -e
+
+# Detect OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+    VERSION=$VERSION_ID
+else
+    echo "INSTALL_FAILED: Cannot detect OS"
+    exit 1
+fi
+
+# Install based on OS
+case "$OS" in
+    ubuntu|debian)
+        export DEBIAN_FRONTEND=noninteractive
+        
+        # Add Intel SGX/TDX repository
+        if [ ! -f /etc/apt/sources.list.d/intel-sgx.list ]; then
+            apt-get update -qq
+            apt-get install -y -qq curl gnupg
+            
+            # Intel SGX repository key
+            curl -fsSL https://download.01.org/intel-sgx/sgx_repo/ubuntu/intel-sgx-deb.key | gpg --dearmor -o /usr/share/keyrings/intel-sgx-keyring.gpg
+            
+            # Add repository (use jammy for 22.04+, focal for 20.04)
+            CODENAME=$(lsb_release -cs)
+            if [ "$CODENAME" = "noble" ] || [ "$CODENAME" = "jammy" ]; then
+                REPO_CODENAME="jammy"
+            else
+                REPO_CODENAME="focal"
+            fi
+            
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-sgx-keyring.gpg] https://download.01.org/intel-sgx/sgx_repo/ubuntu $REPO_CODENAME main" > /etc/apt/sources.list.d/intel-sgx.list
+        fi
+        
+        apt-get update -qq
+        
+        # Install TDX attestation packages
+        apt-get install -y -qq libtdx-attest libtdx-attest-dev tdx-qgs || true
+        
+        # If tdx-quote-generator not available as package, build from source
+        if ! command -v tdx-quote-generator &>/dev/null; then
+            apt-get install -y -qq build-essential cmake git
+            
+            TMPDIR=$(mktemp -d)
+            cd "$TMPDIR"
+            
+            # Clone and build libtdx-attest tools
+            git clone --depth 1 https://github.com/intel/SGXDataCenterAttestationPrimitives.git
+            cd SGXDataCenterAttestationPrimitives/QuoteGeneration/quote_wrapper/tdx_quote
+            
+            # Build simple quote generator
+            cat > tdx_quote_generator.c << 'EOF'
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <stdint.h>
+
+#define TDX_CMD_GET_REPORT0 _IOWR('T', 1, struct tdx_report_req)
+#define TDX_CMD_GET_QUOTE _IOR('T', 4, struct tdx_quote_req)
+
+struct tdx_report_req {
+    uint8_t reportdata[64];
+    uint8_t tdreport[1024];
+};
+
+struct tdx_quote_req {
+    uint64_t buf;
+    uint64_t len;
+};
+
+int main(int argc, char *argv[]) {
+    char *report_data_hex = NULL;
+    char *output_file = NULL;
+    int hex_output = 0;
+    
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--report-data") == 0 && i + 1 < argc) {
+            report_data_hex = argv[++i];
+        } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
+            output_file = argv[++i];
+        } else if (strcmp(argv[i], "--hex") == 0) {
+            hex_output = 1;
+        }
+    }
+    
+    int fd = open("/dev/tdx_guest", O_RDWR);
+    if (fd < 0) {
+        fd = open("/dev/tdx-guest", O_RDWR);
+    }
+    if (fd < 0) {
+        perror("Failed to open TDX device");
+        return 1;
+    }
+    
+    struct tdx_report_req report_req = {0};
+    
+    // Parse hex report data
+    if (report_data_hex) {
+        size_t len = strlen(report_data_hex);
+        for (size_t i = 0; i < len && i/2 < 64; i += 2) {
+            sscanf(report_data_hex + i, "%2hhx", &report_req.reportdata[i/2]);
+        }
+    }
+    
+    if (ioctl(fd, TDX_CMD_GET_REPORT0, &report_req) < 0) {
+        perror("Failed to get TDX report");
+        close(fd);
+        return 1;
+    }
+    
+    // Allocate quote buffer
+    uint8_t *quote_buf = malloc(8192);
+    struct tdx_quote_req quote_req = {
+        .buf = (uint64_t)quote_buf,
+        .len = 8192
+    };
+    
+    if (ioctl(fd, TDX_CMD_GET_QUOTE, &quote_req) < 0) {
+        perror("Failed to get TDX quote");
+        free(quote_buf);
+        close(fd);
+        return 1;
+    }
+    
+    close(fd);
+    
+    FILE *out = output_file ? fopen(output_file, "w") : stdout;
+    if (!out) {
+        perror("Failed to open output file");
+        free(quote_buf);
+        return 1;
+    }
+    
+    if (hex_output) {
+        for (size_t i = 0; i < quote_req.len; i++) {
+            fprintf(out, "%02x", quote_buf[i]);
+        }
+        fprintf(out, "\n");
+    } else {
+        fwrite(quote_buf, 1, quote_req.len, out);
+    }
+    
+    if (output_file) fclose(out);
+    free(quote_buf);
+    
+    return 0;
+}
+EOF
+            
+            gcc -o tdx-quote-generator tdx_quote_generator.c
+            cp tdx-quote-generator /usr/local/bin/
+            chmod +x /usr/local/bin/tdx-quote-generator
+            
+            cd /
+            rm -rf "$TMPDIR"
+        fi
+        ;;
+    
+    rhel|centos|fedora|rocky|almalinux)
+        # RHEL-based installation
+        dnf install -y epel-release || yum install -y epel-release
+        dnf install -y libtdx-attest || yum install -y libtdx-attest || true
+        
+        # Build from source if package not available (similar to above)
+        if ! command -v tdx-quote-generator &>/dev/null; then
+            dnf install -y gcc make git || yum install -y gcc make git
+            # ... similar build steps
+            echo "INSTALL_FAILED: Manual build required for RHEL"
+            exit 1
+        fi
+        ;;
+    
+    *)
+        echo "INSTALL_FAILED: Unsupported OS: $OS"
+        exit 1
+        ;;
+esac
+
+# Verify installation
+if command -v tdx-quote-generator &>/dev/null; then
+    echo "INSTALL_SUCCESS"
+else
+    echo "INSTALL_FAILED: Tool not found after installation"
+    exit 1
+fi
+"#;
+
+        let install_result = self
+            .ssh_client
+            .execute_command(connection, install_script, true)
+            .await;
+
+        match install_result {
+            Ok(output) if output.contains("INSTALL_SUCCESS") => {
+                info!("[TEE] Successfully installed TDX attestation tools");
+                Ok(TdxSetupResult {
+                    tdx_available: true,
+                    tools_available: true,
+                    installed_tools: true,
+                })
+            }
+            Ok(output) => {
+                warn!("[TEE] TDX tools installation failed: {}", output);
+                Ok(TdxSetupResult {
+                    tdx_available: true,
+                    tools_available: false,
+                    installed_tools: false,
+                })
+            }
+            Err(e) => {
+                warn!("[TEE] TDX tools installation error: {}", e);
+                Ok(TdxSetupResult {
+                    tdx_available: true,
+                    tools_available: false,
+                    installed_tools: false,
+                })
+            }
+        }
+    }
+
+    /// Ensure GPU attestation tools are installed on the executor
+    ///
+    /// Returns true if tools were installed during this call.
+    async fn ensure_gpu_attestation_tools_installed(
+        &self,
+        connection: &SshConnectionDetails,
+    ) -> bool {
+        // Check if GPU attestation tools are already installed
+        let tool_check = self
+            .ssh_client
+            .execute_command(
+                connection,
+                r#"
+                if command -v nv-attestation-tool &>/dev/null; then
+                    echo 'INSTALLED:nv-attestation-tool'
+                elif command -v nvidia-attestation &>/dev/null; then
+                    echo 'INSTALLED:nvidia-attestation'
+                elif python3 -c "import nv_attestation_sdk" 2>/dev/null; then
+                    echo 'INSTALLED:python-sdk'
+                else
+                    echo 'NOT_INSTALLED'
+                fi
+                "#,
+                true,
+            )
+            .await
+            .unwrap_or_else(|_| "NOT_INSTALLED".to_string());
+
+        if tool_check.contains("INSTALLED:") {
+            debug!("[TEE] GPU attestation tools already installed: {}", tool_check.trim());
+            return false;
+        }
+
+        // Install GPU attestation tools
+        info!("[TEE] Installing GPU attestation tools on executor");
+
+        let install_script = r#"
+set -e
+
+# Check if NVIDIA GPU is present
+if ! command -v nvidia-smi &>/dev/null; then
+    echo "INSTALL_SKIPPED: No NVIDIA GPU detected"
+    exit 0
+fi
+
+# Detect OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+else
+    echo "INSTALL_FAILED: Cannot detect OS"
+    exit 1
+fi
+
+# Install based on OS
+case "$OS" in
+    ubuntu|debian)
+        export DEBIAN_FRONTEND=noninteractive
+        
+        # Install Python and pip if needed
+        apt-get update -qq
+        apt-get install -y -qq python3 python3-pip python3-venv
+        
+        # Try to install NVIDIA attestation SDK via pip
+        pip3 install --quiet nv-attestation-sdk 2>/dev/null || true
+        
+        # If SDK not available, try the NVIDIA package repository
+        if ! python3 -c "import nv_attestation_sdk" 2>/dev/null; then
+            # Add NVIDIA repository for attestation tools
+            apt-get install -y -qq curl gnupg
+            
+            # Try installing from NVIDIA CUDA repository (which includes attestation tools for CC GPUs)
+            CUDA_KEYRING="cuda-keyring_1.1-1_all.deb"
+            if [ ! -f /usr/share/keyrings/cuda-archive-keyring.gpg ]; then
+                curl -fsSL -o "/tmp/$CUDA_KEYRING" "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu$(lsb_release -rs | tr -d '.')/x86_64/$CUDA_KEYRING" 2>/dev/null || true
+                dpkg -i "/tmp/$CUDA_KEYRING" 2>/dev/null || true
+                rm -f "/tmp/$CUDA_KEYRING"
+            fi
+            
+            apt-get update -qq
+            apt-get install -y -qq nvidia-attestation 2>/dev/null || true
+        fi
+        ;;
+    
+    rhel|centos|fedora|rocky|almalinux)
+        # RHEL-based installation
+        dnf install -y python3 python3-pip || yum install -y python3 python3-pip
+        pip3 install --quiet nv-attestation-sdk 2>/dev/null || true
+        ;;
+    
+    *)
+        echo "INSTALL_FAILED: Unsupported OS: $OS"
+        exit 1
+        ;;
+esac
+
+# Verify installation
+if command -v nv-attestation-tool &>/dev/null; then
+    echo "INSTALL_SUCCESS:nv-attestation-tool"
+elif command -v nvidia-attestation &>/dev/null; then
+    echo "INSTALL_SUCCESS:nvidia-attestation"
+elif python3 -c "import nv_attestation_sdk" 2>/dev/null; then
+    echo "INSTALL_SUCCESS:python-sdk"
+else
+    echo "INSTALL_SKIPPED: GPU attestation tools not available for this platform"
+    exit 0
+fi
+"#;
+
+        let install_result = self
+            .ssh_client
+            .execute_command(connection, install_script, true)
+            .await;
+
+        match install_result {
+            Ok(output) if output.contains("INSTALL_SUCCESS") => {
+                info!("[TEE] Successfully installed GPU attestation tools: {}", output.trim());
+                true
+            }
+            Ok(output) if output.contains("INSTALL_SKIPPED") => {
+                debug!("[TEE] GPU attestation tools installation skipped: {}", output.trim());
+                false
+            }
+            Ok(output) => {
+                warn!("[TEE] GPU attestation tools installation failed: {}", output);
+                false
+            }
+            Err(e) => {
+                warn!("[TEE] GPU attestation tools installation error: {}", e);
+                false
+            }
+        }
+    }
+
     /// Verify TDX quote from executor
     ///
     /// Steps:
-    /// 1. SSH to node and generate TDX quote with nonce
-    /// 2. Parse quote structure using basilica-tee
-    /// 3. Compare measurements against expected values
+    /// 1. SSH to node and check/install TDX tools if needed
+    /// 2. Generate TDX quote with nonce
+    /// 3. Parse quote structure using basilica-tee
+    /// 4. Compare measurements against expected values
     pub async fn verify_tdx_quote(
         &self,
         connection: &SshConnectionDetails,
@@ -117,20 +539,47 @@ impl TeeValidator {
     ) -> Result<TdxVerificationResult> {
         info!("[TEE] Generating TDX quote from executor");
 
+        // First, check if TDX is available and install tools if needed
+        let setup_result = self.ensure_tdx_tools_installed(connection).await?;
+        
+        if setup_result.installed_tools {
+            info!("[TEE] Installed TDX attestation tools on executor");
+        }
+        
+        if !setup_result.tdx_available {
+            warn!("[TEE] TDX not available on this node");
+            return Ok(TdxVerificationResult {
+                quote_valid: false,
+                mrtd_matches: false,
+                rtmr_matches: vec![false; 4],
+                report_data_matches: false,
+                mrtd_hex: String::new(),
+                raw_quote: vec![],
+                verified_at: chrono::Utc::now(),
+            });
+        }
+
+        if !setup_result.tools_available {
+            warn!("[TEE] TDX tools installation failed");
+            return Ok(TdxVerificationResult {
+                quote_valid: false,
+                mrtd_matches: false,
+                rtmr_matches: vec![false; 4],
+                report_data_matches: false,
+                mrtd_hex: String::new(),
+                raw_quote: vec![],
+                verified_at: chrono::Utc::now(),
+            });
+        }
+
         let nonce_hex = hex::encode(nonce);
 
         // Generate quote via SSH using tdx-quote-generator
         let quote_command = format!(
             r#"
-            if command -v tdx-quote-generator &>/dev/null; then
-                TMPFILE=$(mktemp)
-                tdx-quote-generator --report-data {} --hex --output "$TMPFILE" 2>/dev/null
-                cat "$TMPFILE" && rm -f "$TMPFILE"
-            elif [ -c /dev/tdx_guest ] || [ -c /dev/tdx-guest ]; then
-                echo "TDX_DEVICE_PRESENT_NO_TOOL"
-            else
-                echo "TDX_NOT_AVAILABLE"
-            fi
+            TMPFILE=$(mktemp)
+            tdx-quote-generator --report-data {} --hex --output "$TMPFILE" 2>/dev/null
+            cat "$TMPFILE" && rm -f "$TMPFILE"
             "#,
             nonce_hex
         );
@@ -143,25 +592,9 @@ impl TeeValidator {
 
         let quote_output = quote_output.trim();
 
-        // Check for TDX availability
-        if quote_output.is_empty()
-            || quote_output.contains("TDX_NOT_AVAILABLE")
-            || quote_output.contains("error")
-        {
-            warn!("[TEE] TDX quote generation not available on this node");
-            return Ok(TdxVerificationResult {
-                quote_valid: false,
-                mrtd_matches: false,
-                rtmr_matches: vec![false; 4],
-                report_data_matches: false,
-                mrtd_hex: String::new(),
-                raw_quote: vec![],
-                verified_at: chrono::Utc::now(),
-            });
-        }
-
-        if quote_output.contains("TDX_DEVICE_PRESENT_NO_TOOL") {
-            warn!("[TEE] TDX device present but quote generator tool not available");
+        // Check for errors
+        if quote_output.is_empty() || quote_output.contains("error") {
+            warn!("[TEE] TDX quote generation failed: {}", quote_output);
             return Ok(TdxVerificationResult {
                 quote_valid: false,
                 mrtd_matches: false,
@@ -269,19 +702,33 @@ impl TeeValidator {
             );
         }
 
+        // Ensure GPU attestation tools are installed
+        let gpu_tools_installed = self.ensure_gpu_attestation_tools_installed(connection).await;
+        if gpu_tools_installed {
+            info!("[TEE] Installed GPU attestation tools on executor");
+        }
+
         // Generate GPU attestation with nonce
         let nonce_hex = hex::encode(nonce);
         let attestation_command = format!(
             r#"
             if command -v nv-attestation-tool &>/dev/null; then
-                nv-attestation-tool --nonce {} 2>/dev/null
+                nv-attestation-tool --nonce {nonce} 2>/dev/null
             elif command -v nvidia-attestation &>/dev/null; then
-                nvidia-attestation generate --nonce {} 2>/dev/null
+                nvidia-attestation generate --nonce {nonce} 2>/dev/null
+            elif command -v python3 &>/dev/null && python3 -c "import nv_attestation_sdk" 2>/dev/null; then
+                python3 -c "
+import json
+from nv_attestation_sdk import attestation
+nonce = bytes.fromhex('{nonce}')
+evidence = attestation.get_evidence(nonce)
+print(json.dumps(evidence))
+" 2>/dev/null
             else
                 echo '{{"error": "no_attestation_tool"}}'
             fi
             "#,
-            nonce_hex, nonce_hex
+            nonce = nonce_hex
         );
 
         let attestation_json = self

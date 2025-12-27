@@ -3,6 +3,9 @@
 //! This module provides a client implementation for external services
 //! to interact with the Validator's REST API endpoints.
 
+use crate::api::routes::tee::{
+    NodeTeeStatusResponse, TeeAvailabilityResponse, TeeRequirements, TeeStatusSummaryResponse,
+};
 use crate::api::types::*;
 use crate::rental::types::RentalState;
 use anyhow::{Context, Result};
@@ -251,6 +254,114 @@ impl ValidatorClient {
             .context("Failed to parse available nodes response")?;
 
         Ok(json)
+    }
+
+    // ========================================
+    // TEE (Trusted Execution Environment) API
+    // ========================================
+
+    /// Get TEE status summary across all nodes
+    pub async fn get_tee_status_summary(&self) -> Result<TeeStatusSummaryResponse> {
+        let url = format!("{}/tee/status", self.base_url);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .context("Failed to send TEE status request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to get TEE status: {} - {}", status, error_body);
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse TEE status response")
+    }
+
+    /// Get TEE status for a specific node
+    pub async fn get_node_tee_status(&self, node_id: &str) -> Result<NodeTeeStatusResponse> {
+        let url = format!("{}/tee/nodes/{}", self.base_url, node_id);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .context("Failed to send node TEE status request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to get node TEE status: {} - {}", status, error_body);
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse node TEE status response")
+    }
+
+    /// List all TEE-verified nodes
+    pub async fn list_tee_verified_nodes(&self) -> Result<Vec<String>> {
+        let url = format!("{}/tee/nodes", self.base_url);
+
+        let response = self
+            .http_client
+            .get(&url)
+            .send()
+            .await
+            .context("Failed to send list TEE nodes request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Failed to list TEE-verified nodes: {} - {}",
+                status,
+                error_body
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse TEE nodes response")
+    }
+
+    /// Check if TEE requirements can be satisfied
+    pub async fn check_tee_availability(
+        &self,
+        requirements: TeeRequirements,
+    ) -> Result<TeeAvailabilityResponse> {
+        let url = format!("{}/tee/availability", self.base_url);
+
+        let response = self
+            .http_client
+            .post(&url)
+            .json(&requirements)
+            .send()
+            .await
+            .context("Failed to send TEE availability request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "Failed to check TEE availability: {} - {}",
+                status,
+                error_body
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse TEE availability response")
     }
 }
 
