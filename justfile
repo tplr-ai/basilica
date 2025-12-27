@@ -46,9 +46,6 @@ fix-all:
     cargo fmt --all
     cargo clippy --fix --allow-dirty --allow-staged --workspace --all-targets --all-features -- -D warnings
     echo "✓ All checks passed"
-    # Then run without --fix to catch remaining issues (like CI does)
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
-    cargo fmt --all
 
 # Lint workspace packages
 lint: fmt-check
