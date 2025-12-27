@@ -2,7 +2,7 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    text::Span,
+    text::{Line, Span},
     widgets::{Block, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
@@ -18,15 +18,17 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header::header_height()),
+            Constraint::Length(3), // Action bar
             Constraint::Min(0),
             Constraint::Length(footer::footer_height()),
         ])
         .split(area);
 
     header::render_header_ctx(frame, ctx, chunks[0]);
-    footer::render_footer_ctx(frame, ctx, chunks[2]);
+    render_action_bar(frame, ctx, chunks[1]);
+    footer::render_footer_ctx(frame, ctx, chunks[3]);
 
-    let content = chunks[1];
+    let content = chunks[2];
 
     if ctx.screens.deployments.show_logs {
         let split = Layout::default()
@@ -39,6 +41,33 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
     } else {
         render_deployments_table(frame, ctx, content);
     }
+}
+
+fn render_action_bar(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
+    let theme = ctx.theme;
+    let has_selection = !ctx.user_data.deployments.is_empty();
+
+    let actions = Line::from(vec![
+        Span::styled(" Actions: ", theme.text_muted()),
+        Span::styled("[n] ", theme.keybind()),
+        Span::styled("New  ", theme.text_muted()),
+        Span::styled("[v] ", theme.keybind()),
+        Span::styled("vLLM  ", theme.text_muted()),
+        Span::styled("[g] ", theme.keybind()),
+        Span::styled("SGLang  ", theme.text_muted()),
+        Span::raw("│ "),
+        Span::styled("[d] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled("Delete  ", theme.text_muted()),
+        Span::styled("[s] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled("Scale  ", theme.text_muted()),
+        Span::styled("[l] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled("Logs", theme.text_muted()),
+    ]);
+
+    let paragraph = Paragraph::new(actions)
+        .block(Block::default().borders(Borders::ALL).border_style(theme.border()));
+
+    frame.render_widget(paragraph, area);
 }
 
 fn render_deployments_table(frame: &mut Frame, ctx: &RenderContext, area: Rect) {

@@ -29,6 +29,12 @@ chrono = { workspace = true }
 oauth2 = { workspace = true }
 base64 = { workspace = true }
 etcetera = { workspace = true }
+webbrowser = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+url = { workspace = true }
+tokio-util = { workspace = true }
+axum = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }

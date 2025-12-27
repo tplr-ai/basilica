@@ -43,6 +43,11 @@ pub fn render_footer(frame: &mut Frame, app: &App, area: Rect) {
             UserScreen::Billing => {
                 hints.insert(0, key_hint("r", "Refresh", theme));
             }
+            UserScreen::Settings => {
+                hints.insert(0, key_hint("Tab", "Section", theme));
+                hints.insert(1, key_hint("a", "Add", theme));
+                hints.insert(2, key_hint("d", "Delete", theme));
+            }
         },
         AppMode::Miner => match app.miner_screen {
             MinerScreen::Fleet => {
@@ -102,6 +107,11 @@ pub fn render_footer_ctx(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             }
             UserScreen::Billing => {
                 hints.insert(0, key_hint("r", "Refresh", theme));
+            }
+            UserScreen::Settings => {
+                hints.insert(0, key_hint("Tab", "Section", theme));
+                hints.insert(1, key_hint("a", "Add", theme));
+                hints.insert(2, key_hint("d", "Delete", theme));
             }
         },
         AppMode::Miner => match ctx.miner_screen {

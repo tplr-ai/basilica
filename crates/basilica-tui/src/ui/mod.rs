@@ -60,6 +60,34 @@ impl Tui {
         self.terminal.draw(f)?;
         Ok(())
     }
+
+    /// Suspend the TUI temporarily to run an external process
+    /// 
+    /// Returns the terminal to normal mode, runs the provided closure,
+    /// then restores the TUI. Use this for interactive SSH sessions, etc.
+    pub fn suspend_and_run<F, R>(&mut self, f: F) -> Result<R>
+    where
+        F: FnOnce() -> R,
+    {
+        // Exit TUI mode
+        self.exit()?;
+
+        // Clear the screen and show a message
+        print!("\x1B[2J\x1B[1;1H"); // Clear screen, move cursor to top-left
+        println!("Suspended TUI. Running external command...\n");
+
+        // Run the external process
+        let result = f();
+
+        // Wait for user to press Enter before resuming
+        println!("\n\nPress Enter to return to TUI...");
+        let _ = std::io::stdin().read_line(&mut String::new());
+
+        // Re-enter TUI mode
+        self.enter()?;
+
+        Ok(result)
+    }
 }
 
 impl Drop for Tui {

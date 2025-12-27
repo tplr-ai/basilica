@@ -114,7 +114,7 @@ impl Default for WalletConfig {
 /// Create auth configuration for OAuth flows with specific port
 /// This bridges the gap between constants and the auth module's requirements
 /// The port must be one of the registered callback ports
-pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig {
+pub fn create_auth_config_with_port(port: u16) -> basilica_sdk::auth::AuthConfig {
     // Validate that the port is in the allowed list (for OAuth flow)
     // Device flow uses port 0 and doesn't need validation
     if port != 0 {
@@ -128,30 +128,20 @@ pub fn create_auth_config_with_port(port: u16) -> crate::auth::types::AuthConfig
         }
     }
 
-    // Use constants from basilica-common
-    let domain = basilica_common::auth0_domain();
+    // Start with the SDK's default config and add CLI-specific scopes
+    let mut config = basilica_sdk::auth::create_auth_config_with_port(port);
 
-    crate::auth::types::AuthConfig {
-        client_id: basilica_common::auth0_client_id().to_string(),
-        auth_endpoint: format!("https://{}/authorize", domain),
-        token_endpoint: format!("https://{}/oauth/token", domain),
-        device_auth_endpoint: Some(format!("https://{}/oauth/device/code", domain)),
-        revoke_endpoint: Some(format!("https://{}/oauth/revoke", domain)),
-        redirect_uri: format!("http://localhost:{}/auth/callback", port),
-        scopes: vec![
-            "openid".to_string(),
-            "profile".to_string(),
-            "email".to_string(),
-            "offline_access".to_string(), // Required for refresh tokens
-            "rentals:*".to_string(),      // All rental operations
-            "nodes:list".to_string(),     // List available nodes
-            "keys:create".to_string(),    // Create API keys
-            "keys:list".to_string(),      // List API keys
-            "keys:revoke".to_string(),    // Revoke API keys
-            "secure_cloud".to_string(),   // Secure cloud (GPU aggregator) operations
-        ],
-        additional_params: std::collections::HashMap::new(),
-    }
+    // Add CLI-specific scopes
+    config.scopes.extend([
+        "rentals:*".to_string(),    // All rental operations
+        "nodes:list".to_string(),   // List available nodes
+        "keys:create".to_string(),  // Create API keys
+        "keys:list".to_string(),    // List API keys
+        "keys:revoke".to_string(),  // Revoke API keys
+        "secure_cloud".to_string(), // Secure cloud (GPU aggregator) operations
+    ]);
+
+    config
 }
 
 /// Cache data structure

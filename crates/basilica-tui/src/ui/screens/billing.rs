@@ -145,16 +145,32 @@ fn render_spending_chart(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 fn render_deposit_info(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let theme = ctx.theme;
 
-    // TODO: Get deposit address from API
+    // Mock deposit address - in real implementation this comes from API
+    let deposit_address = if ctx.connected {
+        "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY"
+    } else {
+        "Login to get deposit address"
+    };
+    
+    let address_short = if deposit_address.len() > 16 && ctx.connected {
+        format!("{}...{}", &deposit_address[..8], &deposit_address[deposit_address.len()-8..])
+    } else {
+        deposit_address.to_string()
+    };
+
     let content = vec![
         Line::from(""),
         Line::from(vec![Span::styled("  Deposit Address", theme.text_muted())]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "  Run 'basilica deposit'",
-            theme.text_accent(),
+            format!("  {}", address_short),
+            theme.text_accent().add_modifier(Modifier::BOLD),
         )]),
-        Line::from(vec![Span::styled("  for address", theme.text_accent())]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "  [c] Copy full address",
+            theme.text_muted(),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  Network: ", theme.text_muted()),
@@ -164,6 +180,11 @@ fn render_deposit_info(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             Span::styled("  Netuid:  ", theme.text_muted()),
             Span::styled("39", theme.text()),
         ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            "  Min deposit: 0.1 TAO",
+            theme.text_muted(),
+        )]),
     ];
 
     let paragraph = Paragraph::new(content)
@@ -171,7 +192,7 @@ fn render_deposit_info(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(theme.border())
-                .title(Span::styled(" 💳 Deposit ", theme.block_title())),
+                .title(Span::styled(" 💳 Deposit TAO ", theme.block_title())),
         )
         .style(theme.text());
 

@@ -159,6 +159,19 @@ impl Theme {
         Style::default().fg(self.fg_muted).bg(self.bg)
     }
 
+    /// Tab selected style (alias for tab_active)
+    pub fn tab_selected(&self) -> Style {
+        self.tab_active()
+    }
+
+    /// Keybind highlight style
+    pub fn keybind(&self) -> Style {
+        Style::default()
+            .fg(self.accent)
+            .bg(self.bg)
+            .add_modifier(Modifier::BOLD)
+    }
+
     /// Status indicator styles
     pub fn status_running(&self) -> Style {
         Style::default().fg(self.success)

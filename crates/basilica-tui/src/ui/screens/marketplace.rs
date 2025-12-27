@@ -18,15 +18,17 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header::header_height()),
+            Constraint::Length(3), // Action bar
             Constraint::Min(0),
             Constraint::Length(footer::footer_height()),
         ])
         .split(area);
 
     header::render_header_ctx(frame, ctx, chunks[0]);
-    footer::render_footer_ctx(frame, ctx, chunks[2]);
+    render_action_bar(frame, ctx, chunks[1]);
+    footer::render_footer_ctx(frame, ctx, chunks[3]);
 
-    let content = chunks[1];
+    let content = chunks[2];
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(25), Constraint::Min(0)])
@@ -34,6 +36,37 @@ pub fn render_with_ctx(frame: &mut Frame, ctx: &RenderContext) {
 
     render_filters(frame, ctx, columns[0]);
     render_gpu_list(frame, ctx, columns[1]);
+}
+
+fn render_action_bar(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
+    let theme = ctx.theme;
+    let has_selection = !ctx.user_data.offerings.is_empty();
+    let has_filter = ctx.screens.marketplace.filter_gpu_type.is_some()
+        || ctx.screens.marketplace.filter_source.is_some()
+        || ctx.screens.marketplace.filter_max_price.is_some();
+
+    let actions = Line::from(vec![
+        Span::styled(" Actions: ", theme.text_muted()),
+        Span::styled("[Enter] ", if has_selection { theme.keybind() } else { theme.text_muted() }),
+        Span::styled("Rent GPU  ", theme.text_muted()),
+        Span::styled("[/] ", theme.keybind()),
+        Span::styled("Filter  ", theme.text_muted()),
+        Span::styled("[s] ", theme.keybind()),
+        Span::styled("Sort Price  ", theme.text_muted()),
+        if has_filter {
+            Span::styled("[c] ", theme.keybind())
+        } else {
+            Span::styled("[c] ", theme.text_muted())
+        },
+        Span::styled("Clear  ", theme.text_muted()),
+        Span::styled("[r] ", theme.keybind()),
+        Span::styled("Refresh", theme.text_muted()),
+    ]);
+
+    let paragraph = Paragraph::new(actions)
+        .block(Block::default().borders(Borders::ALL).border_style(theme.border()));
+
+    frame.render_widget(paragraph, area);
 }
 
 fn render_filters(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
