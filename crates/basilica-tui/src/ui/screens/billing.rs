@@ -208,9 +208,12 @@ fn render_transactions(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
     let user_data = ctx.user_data;
 
     let rows: Vec<Row> = if user_data.transactions.is_empty() {
-        vec![Row::new(vec![Cell::from(
-            "No transactions yet. Top up your balance to get started.",
-        )])
+        vec![Row::new(vec![
+            Cell::from("No transactions yet"),
+            Cell::from(""),
+            Cell::from("Top up balance to start"),
+            Cell::from(""),
+        ])
         .style(theme.text_muted())]
     } else {
         user_data

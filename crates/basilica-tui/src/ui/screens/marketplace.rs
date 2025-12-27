@@ -141,17 +141,35 @@ fn render_gpu_list(frame: &mut Frame, ctx: &RenderContext, area: Rect) {
 
     let rows: Vec<Row> = if user_data.offerings.is_empty() {
         if user_data.loading.offerings {
-            vec![Row::new(vec![Cell::from("Loading available GPUs...")]).style(theme.text_muted())]
+            vec![Row::new(vec![
+                Cell::from("Loading..."),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from(""),
+            ])
+            .style(theme.text_muted())]
         } else if !ctx.connected {
-            vec![Row::new(vec![Cell::from(
-                "Not connected. Run 'basilica login' first.",
-            )])
+            vec![Row::new(vec![
+                Cell::from("Not connected"),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from("'basilica login'"),
+                Cell::from(""),
+            ])
             .style(theme.text_warning())]
         } else {
-            vec![
-                Row::new(vec![Cell::from("No GPUs available at this time.")])
-                    .style(theme.text_muted()),
-            ]
+            vec![Row::new(vec![
+                Cell::from("No GPUs available"),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from(""),
+                Cell::from(""),
+            ])
+            .style(theme.text_muted())]
         }
     } else {
         user_data

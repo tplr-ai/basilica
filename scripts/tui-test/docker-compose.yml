@@ -1,0 +1,64 @@
+# Docker Compose for TUI Integration Testing
+# Starts API in dev mode without requiring Bittensor/Validator
+#
+# Usage:
+#   docker compose up -d
+#   cargo run -p basilica-tui -- --dev   # TUI in dev mode
+#   # OR test against real API:
+#   BASILICA_API_URL=http://localhost:8000 cargo run -p basilica-tui
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: basilica-tui-test-db
+    environment:
+      POSTGRES_USER: basilica
+      POSTGRES_PASSWORD: dev
+      POSTGRES_DB: basilica
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U basilica"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway in dev mode (no Bittensor/Validator required)
+  api:
+    build:
+      context: ../..
+      dockerfile: scripts/api/Dockerfile
+    container_name: basilica-tui-test-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      RUST_LOG: info,basilica_api=debug
+      BASILICA_API_DEV_MODE: "true"
+      BASILICA_API_DATABASE__URL: postgres://basilica:dev@postgres:5432/basilica
+      BASILICA_API_SERVER__BIND_ADDRESS: "0.0.0.0:8000"
+      # Disable services that require external connections
+      BASILICA_API_PAYMENTS__ENABLED: "false"
+      BASILICA_API_BILLING__ENABLED: "false"
+      BASILICA_API_DNS__ENABLED: "false"
+    ports:
+      - "8000:8000"
+      - "9401:9401"  # Metrics
+    command: ["--dev"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: basilica-tui-test
+

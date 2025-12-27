@@ -51,7 +51,8 @@ Each component has its own directory with:
 ### Infrastructure & Tools
 
 - **cloud/** - Terraform infrastructure as code (AWS deployments)
-- **localtest/** - Local testing environment
+- **localtest/** - Local testing environment with full Bittensor stack
+- **tui-test/** - Simplified testing environment for TUI development
 - **provision/** - Provisioning and configuration management
 
 ## Usage
@@ -85,6 +86,21 @@ docker compose -f compose.dev.yml up -d
 ```bash
 cd scripts/{component}
 docker compose -f compose.prod.yml up -d
+```
+
+### TUI Testing
+
+Start a minimal API for TUI development (no Bittensor required):
+
+```bash
+cd scripts/tui-test
+./start.sh
+
+# Then run TUI against the local API:
+BASILICA_API_URL=http://localhost:8000 cargo run -p basilica-tui
+
+# Or use TUI's built-in dev mode (mock data, no API):
+cargo run -p basilica-tui -- --dev
 ```
 
 ## Main CLI

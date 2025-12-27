@@ -15,6 +15,32 @@ cargo build -p basilica-api --release
 ./target/release/basilica-api --config config.toml
 ```
 
+## Dev Mode
+
+Run the API without requiring Bittensor or a validator connection:
+
+```bash
+# Via CLI flag
+./target/release/basilica-api --dev
+
+# Via environment variable
+BASILICA_API_DEV_MODE=true ./target/release/basilica-api
+
+# Via config file
+# Add: dev_mode = true
+```
+
+Dev mode:
+- Bypasses Bittensor network discovery
+- Uses mock validator credentials
+- Skips health check tasks
+- Still uses a real PostgreSQL database
+
+Useful for:
+- Local development
+- TUI testing
+- Integration tests
+
 ## Testing
 
 ```bash

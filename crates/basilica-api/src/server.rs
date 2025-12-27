@@ -567,67 +567,13 @@ impl Server {
 
         let config = Arc::new(config);
 
-        // Validate configuration
-        if config.bittensor.validator_hotkey.is_empty() {
-            return Err(ApiError::ConfigError(
-                "validator_hotkey must be configured in bittensor section".to_string(),
-            ));
-        }
-
-        // Initialize Bittensor service to find validator endpoint
-        info!("Connecting to Bittensor network to discover validator endpoint");
-        let bittensor_config = config.to_bittensor_config();
-        let bittensor_service = bittensor::Service::new(bittensor_config).await?;
-
-        // Query metagraph to find validator by hotkey
-        info!(
-            "Looking up validator with hotkey: {}",
-            config.bittensor.validator_hotkey
-        );
-        let metagraph = bittensor_service
-            .get_metagraph(config.bittensor.netuid)
-            .await?;
-
-        // Use NeuronDiscovery to find validator
-        let discovery = bittensor::NeuronDiscovery::new(&metagraph);
-        let validator_info = discovery
-            .find_neuron_by_hotkey(&config.bittensor.validator_hotkey)
-            .ok_or_else(|| {
-                ApiError::ConfigError(format!(
-                    "Validator with hotkey {} not found in subnet {}",
-                    config.bittensor.validator_hotkey, config.bittensor.netuid
-                ))
-            })?;
-
-        // Verify it's actually a validator (has validator_permit)
-        if !validator_info.is_validator {
-            return Err(ApiError::ConfigError(format!(
-                "Hotkey {} exists but does not have validator permit in subnet {}",
-                config.bittensor.validator_hotkey, config.bittensor.netuid
-            )));
-        }
-
-        let validator_uid = validator_info.uid;
-
-        // Get axon info from the validator info
-        let axon_info = validator_info.axon_info.ok_or_else(|| {
-            ApiError::ConfigError(format!("No axon info found for validator {validator_uid}"))
-        })?;
-
-        let validator_endpoint = format!("http://{}:{}", axon_info.ip, axon_info.port);
-        info!(
-            "Found validator {} at endpoint {}",
-            validator_uid, validator_endpoint
-        );
-
-        // Create validator client
-        let validator_client = Arc::new(
-            ValidatorClient::new(&validator_endpoint, config.request_timeout()).map_err(|e| {
-                ApiError::Internal {
-                    message: format!("Failed to create validator client: {e}"),
-                }
-            })?,
-        );
+        // Discover validator (or use mock in dev mode)
+        let (validator_client, validator_endpoint, validator_uid, validator_hotkey) =
+            if config.dev_mode {
+                Self::init_dev_mode(&config)?
+            } else {
+                Self::init_production_mode(&config).await?
+            };
 
         // Create HTTP client for validator communication
         let http_client = reqwest::Client::builder()
@@ -861,7 +807,7 @@ impl Server {
             validator_client: validator_client.clone(),
             validator_endpoint: validator_endpoint.clone(),
             validator_uid,
-            validator_hotkey: config.bittensor.validator_hotkey.clone(),
+            validator_hotkey,
             http_client: http_client.clone(),
             db,
             k8s,
@@ -875,82 +821,90 @@ impl Server {
             ssh_client,
         };
 
-        // Start optional health check task using HTTP client
-        let health_http_client = http_client;
-        let health_endpoint = validator_endpoint.clone();
-        let health_interval = config.health_check_interval();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(health_interval);
-            loop {
-                interval.tick().await;
-                let health_url = format!("{health_endpoint}/health");
-                match health_http_client.get(&health_url).send().await {
-                    Ok(response) if response.status().is_success() => {
-                        tracing::trace!("Validator health check passed");
-                    }
-                    Ok(response) => {
-                        tracing::warn!(
-                            "Validator health check returned status: {}",
-                            response.status()
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Validator health check failed for {}: {}",
-                            health_endpoint,
-                            e
-                        );
-                    }
-                }
-            }
-        });
-
-        // Start rental health check task
-        let rental_health_client = validator_client.clone();
-        let rental_health_db = state.db.clone();
-        let rental_health_interval = config.rental_health_check_interval();
-
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(rental_health_interval);
-            loop {
-                interval.tick().await;
-
-                // Query all active rentals from the database
-                match sqlx::query_as::<_, (String,)>("SELECT rental_id FROM user_rentals")
-                    .fetch_all(&rental_health_db)
-                    .await
-                {
-                    Ok(rental_records) => {
-                        // TODO: Consider batching these API calls for better performance
-                        // Currently making individual API calls for each rental
-                        for record in &rental_records {
-                            let rental_id = &record.0;
-                            process_rental_health_check(
-                                rental_id,
-                                &rental_health_client,
-                                &rental_health_db,
-                            )
-                            .await;
+        // Start health check tasks (skip in dev mode - no real validator)
+        if !config.dev_mode {
+            // Start optional health check task using HTTP client
+            let health_http_client = http_client;
+            let health_endpoint = validator_endpoint.clone();
+            let health_interval = config.health_check_interval();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(health_interval);
+                loop {
+                    interval.tick().await;
+                    let health_url = format!("{health_endpoint}/health");
+                    match health_http_client.get(&health_url).send().await {
+                        Ok(response) if response.status().is_success() => {
+                            tracing::trace!("Validator health check passed");
                         }
-
-                        if !rental_records.is_empty() {
-                            tracing::debug!(
-                                "Rental health check completed for {} rentals",
-                                rental_records.len()
+                        Ok(response) => {
+                            tracing::warn!(
+                                "Validator health check returned status: {}",
+                                response.status()
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "Validator health check failed for {}: {}",
+                                health_endpoint,
+                                e
                             );
                         }
                     }
-                    Err(e) => {
-                        tracing::error!("Failed to query active rentals for health check: {}", e);
+                }
+            });
+
+            // Start rental health check task
+            let rental_health_client = validator_client.clone();
+            let rental_health_db = state.db.clone();
+            let rental_health_interval = config.rental_health_check_interval();
+
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(rental_health_interval);
+                loop {
+                    interval.tick().await;
+
+                    // Query all active rentals from the database
+                    match sqlx::query_as::<_, (String,)>("SELECT rental_id FROM user_rentals")
+                        .fetch_all(&rental_health_db)
+                        .await
+                    {
+                        Ok(rental_records) => {
+                            // TODO: Consider batching these API calls for better performance
+                            // Currently making individual API calls for each rental
+                            for record in &rental_records {
+                                let rental_id = &record.0;
+                                process_rental_health_check(
+                                    rental_id,
+                                    &rental_health_client,
+                                    &rental_health_db,
+                                )
+                                .await;
+                            }
+
+                            if !rental_records.is_empty() {
+                                tracing::debug!(
+                                    "Rental health check completed for {} rentals",
+                                    rental_records.len()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to query active rentals for health check: {}",
+                                e
+                            );
+                        }
                     }
                 }
-            }
-        });
+            });
 
-        tracing::info!(
-            "Started rental health check task (interval: {} seconds)",
-            rental_health_interval.as_secs()
-        );
+            tracing::info!(
+                "Started rental health check task (interval: {} seconds)",
+                rental_health_interval.as_secs()
+            );
+        } else {
+            tracing::info!("🔧 DEV MODE: Skipping validator health check tasks");
+        }
 
         // Start GPU offerings refresh task (Secure Cloud)
         let refresh_aggregator_service = state.aggregator_service.clone();
@@ -1273,6 +1227,114 @@ impl Server {
             cancel_token,
             background_tasks: Some(background_tasks),
         })
+    }
+
+    /// Initialize dev mode - bypasses Bittensor with mock validator
+    fn init_dev_mode(config: &Config) -> Result<(Arc<ValidatorClient>, String, u16, String)> {
+        use crate::mock::{DEV_VALIDATOR_ENDPOINT, DEV_VALIDATOR_HOTKEY, DEV_VALIDATOR_UID};
+
+        info!("🔧 DEV MODE: Using mock validator (Bittensor bypassed)");
+
+        // Create a mock validator client pointing to localhost
+        // In dev mode, we don't actually need a real validator running
+        let validator_endpoint = DEV_VALIDATOR_ENDPOINT.to_string();
+        let validator_uid = DEV_VALIDATOR_UID;
+        let validator_hotkey = DEV_VALIDATOR_HOTKEY.to_string();
+
+        // Create validator client (it won't be used for actual calls in dev mode)
+        let validator_client = Arc::new(
+            ValidatorClient::new(&validator_endpoint, config.request_timeout()).map_err(|e| {
+                ApiError::Internal {
+                    message: format!("Failed to create validator client: {e}"),
+                }
+            })?,
+        );
+
+        info!(
+            "🔧 DEV MODE: Mock validator configured (uid={}, endpoint={})",
+            validator_uid, validator_endpoint
+        );
+
+        Ok((
+            validator_client,
+            validator_endpoint,
+            validator_uid,
+            validator_hotkey,
+        ))
+    }
+
+    /// Initialize production mode - discovers validator via Bittensor
+    async fn init_production_mode(
+        config: &Config,
+    ) -> Result<(Arc<ValidatorClient>, String, u16, String)> {
+        // Validate configuration
+        if config.bittensor.validator_hotkey.is_empty() {
+            return Err(ApiError::ConfigError(
+                "validator_hotkey must be configured in bittensor section".to_string(),
+            ));
+        }
+
+        // Initialize Bittensor service to find validator endpoint
+        info!("Connecting to Bittensor network to discover validator endpoint");
+        let bittensor_config = config.to_bittensor_config();
+        let bittensor_service = bittensor::Service::new(bittensor_config).await?;
+
+        // Query metagraph to find validator by hotkey
+        info!(
+            "Looking up validator with hotkey: {}",
+            config.bittensor.validator_hotkey
+        );
+        let metagraph = bittensor_service
+            .get_metagraph(config.bittensor.netuid)
+            .await?;
+
+        // Use NeuronDiscovery to find validator
+        let discovery = bittensor::NeuronDiscovery::new(&metagraph);
+        let validator_info = discovery
+            .find_neuron_by_hotkey(&config.bittensor.validator_hotkey)
+            .ok_or_else(|| {
+                ApiError::ConfigError(format!(
+                    "Validator with hotkey {} not found in subnet {}",
+                    config.bittensor.validator_hotkey, config.bittensor.netuid
+                ))
+            })?;
+
+        // Verify it's actually a validator (has validator_permit)
+        if !validator_info.is_validator {
+            return Err(ApiError::ConfigError(format!(
+                "Hotkey {} exists but does not have validator permit in subnet {}",
+                config.bittensor.validator_hotkey, config.bittensor.netuid
+            )));
+        }
+
+        let validator_uid = validator_info.uid;
+
+        // Get axon info from the validator info
+        let axon_info = validator_info.axon_info.ok_or_else(|| {
+            ApiError::ConfigError(format!("No axon info found for validator {validator_uid}"))
+        })?;
+
+        let validator_endpoint = format!("http://{}:{}", axon_info.ip, axon_info.port);
+        info!(
+            "Found validator {} at endpoint {}",
+            validator_uid, validator_endpoint
+        );
+
+        // Create validator client
+        let validator_client = Arc::new(
+            ValidatorClient::new(&validator_endpoint, config.request_timeout()).map_err(|e| {
+                ApiError::Internal {
+                    message: format!("Failed to create validator client: {e}"),
+                }
+            })?,
+        );
+
+        Ok((
+            validator_client,
+            validator_endpoint,
+            validator_uid,
+            config.bittensor.validator_hotkey.clone(),
+        ))
     }
 
     /// Build the application router with all routes and middleware

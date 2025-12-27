@@ -40,6 +40,9 @@ basilica-tui --miner
 # Dev mode with mock data (no API connection required)
 basilica-tui --dev
 
+# Connect to local API (for testing)
+BASILICA_API_URL=http://localhost:8000 basilica-tui
+
 # Custom config file
 basilica-tui --config /path/to/config.toml
 
@@ -125,6 +128,9 @@ The TUI looks for configuration in:
 2. `~/.config/basilica/tui.toml`
 3. `~/.basilica/tui.toml`
 
+**Environment Variables:**
+- `BASILICA_API_URL` - Override API endpoint (e.g., `http://localhost:8000`)
+
 Example configuration:
 
 ```toml
@@ -187,9 +193,55 @@ cargo run -p basilica-tui -- --dev
 # Run with verbose logging
 cargo run -p basilica-tui -- --dev -vvv
 
-# Run tests
+# Run unit tests
 cargo test -p basilica-tui
 ```
+
+## Integration Testing
+
+Test the TUI against a real API:
+
+### Option 1: Local API (Docker)
+
+```bash
+# Start API in dev mode (no Bittensor required)
+cd scripts/tui-test
+./start.sh
+
+# Run TUI against local API
+BASILICA_API_URL=http://localhost:8000 cargo run -p basilica-tui
+
+# Stop services
+docker compose down
+```
+
+### Option 2: TUI Dev Mode
+
+```bash
+# Mock data, no API connection needed
+cargo run -p basilica-tui -- --dev
+```
+
+### Running Integration Tests
+
+```bash
+# Start local API first
+cd scripts/tui-test && docker compose up -d
+
+# Run integration tests
+cargo test -p basilica-tui --test integration
+
+# Tests auto-skip if API is unavailable
+```
+
+### Test Coverage
+
+| Test Type | Requires API | Description |
+|-----------|--------------|-------------|
+| Unit tests | No | Config, dialog, actions |
+| Integration tests | Yes* | API endpoints |
+
+*Tests skip gracefully if API is not running
 
 ## License
 

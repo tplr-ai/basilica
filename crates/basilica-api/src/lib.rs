@@ -23,6 +23,7 @@ pub mod error;
 pub mod gateway;
 pub mod k8s;
 pub mod metrics;
+pub mod mock;
 pub mod server;
 pub mod ssh;
 pub mod wireguard;

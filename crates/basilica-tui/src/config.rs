@@ -26,7 +26,8 @@ pub struct TuiConfig {
 }
 
 fn default_api_url() -> String {
-    "https://api.basilica.ai".to_string()
+    // Check environment variable first
+    std::env::var("BASILICA_API_URL").unwrap_or_else(|_| "https://api.basilica.ai".to_string())
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -153,6 +154,8 @@ mod tests {
 
     #[test]
     fn test_default_config() {
+        // Clear env var for this test to ensure default is used
+        std::env::remove_var("BASILICA_API_URL");
         let config = TuiConfig::default();
         assert_eq!(config.api_url, "https://api.basilica.ai");
         assert!(matches!(config.theme, ThemePreference::Dark));
@@ -200,6 +203,7 @@ metrics = 10
 
     #[test]
     fn test_config_load_nonexistent_returns_default() {
+        std::env::remove_var("BASILICA_API_URL");
         let config = TuiConfig::load(Some(Path::new("/nonexistent/path/config.toml"))).unwrap();
         assert_eq!(config.api_url, "https://api.basilica.ai");
     }
