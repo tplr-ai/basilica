@@ -144,3 +144,113 @@ impl TuiConfig {
             .map(|dirs| dirs.config_dir().join("config.toml"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_default_config() {
+        let config = TuiConfig::default();
+        assert_eq!(config.api_url, "https://api.basilica.ai");
+        assert!(matches!(config.theme, ThemePreference::Dark));
+        assert_eq!(config.refresh.balance, 30);
+        assert_eq!(config.refresh.rentals, 10);
+        assert_eq!(config.refresh.metrics, 5);
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = TuiConfig::default();
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+
+        assert!(toml_str.contains("api_url"));
+        assert!(toml_str.contains("basilica.ai"));
+
+        // Deserialize back
+        let parsed: TuiConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.api_url, config.api_url);
+    }
+
+    #[test]
+    fn test_config_load_from_file() {
+        let mut temp = NamedTempFile::new().unwrap();
+        writeln!(
+            temp,
+            r#"
+api_url = "http://localhost:8080"
+theme = "light"
+
+[refresh]
+balance = 60
+rentals = 30
+metrics = 10
+"#
+        )
+        .unwrap();
+
+        let config = TuiConfig::load(Some(temp.path())).unwrap();
+        assert_eq!(config.api_url, "http://localhost:8080");
+        assert!(matches!(config.theme, ThemePreference::Light));
+        assert_eq!(config.refresh.balance, 60);
+        assert_eq!(config.refresh.rentals, 30);
+    }
+
+    #[test]
+    fn test_config_load_nonexistent_returns_default() {
+        let config = TuiConfig::load(Some(Path::new("/nonexistent/path/config.toml"))).unwrap();
+        assert_eq!(config.api_url, "https://api.basilica.ai");
+    }
+
+    #[test]
+    fn test_config_save_and_load() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let original = TuiConfig {
+            api_url: "http://test.local".to_string(),
+            theme: ThemePreference::System,
+            refresh: RefreshConfig {
+                balance: 120,
+                rentals: 60,
+                metrics: 15,
+            },
+            miner: MinerTuiConfig {
+                config_path: Some("/etc/miner.toml".to_string()),
+                metrics_url: Some("http://localhost:9090".to_string()),
+            },
+        };
+
+        original.save(&config_path).unwrap();
+        let loaded = TuiConfig::load(Some(&config_path)).unwrap();
+
+        assert_eq!(loaded.api_url, original.api_url);
+        assert_eq!(loaded.refresh.balance, 120);
+        assert_eq!(
+            loaded.miner.config_path,
+            Some("/etc/miner.toml".to_string())
+        );
+    }
+
+    #[test]
+    fn test_theme_preference_variants() {
+        // Test via full config deserialization
+        let dark_config: TuiConfig = toml::from_str("theme = \"dark\"").unwrap();
+        let light_config: TuiConfig = toml::from_str("theme = \"light\"").unwrap();
+        let system_config: TuiConfig = toml::from_str("theme = \"system\"").unwrap();
+
+        assert!(matches!(dark_config.theme, ThemePreference::Dark));
+        assert!(matches!(light_config.theme, ThemePreference::Light));
+        assert!(matches!(system_config.theme, ThemePreference::System));
+    }
+
+    #[test]
+    fn test_refresh_config_defaults() {
+        let refresh = RefreshConfig::default();
+        assert_eq!(refresh.balance, 30);
+        assert_eq!(refresh.rentals, 10);
+        assert_eq!(refresh.metrics, 5);
+    }
+}

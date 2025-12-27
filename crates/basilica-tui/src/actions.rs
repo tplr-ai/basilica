@@ -217,3 +217,103 @@ pub fn copy_to_clipboard(text: &str) -> Result<()> {
     }
     Ok(())
 }
+
+/// Build SSH command string (for display/logging)
+pub fn build_ssh_command(host: &str, port: u16, user: &str) -> String {
+    format!("ssh -p {} {}@{}", port, user, host)
+}
+
+/// Build SSH exec command string (for display/logging)
+pub fn build_ssh_exec_command(host: &str, port: u16, user: &str, command: &str) -> String {
+    format!("ssh -p {} -t {}@{} '{}'", port, user, host, command)
+}
+
+/// Build SCP command paths
+pub fn build_scp_paths(
+    source: &str,
+    destination: &str,
+    host: &str,
+    user: &str,
+    to_remote: bool,
+) -> (String, String) {
+    if to_remote {
+        (
+            source.to_string(),
+            format!("{}@{}:{}", user, host, destination),
+        )
+    } else {
+        (
+            format!("{}@{}:{}", user, host, source),
+            destination.to_string(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_ssh_command() {
+        let cmd = build_ssh_command("gpu-node.example.com", 22, "root");
+        assert_eq!(cmd, "ssh -p 22 root@gpu-node.example.com");
+
+        let cmd_custom_port = build_ssh_command("10.0.0.5", 2222, "ubuntu");
+        assert_eq!(cmd_custom_port, "ssh -p 2222 ubuntu@10.0.0.5");
+    }
+
+    #[test]
+    fn test_build_ssh_exec_command() {
+        let cmd = build_ssh_exec_command("server.com", 22, "user", "nvidia-smi");
+        assert_eq!(cmd, "ssh -p 22 -t user@server.com 'nvidia-smi'");
+
+        let cmd_complex = build_ssh_exec_command("host", 22, "root", "echo hello && ls -la");
+        assert_eq!(cmd_complex, "ssh -p 22 -t root@host 'echo hello && ls -la'");
+    }
+
+    #[test]
+    fn test_build_scp_paths_to_remote() {
+        let (src, dst) = build_scp_paths(
+            "/local/file.txt",
+            "/remote/path/",
+            "server.com",
+            "user",
+            true,
+        );
+        assert_eq!(src, "/local/file.txt");
+        assert_eq!(dst, "user@server.com:/remote/path/");
+    }
+
+    #[test]
+    fn test_build_scp_paths_from_remote() {
+        let (src, dst) = build_scp_paths(
+            "/remote/file.txt",
+            "/local/path/",
+            "server.com",
+            "user",
+            false,
+        );
+        assert_eq!(src, "user@server.com:/remote/file.txt");
+        assert_eq!(dst, "/local/path/");
+    }
+
+    #[test]
+    fn test_spawn_result_success() {
+        let result = SpawnResult {
+            success: true,
+            message: "Command completed".to_string(),
+        };
+        assert!(result.success);
+        assert_eq!(result.message, "Command completed");
+    }
+
+    #[test]
+    fn test_spawn_result_failure() {
+        let result = SpawnResult {
+            success: false,
+            message: "SSH exited with code: 1".to_string(),
+        };
+        assert!(!result.success);
+        assert!(result.message.contains("exited"));
+    }
+}

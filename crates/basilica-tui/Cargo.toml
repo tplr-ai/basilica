@@ -45,3 +45,6 @@ toml = { workspace = true }
 # Utils
 fastrand = { workspace = true }
 
+[dev-dependencies]
+tempfile = "3.10"
+

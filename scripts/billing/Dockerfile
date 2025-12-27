@@ -27,6 +27,7 @@ RUN sed -i '/crates\/basilica-executor/d' Cargo.toml && \
   sed -i '/crates\/basilica-validator/d' Cargo.toml && \
   sed -i '/crates\/basilica-api/d' Cargo.toml && \
   sed -i '/crates\/basilica-cli/d' Cargo.toml && \
+  sed -i '/crates\/basilica-tui/d' Cargo.toml && \
   sed -i '/crates\/basilica-sdk/d' Cargo.toml && \
   sed -i '/crates\/basilica-sdk-python/d' Cargo.toml && \
   sed -i '/crates\/collateral/d' Cargo.toml && \

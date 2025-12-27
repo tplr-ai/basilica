@@ -823,3 +823,428 @@ pub fn handle_dialog_key(dialog: &mut DialogState, key: crossterm::event::KeyEve
         _ => false,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key_event(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::empty())
+    }
+
+    #[test]
+    fn test_dialog_state_default() {
+        let dialog = DialogState::default();
+        assert!(!dialog.active);
+        assert!(dialog.kind.is_none());
+        assert!(dialog.result.is_none());
+    }
+
+    #[test]
+    fn test_confirm_dialog_creation() {
+        let dialog = DialogState::confirm("Delete?", "Are you sure you want to delete this?");
+        assert!(dialog.active);
+        assert!(matches!(dialog.kind, Some(DialogKind::Confirm { .. })));
+    }
+
+    #[test]
+    fn test_confirm_custom_labels() {
+        let dialog = DialogState::confirm_custom("Delete?", "Are you sure?", "Delete", "Keep");
+        if let Some(DialogKind::Confirm {
+            confirm_label,
+            cancel_label,
+            ..
+        }) = &dialog.kind
+        {
+            assert_eq!(confirm_label, "Delete");
+            assert_eq!(cancel_label, "Keep");
+        } else {
+            panic!("Expected Confirm dialog");
+        }
+    }
+
+    #[test]
+    fn test_input_dialog_creation() {
+        let dialog = DialogState::input("Name", "Enter your name:");
+        assert!(dialog.active);
+        if let Some(DialogKind::Input { title, prompt, .. }) = &dialog.kind {
+            assert_eq!(title, "Name");
+            assert_eq!(prompt, "Enter your name:");
+        } else {
+            panic!("Expected Input dialog");
+        }
+    }
+
+    #[test]
+    fn test_select_dialog_creation() {
+        let items = vec![
+            SelectItem {
+                id: "a".to_string(),
+                label: "Option A".to_string(),
+                description: None,
+                disabled: false,
+            },
+            SelectItem {
+                id: "b".to_string(),
+                label: "Option B".to_string(),
+                description: Some("Description".to_string()),
+                disabled: true,
+            },
+        ];
+        let dialog = DialogState::select("Choose", items);
+        assert!(dialog.active);
+        if let Some(DialogKind::Select {
+            items, selected, ..
+        }) = &dialog.kind
+        {
+            assert_eq!(items.len(), 2);
+            assert_eq!(*selected, 0);
+        } else {
+            panic!("Expected Select dialog");
+        }
+    }
+
+    #[test]
+    fn test_alert_dialog_creation() {
+        let dialog = DialogState::alert("Error", "Something went wrong", AlertLevel::Error);
+        assert!(dialog.active);
+        if let Some(DialogKind::Alert { level, .. }) = &dialog.kind {
+            assert_eq!(*level, AlertLevel::Error);
+        } else {
+            panic!("Expected Alert dialog");
+        }
+    }
+
+    #[test]
+    fn test_form_dialog_creation() {
+        let fields = vec![
+            FormField {
+                id: "name".to_string(),
+                label: "Name".to_string(),
+                value: String::new(),
+                placeholder: Some("Enter name".to_string()),
+                required: true,
+                field_type: FormFieldType::Text,
+            },
+            FormField {
+                id: "pass".to_string(),
+                label: "Password".to_string(),
+                value: String::new(),
+                placeholder: None,
+                required: true,
+                field_type: FormFieldType::Password,
+            },
+        ];
+        let dialog = DialogState::form("Login", fields);
+        assert!(dialog.active);
+        if let Some(DialogKind::Form { fields, .. }) = &dialog.kind {
+            assert_eq!(fields.len(), 2);
+        } else {
+            panic!("Expected Form dialog");
+        }
+    }
+
+    #[test]
+    fn test_dialog_close() {
+        let mut dialog = DialogState::confirm("Test", "Test message");
+        assert!(dialog.active);
+        dialog.close();
+        assert!(!dialog.active);
+        assert!(dialog.kind.is_none());
+    }
+
+    #[test]
+    fn test_dialog_confirm_result() {
+        let mut dialog = DialogState::confirm("Test", "Test message");
+        dialog.confirm_result();
+        assert!(!dialog.active);
+        assert!(matches!(dialog.result, Some(DialogResult::Confirmed)));
+    }
+
+    #[test]
+    fn test_dialog_cancel_result() {
+        let mut dialog = DialogState::confirm("Test", "Test message");
+        dialog.cancel_result();
+        assert!(!dialog.active);
+        assert!(matches!(dialog.result, Some(DialogResult::Cancelled)));
+    }
+
+    #[test]
+    fn test_dialog_take_result() {
+        let mut dialog = DialogState::confirm("Test", "Test message");
+        dialog.confirm_result();
+        let result = dialog.take_result();
+        assert!(matches!(result, Some(DialogResult::Confirmed)));
+        assert!(dialog.result.is_none()); // Consumed
+    }
+
+    #[test]
+    fn test_handle_esc_cancels_dialog() {
+        let mut dialog = DialogState::confirm("Test", "Test message");
+        let handled = handle_dialog_key(&mut dialog, key_event(KeyCode::Esc));
+        assert!(handled);
+        assert!(!dialog.active);
+        assert!(matches!(dialog.result, Some(DialogResult::Cancelled)));
+    }
+
+    #[test]
+    fn test_handle_enter_confirms_dialog() {
+        let mut dialog = DialogState::confirm("Test", "Test message");
+        let handled = handle_dialog_key(&mut dialog, key_event(KeyCode::Enter));
+        assert!(handled);
+        assert!(!dialog.active);
+        assert!(matches!(dialog.result, Some(DialogResult::Confirmed)));
+    }
+
+    #[test]
+    fn test_input_dialog_typing() {
+        let mut dialog = DialogState::input("Name", "Enter name:");
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('H')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('i')));
+
+        if let Some(DialogKind::Input { value, .. }) = &dialog.kind {
+            assert_eq!(value, "Hi");
+        } else {
+            panic!("Expected Input dialog");
+        }
+    }
+
+    #[test]
+    fn test_input_dialog_backspace() {
+        let mut dialog = DialogState::input("Name", "Enter name:");
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('A')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('B')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Backspace));
+
+        if let Some(DialogKind::Input { value, .. }) = &dialog.kind {
+            assert_eq!(value, "A");
+        } else {
+            panic!("Expected Input dialog");
+        }
+    }
+
+    #[test]
+    fn test_input_dialog_submit() {
+        let mut dialog = DialogState::input("Name", "Enter name:");
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('T')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('e')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('s')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('t')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Enter));
+
+        assert!(!dialog.active);
+        if let Some(DialogResult::Input(value)) = &dialog.result {
+            assert_eq!(value, "Test");
+        } else {
+            panic!("Expected Input result");
+        }
+    }
+
+    #[test]
+    fn test_select_dialog_navigation() {
+        let items = vec![
+            SelectItem {
+                id: "a".to_string(),
+                label: "A".to_string(),
+                description: None,
+                disabled: false,
+            },
+            SelectItem {
+                id: "b".to_string(),
+                label: "B".to_string(),
+                description: None,
+                disabled: false,
+            },
+            SelectItem {
+                id: "c".to_string(),
+                label: "C".to_string(),
+                description: None,
+                disabled: false,
+            },
+        ];
+        let mut dialog = DialogState::select("Choose", items);
+
+        // Initial selection is 0
+        if let Some(DialogKind::Select { selected, .. }) = &dialog.kind {
+            assert_eq!(*selected, 0);
+        }
+
+        // Move down
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Down));
+        if let Some(DialogKind::Select { selected, .. }) = &dialog.kind {
+            assert_eq!(*selected, 1);
+        }
+
+        // Move down with j
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('j')));
+        if let Some(DialogKind::Select { selected, .. }) = &dialog.kind {
+            assert_eq!(*selected, 2);
+        }
+
+        // Wrap around
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Down));
+        if let Some(DialogKind::Select { selected, .. }) = &dialog.kind {
+            assert_eq!(*selected, 0);
+        }
+
+        // Move up with k
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('k')));
+        if let Some(DialogKind::Select { selected, .. }) = &dialog.kind {
+            assert_eq!(*selected, 2); // Wraps to end
+        }
+    }
+
+    #[test]
+    fn test_select_dialog_submit() {
+        let items = vec![
+            SelectItem {
+                id: "opt1".to_string(),
+                label: "Option 1".to_string(),
+                description: None,
+                disabled: false,
+            },
+            SelectItem {
+                id: "opt2".to_string(),
+                label: "Option 2".to_string(),
+                description: None,
+                disabled: false,
+            },
+        ];
+        let mut dialog = DialogState::select("Choose", items);
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Down));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Enter));
+
+        assert!(!dialog.active);
+        if let Some(DialogResult::Selected(id)) = &dialog.result {
+            assert_eq!(id, "opt2");
+        } else {
+            panic!("Expected Selected result");
+        }
+    }
+
+    #[test]
+    fn test_select_disabled_item_not_selectable() {
+        let items = vec![SelectItem {
+            id: "disabled".to_string(),
+            label: "Disabled".to_string(),
+            description: None,
+            disabled: true,
+        }];
+        let mut dialog = DialogState::select("Choose", items);
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Enter));
+
+        // Should still be active because item is disabled
+        assert!(dialog.active);
+    }
+
+    #[test]
+    fn test_form_dialog_tab_navigation() {
+        let fields = vec![
+            FormField {
+                id: "f1".to_string(),
+                label: "Field 1".to_string(),
+                value: String::new(),
+                placeholder: None,
+                required: false,
+                field_type: FormFieldType::Text,
+            },
+            FormField {
+                id: "f2".to_string(),
+                label: "Field 2".to_string(),
+                value: String::new(),
+                placeholder: None,
+                required: false,
+                field_type: FormFieldType::Text,
+            },
+        ];
+        let mut dialog = DialogState::form("Form", fields);
+
+        if let Some(DialogKind::Form { selected_field, .. }) = &dialog.kind {
+            assert_eq!(*selected_field, 0);
+        }
+
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Tab));
+        if let Some(DialogKind::Form { selected_field, .. }) = &dialog.kind {
+            assert_eq!(*selected_field, 1);
+        }
+
+        // Tab wraps
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Tab));
+        if let Some(DialogKind::Form { selected_field, .. }) = &dialog.kind {
+            assert_eq!(*selected_field, 0);
+        }
+
+        // BackTab
+        handle_dialog_key(&mut dialog, key_event(KeyCode::BackTab));
+        if let Some(DialogKind::Form { selected_field, .. }) = &dialog.kind {
+            assert_eq!(*selected_field, 1);
+        }
+    }
+
+    #[test]
+    fn test_form_dialog_submit() {
+        let fields = vec![
+            FormField {
+                id: "name".to_string(),
+                label: "Name".to_string(),
+                value: String::new(),
+                placeholder: None,
+                required: false,
+                field_type: FormFieldType::Text,
+            },
+            FormField {
+                id: "email".to_string(),
+                label: "Email".to_string(),
+                value: String::new(),
+                placeholder: None,
+                required: false,
+                field_type: FormFieldType::Text,
+            },
+        ];
+        let mut dialog = DialogState::form("Form", fields);
+
+        // Type in first field
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('J')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('o')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('h')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('n')));
+
+        // Move to second field
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Tab));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('a')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('@')));
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Char('b')));
+
+        // Submit
+        handle_dialog_key(&mut dialog, key_event(KeyCode::Enter));
+
+        assert!(!dialog.active);
+        if let Some(DialogResult::Form(values)) = &dialog.result {
+            assert_eq!(values.len(), 2);
+            assert_eq!(values[0], ("name".to_string(), "John".to_string()));
+            assert_eq!(values[1], ("email".to_string(), "a@b".to_string()));
+        } else {
+            panic!("Expected Form result");
+        }
+    }
+
+    #[test]
+    fn test_inactive_dialog_ignores_keys() {
+        let mut dialog = DialogState::default();
+        let handled = handle_dialog_key(&mut dialog, key_event(KeyCode::Enter));
+        assert!(!handled);
+    }
+
+    #[test]
+    fn test_centered_rect() {
+        let area = Rect::new(0, 0, 100, 50);
+        let centered = centered_rect(60, 40, area);
+
+        // Should be roughly centered (percentage-based so not exact)
+        assert!(centered.x > 0);
+        assert!(centered.y > 0);
+        assert!(centered.width < area.width);
+        assert!(centered.height < area.height);
+    }
+}
