@@ -180,6 +180,84 @@ impl SimplePersistence {
             gpu_cc_enabled_count: row.get::<i64, _>("gpu_cc_enabled_count") as u64,
         })
     }
+
+    /// Get all TEE-verified nodes across all miners
+    pub async fn get_all_tee_verified_nodes(&self) -> Result<Vec<String>, anyhow::Error> {
+        let rows = sqlx::query(
+            r#"
+            SELECT node_id
+            FROM node_tee_status
+            WHERE tee_verified = 1
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.iter().map(|r| r.get("node_id")).collect())
+    }
+
+    /// Get TEE status for a node by node_id only (searches across all miners)
+    pub async fn get_node_tee_status_by_node_id(
+        &self,
+        node_id: &str,
+    ) -> Result<Option<NodeTeeStatusRow>, anyhow::Error> {
+        let row = sqlx::query(
+            r#"
+            SELECT miner_uid, node_id, tdx_verified, tdx_quote_valid, tdx_mrtd_matches,
+                   tdx_mrtd_hex, gpu_cc_enabled, gpu_cc_attestation_valid, gpu_cc_model,
+                   gpu_cc_uuid, tee_verified, last_verification_at, verification_error
+            FROM node_tee_status
+            WHERE node_id = ?
+            "#,
+        )
+        .bind(node_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            Ok(Some(NodeTeeStatusRow {
+                miner_uid: row.get::<i32, _>("miner_uid") as u16,
+                node_id: row.get("node_id"),
+                tdx_verified: row.get("tdx_verified"),
+                tdx_quote_valid: row.get("tdx_quote_valid"),
+                tdx_mrtd_matches: row.get("tdx_mrtd_matches"),
+                tdx_mrtd_hex: row.get("tdx_mrtd_hex"),
+                gpu_cc_enabled: row.get("gpu_cc_enabled"),
+                gpu_cc_attestation_valid: row.get("gpu_cc_attestation_valid"),
+                gpu_cc_model: row.get("gpu_cc_model"),
+                gpu_cc_uuid: row.get("gpu_cc_uuid"),
+                tee_verified: row.get("tee_verified"),
+                last_verification_at: row.get("last_verification_at"),
+                verification_error: row.get("verification_error"),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Get count of nodes matching TEE requirements
+    pub async fn count_nodes_matching_tee_requirements(
+        &self,
+        require_tdx: bool,
+        require_gpu_cc: bool,
+        expected_mrtd_hex: Option<&str>,
+    ) -> Result<u64, anyhow::Error> {
+        let mut query = String::from("SELECT COUNT(*) as count FROM node_tee_status WHERE 1=1");
+
+        if require_tdx {
+            query.push_str(" AND tdx_verified = 1");
+        }
+        if require_gpu_cc {
+            query.push_str(" AND gpu_cc_enabled = 1");
+        }
+        if let Some(mrtd) = expected_mrtd_hex {
+            query.push_str(&format!(" AND tdx_mrtd_hex = '{}'", mrtd));
+        }
+
+        let row = sqlx::query(&query).fetch_one(&self.pool).await?;
+
+        Ok(row.get::<i64, _>("count") as u64)
+    }
 }
 
 /// Summary of TEE verification status across all nodes

@@ -1211,7 +1211,11 @@ impl ValidationNode {
                     "[EVAL_FLOW] Performing TEE verification"
                 );
 
-                match tee_validator.verify_full(ssh_details).await {
+                let tee_start = Instant::now();
+                let tee_result_outcome = tee_validator.verify_full(ssh_details).await;
+                let tee_duration = tee_start.elapsed();
+
+                match tee_result_outcome {
                     Ok(tee_result) => {
                         let status = TeeVerificationStatus {
                             verified: tee_result.tee_verified,
@@ -1232,16 +1236,29 @@ impl ValidationNode {
                             error: None,
                         };
 
+                        // Record TEE metrics with accurate timing
+                        if let Some(ref metrics) = self.metrics {
+                            metrics.prometheus().record_tee_verification(
+                                &node_info.id.to_string(),
+                                status.verified,
+                                status.tdx_verified,
+                                status.gpu_cc_mode_enabled,
+                                tee_duration,
+                            );
+                        }
+
                         if tee_result.tee_verified {
                             info!(
                                 miner_uid = miner_uid,
                                 node_id = %node_info.id,
+                                duration_ms = tee_duration.as_millis(),
                                 "[EVAL_FLOW] TEE verification passed"
                             );
                         } else {
                             warn!(
                                 miner_uid = miner_uid,
                                 node_id = %node_info.id,
+                                duration_ms = tee_duration.as_millis(),
                                 "[EVAL_FLOW] TEE verification failed"
                             );
                         }
@@ -1249,10 +1266,22 @@ impl ValidationNode {
                         Some(status)
                     }
                     Err(e) => {
+                        // Record failed TEE verification
+                        if let Some(ref metrics) = self.metrics {
+                            metrics.prometheus().record_tee_verification(
+                                &node_info.id.to_string(),
+                                false,
+                                false,
+                                false,
+                                tee_duration,
+                            );
+                        }
+
                         warn!(
                             miner_uid = miner_uid,
                             node_id = %node_info.id,
                             error = %e,
+                            duration_ms = tee_duration.as_millis(),
                             "[EVAL_FLOW] TEE verification error"
                         );
                         Some(TeeVerificationStatus {

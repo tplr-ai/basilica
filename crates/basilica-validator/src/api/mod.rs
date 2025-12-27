@@ -143,13 +143,14 @@ impl ApiHandler {
             .route("/miners/:miner_id/health", get(routes::get_miner_health))
             .route("/miners/:miner_id/nodes", get(routes::list_miner_nodes))
             .route("/health", get(routes::health_check))
-            // new
+            // GPU profiles
             .route("/gpu-profiles", get(routes::list_gpu_profiles))
             .route(
                 "/gpu-profiles/:category",
                 get(routes::list_gpu_profiles_by_category),
             )
             .route("/gpu-categories", get(routes::list_gpu_categories))
+            // Verification
             .route(
                 "/verification/active",
                 get(routes::list_active_verifications),
@@ -158,9 +159,18 @@ impl ApiHandler {
                 "/verification/results/:miner_id",
                 get(routes::get_verification_results),
             )
+            // Config
             .route("/config", get(routes::get_config))
             .route("/config/verification", get(routes::get_verification_config))
             .route("/config/emission", get(routes::get_emission_config))
+            // TEE (Trusted Execution Environment)
+            .route("/tee/status", get(routes::tee::get_tee_status_summary))
+            .route("/tee/nodes", get(routes::tee::list_tee_verified_nodes))
+            .route("/tee/nodes/:node_id", get(routes::tee::get_node_tee_status))
+            .route(
+                "/tee/availability",
+                post(routes::tee::check_tee_availability),
+            )
             .layer(TraceLayer::new_for_http())
             .layer(CorsLayer::permissive())
             .with_state(self.state.clone())
