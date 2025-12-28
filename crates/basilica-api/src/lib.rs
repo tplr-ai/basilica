@@ -1,15 +1,62 @@
-//! # Basilica API Gateway
+//! # basilica-api
 //!
-//! A smart HTTP gateway that provides centralized access to a single Basilica validator.
+//! Smart HTTP gateway for Basilica validator network with load balancing and caching.
 //!
-//! ## Features
+//! This crate provides an HTTP gateway that enables easy access to the Basilica network.
+//! It handles authentication, load balancing, caching, and request aggregation for
+//! optimal performance and reliability.
 //!
-//! - **Direct Connection**: Direct connection to a specific validator by hotkey configured in settings
-//! - **Health Monitoring**: Continuous health checking of the connected validator
+//! ## Overview
+//!
+//! `basilica-api` provides:
+//!
+//! - **Load Balancing**: Smart distribution of requests across validators
+//! - **Request Aggregation**: Combine similar requests for efficiency
 //! - **Authentication**: API key and JWT-based authentication
-//! - **Rate Limiting**: Configurable rate limits with different tiers
-//! - **Caching**: Response caching with in-memory or Redis backends
-//! - **OpenAPI Documentation**: Auto-generated API documentation
+//! - **Rate Limiting**: Protect backends from overload with configurable limits
+//! - **Caching**: Response caching for improved latency
+//! - **WebSocket Support**: Real-time streaming capabilities
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use basilica_api::{Config, Server};
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Load configuration
+//!     let config = Config::load("api.toml")?;
+//!     
+//!     // Create and start the API server
+//!     let server = Server::new(config).await?;
+//!     server.run().await?;
+//!     
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Feature Flags
+//!
+//! - `server` - Enable HTTP server functionality (default)
+//! - `client` - Enable HTTP client functionality
+//! - `utoipa` - Enable OpenAPI documentation generation
+//! - `full` - Enable all features
+//!
+//! ## API Endpoints
+//!
+//! | Endpoint | Method | Description |
+//! |----------|--------|-------------|
+//! | `/health` | GET | Health check |
+//! | `/miners` | GET | List available miners |
+//! | `/rentals` | POST | Create a GPU rental |
+//! | `/rentals/{id}` | GET | Get rental status |
+//! | `/ws` | WS | WebSocket for streaming |
+//!
+//! ## Related Crates
+//!
+//! - [`basilica-sdk`](https://crates.io/crates/basilica-sdk) - Client SDK
+//! - [`basilica-validator`](https://crates.io/crates/basilica-validator) - Validator implementation
+//! - [`basilica-billing`](https://crates.io/crates/basilica-billing) - Billing service
 
 // Server modules (always available for backward compatibility)
 pub mod api;

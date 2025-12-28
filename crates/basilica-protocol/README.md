@@ -1,82 +1,93 @@
-# Protocol Crate
+# basilica-protocol
 
-This crate provides the gRPC protocol definitions and generated Rust code for all inter-service communication in the Basilca network.
+gRPC protocol definitions and message types for Basilica network communication.
+
+[![Crates.io](https://img.shields.io/crates/v/basilica-protocol.svg)](https://crates.io/crates/basilica-protocol)
+[![Documentation](https://docs.rs/basilica-protocol/badge.svg)](https://docs.rs/basilica-protocol)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+[Documentation](https://docs.rs/basilica-protocol) | [Repository](https://github.com/one-covenant/basilica) | [Website](https://basilica.ai)
 
 ## Overview
 
-The protocol crate defines three main services that support the validator-miner-node interaction flow:
+`basilica-protocol` contains the Protocol Buffer definitions and generated Rust code for communication between Basilica network components. It defines the gRPC services and message types used for validator-miner communication.
 
-1. **MinerDiscovery** - Validator ↔ Miner coordination (steps 3-4 of interaction flow)
-2. **NodeControl** - Direct Validator ↔ Node communication (step 5)
-3. **ValidatorExternalApi** - External services → Validator API for capacity rental
+## Installation
 
-## Building
+Add to your `Cargo.toml`:
 
-The protobuf files are automatically compiled during the build process:
-
-```bash
-cargo build -p protocol
+```toml
+[dependencies]
+basilica-protocol = "0.1"
 ```
 
-Generated code is placed in `src/gen/` and included in the crate.
+## Features
 
-## Usage
+- **MinerDiscovery Service**: Validator authentication and node discovery
+- **Strongly Typed Messages**: All protocol messages are type-safe Rust structs
+- **Tonic Integration**: Built on the tonic gRPC framework
 
-### Client Example
+## Feature Flags
 
-```rust
-use protocol::node_control::node_control_client::NodeControlClient;
-use protocol::helpers;
+- `client` - Enable client-side gRPC stubs
+- `server` - Enable server-side gRPC stubs
 
-let mut client = NodeControlClient::connect("http://[::1]:50051").await?;
+## Protocol Services
 
-// Add authentication
-let request = helpers::add_auth_metadata(
-    Request::new(request_data),
-    "hotkey",
-    "signature"
-);
+### MinerDiscovery
 
-let response = client.health_check(request).await?;
-```
-
-### Server Example
-
-```rust
-use protocol::node_control::node_control_server::{NodeControl, NodeControlServer};
-
-#[tonic::async_trait]
-impl NodeControl for MyService {
-    // Implement service methods
+```protobuf
+service MinerDiscovery {
+    // Validator authenticates with a miner
+    rpc AuthenticateValidator(AuthRequest) returns (AuthResponse);
+    
+    // Stream available GPU nodes from the miner
+    rpc DiscoverNodes(NodeDiscoveryRequest) returns (stream NodeInfo);
 }
-
-Server::builder()
-    .add_service(NodeControlServer::new(MyService))
-    .serve(addr)
-    .await?;
 ```
 
-## Helper Functions
+## Example
 
-The crate provides utility functions in the `utils` and `helpers` modules:
+```rust
+use basilica_protocol::miner_discovery_client::MinerDiscoveryClient;
+use basilica_protocol::AuthRequest;
 
-- `validate_gpu_spec()` - Validate GPU specifications
-- `validate_container_spec()` - Validate container configurations
-- `current_timestamp()` - Create protocol timestamps
-- `extract_metadata()` - Extract gRPC metadata
-- `add_auth_metadata()` - Add authentication to requests
-- `verify_protocol_version()` - Check protocol compatibility
-
-## Security
-
-All gRPC communication should use mTLS in production. The `helpers::create_tls_config()` function provides a starting point for TLS configuration.
-
-## Testing
-
-Run tests with:
-
-```bash
-cargo test -p protocol
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Connect to a miner's gRPC endpoint
+    let mut client = MinerDiscoveryClient::connect("http://miner:50051").await?;
+    
+    // Authenticate as a validator
+    let request = AuthRequest {
+        validator_hotkey: "5GrwvaEF...".to_string(),
+        signature: vec![/* Sr25519 signature */],
+        // ...
+    };
+    
+    let response = client.authenticate_validator(request).await?;
+    println!("Authenticated: {:?}", response);
+    
+    Ok(())
+}
 ```
 
-See `tests/integration_test.rs` for comprehensive examples of using the protocol types and services.
+## Building from Proto
+
+The protocol buffers are compiled at build time using `tonic-build`. The proto files are located in `proto/`:
+
+```
+proto/
+├── common.proto        # Shared message types
+├── miner.proto         # Miner service definitions
+└── billing.proto       # Billing message types
+```
+
+## Related Crates
+
+- [`basilica-common`](https://crates.io/crates/basilica-common) - Core shared types
+- [`basilica-validator`](https://crates.io/crates/basilica-validator) - Validator implementation
+- [`basilica-miner`](https://crates.io/crates/basilica-miner) - Miner implementation
+
+## License
+
+MIT License - see [LICENSE](LICENSE) for details.

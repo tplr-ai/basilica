@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     libpython3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install rustfmt (required by crabtensor build)
+# Install rustfmt (required by some dependencies)
 RUN rustup component add rustfmt
 
 # Set working directory

@@ -439,7 +439,7 @@ impl ReconciliationService {
     /// HIGH-08: Monitor cold wallet balance for operational visibility
     async fn monitor_cold_wallet(&self) -> Result<()> {
         // Convert SS58 address to account hex for balance query
-        use subxt::ext::sp_core::crypto::Ss58Codec;
+        use sp_core::crypto::Ss58Codec;
 
         let coldwallet_public =
             sp_core::sr25519::Public::from_ss58check(&self.config.coldwallet_address_ss58)

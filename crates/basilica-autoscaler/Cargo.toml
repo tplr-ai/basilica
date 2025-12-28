@@ -2,9 +2,17 @@
 name = "basilica-autoscaler"
 version = "0.1.0"
 edition = "2021"
+authors = ["Basilica Team <team@basilica.ai>"]
 description = "Basilica GPU node autoscaler: dynamic scaling of K3s GPU nodes"
-authors = ["Basilica Team"]
 license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-autoscaler"
+readme = "README.md"
+keywords = ["kubernetes", "autoscaling", "gpu", "k3s", "compute"]
+categories = ["network-programming", "asynchronous"]
+rust-version = "1.70"
+include = ["src/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [[bin]]
 name = "basilica-autoscaler"
@@ -42,7 +50,7 @@ prometheus = "0.13"
 tokio-util = { version = "0.7", features = ["rt"] }
 
 # Internal crate
-basilica-common = { path = "../basilica-common" }
+basilica-common = { version = "0.1", path = "../basilica-common" }
 
 # Temp file for SSH key management
 tempfile = { workspace = true }

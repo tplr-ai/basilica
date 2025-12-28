@@ -1,7 +1,69 @@
-//! # Validator Library
+//! # basilica-validator
 //!
-//! Core library for the Basilica validator component that performs verification,
-//! scoring, and participates in the Bittensor network.
+//! Basilica Validator - Bittensor neuron for GPU hardware verification and miner scoring.
+//!
+//! This crate provides the core validator functionality for the Basilica network.
+//! Validators verify GPU hardware capabilities, score miners, and participate in
+//! the Bittensor consensus mechanism.
+//!
+//! ## Overview
+//!
+//! The validator uses SSH-based direct verification where it connects directly to
+//! miners' GPU nodes, eliminating intermediary trust requirements while maintaining
+//! security through cryptographic verification.
+//!
+//! ## Key Features
+//!
+//! - **Hardware Verification**: Binary validation system for secure GPU verification
+//! - **SSH-Based Verification**: Direct SSH access to miner nodes for trustless validation
+//! - **Bittensor Integration**: Native participation in Bittensor consensus with weight allocation
+//! - **GPU Profiling**: Automatic detection and profiling of GPU capabilities
+//! - **REST API**: External access to validator data and status
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use basilica_validator::{ValidatorConfig, ValidatorService};
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Load configuration
+//!     let config = ValidatorConfig::load("validator.toml")?;
+//!     
+//!     // Create and start the validator service
+//!     let service = ValidatorService::new(config).await?;
+//!     service.run().await?;
+//!     
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Feature Flags
+//!
+//! - `client` - Enable HTTP client for external services (default)
+//! - `test-utils` - Enable test utilities
+//! - `cli` - Enable CLI support with clap derives
+//!
+//! ## Architecture
+//!
+//! ```text
+//! ┌─────────────────┐     gRPC      ┌─────────────┐     SSH      ┌──────────┐
+//! │    Validator    │──────────────▶│    Miner    │─────────────▶│ GPU Node │
+//! │                 │◀──────────────│             │              │          │
+//! └─────────────────┘               └─────────────┘              └──────────┘
+//!         │
+//!         ▼
+//! ┌─────────────────┐
+//! │   Bittensor     │
+//! │   (Weights)     │
+//! └─────────────────┘
+//! ```
+//!
+//! ## Related Crates
+//!
+//! - [`basilica-common`](https://crates.io/crates/basilica-common) - Core shared types
+//! - [`basilica-protocol`](https://crates.io/crates/basilica-protocol) - gRPC definitions
+//! - [`basilica-miner`](https://crates.io/crates/basilica-miner) - Miner implementation
 
 pub mod agent_installer;
 pub mod api;

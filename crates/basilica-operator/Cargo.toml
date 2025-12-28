@@ -2,7 +2,17 @@
 name = "basilica-operator"
 version = "0.1.0"
 edition = "2021"
-description = "Basilica K3s operator: CRDs and controllers for Jobs and Rentals"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Basilica Kubernetes operator: CRDs and controllers for GPU workload orchestration"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-operator"
+readme = "README.md"
+keywords = ["kubernetes", "operator", "gpu", "k3s", "crd"]
+categories = ["network-programming", "asynchronous"]
+rust-version = "1.70"
+include = ["src/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [dependencies]
 serde = { workspace = true }

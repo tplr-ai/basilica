@@ -260,7 +260,7 @@ impl GpuScoringEngine {
         &self,
         epoch_timestamp: Option<DateTime<Utc>>,
         cutoff_hours: u32,
-        metagraph: &bittensor::Metagraph<bittensor::AccountId>,
+        metagraph: &bittensor::Metagraph,
     ) -> Result<HashMap<String, Vec<(MinerUid, f64)>>> {
         let all_profiles = self.gpu_profile_repo.get_all_gpu_profiles().await?;
         let cutoff_time = Utc::now() - chrono::Duration::hours(cutoff_hours as i64);

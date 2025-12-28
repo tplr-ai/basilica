@@ -15,7 +15,7 @@ use anyhow::Result;
 use basilica_common::config::BittensorConfig;
 use basilica_common::identity::{MinerUid, NodeId};
 use basilica_common::{KeyValueStorage, MemoryStorage};
-use bittensor::{AccountId, Metagraph, NormalizedWeight, Service as BittensorService};
+use bittensor::{Metagraph, NormalizedWeight, Service as BittensorService};
 use chrono::{DateTime, Utc};
 use sqlx::Row;
 use std::collections::HashMap;
@@ -915,7 +915,7 @@ impl WeightSetter {
     }
 
     /// Get current metagraph from Bittensor network with retry logic
-    async fn get_metagraph(&self) -> Result<Metagraph<AccountId>> {
+    async fn get_metagraph(&self) -> Result<Metagraph> {
         const MAX_RETRIES: u32 = 3;
         const BASE_DELAY: Duration = Duration::from_secs(2);
 

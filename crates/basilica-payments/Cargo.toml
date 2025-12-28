@@ -2,6 +2,17 @@
 name = "basilica-payments"
 version = "0.1.0"
 edition = "2021"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Payment processing service for Basilica GPU marketplace with TAO integration"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-payments"
+readme = "README.md"
+keywords = ["bittensor", "payments", "gpu", "tao", "blockchain"]
+categories = ["network-programming", "cryptography"]
+rust-version = "1.70"
+include = ["src/**/*", "migrations/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [[bin]]
 name = "basilica-payments"
@@ -38,12 +49,15 @@ metrics-exporter-prometheus = { workspace = true }
 sp-core = { workspace = true }
 hex = { workspace = true }
 subxt = { workspace = true }
+subxt-signer = { workspace = true }
 zeroize = { workspace = true }
 
 [dependencies.basilica-protocol]
+version = "0.1"
 path = "../basilica-protocol"
 
 [dependencies.basilica-common]
+version = "0.1"
 path = "../basilica-common"
 features = ["postgres"]
 

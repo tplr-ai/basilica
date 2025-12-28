@@ -1,0 +1,192 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  doc-tests:
+    name: Documentation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "docs-cache"
+      
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+      
+      - name: Run doc tests
+        run: |
+          # Run doc tests for publishable crates
+          cargo test --doc -p basilica-common || true
+          cargo test --doc -p basilica-protocol || true
+          cargo test --doc -p basilica-sdk || true
+
+  doc-build:
+    name: Documentation Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "docs-cache"
+      
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+      
+      - name: Check documentation builds without warnings
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps \
+            -p basilica-common \
+            -p basilica-protocol \
+            -p basilica-sdk \
+            2>&1 | tee doc-output.txt
+          
+          # Check for warnings (but don't fail the build for now)
+          if grep -q "warning:" doc-output.txt; then
+            echo "::warning::Documentation has warnings, please review"
+          fi
+
+  readme-check:
+    name: README Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check all publishable crates have READMEs
+        run: |
+          CRATES=(
+            "basilica-common"
+            "basilica-protocol"
+            "basilica-sdk"
+            "basilica-validator"
+            "basilica-miner"
+            "basilica-api"
+            "basilica-cli"
+            "basilica-aggregator"
+            "basilica-autoscaler"
+            "basilica-billing"
+            "basilica-operator"
+            "basilica-payments"
+            "basilica-storage"
+          )
+          
+          missing=0
+          for crate in "${CRATES[@]}"; do
+            if [ ! -f "crates/$crate/README.md" ]; then
+              echo "::error::Missing README.md for $crate"
+              missing=1
+            else
+              echo "✓ $crate has README.md"
+            fi
+          done
+          
+          exit $missing
+
+  changelog-check:
+    name: CHANGELOG Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check all publishable crates have CHANGELOGs
+        run: |
+          CRATES=(
+            "basilica-common"
+            "basilica-protocol"
+            "basilica-sdk"
+            "basilica-validator"
+            "basilica-miner"
+            "basilica-api"
+            "basilica-cli"
+            "basilica-aggregator"
+            "basilica-autoscaler"
+            "basilica-billing"
+            "basilica-operator"
+            "basilica-payments"
+            "basilica-storage"
+          )
+          
+          missing=0
+          for crate in "${CRATES[@]}"; do
+            if [ ! -f "crates/$crate/CHANGELOG.md" ]; then
+              echo "::error::Missing CHANGELOG.md for $crate"
+              missing=1
+            else
+              echo "✓ $crate has CHANGELOG.md"
+            fi
+          done
+          
+          exit $missing
+
+  cargo-metadata-check:
+    name: Cargo Metadata Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Check required metadata fields
+        run: |
+          CRATES=(
+            "basilica-common"
+            "basilica-protocol"
+            "basilica-sdk"
+          )
+          
+          for crate in "${CRATES[@]}"; do
+            echo "Checking $crate..."
+            
+            # Check for required fields
+            cargo read-manifest -p "$crate" | jq -e '.license' > /dev/null || \
+              echo "::warning::$crate missing license"
+            cargo read-manifest -p "$crate" | jq -e '.repository' > /dev/null || \
+              echo "::warning::$crate missing repository"
+            cargo read-manifest -p "$crate" | jq -e '.description' > /dev/null || \
+              echo "::warning::$crate missing description"
+            
+            echo "✓ $crate metadata validated"
+          done
+

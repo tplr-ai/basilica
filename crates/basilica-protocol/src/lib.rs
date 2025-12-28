@@ -1,27 +1,38 @@
-//! # Protocol
+//! # basilica-protocol
 //!
-//! gRPC protocol definitions and message types for Basilca communication.
-//! This crate provides typed interfaces for all inter-service communication.
+//! gRPC protocol definitions and message types for Basilica network communication.
+//!
+//! This crate provides the Protocol Buffer definitions and generated Rust code for
+//! communication between Basilica network components. It defines the gRPC services
+//! and message types used for validator-miner communication, billing, and payments.
+//!
+//! ## Overview
+//!
+//! `basilica-protocol` contains:
+//!
+//! - **MinerDiscovery Service**: Validator authentication and node discovery
+//! - **ValidatorExternalApi**: External access to validator functionality
+//! - **Billing Service**: Credit management and usage tracking
+//! - **Payments Service**: TAO deposit and wallet management
 //!
 //! ## Services
 //!
 //! ### MinerDiscovery
+//!
 //! Service for Validator ↔ Miner coordination. Allows validators to:
 //! - Authenticate with miners using Bittensor signatures
 //! - Discover available nodes with resource information
 //! - Get node access credentials
 //!
 //! ### ValidatorExternalApi
+//!
 //! Service for external → Validator communication. Allows external services to:
 //! - List available capacity
 //! - Rent GPU capacity with container specifications
 //! - Manage rentals
 //! - Stream logs
 //!
-//! ## Usage
-//!
-//! The protocol crate provides generated gRPC service definitions and message types.
-//! See the generated code in `src/gen/` for the exact structure of all types.
+//! ## Quick Start
 //!
 //! ### Client Example
 //!
@@ -30,17 +41,46 @@
 //! use basilica_protocol::miner_discovery::DiscoverNodesRequest;
 //! use tonic::Request;
 //!
-//! let mut client = MinerDiscoveryClient::connect("http://[::1]:50051").await?;
-//! let request = Request::new(DiscoverNodesRequest {
-//!     validator_hotkey: "validator-key".to_string(),
-//!     signature: "signature".to_string(),
-//!     nonce: "nonce".to_string(),
-//!     validator_public_key: "ssh-rsa ...".to_string(),
-//!     timestamp: Some(current_timestamp()),
-//!     target_miner_hotkey: "miner-key".to_string(),
-//! });
-//! let response = client.discover_nodes(request).await?;
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let mut client = MinerDiscoveryClient::connect("http://miner:50051").await?;
+//!     
+//!     let request = Request::new(DiscoverNodesRequest {
+//!         validator_hotkey: "5GrwvaEF...".to_string(),
+//!         signature: "signature".to_string(),
+//!         nonce: "nonce".to_string(),
+//!         validator_public_key: "ssh-ed25519 ...".to_string(),
+//!         timestamp: Some(utils::current_timestamp()),
+//!         target_miner_hotkey: "5FHneW46...".to_string(),
+//!     });
+//!     
+//!     let response = client.discover_nodes(request).await?;
+//!     Ok(())
+//! }
 //! ```
+//!
+//! ## Feature Flags
+//!
+//! - `client` - Enable client-side gRPC stubs
+//! - `server` - Enable server-side gRPC stubs
+//!
+//! ## Module Organization
+//!
+//! | Module | Description |
+//! |--------|-------------|
+//! | [`common`] | Shared message types across services |
+//! | [`miner_discovery`] | Validator ↔ Miner coordination |
+//! | [`validator_api`] | External validator API |
+//! | [`billing`] | Billing and credit management |
+//! | [`payments`] | Payment processing |
+//! | [`utils`] | Protocol utility functions |
+//! | [`errors`] | Protocol-specific error types |
+//!
+//! ## Related Crates
+//!
+//! - [`basilica-common`](https://crates.io/crates/basilica-common) - Core shared types
+//! - [`basilica-validator`](https://crates.io/crates/basilica-validator) - Validator implementation
+//! - [`basilica-miner`](https://crates.io/crates/basilica-miner) - Miner implementation
 
 // Create proper module hierarchy for generated protobuf code
 pub mod basilca {

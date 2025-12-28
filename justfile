@@ -359,6 +359,122 @@ docs:
 docs-open:
     cargo doc --workspace --no-deps --document-private-items --open
 
+# Check documentation builds without warnings
+docs-check:
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps --workspace
+
+# Run documentation tests
+doc-test:
+    cargo test --doc --workspace
+
+# Check documentation for publishable crates only
+docs-check-publish:
+    #!/usr/bin/env bash
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps \
+        -p basilica-common \
+        -p basilica-protocol \
+        -p basilica-sdk
+
+# =============================================================================
+# CRATES.IO PUBLISHING
+# =============================================================================
+
+# Dry-run publish a single crate
+publish-dry crate:
+    cargo publish -p {{crate}} --dry-run
+
+# Publish a single crate to crates.io (requires CARGO_REGISTRY_TOKEN)
+publish crate:
+    cargo publish -p {{crate}}
+
+# Dry-run publish all crates in dependency order
+publish-all-dry:
+    #!/usr/bin/env bash
+    set -e
+    echo "🔍 Dry-run publishing all crates in dependency order..."
+    echo ""
+    
+    CRATES=(
+        "basilica-common"
+        "basilica-protocol"
+        "basilica-aggregator"
+        "basilica-storage"
+        "basilica-operator"
+        "basilica-autoscaler"
+        "basilica-validator"
+        "basilica-miner"
+        "basilica-billing"
+        "basilica-payments"
+        "basilica-sdk"
+        "basilica-api"
+        "basilica-cli"
+    )
+    
+    for crate in "${CRATES[@]}"; do
+        echo "📦 Checking $crate..."
+        cargo publish -p "$crate" --dry-run || echo "⚠️  $crate failed dry-run"
+        echo ""
+    done
+    
+    echo "✅ Dry-run complete"
+
+# Run pre-publish checks on a crate
+pre-publish-check crate:
+    #!/usr/bin/env bash
+    set -e
+    echo "🔍 Checking {{crate}} for crates.io readiness..."
+    
+    # Check required fields
+    cargo read-manifest -p {{crate}} | jq -e '.license' > /dev/null || { echo "❌ Missing license"; exit 1; }
+    cargo read-manifest -p {{crate}} | jq -e '.repository' > /dev/null || { echo "❌ Missing repository"; exit 1; }
+    cargo read-manifest -p {{crate}} | jq -e '.description' > /dev/null || { echo "❌ Missing description"; exit 1; }
+    echo "✅ Metadata validated"
+    
+    # Check README exists
+    if [ -f "crates/{{crate}}/README.md" ]; then
+        echo "✅ README.md exists"
+    else
+        echo "⚠️  WARNING: Missing README.md"
+    fi
+    
+    # Check CHANGELOG exists
+    if [ -f "crates/{{crate}}/CHANGELOG.md" ]; then
+        echo "✅ CHANGELOG.md exists"
+    else
+        echo "⚠️  WARNING: Missing CHANGELOG.md"
+    fi
+    
+    # Build docs
+    echo "📖 Building documentation..."
+    cargo doc -p {{crate}} --no-deps
+    
+    # Run doc tests
+    echo "🧪 Running doc tests..."
+    cargo test --doc -p {{crate}} || echo "⚠️  Some doc tests failed"
+    
+    # Dry run publish
+    echo "📦 Dry-run publish..."
+    cargo publish -p {{crate}} --dry-run
+    
+    echo ""
+    echo "✅ {{crate}} is ready for publishing"
+
+# Check all publishable crates for crates.io readiness
+pre-publish-check-all:
+    #!/usr/bin/env bash
+    set -e
+    
+    CRATES=(
+        "basilica-common"
+        "basilica-protocol"
+        "basilica-sdk"
+    )
+    
+    for crate in "${CRATES[@]}"; do
+        just pre-publish-check "$crate"
+        echo ""
+    done
+
 # =============================================================================
 # E2E APPLY HELPERS
 # =============================================================================

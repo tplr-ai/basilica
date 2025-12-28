@@ -1,22 +1,69 @@
-//! # Common Basilica
+//! # basilica-common
 //!
-//! Core shared types, error definitions, and cryptographic utilities for the Basilica .
-//! This crate provides the fundamental building blocks that all other Basilica crates depend on.
+//! Core shared types, cryptographic utilities, and infrastructure for the Basilica GPU marketplace.
 //!
-//! ## Key Features
-//! - Identity types (Hotkey, NodeId, ValidatorUid, MinerUid)
-//! - Comprehensive error handling with BasilicaError trait
-//! - Cryptographic utilities for hashing and signature verification
-//! - Shared persistence abstractions and repository patterns
-//! - Common service lifecycle management
-//! - Standardized metrics collection interfaces
+//! This crate provides the foundational building blocks that all other Basilica crates depend on.
+//! It is designed to be lightweight while providing essential functionality for building
+//! decentralized compute applications on Bittensor.
+//!
+//! ## Overview
+//!
+//! `basilica-common` provides:
+//!
+//! - **Identity Types**: `Hotkey`, `NodeId`, `ValidatorUid`, `MinerUid` with SS58 validation
+//! - **Cryptography**: Blake3 hashing, Ed25519/Sr25519 signature verification
+//! - **Configuration**: Unified config loading with TOML files and environment overrides
+//! - **Persistence**: Repository traits and database abstractions (SQLite/PostgreSQL)
+//! - **SSH**: Trait abstractions for SSH key management
+//! - **Metrics**: Standardized metrics collection interfaces
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use basilica_common::{Hotkey, Config, CryptoProvider};
+//!
+//! // Parse a Bittensor hotkey from SS58 format
+//! let hotkey = Hotkey::from_ss58("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY")?;
+//!
+//! // Load configuration with environment overrides
+//! let config = Config::builder()
+//!     .file("config.toml")
+//!     .env_prefix("BASILICA")
+//!     .build()?;
+//! ```
+//!
+//! ## Feature Flags
+//!
+//! - `sqlite` - Enable SQLite persistence backend
+//! - `postgres` - Enable PostgreSQL persistence backend  
+//! - `crypto-extra` - Additional cryptographic utilities
+//!
+//! ## Module Organization
+//!
+//! | Module | Description |
+//! |--------|-------------|
+//! | [`crypto`] | Cryptographic primitives (Blake3, Ed25519, Sr25519, P256) |
+//! | [`identity`] | Network identity types with validation |
+//! | [`config`] | Configuration loading and management |
+//! | [`persistence`] | Database traits and repository patterns |
+//! | [`ssh`] | SSH key management abstractions |
+//! | [`metrics`] | Metrics collection traits |
+//! | [`compute`] | Compute resource definitions |
+//! | [`rental`] | GPU rental types and states |
 //!
 //! ## Design Principles
+//!
 //! - Minimal dependencies to avoid bloat in dependent crates
 //! - Strong typing with validation logic
 //! - Serde support for serialization across network boundaries
 //! - Memory safety and security by design
 //! - Trait-based abstractions for dependency injection
+//!
+//! ## Related Crates
+//!
+//! - [`basilica-sdk`](https://crates.io/crates/basilica-sdk) - High-level client SDK
+//! - [`basilica-protocol`](https://crates.io/crates/basilica-protocol) - gRPC protocol definitions
+//! - [`basilica-validator`](https://crates.io/crates/basilica-validator) - Validator node implementation
 
 pub mod auth_constants;
 pub mod compute;

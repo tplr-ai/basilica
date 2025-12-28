@@ -7,7 +7,7 @@ use super::types::MinerInfo;
 use crate::metrics::ValidatorMetrics;
 use anyhow::Result;
 use basilica_common::identity::{Hotkey, MinerUid};
-use bittensor::{AccountId, AxonInfo, Service as BittensorService};
+use bittensor::{AxonInfo, Service as BittensorService};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -68,7 +68,7 @@ impl MinerDiscovery {
 
     fn extract_miners_from_metagraph(
         &self,
-        metagraph: &bittensor::Metagraph<AccountId>,
+        metagraph: &bittensor::Metagraph,
     ) -> Result<Vec<MinerInfo>> {
         let mut miners = Vec::new();
 
@@ -116,7 +116,7 @@ impl MinerDiscovery {
 
     fn extract_endpoint(
         &self,
-        metagraph: &bittensor::Metagraph<AccountId>,
+        metagraph: &bittensor::Metagraph,
         uid: usize,
     ) -> Result<Option<String>> {
         Ok(metagraph.axons.get(uid).and_then(|axon| {

@@ -2,12 +2,21 @@
 name = "basilica-protocol"
 version = "0.1.0"
 edition = "2021"
-description = "gRPC protocol definitions and message types for Basilca  communication"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "gRPC protocol definitions and message types for Basilica network communication"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-protocol"
+readme = "README.md"
+keywords = ["bittensor", "grpc", "protocol", "gpu", "compute"]
+categories = ["network-programming", "api-bindings"]
 rust-version = "1.70"
+include = ["src/**/*", "proto/**/*", "build.rs", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [dependencies]
 # Use workspace dependencies
-basilica-common = { path = "../basilica-common" }
+basilica-common = { version = "0.1", path = "../basilica-common" }
 tonic = { workspace = true, features = ["tls"] }
 prost = { workspace = true }
 prost-types = { workspace = true }

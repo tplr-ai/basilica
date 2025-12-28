@@ -2,9 +2,17 @@
 name = "basilica-sdk"
 version = "0.10.0"
 edition = "2021"
-authors = ["Basilica Team"]
-description = "SDK for interacting with the Basilica GPU rental network"
-license = "MIT OR Apache-2.0"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Official Rust SDK for interacting with the Basilica GPU rental network"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-sdk"
+readme = "README.md"
+keywords = ["bittensor", "gpu", "compute", "sdk", "api-client"]
+categories = ["api-bindings", "asynchronous", "network-programming"]
+rust-version = "1.70"
+include = ["src/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [dependencies]
 # HTTP client
@@ -31,9 +39,9 @@ base64 = { workspace = true }
 etcetera = { workspace = true }
 
 # Internal dependencies
-basilica-common = { path = "../basilica-common" }
-basilica-validator = { path = "../basilica-validator", features = ["client"] }
-basilica-aggregator = { path = "../basilica-aggregator" }
+basilica-common = { version = "0.1", path = "../basilica-common" }
+basilica-validator = { version = "0.1", path = "../basilica-validator", features = ["client"] }
+basilica-aggregator = { version = "0.1", path = "../basilica-aggregator" }
 urlencoding = { workspace = true }
 
 [dev-dependencies]

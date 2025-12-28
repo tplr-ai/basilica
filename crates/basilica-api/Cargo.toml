@@ -2,20 +2,28 @@
 name = "basilica-api"
 version = "0.1.0"
 edition = "2021"
-authors = ["Basilica Team"]
-description = "Smart HTTP gateway for Basilica validator network"
-license = "MIT OR Apache-2.0"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Smart HTTP gateway for Basilica validator network with load balancing and caching"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-api"
+readme = "README.md"
+keywords = ["bittensor", "api", "gateway", "gpu", "compute"]
+categories = ["web-programming::http-server", "network-programming", "asynchronous"]
+rust-version = "1.70"
+include = ["src/**/*", "migrations/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [dependencies]
 # Internal dependencies
-basilica-common = { path = "../basilica-common" }
+basilica-common = { version = "0.1", path = "../basilica-common" }
 bittensor = { workspace = true }
-basilica-validator = { path = "../basilica-validator", features = ["client"] }
-basilica-sdk = { path = "../basilica-sdk" }
-basilica-billing = { path = "../basilica-billing" }
-basilica-payments = { path = "../basilica-payments" }
-basilica-protocol = { path = "../basilica-protocol" }
-basilica-aggregator = { path = "../basilica-aggregator" }
+basilica-validator = { version = "0.1", path = "../basilica-validator", features = ["client"] }
+basilica-sdk = { version = "0.10", path = "../basilica-sdk" }
+basilica-billing = { version = "0.1", path = "../basilica-billing" }
+basilica-payments = { version = "0.1", path = "../basilica-payments" }
+basilica-protocol = { version = "0.1", path = "../basilica-protocol" }
+basilica-aggregator = { version = "0.1", path = "../basilica-aggregator" }
 
 # Async runtime
 tokio = { workspace = true }

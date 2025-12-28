@@ -2,12 +2,21 @@
 name = "basilica-billing"
 version = "0.1.0"
 edition = "2021"
-description = "Billing service for Basilica compute subnet"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Billing service for Basilica compute subnet with usage tracking and invoicing"
+license = "MIT"
 repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-billing"
+readme = "README.md"
+keywords = ["bittensor", "billing", "gpu", "compute", "usage"]
+categories = ["network-programming", "asynchronous"]
+rust-version = "1.70"
+include = ["src/**/*", "migrations/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [dependencies]
-basilica-common = { path = "../basilica-common", features = ["postgres"] }
-basilica-protocol = { path = "../basilica-protocol" }
+basilica-common = { version = "0.1", path = "../basilica-common", features = ["postgres"] }
+basilica-protocol = { version = "0.1", path = "../basilica-protocol" }
 
 toml = { workspace = true }
 

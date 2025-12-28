@@ -1,6 +1,44 @@
-//! Basilica Storage Layer
+//! # basilica-storage
 //!
-//! Provides persistent storage for stateful jobs using object storage backends (S3, R2, GCS).
+//! Storage daemon for Basilica GPU workloads with R2/S3 and FUSE support.
+//!
+//! This crate provides persistent storage for GPU workloads running on Basilica.
+//! It supports object storage (S3/R2 compatible) and can mount storage as a FUSE
+//! filesystem for transparent access.
+//!
+//! ## Overview
+//!
+//! `basilica-storage` provides:
+//!
+//! - **Object Storage**: S3/R2 compatible storage backend
+//! - **FUSE Filesystem**: Mount object storage as a local filesystem
+//! - **Namespace Isolation**: Per-user/per-workload storage isolation
+//! - **Quota Management**: Storage quotas and rate limiting
+//! - **Kubernetes Integration**: Auto-credential fetching from K8s secrets
+//!
+//! ## Quick Start
+//!
+//! ```rust,ignore
+//! use basilica_storage::{StorageConfig, S3Backend};
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let config = StorageConfig::from_env()?;
+//!     let backend = S3Backend::new(&config).await?;
+//!     
+//!     // Upload a file
+//!     backend.put_object("models/checkpoint.pt", &data).await?;
+//!     
+//!     // Download a file
+//!     let data = backend.get_object("models/checkpoint.pt").await?;
+//!     
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## Feature Flags
+//!
+//! - `fuse` - Enable FUSE filesystem support (default, requires `libfuse3-dev`)
 //!
 //! ## Architecture
 //!
@@ -20,6 +58,11 @@
 //! - Manual snapshot-on-pause approach
 //! - For testing and backwards compatibility
 //! - Use FUSE for production workloads
+//!
+//! ## Related Crates
+//!
+//! - [`basilica-operator`](https://crates.io/crates/basilica-operator) - K8s operator
+//! - [`basilica-common`](https://crates.io/crates/basilica-common) - Core types
 
 pub mod backend;
 pub mod config;

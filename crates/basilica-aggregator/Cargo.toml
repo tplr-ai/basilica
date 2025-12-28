@@ -2,12 +2,23 @@
 name = "basilica-aggregator"
 version = "0.1.0"
 edition = "2021"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Price aggregation and billing utilities for Basilica GPU marketplace"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-aggregator"
+readme = "README.md"
+keywords = ["bittensor", "billing", "aggregation", "gpu", "compute"]
+categories = ["network-programming", "asynchronous"]
+rust-version = "1.70"
+include = ["src/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [dependencies]
 # Basilica dependencies
-basilica-common = { path = "../basilica-common" }
-basilica-billing = { path = "../basilica-billing" }
-basilica-protocol = { path = "../basilica-protocol" }
+basilica-common = { version = "0.1", path = "../basilica-common" }
+basilica-billing = { version = "0.1", path = "../basilica-billing" }
+basilica-protocol = { version = "0.1", path = "../basilica-protocol" }
 
 # Protobuf types (for billing timestamps)
 prost-types = { workspace = true }

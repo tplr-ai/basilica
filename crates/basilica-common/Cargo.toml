@@ -2,9 +2,18 @@
 name = "basilica-common"
 version = "0.1.0"
 edition = "2021"
-description = "Core shared types, errors, traits, and cryptographic utilities for Basilica "
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Core shared types, cryptographic utilities, and infrastructure for the Basilica GPU marketplace"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-common"
+readme = "README.md"
+keywords = ["bittensor", "gpu", "compute", "cryptocurrency", "decentralized"]
+categories = ["cryptography", "network-programming", "asynchronous"]
 rust-version = "1.70"
 build = "build.rs"
+include = ["src/**/*", "build.rs", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [dependencies]
 # Use workspace dependencies

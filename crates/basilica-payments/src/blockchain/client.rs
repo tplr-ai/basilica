@@ -136,7 +136,7 @@ impl BlockchainClient {
         to_address_ss58: &str,
         amount_plancks: u128,
     ) -> Result<TransferReceipt> {
-        use subxt::ext::sp_core::crypto::Ss58Codec;
+        use sp_core::crypto::Ss58Codec;
 
         let dest_account = sp_core::sr25519::Public::from_ss58check(to_address_ss58)
             .map_err(|e| PaymentsError::Blockchain(format!("Invalid SS58 address: {}", e)))?;
@@ -158,7 +158,13 @@ impl BlockchainClient {
             vec![dest_multi, subxt::dynamic::Value::u128(amount_u64 as u128)],
         );
 
-        let signer = subxt::tx::PairSigner::new(keypair.clone());
+        use sp_core::Pair as PairTrait;
+        let raw = keypair.to_raw_vec();
+        let secret_bytes: [u8; 32] = raw[..32].try_into().map_err(|_| {
+            PaymentsError::Blockchain("Failed to extract keypair secret".to_string())
+        })?;
+        let signer = subxt_signer::sr25519::Keypair::from_secret_key(secret_bytes)
+            .map_err(|e| PaymentsError::Blockchain(format!("Failed to create signer: {}", e)))?;
 
         let client = self.get_client().await?;
 

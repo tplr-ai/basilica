@@ -2,8 +2,17 @@
 name = "basilica-miner"
 version = "0.1.0"
 edition = "2021"
-description = "Basilca Miner - Bittensor neuron that manages node fleets"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Basilica Miner - Bittensor neuron that manages GPU node fleets"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-miner"
+readme = "README.md"
+keywords = ["bittensor", "miner", "gpu", "compute", "blockchain"]
+categories = ["network-programming", "asynchronous"]
 rust-version = "1.70"
+include = ["src/**/*", "migrations/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [lib]
 name = "basilica_miner"
@@ -37,12 +46,12 @@ alloy = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 alloy-sol-types = { workspace = true }
-collateral-contract = { path = "../collateral-contract" }
+collateral-contract = { version = "0.1", path = "../collateral-contract" }
 hex = { workspace = true }
 
 # Internal dependencies
-basilica-common = { path = "../basilica-common", features = ["sqlite"] }
-basilica-protocol = { path = "../basilica-protocol" }
+basilica-common = { version = "0.1", path = "../basilica-common", features = ["sqlite"] }
+basilica-protocol = { version = "0.1", path = "../basilica-protocol" }
 bittensor = { workspace = true }
 
 # Miner-specific dependencies

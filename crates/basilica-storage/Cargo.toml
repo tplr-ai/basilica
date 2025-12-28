@@ -2,6 +2,17 @@
 name = "basilica-storage"
 version = "0.1.0"
 edition = "2021"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Storage daemon for Basilica GPU workloads with R2/S3 and FUSE support"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica-storage"
+readme = "README.md"
+keywords = ["storage", "fuse", "s3", "gpu", "compute"]
+categories = ["filesystem", "network-programming", "asynchronous"]
+rust-version = "1.70"
+include = ["src/**/*", "README.md", "LICENSE", "CHANGELOG.md"]
 
 [[bin]]
 name = "basilica-storage-daemon"

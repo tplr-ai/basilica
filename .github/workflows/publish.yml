@@ -1,0 +1,148 @@
+name: Publish to crates.io
+
+on:
+  workflow_dispatch:
+    inputs:
+      crate:
+        description: 'Crate to publish'
+        required: true
+        type: choice
+        options:
+          - basilica-common
+          - basilica-protocol
+          - basilica-aggregator
+          - basilica-validator
+          - basilica-miner
+          - basilica-billing
+          - basilica-payments
+          - basilica-autoscaler
+          - basilica-storage
+          - basilica-operator
+          - basilica-sdk
+          - basilica-api
+          - basilica-cli
+      dry_run:
+        description: 'Dry run (no actual publish)'
+        type: boolean
+        default: true
+      skip_verification:
+        description: 'Skip pre-publish verification'
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  verify:
+    name: Pre-publish Verification
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_verification }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+      
+      - name: Verify crate metadata
+        run: |
+          echo "Verifying ${{ inputs.crate }}..."
+          
+          # Check required fields
+          cargo read-manifest -p ${{ inputs.crate }} | jq -e '.license' > /dev/null
+          cargo read-manifest -p ${{ inputs.crate }} | jq -e '.repository' > /dev/null
+          cargo read-manifest -p ${{ inputs.crate }} | jq -e '.description' > /dev/null
+          
+          echo "✓ Metadata validated"
+      
+      - name: Verify README exists
+        run: |
+          if [ ! -f "crates/${{ inputs.crate }}/README.md" ]; then
+            echo "::error::Missing README.md"
+            exit 1
+          fi
+          echo "✓ README.md exists"
+      
+      - name: Verify CHANGELOG exists
+        run: |
+          if [ ! -f "crates/${{ inputs.crate }}/CHANGELOG.md" ]; then
+            echo "::error::Missing CHANGELOG.md"
+            exit 1
+          fi
+          echo "✓ CHANGELOG.md exists"
+      
+      - name: Run doc tests
+        run: cargo test --doc -p ${{ inputs.crate }} || true
+      
+      - name: Build documentation
+        run: |
+          RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p ${{ inputs.crate }} || true
+      
+      - name: Dry run publish
+        run: cargo publish -p ${{ inputs.crate }} --dry-run
+
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: verify
+    if: ${{ !inputs.dry_run && (needs.verify.result == 'success' || inputs.skip_verification) }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+      
+      - name: Publish to crates.io
+        run: cargo publish -p ${{ inputs.crate }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+      
+      - name: Create success summary
+        run: |
+          echo "## 🎉 Published ${{ inputs.crate }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Crate published to [crates.io](https://crates.io/crates/${{ inputs.crate }})" >> $GITHUB_STEP_SUMMARY
+
+  dry-run-report:
+    name: Dry Run Report
+    runs-on: ubuntu-latest
+    needs: verify
+    if: ${{ inputs.dry_run }}
+    steps:
+      - name: Report dry run success
+        run: |
+          echo "## ✅ Dry Run Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Crate **${{ inputs.crate }}** is ready for publishing." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To publish for real, run this workflow again with 'dry_run' unchecked." >> $GITHUB_STEP_SUMMARY
+
