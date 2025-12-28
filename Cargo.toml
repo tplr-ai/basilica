@@ -172,11 +172,11 @@ pythonize = "0.26"
 self_update = { version = "0.41", default-features = false, features = ["rustls", "archive-tar", "compression-flate2"] }
 
 # Subxt (must match bittensor-rs version)
-subxt = { version = "0.38", features = ["substrate-compat"] }
-subxt-signer = "0.38"
-subxt-codegen = { version = "0.38" }
-subxt-metadata = { version = "0.38" }
-subxt-utils-fetchmetadata = { version = "0.38", features = ["url"] }
+subxt = "0.44"
+subxt-signer = "0.44"
+subxt-codegen = { version = "0.44" }
+subxt-metadata = { version = "0.44" }
+subxt-utils-fetchmetadata = { version = "0.44", features = ["url"] }
 
 # System information
 sysinfo = "0.30"
@@ -193,11 +193,8 @@ axum = "0.7"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
-# Bittensor integration via crabtensor (patched fork for metadata compatibility)
-crabtensor = { git = "https://github.com/one-covenant/crabtensor", branch = "main" }
-
-# Bittensor SDK
-bittensor = { git = "https://github.com/one-covenant/bittensor-rs", branch = "main", package = "bittensor-rs" }
+# Bittensor SDK (published on crates.io)
+bittensor = { version = "0.1.1", package = "bittensor-rs" }
 
 [workspace.metadata]
 # Workspace metadata for tooling
