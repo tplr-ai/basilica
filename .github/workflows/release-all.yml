@@ -1,0 +1,413 @@
+name: Release All Crates
+
+on:
+    workflow_dispatch:
+        inputs:
+            dry_run:
+                description: "Dry run (no actual publish)"
+                type: boolean
+                default: true
+            skip_published:
+                description: "Skip already published versions"
+                type: boolean
+                default: true
+
+env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: 1
+
+jobs:
+    setup:
+        name: Setup & Validate
+        runs-on: ubuntu-latest
+        outputs:
+            matrix: ${{ steps.matrix.outputs.crates }}
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Cache cargo
+              uses: Swatinem/rust-cache@v2
+
+            - name: Install protoc
+              uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Build workspace
+              run: cargo check --workspace
+
+            - name: Generate publish matrix
+              id: matrix
+              run: |
+                  # Define crates in dependency order
+                  CRATES='[
+                    "basilica-common",
+                    "basilica-protocol",
+                    "basilica-storage",
+                    "basilica-operator",
+                    "basilica-aggregator",
+                    "basilica-billing",
+                    "basilica-autoscaler",
+                    "basilica-payments",
+                    "basilica-validator",
+                    "basilica-miner",
+                    "basilica-sdk",
+                    "basilica-api",
+                    "basilica-cli"
+                  ]'
+                  echo "crates=$CRATES" >> $GITHUB_OUTPUT
+
+    # Tier 1: No internal dependencies
+    tier-1:
+        name: "Tier 1: basilica-common"
+        runs-on: ubuntu-latest
+        needs: setup
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p basilica-common | jq -r '.version')
+                  if cargo search basilica-common --limit 1 | grep -q "basilica-common = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                    echo "⏭️ basilica-common@$VERSION already published"
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish basilica-common
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p basilica-common --dry-run
+                    echo "🔍 Dry run completed for basilica-common"
+                  else
+                    cargo publish -p basilica-common
+                    echo "✅ Published basilica-common"
+                    sleep 45  # Wait for crates.io index
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    # Tier 2: Depends on basilica-common
+    tier-2:
+        name: "Tier 2: basilica-protocol"
+        runs-on: ubuntu-latest
+        needs: tier-1
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p basilica-protocol | jq -r '.version')
+                  if cargo search basilica-protocol --limit 1 | grep -q "basilica-protocol = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish basilica-protocol
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p basilica-protocol --dry-run
+                  else
+                    cargo publish -p basilica-protocol
+                    sleep 45
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    # Tier 3: Infrastructure crates
+    tier-3:
+        name: "Tier 3: Infrastructure"
+        runs-on: ubuntu-latest
+        needs: tier-2
+        strategy:
+            max-parallel: 1
+            matrix:
+                crate:
+                    [basilica-storage, basilica-operator, basilica-aggregator]
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p ${{ matrix.crate }} | jq -r '.version')
+                  if cargo search ${{ matrix.crate }} --limit 1 | grep -q "${{ matrix.crate }} = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish ${{ matrix.crate }}
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p ${{ matrix.crate }} --dry-run
+                  else
+                    cargo publish -p ${{ matrix.crate }}
+                    sleep 45
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    # Tier 4: Service crates
+    tier-4:
+        name: "Tier 4: Services"
+        runs-on: ubuntu-latest
+        needs: tier-3
+        strategy:
+            max-parallel: 1
+            matrix:
+                crate:
+                    [
+                        basilica-billing,
+                        basilica-autoscaler,
+                        basilica-payments,
+                        basilica-validator,
+                        basilica-miner,
+                    ]
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p ${{ matrix.crate }} | jq -r '.version')
+                  if cargo search ${{ matrix.crate }} --limit 1 | grep -q "${{ matrix.crate }} = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish ${{ matrix.crate }}
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p ${{ matrix.crate }} --dry-run
+                  else
+                    cargo publish -p ${{ matrix.crate }}
+                    sleep 45
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    # Tier 5: SDK
+    tier-5:
+        name: "Tier 5: basilica-sdk"
+        runs-on: ubuntu-latest
+        needs: tier-4
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p basilica-sdk | jq -r '.version')
+                  if cargo search basilica-sdk --limit 1 | grep -q "basilica-sdk = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish basilica-sdk
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p basilica-sdk --dry-run
+                  else
+                    cargo publish -p basilica-sdk
+                    sleep 45
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    # Tier 6: User-facing binaries
+    tier-6:
+        name: "Tier 6: User Binaries"
+        runs-on: ubuntu-latest
+        needs: tier-5
+        strategy:
+            max-parallel: 1
+            matrix:
+                crate: [basilica-api, basilica-cli]
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p ${{ matrix.crate }} | jq -r '.version')
+                  if cargo search ${{ matrix.crate }} --limit 1 | grep -q "${{ matrix.crate }} = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish ${{ matrix.crate }}
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p ${{ matrix.crate }} --dry-run
+                  else
+                    cargo publish -p ${{ matrix.crate }}
+                    sleep 30
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    # Tier 7: Unified meta-crate (depends on all others)
+    tier-7:
+        name: "Tier 7: basilica (unified)"
+        runs-on: ubuntu-latest
+        needs: tier-6
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p basilica | jq -r '.version')
+                  if cargo search basilica --limit 1 | grep -q "basilica = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish basilica
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p basilica --dry-run
+                  else
+                    cargo publish -p basilica
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    summary:
+        name: Release Summary
+        runs-on: ubuntu-latest
+        needs: [tier-1, tier-2, tier-3, tier-4, tier-5, tier-6, tier-7]
+        if: always()
+        steps:
+            - uses: actions/checkout@v4
+            - name: Generate summary
+              run: |
+                  echo "## 📦 Basilica Crates Release" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    echo "🔍 **Mode: Dry Run**" >> $GITHUB_STEP_SUMMARY
+                  else
+                    echo "🚀 **Mode: Production Release**" >> $GITHUB_STEP_SUMMARY
+                  fi
+                  echo "" >> $GITHUB_STEP_SUMMARY
+
+                  echo "### Published Crates" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "| Crate | crates.io | docs.rs |" >> $GITHUB_STEP_SUMMARY
+                  echo "|-------|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+
+                  for crate in basilica-common basilica-protocol basilica-storage basilica-operator basilica-aggregator basilica-billing basilica-autoscaler basilica-payments basilica-validator basilica-miner basilica-sdk basilica-api basilica-cli basilica; do
+                    echo "| $crate | [crates.io](https://crates.io/crates/$crate) | [docs.rs](https://docs.rs/$crate) |" >> $GITHUB_STEP_SUMMARY
+                  done
+
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "### 🎯 Unified Crate" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "The \`basilica\` crate is the recommended entry point for most users:" >> $GITHUB_STEP_SUMMARY
+                  echo "\`\`\`toml" >> $GITHUB_STEP_SUMMARY
+                  echo "[dependencies]" >> $GITHUB_STEP_SUMMARY
+                  echo "basilica = \"0.1\"" >> $GITHUB_STEP_SUMMARY
+                  echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

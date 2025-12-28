@@ -1,0 +1,52 @@
+[package]
+name = "basilica"
+version = "0.1.0"
+edition = "2021"
+authors = ["Basilica Team <team@basilica.ai>"]
+description = "Decentralized GPU marketplace on Bittensor - unified SDK and tools"
+license = "MIT"
+repository = "https://github.com/one-covenant/basilica"
+homepage = "https://basilica.ai"
+documentation = "https://docs.rs/basilica"
+readme = "README.md"
+keywords = ["bittensor", "gpu", "compute", "cryptocurrency", "decentralized"]
+categories = ["network-programming", "cryptography", "api-bindings"]
+rust-version = "1.70"
+
+[features]
+default = ["sdk"]
+
+# Core functionality (always included)
+full = ["sdk", "cli", "validator", "miner", "api"]
+
+# High-level client SDK for building applications
+sdk = ["dep:basilica-sdk"]
+
+# Command-line interface
+cli = ["dep:basilica-cli"]
+
+# Validator node implementation
+validator = ["dep:basilica-validator"]
+
+# Miner node implementation  
+miner = ["dep:basilica-miner"]
+
+# REST API server
+api = ["dep:basilica-api"]
+
+[dependencies]
+# Always re-export common types
+basilica-common = { version = "0.1", path = "../basilica-common" }
+basilica-protocol = { version = "0.1", path = "../basilica-protocol" }
+
+# Optional components
+basilica-sdk = { version = "0.10", path = "../basilica-sdk", optional = true }
+basilica-cli = { version = "0.10", path = "../basilica-cli", optional = true }
+basilica-validator = { version = "0.1", path = "../basilica-validator", optional = true }
+basilica-miner = { version = "0.1", path = "../basilica-miner", optional = true }
+basilica-api = { version = "0.1", path = "../basilica-api", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+

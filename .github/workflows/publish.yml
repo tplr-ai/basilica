@@ -21,6 +21,7 @@ on:
           - basilica-sdk
           - basilica-api
           - basilica-cli
+          - basilica
       dry_run:
         description: 'Dry run (no actual publish)'
         type: boolean

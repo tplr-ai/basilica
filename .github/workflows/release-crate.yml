@@ -1,0 +1,181 @@
+name: Release Crate
+
+on:
+  push:
+    tags:
+      - '*-v[0-9]*'  # e.g., basilica-common-v0.1.0
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  extract-info:
+    name: Extract Release Info
+    runs-on: ubuntu-latest
+    outputs:
+      crate: ${{ steps.parse.outputs.crate }}
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - name: Parse tag
+        id: parse
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          # Extract crate name (everything before -v)
+          CRATE="${TAG%-v*}"
+          # Extract version (everything after -v)
+          VERSION="${TAG#*-v}"
+          echo "crate=$CRATE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "📦 Crate: $CRATE"
+          echo "🏷️ Version: $VERSION"
+
+  verify:
+    name: Verify Release
+    runs-on: ubuntu-latest
+    needs: extract-info
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Verify version matches Cargo.toml
+        run: |
+          CARGO_VERSION=$(cargo read-manifest -p ${{ needs.extract-info.outputs.crate }} | jq -r '.version')
+          if [ "$CARGO_VERSION" != "${{ needs.extract-info.outputs.version }}" ]; then
+            echo "::error::Tag version (${{ needs.extract-info.outputs.version }}) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+          echo "✓ Version matches: $CARGO_VERSION"
+
+      - name: Verify crate metadata
+        run: |
+          cargo read-manifest -p ${{ needs.extract-info.outputs.crate }} | jq -e '.license' > /dev/null
+          cargo read-manifest -p ${{ needs.extract-info.outputs.crate }} | jq -e '.repository' > /dev/null
+          cargo read-manifest -p ${{ needs.extract-info.outputs.crate }} | jq -e '.description' > /dev/null
+          echo "✓ Metadata validated"
+
+      - name: Verify README exists
+        run: |
+          if [ ! -f "crates/${{ needs.extract-info.outputs.crate }}/README.md" ]; then
+            echo "::error::Missing README.md"
+            exit 1
+          fi
+          echo "✓ README.md exists"
+
+      - name: Dry run publish
+        run: cargo publish -p ${{ needs.extract-info.outputs.crate }} --dry-run
+
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: [extract-info, verify]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "25.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Publish to crates.io
+        run: cargo publish -p ${{ needs.extract-info.outputs.crate }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Wait for crates.io index update
+        run: sleep 30
+
+  github-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [extract-info, publish]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog for this version
+        id: changelog
+        run: |
+          CRATE="${{ needs.extract-info.outputs.crate }}"
+          VERSION="${{ needs.extract-info.outputs.version }}"
+          CHANGELOG_PATH="crates/$CRATE/CHANGELOG.md"
+          
+          if [ -f "$CHANGELOG_PATH" ]; then
+            # Extract the section for this version
+            # Look for ## [version] or ## version header and get content until next ## header
+            NOTES=$(awk -v ver="$VERSION" '
+              /^## \[?'"$VERSION"'\]?/ { found=1; next }
+              /^## / && found { exit }
+              found { print }
+            ' "$CHANGELOG_PATH")
+            
+            if [ -z "$NOTES" ]; then
+              NOTES="Release $CRATE v$VERSION"
+            fi
+          else
+            NOTES="Release $CRATE v$VERSION"
+          fi
+          
+          # Write to file to preserve newlines
+          echo "$NOTES" > release_notes.md
+          echo "Generated release notes:"
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ needs.extract-info.outputs.crate }} v${{ needs.extract-info.outputs.version }}"
+          body_path: release_notes.md
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [extract-info, publish, github-release]
+    if: always()
+    steps:
+      - name: Create summary
+        run: |
+          CRATE="${{ needs.extract-info.outputs.crate }}"
+          VERSION="${{ needs.extract-info.outputs.version }}"
+          
+          echo "## 🎉 Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Crate | \`$CRATE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`$VERSION\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| crates.io | [View](https://crates.io/crates/$CRATE) |" >> $GITHUB_STEP_SUMMARY
+          echo "| docs.rs | [View](https://docs.rs/$CRATE) |" >> $GITHUB_STEP_SUMMARY
+
