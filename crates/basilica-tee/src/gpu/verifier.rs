@@ -8,9 +8,9 @@
 use async_trait::async_trait;
 #[cfg(feature = "remote-attestation")]
 use serde::{Deserialize, Serialize};
+use tracing::{debug, warn};
 #[cfg(feature = "remote-attestation")]
 use tracing::{error, info};
-use tracing::{debug, warn};
 
 use crate::error::{TeeError, TeeResult};
 use crate::traits::GpuVerifier;

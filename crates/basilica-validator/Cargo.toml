@@ -50,7 +50,7 @@ regex = { workspace = true }
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
 basilica-protocol = { path = "../basilica-protocol" }
-basilica-tee = { path = "../basilica-tee" }
+basilica-tee = { path = "../basilica-tee", features = ["remote-attestation"] }
 bittensor = { workspace = true }
 collateral-contract = { path = "../collateral-contract" }
 

@@ -4,6 +4,8 @@
 //! the Basilica validator verification pipeline.
 //!
 //! Uses the basilica-tee crate for quote parsing and verification.
+//!
+//! Also provides TDX host setup capabilities for bare-metal nodes.
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
@@ -16,6 +18,9 @@ use basilica_tee::tdx::TdxQuoteVerifier;
 pub use basilica_tee::types::ExpectedMeasurements;
 
 use crate::ssh::ValidatorSshClient;
+
+// Re-export TDX host types for external use
+pub use super::validation_tdx_host::{TdxHostStatus, TdxHostValidator};
 
 // Re-export types from basilica-tee for external use
 pub use basilica_tee::types::{
@@ -420,7 +425,10 @@ fi
             .unwrap_or_else(|_| "NOT_INSTALLED".to_string());
 
         if tool_check.contains("INSTALLED:") {
-            debug!("[TEE] GPU attestation tools already installed: {}", tool_check.trim());
+            debug!(
+                "[TEE] GPU attestation tools already installed: {}",
+                tool_check.trim()
+            );
             return false;
         }
 
@@ -507,15 +515,24 @@ fi
 
         match install_result {
             Ok(output) if output.contains("INSTALL_SUCCESS") => {
-                info!("[TEE] Successfully installed GPU attestation tools: {}", output.trim());
+                info!(
+                    "[TEE] Successfully installed GPU attestation tools: {}",
+                    output.trim()
+                );
                 true
             }
             Ok(output) if output.contains("INSTALL_SKIPPED") => {
-                debug!("[TEE] GPU attestation tools installation skipped: {}", output.trim());
+                debug!(
+                    "[TEE] GPU attestation tools installation skipped: {}",
+                    output.trim()
+                );
                 false
             }
             Ok(output) => {
-                warn!("[TEE] GPU attestation tools installation failed: {}", output);
+                warn!(
+                    "[TEE] GPU attestation tools installation failed: {}",
+                    output
+                );
                 false
             }
             Err(e) => {
@@ -541,11 +558,11 @@ fi
 
         // First, check if TDX is available and install tools if needed
         let setup_result = self.ensure_tdx_tools_installed(connection).await?;
-        
+
         if setup_result.installed_tools {
             info!("[TEE] Installed TDX attestation tools on executor");
         }
-        
+
         if !setup_result.tdx_available {
             warn!("[TEE] TDX not available on this node");
             return Ok(TdxVerificationResult {
@@ -703,7 +720,9 @@ fi
         }
 
         // Ensure GPU attestation tools are installed
-        let gpu_tools_installed = self.ensure_gpu_attestation_tools_installed(connection).await;
+        let gpu_tools_installed = self
+            .ensure_gpu_attestation_tools_installed(connection)
+            .await;
         if gpu_tools_installed {
             info!("[TEE] Installed GPU attestation tools on executor");
         }
@@ -857,6 +876,118 @@ print(json.dumps(evidence))
             gpu_cc: Some(gpu_cc_result),
             tee_verified,
         })
+    }
+
+    /// Ensure TDX host is ready for running TDX VMs
+    ///
+    /// This method checks the TDX host status and optionally sets it up if needed.
+    /// Use this for bare-metal nodes that will run TDX VMs as executors.
+    ///
+    /// # Arguments
+    /// * `connection` - SSH connection to the bare-metal host
+    /// * `setup_if_needed` - If true, will install packages and configure TDX
+    /// * `intel_api_key` - Optional Intel API key for PCCS configuration
+    ///
+    /// # Returns
+    /// * `TdxHostStatus` with current host status
+    pub async fn ensure_tdx_host_ready(
+        &self,
+        connection: &SshConnectionDetails,
+        setup_if_needed: bool,
+        intel_api_key: Option<&str>,
+    ) -> Result<TdxHostStatus> {
+        let host_validator = TdxHostValidator::new(self.ssh_client.clone());
+
+        // Check current status
+        let status = host_validator.check_status(connection).await?;
+
+        // If TDX is already initialized and running, we're done
+        if status.tdx_initialized && !status.reboot_required {
+            info!("[TEE] TDX host already configured and ready");
+            return Ok(status);
+        }
+
+        // If setup is not requested, just return current status
+        if !setup_if_needed {
+            return Ok(status);
+        }
+
+        // Check if we need to install packages
+        if !status.intel_kernel_installed {
+            info!("[TEE] Installing TDX host packages...");
+            let setup_result = host_validator.setup_tdx_host(connection).await?;
+
+            if setup_result.reboot_required {
+                info!("[TEE] TDX host packages installed, reboot required");
+                let mut new_status = status.clone();
+                new_status.reboot_required = true;
+                return Ok(new_status);
+            }
+        }
+
+        // Configure PCCS if API key provided and PCCS not running
+        if let Some(api_key) = intel_api_key {
+            if !status.pccs_running {
+                info!("[TEE] Configuring PCCS service...");
+                let pccs_ok = host_validator.configure_pccs(connection, api_key).await?;
+                if pccs_ok {
+                    info!("[TEE] PCCS configured successfully");
+                } else {
+                    warn!("[TEE] PCCS configuration may have issues");
+                }
+
+                // Register platform
+                let _ = host_validator.register_platform(connection).await;
+            }
+        }
+
+        // Return updated status
+        host_validator.check_status(connection).await
+    }
+
+    /// Check if a node is a TDX host (bare-metal with TDX capability)
+    ///
+    /// This checks for TDX host characteristics (no /dev/tdx_guest device,
+    /// but CPU has TDX capability).
+    pub async fn is_tdx_host(&self, connection: &SshConnectionDetails) -> Result<bool> {
+        // A TDX host has TDX capability in CPU but no /dev/tdx_guest device
+        // (that device only exists in TDX guest VMs)
+        let check = self
+            .ssh_client
+            .execute_command(
+                connection,
+                r#"
+                # Check if this is a TDX guest (has guest device)
+                if [ -c /dev/tdx_guest ] || [ -c /dev/tdx-guest ]; then
+                    echo "TDX_GUEST"
+                    exit 0
+                fi
+                
+                # Check if CPU supports TDX
+                if grep -q "tdx" /proc/cpuinfo 2>/dev/null; then
+                    echo "TDX_HOST"
+                    exit 0
+                fi
+                
+                # Check dmesg for TDX
+                if dmesg 2>/dev/null | grep -qi "tdx"; then
+                    echo "TDX_HOST"
+                    exit 0
+                fi
+                
+                echo "NOT_TDX"
+                "#,
+                true,
+            )
+            .await
+            .unwrap_or_else(|_| "NOT_TDX".to_string());
+
+        Ok(check.contains("TDX_HOST"))
+    }
+
+    /// Get TDX host validator for direct access
+    pub fn get_host_validator(&self) -> TdxHostValidator {
+        TdxHostValidator::new(self.ssh_client.clone())
     }
 }
 

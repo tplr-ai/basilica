@@ -245,6 +245,7 @@ mod validator_integration_tests {
             expected_rtmr3: None,
             require_gpu_cc: false,
             allowed_gpu_models: vec!["H100".to_string()],
+            ..Default::default()
         };
 
         assert!(config.enabled);
