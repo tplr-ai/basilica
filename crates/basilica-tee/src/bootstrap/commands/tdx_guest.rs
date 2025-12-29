@@ -678,7 +678,8 @@ mod tests {
 
     #[test]
     fn test_launch_uses_tdx_options() {
-        assert!(LAUNCH_TDX_VM_QEMU.contains("confidential-guest-support=tdx"));
-        assert!(LAUNCH_TDX_VM_QEMU.contains("tdx-guest,id=tdx"));
+        // Using libvirt XML configuration for TDX
+        assert!(LAUNCH_TDX_VM_QEMU.contains("launchSecurity type='tdx'"));
+        assert!(LAUNCH_TDX_VM_QEMU.contains("policy>0x0</policy"));
     }
 }

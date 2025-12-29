@@ -117,8 +117,8 @@ mod gpu_cc_e2e_tests {
         let evidence_json = fixtures::sample_gpu_evidence();
         let expected_nonce = "test_nonce_12345678";
 
-        // Act
-        let evidence = basilica_tee::gpu::GpuEvidenceParser::parse(&evidence_json);
+        // Act - using the new parse_evidence function
+        let evidence = basilica_tee::gpu::parse_evidence(&evidence_json);
 
         // Assert
         assert!(evidence.is_ok(), "Evidence parsing should succeed");
@@ -134,8 +134,8 @@ mod gpu_cc_e2e_tests {
         let evidence_json = fixtures::sample_gpu_evidence();
         let wrong_nonce = "wrong_nonce";
 
-        let evidence = basilica_tee::gpu::GpuEvidenceParser::parse(&evidence_json).unwrap();
-        let result = basilica_tee::gpu::GpuEvidenceParser::verify(&evidence[0], Some(wrong_nonce));
+        let evidence = basilica_tee::gpu::parse_evidence(&evidence_json).unwrap();
+        let result = basilica_tee::gpu::verify_evidence(&evidence[0], Some(wrong_nonce)).await;
 
         assert!(result.is_ok());
         assert!(!result.unwrap().nonce_verified, "Nonce should not verify");
@@ -146,8 +146,10 @@ mod gpu_cc_e2e_tests {
     async fn test_gpu_cc_mode_detection() {
         let evidence_json = fixtures::sample_gpu_evidence();
 
-        let evidence = basilica_tee::gpu::GpuEvidenceParser::parse(&evidence_json).unwrap();
-        let result = basilica_tee::gpu::GpuEvidenceParser::verify(&evidence[0], None).unwrap();
+        let evidence = basilica_tee::gpu::parse_evidence(&evidence_json).unwrap();
+        let result = basilica_tee::gpu::verify_evidence(&evidence[0], None)
+            .await
+            .unwrap();
 
         // Evidence with attestation_report indicates CC mode
         assert!(result.cc_mode_enabled);
@@ -156,41 +158,117 @@ mod gpu_cc_e2e_tests {
 
 /// End-to-end tests for combined TEE verification
 mod combined_tee_e2e_tests {
-    /// Test: Full TEE verification (TDX + GPU CC)
+    use super::fixtures;
+
+    /// Test: Full TEE verification result construction
     #[tokio::test]
-    async fn test_full_tee_verification_stub() {
-        // TODO: Implement with mock SSH client and full verification flow
+    async fn test_full_tee_verification_result() {
+        use basilica_tee::types::{
+            GpuCcVerificationResult, TdxVerificationResult, TeeVerificationResult,
+        };
 
-        // This test should:
-        // 1. Create mock SSH client returning sample quotes/evidence
-        // 2. Create TeeValidator with test config
-        // 3. Call verify_full()
-        // 4. Assert both TDX and GPU CC pass
+        // Create TDX verification result
+        let tdx_result = TdxVerificationResult {
+            quote_valid: true,
+            mrtd_matches: true,
+            rtmr_matches: vec![true, true, true, true],
+            report_data_matches: true,
+            raw_quote: fixtures::sample_tdx_quote(),
+            mrtd_hex: "aa".repeat(48),
+            verified_at: chrono::Utc::now(),
+        };
 
-        // Verify basic types are available
-        let result = basilica_tee::types::TeeVerificationResult::not_verified();
-        assert!(
-            !result.tee_verified,
-            "not_verified result should not be verified"
-        );
+        // Create GPU CC verification result
+        let evidence = basilica_tee::gpu::parse_evidence(&fixtures::sample_gpu_evidence()).unwrap();
+        let gpu_result = GpuCcVerificationResult {
+            cc_mode_enabled: true,
+            attestation_valid: true,
+            gpu_uuid: evidence[0].gpu_uuid.clone(),
+            nonce_verified: true,
+            gpu_model: evidence[0].gpu_model.clone(),
+            driver_version: evidence[0].driver_version.clone(),
+            verified_at: chrono::Utc::now(),
+        };
+
+        // Construct combined result
+        let result = TeeVerificationResult {
+            tee_verified: true,
+            tdx: Some(tdx_result),
+            gpu_cc: Some(gpu_result),
+        };
+
+        // Verify combined result
+        assert!(result.tee_verified, "Combined result should be verified");
+        assert!(result.tdx.is_some(), "TDX result should be present");
+        assert!(result.gpu_cc.is_some(), "GPU CC result should be present");
     }
 
     /// Test: TEE verification with TDX only (no GPU CC)
     #[tokio::test]
-    async fn test_tdx_only_verification_stub() {
-        // TODO: Implement with mock SSH client
-        let result = basilica_tee::types::TeeVerificationResult::not_verified();
-        assert!(
-            result.tdx.is_none(),
-            "not_verified should have no TDX result"
-        );
+    async fn test_tdx_only_verification() {
+        use basilica_tee::types::{TdxVerificationResult, TeeVerificationResult};
+
+        let tdx_result = TdxVerificationResult {
+            quote_valid: true,
+            mrtd_matches: true,
+            rtmr_matches: vec![true; 4],
+            report_data_matches: true,
+            raw_quote: fixtures::sample_tdx_quote(),
+            mrtd_hex: "aa".repeat(48),
+            verified_at: chrono::Utc::now(),
+        };
+
+        let result = TeeVerificationResult {
+            tee_verified: true,
+            tdx: Some(tdx_result),
+            gpu_cc: None,
+        };
+
+        assert!(result.tee_verified);
+        assert!(result.tdx.is_some());
+        assert!(result.gpu_cc.is_none());
     }
 
     /// Test: TEE verification with GPU CC only (no TDX)
     #[tokio::test]
-    async fn test_gpu_cc_only_verification_stub() {
-        // TODO: Implement with mock SSH client
+    async fn test_gpu_cc_only_verification() {
+        use basilica_tee::types::{GpuCcVerificationResult, TeeVerificationResult};
+
+        let evidence = basilica_tee::gpu::parse_evidence(&fixtures::sample_gpu_evidence()).unwrap();
+        let gpu_result = GpuCcVerificationResult {
+            cc_mode_enabled: true,
+            attestation_valid: true,
+            gpu_uuid: evidence[0].gpu_uuid.clone(),
+            nonce_verified: true,
+            gpu_model: evidence[0].gpu_model.clone(),
+            driver_version: evidence[0].driver_version.clone(),
+            verified_at: chrono::Utc::now(),
+        };
+
+        let result = TeeVerificationResult {
+            tee_verified: true,
+            tdx: None,
+            gpu_cc: Some(gpu_result),
+        };
+
+        assert!(result.tee_verified);
+        assert!(result.tdx.is_none());
+        assert!(result.gpu_cc.is_some());
+    }
+
+    /// Test: not_verified() returns correct state
+    #[tokio::test]
+    async fn test_not_verified_result() {
         let result = basilica_tee::types::TeeVerificationResult::not_verified();
+
+        assert!(
+            !result.tee_verified,
+            "not_verified result should not be verified"
+        );
+        assert!(
+            result.tdx.is_none(),
+            "not_verified should have no TDX result"
+        );
         assert!(
             result.gpu_cc.is_none(),
             "not_verified should have no GPU CC result"
@@ -200,41 +278,81 @@ mod combined_tee_e2e_tests {
 
 /// Persistence integration tests
 mod persistence_e2e_tests {
-    /// Test: Store and retrieve TEE status
+    use basilica_validator::miner_prover::types::TeeVerificationStatus;
+
+    /// Test: TeeVerificationStatus can be created from basilica-tee result
     #[tokio::test]
-    async fn test_tee_status_persistence_stub() {
-        // TODO: Implement with test database
+    async fn test_tee_status_from_result() {
+        use basilica_tee::types::{
+            GpuCcVerificationResult, TdxVerificationResult, TeeVerificationResult,
+        };
 
-        // This test should:
-        // 1. Create in-memory SQLite database
-        // 2. Run migrations
-        // 3. Store TEE verification result
-        // 4. Retrieve and verify values match
+        // Create a full verification result
+        let tee_result = TeeVerificationResult {
+            tee_verified: true,
+            tdx: Some(TdxVerificationResult {
+                quote_valid: true,
+                mrtd_matches: true,
+                rtmr_matches: vec![true; 4],
+                report_data_matches: true,
+                raw_quote: vec![],
+                mrtd_hex: "aabbccdd".to_string(),
+                verified_at: chrono::Utc::now(),
+            }),
+            gpu_cc: Some(GpuCcVerificationResult {
+                cc_mode_enabled: true,
+                attestation_valid: true,
+                gpu_uuid: "GPU-12345".to_string(),
+                nonce_verified: true,
+                gpu_model: "H100".to_string(),
+                driver_version: "555.0".to_string(),
+                verified_at: chrono::Utc::now(),
+            }),
+        };
 
-        // Verify TeeVerificationResult can be created
+        // Convert to validator status
+        let status = TeeVerificationStatus::from_tee_result(&tee_result);
+
+        // Verify conversion
+        assert!(status.verified);
+        assert!(status.tdx_verified);
+        assert!(status.gpu_cc_verified);
+        assert_eq!(status.mrtd_hex, Some("aabbccdd".to_string()));
+        assert!(status.gpu_cc_mode_enabled);
+        assert_eq!(status.gpu_model, Some("H100".to_string()));
+        assert!(status.error.is_none());
+    }
+
+    /// Test: TeeVerificationStatus failed state
+    #[tokio::test]
+    async fn test_tee_status_failed() {
+        let status = TeeVerificationStatus::failed("Test error".to_string());
+
+        assert!(!status.verified);
+        assert!(!status.tdx_verified);
+        assert!(!status.gpu_cc_verified);
+        assert_eq!(status.error, Some("Test error".to_string()));
+    }
+
+    /// Test: TeeVerificationResult not_verified helper
+    #[tokio::test]
+    async fn test_tee_result_not_verified() {
         let result = basilica_tee::types::TeeVerificationResult::not_verified();
+
         assert!(!result.tee_verified);
         assert!(result.tdx.is_none());
         assert!(result.gpu_cc.is_none());
-    }
-
-    /// Test: TEE status summary query
-    #[tokio::test]
-    async fn test_tee_status_summary_stub() {
-        // TODO: Implement full persistence test
-        // For now verify we can check verification status
-        let result = basilica_tee::types::TeeVerificationResult::not_verified();
-        assert!(!result.tee_verified, "not_verified() should return false");
     }
 }
 
 /// Validator integration tests
 mod validator_integration_tests {
-    /// Test: TeeValidator creation from config
+    /// Test: TeeValidationConfig creation and defaults
     #[test]
-    fn test_tee_validator_from_config() {
+    fn test_tee_validation_config() {
         use basilica_validator::config::TeeValidationConfig;
 
+        // Test custom config
         let config = TeeValidationConfig {
             enabled: true,
             require_tee: false,
@@ -253,20 +371,72 @@ mod validator_integration_tests {
         assert!(config.expected_mrtd.is_some());
     }
 
-    /// Test: TeeValidator in verification pipeline (stub)
+    /// Test: Default config is disabled
     #[tokio::test]
-    async fn test_tee_validator_in_pipeline_stub() {
-        // TODO: Implement with mock VerificationEngine
-
-        // This test should:
-        // 1. Create mock VerificationEngine with TEE validator
-        // 2. Run verify_node() with mock SSH responses
-        // 3. Assert TEE verification result is included
-
-        // Verify config can be created for pipeline
+    async fn test_tee_default_config_disabled() {
         use basilica_validator::config::TeeValidationConfig;
         let config = TeeValidationConfig::default();
         assert!(!config.enabled, "Default config should be disabled");
+    }
+
+    /// Test: Config with remote attestation URLs
+    #[test]
+    fn test_tee_remote_attestation_config() {
+        use basilica_validator::config::TeeValidationConfig;
+
+        let config = TeeValidationConfig {
+            enabled: true,
+            use_remote_attestation: true,
+            dcap_api_url: "https://example.com/dcap".to_string(),
+            nras_api_url: "https://example.com/nras".to_string(),
+            ..Default::default()
+        };
+
+        assert!(config.use_remote_attestation);
+        assert!(!config.dcap_api_url.is_empty());
+        assert!(!config.nras_api_url.is_empty());
+    }
+
+    /// Test: ExpectedMeasurements from_hex parsing
+    #[test]
+    fn test_expected_measurements_from_hex() {
+        use basilica_tee::types::ExpectedMeasurements;
+
+        // Valid 48-byte hex strings (96 chars)
+        let valid_hex = "aa".repeat(48);
+
+        let result = ExpectedMeasurements::from_hex(Some(&valid_hex), None, None, None, None);
+
+        assert!(result.is_ok());
+        let measurements = result.unwrap();
+        assert!(measurements.mrtd.is_some());
+        assert_eq!(measurements.mrtd.unwrap(), [0xAAu8; 48]);
+    }
+
+    /// Test: ExpectedMeasurements matching
+    #[test]
+    fn test_expected_measurements_matching() {
+        use basilica_tee::types::ExpectedMeasurements;
+
+        let measurements = ExpectedMeasurements {
+            mrtd: Some([0xAAu8; 48]),
+            rtmr0: Some([0xBBu8; 48]),
+            rtmr1: None,
+            rtmr2: None,
+            rtmr3: None,
+        };
+
+        // Matching values
+        assert!(measurements.matches_mrtd(&[0xAAu8; 48]));
+        assert!(measurements.matches_rtmr(0, &[0xBBu8; 48]));
+
+        // Non-matching values
+        assert!(!measurements.matches_mrtd(&[0x00u8; 48]));
+        assert!(!measurements.matches_rtmr(0, &[0x00u8; 48]));
+
+        // None matches anything
+        assert!(measurements.matches_rtmr(1, &[0x00u8; 48]));
+        assert!(measurements.matches_rtmr(2, &[0xFFu8; 48]));
     }
 }
 

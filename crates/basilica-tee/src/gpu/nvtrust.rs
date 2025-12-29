@@ -64,6 +64,46 @@ impl NvEvidenceProvider {
         None
     }
 
+    /// Check if Python SDK is available
+    fn check_python_sdk_available() -> bool {
+        std::process::Command::new("python3")
+            .args(["-c", "import nv_attestation_sdk"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Get evidence using Python SDK
+    async fn get_evidence_python_sdk(nonce: &str) -> TeeResult<String> {
+        let script = format!(
+            r#"
+import json
+from nv_attestation_sdk import attestation
+nonce = bytes.fromhex('{}')
+evidence = attestation.get_evidence(nonce)
+print(json.dumps(evidence))
+"#,
+            nonce
+        );
+
+        let output = Command::new("python3")
+            .args(["-c", &script])
+            .output()
+            .await
+            .map_err(|e| TeeError::GpuAttestation(format!("Failed to run Python SDK: {}", e)))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(stdout.trim().to_string())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Err(TeeError::GpuAttestation(format!(
+                "Python SDK failed: {}",
+                stderr
+            )))
+        }
+    }
+
     /// Create a new NvEvidenceProvider from config
     pub fn from_config(config: &GpuCcConfig) -> Self {
         Self {
@@ -117,13 +157,40 @@ impl NvEvidenceProvider {
             debug!("Failed to create output dir (may already exist): {}", e);
         }
 
+        // Try native attestation tool first
+        let native_result = self.try_native_attestation(name, nonce).await;
+
+        let evidence_json = match native_result {
+            Ok(json) => json,
+            Err(e) => {
+                debug!("[NvEvidence] Native tool failed ({}), trying Python SDK", e);
+
+                // Try Python SDK as fallback
+                if Self::check_python_sdk_available() {
+                    info!("[NvEvidence] Trying Python SDK fallback");
+                    Self::get_evidence_python_sdk(nonce).await?
+                } else {
+                    return Err(e);
+                }
+            }
+        };
+
+        info!("[NvEvidence] Successfully generated evidence");
+
+        // Filter evidence if GPU IDs specified
+        let filtered = self.filter_evidence(&evidence_json, gpu_ids)?;
+        Ok(filtered)
+    }
+
+    /// Try to get evidence using native attestation tool
+    async fn try_native_attestation(&self, name: &str, nonce: &str) -> TeeResult<String> {
         let result = Command::new(&self.binary_path)
             .args(["--name", name, "--nonce", nonce])
             .current_dir(&self.output_dir)
             .output()
             .await
             .map_err(|e| {
-                TeeError::GpuAttestation(format!("Failed to execute nvevidence: {}", e))
+                TeeError::GpuAttestation(format!("Failed to execute {}: {}", self.binary_path, e))
             })?;
 
         if result.status.success() {
@@ -138,16 +205,12 @@ impl NvEvidenceProvider {
                     TeeError::GpuAttestation("No output from evidence command".into())
                 })?;
 
-            info!("[NvEvidence] Successfully generated evidence");
-
-            // Filter evidence if GPU IDs specified
-            let filtered = self.filter_evidence(evidence_json, gpu_ids)?;
-            Ok(filtered)
+            Ok(evidence_json.to_string())
         } else {
             let stderr = String::from_utf8_lossy(&result.stderr);
-            error!("[NvEvidence] Failed to gather GPU evidence: {}", stderr);
+            error!("[NvEvidence] Native tool failed: {}", stderr);
             Err(TeeError::GpuAttestation(format!(
-                "Failed to gather GPU evidence: {}",
+                "Native attestation tool failed: {}",
                 stderr
             )))
         }

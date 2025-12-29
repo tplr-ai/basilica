@@ -82,6 +82,60 @@ pub const INSTALL_ATTESTATION_SDK: &str = r#"
     echo "PACKAGE_NOT_AVAILABLE:using-nvidia-smi"
 "#;
 
+/// Enable GPU CC mode (requires reboot)
+/// Only works on H100/H200 GPUs with CC capability
+pub const ENABLE_CC_MODE: &str = r#"
+    # Check for CC-capable GPU
+    GPU_MODEL=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
+    
+    if [[ "$GPU_MODEL" != *"H100"* ]] && [[ "$GPU_MODEL" != *"H200"* ]]; then
+        echo "NOT_CC_CAPABLE:$GPU_MODEL"
+        exit 0
+    fi
+    
+    # Check current CC mode status
+    CC_STATUS=$(nvidia-smi -q 2>/dev/null | grep -i "Conf Compute Mode" | awk -F: '{print $2}' | tr -d ' ' | head -1)
+    
+    if [ "$CC_STATUS" = "Enabled" ]; then
+        echo "ALREADY_ENABLED"
+        exit 0
+    fi
+    
+    # Enable CC mode (requires root)
+    if ! sudo nvidia-smi conf-compute -scc 1 2>&1; then
+        echo "ENABLE_FAILED:check_permissions"
+        exit 1
+    fi
+    
+    echo "CC_ENABLED:reboot_required"
+"#;
+
+/// Disable GPU CC mode
+pub const DISABLE_CC_MODE: &str = r#"
+    # Disable CC mode
+    if sudo nvidia-smi conf-compute -scc 0 2>&1; then
+        echo "CC_DISABLED:reboot_required"
+    else
+        echo "DISABLE_FAILED"
+        exit 1
+    fi
+"#;
+
+/// Check if GPU CC mode change requires reboot
+pub const CHECK_CC_PENDING_REBOOT: &str = r#"
+    # Check if CC mode change is pending (requires reboot)
+    PENDING=$(nvidia-smi -q 2>/dev/null | grep -i "Conf Compute Protected Memory Size" | head -1)
+    CURRENT=$(nvidia-smi -q 2>/dev/null | grep -i "Conf Compute Mode" | awk -F: '{print $2}' | tr -d ' ' | head -1)
+    
+    if [ "$CURRENT" = "Enabled" ] && [ -z "$PENDING" ]; then
+        echo "CC_FULLY_ENABLED"
+    elif [ "$CURRENT" = "Enabled" ]; then
+        echo "CC_PENDING_REBOOT"
+    else
+        echo "CC_NOT_ENABLED"
+    fi
+"#;
+
 /// Test GPU CC attestation
 /// Uses nvidia-smi for CC mode verification (always available)
 /// Uses NVIDIA attestation SDK for full cryptographic attestation (if available)

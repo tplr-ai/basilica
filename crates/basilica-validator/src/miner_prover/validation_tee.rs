@@ -38,6 +38,21 @@ struct TdxSetupResult {
     installed_tools: bool,
 }
 
+/// Result of GPU CC mode enable operation
+#[derive(Debug, Clone)]
+pub struct GpuCcEnableResult {
+    /// Whether the operation succeeded
+    pub success: bool,
+    /// Whether CC mode was already enabled
+    pub already_enabled: bool,
+    /// Whether a reboot is required to complete enablement
+    pub reboot_required: bool,
+    /// GPU model name
+    pub gpu_model: Option<String>,
+    /// Error message if operation failed
+    pub error: Option<String>,
+}
+
 /// TEE Validator configuration
 #[derive(Debug, Clone)]
 pub struct TeeValidatorConfig {
@@ -538,6 +553,109 @@ fi
             Err(e) => {
                 warn!("[TEE] GPU attestation tools installation error: {}", e);
                 false
+            }
+        }
+    }
+
+    /// Enable GPU Confidential Compute mode on the executor
+    ///
+    /// This will enable CC mode if:
+    /// 1. GPU supports CC (H100/H200)
+    /// 2. CC mode is not already enabled
+    ///
+    /// Returns true if CC mode was enabled (reboot required) or already enabled.
+    pub async fn enable_gpu_cc_mode(
+        &self,
+        connection: &SshConnectionDetails,
+    ) -> Result<GpuCcEnableResult> {
+        info!("[TEE] Checking GPU CC mode status");
+
+        // Check GPU model first
+        let gpu_info = self
+            .ssh_client
+            .execute_command(
+                connection,
+                "nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1",
+                true,
+            )
+            .await
+            .unwrap_or_default();
+
+        let gpu_model = gpu_info.trim().to_string();
+
+        // Check if GPU is CC-capable
+        let is_cc_capable = gpu_model.contains("H100") || gpu_model.contains("H200");
+        if !is_cc_capable {
+            debug!("[TEE] GPU {} is not CC-capable", gpu_model);
+            return Ok(GpuCcEnableResult {
+                success: false,
+                already_enabled: false,
+                reboot_required: false,
+                gpu_model: Some(gpu_model),
+                error: Some("GPU is not CC-capable (requires H100/H200)".to_string()),
+            });
+        }
+
+        // Check current CC mode status
+        let cc_status = self
+            .ssh_client
+            .execute_command(
+                connection,
+                "nvidia-smi -q 2>/dev/null | grep -i 'Conf Compute Mode' | awk -F: '{print $2}' | tr -d ' ' | head -1",
+                true,
+            )
+            .await
+            .unwrap_or_default();
+
+        if cc_status.trim().to_lowercase() == "enabled" {
+            info!("[TEE] GPU CC mode is already enabled");
+            return Ok(GpuCcEnableResult {
+                success: true,
+                already_enabled: true,
+                reboot_required: false,
+                gpu_model: Some(gpu_model),
+                error: None,
+            });
+        }
+
+        // Try to enable CC mode
+        info!("[TEE] Enabling GPU CC mode on executor");
+        let enable_result = self
+            .ssh_client
+            .execute_command(connection, "sudo nvidia-smi conf-compute -scc 1 2>&1", true)
+            .await;
+
+        match enable_result {
+            Ok(output) => {
+                if output.contains("Error") || output.contains("failed") {
+                    warn!("[TEE] Failed to enable GPU CC mode: {}", output);
+                    return Ok(GpuCcEnableResult {
+                        success: false,
+                        already_enabled: false,
+                        reboot_required: false,
+                        gpu_model: Some(gpu_model),
+                        error: Some(format!("Failed to enable CC mode: {}", output)),
+                    });
+                }
+
+                info!("[TEE] GPU CC mode enabled, reboot required");
+                Ok(GpuCcEnableResult {
+                    success: true,
+                    already_enabled: false,
+                    reboot_required: true,
+                    gpu_model: Some(gpu_model),
+                    error: None,
+                })
+            }
+            Err(e) => {
+                warn!("[TEE] Failed to enable GPU CC mode: {}", e);
+                Ok(GpuCcEnableResult {
+                    success: false,
+                    already_enabled: false,
+                    reboot_required: false,
+                    gpu_model: Some(gpu_model),
+                    error: Some(e.to_string()),
+                })
             }
         }
     }
