@@ -262,6 +262,30 @@ impl ValidatorPrometheusMetrics {
             "basilica_validator_tee_verification_duration_seconds",
             "Duration of TEE verification operations"
         );
+        describe_histogram!(
+            "basilica_validator_tdx_quote_generation_duration_seconds",
+            "Duration of TDX quote generation via SSH"
+        );
+        describe_histogram!(
+            "basilica_validator_gpu_cc_attestation_duration_seconds",
+            "Duration of GPU CC attestation generation via SSH"
+        );
+        describe_counter!(
+            "basilica_validator_tdx_quote_generation_total",
+            "Total TDX quote generation attempts"
+        );
+        describe_counter!(
+            "basilica_validator_tdx_quote_generation_failed_total",
+            "Failed TDX quote generation attempts"
+        );
+        describe_counter!(
+            "basilica_validator_gpu_cc_attestation_total",
+            "Total GPU CC attestation attempts"
+        );
+        describe_counter!(
+            "basilica_validator_gpu_cc_attestation_failed_total",
+            "Failed GPU CC attestation attempts"
+        );
 
         Ok(Self {
             last_collection: Arc::new(RwLock::new(SystemTime::now())),
@@ -852,5 +876,51 @@ impl ValidatorPrometheusMetrics {
                 debug!("Failed to collect TEE metrics from database: {}", e);
             }
         }
+    }
+
+    /// Record a TDX quote generation attempt
+    pub fn record_tdx_quote_generation(&self, node_id: &str, success: bool, duration: Duration) {
+        counter!("basilica_validator_tdx_quote_generation_total",
+            "node_id" => node_id.to_string()
+        )
+        .increment(1);
+
+        if !success {
+            counter!("basilica_validator_tdx_quote_generation_failed_total",
+                "node_id" => node_id.to_string()
+            )
+            .increment(1);
+        }
+
+        histogram!("basilica_validator_tdx_quote_generation_duration_seconds")
+            .record(duration.as_secs_f64());
+
+        debug!(
+            "Recorded TDX quote generation: node={}, success={}, duration={:?}",
+            node_id, success, duration
+        );
+    }
+
+    /// Record a GPU CC attestation attempt
+    pub fn record_gpu_cc_attestation(&self, node_id: &str, success: bool, duration: Duration) {
+        counter!("basilica_validator_gpu_cc_attestation_total",
+            "node_id" => node_id.to_string()
+        )
+        .increment(1);
+
+        if !success {
+            counter!("basilica_validator_gpu_cc_attestation_failed_total",
+                "node_id" => node_id.to_string()
+            )
+            .increment(1);
+        }
+
+        histogram!("basilica_validator_gpu_cc_attestation_duration_seconds")
+            .record(duration.as_secs_f64());
+
+        debug!(
+            "Recorded GPU CC attestation: node={}, success={}, duration={:?}",
+            node_id, success, duration
+        );
     }
 }

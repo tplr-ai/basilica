@@ -167,6 +167,7 @@ impl ApiHandler {
             .route("/tee/status", get(routes::tee::get_tee_status_summary))
             .route("/tee/nodes", get(routes::tee::list_tee_verified_nodes))
             .route("/tee/nodes/:node_id", get(routes::tee::get_node_tee_status))
+            .route("/tee/availability", post(routes::check_tee_availability))
             .route(
                 "/tee/availability",
                 post(routes::tee::check_tee_availability),

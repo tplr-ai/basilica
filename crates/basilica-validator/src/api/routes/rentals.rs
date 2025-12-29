@@ -25,6 +25,23 @@ use crate::{
     rental::RentalResponse,
 };
 
+/// TEE (Trusted Execution Environment) requirements for rentals
+#[derive(Debug, Clone, Default, Deserialize, serde::Serialize)]
+pub struct TeeRequirements {
+    /// Require TDX verification
+    #[serde(default)]
+    pub require_tdx: bool,
+    /// Require GPU Confidential Compute mode
+    #[serde(default)]
+    pub require_gpu_cc: bool,
+    /// Expected MRTD measurement (hex encoded) - optional strict matching
+    #[serde(default)]
+    pub expected_mrtd_hex: Option<String>,
+    /// Allowed GPU models for CC mode
+    #[serde(default)]
+    pub allowed_gpu_models: Option<Vec<String>>,
+}
+
 /// Start rental request
 #[derive(Debug, Deserialize, serde::Serialize)]
 pub struct StartRentalRequest {
@@ -41,6 +58,9 @@ pub struct StartRentalRequest {
     pub command: Vec<String>,
     #[serde(default)]
     pub volumes: Vec<VolumeMountRequest>,
+    /// TEE requirements for this rental
+    #[serde(default)]
+    pub tee_requirements: TeeRequirements,
 }
 
 fn default_command() -> Vec<String> {
@@ -58,6 +78,7 @@ impl Default for StartRentalRequest {
             resources: ResourceRequirementsRequest::default(),
             command: default_command(),
             volumes: Vec::new(),
+            tee_requirements: TeeRequirements::default(),
         }
     }
 }
@@ -235,6 +256,99 @@ pub async fn start_rental(
             e
         );
         return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Validate TEE requirements if specified
+    if request.tee_requirements.require_tdx || request.tee_requirements.require_gpu_cc {
+        let tee_status = state
+            .persistence
+            .get_node_tee_status(miner_uid, &node_id)
+            .await
+            .map_err(|e| {
+                error!(
+                    miner_uid = miner_uid,
+                    node_id = %node_id,
+                    "[RENTAL_FLOW] Failed to get TEE status: {}",
+                    e
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+
+        match tee_status {
+            Some(status) => {
+                // Check TDX requirement
+                if request.tee_requirements.require_tdx && !status.tdx_verified {
+                    error!(
+                        miner_uid = miner_uid,
+                        node_id = %node_id,
+                        "[RENTAL_FLOW] Node does not meet TDX requirement"
+                    );
+                    return Err(StatusCode::PRECONDITION_FAILED);
+                }
+
+                // Check GPU CC requirement
+                if request.tee_requirements.require_gpu_cc && !status.gpu_cc_enabled {
+                    error!(
+                        miner_uid = miner_uid,
+                        node_id = %node_id,
+                        "[RENTAL_FLOW] Node does not meet GPU CC requirement"
+                    );
+                    return Err(StatusCode::PRECONDITION_FAILED);
+                }
+
+                // Check MRTD if specified
+                if let Some(ref expected_mrtd) = request.tee_requirements.expected_mrtd_hex {
+                    if status.tdx_mrtd_hex.as_ref() != Some(expected_mrtd) {
+                        error!(
+                            miner_uid = miner_uid,
+                            node_id = %node_id,
+                            expected_mrtd = %expected_mrtd,
+                            actual_mrtd = ?status.tdx_mrtd_hex,
+                            "[RENTAL_FLOW] Node MRTD does not match expected value"
+                        );
+                        return Err(StatusCode::PRECONDITION_FAILED);
+                    }
+                }
+
+                // Check GPU model if specified
+                if let Some(ref allowed_models) = request.tee_requirements.allowed_gpu_models {
+                    if !allowed_models.is_empty() {
+                        let model_matches = status.gpu_cc_model.as_ref().is_some_and(|m| {
+                            allowed_models.iter().any(|allowed| m.contains(allowed))
+                        });
+                        if !model_matches {
+                            error!(
+                                miner_uid = miner_uid,
+                                node_id = %node_id,
+                                allowed_models = ?allowed_models,
+                                actual_model = ?status.gpu_cc_model,
+                                "[RENTAL_FLOW] Node GPU model does not match allowed list"
+                            );
+                            return Err(StatusCode::PRECONDITION_FAILED);
+                        }
+                    }
+                }
+
+                info!(
+                    miner_uid = miner_uid,
+                    node_id = %node_id,
+                    tdx_verified = status.tdx_verified,
+                    gpu_cc_enabled = status.gpu_cc_enabled,
+                    "[RENTAL_FLOW] Node meets TEE requirements"
+                );
+            }
+            None => {
+                // No TEE status recorded - node hasn't been TEE-verified
+                if request.tee_requirements.require_tdx || request.tee_requirements.require_gpu_cc {
+                    error!(
+                        miner_uid = miner_uid,
+                        node_id = %node_id,
+                        "[RENTAL_FLOW] Node has not been TEE-verified"
+                    );
+                    return Err(StatusCode::PRECONDITION_FAILED);
+                }
+            }
+        }
     }
 
     let rental_manager = state.rental_manager.as_ref().ok_or_else(|| {
@@ -521,5 +635,53 @@ pub async fn list_rentals(
     Ok(Json(ListRentalsResponse {
         rentals: rental_list,
         total_count,
+    }))
+}
+
+/// Response for TEE availability check
+#[derive(Debug, serde::Serialize)]
+pub struct TeeAvailabilityResponse {
+    /// Whether nodes meeting requirements are available
+    pub available: bool,
+    /// Number of nodes meeting requirements
+    pub matching_nodes: u64,
+    /// Message about availability
+    pub message: String,
+}
+
+/// Check if nodes matching TEE requirements are available
+pub async fn check_tee_availability(
+    State(state): State<ApiState>,
+    Json(requirements): Json<TeeRequirements>,
+) -> Result<Json<TeeAvailabilityResponse>, StatusCode> {
+    info!(
+        "[RENTAL_FLOW] Checking TEE availability: require_tdx={}, require_gpu_cc={}",
+        requirements.require_tdx, requirements.require_gpu_cc
+    );
+
+    let matching_count = state
+        .persistence
+        .count_nodes_matching_tee_requirements(
+            requirements.require_tdx,
+            requirements.require_gpu_cc,
+            requirements.expected_mrtd_hex.as_deref(),
+        )
+        .await
+        .map_err(|e| {
+            error!("[RENTAL_FLOW] Failed to check TEE availability: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let available = matching_count > 0;
+    let message = if available {
+        format!("{} node(s) meet the TEE requirements", matching_count)
+    } else {
+        "No nodes currently meet the specified TEE requirements".to_string()
+    };
+
+    Ok(Json(TeeAvailabilityResponse {
+        available,
+        matching_nodes: matching_count,
+        message,
     }))
 }

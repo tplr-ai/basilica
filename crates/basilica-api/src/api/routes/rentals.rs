@@ -259,6 +259,7 @@ pub async fn start_rental(
         resources: request.resources,
         command: request.command,
         volumes: request.volumes,
+        tee_requirements: Default::default(),
     };
     debug!(
         node_id = %validator_request.node_id,
