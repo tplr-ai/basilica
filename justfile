@@ -105,6 +105,184 @@ clean:
     rm -f *.log
 
 # =============================================================================
+# TDX HOST INTEGRATION TESTS
+# =============================================================================
+
+# Check TDX host status (read-only)
+test-tdx-status HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🔍 Checking TDX status on {{HOST}}..."
+    TDX_TEST_HOST="{{HOST}}" \
+    TDX_TEST_USER="{{USER}}" \
+    TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+    cargo test --package basilica-validator --test tdx_host_integration_test test_check_tdx_host_status -- --ignored --nocapture
+
+# Run all TDX host checks (read-only)
+test-tdx-host HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🔍 Running TDX host integration tests on {{HOST}}..."
+    TDX_TEST_HOST="{{HOST}}" \
+    TDX_TEST_USER="{{USER}}" \
+    TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+    cargo test --package basilica-validator --test tdx_host_integration_test -- --ignored --nocapture
+
+# Run full TDX integration test
+test-tdx-full HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🔍 Running full TDX integration test on {{HOST}}..."
+    TDX_TEST_HOST="{{HOST}}" \
+    TDX_TEST_USER="{{USER}}" \
+    TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+    cargo test --package basilica-validator --test tdx_host_integration_test test_full_tdx_host_integration -- --ignored --nocapture
+
+# Run TDX host setup (CAUTION: modifies system!)
+test-tdx-setup HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "⚠️  Running TDX host SETUP on {{HOST}} - this will modify the system!"
+    read -p "Are you sure? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        TDX_TEST_HOST="{{HOST}}" \
+        TDX_TEST_USER="{{USER}}" \
+        TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+        TDX_RUN_SETUP=1 \
+        cargo test --package basilica-validator --test tdx_host_integration_test test_run_tdx_host_setup -- --ignored --nocapture
+    else
+        echo "Cancelled."
+    fi
+
+# Run full TDX setup with auto-reboot (CAUTION: reboots node!)
+test-tdx-setup-full HOST USER="root" KEY_PATH="~/.ssh/id_rsa" INTEL_API_KEY="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "⚠️  Running FULL TDX host setup on {{HOST}}"
+    echo "   This will:"
+    echo "   - Install TDX packages (Intel kernel, QEMU, etc.)"
+    echo "   - REBOOT the node automatically"
+    echo "   - Wait for it to come back (up to 10 minutes)"
+    echo "   - Configure attestation services"
+    echo ""
+    read -p "Are you SURE you want to proceed? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        TDX_TEST_HOST="{{HOST}}" \
+        TDX_TEST_USER="{{USER}}" \
+        TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+        TDX_RUN_SETUP=1 \
+        TDX_AUTO_REBOOT=1 \
+        INTEL_API_KEY="{{INTEL_API_KEY}}" \
+        cargo test --package basilica-validator --test tdx_host_integration_test test_full_tdx_setup_with_reboot -- --ignored --nocapture
+    else
+        echo "Cancelled."
+    fi
+
+# Reboot TDX node and wait for it to come back
+test-tdx-reboot HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🔄 Rebooting {{HOST}} and waiting for it to come back..."
+    TDX_TEST_HOST="{{HOST}}" \
+    TDX_TEST_USER="{{USER}}" \
+    TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+    cargo test --package basilica-validator --test tdx_host_integration_test test_reboot_and_wait -- --ignored --nocapture
+
+# =============================================================================
+# TDX GUEST VM TESTS
+# =============================================================================
+
+# Check if TDX host can run TDX VMs
+test-tdx-vm-ready HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🔍 Checking TDX VM readiness on {{HOST}}..."
+    TDX_TEST_HOST="{{HOST}}" \
+    TDX_TEST_USER="{{USER}}" \
+    TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+    cargo test --package basilica-validator --test tdx_host_integration_test test_check_vm_readiness -- --ignored --nocapture
+
+# Download TDX guest image
+test-tdx-download-image HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "📥 Downloading TDX guest image on {{HOST}}..."
+    TDX_TEST_HOST="{{HOST}}" \
+    TDX_TEST_USER="{{USER}}" \
+    TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+    cargo test --package basilica-validator --test tdx_host_integration_test test_download_guest_image -- --ignored --nocapture
+
+# Run full TDX guest VM quote generation test
+test-tdx-guest-quote HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🖥️  Running TDX guest VM quote generation test on {{HOST}}"
+    echo "   This will:"
+    echo "   - Check VM readiness"
+    echo "   - Create a TDX VM"
+    echo "   - Test quote generation inside the VM"
+    echo "   - Cleanup"
+    echo ""
+    echo "   This may take 5-10 minutes..."
+    echo ""
+    read -p "Proceed? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        TDX_TEST_HOST="{{HOST}}" \
+        TDX_TEST_USER="{{USER}}" \
+        TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+        TDX_RUN_VM_TEST=1 \
+        cargo test --package basilica-validator --test tdx_host_integration_test test_tdx_guest_vm_quote_generation -- --ignored --nocapture
+    else
+        echo "Cancelled."
+    fi
+
+# Run step-by-step TDX VM creation test
+test-tdx-vm-create HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🔧 Creating test TDX VM on {{HOST}}..."
+    read -p "This will create a TDX VM. Proceed? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        TDX_TEST_HOST="{{HOST}}" \
+        TDX_TEST_USER="{{USER}}" \
+        TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+        TDX_RUN_VM_TEST=1 \
+        cargo test --package basilica-validator --test tdx_host_integration_test test_create_cleanup_tdx_vm -- --ignored --nocapture
+    else
+        echo "Cancelled."
+    fi
+
+# Full TDX attestation test with two-phase boot (installs Intel kernel)
+test-tdx-attestation HOST USER="root" KEY_PATH="~/.ssh/id_rsa":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "🔐 Running full TDX attestation test on {{HOST}}"
+    echo ""
+    echo "   This will:"
+    echo "   1. Create a TDX VM with generic kernel"
+    echo "   2. Install Intel kernel (linux-image-intel) inside VM"
+    echo "   3. Destroy VM and recreate with Intel kernel"
+    echo "   4. Generate TDX Report from /dev/tdx_guest"
+    echo ""
+    echo "   This may take 10-15 minutes..."
+    echo ""
+    read -p "Proceed? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        TDX_TEST_HOST="{{HOST}}" \
+        TDX_TEST_USER="{{USER}}" \
+        TDX_TEST_KEY_PATH="{{KEY_PATH}}" \
+        TDX_RUN_VM_TEST=1 \
+        cargo test --package basilica-validator --test tdx_host_integration_test test_two_phase_attestation -- --ignored --nocapture
+    else
+        echo "Cancelled."
+    fi
+
+# =============================================================================
 # SECURITY & QUALITY
 # =============================================================================
 

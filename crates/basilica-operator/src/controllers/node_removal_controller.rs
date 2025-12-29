@@ -104,6 +104,7 @@ mod tests {
                     model: "A100".into(),
                     count: 1,
                     memory_gb: 80,
+                    cc_capable: false,
                 },
                 cpu: crate::crd::basilica_node_profile::NodeCpu {
                     model: "AMD EPYC".into(),
@@ -112,6 +113,7 @@ mod tests {
                 memory_gb: 128,
                 storage_gb: 1000,
                 network_gbps: 10,
+                tee: None,
             },
         );
         np.status = Some(
@@ -119,6 +121,8 @@ mod tests {
                 last_validated: None,
                 kube_node_name: Some("gpu-node-1".into()),
                 health: Some("Invalid".into()),
+                tee_verified: false,
+                tee_error: None,
             },
         );
 
@@ -174,6 +178,7 @@ mod tests {
                     model: "A100".into(),
                     count: 1,
                     memory_gb: 80,
+                    cc_capable: false,
                 },
                 cpu: crate::crd::basilica_node_profile::NodeCpu {
                     model: "AMD EPYC".into(),
@@ -182,6 +187,7 @@ mod tests {
                 memory_gb: 128,
                 storage_gb: 1000,
                 network_gbps: 10,
+                tee: None,
             },
         );
         np.status = Some(
@@ -189,6 +195,8 @@ mod tests {
                 last_validated: None,
                 kube_node_name: Some("gpu-node-2".into()),
                 health: Some("Invalid".into()),
+                tee_verified: false,
+                tee_error: None,
             },
         );
 

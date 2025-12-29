@@ -51,8 +51,10 @@ impl TeeStatusManager {
     ) -> NodeTeeStatus {
         info!("[TEE] Checking TEE status for node {}", node_id);
 
-        let mut status = NodeTeeStatus::default();
-        status.last_checked = Some(chrono::Utc::now());
+        let mut status = NodeTeeStatus {
+            last_checked: Some(chrono::Utc::now()),
+            ..Default::default()
+        };
 
         // Check TDX availability
         match self.check_tdx_available(connection).await {

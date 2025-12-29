@@ -179,6 +179,36 @@ pub struct TeeValidationConfig {
     /// Allowed GPU models for CC mode
     #[serde(default = "default_allowed_gpu_models")]
     pub allowed_gpu_models: Vec<String>,
+
+    /// Intel DCAP API URL for remote TDX quote verification
+    #[serde(default = "default_dcap_url")]
+    pub dcap_api_url: String,
+
+    /// Intel DCAP API key (optional, some services require it)
+    #[serde(default)]
+    pub dcap_api_key: Option<String>,
+
+    /// NVIDIA NRAS API URL for remote GPU attestation
+    #[serde(default = "default_nras_url")]
+    pub nras_api_url: String,
+
+    /// NVIDIA NRAS API key (optional)
+    #[serde(default)]
+    pub nras_api_key: Option<String>,
+
+    /// Use remote attestation services (DCAP/NRAS) instead of local verification
+    #[serde(default)]
+    pub use_remote_attestation: bool,
+}
+
+fn default_dcap_url() -> String {
+    // Intel's public DCAP verification service
+    "https://api.trustedservices.intel.com/sgx/dev/attestation/v4/report".to_string()
+}
+
+fn default_nras_url() -> String {
+    // NVIDIA Remote Attestation Service
+    "https://nras.attestation.nvidia.com/v1/attest".to_string()
 }
 
 impl Default for TeeValidationConfig {
@@ -193,6 +223,11 @@ impl Default for TeeValidationConfig {
             expected_rtmr3: None,
             require_gpu_cc: false,
             allowed_gpu_models: default_allowed_gpu_models(),
+            dcap_api_url: default_dcap_url(),
+            dcap_api_key: None,
+            nras_api_url: default_nras_url(),
+            nras_api_key: None,
+            use_remote_attestation: false,
         }
     }
 }
