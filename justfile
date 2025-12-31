@@ -394,25 +394,34 @@ publish-all-dry:
     echo "🔍 Dry-run publishing all crates in dependency order..."
     echo ""
     
+    # Crates in dependency order (tier 1 → tier 7)
     CRATES=(
+        # Tier 1: No internal dependencies
         "basilica-common"
-        "basilica-protocol"
-        "basilica-aggregator"
         "basilica-storage"
         "basilica-operator"
+        # Tier 2: Depends on tier 1
+        "basilica-protocol"
         "basilica-autoscaler"
+        # Tier 3: Depends on tier 1-2
+        "basilica-billing"
         "basilica-validator"
         "basilica-miner"
-        "basilica-billing"
         "basilica-payments"
+        # Tier 4: Depends on tier 1-3
+        "basilica-aggregator"
+        # Tier 5: Depends on tier 1-4
         "basilica-sdk"
+        # Tier 6: Depends on tier 1-5
         "basilica-api"
         "basilica-cli"
+        # Tier 7: Meta-crate
+        "basilica"
     )
     
     for crate in "${CRATES[@]}"; do
         echo "📦 Checking $crate..."
-        cargo publish -p "$crate" --dry-run || echo "⚠️  $crate failed dry-run"
+        cargo publish -p "$crate" --dry-run --allow-dirty || echo "⚠️  $crate failed dry-run"
         echo ""
     done
     
@@ -424,10 +433,16 @@ pre-publish-check crate:
     set -e
     echo "🔍 Checking {{crate}} for crates.io readiness..."
     
-    # Check required fields
-    cargo read-manifest -p {{crate}} | jq -e '.license' > /dev/null || { echo "❌ Missing license"; exit 1; }
-    cargo read-manifest -p {{crate}} | jq -e '.repository' > /dev/null || { echo "❌ Missing repository"; exit 1; }
-    cargo read-manifest -p {{crate}} | jq -e '.description' > /dev/null || { echo "❌ Missing description"; exit 1; }
+    # Check required fields using manifest path
+    MANIFEST="crates/{{crate}}/Cargo.toml"
+    if [ ! -f "$MANIFEST" ]; then
+        echo "❌ Manifest not found: $MANIFEST"
+        exit 1
+    fi
+    
+    cargo read-manifest --manifest-path "$MANIFEST" | jq -e '.license' > /dev/null || { echo "❌ Missing license"; exit 1; }
+    cargo read-manifest --manifest-path "$MANIFEST" | jq -e '.repository' > /dev/null || { echo "❌ Missing repository"; exit 1; }
+    cargo read-manifest --manifest-path "$MANIFEST" | jq -e '.description' > /dev/null || { echo "❌ Missing description"; exit 1; }
     echo "✅ Metadata validated"
     
     # Check README exists
@@ -464,15 +479,140 @@ pre-publish-check-all:
     #!/usr/bin/env bash
     set -e
     
+    # Crates in dependency order (tier 1 → tier 7)
     CRATES=(
         "basilica-common"
+        "basilica-storage"
+        "basilica-operator"
         "basilica-protocol"
+        "basilica-autoscaler"
+        "basilica-billing"
+        "basilica-validator"
+        "basilica-miner"
+        "basilica-payments"
+        "basilica-aggregator"
         "basilica-sdk"
+        "basilica-api"
+        "basilica-cli"
     )
     
     for crate in "${CRATES[@]}"; do
         just pre-publish-check "$crate"
         echo ""
+    done
+
+# =============================================================================
+# RELEASE AUTOMATION
+# =============================================================================
+
+# Tag a crate for release (triggers CI publish workflow)
+release crate version:
+    #!/usr/bin/env bash
+    set -e
+    
+    CRATE="{{crate}}"
+    VERSION="{{version}}"
+    TAG="${CRATE}-v${VERSION}"
+    
+    echo "🏷️  Creating release tag: $TAG"
+    echo ""
+    
+    # Verify version matches Cargo.toml
+    CARGO_VERSION=$(cargo read-manifest -p "$CRATE" | jq -r '.version')
+    if [ "$CARGO_VERSION" != "$VERSION" ]; then
+        echo "❌ Version mismatch!"
+        echo "   Tag version: $VERSION"
+        echo "   Cargo.toml:  $CARGO_VERSION"
+        echo ""
+        echo "Update crates/$CRATE/Cargo.toml first, then run this command again."
+        exit 1
+    fi
+    
+    # Run pre-publish checks
+    echo "🔍 Running pre-publish checks..."
+    just pre-publish-check "$CRATE"
+    
+    echo ""
+    echo "✅ All checks passed!"
+    echo ""
+    echo "Ready to create tag: $TAG"
+    echo "This will trigger the release workflow on GitHub."
+    echo ""
+    read -p "Proceed? [y/N] " -n 1 -r
+    echo
+    
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        git tag -a "$TAG" -m "Release $CRATE v$VERSION"
+        echo "✅ Tag created: $TAG"
+        echo ""
+        echo "Push the tag to trigger release:"
+        echo "  git push origin $TAG"
+    else
+        echo "Aborted."
+    fi
+
+# Push a release tag to GitHub (triggers publish workflow)
+release-push crate version:
+    #!/usr/bin/env bash
+    set -e
+    TAG="{{crate}}-v{{version}}"
+    echo "🚀 Pushing tag: $TAG"
+    git push origin "$TAG"
+    echo ""
+    echo "✅ Tag pushed! GitHub Actions will now:"
+    echo "   1. Verify the crate"
+    echo "   2. Publish to crates.io"
+    echo "   3. Create a GitHub release"
+    echo ""
+    echo "Monitor at: https://github.com/one-covenant/basilica/actions"
+
+# Delete a release tag (if something went wrong)
+release-delete crate version:
+    #!/usr/bin/env bash
+    set -e
+    TAG="{{crate}}-v{{version}}"
+    echo "⚠️  Deleting tag: $TAG"
+    git tag -d "$TAG" 2>/dev/null || true
+    git push origin --delete "$TAG" 2>/dev/null || true
+    echo "✅ Tag deleted"
+
+# List all release tags
+release-list:
+    #!/usr/bin/env bash
+    echo "📋 Release tags:"
+    git tag -l "*-v*" --sort=-version:refname | head -20
+
+# Show what would be released for each crate
+release-status:
+    #!/usr/bin/env bash
+    echo "📦 Crate Release Status"
+    echo "========================"
+    echo ""
+    printf "%-25s %-12s %-20s\n" "CRATE" "VERSION" "LATEST TAG"
+    printf "%-25s %-12s %-20s\n" "-----" "-------" "----------"
+    
+    # Crates in dependency order (tier 1 → tier 7)
+    CRATES=(
+        "basilica-common"
+        "basilica-storage"
+        "basilica-operator"
+        "basilica-protocol"
+        "basilica-autoscaler"
+        "basilica-billing"
+        "basilica-validator"
+        "basilica-miner"
+        "basilica-payments"
+        "basilica-aggregator"
+        "basilica-sdk"
+        "basilica-api"
+        "basilica-cli"
+        "basilica"
+    )
+
+    for crate in "${CRATES[@]}"; do
+        VERSION=$(cargo read-manifest -p "$crate" 2>/dev/null | jq -r '.version' || echo "?")
+        LATEST_TAG=$(git tag -l "${crate}-v*" --sort=-version:refname 2>/dev/null | head -1 || echo "-")
+        printf "%-25s %-12s %-20s\n" "$crate" "$VERSION" "${LATEST_TAG:-"-"}"
     done
 
 # =============================================================================

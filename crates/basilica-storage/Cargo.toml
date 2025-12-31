@@ -20,7 +20,9 @@ path = "src/bin/daemon.rs"
 required-features = ["fuse"]
 
 [features]
-default = ["fuse"]
+# Note: FUSE is opt-in because it requires libfuse3-dev on Linux and isn't available on all platforms
+# To build the daemon: cargo build -p basilica-storage --features fuse
+default = []
 fuse = ["dep:fuser"]
 
 [dependencies]

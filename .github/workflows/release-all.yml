@@ -48,21 +48,22 @@ jobs:
             - name: Generate publish matrix
               id: matrix
               run: |
-                  # Define crates in dependency order
+                  # Define crates in dependency order (tier 1 → tier 7)
                   CRATES='[
                     "basilica-common",
-                    "basilica-protocol",
                     "basilica-storage",
                     "basilica-operator",
-                    "basilica-aggregator",
-                    "basilica-billing",
+                    "basilica-protocol",
                     "basilica-autoscaler",
+                    "basilica-billing",
                     "basilica-payments",
                     "basilica-validator",
                     "basilica-miner",
+                    "basilica-aggregator",
                     "basilica-sdk",
                     "basilica-api",
-                    "basilica-cli"
+                    "basilica-cli",
+                    "basilica"
                   ]'
                   echo "crates=$CRATES" >> $GITHUB_OUTPUT
 
@@ -151,7 +152,7 @@ jobs:
               env:
                   CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
-    # Tier 3: Infrastructure crates
+    # Tier 3: Infrastructure crates (no deps on protocol, just common)
     tier-3:
         name: "Tier 3: Infrastructure"
         runs-on: ubuntu-latest
@@ -160,7 +161,7 @@ jobs:
             max-parallel: 1
             matrix:
                 crate:
-                    [basilica-storage, basilica-operator, basilica-aggregator]
+                    [basilica-storage, basilica-operator, basilica-autoscaler]
         steps:
             - uses: actions/checkout@v4
             - uses: dtolnay/rust-toolchain@stable
@@ -197,7 +198,7 @@ jobs:
               env:
                   CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
-    # Tier 4: Service crates
+    # Tier 4: Service crates (depend on common + protocol)
     tier-4:
         name: "Tier 4: Services"
         runs-on: ubuntu-latest
@@ -208,7 +209,6 @@ jobs:
                 crate:
                     [
                         basilica-billing,
-                        basilica-autoscaler,
                         basilica-payments,
                         basilica-validator,
                         basilica-miner,
@@ -249,11 +249,52 @@ jobs:
               env:
                   CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
 
-    # Tier 5: SDK
+    # Tier 4.5: Aggregator (depends on billing)
+    tier-4-aggregator:
+        name: "Tier 4.5: basilica-aggregator"
+        runs-on: ubuntu-latest
+        needs: tier-4
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            - uses: arduino/setup-protoc@v3
+              with:
+                  version: "25.x"
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+            - name: Install system dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y pkg-config libssl-dev
+
+            - name: Check if already published
+              id: check
+              if: ${{ inputs.skip_published }}
+              run: |
+                  VERSION=$(cargo read-manifest -p basilica-aggregator | jq -r '.version')
+                  if cargo search basilica-aggregator --limit 1 | grep -q "basilica-aggregator = \"$VERSION\""; then
+                    echo "skip=true" >> $GITHUB_OUTPUT
+                  else
+                    echo "skip=false" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Publish basilica-aggregator
+              if: ${{ steps.check.outputs.skip != 'true' }}
+              run: |
+                  if [ "${{ inputs.dry_run }}" == "true" ]; then
+                    cargo publish -p basilica-aggregator --dry-run
+                  else
+                    cargo publish -p basilica-aggregator
+                    sleep 45
+                  fi
+              env:
+                  CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+    # Tier 5: SDK (depends on aggregator + validator)
     tier-5:
         name: "Tier 5: basilica-sdk"
         runs-on: ubuntu-latest
-        needs: tier-4
+        needs: tier-4-aggregator
         steps:
             - uses: actions/checkout@v4
             - uses: dtolnay/rust-toolchain@stable
@@ -378,7 +419,17 @@ jobs:
     summary:
         name: Release Summary
         runs-on: ubuntu-latest
-        needs: [tier-1, tier-2, tier-3, tier-4, tier-5, tier-6, tier-7]
+        needs:
+            [
+                tier-1,
+                tier-2,
+                tier-3,
+                tier-4,
+                tier-4-aggregator,
+                tier-5,
+                tier-6,
+                tier-7,
+            ]
         if: always()
         steps:
             - uses: actions/checkout@v4
