@@ -350,6 +350,145 @@ run_all_tests() {
     log_success "All sandbox E2E tests passed!"
 }
 
+# ============================================================================
+# kubectl-only tests (when API is not available)
+# ============================================================================
+
+KUBECTL_SANDBOX_NAME=""
+
+kubectl_create_sandbox() {
+    log_test "Creating sandbox via kubectl..."
+    
+    KUBECTL_SANDBOX_NAME="test-sandbox-$(date +%s)"
+    
+    kubectl apply -f - <<EOF
+apiVersion: basilica.ai/v1
+kind: BasilicaSandbox
+metadata:
+  name: ${KUBECTL_SANDBOX_NAME}
+  namespace: ${NAMESPACE}
+spec:
+  userId: "test-user"
+  language: python
+  resources:
+    cpu: "500m"
+    memory: "512Mi"
+  timeoutSeconds: 300
+  idleTimeoutSeconds: 60
+  networkIsolation: none
+EOF
+    
+    log_success "Sandbox created: $KUBECTL_SANDBOX_NAME"
+    
+    # Wait for sandbox to be processed
+    log_info "Waiting for sandbox..."
+    sleep 5
+    
+    # Show status
+    kubectl get basilicasandbox "$KUBECTL_SANDBOX_NAME" -n "$NAMESPACE" -o wide
+}
+
+kubectl_test_sandbox() {
+    log_test "Testing sandbox via kubectl..."
+    
+    if [ -z "$KUBECTL_SANDBOX_NAME" ]; then
+        KUBECTL_SANDBOX_NAME=$(kubectl get basilicasandbox -n "$NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+        if [ -z "$KUBECTL_SANDBOX_NAME" ]; then
+            log_error "No sandbox found. Run 'kubectl-create' first."
+            return 1
+        fi
+    fi
+    
+    # Get pod name from sandbox status
+    local pod_name=$(kubectl get basilicasandbox "$KUBECTL_SANDBOX_NAME" -n "$NAMESPACE" -o jsonpath='{.status.podName}' 2>/dev/null || echo "")
+    
+    if [ -z "$pod_name" ]; then
+        log_warn "Sandbox pod not yet created, checking for matching pods..."
+        pod_name=$(kubectl get pods -n "$NAMESPACE" -l "basilica.ai/type=sandbox" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    fi
+    
+    if [ -z "$pod_name" ]; then
+        log_error "No sandbox pod found"
+        return 1
+    fi
+    
+    log_info "Using pod: $pod_name"
+    
+    # Wait for pod to be ready
+    log_info "Waiting for pod to be ready..."
+    kubectl wait --for=condition=Ready pod/"$pod_name" -n "$NAMESPACE" --timeout=60s || {
+        log_warn "Pod not ready, checking status..."
+        kubectl describe pod "$pod_name" -n "$NAMESPACE" | tail -20
+        return 1
+    }
+    
+    # Test exec in sandbox container
+    log_info "Testing exec in sandbox..."
+    local result=$(kubectl exec -n "$NAMESPACE" "$pod_name" -c sandbox -- python3 -c "print('Hello from sandbox!')" 2>&1)
+    
+    if [[ "$result" == *"Hello from sandbox!"* ]]; then
+        log_success "Exec test passed: $result"
+    else
+        log_error "Exec test failed: $result"
+        return 1
+    fi
+    
+    # Test file operations
+    log_info "Testing file operations..."
+    kubectl exec -n "$NAMESPACE" "$pod_name" -c sandbox -- sh -c "echo 'test content' > /workspace/test.txt"
+    local content=$(kubectl exec -n "$NAMESPACE" "$pod_name" -c sandbox -- cat /workspace/test.txt 2>&1)
+    
+    if [[ "$content" == *"test content"* ]]; then
+        log_success "File operations test passed"
+    else
+        log_error "File operations test failed: $content"
+        return 1
+    fi
+    
+    log_success "All kubectl tests passed"
+}
+
+kubectl_cleanup() {
+    log_info "Cleaning up kubectl-created sandboxes..."
+    
+    kubectl delete basilicasandbox --all -n "$NAMESPACE" --ignore-not-found
+    
+    log_success "Cleanup completed"
+}
+
+kubectl_list() {
+    log_info "Listing sandboxes via kubectl..."
+    
+    echo "=== BasilicaSandbox CRs ==="
+    kubectl get basilicasandbox -n "$NAMESPACE" -o wide 2>/dev/null || echo "No sandboxes found"
+    echo ""
+    
+    echo "=== Sandbox Pods ==="
+    kubectl get pods -n "$NAMESPACE" -l "basilica.ai/type=sandbox" -o wide 2>/dev/null || echo "No sandbox pods"
+}
+
+kubectl_run_all() {
+    log_info "Running kubectl-only E2E tests..."
+    echo ""
+    
+    check_prerequisites
+    echo ""
+    
+    setup_crd
+    echo ""
+    
+    kubectl_create_sandbox || { log_error "Create failed"; kubectl_cleanup; exit 1; }
+    echo ""
+    
+    kubectl_test_sandbox || { log_error "Test failed"; kubectl_cleanup; exit 1; }
+    echo ""
+    
+    kubectl_cleanup
+    echo ""
+    
+    log_success "All kubectl E2E tests passed!"
+}
+
 # Main
 case "${1:-all}" in
     setup)
@@ -377,8 +516,31 @@ case "${1:-all}" in
     all)
         run_all_tests
         ;;
+    # kubectl-only commands
+    kubectl-create)
+        kubectl_create_sandbox
+        ;;
+    kubectl-test)
+        kubectl_test_sandbox
+        ;;
+    kubectl-list)
+        kubectl_list
+        ;;
+    kubectl-cleanup)
+        kubectl_cleanup
+        ;;
+    kubectl-all)
+        kubectl_run_all
+        ;;
     *)
         echo "Usage: $0 {setup|create|exec|files|snapshot|list|cleanup|all}"
+        echo ""
+        echo "kubectl-only commands (no API required):"
+        echo "  kubectl-create   - Create sandbox via kubectl"
+        echo "  kubectl-test     - Test sandbox via kubectl exec"
+        echo "  kubectl-list     - List sandboxes via kubectl"
+        echo "  kubectl-cleanup  - Delete all sandboxes"
+        echo "  kubectl-all      - Run all kubectl tests"
         exit 1
         ;;
 esac
