@@ -97,111 +97,33 @@ setup_crd() {
     log_info "Setting up BasilicaSandbox CRD..."
     
     if command -v kubectl &>/dev/null; then
-        # Generate CRD from Rust definition
-        cat <<EOF | kubectl apply -f -
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: basilicasandboxes.basilica.ai
-spec:
-  group: basilica.ai
-  versions:
-    - name: v1
-      served: true
-      storage: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required: ["userId", "language"]
-              properties:
-                userId:
-                  type: string
-                language:
-                  type: string
-                image:
-                  type: string
-                resources:
-                  type: object
-                  properties:
-                    cpu:
-                      type: string
-                    memory:
-                      type: string
-                    gpus:
-                      type: object
-                      properties:
-                        count:
-                          type: integer
-                        model:
-                          type: array
-                          items:
-                            type: string
-                env:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      value:
-                        type: string
-                timeoutSeconds:
-                  type: integer
-                idleTimeoutSeconds:
-                  type: integer
-                autoSnapshot:
-                  type: boolean
-                restoreFrom:
-                  type: string
-                networkIsolation:
-                  type: string
-                  enum: ["none", "egress", "full"]
-            status:
-              type: object
-              properties:
-                state:
-                  type: string
-                sandboxId:
-                  type: string
-                podName:
-                  type: string
-                nodeName:
-                  type: string
-                websocketPath:
-                  type: string
-                createdAt:
-                  type: string
-                lastActivityAt:
-                  type: string
-                message:
-                  type: string
-                snapshotId:
-                  type: string
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: State
-          type: string
-          jsonPath: .status.state
-        - name: Language
-          type: string
-          jsonPath: .spec.language
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
-  scope: Namespaced
-  names:
-    plural: basilicasandboxes
-    singular: basilicasandbox
-    kind: BasilicaSandbox
-    shortNames:
-      - bsb
-      - sandbox
-EOF
-        log_success "CRD applied"
+        # Try to use the generated CRD file from basilica-backend
+        local crd_file="$SCRIPT_DIR/../../../basilica-backend/orchestrator/k8s/crds/basilica-sandbox.yaml"
+        
+        if [ -f "$crd_file" ]; then
+            kubectl apply -f "$crd_file"
+            log_success "CRD applied from $crd_file"
+        else
+            log_warn "CRD file not found at $crd_file - trying to generate"
+            # Fallback: try to generate from operator
+            local operator_dir="$SCRIPT_DIR/../../../basilica-backend"
+            if [ -f "$operator_dir/Cargo.toml" ]; then
+                (cd "$operator_dir" && cargo run --package basilica-operator --bin crdgen 2>/dev/null | \
+                    sed -n '/kind: CustomResourceDefinition/,/---/{/---/!p}' | \
+                    grep -A 1000 "basilicasandboxes.basilica.ai" | kubectl apply -f -)
+                log_success "CRD generated and applied"
+            else
+                log_error "Could not find CRD file or operator to generate it"
+                return 1
+            fi
+        fi
+        
+        # Apply RBAC for sandboxes
+        local rbac_file="$SCRIPT_DIR/../../../basilica-backend/orchestrator/k8s/services/sandbox-rbac.yaml"
+        if [ -f "$rbac_file" ]; then
+            kubectl apply -f "$rbac_file"
+            log_success "RBAC applied"
+        fi
     else
         log_warn "kubectl not available - skipping CRD setup"
     fi
