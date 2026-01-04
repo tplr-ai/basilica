@@ -154,6 +154,22 @@ from .source import SourcePackager
 from .spec import DeploymentSpec
 from .volume import Volume
 
+# Sandbox module
+from .sandbox import (
+    Sandbox,
+    SandboxState,
+    SandboxError,
+    SandboxNotFound,
+    SandboxNotReady,
+    ExecutionError,
+    ExecResult,
+    FileInfo,
+    Snapshot,
+    NetworkIsolation,
+    GpuSpec as SandboxGpuSpec,
+    ResourceSpec as SandboxResourceSpec,
+)
+
 # Default command is a list in Python
 DEFAULT_COMMAND = ["/bin/bash"]
 
@@ -211,6 +227,19 @@ __all__ = [
     "DeploymentStatus",
     "ProgressInfo",
     "SourcePackager",
+    # Sandbox API
+    "Sandbox",
+    "SandboxState",
+    "SandboxError",
+    "SandboxNotFound",
+    "SandboxNotReady",
+    "ExecutionError",
+    "ExecResult",
+    "FileInfo",
+    "Snapshot",
+    "NetworkIsolation",
+    "SandboxGpuSpec",
+    "SandboxResourceSpec",
     # Exceptions
     "BasilicaError",
     "AuthenticationError",
