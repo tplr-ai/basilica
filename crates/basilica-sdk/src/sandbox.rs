@@ -1,21 +1,19 @@
 //! Sandbox module for Basilica SDK
 //!
-//! Provides Daytona-compatible API for running code in isolated sandboxes.
+//! Provides API for running code in isolated sandboxes.
 //!
 //! # Usage
 //!
 //! ```rust,no_run
-//! use basilica_sdk::{BasilicaClient, ClientBuilder};
 //! use basilica_sdk::sandbox::{Sandbox, SandboxConfig};
 //!
 //! # async fn example() -> basilica_sdk::Result<()> {
-//! let client = ClientBuilder::default()
-//!     .base_url("https://api.basilica.ai")
-//!     .with_tokens("access_token", "refresh_token")
-//!     .build()?;
-//!
 //! // Create a Python sandbox
-//! let sandbox = Sandbox::create(&client, SandboxConfig::new("python")).await?;
+//! let sandbox = Sandbox::create(
+//!     "https://api.basilica.ai",
+//!     Some("your-api-token".to_string()),
+//!     SandboxConfig::new("python"),
+//! ).await?;
 //!
 //! // Run code
 //! let result = sandbox.run("print('Hello, World!')").await?;
@@ -283,6 +281,247 @@ pub struct SnapshotInfo {
     pub created_at: String,
     #[serde(default)]
     pub size_bytes: u64,
+}
+
+// ============================================================================
+// Git Types
+// ============================================================================
+
+/// Result of a git clone operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCloneResult {
+    /// Whether the clone succeeded
+    pub success: bool,
+    /// Path where the repository was cloned
+    pub path: String,
+    /// Branch that was checked out
+    pub branch: String,
+    /// Commit hash of HEAD
+    pub commit: String,
+    /// Error message if clone failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Result of git status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatusResult {
+    /// Whether the status command succeeded
+    pub success: bool,
+    /// Current branch
+    pub branch: String,
+    /// Whether the working tree is clean
+    pub clean: bool,
+    /// Staged files
+    #[serde(default)]
+    pub staged: Vec<String>,
+    /// Modified files
+    #[serde(default)]
+    pub modified: Vec<String>,
+    /// Untracked files
+    #[serde(default)]
+    pub untracked: Vec<String>,
+    /// Error message if status failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Result of git commit
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitResult {
+    /// Whether the commit succeeded
+    pub success: bool,
+    /// Commit hash
+    pub commit_hash: String,
+    /// Commit message
+    pub message: String,
+    /// Error message if commit failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Result of git push
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitPushResult {
+    /// Whether the push succeeded
+    pub success: bool,
+    /// Remote name
+    pub remote: String,
+    /// Branch that was pushed
+    pub branch: String,
+    /// Error message if push failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Result of git pull
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitPullResult {
+    /// Whether the pull succeeded
+    pub success: bool,
+    /// Remote name
+    pub remote: String,
+    /// Branch that was pulled
+    pub branch: String,
+    /// Number of commits pulled
+    #[serde(default)]
+    pub commits_pulled: u32,
+    /// Error message if pull failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+// ============================================================================
+// LSP Types
+// ============================================================================
+
+/// LSP server capabilities
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspCapabilities {
+    /// Whether completion is supported
+    #[serde(default)]
+    pub completion_provider: bool,
+    /// Whether hover is supported
+    #[serde(default)]
+    pub hover_provider: bool,
+    /// Whether go-to-definition is supported
+    #[serde(default)]
+    pub definition_provider: bool,
+    /// Whether find-references is supported
+    #[serde(default)]
+    pub references_provider: bool,
+    /// Whether document symbols are supported
+    #[serde(default)]
+    pub document_symbol_provider: bool,
+    /// Raw capabilities from server
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw: Option<serde_json::Value>,
+}
+
+/// LSP error response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LspError {
+    /// Error code
+    pub code: i32,
+    /// Error message
+    pub message: String,
+    /// Additional data
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+}
+
+/// LSP completion item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletionItem {
+    /// The label of this completion item
+    pub label: String,
+    /// The kind of this completion item (1=Text, 2=Method, 3=Function, etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<u32>,
+    /// A human-readable string with additional information
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Documentation for this item
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<String>,
+    /// Text to be inserted when this item is selected
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub insert_text: Option<String>,
+    /// A string to sort this item relative to others
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort_text: Option<String>,
+}
+
+/// LSP hover result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HoverResult {
+    /// Hover contents (markdown or plaintext)
+    pub contents: String,
+    /// Range start position
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range_start: Option<Position>,
+    /// Range end position
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range_end: Option<Position>,
+}
+
+/// LSP position in a document
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Position {
+    /// Line number (0-indexed)
+    pub line: u32,
+    /// Character offset (0-indexed)
+    pub character: u32,
+}
+
+/// LSP diagnostic (error/warning)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Diagnostic {
+    /// The diagnostic message
+    pub message: String,
+    /// Severity: 1=Error, 2=Warning, 3=Info, 4=Hint
+    pub severity: u32,
+    /// Line number (0-indexed)
+    pub line: u32,
+    /// Character offset (0-indexed)
+    pub character: u32,
+    /// End line (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
+    /// End character (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_character: Option<u32>,
+    /// Source of the diagnostic
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// Diagnostic code
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+}
+
+/// LSP location (file + position)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Location {
+    /// File URI
+    pub uri: String,
+    /// Line number (0-indexed)
+    pub line: u32,
+    /// Character offset (0-indexed)
+    pub character: u32,
+}
+
+/// LSP initialization response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspInitResponse {
+    /// Language the server was initialized for
+    pub language: String,
+    /// Server capabilities
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<serde_json::Value>,
+}
+
+/// LSP request response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LspRequestResponse {
+    /// Request ID
+    pub id: u64,
+    /// Result if successful
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<serde_json::Value>,
+    /// Error if failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<LspError>,
 }
 
 /// Sandbox status response
@@ -673,6 +912,632 @@ impl Sandbox {
             .await
     }
 
+    // =========================================================================
+    // Git Operations
+    // =========================================================================
+
+    /// Clone a git repository into the sandbox
+    ///
+    /// # Arguments
+    /// * `url` - Repository URL (HTTPS or SSH)
+    /// * `path` - Target path (defaults to /workspace/<repo_name>)
+    /// * `branch` - Branch to clone (defaults to default branch)
+    /// * `depth` - Clone depth for shallow clone (defaults to 1)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let result = sandbox.git_clone("https://github.com/user/repo.git", None, None, None).await?;
+    /// println!("Cloned to {} at commit {}", result.path, result.commit);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn git_clone(
+        &self,
+        url: &str,
+        path: Option<&str>,
+        branch: Option<&str>,
+        depth: Option<u32>,
+    ) -> Result<GitCloneResult> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct GitCloneRequest {
+            url: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            path: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            branch: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            depth: Option<u32>,
+        }
+
+        self.http
+            .post(
+                &format!("/sandboxes/{}/git/clone", self.sandbox_id),
+                &GitCloneRequest {
+                    url: url.to_string(),
+                    path: path.map(String::from),
+                    branch: branch.map(String::from),
+                    depth,
+                },
+            )
+            .await
+    }
+
+    /// Get git status in the sandbox
+    ///
+    /// # Arguments
+    /// * `path` - Path to the git repository (defaults to /workspace)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let status = sandbox.git_status(None).await?;
+    /// if !status.clean {
+    ///     println!("Modified files: {:?}", status.modified);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn git_status(&self, path: Option<&str>) -> Result<GitStatusResult> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct GitStatusRequest {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            path: Option<String>,
+        }
+
+        self.http
+            .post(
+                &format!("/sandboxes/{}/git/status", self.sandbox_id),
+                &GitStatusRequest {
+                    path: path.map(String::from),
+                },
+            )
+            .await
+    }
+
+    /// Commit changes in the sandbox
+    ///
+    /// Stages all changes and creates a commit.
+    ///
+    /// # Arguments
+    /// * `message` - Commit message
+    /// * `path` - Path to the git repository (defaults to /workspace)
+    /// * `author` - Author in format "Name <email>" (optional)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let result = sandbox.git_commit("Add new feature", None, None).await?;
+    /// println!("Created commit: {}", result.commit_hash);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn git_commit(
+        &self,
+        message: &str,
+        path: Option<&str>,
+        author: Option<&str>,
+    ) -> Result<GitCommitResult> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct GitCommitRequest {
+            message: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            path: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            author: Option<String>,
+        }
+
+        self.http
+            .post(
+                &format!("/sandboxes/{}/git/commit", self.sandbox_id),
+                &GitCommitRequest {
+                    message: message.to_string(),
+                    path: path.map(String::from),
+                    author: author.map(String::from),
+                },
+            )
+            .await
+    }
+
+    /// Push commits to remote
+    ///
+    /// # Arguments
+    /// * `path` - Path to the git repository (defaults to /workspace)
+    /// * `remote` - Remote name (defaults to "origin")
+    /// * `branch` - Branch to push (defaults to current branch)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let result = sandbox.git_push(None, Some("origin"), None).await?;
+    /// if result.success {
+    ///     println!("Pushed to {}/{}", result.remote, result.branch);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn git_push(
+        &self,
+        path: Option<&str>,
+        remote: Option<&str>,
+        branch: Option<&str>,
+    ) -> Result<GitPushResult> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct GitPushRequest {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            path: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            remote: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            branch: Option<String>,
+        }
+
+        self.http
+            .post(
+                &format!("/sandboxes/{}/git/push", self.sandbox_id),
+                &GitPushRequest {
+                    path: path.map(String::from),
+                    remote: remote.map(String::from),
+                    branch: branch.map(String::from),
+                },
+            )
+            .await
+    }
+
+    /// Pull changes from remote
+    ///
+    /// # Arguments
+    /// * `path` - Path to the git repository (defaults to /workspace)
+    /// * `remote` - Remote name (defaults to "origin")
+    /// * `branch` - Branch to pull (defaults to current branch)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let result = sandbox.git_pull(None, Some("origin"), None).await?;
+    /// println!("Pulled {} commits", result.commits_pulled);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn git_pull(
+        &self,
+        path: Option<&str>,
+        remote: Option<&str>,
+        branch: Option<&str>,
+    ) -> Result<GitPullResult> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct GitPullRequest {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            path: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            remote: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            branch: Option<String>,
+        }
+
+        self.http
+            .post(
+                &format!("/sandboxes/{}/git/pull", self.sandbox_id),
+                &GitPullRequest {
+                    path: path.map(String::from),
+                    remote: remote.map(String::from),
+                    branch: branch.map(String::from),
+                },
+            )
+            .await
+    }
+
+    // =========================================================================
+    // LSP (Language Server Protocol) Operations
+    // =========================================================================
+
+    /// Initialize LSP server for code intelligence
+    ///
+    /// Starts a language server for the specified language, enabling
+    /// code completion, hover documentation, diagnostics, and more.
+    ///
+    /// # Arguments
+    /// * `language` - Programming language (defaults to sandbox's language)
+    /// * `root_path` - Root path for the workspace
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let capabilities = sandbox.lsp_init(None, "/workspace").await?;
+    /// if capabilities.completion_provider {
+    ///     println!("Code completion available!");
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn lsp_init(
+        &self,
+        language: Option<&str>,
+        root_path: &str,
+    ) -> Result<LspCapabilities> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct LspInitRequest {
+            language: String,
+            root_path: String,
+        }
+
+        let response: LspInitResponse = self
+            .http
+            .post(
+                &format!("/sandboxes/{}/lsp/init", self.sandbox_id),
+                &LspInitRequest {
+                    language: language.unwrap_or(&self.language).to_string(),
+                    root_path: root_path.to_string(),
+                },
+            )
+            .await?;
+
+        // Parse capabilities from raw response
+        let caps = response.capabilities.unwrap_or_default();
+        Ok(LspCapabilities {
+            completion_provider: caps
+                .get("completionProvider")
+                .map(|v| !v.is_null())
+                .unwrap_or(false),
+            hover_provider: caps
+                .get("hoverProvider")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            definition_provider: caps
+                .get("definitionProvider")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            references_provider: caps
+                .get("referencesProvider")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            document_symbol_provider: caps
+                .get("documentSymbolProvider")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            raw: Some(caps),
+        })
+    }
+
+    /// Get code completions at a position
+    ///
+    /// # Arguments
+    /// * `file` - File path (relative to workspace)
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character position (0-indexed)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let completions = sandbox.lsp_completion("main.py", 10, 5).await?;
+    /// for item in completions.iter().take(5) {
+    ///     println!("{}: {:?}", item.label, item.detail);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn lsp_completion(
+        &self,
+        file: &str,
+        line: u32,
+        character: u32,
+    ) -> Result<Vec<CompletionItem>> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct LspRequest {
+            method: String,
+            params: serde_json::Value,
+        }
+
+        let response: LspRequestResponse = self
+            .http
+            .post(
+                &format!("/sandboxes/{}/lsp/request", self.sandbox_id),
+                &LspRequest {
+                    method: "textDocument/completion".to_string(),
+                    params: serde_json::json!({
+                        "textDocument": { "uri": format!("file://{}", file) },
+                        "position": { "line": line, "character": character }
+                    }),
+                },
+            )
+            .await?;
+
+        if let Some(err) = response.error {
+            return Err(ApiError::Internal {
+                message: format!("LSP error: {}", err.message),
+            });
+        }
+
+        let result = response.result.unwrap_or_default();
+        let items = if let Some(items) = result.get("items") {
+            items.clone()
+        } else if result.is_array() {
+            result
+        } else {
+            return Ok(Vec::new());
+        };
+
+        let completions: Vec<CompletionItem> = serde_json::from_value(items).unwrap_or_default();
+        Ok(completions)
+    }
+
+    /// Get hover information at a position
+    ///
+    /// # Arguments
+    /// * `file` - File path (relative to workspace)
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character position (0-indexed)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// if let Some(hover) = sandbox.lsp_hover("main.py", 10, 5).await? {
+    ///     println!("{}", hover.contents);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn lsp_hover(
+        &self,
+        file: &str,
+        line: u32,
+        character: u32,
+    ) -> Result<Option<HoverResult>> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct LspRequest {
+            method: String,
+            params: serde_json::Value,
+        }
+
+        let response: LspRequestResponse = self
+            .http
+            .post(
+                &format!("/sandboxes/{}/lsp/request", self.sandbox_id),
+                &LspRequest {
+                    method: "textDocument/hover".to_string(),
+                    params: serde_json::json!({
+                        "textDocument": { "uri": format!("file://{}", file) },
+                        "position": { "line": line, "character": character }
+                    }),
+                },
+            )
+            .await?;
+
+        if response.error.is_some() {
+            return Ok(None);
+        }
+
+        let result = match response.result {
+            Some(r) if !r.is_null() => r,
+            _ => return Ok(None),
+        };
+
+        // Extract contents from various formats
+        let contents = if let Some(contents) = result.get("contents") {
+            if let Some(s) = contents.as_str() {
+                s.to_string()
+            } else if let Some(obj) = contents.as_object() {
+                obj.get("value")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string()
+            } else if let Some(arr) = contents.as_array() {
+                arr.iter()
+                    .filter_map(|v| {
+                        if let Some(s) = v.as_str() {
+                            Some(s.to_string())
+                        } else if let Some(obj) = v.as_object() {
+                            obj.get("value").and_then(|v| v.as_str()).map(String::from)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                return Ok(None);
+            }
+        } else {
+            return Ok(None);
+        };
+
+        let range = result.get("range");
+        let range_start = range.and_then(|r| r.get("start")).and_then(|s| {
+            Some(Position {
+                line: s.get("line")?.as_u64()? as u32,
+                character: s.get("character")?.as_u64()? as u32,
+            })
+        });
+        let range_end = range.and_then(|r| r.get("end")).and_then(|e| {
+            Some(Position {
+                line: e.get("line")?.as_u64()? as u32,
+                character: e.get("character")?.as_u64()? as u32,
+            })
+        });
+
+        Ok(Some(HoverResult {
+            contents,
+            range_start,
+            range_end,
+        }))
+    }
+
+    /// Get definition location for symbol at position
+    ///
+    /// # Arguments
+    /// * `file` - File path (relative to workspace)
+    /// * `line` - Line number (0-indexed)
+    /// * `character` - Character position (0-indexed)
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use basilica_sdk::sandbox::Sandbox;
+    /// # async fn example(sandbox: &Sandbox) -> basilica_sdk::Result<()> {
+    /// let locations = sandbox.lsp_definition("main.py", 10, 5).await?;
+    /// for loc in locations {
+    ///     println!("{}:{}:{}", loc.uri, loc.line, loc.character);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn lsp_definition(
+        &self,
+        file: &str,
+        line: u32,
+        character: u32,
+    ) -> Result<Vec<Location>> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct LspRequest {
+            method: String,
+            params: serde_json::Value,
+        }
+
+        let response: LspRequestResponse = self
+            .http
+            .post(
+                &format!("/sandboxes/{}/lsp/request", self.sandbox_id),
+                &LspRequest {
+                    method: "textDocument/definition".to_string(),
+                    params: serde_json::json!({
+                        "textDocument": { "uri": format!("file://{}", file) },
+                        "position": { "line": line, "character": character }
+                    }),
+                },
+            )
+            .await?;
+
+        if response.error.is_some() {
+            return Ok(Vec::new());
+        }
+
+        let result = match response.result {
+            Some(r) if !r.is_null() => r,
+            _ => return Ok(Vec::new()),
+        };
+
+        // Can be a single location or array
+        let locations_data = if result.is_array() {
+            result.as_array().cloned().unwrap_or_default()
+        } else {
+            vec![result]
+        };
+
+        let mut locations = Vec::new();
+        for loc in locations_data {
+            if let (Some(uri), Some(range)) = (loc.get("uri"), loc.get("range")) {
+                if let (Some(uri_str), Some(start)) = (uri.as_str(), range.get("start")) {
+                    locations.push(Location {
+                        uri: uri_str.to_string(),
+                        line: start.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as u32,
+                        character: start
+                            .get("character")
+                            .and_then(|c| c.as_u64())
+                            .unwrap_or(0) as u32,
+                    });
+                }
+            }
+        }
+
+        Ok(locations)
+    }
+
+    /// Notify LSP server that a file was opened
+    ///
+    /// # Arguments
+    /// * `file` - File path (relative to workspace)
+    /// * `content` - File content
+    pub async fn lsp_did_open(&self, file: &str, content: &str) -> Result<()> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct LspNotification {
+            method: String,
+            params: serde_json::Value,
+        }
+
+        let _: serde_json::Value = self
+            .http
+            .post(
+                &format!("/sandboxes/{}/lsp/notify", self.sandbox_id),
+                &LspNotification {
+                    method: "textDocument/didOpen".to_string(),
+                    params: serde_json::json!({
+                        "textDocument": {
+                            "uri": format!("file://{}", file),
+                            "languageId": self.language,
+                            "version": 1,
+                            "text": content
+                        }
+                    }),
+                },
+            )
+            .await
+            .unwrap_or_default();
+
+        Ok(())
+    }
+
+    /// Notify LSP server that a file was changed
+    ///
+    /// # Arguments
+    /// * `file` - File path (relative to workspace)
+    /// * `content` - New file content
+    pub async fn lsp_did_change(&self, file: &str, content: &str) -> Result<()> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct LspNotification {
+            method: String,
+            params: serde_json::Value,
+        }
+
+        let _: serde_json::Value = self
+            .http
+            .post(
+                &format!("/sandboxes/{}/lsp/notify", self.sandbox_id),
+                &LspNotification {
+                    method: "textDocument/didChange".to_string(),
+                    params: serde_json::json!({
+                        "textDocument": { "uri": format!("file://{}", file), "version": 2 },
+                        "contentChanges": [{ "text": content }]
+                    }),
+                },
+            )
+            .await
+            .unwrap_or_default();
+
+        Ok(())
+    }
+
+    /// Shutdown the LSP server
+    pub async fn lsp_shutdown(&self) -> Result<()> {
+        let _: serde_json::Value = self
+            .http
+            .post(
+                &format!("/sandboxes/{}/lsp/shutdown", self.sandbox_id),
+                &serde_json::json!({}),
+            )
+            .await
+            .unwrap_or_default();
+
+        Ok(())
+    }
+
     /// Delete the sandbox
     pub async fn delete(self) -> Result<()> {
         self.http
@@ -767,6 +1632,101 @@ mod tests {
         let json = serde_json::to_string(&config).expect("should serialize");
         assert!(json.contains("\"language\":\"python\""));
         assert!(json.contains("\"env\":["));
+    }
+
+    // Git tests
+    #[test]
+    fn test_git_clone_result_deserialization() {
+        let json = r#"{"success":true,"path":"/workspace/repo","branch":"main","commit":"abc1234"}"#;
+        let result: GitCloneResult = serde_json::from_str(json).expect("should deserialize");
+        
+        assert!(result.success);
+        assert_eq!(result.path, "/workspace/repo");
+        assert_eq!(result.branch, "main");
+        assert_eq!(result.commit, "abc1234");
+        assert!(result.error.is_none());
+    }
+
+    #[test]
+    fn test_git_clone_result_with_error() {
+        let json = r#"{"success":false,"path":"","branch":"","commit":"","error":"Repository not found"}"#;
+        let result: GitCloneResult = serde_json::from_str(json).expect("should deserialize");
+        
+        assert!(!result.success);
+        assert_eq!(result.error, Some("Repository not found".to_string()));
+    }
+
+    #[test]
+    fn test_git_status_result_deserialization() {
+        let json = r#"{"success":true,"branch":"feature","clean":false,"staged":["file1.txt"],"modified":["file2.txt"],"untracked":["file3.txt"]}"#;
+        let result: GitStatusResult = serde_json::from_str(json).expect("should deserialize");
+        
+        assert!(result.success);
+        assert_eq!(result.branch, "feature");
+        assert!(!result.clean);
+        assert_eq!(result.staged, vec!["file1.txt"]);
+        assert_eq!(result.modified, vec!["file2.txt"]);
+        assert_eq!(result.untracked, vec!["file3.txt"]);
+    }
+
+    #[test]
+    fn test_git_status_clean() {
+        let json = r#"{"success":true,"branch":"main","clean":true,"staged":[],"modified":[],"untracked":[]}"#;
+        let result: GitStatusResult = serde_json::from_str(json).expect("should deserialize");
+        
+        assert!(result.success);
+        assert!(result.clean);
+        assert!(result.staged.is_empty());
+        assert!(result.modified.is_empty());
+        assert!(result.untracked.is_empty());
+    }
+
+    #[test]
+    fn test_git_commit_result_deserialization() {
+        let json = r#"{"success":true,"commitHash":"def5678","message":"Test commit"}"#;
+        let result: GitCommitResult = serde_json::from_str(json).expect("should deserialize");
+        
+        assert!(result.success);
+        assert_eq!(result.commit_hash, "def5678");
+        assert_eq!(result.message, "Test commit");
+    }
+
+    #[test]
+    fn test_git_push_result_deserialization() {
+        let json = r#"{"success":true,"remote":"origin","branch":"main"}"#;
+        let result: GitPushResult = serde_json::from_str(json).expect("should deserialize");
+        
+        assert!(result.success);
+        assert_eq!(result.remote, "origin");
+        assert_eq!(result.branch, "main");
+    }
+
+    #[test]
+    fn test_git_pull_result_deserialization() {
+        let json = r#"{"success":true,"remote":"origin","branch":"main","commitsPulled":3}"#;
+        let result: GitPullResult = serde_json::from_str(json).expect("should deserialize");
+        
+        assert!(result.success);
+        assert_eq!(result.remote, "origin");
+        assert_eq!(result.branch, "main");
+        assert_eq!(result.commits_pulled, 3);
+    }
+
+    #[test]
+    fn test_git_clone_result_serialization() {
+        let result = GitCloneResult {
+            success: true,
+            path: "/workspace/repo".to_string(),
+            branch: "main".to_string(),
+            commit: "abc123".to_string(),
+            error: None,
+        };
+        
+        let json = serde_json::to_string(&result).expect("should serialize");
+        assert!(json.contains("\"success\":true"));
+        assert!(json.contains("\"branch\":\"main\""));
+        // error should be omitted when None
+        assert!(!json.contains("\"error\""));
     }
 }
 

@@ -7,19 +7,17 @@
 //!
 //! ## Sandbox Support
 //!
-//! The SDK includes support for Daytona-compatible sandboxes for code execution:
+//! The SDK includes support for sandboxes for code execution:
 //!
 //! ```rust,no_run
-//! use basilica_sdk::{BasilicaClient, ClientBuilder};
 //! use basilica_sdk::sandbox::{Sandbox, SandboxConfig};
 //!
 //! # async fn example() -> basilica_sdk::Result<()> {
-//! let client = ClientBuilder::default()
-//!     .base_url("https://api.basilica.ai")
-//!     .with_tokens("access_token", "refresh_token")
-//!     .build()?;
-//!
-//! let sandbox = Sandbox::create(&client, SandboxConfig::new("python")).await?;
+//! let sandbox = Sandbox::create(
+//!     "https://api.basilica.ai",
+//!     Some("your-api-token".to_string()),
+//!     SandboxConfig::new("python"),
+//! ).await?;
 //! let result = sandbox.run("print('Hello!')").await?;
 //! # Ok(())
 //! # }
