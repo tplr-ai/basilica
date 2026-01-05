@@ -181,6 +181,12 @@ from .sandbox import (
     NetworkIsolation,
     GpuSpec as SandboxGpuSpec,
     ResourceSpec as SandboxResourceSpec,
+    # Git result types
+    GitCloneResult,
+    GitStatusResult,
+    GitCommitResult,
+    GitPushResult,
+    GitPullResult,
 )
 
 # Default command is a list in Python
@@ -253,6 +259,12 @@ __all__ = [
     "NetworkIsolation",
     "SandboxGpuSpec",
     "SandboxResourceSpec",
+    # Sandbox Git
+    "GitCloneResult",
+    "GitStatusResult",
+    "GitCommitResult",
+    "GitPushResult",
+    "GitPullResult",
     # Exceptions
     "BasilicaError",
     "AuthenticationError",
