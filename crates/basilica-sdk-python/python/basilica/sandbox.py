@@ -38,14 +38,14 @@ import requests
 class SandboxState(Enum):
     """State of a sandbox."""
 
-    CREATING = "Creating"
-    INITIALIZING = "Initializing"
-    READY = "Ready"
-    EXECUTING = "Executing"
-    SNAPSHOTTING = "Snapshotting"
-    TERMINATING = "Terminating"
-    TERMINATED = "Terminated"
-    FAILED = "Failed"
+    CREATING = "creating"
+    INITIALIZING = "initializing"
+    READY = "ready"
+    EXECUTING = "executing"
+    SNAPSHOTTING = "snapshotting"
+    TERMINATING = "terminating"
+    TERMINATED = "terminated"
+    FAILED = "failed"
 
 
 class NetworkIsolation(Enum):
