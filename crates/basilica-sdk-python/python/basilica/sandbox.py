@@ -321,7 +321,7 @@ class Sandbox:
     def create(
         cls,
         language: str = "python",
-        runtime: str = "container",
+        runtime: str = "firecracker",
         image: Optional[str] = None,
         cpu: str = "500m",
         memory: str = "512Mi",
@@ -343,7 +343,7 @@ class Sandbox:
 
         Args:
             language: Programming language (python, javascript, bash, etc.)
-            runtime: Sandbox runtime - "container" (default), "firecracker" (microVM), or "gvisor"
+            runtime: Sandbox runtime - "firecracker" (default, microVM), "container", or "gvisor"
             image: Custom container image (uses default for language if not specified)
             cpu: CPU allocation (e.g., "500m", "1", "2")
             memory: Memory allocation (e.g., "512Mi", "1Gi", "4Gi")
