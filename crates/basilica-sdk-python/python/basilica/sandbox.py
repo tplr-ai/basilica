@@ -231,6 +231,156 @@ class Location:
     character: int
 
 
+# =============================================================================
+# Namespace Classes for Improved DX
+# =============================================================================
+
+class SandboxFiles:
+    """
+    File operations namespace for Sandbox.
+    
+    Provides a cleaner API for file operations with automatic /workspace prefix
+    for relative paths.
+    
+    Example:
+        >>> sandbox.files.write("app.py", "print('hello')")  # -> /workspace/app.py
+        >>> content = sandbox.files.read("app.py")
+        >>> files = sandbox.files.list()
+    """
+    
+    def __init__(self, sandbox: "Sandbox"):
+        self._sandbox = sandbox
+    
+    def _resolve_path(self, path: str) -> str:
+        """Add /workspace prefix if path is relative."""
+        if not path.startswith("/"):
+            return f"/workspace/{path}"
+        return path
+    
+    def read(self, path: str, encoding: str = "utf-8") -> str:
+        """Read a file. Relative paths are prefixed with /workspace."""
+        return self._sandbox.read_file(self._resolve_path(path), encoding)
+    
+    def write(self, path: str, content: str, mode: Optional[str] = None) -> None:
+        """Write a file. Relative paths are prefixed with /workspace."""
+        self._sandbox.write_file(self._resolve_path(path), content, mode)
+    
+    def list(self, path: str = "/workspace", recursive: bool = False) -> List["FileInfo"]:
+        """List files in a directory."""
+        return self._sandbox.list_files(self._resolve_path(path), recursive)
+    
+    def exists(self, path: str) -> bool:
+        """Check if a file exists."""
+        try:
+            self._sandbox.read_file(self._resolve_path(path))
+            return True
+        except SandboxError:
+            return False
+
+
+class SandboxProcess:
+    """
+    Process execution namespace for Sandbox.
+    
+    Provides a cleaner API for running code and commands.
+    
+    Example:
+        >>> result = sandbox.process.run("print('hello')")
+        >>> result = sandbox.process.exec(["ls", "-la"])
+        >>> result = sandbox.process.exec(["python3", "app.py"], cwd="/workspace")
+    """
+    
+    def __init__(self, sandbox: "Sandbox"):
+        self._sandbox = sandbox
+    
+    def run(
+        self,
+        code: str,
+        entrypoint: Optional[str] = None,
+        args: Optional[List[str]] = None,
+        env: Optional[Dict[str, str]] = None,
+        timeout: int = 300,
+    ) -> "ExecResult":
+        """Run code in the sandbox's language runtime."""
+        return self._sandbox.run(code, entrypoint, args, env, timeout)
+    
+    def exec(
+        self,
+        command: List[str],
+        cwd: Optional[str] = None,
+        stdin: Optional[str] = None,
+        env: Optional[Dict[str, str]] = None,
+        timeout: int = 300,
+    ) -> "ExecResult":
+        """Execute a shell command."""
+        return self._sandbox.exec(command, cwd, stdin, env, timeout)
+
+
+class SandboxGit:
+    """
+    Git operations namespace for Sandbox.
+    
+    Provides a cleaner API for Git operations.
+    
+    Example:
+        >>> sandbox.git.clone("https://github.com/user/repo")
+        >>> sandbox.git.commit("Fix bug")
+        >>> sandbox.git.push()
+    """
+    
+    def __init__(self, sandbox: "Sandbox"):
+        self._sandbox = sandbox
+    
+    def clone(
+        self,
+        url: str,
+        path: str = "/workspace/repo",
+        branch: Optional[str] = None,
+        depth: Optional[int] = None,
+        auth_token: Optional[str] = None,
+    ) -> "GitCloneResult":
+        """Clone a git repository."""
+        return self._sandbox.git_clone(url, path, branch, depth, auth_token)
+    
+    def status(self, path: str = "/workspace/repo") -> "GitStatusResult":
+        """Get git status."""
+        return self._sandbox.git_status(path)
+    
+    def commit(
+        self,
+        message: str,
+        path: str = "/workspace/repo",
+        author_name: Optional[str] = None,
+        author_email: Optional[str] = None,
+    ) -> "GitCommitResult":
+        """Create a git commit."""
+        return self._sandbox.git_commit(message, path, author_name, author_email)
+    
+    def push(
+        self,
+        path: str = "/workspace/repo",
+        remote: str = "origin",
+        branch: Optional[str] = None,
+        auth_token: Optional[str] = None,
+    ) -> "GitPushResult":
+        """Push to remote."""
+        return self._sandbox.git_push(path, remote, branch, auth_token)
+    
+    def pull(
+        self,
+        path: str = "/workspace/repo",
+        remote: str = "origin",
+        branch: Optional[str] = None,
+        auth_token: Optional[str] = None,
+    ) -> "GitPullResult":
+        """Pull from remote."""
+        return self._sandbox.git_pull(path, remote, branch, auth_token)
+
+
+# =============================================================================
+# Exceptions
+# =============================================================================
+
 class SandboxError(Exception):
     """Base exception for sandbox errors."""
 
@@ -275,6 +425,13 @@ class Sandbox:
     - Snapshot/restore functionality
 
     Example:
+        >>> # Using context manager (recommended - auto-cleanup)
+        >>> with Sandbox.create(language="python") as sandbox:
+        ...     result = sandbox.run("print('Hello!')")
+        ...     print(result.stdout)
+        Hello!
+
+        >>> # Manual lifecycle management
         >>> sandbox = Sandbox.create(language="python")
         >>> result = sandbox.run("print('Hello!')")
         >>> print(result.stdout)
@@ -303,6 +460,62 @@ class Sandbox:
                 "Content-Type": "application/json",
             }
         )
+        
+        # Initialize namespace objects for cleaner API
+        self._files: Optional[SandboxFiles] = None
+        self._process: Optional[SandboxProcess] = None
+        self._git: Optional[SandboxGit] = None
+
+    @property
+    def files(self) -> SandboxFiles:
+        """
+        File operations namespace.
+        
+        Example:
+            >>> sandbox.files.write("app.py", code)
+            >>> content = sandbox.files.read("app.py")
+        """
+        if self._files is None:
+            self._files = SandboxFiles(self)
+        return self._files
+    
+    @property
+    def process(self) -> SandboxProcess:
+        """
+        Process execution namespace.
+        
+        Example:
+            >>> sandbox.process.run("print('hello')")
+            >>> sandbox.process.exec(["ls", "-la"])
+        """
+        if self._process is None:
+            self._process = SandboxProcess(self)
+        return self._process
+    
+    @property
+    def git(self) -> SandboxGit:
+        """
+        Git operations namespace.
+        
+        Example:
+            >>> sandbox.git.clone("https://github.com/user/repo")
+            >>> sandbox.git.commit("message")
+        """
+        if self._git is None:
+            self._git = SandboxGit(self)
+        return self._git
+
+    def __enter__(self) -> "Sandbox":
+        """Enter context manager - returns self for use in with statement."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit context manager - automatically deletes the sandbox."""
+        try:
+            self.delete()
+        except Exception:
+            # Silently ignore deletion errors on context exit
+            pass
 
     @property
     def state(self) -> SandboxState:
@@ -355,8 +568,8 @@ class Sandbox:
             auto_snapshot: Save snapshot on termination
             restore_from: Snapshot ID to restore from
             network_isolation: Network isolation mode
-            api_url: Basilica API URL (defaults to BASILICA_API_URL env var)
-            api_key: API key (defaults to BASILICA_API_TOKEN env var)
+            api_url: Basilica API URL (defaults to global config or BASILICA_API_URL env var)
+            api_key: API key (defaults to global config or BASILICA_API_TOKEN env var)
             wait: Wait for sandbox to be ready
             wait_timeout: Timeout for waiting (seconds)
 
@@ -366,12 +579,18 @@ class Sandbox:
         Raises:
             SandboxError: If creation fails
         """
+        # Use global config if available, then environment variables
+        from basilica import get_config
+        config = get_config()
+        
         if api_url is None:
-            api_url = os.environ.get("BASILICA_API_URL", "https://api.basilica.ai")
+            api_url = config.api_url
         if api_key is None:
-            api_key = os.environ.get("BASILICA_API_TOKEN", "")
+            api_key = config.api_key or ""
         if not api_key:
-            raise SandboxError("API key is required. Set BASILICA_API_TOKEN env var.")
+            raise SandboxError(
+                "API key is required. Set BASILICA_API_TOKEN env var or call basilica.configure()."
+            )
 
         # Build request
         request: Dict[str, Any] = {
@@ -434,8 +653,8 @@ class Sandbox:
 
         Args:
             sandbox_id: The sandbox ID
-            api_url: API URL
-            api_key: API key
+            api_url: API URL (defaults to global config or BASILICA_API_URL env var)
+            api_key: API key (defaults to global config or BASILICA_API_TOKEN env var)
 
         Returns:
             Sandbox: The sandbox
@@ -443,10 +662,14 @@ class Sandbox:
         Raises:
             SandboxNotFound: If sandbox doesn't exist
         """
+        # Use global config if available
+        from basilica import get_config
+        config = get_config()
+        
         if api_url is None:
-            api_url = os.environ.get("BASILICA_API_URL", "https://api.basilica.ai")
+            api_url = config.api_url
         if api_key is None:
-            api_key = os.environ.get("BASILICA_API_TOKEN", "")
+            api_key = config.api_key or ""
 
         url = f"{api_url}/api/v1/sandboxes/{sandbox_id}"
         headers = {
