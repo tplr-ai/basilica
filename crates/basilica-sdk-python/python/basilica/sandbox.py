@@ -336,7 +336,7 @@ class Sandbox:
         api_url: Optional[str] = None,
         api_key: Optional[str] = None,
         wait: bool = True,
-        wait_timeout: int = 120,
+        wait_timeout: int = 300,
     ) -> "Sandbox":
         """
         Create a new sandbox.
@@ -488,7 +488,7 @@ class Sandbox:
         except requests.RequestException as e:
             raise SandboxError(f"Failed to refresh sandbox: {e}") from e
 
-    def wait_until_ready(self, timeout: int = 120, poll_interval: float = 1.0) -> None:
+    def wait_until_ready(self, timeout: int = 300, poll_interval: float = 1.0) -> None:
         """
         Wait for sandbox to become ready.
 
