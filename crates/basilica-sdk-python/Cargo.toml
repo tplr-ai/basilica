@@ -22,10 +22,12 @@ stub-gen = ["dep:pyo3-stub-gen", "dep:pyo3-stub-gen-derive"]
 basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client"] }
 pyo3 = { workspace = true }
+pyo3-async-runtimes = { workspace = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 pyo3-stub-gen-derive = { workspace = true, optional = true }
 tokio = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 pythonize = { workspace = true }
 
 [build-dependencies]

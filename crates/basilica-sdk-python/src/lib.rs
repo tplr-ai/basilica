@@ -1,6 +1,7 @@
 //! Python bindings for the Basilica SDK
 #![allow(clippy::useless_conversion)]
 
+mod sandbox_types;
 mod types;
 
 use basilica_sdk::{
@@ -20,6 +21,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
+use crate::sandbox_types::{
+    CompletionItem, Diagnostic, EnvVar as SandboxEnvVar, ExecResult as SandboxExecResult,
+    FileInfo as SandboxFileInfo, GitCloneResult, GitCommitResult, GitPullResult, GitPushResult,
+    GitStatusResult, GpuSpec as SandboxGpuSpec, HoverResult, Location, LspCapabilities,
+    NetworkIsolation, Position, ResourceSpec as SandboxResourceSpec, SandboxConfig, SandboxState,
+    SandboxStatus, SnapshotInfo, PySandbox,
+};
 use crate::types::{
     AvailableNode, CreateDeploymentRequest, DeleteDeploymentResponse, DeploymentListResponse,
     DeploymentResponse, HealthCheckResponse, ListAvailableNodesQuery, ListRentalsQuery,
@@ -39,6 +47,25 @@ struct BasilicaClient {
 fn to_pyobject<T: serde::Serialize>(py: Python<'_>, value: &T) -> PyResult<Py<pyo3::PyAny>> {
     // `pythonize` already returns `PyResult<_>` so just propagate as-is.
     Ok(pythonize(py, value)?.unbind())
+}
+
+pub(crate) fn map_api_error(error: basilica_sdk::ApiError) -> PyErr {
+    use basilica_sdk::ApiError;
+    match error {
+        ApiError::InvalidRequest { message } => PyValueError::new_err(message),
+        ApiError::NotFound { resource } => PyKeyError::new_err(format!("Not found: {}", resource)),
+        ApiError::Authentication { message } | ApiError::MissingAuthentication { message } => {
+            PyPermissionError::new_err(format!(
+                "Authentication error: {}. Please provide a valid API key or set BASILICA_API_TOKEN environment variable.",
+                message
+            ))
+        }
+        ApiError::Authorization { message } => PyPermissionError::new_err(message),
+        ApiError::HttpClient(e) => PyConnectionError::new_err(e.to_string()),
+        ApiError::BadRequest { message } => PyValueError::new_err(message),
+        ApiError::Internal { message } => PyRuntimeError::new_err(message),
+        _ => PyRuntimeError::new_err(error.to_string()),
+    }
 }
 
 #[pymethods]
@@ -348,22 +375,7 @@ impl BasilicaClient {
 impl BasilicaClient {
     /// Map Rust errors to appropriate Python exception types
     fn map_error_to_python(&self, error: basilica_sdk::ApiError) -> PyErr {
-        use basilica_sdk::ApiError;
-
-        match error {
-            ApiError::InvalidRequest { message } => PyValueError::new_err(message),
-            ApiError::NotFound { resource } => {
-                PyKeyError::new_err(format!("Not found: {}", resource))
-            }
-            ApiError::Authentication { message } | ApiError::MissingAuthentication { message } => {
-                PyPermissionError::new_err(format!("Authentication error: {}. Please provide a valid API key or set BASILICA_API_TOKEN environment variable.", message))
-            }
-            ApiError::Authorization { message } => PyPermissionError::new_err(message),
-            ApiError::HttpClient(e) => PyConnectionError::new_err(e.to_string()),
-            ApiError::BadRequest { message } => PyValueError::new_err(message),
-            ApiError::Internal { message } => PyRuntimeError::new_err(message),
-            _ => PyRuntimeError::new_err(error.to_string()),
-        }
+        map_api_error(error)
     }
 }
 
@@ -403,6 +415,34 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Core client
     m.add_class::<BasilicaClient>()?;
+
+    // Sandbox core
+    m.add_class::<PySandbox>()?;
+    m.add_class::<SandboxConfig>()?;
+    m.add_class::<SandboxState>()?;
+    m.add_class::<SandboxStatus>()?;
+    m.add_class::<SandboxExecResult>()?;
+    m.add_class::<SandboxFileInfo>()?;
+    m.add_class::<SnapshotInfo>()?;
+    m.add_class::<NetworkIsolation>()?;
+    m.add_class::<SandboxGpuSpec>()?;
+    m.add_class::<SandboxResourceSpec>()?;
+    m.add_class::<SandboxEnvVar>()?;
+
+    // Git types
+    m.add_class::<GitCloneResult>()?;
+    m.add_class::<GitStatusResult>()?;
+    m.add_class::<GitCommitResult>()?;
+    m.add_class::<GitPushResult>()?;
+    m.add_class::<GitPullResult>()?;
+
+    // LSP types
+    m.add_class::<LspCapabilities>()?;
+    m.add_class::<CompletionItem>()?;
+    m.add_class::<HoverResult>()?;
+    m.add_class::<Diagnostic>()?;
+    m.add_class::<Location>()?;
+    m.add_class::<Position>()?;
 
     // Response types
     m.add_class::<types::HealthCheckResponse>()?;
