@@ -41,13 +41,21 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum SandboxState {
+    #[serde(alias = "creating")]
     Creating,
+    #[serde(alias = "initializing")]
     Initializing,
+    #[serde(alias = "ready")]
     Ready,
+    #[serde(alias = "executing")]
     Executing,
+    #[serde(alias = "snapshotting")]
     Snapshotting,
+    #[serde(alias = "terminating")]
     Terminating,
+    #[serde(alias = "terminated")]
     Terminated,
+    #[serde(alias = "failed")]
     Failed,
 }
 
@@ -132,6 +140,9 @@ fn default_memory() -> String {
 pub struct SandboxConfig {
     /// Programming language (python, javascript, bash, etc.)
     pub language: String,
+    /// Sandbox runtime (firecracker, container, gvisor)
+    #[serde(default = "default_runtime")]
+    pub runtime: String,
     /// Custom container image (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
@@ -156,6 +167,9 @@ pub struct SandboxConfig {
     /// Network isolation mode
     #[serde(default)]
     pub network_isolation: NetworkIsolation,
+    /// Custom namespace (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub namespace: Option<String>,
 }
 
 fn default_timeout() -> u32 {
@@ -166,11 +180,16 @@ fn default_idle_timeout() -> u32 {
     600
 }
 
+fn default_runtime() -> String {
+    "firecracker".to_string()
+}
+
 impl SandboxConfig {
     /// Create a new sandbox config with defaults
     pub fn new(language: impl Into<String>) -> Self {
         Self {
             language: language.into(),
+            runtime: default_runtime(),
             image: None,
             resources: ResourceSpec::default(),
             env: Vec::new(),
@@ -179,6 +198,7 @@ impl SandboxConfig {
             auto_snapshot: false,
             restore_from: None,
             network_isolation: NetworkIsolation::default(),
+            namespace: None,
         }
     }
 
@@ -224,6 +244,18 @@ impl SandboxConfig {
     /// Set network isolation
     pub fn with_network_isolation(mut self, isolation: NetworkIsolation) -> Self {
         self.network_isolation = isolation;
+        self
+    }
+
+    /// Set runtime
+    pub fn with_runtime(mut self, runtime: impl Into<String>) -> Self {
+        self.runtime = runtime.into();
+        self
+    }
+
+    /// Set namespace
+    pub fn with_namespace(mut self, namespace: impl Into<String>) -> Self {
+        self.namespace = Some(namespace.into());
         self
     }
 }
@@ -664,7 +696,7 @@ impl Sandbox {
         };
 
         let language = config.language.clone();
-        let response: CreateSandboxResponse = http.post("/sandboxes", &config).await?;
+        let response: CreateSandboxResponse = http.post("/api/v1/sandboxes", &config).await?;
 
         Ok(Self {
             http,
@@ -690,6 +722,24 @@ impl Sandbox {
         }
     }
 
+    /// Create a sandbox from an existing ID with a known language
+    pub fn from_id_with_language(
+        base_url: impl Into<String>,
+        auth_token: Option<String>,
+        sandbox_id: impl Into<String>,
+        language: impl Into<String>,
+    ) -> Self {
+        Self {
+            http: SandboxHttpClient {
+                client: Client::new(),
+                base_url: base_url.into(),
+                auth_token,
+            },
+            sandbox_id: sandbox_id.into(),
+            language: language.into(),
+        }
+    }
+
     /// Get the sandbox ID
     pub fn id(&self) -> &str {
         &self.sandbox_id
@@ -703,7 +753,7 @@ impl Sandbox {
     /// Get sandbox status
     pub async fn status(&self) -> Result<SandboxStatus> {
         self.http
-            .get(&format!("/sandboxes/{}", self.sandbox_id))
+            .get(&format!("/api/v1/sandboxes/{}", self.sandbox_id))
             .await
     }
 
@@ -746,7 +796,7 @@ impl Sandbox {
 
         self.http
             .post(
-                &format!("/sandboxes/{}/exec", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/exec", self.sandbox_id),
                 &ExecRequest {
                     command: command.iter().map(|s| s.to_string()).collect(),
                 },
@@ -760,6 +810,8 @@ impl Sandbox {
         command: &[&str],
         stdin: Option<&str>,
         workdir: Option<&str>,
+        env: Option<Vec<EnvVar>>,
+        timeout_seconds: Option<u32>,
     ) -> Result<ExecResult> {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
@@ -769,15 +821,21 @@ impl Sandbox {
             stdin: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             workdir: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            env: Option<Vec<EnvVar>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            timeout_seconds: Option<u32>,
         }
 
         self.http
             .post(
-                &format!("/sandboxes/{}/exec", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/exec", self.sandbox_id),
                 &ExecRequest {
                     command: command.iter().map(|s| s.to_string()).collect(),
                     stdin: stdin.map(String::from),
                     workdir: workdir.map(String::from),
+                    env,
+                    timeout_seconds,
                 },
             )
             .await
@@ -785,35 +843,47 @@ impl Sandbox {
 
     /// Run code in the sandbox
     pub async fn run(&self, code: &str) -> Result<ExecResult> {
-        #[derive(Serialize)]
-        struct RunRequest {
-            code: String,
-        }
-
-        self.http
-            .post(
-                &format!("/sandboxes/{}/run", self.sandbox_id),
-                &RunRequest {
-                    code: code.to_string(),
-                },
-            )
-            .await
+        self.run_with_options(code, None, None, None, None).await
     }
 
     /// Run code with arguments
     pub async fn run_with_args(&self, code: &str, args: &[&str]) -> Result<ExecResult> {
+        self.run_with_options(code, None, Some(args), None, None)
+            .await
+    }
+
+    /// Run code with full options
+    pub async fn run_with_options(
+        &self,
+        code: &str,
+        entrypoint: Option<&str>,
+        args: Option<&[&str]>,
+        env: Option<Vec<EnvVar>>,
+        timeout_seconds: Option<u32>,
+    ) -> Result<ExecResult> {
         #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
         struct RunRequest {
             code: String,
-            args: Vec<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            entrypoint: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            args: Option<Vec<String>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            env: Option<Vec<EnvVar>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            timeout_seconds: Option<u32>,
         }
 
         self.http
             .post(
-                &format!("/sandboxes/{}/run", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/run", self.sandbox_id),
                 &RunRequest {
                     code: code.to_string(),
-                    args: args.iter().map(|s| s.to_string()).collect(),
+                    entrypoint: entrypoint.map(String::from),
+                    args: args.map(|a| a.iter().map(|s| s.to_string()).collect()),
+                    env,
+                    timeout_seconds,
                 },
             )
             .await
@@ -834,7 +904,7 @@ impl Sandbox {
         let response: ReadResponse = self
             .http
             .post(
-                &format!("/sandboxes/{}/files/read", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/files/read", self.sandbox_id),
                 &ReadRequest {
                     path: path.to_string(),
                 },
@@ -858,7 +928,7 @@ impl Sandbox {
         let _: EmptyResponse = self
             .http
             .post(
-                &format!("/sandboxes/{}/files/write", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/files/write", self.sandbox_id),
                 &WriteRequest {
                     path: path.to_string(),
                     content: content.to_string(),
@@ -871,9 +941,20 @@ impl Sandbox {
 
     /// List files in a directory
     pub async fn list_files(&self, path: &str) -> Result<Vec<FileInfo>> {
+        self.list_files_with_options(path, false).await
+    }
+
+    /// List files in a directory with options
+    pub async fn list_files_with_options(
+        &self,
+        path: &str,
+        recursive: bool,
+    ) -> Result<Vec<FileInfo>> {
         #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
         struct ListRequest {
             path: String,
+            recursive: bool,
         }
 
         #[derive(Deserialize)]
@@ -884,9 +965,10 @@ impl Sandbox {
         let response: ListResponse = self
             .http
             .post(
-                &format!("/sandboxes/{}/files/list", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/files/list", self.sandbox_id),
                 &ListRequest {
                     path: path.to_string(),
+                    recursive,
                 },
             )
             .await?;
@@ -904,7 +986,7 @@ impl Sandbox {
 
         self.http
             .post(
-                &format!("/sandboxes/{}/snapshot", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/snapshot", self.sandbox_id),
                 &SnapshotRequest {
                     name: name.map(String::from),
                 },
@@ -954,7 +1036,7 @@ impl Sandbox {
 
         self.http
             .post(
-                &format!("/sandboxes/{}/git/clone", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/git/clone", self.sandbox_id),
                 &GitCloneRequest {
                     url: url.to_string(),
                     path: path.map(String::from),
@@ -991,7 +1073,7 @@ impl Sandbox {
 
         self.http
             .post(
-                &format!("/sandboxes/{}/git/status", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/git/status", self.sandbox_id),
                 &GitStatusRequest {
                     path: path.map(String::from),
                 },
@@ -1035,7 +1117,7 @@ impl Sandbox {
 
         self.http
             .post(
-                &format!("/sandboxes/{}/git/commit", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/git/commit", self.sandbox_id),
                 &GitCommitRequest {
                     message: message.to_string(),
                     path: path.map(String::from),
@@ -1082,7 +1164,7 @@ impl Sandbox {
 
         self.http
             .post(
-                &format!("/sandboxes/{}/git/push", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/git/push", self.sandbox_id),
                 &GitPushRequest {
                     path: path.map(String::from),
                     remote: remote.map(String::from),
@@ -1127,7 +1209,7 @@ impl Sandbox {
 
         self.http
             .post(
-                &format!("/sandboxes/{}/git/pull", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/git/pull", self.sandbox_id),
                 &GitPullRequest {
                     path: path.map(String::from),
                     remote: remote.map(String::from),
@@ -1176,7 +1258,7 @@ impl Sandbox {
         let response: LspInitResponse = self
             .http
             .post(
-                &format!("/sandboxes/{}/lsp/init", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/lsp/init", self.sandbox_id),
                 &LspInitRequest {
                     language: language.unwrap_or(&self.language).to_string(),
                     root_path: root_path.to_string(),
@@ -1245,7 +1327,7 @@ impl Sandbox {
         let response: LspRequestResponse = self
             .http
             .post(
-                &format!("/sandboxes/{}/lsp/request", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/lsp/request", self.sandbox_id),
                 &LspRequest {
                     method: "textDocument/completion".to_string(),
                     params: serde_json::json!({
@@ -1308,7 +1390,7 @@ impl Sandbox {
         let response: LspRequestResponse = self
             .http
             .post(
-                &format!("/sandboxes/{}/lsp/request", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/lsp/request", self.sandbox_id),
                 &LspRequest {
                     method: "textDocument/hover".to_string(),
                     params: serde_json::json!({
@@ -1412,7 +1494,7 @@ impl Sandbox {
         let response: LspRequestResponse = self
             .http
             .post(
-                &format!("/sandboxes/{}/lsp/request", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/lsp/request", self.sandbox_id),
                 &LspRequest {
                     method: "textDocument/definition".to_string(),
                     params: serde_json::json!({
@@ -1446,10 +1528,8 @@ impl Sandbox {
                     locations.push(Location {
                         uri: uri_str.to_string(),
                         line: start.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as u32,
-                        character: start
-                            .get("character")
-                            .and_then(|c| c.as_u64())
-                            .unwrap_or(0) as u32,
+                        character: start.get("character").and_then(|c| c.as_u64()).unwrap_or(0)
+                            as u32,
                     });
                 }
             }
@@ -1474,7 +1554,7 @@ impl Sandbox {
         let _: serde_json::Value = self
             .http
             .post(
-                &format!("/sandboxes/{}/lsp/notify", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/lsp/notify", self.sandbox_id),
                 &LspNotification {
                     method: "textDocument/didOpen".to_string(),
                     params: serde_json::json!({
@@ -1509,7 +1589,7 @@ impl Sandbox {
         let _: serde_json::Value = self
             .http
             .post(
-                &format!("/sandboxes/{}/lsp/notify", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/lsp/notify", self.sandbox_id),
                 &LspNotification {
                     method: "textDocument/didChange".to_string(),
                     params: serde_json::json!({
@@ -1529,7 +1609,7 @@ impl Sandbox {
         let _: serde_json::Value = self
             .http
             .post(
-                &format!("/sandboxes/{}/lsp/shutdown", self.sandbox_id),
+                &format!("/api/v1/sandboxes/{}/lsp/shutdown", self.sandbox_id),
                 &serde_json::json!({}),
             )
             .await
@@ -1541,7 +1621,7 @@ impl Sandbox {
     /// Delete the sandbox
     pub async fn delete(self) -> Result<()> {
         self.http
-            .delete(&format!("/sandboxes/{}", self.sandbox_id))
+            .delete(&format!("/api/v1/sandboxes/{}", self.sandbox_id))
             .await
     }
 
@@ -1626,20 +1706,32 @@ mod tests {
 
     #[test]
     fn test_config_serialization() {
-        let config = SandboxConfig::new("python")
-            .with_env("TEST", "value");
+        let config = SandboxConfig::new("python").with_env("TEST", "value");
 
         let json = serde_json::to_string(&config).expect("should serialize");
         assert!(json.contains("\"language\":\"python\""));
+        assert!(json.contains("\"runtime\":\"firecracker\""));
         assert!(json.contains("\"env\":["));
+    }
+
+    #[test]
+    fn test_config_runtime_and_namespace() {
+        let config = SandboxConfig::new("python")
+            .with_runtime("container")
+            .with_namespace("u-test");
+
+        let json = serde_json::to_string(&config).expect("should serialize");
+        assert!(json.contains("\"runtime\":\"container\""));
+        assert!(json.contains("\"namespace\":\"u-test\""));
     }
 
     // Git tests
     #[test]
     fn test_git_clone_result_deserialization() {
-        let json = r#"{"success":true,"path":"/workspace/repo","branch":"main","commit":"abc1234"}"#;
+        let json =
+            r#"{"success":true,"path":"/workspace/repo","branch":"main","commit":"abc1234"}"#;
         let result: GitCloneResult = serde_json::from_str(json).expect("should deserialize");
-        
+
         assert!(result.success);
         assert_eq!(result.path, "/workspace/repo");
         assert_eq!(result.branch, "main");
@@ -1649,9 +1741,10 @@ mod tests {
 
     #[test]
     fn test_git_clone_result_with_error() {
-        let json = r#"{"success":false,"path":"","branch":"","commit":"","error":"Repository not found"}"#;
+        let json =
+            r#"{"success":false,"path":"","branch":"","commit":"","error":"Repository not found"}"#;
         let result: GitCloneResult = serde_json::from_str(json).expect("should deserialize");
-        
+
         assert!(!result.success);
         assert_eq!(result.error, Some("Repository not found".to_string()));
     }
@@ -1660,7 +1753,7 @@ mod tests {
     fn test_git_status_result_deserialization() {
         let json = r#"{"success":true,"branch":"feature","clean":false,"staged":["file1.txt"],"modified":["file2.txt"],"untracked":["file3.txt"]}"#;
         let result: GitStatusResult = serde_json::from_str(json).expect("should deserialize");
-        
+
         assert!(result.success);
         assert_eq!(result.branch, "feature");
         assert!(!result.clean);
@@ -1673,7 +1766,7 @@ mod tests {
     fn test_git_status_clean() {
         let json = r#"{"success":true,"branch":"main","clean":true,"staged":[],"modified":[],"untracked":[]}"#;
         let result: GitStatusResult = serde_json::from_str(json).expect("should deserialize");
-        
+
         assert!(result.success);
         assert!(result.clean);
         assert!(result.staged.is_empty());
@@ -1685,7 +1778,7 @@ mod tests {
     fn test_git_commit_result_deserialization() {
         let json = r#"{"success":true,"commitHash":"def5678","message":"Test commit"}"#;
         let result: GitCommitResult = serde_json::from_str(json).expect("should deserialize");
-        
+
         assert!(result.success);
         assert_eq!(result.commit_hash, "def5678");
         assert_eq!(result.message, "Test commit");
@@ -1695,7 +1788,7 @@ mod tests {
     fn test_git_push_result_deserialization() {
         let json = r#"{"success":true,"remote":"origin","branch":"main"}"#;
         let result: GitPushResult = serde_json::from_str(json).expect("should deserialize");
-        
+
         assert!(result.success);
         assert_eq!(result.remote, "origin");
         assert_eq!(result.branch, "main");
@@ -1705,7 +1798,7 @@ mod tests {
     fn test_git_pull_result_deserialization() {
         let json = r#"{"success":true,"remote":"origin","branch":"main","commitsPulled":3}"#;
         let result: GitPullResult = serde_json::from_str(json).expect("should deserialize");
-        
+
         assert!(result.success);
         assert_eq!(result.remote, "origin");
         assert_eq!(result.branch, "main");
@@ -1721,7 +1814,7 @@ mod tests {
             commit: "abc123".to_string(),
             error: None,
         };
-        
+
         let json = serde_json::to_string(&result).expect("should serialize");
         assert!(json.contains("\"success\":true"));
         assert!(json.contains("\"branch\":\"main\""));
@@ -1729,4 +1822,3 @@ mod tests {
         assert!(!json.contains("\"error\""));
     }
 }
-
