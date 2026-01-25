@@ -30,6 +30,7 @@ Authentication:
 import os
 import re
 import time
+import requests
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -449,11 +450,31 @@ class BasilicaClient:
 
         self._base_url = base_url
         self._client = _BasilicaClient(base_url, api_key)
+        self._api_key = api_key or os.environ.get("BASILICA_API_TOKEN")
 
     @property
     def base_url(self) -> str:
         """The API endpoint URL."""
         return self._base_url
+
+    def capabilities(self) -> Dict[str, Any]:
+        """
+        Fetch API capability metadata.
+
+        Returns:
+            Dict[str, Any]: Capabilities response
+        """
+        if not self._api_key:
+            raise AuthenticationError("API key is required for capabilities()")
+
+        url = f"{self._base_url}/api/v1/capabilities"
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        try:
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            raise BasilicaError(f"Failed to fetch capabilities: {e}") from e
 
     def deploy(
         self,

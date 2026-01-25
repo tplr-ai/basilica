@@ -274,6 +274,28 @@ with python_sandbox() as sb:
     sb.git.push()
 ```
 
+### Streaming Output (WebSocket)
+
+Install the optional WebSocket client:
+
+```bash
+pip install basilica-sdk[ws]
+```
+
+Stream raw output chunks (including binary-safe data):
+
+```python
+from basilica import python_sandbox
+from basilica.sandbox import StreamOutput, StreamExit
+
+with python_sandbox() as sb:
+    for event in sb.process.exec_stream(["bash", "-lc", "python - <<'PY'\nprint('hi')\nPY"]):
+        if isinstance(event, StreamOutput):
+            print(event.stream, event.text, end="")
+        elif isinstance(event, StreamExit):
+            print("exit", event.code)
+```
+
 ### Global Configuration
 
 Configure once, use everywhere:

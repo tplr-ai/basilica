@@ -26,11 +26,14 @@ Usage:
     >>> sandbox.delete()
 """
 
+import base64
+import json
 import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
+from urllib.parse import quote
 
 import requests
 
@@ -83,10 +86,41 @@ class ExecResult:
     stderr: str
     exit_code: int
     duration_ms: int = 0
+    should_continue: Optional[bool] = None
 
     @property
     def success(self) -> bool:
         return self.exit_code == 0
+
+
+@dataclass
+class StreamOutput:
+    """Output chunk from a streaming exec/run session."""
+
+    stream: str
+    data: bytes
+    encoding: str = "base64"
+
+    @property
+    def text(self) -> str:
+        return self.data.decode("utf-8", errors="replace")
+
+
+@dataclass
+class StreamExit:
+    """Exit event for a streaming exec/run session."""
+
+    code: int
+
+
+@dataclass
+class StreamError:
+    """Error event for a streaming exec/run session."""
+
+    message: str
+
+
+StreamEvent = Union[StreamOutput, StreamExit, StreamError]
 
 
 @dataclass
@@ -315,6 +349,25 @@ class SandboxProcess:
         """Execute a shell command."""
         return self._sandbox.exec(command, cwd, stdin, env, timeout)
 
+    def exec_stream(
+        self,
+        command: List[str],
+        cwd: Optional[str] = None,
+        stdin: Optional[str] = None,
+        tty: bool = False,
+    ) -> Iterator["StreamEvent"]:
+        """Execute a command and stream raw output chunks."""
+        return self._sandbox.exec_stream(command, cwd, stdin, tty)
+
+    def run_stream(
+        self,
+        code: str,
+        language: Optional[str] = None,
+        args: Optional[List[str]] = None,
+    ) -> Iterator["StreamEvent"]:
+        """Run code and stream raw output chunks."""
+        return self._sandbox.run_stream(code, language, args)
+
 
 class SandboxGit:
     """
@@ -340,7 +393,9 @@ class SandboxGit:
         auth_token: Optional[str] = None,
     ) -> "GitCloneResult":
         """Clone a git repository."""
-        return self._sandbox.git_clone(url, path, branch, depth, auth_token)
+        # TODO: Implement auth_token support via credential helper injection.
+        _ = auth_token
+        return self._sandbox.git_clone(url, path, branch, depth)
     
     def status(self, path: str = "/workspace/repo") -> "GitStatusResult":
         """Get git status."""
@@ -350,11 +405,14 @@ class SandboxGit:
         self,
         message: str,
         path: str = "/workspace/repo",
+        author: Optional[str] = None,
         author_name: Optional[str] = None,
         author_email: Optional[str] = None,
     ) -> "GitCommitResult":
         """Create a git commit."""
-        return self._sandbox.git_commit(message, path, author_name, author_email)
+        if author is None and author_name and author_email:
+            author = f"{author_name} <{author_email}>"
+        return self._sandbox.git_commit(message, path, author)
     
     def push(
         self,
@@ -364,7 +422,9 @@ class SandboxGit:
         auth_token: Optional[str] = None,
     ) -> "GitPushResult":
         """Push to remote."""
-        return self._sandbox.git_push(path, remote, branch, auth_token)
+        # TODO: Implement auth_token support via credential helper injection.
+        _ = auth_token
+        return self._sandbox.git_push(path, remote, branch)
     
     def pull(
         self,
@@ -374,7 +434,9 @@ class SandboxGit:
         auth_token: Optional[str] = None,
     ) -> "GitPullResult":
         """Pull from remote."""
-        return self._sandbox.git_pull(path, remote, branch, auth_token)
+        # TODO: Implement auth_token support via credential helper injection.
+        _ = auth_token
+        return self._sandbox.git_pull(path, remote, branch)
 
 
 # =============================================================================
@@ -446,12 +508,14 @@ class Sandbox:
         api_key: str,
         language: str = "python",
         state: str = "Creating",
+        websocket_url: Optional[str] = None,
     ):
         """Initialize a sandbox instance (use Sandbox.create() instead)."""
         self.sandbox_id = sandbox_id
         self.language = language
         self._state = state
         self._api_url = api_url.rstrip("/")
+        self._websocket_url = websocket_url
         self._api_key = api_key
         self._session = requests.Session()
         self._session.headers.update(
@@ -509,6 +573,114 @@ class Sandbox:
         """Enter context manager - returns self for use in with statement."""
         return self
 
+    @property
+    def websocket_url(self) -> str:
+        """Resolved WebSocket URL for streaming APIs."""
+        url = self._websocket_url or f"{self._api_url}/api/v1/sandboxes/{self.sandbox_id}/ws"
+        if url.startswith("/"):
+            url = f"{self._api_url}{url}"
+        if url.startswith("http://"):
+            return f"ws://{url[len('http://'):]}"
+        if url.startswith("https://"):
+            return f"wss://{url[len('https://'):]}"
+        return url
+
+    def _open_websocket(self):
+        try:
+            import websocket  # type: ignore
+        except Exception as exc:  # pragma: no cover - import error path
+            raise SandboxError(
+                "websocket-client is required for streaming. "
+                "Install with: pip install basilica-sdk[ws]"
+            ) from exc
+
+        url = self.websocket_url
+        if "api_key=" not in url and "token=" not in url:
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}api_key={quote(self._api_key)}"
+        return websocket.create_connection(url, timeout=30)
+
+    def _stream_ws(self, message: Dict[str, Any]) -> Iterator[StreamEvent]:
+        ws = self._open_websocket()
+        try:
+            ws.send(json.dumps(message))
+            while True:
+                raw = ws.recv()
+                if raw is None:
+                    break
+                try:
+                    payload = json.loads(raw)
+                except json.JSONDecodeError:
+                    yield StreamError("Failed to decode WebSocket message")
+                    continue
+
+                msg_type = payload.get("type")
+                if msg_type == "output_chunk":
+                    encoding = payload.get("encoding", "base64")
+                    data = payload.get("data", "")
+                    if encoding == "base64":
+                        try:
+                            decoded = base64.b64decode(data)
+                        except Exception:
+                            yield StreamError("Failed to decode output chunk")
+                            continue
+                    else:
+                        # TODO: support additional encodings if the server adds them.
+                        decoded = str(data).encode("utf-8", errors="replace")
+                    yield StreamOutput(
+                        stream=payload.get("stream", "stdout"),
+                        data=decoded,
+                        encoding=encoding,
+                    )
+                elif msg_type == "stdout":
+                    yield StreamOutput(stream="stdout", data=payload.get("data", "").encode("utf-8"))
+                elif msg_type == "stderr":
+                    yield StreamOutput(stream="stderr", data=payload.get("data", "").encode("utf-8"))
+                elif msg_type == "exit":
+                    yield StreamExit(code=int(payload.get("code", 0)))
+                    break
+                elif msg_type == "error":
+                    yield StreamError(payload.get("message", "Unknown error"))
+                else:
+                    # Ignore control/LSP messages for now
+                    continue
+        finally:
+            ws.close()
+
+    def exec_stream(
+        self,
+        command: List[str],
+        workdir: Optional[str] = None,
+        stdin: Optional[str] = None,
+        tty: bool = False,
+    ) -> Iterator[StreamEvent]:
+        """
+        Execute a command and stream output chunks via WebSocket.
+        """
+        message: Dict[str, Any] = {"type": "exec", "command": command, "tty": tty}
+        if workdir:
+            message["workdir"] = workdir
+        if stdin:
+            message["stdin"] = stdin
+        return self._stream_ws(message)
+
+    def run_stream(
+        self,
+        code: str,
+        language: Optional[str] = None,
+        args: Optional[List[str]] = None,
+    ) -> Iterator[StreamEvent]:
+        """
+        Run code and stream output chunks via WebSocket.
+        """
+        message: Dict[str, Any] = {
+            "type": "code_run",
+            "code": code,
+            "language": language or self.language,
+            "args": args or [],
+        }
+        return self._stream_ws(message)
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit context manager - automatically deletes the sandbox."""
         try:
@@ -536,6 +708,9 @@ class Sandbox:
         language: str = "python",
         runtime: str = "firecracker",
         image: Optional[str] = None,
+        image_build: Optional[Dict[str, Any]] = None,
+        dind: Optional[Dict[str, Any]] = None,
+        compose: Optional[Dict[str, Any]] = None,
         cpu: str = "500m",
         memory: str = "512Mi",
         gpu_count: Optional[int] = None,
@@ -606,6 +781,12 @@ class Sandbox:
 
         if image:
             request["image"] = image
+        if image_build:
+            request["imageBuild"] = image_build
+        if dind:
+            request["dind"] = dind
+        if compose:
+            request["compose"] = compose
         if gpu_count:
             request["resources"]["gpus"] = {
                 "count": gpu_count,
@@ -634,6 +815,7 @@ class Sandbox:
             api_key=api_key,
             language=language,
             state=data.get("state", "Creating"),
+            websocket_url=data.get("websocketUrl"),
         )
 
         if wait:
@@ -793,6 +975,7 @@ class Sandbox:
             stderr=data.get("stderr", ""),
             exit_code=data.get("exitCode", 0),
             duration_ms=data.get("durationMs", 0),
+            should_continue=data.get("shouldContinue"),
         )
 
     def exec(
@@ -848,6 +1031,7 @@ class Sandbox:
             stderr=data.get("stderr", ""),
             exit_code=data.get("exitCode", 0),
             duration_ms=data.get("durationMs", 0),
+            should_continue=data.get("shouldContinue"),
         )
 
     def read_file(self, path: str, encoding: str = "utf-8") -> str:
@@ -929,6 +1113,53 @@ class Sandbox:
             ]
         except requests.RequestException as e:
             raise SandboxError(f"Failed to list files: {e}") from e
+
+    def set_context(
+        self,
+        content: Optional[str] = None,
+        json: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Write context to the sandbox.
+
+        Args:
+            content: Markdown content for context
+            json: Structured JSON context
+
+        Returns:
+            Dict[str, Any]: Context response
+        """
+        if content is None and json is None:
+            raise SandboxError("Context must include content or json")
+
+        request: Dict[str, Any] = {}
+        if content is not None:
+            request["content"] = content
+        if json is not None:
+            request["json"] = json
+
+        url = f"{self._api_url}/api/v1/sandboxes/{self.sandbox_id}/context"
+        try:
+            response = self._session.post(url, json=request, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            raise SandboxError(f"Failed to set context: {e}") from e
+
+    def get_context(self) -> Dict[str, Any]:
+        """
+        Read context from the sandbox.
+
+        Returns:
+            Dict[str, Any]: Context response
+        """
+        url = f"{self._api_url}/api/v1/sandboxes/{self.sandbox_id}/context"
+        try:
+            response = self._session.get(url, timeout=30)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            raise SandboxError(f"Failed to get context: {e}") from e
 
     def create_snapshot(self, name: Optional[str] = None) -> Snapshot:
         """
