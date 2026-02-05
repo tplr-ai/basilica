@@ -907,6 +907,16 @@ pub enum DeployAction {
         #[command(flatten)]
         openclaw: OpenclawOptions,
     },
+
+    /// Deploy Tau agent
+    #[command(name = "tau")]
+    Tau {
+        #[command(flatten)]
+        common: TemplateCommonOptions,
+
+        #[command(flatten)]
+        tau: TauOptions,
+    },
 }
 
 /// Share token management actions
@@ -1082,4 +1092,25 @@ pub struct OpenclawOptions {
 pub enum OpenclawProvider {
     Openai,
     Anthropic,
+}
+
+/// Tau-specific deployment options
+#[derive(clap::Args, Debug, Clone)]
+pub struct TauOptions {
+    /// Telegram bot token (from @BotFather)
+    #[arg(long, value_name = "TOKEN", env = "TAU_BOT_TOKEN")]
+    pub bot_token: Option<String>,
+
+    /// Cursor API key for agent execution
+    /// Generate at: Cursor Dashboard → Integrations → User API Keys
+    #[arg(long, value_name = "KEY", env = "CURSOR_API_KEY")]
+    pub cursor_api_key: Option<String>,
+
+    /// OpenAI API key for voice transcription / TTS
+    #[arg(long, value_name = "KEY", env = "OPENAI_API_KEY")]
+    pub openai_api_key: Option<String>,
+
+    /// Chat model for Cursor agent (default: composer-1)
+    #[arg(long, value_name = "MODEL")]
+    pub chat_model: Option<String>,
 }

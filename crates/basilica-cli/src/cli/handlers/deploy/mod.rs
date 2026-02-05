@@ -63,6 +63,9 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
         Some(DeployAction::Openclaw { common, openclaw }) => {
             templates::handle_openclaw_deploy(&client, common, openclaw).await
         }
+        Some(DeployAction::Tau { common, tau }) => {
+            templates::handle_tau_deploy(&client, common, tau).await
+        }
         None => {
             if let Some(source) = cmd.source.clone() {
                 create::handle_create(&client, &source, cmd).await
