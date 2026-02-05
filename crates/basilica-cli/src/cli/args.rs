@@ -85,7 +85,12 @@ impl Args {
         };
 
         // Check if command requires authentication and handle auto-login if needed
-        if self.command.requires_auth() {
+        // If BASILICA_API_TOKEN is set, skip the auth retry flow (dev mode / CI)
+        let has_env_token = std::env::var("BASILICA_API_TOKEN")
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+
+        if self.command.requires_auth() && !has_env_token {
             self.execute_with_auth_retry(&config).await
         } else {
             self.execute_command(&config).await

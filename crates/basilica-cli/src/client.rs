@@ -30,7 +30,19 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
         .base_url(api_url)
         .timeout(Duration::from_secs(config.api.request_timeout));
 
-    // Use JWT authentication with token manager support
+    // Priority 1: BASILICA_API_TOKEN env var (dev mode / API key auth)
+    if let Ok(token) = std::env::var("BASILICA_API_TOKEN") {
+        if !token.is_empty() {
+            debug!("Using BASILICA_API_TOKEN for authentication (bypasses OAuth)");
+            // Use the token as both access and refresh (refresh won't be used)
+            builder = builder.with_tokens(&token, "unused");
+            return builder
+                .build()
+                .map_err(|e| eyre!("Failed to build client: {}", e).into());
+        }
+    }
+
+    // Priority 2: JWT authentication with token manager support
     if let Ok(tokens) = get_valid_jwt_tokens(config).await {
         debug!("Using JWT authentication with automatic token refresh");
         builder = builder.with_tokens(tokens.access_token, tokens.refresh_token);
