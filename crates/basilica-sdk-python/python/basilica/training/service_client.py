@@ -14,6 +14,7 @@ from .types import GetServerCapabilitiesResponse
 from .training_client import TrainingClient
 from .sampling_client import SamplingClient
 from .rest_client import RestClient
+from .job_client import JobClient
 from .exceptions import (
     TrainingError,
     SessionTimeoutError,
@@ -346,6 +347,10 @@ class ServiceClient:
             >>> url = rest.get_checkpoint_archive_url("cp-xyz").result()
         """
         return RestClient(client=self._client)
+
+    def create_job_client(self, base_path: str = "/training") -> JobClient:
+        """Create JobClient for training job orchestration API."""
+        return JobClient(client=self._client, base_path=base_path)
 
     def get_session(self, session_id: str) -> TrainingClient:
         """Get existing training session.

@@ -65,6 +65,7 @@ from .service_client import ServiceClient
 from .training_client import TrainingClient
 from .sampling_client import SamplingClient
 from .rest_client import RestClient
+from .job_client import JobClient
 
 # Export all public symbols
 __all__ = [
@@ -75,6 +76,7 @@ __all__ = [
     "TrainingClient",
     "SamplingClient",
     "RestClient",
+    "JobClient",
     # Types
     "Datum",
     "ModelInput",
