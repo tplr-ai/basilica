@@ -72,7 +72,7 @@ pub fn compress_path(path: &std::path::Path) -> String {
 pub fn format_credits(value: &str) -> String {
     value
         .parse::<Decimal>()
-        .map(|d| format!("{:.2}", d))
+        .map(|d| format!("{:.2}", d.round_dp(2)))
         .unwrap_or_else(|_| value.to_string())
 }
 
