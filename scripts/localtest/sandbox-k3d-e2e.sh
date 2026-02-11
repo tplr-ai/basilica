@@ -20,10 +20,13 @@
 #   status    - Show cluster and pod status
 #   logs      - Show operator and API logs
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$(cd "$SCRIPT_DIR/../../../basilica-backend" && pwd)"
+BACKEND_DIR="${BASILICA_BACKEND_DIR:-$SCRIPT_DIR/../../../basilica-backend}"
+if [ -d "$BACKEND_DIR" ]; then
+    BACKEND_DIR="$(cd "$BACKEND_DIR" && pwd)"
+fi
 
 # Configuration
 CLUSTER_NAME="basilica-sandbox-test"
@@ -107,6 +110,7 @@ check_prerequisites() {
     # Check if backend directory exists
     if [ ! -d "$BACKEND_DIR" ]; then
         log_error "Backend directory not found at $BACKEND_DIR"
+        log_error "Set BASILICA_BACKEND_DIR to your local basilica-backend checkout"
         exit 1
     fi
     

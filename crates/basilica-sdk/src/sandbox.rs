@@ -673,11 +673,12 @@ impl Sandbox {
         })
     }
 
-    /// Create a sandbox from an existing ID (for reconnecting)
-    pub fn from_id(
+    /// Create a sandbox handle from an existing ID with explicit language.
+    pub fn from_id_with_language(
         base_url: impl Into<String>,
         auth_token: Option<String>,
         sandbox_id: impl Into<String>,
+        language: impl Into<String>,
     ) -> Self {
         Self {
             http: SandboxHttpClient {
@@ -686,8 +687,19 @@ impl Sandbox {
                 auth_token,
             },
             sandbox_id: sandbox_id.into(),
-            language: String::new(),
+            language: language.into(),
         }
+    }
+
+    /// Create a sandbox from an existing ID (for reconnecting)
+    ///
+    /// Note: language is discovered lazily for LSP operations if unknown.
+    pub fn from_id(
+        base_url: impl Into<String>,
+        auth_token: Option<String>,
+        sandbox_id: impl Into<String>,
+    ) -> Self {
+        Self::from_id_with_language(base_url, auth_token, sandbox_id, String::new())
     }
 
     /// Get the sandbox ID
@@ -852,10 +864,7 @@ impl Sandbox {
             content: String,
         }
 
-        #[derive(Deserialize)]
-        struct EmptyResponse {}
-
-        let _: EmptyResponse = self
+        let _: serde_json::Value = self
             .http
             .post(
                 &format!("/sandboxes/{}/files/write", self.sandbox_id),
@@ -1207,12 +1216,21 @@ impl Sandbox {
             root_path: String,
         }
 
+        let selected_language = if let Some(lang) = language {
+            lang.to_string()
+        } else if !self.language.is_empty() {
+            self.language.clone()
+        } else {
+            // Reconnected sandboxes may not know language locally; fetch status.
+            self.status().await?.language
+        };
+
         let response: LspInitResponse = self
             .http
             .post(
                 &format!("/sandboxes/{}/lsp/init", self.sandbox_id),
                 &LspInitRequest {
-                    language: language.unwrap_or(&self.language).to_string(),
+                    language: selected_language,
                     root_path: root_path.to_string(),
                 },
             )
