@@ -78,7 +78,7 @@ A sandbox is an isolated execution environment that provides:
 
 ### Sandbox States
 
-```
+```text
 Creating → Initializing → Ready ⇄ Executing → Terminating → Terminated
                             ↓
                        Snapshotting
@@ -249,7 +249,7 @@ For cleaner code organization:
 with python_sandbox() as sb:
     # Same as sb.run() and sb.exec()
     sb.process.run("print('hello')")
-    sb.process.exec(["ls", "-la"], cwd="/workspace")
+    sb.process.exec(["ls", "-la"], workdir="/workspace")
 ```
 
 ---

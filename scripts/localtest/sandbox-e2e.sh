@@ -22,10 +22,16 @@
 #   cleanup   - Delete test sandboxes
 #   all       - Run all tests (default)
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+DEFAULT_BACKEND_DIR="$SCRIPT_DIR/../../../basilica-backend"
+BASILICA_BACKEND_DIR="${BASILICA_BACKEND_DIR:-$DEFAULT_BACKEND_DIR}"
+if [ -d "$BASILICA_BACKEND_DIR" ]; then
+    BASILICA_BACKEND_DIR="$(cd "$BASILICA_BACKEND_DIR" && pwd)"
+fi
 
 # Load test configuration
 if [ -f "test.conf" ]; then
@@ -97,8 +103,8 @@ setup_crd() {
     log_info "Setting up BasilicaSandbox CRD..."
     
     if command -v kubectl &>/dev/null; then
-        # Try to use the generated CRD file from basilica-backend
-        local crd_file="$SCRIPT_DIR/../../../basilica-backend/orchestrator/k8s/crds/basilica-sandbox.yaml"
+        # Try to use the generated CRD file from basilica-backend.
+        local crd_file="$BASILICA_BACKEND_DIR/orchestrator/k8s/crds/basilica-sandbox.yaml"
         
         if [ -f "$crd_file" ]; then
             kubectl apply -f "$crd_file"
@@ -106,20 +112,22 @@ setup_crd() {
         else
             log_warn "CRD file not found at $crd_file - trying to generate"
             # Fallback: try to generate from operator
-            local operator_dir="$SCRIPT_DIR/../../../basilica-backend"
-            if [ -f "$operator_dir/Cargo.toml" ]; then
+            local operator_dir="$BASILICA_BACKEND_DIR"
+            if [ -d "$operator_dir" ] && [ -f "$operator_dir/Cargo.toml" ]; then
                 (cd "$operator_dir" && cargo run --package basilica-operator --bin crdgen 2>/dev/null | \
                     sed -n '/kind: CustomResourceDefinition/,/---/{/---/!p}' | \
                     grep -A 1000 "basilicasandboxes.basilica.ai" | kubectl apply -f -)
                 log_success "CRD generated and applied"
             else
-                log_error "Could not find CRD file or operator to generate it"
+                log_error "Could not find CRD file or operator to generate it."
+                log_error "Set BASILICA_BACKEND_DIR to a local basilica-backend checkout."
+                log_error "Example: export BASILICA_BACKEND_DIR=\$HOME/code/basilica-backend"
                 return 1
             fi
         fi
         
         # Apply RBAC for sandboxes
-        local rbac_file="$SCRIPT_DIR/../../../basilica-backend/orchestrator/k8s/services/sandbox-rbac.yaml"
+        local rbac_file="$BASILICA_BACKEND_DIR/orchestrator/k8s/services/sandbox-rbac.yaml"
         if [ -f "$rbac_file" ]; then
             kubectl apply -f "$rbac_file"
             log_success "RBAC applied"

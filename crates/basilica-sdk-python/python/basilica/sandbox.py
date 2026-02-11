@@ -287,7 +287,7 @@ class SandboxProcess:
     Example:
         >>> result = sandbox.process.run("print('hello')")
         >>> result = sandbox.process.exec(["ls", "-la"])
-        >>> result = sandbox.process.exec(["python3", "app.py"], cwd="/workspace")
+        >>> result = sandbox.process.exec(["python3", "app.py"], workdir="/workspace")
     """
     
     def __init__(self, sandbox: "Sandbox"):
@@ -307,13 +307,16 @@ class SandboxProcess:
     def exec(
         self,
         command: List[str],
-        cwd: Optional[str] = None,
+        workdir: Optional[str] = None,
         stdin: Optional[str] = None,
         env: Optional[Dict[str, str]] = None,
         timeout: int = 300,
+        cwd: Optional[str] = None,
     ) -> "ExecResult":
         """Execute a shell command."""
-        return self._sandbox.exec(command, cwd, stdin, env, timeout)
+        if workdir is None:
+            workdir = cwd
+        return self._sandbox.exec(command, workdir, stdin, env, timeout)
 
 
 class SandboxGit:
@@ -354,7 +357,14 @@ class SandboxGit:
         author_email: Optional[str] = None,
     ) -> "GitCommitResult":
         """Create a git commit."""
-        return self._sandbox.git_commit(message, path, author_name, author_email)
+        author: Optional[str] = None
+        if author_name and author_email:
+            author = f"{author_name} <{author_email}>"
+        elif author_name:
+            author = author_name
+        elif author_email:
+            author = author_email
+        return self._sandbox.git_commit(message, path, author)
     
     def push(
         self,
@@ -505,23 +515,11 @@ class Sandbox:
             self._git = SandboxGit(self)
         return self._git
 
-    def __enter__(self) -> "Sandbox":
-        """Enter context manager - returns self for use in with statement."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Exit context manager - automatically deletes the sandbox."""
-        try:
-            self.delete()
-        except Exception:
-            # Silently ignore deletion errors on context exit
-            pass
-
     @property
     def state(self) -> SandboxState:
         """Current state of the sandbox."""
         try:
-            return SandboxState(self._state)
+            return SandboxState(self._state.lower())
         except ValueError:
             return SandboxState.FAILED
 
@@ -735,7 +733,7 @@ class Sandbox:
 
             time.sleep(poll_interval)
 
-        raise SandboxError(f"Timeout waiting for sandbox to become ready")
+        raise SandboxError("Timeout waiting for sandbox to become ready")
 
     def run(
         self,
@@ -969,6 +967,7 @@ class Sandbox:
         path: Optional[str] = None,
         branch: Optional[str] = None,
         depth: Optional[int] = None,
+        auth_token: Optional[str] = None,
     ) -> GitCloneResult:
         """
         Clone a git repository into the sandbox.
@@ -977,7 +976,8 @@ class Sandbox:
             url: Repository URL (HTTPS or SSH)
             path: Target path (defaults to /workspace/<repo_name>)
             branch: Branch to clone (defaults to default branch)
-            depth: Clone depth for shallow clone (defaults to 1)
+            depth: Clone depth for shallow clone (optional; server default is used if omitted)
+            auth_token: Git auth token to pass through to the exec agent (optional)
 
         Returns:
             GitCloneResult: Clone operation result
@@ -993,6 +993,8 @@ class Sandbox:
             request["branch"] = branch
         if depth is not None:
             request["depth"] = depth
+        if auth_token:
+            request["authToken"] = auth_token
 
         api_url = f"{self._api_url}/api/v1/sandboxes/{self.sandbox_id}/git/clone"
         try:
@@ -1093,6 +1095,7 @@ class Sandbox:
         path: Optional[str] = None,
         remote: str = "origin",
         branch: Optional[str] = None,
+        auth_token: Optional[str] = None,
     ) -> GitPushResult:
         """
         Push commits to remote.
@@ -1115,6 +1118,8 @@ class Sandbox:
             request["path"] = path
         if branch:
             request["branch"] = branch
+        if auth_token:
+            request["authToken"] = auth_token
 
         api_url = f"{self._api_url}/api/v1/sandboxes/{self.sandbox_id}/git/push"
         try:
@@ -1135,6 +1140,7 @@ class Sandbox:
         path: Optional[str] = None,
         remote: str = "origin",
         branch: Optional[str] = None,
+        auth_token: Optional[str] = None,
     ) -> GitPullResult:
         """
         Pull changes from remote.
@@ -1156,6 +1162,8 @@ class Sandbox:
             request["path"] = path
         if branch:
             request["branch"] = branch
+        if auth_token:
+            request["authToken"] = auth_token
 
         api_url = f"{self._api_url}/api/v1/sandboxes/{self.sandbox_id}/git/pull"
         try:
@@ -1557,11 +1565,20 @@ class Sandbox:
         try:
             response = self._session.delete(url, timeout=30)
             response.raise_for_status()
-            data = response.json()
             self._state = "Terminated"
+            if not response.content or not response.content.strip():
+                return None
+            try:
+                data = response.json()
+            except ValueError:
+                return None
             return data.get("snapshotId")
         except requests.RequestException as e:
             raise SandboxError(f"Failed to delete sandbox: {e}") from e
+
+    def close(self) -> None:
+        """Close the underlying HTTP session."""
+        self._session.close()
 
     def __enter__(self) -> "Sandbox":
         """Context manager entry."""
@@ -1575,6 +1592,8 @@ class Sandbox:
             self.delete()
         except SandboxError:
             pass  # Ignore deletion errors
+        finally:
+            self.close()
 
     def __repr__(self) -> str:
         return f"Sandbox(id={self.sandbox_id!r}, language={self.language!r}, state={self._state!r})"
