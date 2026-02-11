@@ -9,7 +9,9 @@ Provides high-level APIs for:
 """
 
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Dict, List, Optional
+import json
+import time
+from typing import Any, Dict, Iterator, List, Optional
 
 import httpx
 
@@ -179,7 +181,46 @@ class JobClient:
 
         return APIFuture(self._executor.submit(_call), dict)
 
+    def unpublish_checkpoint(self, job_id: str) -> APIFuture:
+        def _call():
+            resp = self._client.post(self._url(f"/checkpoints/{job_id}/unpublish"))
+            if not resp.is_success:
+                raise TrainingError(f"unpublish_checkpoint failed: {resp.text}")
+            return resp.json()
+
+        return APIFuture(self._executor.submit(_call), dict)
+
+    def stream_metrics(self, job_id: str) -> Iterator[Dict[str, Any]]:
+        """Stream job metrics/status updates over SSE."""
+        url = self._url(f"/jobs/{job_id}/metrics/stream")
+        with self._client.stream("GET", url) as resp:
+            if not resp.is_success:
+                raise TrainingError(f"stream_metrics failed: {resp.text}")
+            for line in resp.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                payload = line[6:].strip()
+                if not payload:
+                    continue
+                try:
+                    yield json.loads(payload)
+                except json.JSONDecodeError:
+                    continue
+
+    def wait_for_completion(
+        self,
+        job_id: str,
+        poll_interval: float = 5.0,
+    ) -> Dict[str, Any]:
+        """Poll until a job reaches a terminal state."""
+        terminal = {"COMPLETED", "FAILED", "CANCELLED"}
+        while True:
+            job = self.get_job(job_id).result()
+            status = str(job.get("status", "")).upper()
+            if status in terminal:
+                return job
+            time.sleep(poll_interval)
+
     def close(self):
         self._executor.shutdown(wait=False)
-
 

@@ -2,8 +2,16 @@
 Basilica Training SDK
 
 Fine-tune LLMs with LoRA on Basilica's GPU cloud.
+All training compute is remote and cluster-managed.
 
-Quick Start:
+Quick Start (Job API, recommended):
+    >>> from basilica.training import ServiceClient
+    >>> client = ServiceClient()
+    >>> jobs = client.create_job_client()
+    >>> created = jobs.create_job(name="math-grpo", config={...})
+    >>> final = jobs.wait_for_completion(created["job_id"])
+
+Compatibility Quick Start (primitive controls over remote session):
     >>> from basilica.training import ServiceClient, Datum
     >>>
     >>> client = ServiceClient()
@@ -13,6 +21,7 @@ Quick Start:
     ...     train_mlp=True,
     ...     train_attn=True,
     ... ) as training:
+    ...     # Primitive ops are always proxied to remote cluster workers.
     ...     result = training.forward_backward([Datum(input_ids=[1, 2, 3])]).result()
     ...     training.optim_step().result()
     ...     print(training.sample("Hello!"))

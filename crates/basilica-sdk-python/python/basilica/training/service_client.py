@@ -26,6 +26,11 @@ from .exceptions import (
 class ServiceClient:
     """Main entry point for Basilica Training API.
 
+    Notes:
+        - Recommended default: `create_job_client()` for server-driven jobs.
+        - Primitive session clients remain supported, and execute remotely on
+          cluster-managed training workers (no local GPU execution).
+
     Example:
         >>> client = ServiceClient()
         >>> training = client.create_lora_training_client(
