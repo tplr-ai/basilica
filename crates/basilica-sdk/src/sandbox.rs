@@ -912,6 +912,40 @@ impl Sandbox {
             .await
     }
 
+    /// List snapshots for this sandbox
+    pub async fn list_snapshots(&self) -> Result<Vec<SnapshotInfo>> {
+        #[derive(Deserialize)]
+        struct ListSnapshotsResponse {
+            snapshots: Vec<SnapshotInfo>,
+        }
+
+        let response: ListSnapshotsResponse = self
+            .http
+            .get(&format!("/sandboxes/{}/snapshots", self.sandbox_id))
+            .await?;
+        Ok(response.snapshots)
+    }
+
+    /// Get a specific snapshot for this sandbox
+    pub async fn get_snapshot(&self, snapshot_id: &str) -> Result<SnapshotInfo> {
+        self.http
+            .get(&format!(
+                "/sandboxes/{}/snapshots/{}",
+                self.sandbox_id, snapshot_id
+            ))
+            .await
+    }
+
+    /// Delete a specific snapshot metadata record for this sandbox
+    pub async fn delete_snapshot(&self, snapshot_id: &str) -> Result<()> {
+        self.http
+            .delete(&format!(
+                "/sandboxes/{}/snapshots/{}",
+                self.sandbox_id, snapshot_id
+            ))
+            .await
+    }
+
     // =========================================================================
     // Git Operations
     // =========================================================================
