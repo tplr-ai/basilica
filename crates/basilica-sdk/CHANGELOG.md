@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-02-15
+
+### Added
+- `WebSocketConfig` type with `enabled` flag and `idle_timeout_seconds` (60-3600 range, default 1800s)
+- `websocket` field on `CreateDeploymentRequest`, `DeploymentResponse`, and `DeploymentSummary`
+- `Default` implementation for `WebSocketConfig` (enabled=true, 1800s idle timeout)
+
 ## [0.19.0] - 2026-02-12
 
 ### Added

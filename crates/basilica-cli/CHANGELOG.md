@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-02-15
+
+### Added
+- `--websocket` flag for `deploy` command to enable WebSocket support for long-lived connections
+- `--ws-idle-timeout` flag for configuring WebSocket idle timeout (60-3600 seconds, default 1800)
+- WebSocket enabled by default for `basilica summon openclaw` template
+- Accept all GPU types through secure cloud pipeline (`basilica up rtx6000`)
+
 ## [0.19.0] - 2026-02-12
 
 ### Added

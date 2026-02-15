@@ -1927,7 +1927,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "basilica-cli"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "axum 0.7.9",
  "base64 0.21.7",
@@ -2065,7 +2065,7 @@ dependencies = [
 
 [[package]]
 name = "basilica-sdk"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "base64 0.21.7",
  "basilica-common",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "basilica-sdk-python"
-version = "0.19.0"
+version = "0.20.0"
 dependencies = [
  "basilica-sdk",
  "basilica-validator",
