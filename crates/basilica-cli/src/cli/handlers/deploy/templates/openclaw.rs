@@ -9,7 +9,7 @@ use crate::output::print_success;
 use crate::progress::{complete_spinner_and_clear, create_spinner};
 use basilica_sdk::types::{
     CreateDeploymentRequest, HealthCheckConfig, PersistentStorageSpec, ProbeConfig,
-    ResourceRequirements, StorageBackend, StorageSpec,
+    ResourceRequirements, StorageBackend, StorageSpec, WebSocketConfig,
 };
 use basilica_sdk::BasilicaClient;
 use regex::Regex;
@@ -144,7 +144,7 @@ pub async fn handle_openclaw_deploy(
         suspended: false,
         priority: None,
         topology_spread: None,
-        websocket: None,
+        websocket: Some(WebSocketConfig::default()),
         public_metadata: false,
     };
 
