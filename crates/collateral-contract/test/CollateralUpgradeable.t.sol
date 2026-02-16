@@ -206,4 +206,59 @@ contract CollateralUpgradeableTest is Test {
         bytes32 indexed oldAlphaColdkey,
         bytes32 indexed newAlphaColdkey
     );
+
+    /// @dev Test that denyReclaimRequest clears nodeToMiner after full slash
+    function testDenyAfterFullSlashClearsNodeToMiner() public {
+        vm.deal(alice, 10 ether);
+        bytes32 hotkey = bytes32(uint256(1));
+        bytes16 nodeId = bytes16(uint128(1));
+
+        // 1. Alice deposits
+        vm.prank(alice);
+        collateral.deposit{value: 5 ether}(hotkey, nodeId, alphaHotkey, 0);
+        assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);
+
+        // 2. Alice starts a reclaim
+        vm.prank(alice);
+        collateral.reclaimCollateral(
+            hotkey,
+            nodeId,
+            alphaColdkey,
+            "https://example.com",
+            bytes16(0)
+        );
+
+        // 3. Trustee fully slashes (collaterals go to zero, but pending reclaim keeps nodeToMiner)
+        vm.prank(trustee);
+        collateral.slashCollateral(
+            hotkey,
+            nodeId,
+            5 ether,
+            0,
+            "https://example.com/slash",
+            bytes16(0)
+        );
+        // nodeToMiner should still be set because of pending reclaim
+        assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);
+
+        // 4. Trustee denies the reclaim — should now clear nodeToMiner
+        vm.prank(trustee);
+        collateral.denyReclaimRequest(
+            0,
+            "https://example.com/deny",
+            bytes16(0)
+        );
+        assertEq(
+            collateral.nodeToMiner(hotkey, nodeId),
+            address(0),
+            "nodeToMiner should be cleared after deny with zero balances"
+        );
+
+        // 5. New miner (bob) can deposit on the same node
+        address bob = address(0xB0B);
+        vm.deal(bob, 10 ether);
+        vm.prank(bob);
+        collateral.deposit{value: 2 ether}(hotkey, nodeId, alphaHotkey, 0);
+        assertEq(collateral.nodeToMiner(hotkey, nodeId), bob);
+    }
 }

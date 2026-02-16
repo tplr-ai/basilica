@@ -435,15 +435,24 @@ contract CollateralUpgradeable is
             revert PastDenyTimeout();
         }
 
-        collateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.nodeId
-        ] -= reclaim.amount;
-        alphaCollateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.nodeId
-        ] -= reclaim.alphaAmount;
+        bytes32 hotkey = reclaim.hotkey;
+        bytes16 nodeId = reclaim.nodeId;
+
+        collateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.amount;
+        alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.alphaAmount;
         emit Denied(reclaimRequestId, url, urlContentMd5Checksum);
 
         delete reclaims[reclaimRequestId];
+
+        // Clear ownership if all balances and pending reclaims are zero
+        if (
+            collaterals[hotkey][nodeId] == 0 &&
+            alphaCollaterals[hotkey][nodeId] == 0 &&
+            collateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
+            alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
+        ) {
+            nodeToMiner[hotkey][nodeId] = address(0);
+        }
     }
 
     /// @notice Allows the trustee to slash a miner's collateral for a specific node
