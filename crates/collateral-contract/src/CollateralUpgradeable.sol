@@ -353,26 +353,24 @@ contract CollateralUpgradeable is
         bytes32 alphaColdkey = reclaim.alphaColdkey;
         uint256 alphaAmount = reclaim.alphaAmount;
 
+        // --- Effects ---
         delete reclaims[reclaimRequestId];
         collateralUnderPendingReclaims[hotkey][nodeId] -= amount;
+        alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= alphaAmount;
 
+        // Cap TAO transfer to available balance (slash may have reduced it)
+        uint256 actualAmount = amount;
         if (collaterals[hotkey][nodeId] < amount) {
-            // miner got slashed and can't withdraw
-            revert InsufficientCollateralForReclaim();
+            actualAmount = collaterals[hotkey][nodeId];
         }
+        collaterals[hotkey][nodeId] -= actualAmount;
 
-        collaterals[hotkey][nodeId] -= amount;
-
-        // check-effect-interact pattern used to prevent reentrancy attacks
-        (bool success, ) = payable(miner).call{value: amount}("");
-        if (!success) {
-            revert TransferFailed();
+        // Cap alpha transfer to available balance (slash may have reduced it)
+        uint256 actualAlphaAmount = alphaAmount;
+        if (alphaCollaterals[hotkey][nodeId] < alphaAmount) {
+            actualAlphaAmount = alphaCollaterals[hotkey][nodeId];
         }
-
-        if (alphaAmount > 0) {
-            alphaCollaterals[hotkey][nodeId] -= alphaAmount;
-            withdrawAlpha(alphaColdkey, alphaAmount);
-        }
+        alphaCollaterals[hotkey][nodeId] -= actualAlphaAmount;
 
         if (
             collaterals[hotkey][nodeId] == 0 &&
@@ -386,10 +384,22 @@ contract CollateralUpgradeable is
             hotkey,
             nodeId,
             miner,
-            amount,
+            actualAmount,
             alphaColdkey,
-            alphaAmount
+            actualAlphaAmount
         );
+
+        // --- Interactions ---
+        if (actualAmount > 0) {
+            (bool success, ) = payable(miner).call{value: actualAmount}("");
+            if (!success) {
+                revert TransferFailed();
+            }
+        }
+
+        if (actualAlphaAmount > 0) {
+            withdrawAlpha(alphaColdkey, actualAlphaAmount);
+        }
     }
 
     /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires
@@ -409,7 +419,7 @@ contract CollateralUpgradeable is
         bytes16 urlContentMd5Checksum
     ) external onlyTrustee {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
-        if (reclaim.amount == 0) {
+        if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
         }
         if (reclaim.denyTimeout < block.timestamp) {
