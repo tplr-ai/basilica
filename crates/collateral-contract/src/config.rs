@@ -10,7 +10,7 @@ pub const RPC_URL: &str = "https://lite.chain.opentensor.ai:443";
 
 // Test environment
 pub const TEST_CHAIN_ID: u64 = 945;
-pub const TEST_RPC_URL: &str = "https://test.finney.opentensor.ai";
+pub const TEST_RPC_URL: &str = "https://test.chain.opentensor.ai";
 
 // Local network configuration
 pub const LOCAL_CHAIN_ID: u64 = 42;
