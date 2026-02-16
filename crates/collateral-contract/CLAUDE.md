@@ -4,6 +4,13 @@
 
 Bittensor runs on **Subtensor**, a Substrate-based blockchain. The EVM layer is built using Frontier (Substrate's EVM compatibility framework) and runs **on top of** Subtensor as an application layer. All execution happens on the Bittensor blockchain, not Ethereum.
 
+### Bittensor Key Model (Coldkey / Hotkey)
+
+- **Coldkey**: Primary ownership key (SS58, sr25519/ed25519). Controls funds, staking, unstaking, transfers, subnet registration. Keep offline.
+- **Hotkey**: Operational key (same key type, independently generated -- NOT derived from coldkey). Runs miners/validators, signs weight-setting extrinsics.
+- **Link**: On-chain mapping (`hotkey -> coldkey`) created when coldkey signs a registration extrinsic. One coldkey can own multiple hotkeys.
+- **Fees**: Coldkey pays registration costs. Weight-related hotkey extrinsics (`set_weights`, `commit_weights`, `reveal_weights`) are fee-free. Do NOT send TAO to a hotkey -- it's not designed to hold funds.
+
 ### Two Address Worlds
 
 | Property | Substrate Side | EVM Side |
@@ -15,101 +22,130 @@ Bittensor runs on **Subtensor**, a Substrate-based blockchain. The EVM layer is 
 | **Can do** | Subtensor extrinsics (staking, registration, transfers) | EVM smart contract calls |
 | **Cannot do** | Sign EVM smart contracts | Sign Substrate extrinsics |
 
-### HashedAddressMapping (H160 <-> SS58)
+### HashedAddressMapping (H160 -> SS58, One-Way Only)
 
-Bittensor uses Frontier's `HashedAddressMapping` for deterministic, one-way address derivation:
+Bittensor uses Frontier's `HashedAddressMapping` for deterministic, **one-way** address derivation from EVM to Substrate:
 
-**H160 -> SS58 (EVM address -> Substrate mirror):**
 ```rust
 fn into_account_id(address: H160) -> AccountId32 {
     let mut data = [0u8; 24];
-    data[0..4].copy_from_slice(b"evm:");
-    data[4..24].copy_from_slice(&address[..]);
-    let hash = blake2_256(&data);
+    data[0..4].copy_from_slice(b"evm:");      // literal 4 bytes
+    data[4..24].copy_from_slice(&address[..]);  // 20-byte H160 address
+    let hash = blake2b_256(&data);              // blake2b with 256-bit output
     AccountId32::from(hash)
 }
 ```
 
-**SS58 -> H160 (Substrate address -> EVM mirror):**
-Take the first 20 bytes of the 32-byte Substrate public key.
-
-**Critical:** Neither direction yields a usable private key. The derived "mirror" addresses are accounting-only.
-
-### Four Addresses, Two Keypairs
-
-```
-Keypair A (Ed25519/Sr25519 - Bittensor native):
-  +-- #1: Native SS58 address (you control, signs extrinsics)
-  +-- #4: EVM mirror (first 20 bytes of pubkey, NO private key)
-
-Keypair B (Secp256k1 - Ethereum native):
-  +-- #3: Native H160 address (you control, signs EVM txns)
-  +-- #2: SS58 mirror (blake2("evm:" ++ h160_bytes), NO private key)
-```
-
-An SS58 wallet CANNOT sign EVM transactions. An EVM wallet CANNOT sign Substrate extrinsics. They are separate identity domains on the same chain.
+There is **no general reverse mapping** from SS58 back to H160. The resulting SS58 address is a "mirror" with no known private key. An EVM contract's on-chain Substrate identity is derived this way.
 
 ### Balance Flow Between Layers
 
-- Sending TAO from Substrate wallet (#1) to EVM mirror SS58 address (#2) makes it appear in the EVM wallet (#3) in MetaMask.
+- Sending TAO from Substrate wallet to an EVM mirror SS58 address makes it appear in the corresponding EVM wallet in MetaMask.
 - Going EVM -> Substrate uses the `BalanceTransfer` precompile or `evm.withdraw()` extrinsic.
 - Same TAO token, different account format, no wrapping involved.
 
-### Precompiles (EVM -> Substrate Bridge)
+### Precompiles Used by This Contract
 
 | Precompile | Address | Purpose |
 |---|---|---|
-| Ed25519Verify | `0x...0402` | Verify Ed25519 signatures (prove SS58 key ownership from EVM) |
-| StakingV2 | `0x...0805` | Add/remove stake, move stake between hotkeys |
-| BalanceTransfer | custom | Transfer TAO between accounts |
-| SubnetPrecompile | custom | Subnet operations |
+| Ed25519Verify | `0x0000000000000000000000000000000000000402` | Verify Ed25519 signatures (prove SS58 key ownership from EVM) |
+| INeuron | `0x0000000000000000000000000000000000000804` | `burnedRegister` -- register the contract on-chain |
+| StakingV2 | `0x0000000000000000000000000000000000000805` | `addStake`, `removeStake`, `getStake`, `transferStake`, `moveStake`, `burnAlpha` |
 
-**Staking caveat:** When a smart contract calls the staking precompile, the **contract's address** is the coldkey (not the original caller).
+**Staking precompile caveat:** When a smart contract calls the staking precompile via `call`, the **contract's EVM address** (mapped to its Substrate mirror via HashedAddressMapping) is the coldkey. Use `delegatecall` to preserve the original caller's identity.
+
+### StakingV2 Key Functions
+
+| Function | Signature | What It Does |
+|---|---|---|
+| `addStake` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Stake TAO into subnet, receive alpha |
+| `removeStake` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Unstake alpha, receive TAO back |
+| `getStake` | `(bytes32 hotkey, bytes32 coldkey, uint256 netuid) -> uint256` view | Query alpha balance |
+| `transferStake` | `(bytes32 destination_coldkey, bytes32 hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount)` payable | Transfer alpha ownership to another coldkey |
+| `moveStake` | `(bytes32 origin_hotkey, bytes32 destination_hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount)` payable | Re-delegate alpha to another hotkey (same coldkey) |
+| `burnAlpha` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Burn alpha tokens |
 
 ### Network Config
 
 | Network | RPC URL | Chain ID |
 |---|---|---|
 | Mainnet | `https://lite.chain.opentensor.ai` | 964 |
-| Testnet | `https://test.finney.opentensor.ai` | 945 |
+| Testnet | `https://test.chain.opentensor.ai` | 945 |
 | Localnet | `http://localhost:9944` | 42 |
 
 ### Unit Conversion
 
-- EVM side: 1 TAO = 1e18 (like ETH wei)
-- Substrate staking (RAO): 1 TAO = 1e9 RAO
-- When calling staking precompile from EVM with `msg.value`: `amount_rao = msg.value / 1e9`
+- EVM side: 1 TAO = 1e18 (18 decimals, like ETH wei)
+- Substrate side: 1 TAO = 1e9 RAO
+
+## Alpha Tokens
+
+Each Bittensor subnet has its own **alpha token**. Alpha is NOT an ERC-20 -- it exists as **staked balances on the Substrate layer**, tracked per `(hotkey, coldkey, netuid)` tuple.
+
+- Each subnet is an **AMM** with two reserve pools: TAO and Alpha
+- **Price** = TAO_in_reserve / Alpha_in_reserve
+- Staking TAO into a subnet swaps TAO for alpha via the AMM
+- Unstaking swaps alpha back to TAO (with slippage)
+- Each alpha has a **21M max supply** (same as TAO), with its own halving schedule starting from subnet creation
+- Alpha emission starts at ~1 alpha/block per subnet, halving independently
+- **Coldkey controls alpha** -- to give someone ownership of alpha, you must `transferStake` to their coldkey. `moveStake` only changes the hotkey (validator delegation) but keeps the same coldkey owner.
 
 ## This Crate
 
 ### Architecture
 
-- **Solidity contracts** (`src/Collateral.sol`, `src/CollateralUpgradeableV2.sol`): Upgradeable ERC1967 proxy pattern via OpenZeppelin
+- **Solidity contracts** (`src/CollateralUpgradeable.sol`): Upgradeable ERC1967 proxy pattern via OpenZeppelin
 - **Rust library** (`src/lib.rs`): Alloy-based contract bindings generated via `sol!` macro from ABI JSON
 - **CLI** (`src/main.rs`): `collateral-cli` for all contract operations (deposit, reclaim, slash, query, events)
 
 ### Contract Identity Model
 
-The contract uses **H160 addresses** for miners and **bytes32** for hotkeys/coldkeys (which are Substrate public keys passed as raw 32-byte values). The `nodeId` is `bytes16` (UUID). The trustee is an H160 address.
+| Parameter | Type | What It Is |
+|---|---|---|
+| `CONTRACT_COLDKEY` | `bytes32` | Substrate coldkey. The contract's owner identity on the Substrate staking side. Set via `setContractColdkey()` by trustee. |
+| `CONTRACT_HOTKEY` | `bytes32` | Substrate validator hotkey. Where the contract consolidates all alpha collateral. Set at `initialize()`. |
+| `TRUSTEE` | `address` (H160) | EVM address with admin powers: slash, deny reclaims, burn-register, set coldkey. |
+| `NETUID` | `uint16` | The Basilica subnet ID. All alpha operations use this netuid. |
 
-Both miners and validators need TAO in their H160 wallets for gas (~0.01 TAO minimum).
+Both miners and the trustee need TAO in their H160 wallets for gas.
 
-### Key Contract State
+### Dual-Mode Collateral State
 
-- `nodeToMiner[hotkey][nodeId] -> address`: Maps (hotkey, nodeId) to the miner's H160 address
-- `collaterals[hotkey][nodeId] -> uint256`: TAO collateral amount (in wei, 1e18)
-- `alphaCollaterals[hotkey][nodeId] -> uint256`: Alpha token collateral
-- `reclaims[reclaimId] -> Reclaim`: Pending reclaim requests with deny timeout
-- `CONTRACT_COLDKEY`: bytes32 Substrate coldkey associated with the contract (for staking precompile calls)
+Per `(hotkey, nodeId)` the contract tracks:
+- `collaterals` -- total TAO locked (in wei, 1e18 = 1 TAO)
+- `alphaCollaterals` -- total alpha locked (in alpha units from staking precompile)
+- `collateralUnderPendingReclaims` -- TAO reserved for pending reclaims
+- `alphaCollateralUnderPendingReclaims` -- alpha reserved for pending reclaims
+- `nodeToMiner` -- the miner's H160 address (set on first deposit, cleared when all four balances are zero)
 
-### Contract Operations
+### TAO Collateral Flow
 
-- **Deposit**: Miner sends TAO + optional alpha to lock as collateral for a (hotkey, nodeId) pair
-- **Reclaim**: Miner requests collateral back, starts a timeout window for trustee to deny
-- **Finalize Reclaim**: After timeout passes without denial, miner withdraws
-- **Deny Reclaim**: Trustee rejects a reclaim within the timeout window
-- **Slash**: Trustee slashes a miner's collateral for misconduct
-- **Burn Register**: Calls the `0x0804` precompile to burn-register the contract on-chain
+- **Deposit:** Miner sends TAO as `msg.value`. Recorded in `collaterals[hotkey][nodeId]`.
+- **Reclaim:** TAO sent back to miner via `payable(miner).call{value: amount}`.
+- **Slash:** TAO sent to `TRUSTEE` wallet (not burned).
+
+### Alpha Collateral Flow
+
+**Deposit (`transferAlpha`):**
+1. Miner has alpha staked to `alphaHotkey` under their own coldkey on the Basilica subnet.
+2. Contract calls `IStaking.transferStake` via **`delegatecall`** -- preserves miner's identity as origin, so precompile sees the miner's coldkey. Alpha moves from miner's coldkey to `CONTRACT_COLDKEY` under `alphaHotkey`.
+3. Actual amount received = `newContractStake - oldContractStake` (swap fees may reduce it).
+4. If `alphaHotkey != CONTRACT_HOTKEY`, calls `IStaking.moveStake` via **`call`** to consolidate alpha from `alphaHotkey` to `CONTRACT_HOTKEY` (uses contract's identity as coldkey).
+5. Recorded in `alphaCollaterals[hotkey][nodeId]`.
+
+**Reclaim (`withdrawAlpha`):**
+1. Calls `IStaking.transferStake` via **`call`** to send alpha from `CONTRACT_HOTKEY` to miner's `alphaColdkey` (provided at reclaim time).
+2. Both origin and destination netuids are `NETUID` (stays within Basilica subnet).
+
+**Slash:**
+- Alpha transferred to trustee's coldkey (`TRUSTEE_COLDKEY`) via `transferStake` (not left locked in the contract).
+
+### `delegatecall` vs `call` (Critical)
+
+| Call Type | Precompile sees as origin | Used When |
+|---|---|---|
+| `delegatecall` | Original `msg.sender` (miner's EVM address -> miner's Substrate mirror) | `transferAlpha` step 1: moving alpha FROM miner TO contract |
+| `call` | Proxy contract's EVM address (-> contract's Substrate mirror) | `moveStake`, `withdrawAlpha`: moving alpha between contract-owned positions |
 
 ### Deployment
 
