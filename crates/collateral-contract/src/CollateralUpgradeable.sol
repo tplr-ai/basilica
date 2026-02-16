@@ -76,6 +76,10 @@ contract CollateralUpgradeable is
         private alphaCollateralUnderPendingReclaims;
     uint256 private nextReclaimId;
 
+    /// @dev Reserved storage gap for future upgrades.
+    /// Reduce this array size by N when adding N new state variables above.
+    uint256[50] private __gap;
+
     struct Reclaim {
         bytes32 hotkey;
         bytes16 nodeId;
@@ -228,6 +232,9 @@ contract CollateralUpgradeable is
         bytes32 alphaHotkey,
         uint256 alphaAmount
     ) external payable {
+        if (msg.value == 0 && alphaAmount == 0) {
+            revert AmountZero();
+        }
         if (msg.value != 0 && msg.value < MIN_COLLATERAL_INCREASE) {
             revert InsufficientAmount();
         }
