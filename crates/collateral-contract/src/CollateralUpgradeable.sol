@@ -374,7 +374,9 @@ contract CollateralUpgradeable is
 
         if (
             collaterals[hotkey][nodeId] == 0 &&
-            alphaCollaterals[hotkey][nodeId] == 0
+            alphaCollaterals[hotkey][nodeId] == 0 &&
+            collateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
+            alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
         }
@@ -475,7 +477,12 @@ contract CollateralUpgradeable is
         if (!success) {
             revert TransferFailed();
         }
-        if (amount == slashAmount && alphaAmount == slashAlphaAmount) {
+        if (
+            amount == slashAmount &&
+            alphaAmount == slashAlphaAmount &&
+            collateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
+            alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
+        ) {
             nodeToMiner[hotkey][nodeId] = address(0);
         }
         emit Slashed(

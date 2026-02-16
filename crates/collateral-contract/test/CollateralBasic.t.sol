@@ -475,23 +475,7 @@ contract CollateralBasicTest is Test {
             0
         );
 
-        // Use vm.store to create a Reclaim with amount=0, alphaAmount>0
-        // Reclaim struct stored in slot for reclaims mapping (slot 11 in storage layout)
-        // reclaims is at slot 7 (counting from 0: NETUID=0, TRUSTEE=1 (shares slot), ...
-        // Actually let's compute: the mapping reclaims[nextReclaimId] is at storage slot
-        // We need to find the storage slot. Let's use a different approach:
-        // First, let's get the next reclaim ID by making a reclaim and then manipulating it
-
-        // Instead of vm.store, let's test via the deny path:
-        // We can't easily create alpha-only reclaim without IStaking mock.
-        // So we use vm.store to directly set the reclaim struct fields.
-
-        // reclaims mapping is at slot 7 (0-indexed: NETUID(0), TRUSTEE(1), DECISION_TIMEOUT(2),
-        // MIN_COLLATERAL_INCREASE(3), CONTRACT_COLDKEY(4), CONTRACT_HOTKEY(5),
-        // nodeToMiner(6), collaterals(7), alphaCollaterals(8), reclaims(9))
-        // Wait - need to account for the AccessControl storage. Let me use a simpler approach.
-
-        // Let Alice do a normal TAO reclaim first to get reclaimId 0 created
+        // Create a normal TAO reclaim to get reclaimId 0
         vm.prank(ALICE);
         collateral.reclaimCollateral(
             HOTKEY_1,
@@ -501,53 +485,53 @@ contract CollateralBasicTest is Test {
             TEST_MD5
         );
 
-        // Now we have reclaim 0 with amount=5 ether, alphaAmount=0
-        // Deny it so it's cleaned up
-        vm.prank(TRUSTEE);
-        collateral.denyReclaimRequest(0, TEST_URL, TEST_MD5);
-
-        // Now create reclaim 1 with amount=0, alphaAmount=100 using vm.store
-        // Find the base slot for reclaims[1]:
-        // reclaims is the mapping at some storage slot S
-        // reclaims[1] is at keccak256(abi.encode(1, S))
-        // The Reclaim struct fields are stored consecutively from that slot
-
-        // We need to figure out the storage slot of the `reclaims` mapping
-        // Since this is an upgradeable contract, storage layout follows declaration order
-        // after the gap used by Initializable, UUPSUpgradeable, AccessControlUpgradeable
-        // Slot layout of our state:
-        // slot 0: NETUID (uint16) + TRUSTEE (address) packed? No, NETUID is uint16, TRUSTEE is address
-        // Actually for upgradeable contracts, OZ uses specific storage slots.
-        // Let's just compute empirically by reading reclaim 0's slot.
-
-        // For simplicity, let's directly verify the fix by observing that
-        // reclaim with amount > 0 works for deny (existing behavior), and
-        // separately check the condition in the code. The key test is that
-        // the OR condition works. Let's use a trick:
-
-        // Actually the simplest approach: make Alice reclaim again (gets reclaimId 1 with amount=5, alphaAmount=0)
-        // then manually zero out the amount field and set alphaAmount > 0
-
-        vm.prank(ALICE);
-        collateral.reclaimCollateral(
-            HOTKEY_1,
-            EXECUTOR_ID_1,
-            bytes32(0),
-            TEST_URL,
-            TEST_MD5
-        );
-
-        // reclaimId 1 now exists. Let's read to confirm
-        (,,,uint256 amt,,uint256 alphaAmt,) = collateral.reclaims(1);
+        // Verify reclaim 0 exists with amount=5 ether
+        (,,,uint256 amt,,uint256 alphaAmt,) = collateral.reclaims(0);
         assertEq(amt, 5 ether);
         assertEq(alphaAmt, 0);
 
-        // Now deny should work (since amount > 0)
-        vm.prank(TRUSTEE);
-        collateral.denyReclaimRequest(1, TEST_URL, TEST_MD5);
+        // Compute storage slots for reclaim struct fields using vm.store
+        // OZ v5 uses ERC-7201 namespaced storage, so our state vars start at slot 0:
+        // slot 0: NETUID(u16) + TRUSTEE(addr) + DECISION_TIMEOUT(u64) packed
+        // slot 1: MIN_COLLATERAL_INCREASE(u256)
+        // slot 2: CONTRACT_COLDKEY(b32)
+        // slot 3: CONTRACT_HOTKEY(b32)
+        // slot 4: nodeToMiner mapping
+        // slot 5: collaterals mapping
+        // slot 6: alphaCollaterals mapping
+        // slot 7: reclaims mapping
+        // slot 8: collateralUnderPendingReclaims mapping
+        // slot 9: alphaCollateralUnderPendingReclaims mapping
+        uint256 RECLAIMS_SLOT = 7;
+        bytes32 baseSlot = keccak256(abi.encode(uint256(0), RECLAIMS_SLOT));
+        // Reclaim struct layout: +0=hotkey, +1=nodeId, +2=miner, +3=amount, +4=alphaColdkey, +5=alphaAmount, +6=denyTimeout
+        bytes32 amountSlot = bytes32(uint256(baseSlot) + 3);
+        bytes32 alphaAmountSlot = bytes32(uint256(baseSlot) + 5);
 
-        // Verify it was cleaned up
-        (,,,amt,,alphaAmt,) = collateral.reclaims(1);
+        // Verify slot calculation by loading amount (should be 5 ether)
+        assertEq(uint256(vm.load(address(collateral), amountSlot)), 5 ether);
+
+        // Mutate reclaim 0 to be alpha-only: amount=0, alphaAmount=100 ether
+        vm.store(address(collateral), amountSlot, bytes32(uint256(0)));
+        vm.store(address(collateral), alphaAmountSlot, bytes32(uint256(100 ether)));
+
+        // Also set alphaCollateralUnderPendingReclaims so deny doesn't underflow
+        uint256 ALPHA_PENDING_SLOT = 9;
+        bytes32 level1 = keccak256(abi.encode(HOTKEY_1, ALPHA_PENDING_SLOT));
+        bytes32 alphaPendingSlot = keccak256(abi.encode(EXECUTOR_ID_1, level1));
+        vm.store(address(collateral), alphaPendingSlot, bytes32(uint256(100 ether)));
+
+        // Verify the reclaim now reads as alpha-only
+        (,,,amt,,alphaAmt,) = collateral.reclaims(0);
+        assertEq(amt, 0);
+        assertEq(alphaAmt, 100 ether);
+
+        // Deny should succeed (the fix changed `amount == 0` to `amount == 0 && alphaAmount == 0`)
+        vm.prank(TRUSTEE);
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_MD5);
+
+        // Verify reclaim was cleaned up
+        (,,,amt,,alphaAmt,) = collateral.reclaims(0);
         assertEq(amt, 0);
         assertEq(alphaAmt, 0);
     }
@@ -601,6 +585,140 @@ contract CollateralBasicTest is Test {
         // Verify Alice got her 3 ETH back
         assertEq(ALICE.balance, aliceBalanceBefore + 3 ether);
         assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+    }
+
+    function testMultiplePendingReclaimsNoTheftAfterSlash() public {
+        // Regression test for P1: collateral theft via multiple pending reclaims
+        // Attack path: deposit->reclaim->deposit->reclaim->slash_all->
+        //   finalize clears nodeToMiner->new depositor->old finalize drains new funds
+
+        // Step 1-2: Alice deposits 10 ETH and reclaims
+        vm.prank(ALICE);
+        collateral.deposit{value: 10 ether}(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            ALPHA_HOTKEY,
+            0
+        );
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            bytes32(0),
+            TEST_URL,
+            TEST_MD5
+        );
+
+        // Step 3-4: Alice deposits 5 more and reclaims the delta
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            ALPHA_HOTKEY,
+            0
+        );
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            bytes32(0),
+            TEST_URL,
+            TEST_MD5
+        );
+
+        // Step 5: Trustee slashes all 15 ETH
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            15 ether,
+            0,
+            TEST_URL,
+            TEST_MD5
+        );
+
+        // nodeToMiner must NOT be cleared (pending reclaims still exist)
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
+
+        // Step 7: Bob tries to deposit — must fail since Alice still owns the node
+        vm.prank(BOB);
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralUpgradeable.NodeNotOwned.selector)
+        );
+        collateral.deposit{value: 5 ether}(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            ALPHA_HOTKEY,
+            0
+        );
+
+        // Step 8: Alice finalizes reclaim 0 — gets nothing (slashed)
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        collateral.finalizeReclaim(0);
+
+        // nodeToMiner still Alice (reclaim 1 still pending)
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
+
+        // Step 9: Alice finalizes reclaim 1 — gets nothing (slashed)
+        collateral.finalizeReclaim(1);
+
+        // NOW nodeToMiner is cleared (all pending reclaims resolved, all balances zero)
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
+
+        // Step 10: Bob can now safely deposit
+        vm.prank(BOB);
+        collateral.deposit{value: 5 ether}(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            ALPHA_HOTKEY,
+            0
+        );
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), BOB);
+        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
+    }
+
+    function testSlashAllWithPendingReclaimKeepsOwnership() public {
+        // Slash all collateral while a reclaim is pending — nodeToMiner must persist
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            ALPHA_HOTKEY,
+            0
+        );
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            bytes32(0),
+            TEST_URL,
+            TEST_MD5
+        );
+
+        // Slash everything
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            5 ether,
+            0,
+            TEST_URL,
+            TEST_MD5
+        );
+
+        // nodeToMiner stays (pending reclaim exists)
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
+        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+
+        // Finalize reclaim — gets 0
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        collateral.finalizeReclaim(0);
+
+        // NOW nodeToMiner is cleared
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
     }
 
     // ============ DENY RECLAIM TESTS ============
