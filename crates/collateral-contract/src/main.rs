@@ -46,7 +46,7 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum TxCommands {
-    /// Deposit collateral for an node
+    /// Deposit collateral for an node (alpha-only tx path; TAO msg.value is intentionally not exposed)
     Deposit {
         /// Private key for signing the transaction (hex string)
         #[arg(long, env = "PRIVATE_KEY")]
@@ -57,7 +57,7 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
-        /// Alpha hotkey as hex string (32 bytes)
+        /// Alpha hotkey as hex string (32 bytes). Required when claiming ownership on a new node.
         #[arg(long)]
         alpha_hotkey: String,
         /// Alpha amount to deposit in wei
@@ -109,7 +109,7 @@ enum TxCommands {
         #[arg(long)]
         url_content_sha256: String,
     },
-    /// Slash collateral for an node
+    /// Slash collateral for an node (alpha-only tx path; TAO slash amount is intentionally fixed to zero)
     SlashCollateral {
         /// Private key for signing the transaction (hex string)
         #[arg(long, env = "PRIVATE_KEY")]
@@ -245,7 +245,7 @@ async fn handle_tx_command(
             let alpha_amount_u256 = parse_u256(&alpha_amount)?;
 
             println!(
-                "Depositing {} alpha (wei) for node {} with hotkey {}",
+                "Depositing {} alpha (wei) for node {} with hotkey {} (TAO msg.value is fixed to 0 in this CLI path)",
                 alpha_amount, node_id, hotkey
             );
             collateral_contract::deposit(
@@ -332,7 +332,7 @@ async fn handle_tx_command(
             let alpha_amount = parse_u256(&slash_alpha_amount)?;
 
             println!(
-                "Slashing {} alpha (wei) for node {} with hotkey {}",
+                "Slashing {} alpha (wei) for node {} with hotkey {} (TAO slash amount is fixed to 0 in this CLI path)",
                 slash_alpha_amount, node_id, hotkey
             );
             collateral_contract::slash_collateral(

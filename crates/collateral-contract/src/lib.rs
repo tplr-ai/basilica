@@ -235,6 +235,7 @@ pub async fn deposit(
 ) -> Result<(), anyhow::Error> {
     let contract = get_collateral(private_key, network_config).await?;
 
+    // Product policy: tx surface is alpha-primary. We intentionally do not send TAO msg.value.
     let tx = contract
         .deposit(
             FixedBytes::from_slice(&hotkey),
@@ -259,6 +260,7 @@ pub async fn deposit_with_config(
 ) -> Result<(), anyhow::Error> {
     let contract = get_collateral(private_key, network_config).await?;
 
+    // Product policy: tx surface is alpha-primary. We intentionally do not send TAO msg.value.
     let tx = contract
         .deposit(
             FixedBytes::from_slice(&hotkey),
@@ -339,6 +341,7 @@ pub async fn slash_collateral(
 ) -> Result<(), anyhow::Error> {
     let contract = get_collateral(private_key, network_config).await?;
 
+    // Product policy: slash operations only target alpha via this client path.
     let tx = contract.slashCollateral(
         FixedBytes::from_slice(&hotkey),
         FixedBytes::from_slice(&node_id),

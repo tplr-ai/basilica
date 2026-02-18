@@ -234,6 +234,26 @@ mod tests {
         }
     }
 
+    struct FixedPriceFetcher;
+
+    #[async_trait::async_trait]
+    impl TokenPriceFetcher for FixedPriceFetcher {
+        async fn fetch(
+            &self,
+            _client: &BasilicaApiClient,
+            _netuid: u16,
+        ) -> Result<TokenPriceSnapshot> {
+            Ok(TokenPriceSnapshot {
+                tao_price_usd: Decimal::ONE,
+                alpha_price_usd: Decimal::ONE,
+                alpha_price_tao: Decimal::ONE,
+                tao_reserve: Decimal::ONE,
+                alpha_reserve: Decimal::ONE,
+                fetched_at: "2026-01-01T00:00:00Z".to_string(),
+            })
+        }
+    }
+
     struct TestBaselineFetcher;
 
     #[async_trait::async_trait]
@@ -288,5 +308,59 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(alpha, Decimal::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_tao_is_non_authoritative_for_collateral_status() {
+        let persistence = Arc::new(SimplePersistence::for_testing().await.unwrap());
+        let hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+        let node_id = Uuid::new_v4().to_string();
+        let hotkey_hex = hotkey_ss58_to_hex(hotkey).unwrap();
+        let node_hex = node_id_to_hex(&node_id).unwrap();
+
+        // Persist very high TAO with zero alpha to prove policy uses alpha only.
+        sqlx::query(
+            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, pending_tao_reclaim, pending_alpha_reclaim, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        )
+        .bind(hotkey_hex)
+        .bind(node_hex)
+        .bind("0x0000000000000000000000000000000000000001")
+        .bind("1000000000000000000000000")
+        .bind("0")
+        .bind("0")
+        .bind("0")
+        .execute(persistence.pool())
+        .await
+        .unwrap();
+
+        let config = CollateralConfig::default();
+        let grace_tracker = Arc::new(GracePeriodTracker::new(
+            persistence.clone(),
+            Duration::hours(24),
+        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(
+            config.clone(),
+            grace_tracker.clone(),
+        ));
+        let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
+        let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
+            "http://localhost".to_string(),
+            signer,
+            reqwest::Client::new(),
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+            Arc::new(TestBaselineFetcher),
+            Arc::new(FixedPriceFetcher),
+        ));
+        let manager =
+            CollateralManager::new(persistence, api_client, evaluator, grace_tracker, 1, None);
+
+        let (state, status) = manager
+            .get_collateral_status(hotkey, &node_id, "H100", 1)
+            .await
+            .unwrap();
+        assert!(matches!(state, CollateralState::Undercollateralized { .. }));
+        assert_eq!(status.current_alpha, Decimal::ZERO);
+        assert_eq!(status.status, "undercollateralized");
     }
 }

@@ -12,6 +12,28 @@ contract AddressMappingPrecompileMock {
     }
 }
 
+contract StakingV2PrecompileMock {
+    function transferStake(
+        bytes32,
+        bytes32,
+        uint256,
+        uint256,
+        uint256
+    ) external payable {}
+
+    function moveStake(
+        bytes32,
+        bytes32,
+        uint256,
+        uint256,
+        uint256
+    ) external payable {}
+
+    function getStake(bytes32, bytes32, uint256) external view returns (uint256) {
+        return type(uint256).max - gasleft();
+    }
+}
+
 /**
  * @title CollateralBasicTest
  * @notice Basic tests for CollateralUpgradeable without alpha/IStaking interactions
@@ -33,6 +55,8 @@ contract CollateralBasicTest is Test {
     address constant CHARLIE = address(0xDEF);
     address constant ADDRESS_MAPPING_PRECOMPILE =
         0x000000000000000000000000000000000000080C;
+    address constant STAKING_V2_PRECOMPILE =
+        0x0000000000000000000000000000000000000805;
 
     bytes32 constant ALPHA_HOTKEY = bytes32(uint256(1));
     bytes32 constant HOTKEY_1 = bytes32(uint256(100));
@@ -47,6 +71,8 @@ contract CollateralBasicTest is Test {
     function setUp() public {
         AddressMappingPrecompileMock addressMappingMock = new AddressMappingPrecompileMock();
         vm.etch(ADDRESS_MAPPING_PRECOMPILE, address(addressMappingMock).code);
+        StakingV2PrecompileMock stakingMock = new StakingV2PrecompileMock();
+        vm.etch(STAKING_V2_PRECOMPILE, address(stakingMock).code);
 
         // Deploy implementation
         implementation = new CollateralUpgradeable();
@@ -68,10 +94,34 @@ contract CollateralBasicTest is Test {
         // Cast proxy to interface
         collateral = CollateralUpgradeable(payable(address(proxy)));
 
+        // Most legacy TAO flow tests operate on this node pair after ownership is established.
+        _seedNodeOwner(HOTKEY_1, EXECUTOR_ID_1, ALICE);
+
         // Give test accounts some ETH
         vm.deal(ALICE, 100 ether);
         vm.deal(BOB, 100 ether);
         vm.deal(CHARLIE, 100 ether);
+    }
+
+    function _nodeToMinerSlot(
+        bytes32 hotkey,
+        bytes16 nodeId
+    ) internal pure returns (bytes32) {
+        uint256 nodeToMinerSlot = 4;
+        bytes32 levelOne = keccak256(abi.encode(hotkey, nodeToMinerSlot));
+        return keccak256(abi.encode(nodeId, levelOne));
+    }
+
+    function _seedNodeOwner(
+        bytes32 hotkey,
+        bytes16 nodeId,
+        address owner
+    ) internal {
+        vm.store(
+            address(collateral),
+            _nodeToMinerSlot(hotkey, nodeId),
+            bytes32(uint256(uint160(owner)))
+        );
     }
 
     // ============ INITIALIZATION TESTS ============
@@ -166,6 +216,39 @@ contract CollateralBasicTest is Test {
 
         assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 8 ether);
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
+    }
+
+    function testFirstDepositRequiresAlphaForOwnershipClaim() public {
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CollateralUpgradeable.AlphaRequiredForOwnership.selector
+            )
+        );
+        collateral.deposit{value: 5 ether}(
+            HOTKEY_2,
+            EXECUTOR_ID_2,
+            ALPHA_HOTKEY,
+            0
+        );
+    }
+
+    function testAlphaClaimAllowsSubsequentTaoTopUp() public {
+        vm.prank(ALICE);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+
+        assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), ALICE);
+        assertEq(collateral.collaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
+        assertGt(collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
+
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(
+            HOTKEY_2,
+            EXECUTOR_ID_2,
+            ALPHA_HOTKEY,
+            0
+        );
+        assertEq(collateral.collaterals(HOTKEY_2, EXECUTOR_ID_2), 5 ether);
     }
 
     // ============ RECLAIM TESTS ============
@@ -569,6 +652,7 @@ contract CollateralBasicTest is Test {
 
         // Second cycle: deposit again -> reclaim -> finalize
         // This would fail if pending counters weren't decremented in first cycle
+        _seedNodeOwner(HOTKEY_1, EXECUTOR_ID_1, ALICE);
         vm.prank(ALICE);
         collateral.deposit{value: 3 ether}(
             HOTKEY_1,
@@ -682,7 +766,7 @@ contract CollateralBasicTest is Test {
             HOTKEY_1,
             EXECUTOR_ID_1,
             ALPHA_HOTKEY,
-            0
+            1
         );
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), BOB);
         assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);

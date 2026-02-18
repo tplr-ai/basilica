@@ -180,6 +180,8 @@ impl SimplePersistence {
         hotkey: &str,
         node_id: &str,
     ) -> Result<Option<U256>, anyhow::Error> {
+        // TAO is retained for on-chain state sync and operator visibility.
+        // Eligibility and slash policy use alpha collateral.
         self.get_collateral_amount_internal(hotkey, node_id, "tao_collateral")
             .await
     }

@@ -69,17 +69,30 @@
   - Standardized all checksum interfaces on full SHA-256 (`bytes32` / `[u8; 32]`) and renamed fields to `urlContentSha256`.
   - Updated contract ABI/events, CLI parsing/flags (`--url-content-sha256`), validator slash checksum computation, and persistence column naming to `url_content_sha256`.
   - Added migration `018_rename_md5_checksum_to_sha256.sql` to rename the persistence column and null out non-64-hex legacy values.
+  Verification:
+  - `forge test` (collateral-contract) passed.
+  - `cargo test -p collateral-contract --lib` passed.
+  - `cargo test -p collateral-contract --bin collateral-cli` passed.
+  - `cargo test -p basilica-validator --test collateral_e2e` passed.
+  - `cargo test -p basilica-validator --test collateral_slash_flow` passed.
+  - `cargo test -p basilica-validator test_handle_slashed_with_url_data` passed.
+  Completed: 2026-02-18
   Files: `crates/collateral-contract/src/CollateralUpgradeable.sol`, `crates/collateral-contract/src/main.rs`, `crates/collateral-contract/src/lib.rs`, `crates/basilica-validator/src/collateral/slash_executor.rs`, `crates/basilica-validator/src/persistence/collateral_persistence.rs`
 
-### ABI/CLI Updates (Integration) **PARTIALLY RESOLVED**
-- Problem: CLI and Rust bindings now send only alpha collateral and ignore TAO `msg.value`, while contract still supports TAO. This can cause mixed‑collateral state drift.
-  Done:
-  - Validator-side drift is resolved: event sync now tracks both TAO and alpha state, includes reclaim lifecycle events (`ReclaimProcessStarted`, `Denied`), and persists pending reclaim amounts to mirror on-chain lifecycle semantics.
-  - Added event-coverage and lifecycle tests so newly supported events must remain wired in persistence dispatch.
-  Still to do:
-  - Decide product direction explicitly:
-    - If TAO is deprecated: remove TAO paths from contract ABI and bindings (or gate/disable them), and document alpha-only behavior as canonical.
-    - If TAO remains supported: extend CLI/Rust tx interfaces to accept TAO inputs and set nonzero `msg.value` for TAO deposits; keep slash/reclaim tooling consistent across both assets.
-  - Deferred in this pass: no TAO/alpha product-direction changes were made while standardizing evidence checksums.
-  - Align docs/operator playbooks with whichever direction is chosen so tx behavior and validator sync guarantees are unambiguous.
-  Files: `crates/collateral-contract/src/lib.rs`, `crates/collateral-contract/src/main.rs`
+### ~~Alpha-Primary, Dual-State Alignment (Integration)~~ **DONE**
+- Decision:
+  - Keep **dual-state** contract/event sync for TAO + alpha.
+  - Keep **alpha-only policy** for validator eligibility/limits/slash sizing.
+  - Keep **alpha-only tx surface** in CLI/Rust bindings (`msg.value=0`, `slashAmount=0` in tx helpers).
+  - Require **non-zero alpha** to claim ownership on first deposit (prevents TAO-only ownership claims).
+- Fix:
+  - Added `AlphaRequiredForOwnership` guard in `deposit()` when `nodeToMiner` is empty.
+  - Preserved TAO write paths for already-owned nodes (deposits/reclaims/slashes remain contract-supported).
+  - Added/updated tests for:
+    - TAO-only first claim reverts.
+    - Alpha-backed first claim succeeds.
+    - TAO top-up remains valid after alpha-backed ownership claim.
+  - Clarified alpha-primary policy in CLI/lib comments and operator docs.
+  - Added validator regression proving TAO is non-authoritative for eligibility (high TAO + zero alpha remains undercollateralized).
+- Completed: 2026-02-18
+- Files: `crates/collateral-contract/src/CollateralUpgradeable.sol`, `crates/collateral-contract/test/CollateralBasic.t.sol`, `crates/collateral-contract/test/CollateralUpgradeable.t.sol`, `crates/collateral-contract/src/lib.rs`, `crates/collateral-contract/src/main.rs`, `docs/collateral-contract.md`, `crates/collateral-contract/README.md`, `crates/collateral-contract/flow.sh`, `crates/basilica-validator/src/collateral/manager.rs`, `crates/basilica-validator/src/collateral/evaluator.rs`, `crates/basilica-validator/src/persistence/collateral_persistence.rs`

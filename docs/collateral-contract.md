@@ -105,12 +105,14 @@ Below is a typical sequence for integrating and using this collateral contract w
 
   - Each miner **creates an Ethereum (H160) wallet**, links it to their hotkey, and funds it with enough TAO for transaction fees.
   - Miners **retrieve** the owner's contract address from the chain or another trusted source.
-  - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(executorUuid)` function, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract interface) to associate the collateral with specific GPU nodes.
+  - Upon confirmation, miners **deposit** collateral by calling `deposit(hotkey, nodeId, alphaHotkey, alphaAmount)`, specifying the **GPU node UUID** (`nodeId`) to associate collateral with a specific GPU node.
+  - Current tx policy in Basilica tooling is **alpha-primary**: CLI/Rust tx paths send alpha inputs and do not expose TAO `msg.value` knobs.
+  - The contract still tracks both TAO and alpha, and validator event sync persists both assets.
   - Confirm on-chain that your collateral has been successfully locked for that GPU node
 
 - **Slashing Misbehaving Miners**
-  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` for a full slash or `slashCollateralAmount()` for a partial slash, providing the `hotkey`, `executorUuid`, `amount` (partial only), and justification details to reduce the miner’s collateral.
-  Partial slashing requires the upgraded contract that includes `slashCollateralAmount` plus regenerated ABI/CLI bindings.
+  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral(hotkey, nodeId, slashAmount, slashAlphaAmount, ...)` with justification details.
+  Current validator/CLI slash policy is alpha-primary (`slashAmount` fixed to 0 in tx tooling).
 
 - **Reclaiming Collateral**
   - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract) associated with the collateral.
@@ -144,7 +146,7 @@ You need replace the variable with the correct value like contract address.
     collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query netuid
   ```
 
-  - Run deposit command to initiate the deposit transaction with your specified amount of $TAO. running `collateral-cli tx deposit`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+  - Run deposit command to initiate an **alpha** collateral deposit. The current CLI tx surface is alpha-primary (no TAO `--amount` flag). See [`flow.sh`](/crates/collateral-contract/flow.sh).
 
   ```shell
   #!/usr/bin/env bash
@@ -154,18 +156,21 @@ You need replace the variable with the correct value like contract address.
   export NETWORK=local
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
-  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export ALPHA_HOTKEY=0x
+  export ALPHA_AMOUNT=1000000000000000000
   # WARNING: never commit or paste real keys in scripts
   export PRIVATE_KEY=0x
   # deposit
   collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
   --private-key "$PRIVATE_KEY" \
   --hotkey "$HOTKEY" \
-  --amount 10 \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$NODE_ID" \
+  --alpha-hotkey "$ALPHA_HOTKEY" \
+  --alpha-amount "$ALPHA_AMOUNT"
   ```
 
-  - Confirm on-chain that your collateral has been successfully locked for that validator. running `collateral-cli query executor-to-miner` and `collateral-cli query collaterals`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh)
+  - Confirm on-chain that your collateral has been successfully locked for that validator via `query node-to-miner` and `query alpha-collaterals`.
 
   ```shell
   #!/usr/bin/env bash
@@ -173,20 +178,20 @@ You need replace the variable with the correct value like contract address.
   export NETWORK=local
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
-  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
 
-  # check the executor to miner, miner is not zero if deposit is successful
+  # check node ownership, miner is not zero if deposit is successful
 
-  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query executor-to-miner \
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query node-to-miner \
   --hotkey "$HOTKEY" \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$NODE_ID"
 
-  # check the collaterals should be amount you deposit
+  # check alpha collateral should reflect your deposit
 
-  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query collaterals \
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query alpha-collaterals \
   --hotkey "$HOTKEY" \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$NODE_ID"
   ```
 
 - **Reclaim Collateral**

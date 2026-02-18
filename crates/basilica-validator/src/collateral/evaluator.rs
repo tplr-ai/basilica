@@ -73,6 +73,7 @@ impl CollateralEvaluator {
         node_id: &str,
         gpu_category: &str,
         gpu_count: u32,
+        // Policy input is alpha collateral only. TAO is synced for observability but not used for limits.
         collateral_alpha: Decimal,
         alpha_price_usd: Option<Decimal>,
     ) -> Result<(CollateralState, CollateralStatus)> {

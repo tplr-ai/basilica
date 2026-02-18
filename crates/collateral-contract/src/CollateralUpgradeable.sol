@@ -161,6 +161,7 @@ contract CollateralUpgradeable is
     error InsufficientCollateralForReclaim();
     error InsufficientCollateralForSlash();
     error InvalidAlphaColdkey();
+    error AlphaRequiredForOwnership();
     error AddressMappingPrecompileCallFailed();
     error AddressMappingPrecompileInvalidResponse();
     error InvalidDerivedContractColdkey();
@@ -261,6 +262,9 @@ contract CollateralUpgradeable is
 
         address owner = nodeToMiner[hotkey][nodeId];
         if (owner == address(0)) {
+            if (alphaAmount == 0) {
+                revert AlphaRequiredForOwnership();
+            }
             nodeToMiner[hotkey][nodeId] = msg.sender;
         } else if (owner != msg.sender) {
             revert NodeNotOwned();

@@ -13,6 +13,28 @@ contract AddressMappingPrecompileMock {
     }
 }
 
+contract StakingV2PrecompileMock {
+    function transferStake(
+        bytes32,
+        bytes32,
+        uint256,
+        uint256,
+        uint256
+    ) external payable {}
+
+    function moveStake(
+        bytes32,
+        bytes32,
+        uint256,
+        uint256,
+        uint256
+    ) external payable {}
+
+    function getStake(bytes32, bytes32, uint256) external view returns (uint256) {
+        return type(uint256).max - gasleft();
+    }
+}
+
 contract CollateralUpgradeableTest is Test {
     CollateralUpgradeable public collateral;
     CollateralUpgradeable public implementation;
@@ -31,10 +53,14 @@ contract CollateralUpgradeableTest is Test {
     uint256 constant alphaAmount = 1 ether;
     address constant ADDRESS_MAPPING_PRECOMPILE =
         0x000000000000000000000000000000000000080C;
+    address constant STAKING_V2_PRECOMPILE =
+        0x0000000000000000000000000000000000000805;
 
     function setUp() public {
         AddressMappingPrecompileMock addressMappingMock = new AddressMappingPrecompileMock();
         vm.etch(ADDRESS_MAPPING_PRECOMPILE, address(addressMappingMock).code);
+        StakingV2PrecompileMock stakingMock = new StakingV2PrecompileMock();
+        vm.etch(STAKING_V2_PRECOMPILE, address(stakingMock).code);
 
         // Deploy implementation
         implementation = new CollateralUpgradeable();
@@ -55,6 +81,27 @@ contract CollateralUpgradeableTest is Test {
 
         // Cast proxy to interface
         collateral = CollateralUpgradeable(payable(address(proxy)));
+    }
+
+    function _nodeToMinerSlot(
+        bytes32 hotkey,
+        bytes16 nodeId
+    ) internal pure returns (bytes32) {
+        uint256 nodeToMinerSlot = 4;
+        bytes32 levelOne = keccak256(abi.encode(hotkey, nodeToMinerSlot));
+        return keccak256(abi.encode(nodeId, levelOne));
+    }
+
+    function _seedNodeOwner(
+        bytes32 hotkey,
+        bytes16 nodeId,
+        address owner
+    ) internal {
+        vm.store(
+            address(collateral),
+            _nodeToMinerSlot(hotkey, nodeId),
+            bytes32(uint256(uint160(owner)))
+        );
     }
 
     /// @dev Test basic initialization
@@ -90,6 +137,7 @@ contract CollateralUpgradeableTest is Test {
         vm.deal(alice, 10 ether);
         bytes32 hotkey = bytes32(uint256(1));
         bytes16 nodeId = bytes16(uint128(1));
+        _seedNodeOwner(hotkey, nodeId, alice);
 
         // Test event emission
         vm.expectEmit(true, true, true, true, address(collateral));
@@ -101,6 +149,36 @@ contract CollateralUpgradeableTest is Test {
         assertEq(collateral.collaterals(hotkey, nodeId), 5 ether);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);
         assertEq(address(collateral).balance, 5 ether);
+    }
+
+    function testFirstDepositRequiresAlphaForOwnershipClaim() public {
+        vm.deal(alice, 10 ether);
+        bytes32 hotkey = bytes32(uint256(0xA1));
+        bytes16 nodeId = bytes16(uint128(0xB1));
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                CollateralUpgradeable.AlphaRequiredForOwnership.selector
+            )
+        );
+        collateral.deposit{value: 5 ether}(hotkey, nodeId, alphaHotkey, 0);
+    }
+
+    function testAlphaOwnershipClaimThenTaoTopUp() public {
+        vm.deal(alice, 10 ether);
+        bytes32 hotkey = bytes32(uint256(0xA2));
+        bytes16 nodeId = bytes16(uint128(0xB2));
+
+        vm.prank(alice);
+        collateral.deposit(hotkey, nodeId, alphaHotkey, 1);
+        assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);
+        assertEq(collateral.collaterals(hotkey, nodeId), 0);
+        assertGt(collateral.alphaCollaterals(hotkey, nodeId), 0);
+
+        vm.prank(alice);
+        collateral.deposit{value: 2 ether}(hotkey, nodeId, alphaHotkey, 0);
+        assertEq(collateral.collaterals(hotkey, nodeId), 2 ether);
     }
 
     /// @dev Test admin functions
@@ -218,6 +296,7 @@ contract CollateralUpgradeableTest is Test {
         vm.deal(alice, 10 ether);
         bytes32 hotkey = bytes32(uint256(1));
         bytes16 nodeId = bytes16(uint128(1));
+        _seedNodeOwner(hotkey, nodeId, alice);
 
         // 1. Alice deposits
         vm.prank(alice);
@@ -264,7 +343,7 @@ contract CollateralUpgradeableTest is Test {
         address bob = address(0xB0B);
         vm.deal(bob, 10 ether);
         vm.prank(bob);
-        collateral.deposit{value: 2 ether}(hotkey, nodeId, alphaHotkey, 0);
+        collateral.deposit{value: 2 ether}(hotkey, nodeId, alphaHotkey, 1);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), bob);
     }
 }

@@ -110,36 +110,43 @@ collateral-cli --contract-address 0x1234567890123456789012345678901234567890
 
 ### Transaction Commands
 
+> Transaction policy in this CLI is alpha-primary: deposit and slash commands only expose alpha inputs.
+> TAO state remains available via query and event sync.
+
 #### Deposit Collateral
 
 ```bash
-# Basic deposit on mainnet
+# Basic deposit on mainnet (alpha-only tx path)
 collateral-cli tx deposit \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 123 \
-  --amount 1000000000000000000
+  --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6 \
+  --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
+  --alpha-amount 1000000000000000000
 
 # Deposit on testnet
 collateral-cli --network testnet tx deposit \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 456 \
-  --amount 5000000000000000000
+  --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13 \
+  --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
+  --alpha-amount 5000000000000000000
 
 # Deposit with custom contract address
 collateral-cli --contract-address 0x5FbDB2315678afecb367f032d93F642f64180aa3 tx deposit \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 789 \
-  --amount 2000000000000000000
+  --node-id 1f4b20b4-1fdd-4fbb-8904-4310ec6df456 \
+  --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
+  --alpha-amount 2000000000000000000
 
 # Using environment variable for private key
 export PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12
 collateral-cli tx deposit \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 101 \
-  --amount 1500000000000000000
+  --node-id 12c61943-7ce0-470f-a3aa-14df501f15e2 \
+  --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
+  --alpha-amount 1500000000000000000
 ```
 
 #### Reclaim Collateral
@@ -149,7 +156,8 @@ collateral-cli tx deposit \
 collateral-cli tx reclaim-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 123 \
+  --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6 \
+  --alpha-coldkey 1111111111111111111111111111111111111111111111111111111111111111 \
   --url "https://example.com/reclaim-proof" \
   --url-content-sha256 abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 
@@ -157,7 +165,8 @@ collateral-cli tx reclaim-collateral \
 collateral-cli --network testnet tx reclaim-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 456 \
+  --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13 \
+  --alpha-coldkey 1111111111111111111111111111111111111111111111111111111111111111 \
   --url "https://proof-server.testnet.com/evidence/456" \
   --url-content-sha256 d41d8cd98f00b204e9800998ecf8427ed41d8cd98f00b204e9800998ecf8427e
 ```
@@ -190,11 +199,12 @@ collateral-cli tx deny-reclaim \
 #### Slash Collateral
 
 ```bash
-# Slash collateral for misconduct
+# Slash collateral for misconduct (alpha-only tx path)
 collateral-cli tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 123 \
+  --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6 \
+  --slash-alpha-amount 1000000000000000000 \
   --url "https://evidence.example.com/slash-proof" \
   --url-content-sha256 aab03e786183b16c8a0b15f6b40ff607aab03e786183b16c8a0b15f6b40ff607
 
@@ -202,7 +212,8 @@ collateral-cli tx slash-collateral \
 collateral-cli --network testnet tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --node-id 999 \
+  --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13 \
+  --slash-alpha-amount 5000000000000000000 \
   --url "https://audit.testnet.com/violations/999" \
   --url-content-sha256 098f6bcd4621d373cade4e832627b4f6098f6bcd4621d373cade4e832627b4f6
 ```
@@ -231,12 +242,17 @@ collateral-cli query min-collateral-increase
 # Get miner address for node
 collateral-cli query node-to-miner \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 123
+  --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
 # Get collateral amount for node
 collateral-cli query collaterals \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 123
+  --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+
+# Get alpha collateral amount for node
+collateral-cli query alpha-collaterals \
+  --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
 # Get reclaim details
 collateral-cli query reclaims \
@@ -245,7 +261,7 @@ collateral-cli query reclaims \
 # Query on different networks
 collateral-cli --network testnet query collaterals \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --node-id 456
+  --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13
 
 # Query with custom contract
 collateral-cli --contract-address 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 query netuid
