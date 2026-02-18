@@ -103,7 +103,7 @@ Each Bittensor subnet has its own **alpha token**. Alpha is NOT an ERC-20 -- it 
 | Parameter | Type | What It Is |
 |---|---|---|
 | `CONTRACT_COLDKEY` | `bytes32` | Substrate coldkey. The contract's owner identity on the Substrate staking side. Derived once in `initialize()` from AddressMapping precompile (`0x...080C`) using `address(this)`. |
-| `CONTRACT_HOTKEY` | `bytes32` | Substrate validator hotkey. Where the contract consolidates all alpha collateral. Set at `initialize()`. |
+| `VALIDATOR_HOTKEY` | `bytes32` | Substrate validator hotkey. Where the contract consolidates all alpha collateral. Set at `initialize()`. |
 | `TRUSTEE` | `address` (H160) | EVM address with admin powers: slash, deny reclaims, burn-register. |
 | `NETUID` | `uint16` | The Basilica subnet ID. All alpha operations use this netuid. |
 
@@ -130,11 +130,11 @@ Per `(hotkey, nodeId)` the contract tracks:
 1. Miner has alpha staked to `alphaHotkey` under their own coldkey on the Basilica subnet.
 2. Contract calls `IStaking.transferStake` via **`delegatecall`** -- preserves miner's identity as origin, so precompile sees the miner's coldkey. Alpha moves from miner's coldkey to `CONTRACT_COLDKEY` under `alphaHotkey`.
 3. Actual amount received = `newContractStake - oldContractStake` (swap fees may reduce it).
-4. If `alphaHotkey != CONTRACT_HOTKEY`, calls `IStaking.moveStake` via **`call`** to consolidate alpha from `alphaHotkey` to `CONTRACT_HOTKEY` (uses contract's identity as coldkey).
+4. If `alphaHotkey != VALIDATOR_HOTKEY`, calls `IStaking.moveStake` via **`call`** to consolidate alpha from `alphaHotkey` to `VALIDATOR_HOTKEY` (uses contract's identity as coldkey).
 5. Recorded in `alphaCollaterals[hotkey][nodeId]`.
 
 **Reclaim (`withdrawAlpha`):**
-1. Calls `IStaking.transferStake` via **`call`** to send alpha from `CONTRACT_HOTKEY` to miner's `alphaColdkey` (provided at reclaim time).
+1. Calls `IStaking.transferStake` via **`call`** to send alpha from `VALIDATOR_HOTKEY` to miner's `alphaColdkey` (provided at reclaim time).
 2. Both origin and destination netuids are `NETUID` (stays within Basilica subnet).
 
 **Slash:**

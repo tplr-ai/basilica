@@ -86,7 +86,7 @@ contract CollateralBasicTest is Test {
             collateral.CONTRACT_COLDKEY(),
             bytes32(uint256(uint160(address(proxy))))
         );
-        assertEq(collateral.CONTRACT_HOTKEY(), ALPHA_HOTKEY);
+        assertEq(collateral.VALIDATOR_HOTKEY(), ALPHA_HOTKEY);
 
         // Check roles
         assertTrue(collateral.hasRole(collateral.DEFAULT_ADMIN_ROLE(), ADMIN));
@@ -504,7 +504,7 @@ contract CollateralBasicTest is Test {
         // slot 0: NETUID(u16) + TRUSTEE(addr) + DECISION_TIMEOUT(u64) packed
         // slot 1: MIN_COLLATERAL_INCREASE(u256)
         // slot 2: CONTRACT_COLDKEY(b32)
-        // slot 3: CONTRACT_HOTKEY(b32)
+        // slot 3: VALIDATOR_HOTKEY(b32)
         // slot 4: nodeToMiner mapping
         // slot 5: collaterals mapping
         // slot 6: alphaCollaterals mapping

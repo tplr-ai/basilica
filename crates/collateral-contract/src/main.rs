@@ -382,8 +382,8 @@ async fn handle_query_command(
             println!("Contract coldkey: 0x{}", hex::encode(result));
         }
         QueryCommands::ContractHotkey => {
-            let result = collateral_contract::contract_hotkey(network_config).await?;
-            println!("Contract hotkey: 0x{}", hex::encode(result));
+            let result = collateral_contract::validator_hotkey(network_config).await?;
+            println!("Validator hotkey: 0x{}", hex::encode(result));
         }
         QueryCommands::MinCollateralIncrease => {
             let result = collateral_contract::min_collateral_increase(network_config).await?;

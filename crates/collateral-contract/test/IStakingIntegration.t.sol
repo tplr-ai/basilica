@@ -205,7 +205,7 @@ contract IStakingIntegrationTest is Test {
     bytes32 constant ALICE_COLDKEY = bytes32(uint256(9));
 
     bytes32 CONTRACT_COLDKEY;
-    bytes32 constant CONTRACT_HOTKEY = bytes32(uint256(88));
+    bytes32 constant VALIDATOR_HOTKEY = bytes32(uint256(88));
 
     bytes32 constant HOTKEY_1 = bytes32(uint256(101));
     bytes16 constant EXECUTOR_ID_1 = bytes16(uint128(1));
@@ -236,7 +236,7 @@ contract IStakingIntegrationTest is Test {
             MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
-            CONTRACT_HOTKEY
+            VALIDATOR_HOTKEY
         );
         ERC1967Proxy proxy = new ERC1967Proxy(
             address(implementation),
@@ -255,13 +255,13 @@ contract IStakingIntegrationTest is Test {
         assertEq(collateral.CONTRACT_COLDKEY(), CONTRACT_COLDKEY);
 
         // Seed Alice alpha on the same hotkey to avoid moveStake path noise.
-        mockStaking.setStake(CONTRACT_HOTKEY, ALICE_COLDKEY, NETUID, ALPHA_AMOUNT);
+        mockStaking.setStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID, ALPHA_AMOUNT);
 
         vm.prank(ALICE);
         collateral.deposit(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            CONTRACT_HOTKEY,
+            VALIDATOR_HOTKEY,
             ALPHA_AMOUNT
         );
 
@@ -269,9 +269,9 @@ contract IStakingIntegrationTest is Test {
             collateral.alphaCollaterals(HOTKEY_1, EXECUTOR_ID_1),
             ALPHA_AMOUNT
         );
-        assertEq(mockStaking.getStake(CONTRACT_HOTKEY, ALICE_COLDKEY, NETUID), 0);
+        assertEq(mockStaking.getStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID), 0);
         assertEq(
-            mockStaking.getStake(CONTRACT_HOTKEY, CONTRACT_COLDKEY, NETUID),
+            mockStaking.getStake(VALIDATOR_HOTKEY, CONTRACT_COLDKEY, NETUID),
             ALPHA_AMOUNT
         );
 
@@ -288,11 +288,11 @@ contract IStakingIntegrationTest is Test {
         collateral.finalizeReclaim(0);
 
         assertEq(
-            mockStaking.getStake(CONTRACT_HOTKEY, CONTRACT_COLDKEY, NETUID),
+            mockStaking.getStake(VALIDATOR_HOTKEY, CONTRACT_COLDKEY, NETUID),
             0
         );
         assertEq(
-            mockStaking.getStake(CONTRACT_HOTKEY, ALICE_COLDKEY, NETUID),
+            mockStaking.getStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID),
             ALPHA_AMOUNT
         );
     }

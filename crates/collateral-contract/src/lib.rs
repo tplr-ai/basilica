@@ -369,14 +369,14 @@ pub async fn contract_coldkey(
     Ok(coldkey.into())
 }
 
-pub async fn contract_hotkey(
+pub async fn validator_hotkey(
     network_config: &CollateralNetworkConfig,
 ) -> Result<[u8; 32], anyhow::Error> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
-    let hotkey = contract.CONTRACT_HOTKEY().call().await?;
+    let hotkey = contract.VALIDATOR_HOTKEY().call().await?;
     Ok(hotkey.into())
 }
 

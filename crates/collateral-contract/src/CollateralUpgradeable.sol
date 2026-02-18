@@ -70,7 +70,7 @@ contract CollateralUpgradeable is
     uint64 public DECISION_TIMEOUT;
     uint256 public MIN_COLLATERAL_INCREASE;
     bytes32 public CONTRACT_COLDKEY;
-    bytes32 public CONTRACT_HOTKEY;
+    bytes32 public VALIDATOR_HOTKEY;
 
     mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
     mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
@@ -177,11 +177,11 @@ contract CollateralUpgradeable is
         uint256 minCollateralIncrease,
         uint64 decisionTimeout,
         address admin,
-        bytes32 alphaHotkey
+        bytes32 validatorHotkey
     ) public initializer {
         require(trustee != address(0), "Trustee address must be non-zero");
         require(admin != address(0), "Admin address must be non-zero");
-        require(alphaHotkey != bytes32(0), "Alpha hotkey must be non-zero");
+        require(validatorHotkey != bytes32(0), "Validator hotkey must be non-zero");
         require(
             minCollateralIncrease > 0,
             "Min collateral increase must be greater than 0"
@@ -195,7 +195,7 @@ contract CollateralUpgradeable is
         TRUSTEE = trustee;
         MIN_COLLATERAL_INCREASE = minCollateralIncrease;
         DECISION_TIMEOUT = decisionTimeout;
-        CONTRACT_HOTKEY = alphaHotkey;
+        VALIDATOR_HOTKEY = validatorHotkey;
         CONTRACT_COLDKEY = _deriveContractColdkey();
 
         // Set up roles
@@ -635,11 +635,11 @@ contract CollateralUpgradeable is
         // the contract will take it and get compensated by laster emission of alpha
         uint256 actualAlphaAmount = newContractStake - contractStake;
 
-        if (alphaHotkey != CONTRACT_HOTKEY) {
+        if (alphaHotkey != VALIDATOR_HOTKEY) {
             data = abi.encodeWithSelector(
                 IStaking.moveStake.selector,
                 alphaHotkey,
-                CONTRACT_HOTKEY,
+                VALIDATOR_HOTKEY,
                 NETUID,
                 NETUID,
                 actualAlphaAmount
@@ -655,7 +655,7 @@ contract CollateralUpgradeable is
     }
 
     function withdrawAlpha(bytes32 alphaColdkey, uint256 alphaAmount) internal {
-        uint256 contractStake = getContractStake(CONTRACT_HOTKEY);
+        uint256 contractStake = getContractStake(VALIDATOR_HOTKEY);
         require(
             contractStake >= alphaAmount,
             "contract stake is less than withdraw alpha amount"
@@ -664,7 +664,7 @@ contract CollateralUpgradeable is
         bytes memory data = abi.encodeWithSelector(
             IStaking.transferStake.selector,
             alphaColdkey,
-            CONTRACT_HOTKEY,
+            VALIDATOR_HOTKEY,
             NETUID,
             NETUID,
             alphaAmount
@@ -680,7 +680,7 @@ contract CollateralUpgradeable is
         bytes memory data = abi.encodeWithSelector(
             INeuron.burnedRegister.selector,
             NETUID,
-            CONTRACT_HOTKEY
+            VALIDATOR_HOTKEY
         );
         (bool success, ) = address(INEURON_ADDRESS).call{gas: gasleft()}(data);
         require(success, "user burn register call failed");
