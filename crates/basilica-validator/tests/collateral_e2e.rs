@@ -35,7 +35,7 @@ struct MockSlashCall {
     node_bytes: [u8; 16],
     alpha_amount: U256,
     url: String,
-    checksum: u128,
+    checksum: [u8; 32],
 }
 
 #[derive(Clone)]
@@ -75,7 +75,7 @@ impl CollateralChainClient for MockChainClient {
         node_bytes: [u8; 16],
         alpha_amount: U256,
         url: &str,
-        checksum: u128,
+        checksum: [u8; 32],
         _network_config: &collateral_contract::config::CollateralNetworkConfig,
     ) -> Result<()> {
         let mut calls = self.calls.lock().await;
@@ -178,7 +178,7 @@ async fn test_slash_flow_executes_and_emits_metrics() -> Result<()> {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].alpha_amount, U256::from(1000u64));
     assert_eq!(calls[0].private_key, "test-private-key");
-    assert!(calls[0].checksum > 0);
+    assert_ne!(calls[0].checksum, [0u8; 32]);
     assert!(calls[0].url.contains("validator.example.com"));
     assert!(calls[0].hotkey_bytes.iter().any(|byte| *byte != 0));
     assert!(calls[0].node_bytes.iter().any(|byte| *byte != 0));

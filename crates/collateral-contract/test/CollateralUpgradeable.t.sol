@@ -169,7 +169,7 @@ contract CollateralUpgradeableTest is Test {
         uint256 amount,
         uint64 expirationTime,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
@@ -183,7 +183,7 @@ contract CollateralUpgradeableTest is Test {
     event Denied(
         uint256 indexed reclaimRequestId,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
     event Slashed(
         bytes32 indexed hotkey,
@@ -192,7 +192,7 @@ contract CollateralUpgradeableTest is Test {
         uint256 slashAmount,
         uint256 slashAlphaAmount,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
 
     // Upgrade event

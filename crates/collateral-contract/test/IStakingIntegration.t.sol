@@ -215,8 +215,8 @@ contract IStakingIntegrationTest is Test {
 
     uint256 constant ALPHA_AMOUNT = 5 ether;
     string constant TEST_URL = "https://example.com/reclaim";
-    bytes16 constant TEST_MD5 =
-        bytes16(uint128(0x12345678901234567890123456789012));
+    bytes32 constant TEST_SHA256 =
+        bytes32(0x1234567890123456789012345678901212345678901234567890123456789012);
 
     function setUp() public {
         // Deploy precompile mocks.
@@ -281,7 +281,7 @@ contract IStakingIntegrationTest is Test {
             EXECUTOR_ID_1,
             ALICE_COLDKEY,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);

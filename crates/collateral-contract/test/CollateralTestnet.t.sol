@@ -137,7 +137,7 @@ contract CollateralTestnetTest is Test {
         uint256 amount,
         uint64 expirationTime,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
@@ -149,7 +149,7 @@ contract CollateralTestnetTest is Test {
     event Denied(
         uint256 indexed reclaimRequestId,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
     event Slashed(
         bytes32 indexed hotkey,
@@ -157,6 +157,6 @@ contract CollateralTestnetTest is Test {
         address indexed miner,
         uint256 amount,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
 }

@@ -42,7 +42,7 @@ pub trait CollateralChainClient: Send + Sync {
         node_bytes: [u8; 16],
         alpha_amount: U256,
         url: &str,
-        checksum: u128,
+        checksum: [u8; 32],
         network_config: &CollateralNetworkConfig,
     ) -> Result<()>;
 }
@@ -67,7 +67,7 @@ impl CollateralChainClient for OnchainCollateralClient {
         node_bytes: [u8; 16],
         alpha_amount: U256,
         url: &str,
-        checksum: u128,
+        checksum: [u8; 32],
         network_config: &CollateralNetworkConfig,
     ) -> Result<()> {
         slash_collateral(
@@ -305,7 +305,7 @@ impl SlashExecutor {
         rental_id: &str,
         miner_hotkey: &str,
         node_id: &str,
-    ) -> Result<(String, u128)> {
+    ) -> Result<(String, [u8; 32])> {
         let evidence = self.build_evidence(
             misbehaviour_type,
             details,
@@ -315,7 +315,7 @@ impl SlashExecutor {
             node_id,
         )?;
         let (url, json) = self.evidence_store.store(&evidence).await?;
-        let checksum = compute_sha256_checksum_truncated(&json);
+        let checksum = compute_sha256_checksum(&json);
         Ok((url, checksum))
     }
 
@@ -493,7 +493,7 @@ struct SlashSubmission<'a> {
     node_bytes: [u8; 16],
     alpha_amount: U256,
     url: &'a str,
-    checksum: u128,
+    checksum: [u8; 32],
     network_config: &'a CollateralNetworkConfig,
 }
 
@@ -588,11 +588,9 @@ impl SlashRateLimiterState {
     }
 }
 
-fn compute_sha256_checksum_truncated(contents: &[u8]) -> u128 {
+fn compute_sha256_checksum(contents: &[u8]) -> [u8; 32] {
     let digest = Sha256::digest(contents);
-    let mut truncated = [0u8; 16];
-    truncated.copy_from_slice(&digest[..16]);
-    u128::from_be_bytes(truncated)
+    digest.into()
 }
 
 fn to_network_config(config: &CollateralConfig) -> Result<CollateralNetworkConfig> {
@@ -659,9 +657,9 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
-    async fn test_sha256_checksum_truncated_nonzero() {
-        let checksum = compute_sha256_checksum_truncated(b"test");
-        assert!(checksum > 0);
+    async fn test_sha256_checksum_nonzero() {
+        let checksum = compute_sha256_checksum(b"test");
+        assert_ne!(checksum, [0u8; 32]);
     }
 
     #[tokio::test]

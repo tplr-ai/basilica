@@ -151,7 +151,7 @@ collateral-cli tx reclaim-collateral \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 123 \
   --url "https://example.com/reclaim-proof" \
-  --url-content-md5-checksum abcdef1234567890abcdef1234567890
+  --url-content-sha256 abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 
 # Reclaim on testnet
 collateral-cli --network testnet tx reclaim-collateral \
@@ -159,7 +159,7 @@ collateral-cli --network testnet tx reclaim-collateral \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 456 \
   --url "https://proof-server.testnet.com/evidence/456" \
-  --url-content-md5-checksum d41d8cd98f00b204e9800998ecf8427e
+  --url-content-sha256 d41d8cd98f00b204e9800998ecf8427ed41d8cd98f00b204e9800998ecf8427e
 ```
 
 #### Finalize Reclaim
@@ -184,7 +184,7 @@ collateral-cli tx deny-reclaim \
   --private-key $PRIVATE_KEY \
   --reclaim-request-id 42 \
   --url "https://example.com/denial-proof" \
-  --url-content-md5-checksum 5d41402abc4b2a76b9719d911017c592
+  --url-content-sha256 5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592
 ```
 
 #### Slash Collateral
@@ -196,7 +196,7 @@ collateral-cli tx slash-collateral \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 123 \
   --url "https://evidence.example.com/slash-proof" \
-  --url-content-md5-checksum aab03e786183b16c8a0b15f6b40ff607
+  --url-content-sha256 aab03e786183b16c8a0b15f6b40ff607aab03e786183b16c8a0b15f6b40ff607
 
 # Slash on testnet with detailed proof
 collateral-cli --network testnet tx slash-collateral \
@@ -204,7 +204,7 @@ collateral-cli --network testnet tx slash-collateral \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
   --node-id 999 \
   --url "https://audit.testnet.com/violations/999" \
-  --url-content-md5-checksum 098f6bcd4621d373cade4e832627b4f6
+  --url-content-sha256 098f6bcd4621d373cade4e832627b4f6098f6bcd4621d373cade4e832627b4f6
 ```
 
 ### Query Commands

@@ -62,7 +62,7 @@ contract CollateralUpgradeableV2 is
         uint256 amount,
         uint64 expirationTime,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
@@ -74,7 +74,7 @@ contract CollateralUpgradeableV2 is
     event Denied(
         uint256 indexed reclaimRequestId,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
     event Slashed(
         bytes32 indexed hotkey,
@@ -82,7 +82,7 @@ contract CollateralUpgradeableV2 is
         address indexed miner,
         uint256 amount,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
 
     // Upgrade event
@@ -152,7 +152,7 @@ contract CollateralUpgradeableV2 is
     /// @param hotkey The netuid key for the subnet
     /// @param nodeId The ID of the node to reclaim collateral from
     /// @param url URL containing information about the reclaim request
-    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits ReclaimProcessStarted event with reclaim details and timeout
     /// @dev Reverts with NodeNotOwned if caller is not the owner of the node
     /// @dev Reverts with AmountZero if there is no available collateral to reclaim
@@ -160,7 +160,7 @@ contract CollateralUpgradeableV2 is
         bytes32 hotkey,
         bytes16 nodeId,
         string calldata url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     ) external {
         if (msg.sender != nodeToMiner[hotkey][nodeId]) {
             revert NodeNotOwned();
@@ -196,7 +196,7 @@ contract CollateralUpgradeableV2 is
             availableAmount,
             denyTimeout,
             url,
-            urlContentMd5Checksum
+            urlContentSha256
         );
 
         nextReclaimId++;
@@ -251,7 +251,7 @@ contract CollateralUpgradeableV2 is
     /// @dev Removes the reclaim request and frees up the collateral for other reclaims
     /// @param reclaimRequestId The ID of the reclaim request to deny
     /// @param url URL containing the reason of denial
-    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits Denied event with the reclaim request ID
     /// @dev Reverts with NotTrustee if called by non-trustee address
     /// @dev Reverts with ReclaimNotFound if the reclaim request doesn't exist
@@ -259,7 +259,7 @@ contract CollateralUpgradeableV2 is
     function denyReclaimRequest(
         uint256 reclaimRequestId,
         string calldata url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     ) external onlyTrustee {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
         if (reclaim.amount == 0) {
@@ -272,7 +272,7 @@ contract CollateralUpgradeableV2 is
         collateralUnderPendingReclaims[reclaim.hotkey][
             reclaim.nodeId
         ] -= reclaim.amount;
-        emit Denied(reclaimRequestId, url, urlContentMd5Checksum);
+        emit Denied(reclaimRequestId, url, urlContentSha256);
 
         delete reclaims[reclaimRequestId];
     }
@@ -283,7 +283,7 @@ contract CollateralUpgradeableV2 is
     /// @param hotkey The netuid key for the subnet
     /// @param nodeId The ID of the node to slash
     /// @param url URL containing the reason for slashing
-    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits Slashed event with the node's ID, miner's address and the amount slashed
     /// @dev Reverts with AmountZero if there is no collateral to slash
     /// @dev Reverts with TransferFailed if the TAO transfer fails
@@ -291,7 +291,7 @@ contract CollateralUpgradeableV2 is
         bytes32 hotkey,
         bytes16 nodeId,
         string calldata url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     ) external onlyTrustee {
         uint256 amount = collaterals[hotkey][nodeId];
 
@@ -314,7 +314,7 @@ contract CollateralUpgradeableV2 is
             miner,
             amount,
             url,
-            urlContentMd5Checksum
+            urlContentSha256
         );
     }
 
@@ -325,7 +325,7 @@ contract CollateralUpgradeableV2 is
     /// @param nodeId The ID of the node to slash
     /// @param amount Amount of collateral to slash
     /// @param url URL containing the reason for slashing
-    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits Slashed event with the node's ID, miner's address and the amount slashed
     /// @dev Reverts with AmountZero if amount is zero
     /// @dev Reverts with InsufficientAmount if amount exceeds collateral
@@ -335,7 +335,7 @@ contract CollateralUpgradeableV2 is
         bytes16 nodeId,
         uint256 amount,
         string calldata url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     ) external onlyTrustee {
         uint256 collateral = collaterals[hotkey][nodeId];
 
@@ -363,7 +363,7 @@ contract CollateralUpgradeableV2 is
             miner,
             amount,
             url,
-            urlContentMd5Checksum
+            urlContentSha256
         );
     }
 

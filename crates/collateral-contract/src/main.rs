@@ -81,9 +81,9 @@ enum TxCommands {
         /// URL for proof of reclaim
         #[arg(long)]
         url: String,
-        /// MD5 checksum of URL content as hex string (16 bytes)
+        /// SHA-256 checksum of URL content as hex string (32 bytes)
         #[arg(long)]
-        url_content_md5_checksum: String,
+        url_content_sha256: String,
     },
     /// Finalize a reclaim request
     FinalizeReclaim {
@@ -105,9 +105,9 @@ enum TxCommands {
         /// URL for proof of denial
         #[arg(long)]
         url: String,
-        /// MD5 checksum of URL content as hex string (16 bytes)
+        /// SHA-256 checksum of URL content as hex string (32 bytes)
         #[arg(long)]
-        url_content_md5_checksum: String,
+        url_content_sha256: String,
     },
     /// Slash collateral for an node
     SlashCollateral {
@@ -126,9 +126,9 @@ enum TxCommands {
         /// URL for proof of slashing
         #[arg(long)]
         url: String,
-        /// MD5 checksum of URL content as hex string (16 bytes)
+        /// SHA-256 checksum of URL content as hex string (32 bytes)
         #[arg(long)]
-        url_content_md5_checksum: String,
+        url_content_sha256: String,
     },
     /// Burn register for the contract hotkey
     BurnRegister {
@@ -265,10 +265,10 @@ async fn handle_tx_command(
             node_id,
             alpha_coldkey,
             url,
-            url_content_md5_checksum,
+            url_content_sha256,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
-            let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
+            let checksum = parse_sha256_checksum(&url_content_sha256)?;
             let node_uuid = Uuid::parse_str(&node_id)?;
             let alpha_coldkey_bytes = parse_hotkey(&alpha_coldkey)?;
 
@@ -302,10 +302,10 @@ async fn handle_tx_command(
             private_key,
             reclaim_request_id,
             url,
-            url_content_md5_checksum,
+            url_content_sha256,
         } => {
             let request_id = parse_u256(&reclaim_request_id)?;
-            let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
+            let checksum = parse_sha256_checksum(&url_content_sha256)?;
 
             println!("Denying reclaim request {}", reclaim_request_id);
             collateral_contract::deny_reclaim(
@@ -324,10 +324,10 @@ async fn handle_tx_command(
             node_id,
             slash_alpha_amount,
             url,
-            url_content_md5_checksum,
+            url_content_sha256,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
-            let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
+            let checksum = parse_sha256_checksum(&url_content_sha256)?;
             let node_uuid = Uuid::parse_str(&node_id)?;
             let alpha_amount = parse_u256(&slash_alpha_amount)?;
 
@@ -490,17 +490,17 @@ fn parse_u256(value: &str) -> Result<U256> {
     Ok(U256::from_str(value)?)
 }
 
-fn parse_md5_checksum(checksum: &str) -> Result<u128> {
+fn parse_sha256_checksum(checksum: &str) -> Result<[u8; 32]> {
     let checksum = checksum.strip_prefix("0x").unwrap_or(checksum);
-    if checksum.len() != 32 {
+    if checksum.len() != 64 {
         return Err(anyhow::anyhow!(
-            "MD5 checksum must be 16 bytes (32 hex characters)"
+            "SHA-256 checksum must be 32 bytes (64 hex characters)"
         ));
     }
     let bytes = Vec::from_hex(checksum)?;
-    let mut array = [0u8; 16];
+    let mut array = [0u8; 32];
     array.copy_from_slice(&bytes);
-    Ok(u128::from_be_bytes(array))
+    Ok(array)
 }
 
 fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
@@ -546,8 +546,8 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     println!("    Expiration: {}", reclaim_started.expirationTime);
                     println!("    URL: {}", reclaim_started.url);
                     println!(
-                        "    URL Content MD5: {}",
-                        hex::encode(reclaim_started.urlContentMd5Checksum.as_slice())
+                        "    URL Content SHA-256: {}",
+                        hex::encode(reclaim_started.urlContentSha256.as_slice())
                     );
                 }
                 CollateralEvent::Denied(denied) => {
@@ -555,8 +555,8 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     println!("    Request ID: {}", denied.reclaimRequestId);
                     println!("    URL: {}", denied.url);
                     println!(
-                        "    URL Content MD5: {}",
-                        hex::encode(denied.urlContentMd5Checksum.as_slice())
+                        "    URL Content SHA-256: {}",
+                        hex::encode(denied.urlContentSha256.as_slice())
                     );
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
@@ -579,8 +579,8 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     println!("    Alpha Amount: {} wei", slashed.slashAlphaAmount);
                     println!("    URL: {}", slashed.url);
                     println!(
-                        "    URL Content MD5: {}",
-                        hex::encode(slashed.urlContentMd5Checksum.as_slice())
+                        "    URL Content SHA-256: {}",
+                        hex::encode(slashed.urlContentSha256.as_slice())
                     );
                 }
             }
@@ -618,7 +618,7 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "alphaAmount": reclaim_started.alphaAmount.to_string(),
                         "expirationTime": reclaim_started.expirationTime,
                         "url": reclaim_started.url,
-                        "urlContentMd5Checksum": hex::encode(reclaim_started.urlContentMd5Checksum.as_slice())
+                        "urlContentSha256": hex::encode(reclaim_started.urlContentSha256.as_slice())
                     })
                 }
                 CollateralEvent::Denied(denied) => {
@@ -626,7 +626,7 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "type": "Denied",
                         "reclaimRequestId": denied.reclaimRequestId.to_string(),
                         "url": denied.url,
-                        "urlContentMd5Checksum": hex::encode(denied.urlContentMd5Checksum.as_slice())
+                        "urlContentSha256": hex::encode(denied.urlContentSha256.as_slice())
                     })
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
@@ -648,7 +648,7 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "miner": slashed.miner.to_string(),
                         "alphaAmount": slashed.slashAlphaAmount.to_string(),
                         "url": slashed.url,
-                        "urlContentMd5Checksum": hex::encode(slashed.urlContentMd5Checksum.as_slice())
+                        "urlContentSha256": hex::encode(slashed.urlContentSha256.as_slice())
                     })
                 }
             };

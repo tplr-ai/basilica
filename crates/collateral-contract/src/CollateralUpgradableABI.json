@@ -27,19 +27,6 @@
   },
   {
     "type": "function",
-    "name": "VALIDATOR_HOTKEY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "DECISION_TIMEOUT",
     "inputs": [],
     "outputs": [
@@ -170,6 +157,19 @@
   },
   {
     "type": "function",
+    "name": "VALIDATOR_HOTKEY",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "alphaCollaterals",
     "inputs": [
       {
@@ -238,9 +238,9 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
-        "internalType": "bytes16"
+        "name": "urlContentSha256",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -480,9 +480,9 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
-        "internalType": "bytes16"
+        "name": "urlContentSha256",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -603,9 +603,9 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
-        "internalType": "bytes16"
+        "name": "urlContentSha256",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -742,10 +742,10 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
+        "name": "urlContentSha256",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "bytes16"
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -884,10 +884,10 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
+        "name": "urlContentSha256",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "bytes16"
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1057,10 +1057,10 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
+        "name": "urlContentSha256",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "bytes16"
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false

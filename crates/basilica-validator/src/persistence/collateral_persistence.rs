@@ -635,12 +635,12 @@ impl SimplePersistence {
             .saturating_sub(slashed.slashAlphaAmount);
 
         sqlx::query(
-            "UPDATE collateral_status SET tao_collateral = ?, alpha_collateral = ?, url = ?, url_content_md5_checksum = ?, updated_at = ? WHERE id = ?",
+            "UPDATE collateral_status SET tao_collateral = ?, alpha_collateral = ?, url = ?, url_content_sha256 = ?, updated_at = ? WHERE id = ?",
         )
         .bind(state.tao_collateral.to_string())
         .bind(state.alpha_collateral.to_string())
         .bind(slashed.url.clone())
-        .bind(slashed.urlContentMd5Checksum.encode_hex::<String>())
+        .bind(slashed.urlContentSha256.encode_hex::<String>())
         .bind(Utc::now().to_rfc3339())
         .bind(state.id)
         .execute(&mut **tx)
@@ -700,7 +700,7 @@ mod tests {
             alphaAmount: U256::from(alpha),
             expirationTime: 123456,
             url: "https://example.com/reclaim".to_string(),
-            urlContentMd5Checksum: FixedBytes::from_slice(&[0x11; 16]),
+            urlContentSha256: FixedBytes::from_slice(&[0x11; 32]),
         }
     }
 
@@ -708,7 +708,7 @@ mod tests {
         Denied {
             reclaimRequestId: U256::from(reclaim_request_id),
             url: "https://example.com/deny".to_string(),
-            urlContentMd5Checksum: FixedBytes::from_slice(&[0x22; 16]),
+            urlContentSha256: FixedBytes::from_slice(&[0x22; 32]),
         }
     }
 
@@ -738,7 +738,7 @@ mod tests {
             slashAmount: U256::from(tao),
             slashAlphaAmount: U256::from(alpha),
             url: String::new(),
-            urlContentMd5Checksum: FixedBytes::from_slice(&[0u8; 16]),
+            urlContentSha256: FixedBytes::from_slice(&[0u8; 32]),
         }
     }
 
@@ -992,15 +992,16 @@ mod tests {
 
         let mut slashed = ev_slashed(hk, ex, 50, 60);
         slashed.url = "https://example.com/proof".to_string();
-        slashed.urlContentMd5Checksum = FixedBytes::from_slice(&[
+        slashed.urlContentSha256 = FixedBytes::from_slice(&[
             0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56,
-            0x78, 0x90,
+            0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12,
+            0x34, 0x56, 0x78, 0x90,
         ]);
 
         persistence.handle_slashed(&slashed).await.unwrap();
 
         let (url, checksum): (String, String) = sqlx::query_as(
-            "SELECT url, url_content_md5_checksum FROM collateral_status WHERE hotkey = ? AND node_id = ?",
+            "SELECT url, url_content_sha256 FROM collateral_status WHERE hotkey = ? AND node_id = ?",
         )
         .bind(hk.encode_hex::<String>())
         .bind(ex.encode_hex::<String>())
@@ -1009,7 +1010,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(url, "https://example.com/proof");
-        assert_eq!(checksum, "abcdef1234567890abcdef1234567890");
+        assert_eq!(
+            checksum,
+            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        );
     }
 
     #[tokio::test]

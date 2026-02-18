@@ -41,8 +41,8 @@ contract CollateralBasicTest is Test {
     bytes16 constant EXECUTOR_ID_2 = bytes16(uint128(2));
 
     string constant TEST_URL = "https://example.com/proof";
-    bytes16 constant TEST_MD5 =
-        bytes16(uint128(0x12345678901234567890123456789012));
+    bytes32 constant TEST_SHA256 =
+        bytes32(0x1234567890123456789012345678901212345678901234567890123456789012);
 
     function setUp() public {
         AddressMappingPrecompileMock addressMappingMock = new AddressMappingPrecompileMock();
@@ -192,7 +192,7 @@ contract CollateralBasicTest is Test {
             0,
             uint64(block.timestamp + DECISION_TIMEOUT),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         vm.prank(ALICE);
@@ -201,7 +201,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Check reclaim was created
@@ -241,7 +241,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
     }
 
@@ -261,7 +261,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         vm.prank(ALICE);
@@ -273,7 +273,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
     }
 
@@ -295,7 +295,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Fast forward past timeout
@@ -339,7 +339,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Try to finalize before timeout
@@ -376,7 +376,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Slash 3 ETH of collateral during pending reclaim
@@ -387,7 +387,7 @@ contract CollateralBasicTest is Test {
             3 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Fast forward past timeout
@@ -432,7 +432,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Slash ALL collateral during pending reclaim
@@ -443,7 +443,7 @@ contract CollateralBasicTest is Test {
             5 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Fast forward past timeout
@@ -491,7 +491,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Verify reclaim 0 exists with amount=5 ether
@@ -537,7 +537,7 @@ contract CollateralBasicTest is Test {
 
         // Deny should succeed (the fix changed `amount == 0` to `amount == 0 && alphaAmount == 0`)
         vm.prank(TRUSTEE);
-        collateral.denyReclaimRequest(0, TEST_URL, TEST_MD5);
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
 
         // Verify reclaim was cleaned up
         (,,,amt,,alphaAmt,) = collateral.reclaims(0);
@@ -561,7 +561,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
@@ -583,7 +583,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
@@ -616,7 +616,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Step 3-4: Alice deposits 5 more and reclaims the delta
@@ -634,7 +634,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Step 5: Trustee slashes all 15 ETH
@@ -645,7 +645,7 @@ contract CollateralBasicTest is Test {
             15 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // nodeToMiner must NOT be cleared (pending reclaims still exist)
@@ -704,7 +704,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Slash everything
@@ -715,7 +715,7 @@ contract CollateralBasicTest is Test {
             5 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // nodeToMiner stays (pending reclaim exists)
@@ -748,19 +748,19 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Trustee denies
         vm.expectEmit(true, false, false, true, address(collateral));
-        emit Denied(0, TEST_URL, TEST_MD5);
+        emit Denied(0, TEST_URL, TEST_SHA256);
 
         uint256 amount;
         (, , , amount, , , ) = collateral.reclaims(0);
         assertEq(amount, 5 ether);
 
         vm.prank(TRUSTEE);
-        collateral.denyReclaimRequest(0, TEST_URL, TEST_MD5);
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
 
         // Check reclaim was deleted
         (, , , amount, , , ) = collateral.reclaims(0);
@@ -783,7 +783,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             bytes32(0),
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Non-trustee tries to deny
@@ -791,7 +791,7 @@ contract CollateralBasicTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(CollateralUpgradeable.NotTrustee.selector)
         );
-        collateral.denyReclaimRequest(1, TEST_URL, TEST_MD5);
+        collateral.denyReclaimRequest(1, TEST_URL, TEST_SHA256);
     }
 
     // ============ SLASH TESTS ============
@@ -817,7 +817,7 @@ contract CollateralBasicTest is Test {
             5 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         vm.prank(TRUSTEE);
@@ -827,7 +827,7 @@ contract CollateralBasicTest is Test {
             5 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Check state
@@ -854,7 +854,7 @@ contract CollateralBasicTest is Test {
             5 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
 
         // Check executor ownership is cleared
@@ -881,7 +881,7 @@ contract CollateralBasicTest is Test {
             5 ether,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
     }
 
@@ -896,7 +896,7 @@ contract CollateralBasicTest is Test {
             0,
             0,
             TEST_URL,
-            TEST_MD5
+            TEST_SHA256
         );
     }
 
@@ -984,7 +984,7 @@ contract CollateralBasicTest is Test {
         uint256 alphaAmount,
         uint64 expirationTime,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
 
     event Reclaimed(
@@ -1000,7 +1000,7 @@ contract CollateralBasicTest is Test {
     event Denied(
         uint256 indexed reclaimRequestId,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
 
     event Slashed(
@@ -1010,7 +1010,7 @@ contract CollateralBasicTest is Test {
         uint256 slashAmount,
         uint256 slashAlphaAmount,
         string url,
-        bytes16 urlContentMd5Checksum
+        bytes32 urlContentSha256
     );
 
     event ContractUpgraded(

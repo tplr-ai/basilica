@@ -30,7 +30,7 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx re
 --hotkey "$HOTKEY" \
 --node-id "$NODE_ID" \
 --url https://www.tplr.ai/ \
---url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
+--url-content-sha256 269ff519d1140a175941ea4b00ccbe0d269ff519d1140a175941ea4b00ccbe0d
 
 # check the reclaims should include the content
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query reclaims \
@@ -46,7 +46,7 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx de
 --private-key "$PRIVATE_KEY" \
 --reclaim-request-id 0 \
 --url https://www.tplr.ai/ \
---url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
+--url-content-sha256 269ff519d1140a175941ea4b00ccbe0d269ff519d1140a175941ea4b00ccbe0d
 
 # check the reclaims should be deleted after finalize, all items are 0
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query reclaims \
@@ -63,7 +63,7 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx sl
 --hotkey "$HOTKEY" \
 --node-id "$NODE_ID" \
 --url https://www.tplr.ai/ \
---url-content-md5-checksum 269ff519d1140a175941ea4b00ccbe0d
+--url-content-sha256 269ff519d1140a175941ea4b00ccbe0d269ff519d1140a175941ea4b00ccbe0d
 
 # scan the events
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" events scan \

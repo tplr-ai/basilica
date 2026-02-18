@@ -59,7 +59,7 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
 - **Off-Chain Justifications**
 
-  Functions `slashCollateral`, `reclaimCollateral`, and `denyReclaim` include URL fields (and content MD5 checksums) to reference off-chain
+  Functions `slashCollateral`, `reclaimCollateral`, and `denyReclaim` include URL fields (and content SHA-256 checksums) to reference off-chain
   explanations or evidence for each action, ensuring decisions are transparent and auditable.
 
 - **Configurable Minimum Bond & Decision Deadline**
