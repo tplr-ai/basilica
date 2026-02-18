@@ -66,6 +66,19 @@
   },
   {
     "type": "function",
+    "name": "IADDRESS_MAPPING_ADDRESS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "INEURON_ADDRESS",
     "inputs": [],
     "outputs": [
@@ -562,19 +575,6 @@
   },
   {
     "type": "function",
-    "name": "setContractColdkey",
-    "inputs": [
-      {
-        "name": "alphaColdkey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "slashCollateral",
     "inputs": [
       {
@@ -686,25 +686,6 @@
     ],
     "outputs": [],
     "stateMutability": "payable"
-  },
-  {
-    "type": "event",
-    "name": "AlphaColdkeyUpdated",
-    "inputs": [
-      {
-        "name": "oldAlphaColdkey",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "newAlphaColdkey",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      }
-    ],
-    "anonymous": false
   },
   {
     "type": "event",
@@ -1150,6 +1131,16 @@
   },
   {
     "type": "error",
+    "name": "AddressMappingPrecompileCallFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AddressMappingPrecompileInvalidResponse",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AmountZero",
     "inputs": []
   },
@@ -1202,6 +1193,11 @@
   {
     "type": "error",
     "name": "InvalidDepositMethod",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDerivedContractColdkey",
     "inputs": []
   },
   {

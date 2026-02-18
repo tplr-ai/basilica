@@ -2,29 +2,24 @@
 
 pragma solidity ^0.8.22;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {CollateralUpgradeable} from "../src/CollateralUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-// Advanced Mock IStaking contract that simulates real behavior
+contract AddressMappingPrecompileMock {
+    function addressMapping(address evmAddress) external pure returns (bytes32) {
+        return bytes32(uint256(uint160(evmAddress)));
+    }
+}
+
+// Mock IStaking precompile that works with both call and delegatecall entrypoints.
 contract AdvancedMockIStaking {
+    address private constant ISTAKING_PRECOMPILE =
+        0x0000000000000000000000000000000000000805;
+
     // coldkey -> hotkey -> netuid -> amount
     mapping(bytes32 => mapping(bytes32 => mapping(uint256 => uint256)))
         public stakes;
-
-    // Track transfer history for testing
-    struct Transfer {
-        bytes32 fromColdkey;
-        bytes32 toColdkey;
-        bytes32 fromHotkey;
-        bytes32 toHotkey;
-        uint256 fromNetuid;
-        uint256 toNetuid;
-        uint256 amount;
-        uint256 timestamp;
-    }
-
-    Transfer[] public transferHistory;
 
     function transferStake(
         bytes32 toColdkey,
@@ -33,26 +28,53 @@ contract AdvancedMockIStaking {
         uint256 toNetuid,
         uint256 amount
     ) external {
-        // directly convert address to coldkey
         bytes32 fromColdkey = bytes32(uint256(uint160(msg.sender)));
-        require(
-            stakes[fromColdkey][hotkey][fromNetuid] >= amount,
-            "Insufficient stake"
+
+        if (address(this) == ISTAKING_PRECOMPILE) {
+            _applyTransferStake(
+                fromColdkey,
+                toColdkey,
+                hotkey,
+                fromNetuid,
+                toNetuid,
+                amount
+            );
+            return;
+        }
+
+        (bool ok, ) = ISTAKING_PRECOMPILE.call(
+            abi.encodeWithSelector(
+                this.applyTransferStake.selector,
+                fromColdkey,
+                toColdkey,
+                hotkey,
+                fromNetuid,
+                toNetuid,
+                amount
+            )
         );
-        stakes[fromColdkey][hotkey][fromNetuid] -= amount;
-        stakes[toColdkey][hotkey][toNetuid] += amount;
-        // Record transfer
-        transferHistory.push(
-            Transfer({
-                fromColdkey: fromColdkey,
-                toColdkey: toColdkey,
-                fromHotkey: hotkey,
-                toHotkey: hotkey,
-                fromNetuid: fromNetuid,
-                toNetuid: toNetuid,
-                amount: amount,
-                timestamp: block.timestamp
-            })
+        require(ok, "forward transfer failed");
+    }
+
+    function applyTransferStake(
+        bytes32 fromColdkey,
+        bytes32 toColdkey,
+        bytes32 hotkey,
+        uint256 fromNetuid,
+        uint256 toNetuid,
+        uint256 amount
+    ) external {
+        require(
+            address(this) == ISTAKING_PRECOMPILE,
+            "must run at precompile"
+        );
+        _applyTransferStake(
+            fromColdkey,
+            toColdkey,
+            hotkey,
+            fromNetuid,
+            toNetuid,
+            amount
         );
     }
 
@@ -63,27 +85,53 @@ contract AdvancedMockIStaking {
         uint256 toNetuid,
         uint256 amount
     ) external {
-        // directly convert address to coldkey
         bytes32 coldkey = bytes32(uint256(uint160(msg.sender)));
-        require(
-            stakes[coldkey][fromHotkey][fromNetuid] >= amount,
-            "Insufficient stake"
+
+        if (address(this) == ISTAKING_PRECOMPILE) {
+            _applyMoveStake(
+                coldkey,
+                fromHotkey,
+                toHotkey,
+                fromNetuid,
+                toNetuid,
+                amount
+            );
+            return;
+        }
+
+        (bool ok, ) = ISTAKING_PRECOMPILE.call(
+            abi.encodeWithSelector(
+                this.applyMoveStake.selector,
+                coldkey,
+                fromHotkey,
+                toHotkey,
+                fromNetuid,
+                toNetuid,
+                amount
+            )
         );
+        require(ok, "forward move failed");
+    }
 
-        stakes[coldkey][fromHotkey][fromNetuid] -= amount;
-        stakes[coldkey][toHotkey][toNetuid] += amount;
-
-        transferHistory.push(
-            Transfer({
-                fromColdkey: coldkey,
-                toColdkey: coldkey,
-                fromHotkey: fromHotkey,
-                toHotkey: toHotkey,
-                fromNetuid: fromNetuid,
-                toNetuid: toNetuid,
-                amount: amount,
-                timestamp: block.timestamp
-            })
+    function applyMoveStake(
+        bytes32 coldkey,
+        bytes32 fromHotkey,
+        bytes32 toHotkey,
+        uint256 fromNetuid,
+        uint256 toNetuid,
+        uint256 amount
+    ) external {
+        require(
+            address(this) == ISTAKING_PRECOMPILE,
+            "must run at precompile"
+        );
+        _applyMoveStake(
+            coldkey,
+            fromHotkey,
+            toHotkey,
+            fromNetuid,
+            toNetuid,
+            amount
         );
     }
 
@@ -95,7 +143,7 @@ contract AdvancedMockIStaking {
         return stakes[coldkey][hotkey][netuid];
     }
 
-    // Helper functions for testing
+    // Helper functions for tests.
     function setStake(
         bytes32 hotkey,
         bytes32 coldkey,
@@ -105,19 +153,44 @@ contract AdvancedMockIStaking {
         stakes[coldkey][hotkey][netuid] = amount;
     }
 
-    function getTransferCount() external view returns (uint256) {
-        return transferHistory.length;
+    function _applyTransferStake(
+        bytes32 fromColdkey,
+        bytes32 toColdkey,
+        bytes32 hotkey,
+        uint256 fromNetuid,
+        uint256 toNetuid,
+        uint256 amount
+    ) internal {
+        require(
+            stakes[fromColdkey][hotkey][fromNetuid] >= amount,
+            "insufficient stake"
+        );
+        stakes[fromColdkey][hotkey][fromNetuid] -= amount;
+        stakes[toColdkey][hotkey][toNetuid] += amount;
     }
 
-    function getLastTransfer() external view returns (Transfer memory) {
-        require(transferHistory.length > 0, "No transfers");
-        return transferHistory[transferHistory.length - 1];
+    function _applyMoveStake(
+        bytes32 coldkey,
+        bytes32 fromHotkey,
+        bytes32 toHotkey,
+        uint256 fromNetuid,
+        uint256 toNetuid,
+        uint256 amount
+    ) internal {
+        require(
+            stakes[coldkey][fromHotkey][fromNetuid] >= amount,
+            "insufficient stake"
+        );
+        stakes[coldkey][fromHotkey][fromNetuid] -= amount;
+        stakes[coldkey][toHotkey][toNetuid] += amount;
     }
 }
 
 contract IStakingIntegrationTest is Test {
-    mapping(bytes32 => mapping(bytes32 => mapping(uint256 => uint256)))
-        public stakes;
+    address constant ISTAKING_PRECOMPILE =
+        0x0000000000000000000000000000000000000805;
+    address constant ADDRESS_MAPPING_PRECOMPILE =
+        0x000000000000000000000000000000000000080C;
 
     CollateralUpgradeable public collateral;
     AdvancedMockIStaking public mockStaking;
@@ -132,7 +205,7 @@ contract IStakingIntegrationTest is Test {
     bytes32 constant ALICE_COLDKEY = bytes32(uint256(9));
 
     bytes32 CONTRACT_COLDKEY;
-    bytes32 CONTRACT_HOTKEY = bytes32(uint256(88));
+    bytes32 constant CONTRACT_HOTKEY = bytes32(uint256(88));
 
     bytes32 constant HOTKEY_1 = bytes32(uint256(101));
     bytes16 constant EXECUTOR_ID_1 = bytes16(uint128(1));
@@ -141,12 +214,20 @@ contract IStakingIntegrationTest is Test {
     address constant ADMIN = address(0x2222);
 
     uint256 constant ALPHA_AMOUNT = 5 ether;
+    string constant TEST_URL = "https://example.com/reclaim";
+    bytes16 constant TEST_MD5 =
+        bytes16(uint128(0x12345678901234567890123456789012));
 
     function setUp() public {
-        // Deploy advanced mock staking
-        mockStaking = new AdvancedMockIStaking();
+        // Deploy precompile mocks.
+        AddressMappingPrecompileMock addressMappingMock = new AddressMappingPrecompileMock();
+        AdvancedMockIStaking mockStakingCode = new AdvancedMockIStaking();
 
-        // Deploy collateral contract
+        vm.etch(ADDRESS_MAPPING_PRECOMPILE, address(addressMappingMock).code);
+        vm.etch(ISTAKING_PRECOMPILE, address(mockStakingCode).code);
+        mockStaking = AdvancedMockIStaking(ISTAKING_PRECOMPILE);
+
+        // Deploy collateral contract behind proxy.
         CollateralUpgradeable implementation = new CollateralUpgradeable();
         bytes memory initData = abi.encodeWithSelector(
             CollateralUpgradeable.initialize.selector,
@@ -165,53 +246,54 @@ contract IStakingIntegrationTest is Test {
 
         CONTRACT_COLDKEY = bytes32(uint256(uint160(address(proxy))));
 
-        // Set contract coldkey
-        vm.prank(TRUSTEE);
-        collateral.setContractColdkey(CONTRACT_COLDKEY);
-
-        // Mock the IStaking address
-        vm.etch(
-            0x0000000000000000000000000000000000000805,
-            address(mockStaking).code
-        );
-
         vm.deal(ALICE, 100 ether);
     }
 
-    function testDepositWithAlphaTransfer() public {
-        uint256 initialStake = mockStaking.getStake(
-            CONTRACT_COLDKEY,
-            CONTRACT_HOTKEY,
-            NETUID
-        );
+    function testAlphaDepositReclaimFlowWithoutManualColdkeyConfiguration()
+        public
+    {
+        assertEq(collateral.CONTRACT_COLDKEY(), CONTRACT_COLDKEY);
 
-        assertEq(initialStake, 0 ether);
-
-        mockStaking.setStake(CONTRACT_HOTKEY, ALICE_COLDKEY, NETUID, 5 ether);
-
-        uint256 finalStake = mockStaking.getStake(
-            CONTRACT_HOTKEY,
-            ALICE_COLDKEY,
-            NETUID
-        );
-
-        assertEq(finalStake, 5 ether);
+        // Seed Alice alpha on the same hotkey to avoid moveStake path noise.
+        mockStaking.setStake(CONTRACT_HOTKEY, ALICE_COLDKEY, NETUID, ALPHA_AMOUNT);
 
         vm.prank(ALICE);
-        mockStaking.transferStake(
-            CONTRACT_COLDKEY,
+        collateral.deposit(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
             CONTRACT_HOTKEY,
-            NETUID,
-            NETUID,
             ALPHA_AMOUNT
         );
 
-        uint256 stakeAfterTransfer = mockStaking.getStake(
-            CONTRACT_HOTKEY,
-            CONTRACT_COLDKEY,
-            NETUID
+        assertEq(
+            collateral.alphaCollaterals(HOTKEY_1, EXECUTOR_ID_1),
+            ALPHA_AMOUNT
+        );
+        assertEq(mockStaking.getStake(CONTRACT_HOTKEY, ALICE_COLDKEY, NETUID), 0);
+        assertEq(
+            mockStaking.getStake(CONTRACT_HOTKEY, CONTRACT_COLDKEY, NETUID),
+            ALPHA_AMOUNT
         );
 
-        assertEq(stakeAfterTransfer, initialStake + ALPHA_AMOUNT);
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            ALICE_COLDKEY,
+            TEST_URL,
+            TEST_MD5
+        );
+
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        collateral.finalizeReclaim(0);
+
+        assertEq(
+            mockStaking.getStake(CONTRACT_HOTKEY, CONTRACT_COLDKEY, NETUID),
+            0
+        );
+        assertEq(
+            mockStaking.getStake(CONTRACT_HOTKEY, ALICE_COLDKEY, NETUID),
+            ALPHA_AMOUNT
+        );
     }
 }

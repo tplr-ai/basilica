@@ -26,6 +26,10 @@ contract DeployUpgradeableScript is Script {
             vm.envOr("DECISION_TIMEOUT", uint256(3600))
         ); // 1 hour
         address admin = vm.envOr("ADMIN_ADDRESS", msg.sender);
+        bytes32 alphaHotkey = vm.envOr(
+            "ALPHA_HOTKEY",
+            bytes32(uint256(uint160(msg.sender)))
+        );
 
         console.log("Deploying Upgradeable Collateral contract with:");
         console.log("- NETUID:", netuid);
@@ -33,6 +37,8 @@ contract DeployUpgradeableScript is Script {
         console.log("- Min Collateral:", minCollateralIncrease);
         console.log("- Decision Timeout:", decisionTimeout);
         console.log("- Admin:", admin);
+        console.log("- Alpha Hotkey:");
+        console.logBytes32(alphaHotkey);
 
         vm.startBroadcast();
 
@@ -47,7 +53,8 @@ contract DeployUpgradeableScript is Script {
             trustee,
             minCollateralIncrease,
             decisionTimeout,
-            admin
+            admin,
+            alphaHotkey
         );
 
         // Deploy the proxy with initialization

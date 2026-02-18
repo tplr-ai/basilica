@@ -7,6 +7,12 @@ import {CollateralUpgradeable} from "../src/CollateralUpgradeable.sol";
 import {CollateralUpgradeableV2} from "../src/CollateralUpgradeableV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
+contract AddressMappingPrecompileMock {
+    function addressMapping(address evmAddress) external pure returns (bytes32) {
+        return bytes32(uint256(uint160(evmAddress)));
+    }
+}
+
 contract CollateralUpgradeableTest is Test {
     CollateralUpgradeable public collateral;
     CollateralUpgradeable public implementation;
@@ -23,8 +29,13 @@ contract CollateralUpgradeableTest is Test {
     bytes32 constant alphaHotkey = bytes32(uint256(1));
     bytes32 constant alphaColdkey = bytes32(uint256(2));
     uint256 constant alphaAmount = 1 ether;
+    address constant ADDRESS_MAPPING_PRECOMPILE =
+        0x000000000000000000000000000000000000080C;
 
     function setUp() public {
+        AddressMappingPrecompileMock addressMappingMock = new AddressMappingPrecompileMock();
+        vm.etch(ADDRESS_MAPPING_PRECOMPILE, address(addressMappingMock).code);
+
         // Deploy implementation
         implementation = new CollateralUpgradeable();
 
@@ -200,11 +211,6 @@ contract CollateralUpgradeableTest is Test {
     event MinCollateralIncreaseUpdated(
         uint256 oldMinIncrease,
         uint256 newMinIncrease
-    );
-
-    event AlphaColdkeyUpdated(
-        bytes32 indexed oldAlphaColdkey,
-        bytes32 indexed newAlphaColdkey
     );
 
     /// @dev Test that denyReclaimRequest clears nodeToMiner after full slash

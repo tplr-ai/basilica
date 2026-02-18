@@ -6,6 +6,12 @@ import {CollateralUpgradeable} from "../src/CollateralUpgradeable.sol";
 import {CollateralUpgradeableV2} from "../src/CollateralUpgradeableV2.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
+contract AddressMappingPrecompileMock {
+    function addressMapping(address evmAddress) external pure returns (bytes32) {
+        return bytes32(uint256(uint160(evmAddress)));
+    }
+}
+
 /**
  * @title CollateralBasicTest
  * @notice Basic tests for CollateralUpgradeable without alpha/IStaking interactions
@@ -25,9 +31,10 @@ contract CollateralBasicTest is Test {
     address constant ALICE = address(0x789);
     address constant BOB = address(0xABC);
     address constant CHARLIE = address(0xDEF);
+    address constant ADDRESS_MAPPING_PRECOMPILE =
+        0x000000000000000000000000000000000000080C;
 
     bytes32 constant ALPHA_HOTKEY = bytes32(uint256(1));
-    bytes32 constant CONTRACT_COLDKEY = bytes32(uint256(2));
     bytes32 constant HOTKEY_1 = bytes32(uint256(100));
     bytes32 constant HOTKEY_2 = bytes32(uint256(101));
     bytes16 constant EXECUTOR_ID_1 = bytes16(uint128(1));
@@ -38,6 +45,9 @@ contract CollateralBasicTest is Test {
         bytes16(uint128(0x12345678901234567890123456789012));
 
     function setUp() public {
+        AddressMappingPrecompileMock addressMappingMock = new AddressMappingPrecompileMock();
+        vm.etch(ADDRESS_MAPPING_PRECOMPILE, address(addressMappingMock).code);
+
         // Deploy implementation
         implementation = new CollateralUpgradeable();
 
@@ -58,10 +68,6 @@ contract CollateralBasicTest is Test {
         // Cast proxy to interface
         collateral = CollateralUpgradeable(payable(address(proxy)));
 
-        // Set contract coldkey
-        vm.prank(TRUSTEE);
-        collateral.setContractColdkey(CONTRACT_COLDKEY);
-
         // Give test accounts some ETH
         vm.deal(ALICE, 100 ether);
         vm.deal(BOB, 100 ether);
@@ -76,7 +82,10 @@ contract CollateralBasicTest is Test {
         assertEq(collateral.MIN_COLLATERAL_INCREASE(), MIN_DEPOSIT);
         assertEq(collateral.DECISION_TIMEOUT(), DECISION_TIMEOUT);
         assertEq(collateral.getVersion(), 1);
-        assertEq(collateral.CONTRACT_COLDKEY(), CONTRACT_COLDKEY);
+        assertEq(
+            collateral.CONTRACT_COLDKEY(),
+            bytes32(uint256(uint160(address(proxy))))
+        );
         assertEq(collateral.CONTRACT_HOTKEY(), ALPHA_HOTKEY);
 
         // Check roles
@@ -919,16 +928,25 @@ contract CollateralBasicTest is Test {
         assertEq(collateral.MIN_COLLATERAL_INCREASE(), 2 ether);
     }
 
-    function testSetContractColdkey() public {
-        bytes32 newColdkey = bytes32(uint256(999));
+    function testSetContractColdkeyFunctionRemoved() public {
+        (bool success, bytes memory returndata) = address(collateral).call(
+            abi.encodeWithSignature(
+                "setContractColdkey(bytes32)",
+                bytes32(uint256(999))
+            )
+        );
 
-        vm.expectEmit(true, true, false, false, address(collateral));
-        emit AlphaColdkeyUpdated(CONTRACT_COLDKEY, newColdkey);
-
-        vm.prank(TRUSTEE);
-        collateral.setContractColdkey(newColdkey);
-
-        assertEq(collateral.CONTRACT_COLDKEY(), newColdkey);
+        assertFalse(success);
+        assertGe(returndata.length, 4);
+        bytes4 selector;
+        assembly {
+            selector := mload(add(returndata, 0x20))
+        }
+        assertEq(selector, CollateralUpgradeable.InvalidDepositMethod.selector);
+        assertEq(
+            collateral.CONTRACT_COLDKEY(),
+            bytes32(uint256(uint160(address(proxy))))
+        );
     }
 
     // ============ UPGRADE TESTS ============
@@ -993,11 +1011,6 @@ contract CollateralBasicTest is Test {
         uint256 slashAlphaAmount,
         string url,
         bytes16 urlContentMd5Checksum
-    );
-
-    event AlphaColdkeyUpdated(
-        bytes32 indexed oldAlphaColdkey,
-        bytes32 indexed newAlphaColdkey
     );
 
     event ContractUpgraded(

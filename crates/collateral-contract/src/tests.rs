@@ -14,7 +14,7 @@ use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {
-    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint64 decisionTimeout, address admin);
+    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint64 decisionTimeout, address admin, bytes32 alphaHotkey);
 }
 
 #[allow(dead_code)]
@@ -82,6 +82,7 @@ async fn test_collateral_deploy() {
     let min_collateral_increase = U256::from(1_000_000_000_000_000_000u128); // 1 TAO
     let decision_timeout = 3600u64; // 1 hour
     let admin = signer.address();
+    let alpha_hotkey = [2u8; 32];
 
     let contract = CollateralUpgradeable::deploy(provider.clone())
         .await
@@ -96,6 +97,7 @@ async fn test_collateral_deploy() {
             minCollateralIncrease: min_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
+            alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),
         }
         .abi_encode(),
     );
@@ -210,6 +212,7 @@ async fn test_deploy_proxy_in_testnet() {
     let min_collateral_increase = U256::from(1);
     let decision_timeout = 1; // 1 hour
     let admin = signer.address();
+    let alpha_hotkey = [2u8; 32];
 
     let data: Bytes = Bytes::from(
         initializeCall {
@@ -218,6 +221,7 @@ async fn test_deploy_proxy_in_testnet() {
             minCollateralIncrease: min_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
+            alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),
         }
         .abi_encode(),
     );

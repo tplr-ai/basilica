@@ -102,9 +102,9 @@ Each Bittensor subnet has its own **alpha token**. Alpha is NOT an ERC-20 -- it 
 
 | Parameter | Type | What It Is |
 |---|---|---|
-| `CONTRACT_COLDKEY` | `bytes32` | Substrate coldkey. The contract's owner identity on the Substrate staking side. Set via `setContractColdkey()` by trustee. |
+| `CONTRACT_COLDKEY` | `bytes32` | Substrate coldkey. The contract's owner identity on the Substrate staking side. Derived once in `initialize()` from AddressMapping precompile (`0x...080C`) using `address(this)`. |
 | `CONTRACT_HOTKEY` | `bytes32` | Substrate validator hotkey. Where the contract consolidates all alpha collateral. Set at `initialize()`. |
-| `TRUSTEE` | `address` (H160) | EVM address with admin powers: slash, deny reclaims, burn-register, set coldkey. |
+| `TRUSTEE` | `address` (H160) | EVM address with admin powers: slash, deny reclaims, burn-register. |
 | `NETUID` | `uint16` | The Basilica subnet ID. All alpha operations use this netuid. |
 
 Both miners and the trustee need TAO in their H160 wallets for gas.

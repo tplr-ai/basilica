@@ -33,6 +33,10 @@ interface INeuron {
     function dummy() external payable;
 }
 
+interface IAddressMapping {
+    function addressMapping(address evmAddress) external view returns (bytes32);
+}
+
 contract CollateralUpgradeable is
     Initializable,
     UUPSUpgradeable,
@@ -56,6 +60,9 @@ contract CollateralUpgradeable is
 
     address public constant INEURON_ADDRESS =
         0x0000000000000000000000000000000000000804;
+
+    address public constant IADDRESS_MAPPING_ADDRESS =
+        0x000000000000000000000000000000000000080C;
 
     // State variables
     uint16 public NETUID;
@@ -134,10 +141,6 @@ contract CollateralUpgradeable is
         string url,
         bytes16 urlContentMd5Checksum
     );
-    event AlphaColdkeyUpdated(
-        bytes32 indexed oldAlphaColdkey,
-        bytes32 indexed newAlphaColdkey
-    );
 
     // Upgrade event
     event ContractUpgraded(
@@ -158,6 +161,9 @@ contract CollateralUpgradeable is
     error InsufficientCollateralForReclaim();
     error InsufficientCollateralForSlash();
     error InvalidAlphaColdkey();
+    error AddressMappingPrecompileCallFailed();
+    error AddressMappingPrecompileInvalidResponse();
+    error InvalidDerivedContractColdkey();
 
     /// @notice Initializes the upgradeable collateral contract
     /// @param netuid The netuid of the subnet
@@ -190,6 +196,7 @@ contract CollateralUpgradeable is
         MIN_COLLATERAL_INCREASE = minCollateralIncrease;
         DECISION_TIMEOUT = decisionTimeout;
         CONTRACT_HOTKEY = alphaHotkey;
+        CONTRACT_COLDKEY = _deriveContractColdkey();
 
         // Set up roles
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -203,11 +210,24 @@ contract CollateralUpgradeable is
         _;
     }
 
-    function setContractColdkey(bytes32 alphaColdkey) external onlyTrustee {
-        require(alphaColdkey != bytes32(0), "Alpha coldkey must be non-zero");
-        bytes32 oldAlphaColdkey = CONTRACT_COLDKEY;
-        CONTRACT_COLDKEY = alphaColdkey;
-        emit AlphaColdkeyUpdated(oldAlphaColdkey, alphaColdkey);
+    function _deriveContractColdkey() internal view returns (bytes32) {
+        (bool success, bytes memory returndata) = IADDRESS_MAPPING_ADDRESS
+            .staticcall(
+                abi.encodeCall(IAddressMapping.addressMapping, (address(this)))
+            );
+        if (!success) {
+            revert AddressMappingPrecompileCallFailed();
+        }
+        if (returndata.length != 32) {
+            revert AddressMappingPrecompileInvalidResponse();
+        }
+
+        bytes32 derivedColdkey = abi.decode(returndata, (bytes32));
+        if (derivedColdkey == bytes32(0)) {
+            revert InvalidDerivedContractColdkey();
+        }
+
+        return derivedColdkey;
     }
 
     // Allow deposits only via deposit() function
