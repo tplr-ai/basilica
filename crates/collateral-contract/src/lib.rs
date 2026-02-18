@@ -8,7 +8,7 @@ use alloy_sol_types::{sol, SolEvent};
 pub mod config;
 pub mod proxy;
 use tracing::info;
-pub use CollateralUpgradeable::{Deposit, Reclaimed, Slashed};
+pub use CollateralUpgradeable::{Denied, Deposit, ReclaimProcessStarted, Reclaimed, Slashed};
 
 #[cfg(test)]
 mod tests;
@@ -84,6 +84,8 @@ impl
 
 pub enum CollateralEvent {
     Deposit(CollateralUpgradeable::Deposit),
+    ReclaimProcessStarted(CollateralUpgradeable::ReclaimProcessStarted),
+    Denied(CollateralUpgradeable::Denied),
     Reclaimed(CollateralUpgradeable::Reclaimed),
     Slashed(CollateralUpgradeable::Slashed),
 }
@@ -170,6 +172,20 @@ pub async fn scan_events_with_scope(
                     log.data().data.as_ref(),
                 )?;
                 Some(CollateralEvent::Deposit(deposit))
+            }
+            Some(sig) if sig == &CollateralUpgradeable::ReclaimProcessStarted::SIGNATURE_HASH => {
+                let reclaim_started = CollateralUpgradeable::ReclaimProcessStarted::decode_raw_log(
+                    topics,
+                    log.data().data.as_ref(),
+                )?;
+                Some(CollateralEvent::ReclaimProcessStarted(reclaim_started))
+            }
+            Some(sig) if sig == &CollateralUpgradeable::Denied::SIGNATURE_HASH => {
+                let denied = CollateralUpgradeable::Denied::decode_raw_log(
+                    topics,
+                    log.data().data.as_ref(),
+                )?;
+                Some(CollateralEvent::Denied(denied))
             }
             Some(sig) if sig == &CollateralUpgradeable::Reclaimed::SIGNATURE_HASH => {
                 let reclaimed = CollateralUpgradeable::Reclaimed::decode_raw_log(

@@ -1,7 +1,7 @@
 use crate::config::collateral::CollateralConfig;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
-use collateral_contract::{config::CollateralNetworkConfig, CollateralEvent};
+use collateral_contract::config::CollateralNetworkConfig;
 use std::sync::Arc;
 use tracing::{error, info};
 
@@ -62,22 +62,8 @@ impl Collateral {
         sorted_events_map.sort_by(|a, b| a.0.cmp(b.0));
 
         for (block_number, events_vec) in sorted_events_map.iter() {
-            for event in events_vec.iter() {
-                match event {
-                    CollateralEvent::Deposit(deposit) => {
-                        self.persistence.handle_deposit(deposit).await?;
-                    }
-                    CollateralEvent::Reclaimed(reclaimed) => {
-                        self.persistence.handle_reclaimed(reclaimed).await?;
-                    }
-                    CollateralEvent::Slashed(slashed) => {
-                        self.persistence.handle_slashed(slashed).await?;
-                    }
-                }
-            }
-            // update the last scanned block number after handling all events in the block
             self.persistence
-                .update_last_scanned_block_number(**block_number)
+                .apply_collateral_events_for_block(**block_number, events_vec.as_slice())
                 .await?;
         }
 

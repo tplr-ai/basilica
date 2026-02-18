@@ -525,6 +525,40 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     );
                     println!("    Alpha Amount: {} wei", deposit.alphaAmount);
                 }
+                CollateralEvent::ReclaimProcessStarted(reclaim_started) => {
+                    println!("    Type: ReclaimProcessStarted");
+                    println!("    Request ID: {}", reclaim_started.reclaimRequestId);
+                    println!(
+                        "    Hotkey: {}",
+                        hex::encode(reclaim_started.hotkey.as_slice())
+                    );
+                    println!(
+                        "    Node ID: {}",
+                        hex::encode(reclaim_started.nodeId.as_slice())
+                    );
+                    println!("    Miner: {}", reclaim_started.miner);
+                    println!("    TAO Amount: {} wei", reclaim_started.amount);
+                    println!(
+                        "    Alpha Coldkey: {}",
+                        hex::encode(reclaim_started.alphaColdkey.as_slice())
+                    );
+                    println!("    Alpha Amount: {} wei", reclaim_started.alphaAmount);
+                    println!("    Expiration: {}", reclaim_started.expirationTime);
+                    println!("    URL: {}", reclaim_started.url);
+                    println!(
+                        "    URL Content MD5: {}",
+                        hex::encode(reclaim_started.urlContentMd5Checksum.as_slice())
+                    );
+                }
+                CollateralEvent::Denied(denied) => {
+                    println!("    Type: Denied");
+                    println!("    Request ID: {}", denied.reclaimRequestId);
+                    println!("    URL: {}", denied.url);
+                    println!(
+                        "    URL Content MD5: {}",
+                        hex::encode(denied.urlContentMd5Checksum.as_slice())
+                    );
+                }
                 CollateralEvent::Reclaimed(reclaimed) => {
                     println!("    Type: Reclaimed");
                     println!("    Request ID: {}", reclaimed.reclaimRequestId);
@@ -570,6 +604,29 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "miner": deposit.miner.to_string(),
                         "alphaHotkey": hex::encode(deposit.alphaHotkey.as_slice()),
                         "alphaAmount": deposit.alphaAmount.to_string()
+                    })
+                }
+                CollateralEvent::ReclaimProcessStarted(reclaim_started) => {
+                    serde_json::json!({
+                        "type": "ReclaimProcessStarted",
+                        "reclaimRequestId": reclaim_started.reclaimRequestId.to_string(),
+                        "hotkey": hex::encode(reclaim_started.hotkey.as_slice()),
+                        "nodeId": hex::encode(reclaim_started.nodeId.as_slice()),
+                        "miner": reclaim_started.miner.to_string(),
+                        "amount": reclaim_started.amount.to_string(),
+                        "alphaColdkey": hex::encode(reclaim_started.alphaColdkey.as_slice()),
+                        "alphaAmount": reclaim_started.alphaAmount.to_string(),
+                        "expirationTime": reclaim_started.expirationTime,
+                        "url": reclaim_started.url,
+                        "urlContentMd5Checksum": hex::encode(reclaim_started.urlContentMd5Checksum.as_slice())
+                    })
+                }
+                CollateralEvent::Denied(denied) => {
+                    serde_json::json!({
+                        "type": "Denied",
+                        "reclaimRequestId": denied.reclaimRequestId.to_string(),
+                        "url": denied.url,
+                        "urlContentMd5Checksum": hex::encode(denied.urlContentMd5Checksum.as_slice())
                     })
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
