@@ -122,7 +122,7 @@ Per `(hotkey, nodeId)` the contract tracks:
 
 - **Deposit:** Miner sends TAO as `msg.value`. Recorded in `collaterals[hotkey][nodeId]`.
 - **Reclaim:** TAO sent back to miner via `payable(miner).call{value: amount}`.
-- **Slash:** TAO sent to `TRUSTEE` wallet (not burned).
+- **Slash:** TAO sent to `address(0)` (burned).
 
 ### Alpha Collateral Flow
 
@@ -134,18 +134,19 @@ Per `(hotkey, nodeId)` the contract tracks:
 5. Recorded in `alphaCollaterals[hotkey][nodeId]`.
 
 **Reclaim (`withdrawAlpha`):**
-1. Calls `IStaking.transferStake` via **`call`** to send alpha from `VALIDATOR_HOTKEY` to miner's `alphaColdkey` (provided at reclaim time).
-2. Both origin and destination netuids are `NETUID` (stays within Basilica subnet).
+1. Calls `IStaking.transferStake(alphaColdkey, VALIDATOR_HOTKEY, NETUID, NETUID, alphaAmount)` via **`call`**.
+2. This changes **only the coldkey ownership** — alpha moves from `(VALIDATOR_HOTKEY, CONTRACT_COLDKEY, NETUID)` to `(VALIDATOR_HOTKEY, miner's alphaColdkey, NETUID)`.
+3. The alpha remains staked under `VALIDATOR_HOTKEY`. It is **not** unstaked or converted back to TAO. The miner must separately call `removeStake` to convert to TAO, or `moveStake` to re-delegate to a different hotkey.
 
 **Slash:**
-- Alpha transferred to trustee's coldkey (`TRUSTEE_COLDKEY`) via `transferStake` (not left locked in the contract).
+- Alpha transferred to trustee's coldkey (`TRUSTEE_COLDKEY`) via `transferStake` (not left locked in the contract). Same as reclaim — only coldkey ownership changes, alpha stays staked under `VALIDATOR_HOTKEY`.
 
 ### `delegatecall` vs `call` (Critical)
 
 | Call Type | Precompile sees as origin | Used When |
 |---|---|---|
-| `delegatecall` | Original `msg.sender` (miner's EVM address -> miner's Substrate mirror) | `transferAlpha` step 1: moving alpha FROM miner TO contract |
-| `call` | Proxy contract's EVM address (-> contract's Substrate mirror) | `moveStake`, `withdrawAlpha`: moving alpha between contract-owned positions |
+| `delegatecall` | Original `msg.sender` (miner's EVM address -> miner's Substrate mirror) | `transferAlpha` step 1: moving alpha FROM miner's coldkey TO contract's coldkey |
+| `call` | Proxy contract's EVM address (-> contract's Substrate mirror) | `moveStake`: consolidating alpha under `VALIDATOR_HOTKEY`; `withdrawAlpha`: transferring alpha ownership from contract's coldkey to miner's coldkey |
 
 ### Deployment
 
