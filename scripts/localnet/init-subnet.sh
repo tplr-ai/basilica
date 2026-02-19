@@ -88,6 +88,24 @@ echo "  Subtensor: OK"
 echo ""
 
 # =============================================================================
+# Disable EVM Deployment Whitelist (matching mainnet behavior)
+# =============================================================================
+echo "[1.5/5] Disabling EVM deployment whitelist..."
+
+uv run --with substrate-interface python3 -c "
+from substrateinterface import SubstrateInterface, Keypair
+substrate = SubstrateInterface(url='ws://localhost:9944')
+alice = Keypair.create_from_uri('//Alice')
+inner = substrate.compose_call('EVM', 'disable_whitelist', {'disabled': True})
+sudo = substrate.compose_call('Sudo', 'sudo', {'call': inner})
+extrinsic = substrate.create_signed_extrinsic(call=sudo, keypair=alice)
+receipt = substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+print('  EVM whitelist disabled' if receipt.is_success else f'  WARNING: {receipt.error_message}')
+" || echo "  WARNING: Could not disable EVM whitelist (continuing anyway)"
+
+echo ""
+
+# =============================================================================
 # Create Wallets
 # =============================================================================
 echo "[2/5] Creating wallets in ${WALLETS_DIR}..."

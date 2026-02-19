@@ -68,6 +68,39 @@ def wait_for_chain(subtensor: bt.Subtensor, max_attempts: int = 30) -> bool:
     return False
 
 
+def disable_evm_whitelist(subtensor: bt.Subtensor) -> bool:
+    """Disable EVM deployment whitelist via sudo, matching mainnet behavior."""
+    log("[init] Disabling EVM deployment whitelist (matching mainnet)...", C.Y)
+    try:
+        from substrateinterface import Keypair
+
+        substrate = subtensor.substrate
+        alice = Keypair.create_from_uri("//Alice")
+
+        inner_call = substrate.compose_call(
+            call_module="EVM",
+            call_function="disable_whitelist",
+            call_params={"disabled": True},
+        )
+        sudo_call = substrate.compose_call(
+            call_module="Sudo",
+            call_function="sudo",
+            call_params={"call": inner_call},
+        )
+        extrinsic = substrate.create_signed_extrinsic(call=sudo_call, keypair=alice)
+        receipt = substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+
+        if receipt.is_success:
+            log("[init] EVM deployment whitelist disabled", C.G)
+            return True
+        else:
+            log(f"[init] WARNING: EVM whitelist disable failed: {receipt.error_message}", C.Y)
+            return False
+    except Exception as e:
+        log(f"[init] WARNING: Could not disable EVM whitelist: {e}", C.Y)
+        return False
+
+
 def create_alice_from_seed(wallet_path: Path) -> Optional[Wallet]:
     """Create Alice wallet from known seed."""
     wallet = Wallet(name="Alice", hotkey="default", path=str(wallet_path))
@@ -244,6 +277,9 @@ def main():
         return 1
 
     log(f"[init] bittensor version: {bt.__version__}")
+
+    # Disable EVM deployment whitelist (matches mainnet behavior)
+    disable_evm_whitelist(subtensor)
 
     # Create Alice wallet from seed
     alice_default = create_alice_from_seed(WALLET_PATH)
