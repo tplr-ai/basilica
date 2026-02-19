@@ -4,7 +4,14 @@ pragma solidity ^0.8.20;
 import {Script, console} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {CollateralUpgradeable} from "../src/CollateralUpgradeable.sol";
-import {CollateralUpgradeableV2} from "../src/CollateralUpgradeableV2.sol";
+
+contract CollateralUpgradeableUpgradeMock is CollateralUpgradeable {
+    function getVersion() external pure override returns (uint256) {
+        return 2;
+    }
+
+    function initializeUpgradeMock() external reinitializer(2) {}
+}
 
 contract DeployUpgradeableScript is Script {
     CollateralUpgradeable public collateral;
@@ -85,21 +92,26 @@ contract DeployUpgradeableScript is Script {
         console.log("- VERSION:", collateral.getVersion());
     }
 
-    /// @notice Deploy V2 implementation for upgrade testing
-    function deployV2Implementation() public {
-        console.log("Deploying V2 implementation...");
+    /// @notice Deploy upgrade-mock implementation for upgrade testing
+    function deployUpgradeMockImplementation() public {
+        console.log("Deploying upgrade mock implementation...");
 
         vm.startBroadcast();
 
-        CollateralUpgradeableV2 implementationV2 = new CollateralUpgradeableV2();
+        CollateralUpgradeableUpgradeMock implementationV2 = new CollateralUpgradeableUpgradeMock();
         console.log(
-            "V2 Implementation deployed at:",
+            "Upgrade mock implementation deployed at:",
             address(implementationV2)
         );
 
         vm.stopBroadcast();
 
-        console.log("V2 deployment completed!");
-        console.log("Use this address for upgrading existing proxy to V2");
+        console.log("Upgrade mock deployment completed!");
+        console.log("Use this address for upgrading existing proxy for tests");
+    }
+
+    /// @notice Backward-compatible alias.
+    function deployV2Implementation() public {
+        deployUpgradeMockImplementation();
     }
 }

@@ -3,7 +3,7 @@
 pragma solidity ^0.8.22;
 import {Test, console} from "forge-std/Test.sol";
 import {CollateralUpgradeable} from "../src/CollateralUpgradeable.sol";
-import {CollateralUpgradeableV2} from "../src/CollateralUpgradeableV2.sol";
+import {CollateralUpgradeableUpgradeMock} from "./mocks/CollateralUpgradeableUpgradeMock.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract AddressMappingPrecompileMock {
@@ -1092,7 +1092,7 @@ contract CollateralBasicTest is Test {
     // ============ UPGRADE TESTS ============
 
     function testUpgrade() public {
-        CollateralUpgradeableV2 newImplementation = new CollateralUpgradeableV2();
+        CollateralUpgradeableUpgradeMock newImplementation = new CollateralUpgradeableUpgradeMock();
 
         vm.expectEmit(true, true, false, false, address(collateral));
         emit ContractUpgraded(2, address(newImplementation));
