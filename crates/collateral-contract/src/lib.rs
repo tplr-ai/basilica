@@ -382,7 +382,7 @@ pub async fn contract_coldkey(
         .connect(&network_config.rpc_url)
         .await?;
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
-    let coldkey = contract.CONTRACT_COLDKEY().call().await?;
+    let coldkey = contract.contractColdkey().call().await?;
     Ok(coldkey.into())
 }
 
@@ -393,7 +393,7 @@ pub async fn validator_hotkey(
         .connect(&network_config.rpc_url)
         .await?;
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
-    let hotkey = contract.VALIDATOR_HOTKEY().call().await?;
+    let hotkey = contract.validatorHotkey().call().await?;
     Ok(hotkey.into())
 }
 
@@ -402,7 +402,7 @@ pub async fn netuid(network_config: &CollateralNetworkConfig) -> Result<u16, any
         .connect(&network_config.rpc_url)
         .await?;
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
-    let netuid = contract.NETUID().call().await?;
+    let netuid = contract.netuid().call().await?;
     Ok(netuid)
 }
 
@@ -411,7 +411,7 @@ pub async fn trustee(network_config: &CollateralNetworkConfig) -> Result<Address
         .connect(&network_config.rpc_url)
         .await?;
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
-    let trustee = contract.TRUSTEE().call().await?;
+    let trustee = contract.trustee().call().await?;
     Ok(trustee)
 }
 
@@ -422,7 +422,7 @@ pub async fn decision_timeout(
         .connect(&network_config.rpc_url)
         .await?;
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
-    let decision_timeout = contract.DECISION_TIMEOUT().call().await?;
+    let decision_timeout = contract.decisionTimeout().call().await?;
     Ok(decision_timeout)
 }
 
@@ -433,7 +433,7 @@ pub async fn min_collateral_increase(
         .connect(&network_config.rpc_url)
         .await?;
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
-    let min_collateral_increase = contract.MIN_COLLATERAL_INCREASE().call().await?;
+    let min_collateral_increase = contract.minCollateralIncrease().call().await?;
     Ok(min_collateral_increase)
 }
 

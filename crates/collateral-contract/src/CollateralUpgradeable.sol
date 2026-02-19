@@ -2,9 +2,9 @@
 
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 
 interface IStaking {
     function transferStake(
@@ -65,12 +65,12 @@ contract CollateralUpgradeable is
         0x000000000000000000000000000000000000080C;
 
     // State variables
-    uint16 public NETUID;
-    address public TRUSTEE;
-    uint64 public DECISION_TIMEOUT;
-    uint256 public MIN_COLLATERAL_INCREASE;
-    bytes32 public CONTRACT_COLDKEY;
-    bytes32 public VALIDATOR_HOTKEY;
+    uint16 public netuid;
+    address public trustee;
+    uint64 public decisionTimeout;
+    uint256 public minCollateralIncrease;
+    bytes32 public contractColdkey;
+    bytes32 public validatorHotkey;
 
     mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
     mapping(bytes32 => mapping(bytes16 => uint256)) public taoCollaterals;
@@ -86,7 +86,7 @@ contract CollateralUpgradeable is
 
     /// @dev Reserved storage gap for future upgrades.
     /// Reduce this array size by N when adding N new state variables above.
-    uint256[49] private __gap;
+    uint256[49] private _gap;
 
     struct Reclaim {
         bytes32 hotkey;
@@ -170,37 +170,43 @@ contract CollateralUpgradeable is
     error MinerMustBeEOA();
 
     /// @notice Initializes the upgradeable collateral contract
-    /// @param netuid The netuid of the subnet
-    /// @param trustee Address of the trustee who has permissions to slash collateral or deny reclaim requests
-    /// @param minCollateralIncrease The minimum amount that can be deposited or reclaimed
-    /// @param decisionTimeout The time window (in seconds) for the trustee to deny a reclaim request
+    /// @param netuid_ The netuid of the subnet
+    /// @param trustee_ Address of the trustee who has permissions to slash collateral or deny reclaim requests
+    /// @param minCollateralIncrease_ The minimum amount that can be deposited or reclaimed
+    /// @param decisionTimeout_ The time window (in seconds) for the trustee to deny a reclaim request
     /// @param admin Address that will have admin and upgrader roles
     function initialize(
-        uint16 netuid,
-        address trustee,
-        uint256 minCollateralIncrease,
-        uint64 decisionTimeout,
+        uint16 netuid_,
+        address trustee_,
+        uint256 minCollateralIncrease_,
+        uint64 decisionTimeout_,
         address admin,
-        bytes32 validatorHotkey
+        bytes32 validatorHotkey_
     ) public initializer {
-        require(trustee != address(0), "Trustee address must be non-zero");
+        require(trustee_ != address(0), "Trustee address must be non-zero");
         require(admin != address(0), "Admin address must be non-zero");
-        require(validatorHotkey != bytes32(0), "Validator hotkey must be non-zero");
         require(
-            minCollateralIncrease > 0,
+            validatorHotkey_ != bytes32(0),
+            "Validator hotkey must be non-zero"
+        );
+        require(
+            minCollateralIncrease_ > 0,
             "Min collateral increase must be greater than 0"
         );
-        require(decisionTimeout > 0, "Decision timeout must be greater than 0");
+        require(
+            decisionTimeout_ > 0,
+            "Decision timeout must be greater than 0"
+        );
 
         __UUPSUpgradeable_init();
         __AccessControl_init();
 
-        NETUID = netuid;
-        TRUSTEE = trustee;
-        MIN_COLLATERAL_INCREASE = minCollateralIncrease;
-        DECISION_TIMEOUT = decisionTimeout;
-        VALIDATOR_HOTKEY = validatorHotkey;
-        CONTRACT_COLDKEY = _deriveContractColdkey();
+        netuid = netuid_;
+        trustee = trustee_;
+        minCollateralIncrease = minCollateralIncrease_;
+        decisionTimeout = decisionTimeout_;
+        validatorHotkey = validatorHotkey_;
+        contractColdkey = _deriveContractColdkey();
 
         // Set up roles
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -208,10 +214,14 @@ contract CollateralUpgradeable is
     }
 
     modifier onlyTrustee() {
-        if (msg.sender != TRUSTEE) {
+        _onlyTrustee();
+        _;
+    }
+
+    function _onlyTrustee() internal view {
+        if (msg.sender != trustee) {
             revert NotTrustee();
         }
-        _;
     }
 
     function _addressMapping(address evmAddress) internal view returns (bytes32) {
@@ -267,7 +277,7 @@ contract CollateralUpgradeable is
     /// @param hotkey The netuid key for the subnet
     /// @param nodeId The ID of the node to deposit collateral for
     /// @dev The first deposit for an nodeId sets the owner. Subsequent deposits must be from the owner.
-    /// @dev The deposited amount must be greater than or equal to MIN_COLLATERAL_INCREASE
+    /// @dev The deposited amount must be greater than or equal to minCollateralIncrease
     /// @dev Emits a Deposit event with the hotkey, nodeId, sender's address and deposited amount
     function deposit(
         bytes32 hotkey,
@@ -278,7 +288,7 @@ contract CollateralUpgradeable is
         if (msg.value == 0 && alphaAmount == 0) {
             revert AmountZero();
         }
-        if (msg.value != 0 && msg.value < MIN_COLLATERAL_INCREASE) {
+        if (msg.value != 0 && msg.value < minCollateralIncrease) {
             revert InsufficientAmount();
         }
 
@@ -302,7 +312,7 @@ contract CollateralUpgradeable is
         uint256 actualAlphaAmount = alphaAmount;
         if (alphaAmount > 0) {
             require(
-                CONTRACT_COLDKEY != bytes32(0),
+                contractColdkey != bytes32(0),
                 "contract coldkey must be non-zero"
             );
             actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
@@ -322,7 +332,7 @@ contract CollateralUpgradeable is
     }
 
     /// @notice Initiates a process to reclaim all available collateral from a specific node
-    /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after DECISION_TIMEOUT
+    /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after decisionTimeout
     /// @param hotkey The netuid key for the subnet
     /// @param nodeId The ID of the node to reclaim collateral from
     /// @dev Alpha payout destination is always derived from the owner address mapping.
@@ -365,7 +375,7 @@ contract CollateralUpgradeable is
             revert InvalidAlphaColdkey();
         }
 
-        uint64 denyTimeout = uint64(block.timestamp) + DECISION_TIMEOUT;
+        uint64 denyTimeout = uint64(block.timestamp) + decisionTimeout;
 
         reclaims[nextReclaimId] = Reclaim({
             hotkey: hotkey,
@@ -585,8 +595,8 @@ contract CollateralUpgradeable is
         address newTrustee
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(newTrustee != address(0), "New trustee cannot be zero address");
-        address oldTrustee = TRUSTEE;
-        TRUSTEE = newTrustee;
+        address oldTrustee = trustee;
+        trustee = newTrustee;
 
         // Emit an event for the trustee change
         emit TrusteeUpdated(oldTrustee, newTrustee);
@@ -599,8 +609,8 @@ contract CollateralUpgradeable is
         uint64 newTimeout
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(newTimeout > 0, "Decision timeout must be greater than 0");
-        uint64 oldTimeout = DECISION_TIMEOUT;
-        DECISION_TIMEOUT = newTimeout;
+        uint64 oldTimeout = decisionTimeout;
+        decisionTimeout = newTimeout;
 
         // Emit an event for the timeout change
         emit DecisionTimeoutUpdated(oldTimeout, newTimeout);
@@ -616,8 +626,8 @@ contract CollateralUpgradeable is
             newMinIncrease > 0,
             "Min collateral increase must be greater than 0"
         );
-        uint256 oldMinIncrease = MIN_COLLATERAL_INCREASE;
-        MIN_COLLATERAL_INCREASE = newMinIncrease;
+        uint256 oldMinIncrease = minCollateralIncrease;
+        minCollateralIncrease = newMinIncrease;
 
         // Emit an event for the min increase change
         emit MinCollateralIncreaseUpdated(oldMinIncrease, newMinIncrease);
@@ -645,8 +655,8 @@ contract CollateralUpgradeable is
         return
             IStaking(ISTAKING_V2_ADDRESS).getStake(
                 hotkey,
-                CONTRACT_COLDKEY,
-                NETUID
+                contractColdkey,
+                netuid
             );
     }
 
@@ -658,10 +668,10 @@ contract CollateralUpgradeable is
 
         bytes memory data = abi.encodeWithSelector(
             IStaking.transferStake.selector,
-            CONTRACT_COLDKEY,
+            contractColdkey,
             alphaHotkey,
-            uint256(NETUID),
-            uint256(NETUID),
+            uint256(netuid),
+            uint256(netuid),
             alphaAmount
         );
         // delegatecall the original sender should be used as origin for deposit alpha
@@ -681,13 +691,13 @@ contract CollateralUpgradeable is
         // the contract will take it and get compensated by laster emission of alpha
         uint256 actualAlphaAmount = newContractStake - contractStake;
 
-        if (alphaHotkey != VALIDATOR_HOTKEY) {
+        if (alphaHotkey != validatorHotkey) {
             data = abi.encodeWithSelector(
                 IStaking.moveStake.selector,
                 alphaHotkey,
-                VALIDATOR_HOTKEY,
-                NETUID,
-                NETUID,
+                validatorHotkey,
+                netuid,
+                netuid,
                 actualAlphaAmount
             );
             // call the origin is the proxy contract. the alpha just transfer betweend different hotkeys of contract as coldkey
@@ -701,7 +711,7 @@ contract CollateralUpgradeable is
     }
 
     function withdrawAlpha(bytes32 alphaColdkey, uint256 alphaAmount) internal {
-        uint256 contractStake = getContractStake(VALIDATOR_HOTKEY);
+        uint256 contractStake = getContractStake(validatorHotkey);
         require(
             contractStake >= alphaAmount,
             "contract stake is less than withdraw alpha amount"
@@ -710,9 +720,9 @@ contract CollateralUpgradeable is
         bytes memory data = abi.encodeWithSelector(
             IStaking.transferStake.selector,
             alphaColdkey,
-            VALIDATOR_HOTKEY,
-            NETUID,
-            NETUID,
+            validatorHotkey,
+            netuid,
+            netuid,
             alphaAmount
         );
         // use call the origin should be the proxy contract
@@ -725,8 +735,8 @@ contract CollateralUpgradeable is
     function burnRegister() external onlyTrustee {
         bytes memory data = abi.encodeWithSelector(
             INeuron.burnedRegister.selector,
-            NETUID,
-            VALIDATOR_HOTKEY
+            netuid,
+            validatorHotkey
         );
         (bool success, ) = address(INEURON_ADDRESS).call{gas: gasleft()}(data);
         require(success, "user burn register call failed");

@@ -82,13 +82,13 @@ contract DeployUpgradeableScript is Script {
 
         // Verify deployment
         console.log("\nVerification:");
-        console.log("- NETUID:", collateral.NETUID());
-        console.log("- TRUSTEE:", collateral.TRUSTEE());
+        console.log("- NETUID:", collateral.netuid());
+        console.log("- TRUSTEE:", collateral.trustee());
         console.log(
             "- MIN_COLLATERAL_INCREASE:",
-            collateral.MIN_COLLATERAL_INCREASE()
+            collateral.minCollateralIncrease()
         );
-        console.log("- DECISION_TIMEOUT:", collateral.DECISION_TIMEOUT());
+        console.log("- DECISION_TIMEOUT:", collateral.decisionTimeout());
         console.log("- VERSION:", collateral.getVersion());
     }
 

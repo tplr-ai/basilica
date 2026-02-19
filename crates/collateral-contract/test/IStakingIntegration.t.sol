@@ -204,7 +204,7 @@ contract IStakingIntegrationTest is Test {
     address constant ALICE = address(0x09);
     bytes32 constant ALICE_COLDKEY = bytes32(uint256(9));
 
-    bytes32 CONTRACT_COLDKEY;
+    bytes32 contractColdkey;
     bytes32 constant VALIDATOR_HOTKEY = bytes32(uint256(88));
 
     bytes32 constant HOTKEY_1 = bytes32(uint256(101));
@@ -244,7 +244,7 @@ contract IStakingIntegrationTest is Test {
         );
         collateral = CollateralUpgradeable(payable(address(proxy)));
 
-        CONTRACT_COLDKEY = bytes32(uint256(uint160(address(proxy))));
+        contractColdkey = bytes32(uint256(uint160(address(proxy))));
 
         vm.deal(ALICE, 100 ether);
     }
@@ -252,7 +252,7 @@ contract IStakingIntegrationTest is Test {
     function testAlphaDepositReclaimFlowWithoutManualColdkeyConfiguration()
         public
     {
-        assertEq(collateral.CONTRACT_COLDKEY(), CONTRACT_COLDKEY);
+        assertEq(collateral.contractColdkey(), contractColdkey);
 
         // Seed Alice alpha on the same hotkey to avoid moveStake path noise.
         mockStaking.setStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID, ALPHA_AMOUNT);
@@ -271,7 +271,7 @@ contract IStakingIntegrationTest is Test {
         );
         assertEq(mockStaking.getStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID), 0);
         assertEq(
-            mockStaking.getStake(VALIDATOR_HOTKEY, CONTRACT_COLDKEY, NETUID),
+            mockStaking.getStake(VALIDATOR_HOTKEY, contractColdkey, NETUID),
             ALPHA_AMOUNT
         );
 
@@ -287,7 +287,7 @@ contract IStakingIntegrationTest is Test {
         collateral.finalizeReclaim(0);
 
         assertEq(
-            mockStaking.getStake(VALIDATOR_HOTKEY, CONTRACT_COLDKEY, NETUID),
+            mockStaking.getStake(VALIDATOR_HOTKEY, contractColdkey, NETUID),
             0
         );
         assertEq(

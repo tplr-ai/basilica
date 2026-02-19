@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 
 pragma solidity ^0.8.24;
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {CollateralUpgradeable} from "../src/CollateralUpgradeable.sol";
 import {CollateralUpgradeableUpgradeMock} from "./mocks/CollateralUpgradeableUpgradeMock.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -148,16 +148,16 @@ contract CollateralBasicTest is Test {
     // ============ INITIALIZATION TESTS ============
 
     function testInitialization() public view {
-        assertEq(collateral.NETUID(), NETUID);
-        assertEq(collateral.TRUSTEE(), TRUSTEE);
-        assertEq(collateral.MIN_COLLATERAL_INCREASE(), MIN_DEPOSIT);
-        assertEq(collateral.DECISION_TIMEOUT(), DECISION_TIMEOUT);
+        assertEq(collateral.netuid(), NETUID);
+        assertEq(collateral.trustee(), TRUSTEE);
+        assertEq(collateral.minCollateralIncrease(), MIN_DEPOSIT);
+        assertEq(collateral.decisionTimeout(), DECISION_TIMEOUT);
         assertEq(collateral.getVersion(), 1);
         assertEq(
-            collateral.CONTRACT_COLDKEY(),
+            collateral.contractColdkey(),
             bytes32(uint256(uint160(address(proxy))))
         );
-        assertEq(collateral.VALIDATOR_HOTKEY(), ALPHA_HOTKEY);
+        assertEq(collateral.validatorHotkey(), ALPHA_HOTKEY);
 
         // Check roles
         assertTrue(collateral.hasRole(collateral.DEFAULT_ADMIN_ROLE(), ADMIN));
@@ -657,8 +657,8 @@ contract CollateralBasicTest is Test {
         // slot 9: alphaCollateralUnderPendingReclaims mapping
         // slot 10: nextReclaimId
         // slot 11: ownerColdkeys mapping
-        uint256 RECLAIMS_SLOT = 7;
-        bytes32 baseSlot = keccak256(abi.encode(uint256(0), RECLAIMS_SLOT));
+        uint256 reclaimsSlot = 7;
+        bytes32 baseSlot = keccak256(abi.encode(uint256(0), reclaimsSlot));
         // Reclaim struct layout: +0=hotkey, +1=nodeId, +2=miner, +3=amount, +4=alphaColdkey, +5=alphaAmount, +6=denyTimeout
         bytes32 amountSlot = bytes32(uint256(baseSlot) + 3);
         bytes32 alphaAmountSlot = bytes32(uint256(baseSlot) + 5);
@@ -671,8 +671,8 @@ contract CollateralBasicTest is Test {
         vm.store(address(collateral), alphaAmountSlot, bytes32(uint256(100 ether)));
 
         // Also set alphaCollateralUnderPendingReclaims so deny doesn't underflow
-        uint256 ALPHA_PENDING_SLOT = 9;
-        bytes32 level1 = keccak256(abi.encode(HOTKEY_1, ALPHA_PENDING_SLOT));
+        uint256 alphaPendingSlotIndex = 9;
+        bytes32 level1 = keccak256(abi.encode(HOTKEY_1, alphaPendingSlotIndex));
         bytes32 alphaPendingSlot = keccak256(abi.encode(EXECUTOR_ID_1, level1));
         vm.store(address(collateral), alphaPendingSlot, bytes32(uint256(100 ether)));
 
@@ -1051,21 +1051,21 @@ contract CollateralBasicTest is Test {
         vm.prank(ADMIN);
         collateral.updateTrustee(newTrustee);
 
-        assertEq(collateral.TRUSTEE(), newTrustee);
+        assertEq(collateral.trustee(), newTrustee);
     }
 
     function testUpdateDecisionTimeout() public {
         vm.prank(ADMIN);
         collateral.updateDecisionTimeout(7200);
 
-        assertEq(collateral.DECISION_TIMEOUT(), 7200);
+        assertEq(collateral.decisionTimeout(), 7200);
     }
 
     function testUpdateMinCollateralIncrease() public {
         vm.prank(ADMIN);
         collateral.updateMinCollateralIncrease(2 ether);
 
-        assertEq(collateral.MIN_COLLATERAL_INCREASE(), 2 ether);
+        assertEq(collateral.minCollateralIncrease(), 2 ether);
     }
 
     function testSetContractColdkeyFunctionRemoved() public {
@@ -1084,7 +1084,7 @@ contract CollateralBasicTest is Test {
         }
         assertEq(selector, CollateralUpgradeable.InvalidDepositMethod.selector);
         assertEq(
-            collateral.CONTRACT_COLDKEY(),
+            collateral.contractColdkey(),
             bytes32(uint256(uint160(address(proxy))))
         );
     }

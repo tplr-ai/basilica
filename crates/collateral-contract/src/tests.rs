@@ -128,16 +128,16 @@ async fn test_collateral_deploy() {
     println!("Deposit receipt: {:?}", receipt);
 
     // Test get methods
-    let netuid_result = proxied.NETUID().call().await.unwrap();
+    let netuid_result = proxied.netuid().call().await.unwrap();
     assert_eq!(netuid_result, netuid);
 
-    let trustee_result = proxied.TRUSTEE().call().await.unwrap();
+    let trustee_result = proxied.trustee().call().await.unwrap();
     assert_eq!(trustee_result, trustee);
 
-    let min_collateral_increase_result = proxied.MIN_COLLATERAL_INCREASE().call().await.unwrap();
+    let min_collateral_increase_result = proxied.minCollateralIncrease().call().await.unwrap();
     assert_eq!(min_collateral_increase_result, min_collateral_increase);
 
-    let decision_timeout_result = proxied.DECISION_TIMEOUT().call().await.unwrap();
+    let decision_timeout_result = proxied.decisionTimeout().call().await.unwrap();
     assert_eq!(decision_timeout_result, decision_timeout);
 
     let node_to_miner_result = proxied
