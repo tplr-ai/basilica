@@ -25,18 +25,10 @@ contract DeployUpgradeableScript is Script {
         console.log("sender address is :", msg.sender);
         console.log("msg.sender balance is :", msg.sender.balance);
         address trustee = vm.envOr("TRUSTEE_ADDRESS", msg.sender);
-        uint256 minCollateralIncrease = vm.envOr(
-            "MIN_COLLATERAL",
-            uint256(1 ether)
-        );
-        uint64 decisionTimeout = uint64(
-            vm.envOr("DECISION_TIMEOUT", uint256(3600))
-        ); // 1 hour
+        uint256 minCollateralIncrease = vm.envOr("MIN_COLLATERAL", uint256(1 ether));
+        uint64 decisionTimeout = uint64(vm.envOr("DECISION_TIMEOUT", uint256(3600))); // 1 hour
         address admin = vm.envOr("ADMIN_ADDRESS", msg.sender);
-        bytes32 validatorHotkey = vm.envOr(
-            "VALIDATOR_HOTKEY",
-            bytes32(uint256(uint160(msg.sender)))
-        );
+        bytes32 validatorHotkey = vm.envOr("VALIDATOR_HOTKEY", bytes32(uint256(uint160(msg.sender))));
 
         console.log("Deploying Upgradeable Collateral contract with:");
         console.log("- NETUID:", netuid);
@@ -74,20 +66,14 @@ contract DeployUpgradeableScript is Script {
         vm.stopBroadcast();
 
         console.log("Deployment completed!");
-        console.log(
-            "Proxy Address (use this for interactions):",
-            address(proxy)
-        );
+        console.log("Proxy Address (use this for interactions):", address(proxy));
         console.log("Implementation Address:", address(implementation));
 
         // Verify deployment
         console.log("\nVerification:");
         console.log("- NETUID:", collateral.netuid());
         console.log("- TRUSTEE:", collateral.trustee());
-        console.log(
-            "- MIN_COLLATERAL_INCREASE:",
-            collateral.minCollateralIncrease()
-        );
+        console.log("- MIN_COLLATERAL_INCREASE:", collateral.minCollateralIncrease());
         console.log("- DECISION_TIMEOUT:", collateral.decisionTimeout());
         console.log("- VERSION:", collateral.getVersion());
     }
@@ -99,10 +85,7 @@ contract DeployUpgradeableScript is Script {
         vm.startBroadcast();
 
         CollateralUpgradeableUpgradeMock implementationV2 = new CollateralUpgradeableUpgradeMock();
-        console.log(
-            "Upgrade mock implementation deployed at:",
-            address(implementationV2)
-        );
+        console.log("Upgrade mock implementation deployed at:", address(implementationV2));
 
         vm.stopBroadcast();
 

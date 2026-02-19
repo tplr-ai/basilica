@@ -14,21 +14,9 @@ contract AddressMappingPrecompileMock {
 }
 
 contract StakingV2PrecompileMock {
-    function transferStake(
-        bytes32,
-        bytes32,
-        uint256,
-        uint256,
-        uint256
-    ) external payable {}
+    function transferStake(bytes32, bytes32, uint256, uint256, uint256) external payable {}
 
-    function moveStake(
-        bytes32,
-        bytes32,
-        uint256,
-        uint256,
-        uint256
-    ) external payable {}
+    function moveStake(bytes32, bytes32, uint256, uint256, uint256) external payable {}
 
     function getStake(bytes32, bytes32, uint256) external view returns (uint256) {
         return type(uint256).max - gasleft();
@@ -43,12 +31,7 @@ contract ContractDepositorUpgradeable {
         bytes32 alphaHotkey,
         uint256 alphaAmount
     ) external payable {
-        collateral.deposit{value: msg.value}(
-            hotkey,
-            nodeId,
-            alphaHotkey,
-            alphaAmount
-        );
+        collateral.deposit{value: msg.value}(hotkey, nodeId, alphaHotkey, alphaAmount);
     }
 }
 
@@ -60,12 +43,7 @@ contract ConstructorDepositorUpgradeable {
         bytes32 alphaHotkey,
         uint256 alphaAmount
     ) payable {
-        collateral.deposit{value: msg.value}(
-            hotkey,
-            nodeId,
-            alphaHotkey,
-            alphaAmount
-        );
+        collateral.deposit{value: msg.value}(hotkey, nodeId, alphaHotkey, alphaAmount);
     }
 }
 
@@ -83,10 +61,8 @@ contract CollateralUpgradeableTest is Test {
     address constant ALICE = address(0x789);
     bytes32 constant ALPHA_HOTKEY = bytes32(uint256(1));
     uint256 constant ALPHA_AMOUNT = 1 ether;
-    address constant ADDRESS_MAPPING_PRECOMPILE =
-        0x000000000000000000000000000000000000080C;
-    address constant STAKING_V2_PRECOMPILE =
-        0x0000000000000000000000000000000000000805;
+    address constant ADDRESS_MAPPING_PRECOMPILE = 0x000000000000000000000000000000000000080C;
+    address constant STAKING_V2_PRECOMPILE = 0x0000000000000000000000000000000000000805;
 
     function setUp() public {
         AddressMappingPrecompileMock addressMappingMock = new AddressMappingPrecompileMock();
@@ -115,25 +91,14 @@ contract CollateralUpgradeableTest is Test {
         collateral = CollateralUpgradeable(payable(address(proxy)));
     }
 
-    function _nodeToMinerSlot(
-        bytes32 hotkey,
-        bytes16 nodeId
-    ) internal pure returns (bytes32) {
+    function _nodeToMinerSlot(bytes32 hotkey, bytes16 nodeId) internal pure returns (bytes32) {
         uint256 nodeToMinerSlot = 4;
         bytes32 levelOne = keccak256(abi.encode(hotkey, nodeToMinerSlot));
         return keccak256(abi.encode(nodeId, levelOne));
     }
 
-    function _seedNodeOwner(
-        bytes32 hotkey,
-        bytes16 nodeId,
-        address owner
-    ) internal {
-        vm.store(
-            address(collateral),
-            _nodeToMinerSlot(hotkey, nodeId),
-            bytes32(uint256(uint160(owner)))
-        );
+    function _seedNodeOwner(bytes32 hotkey, bytes16 nodeId, address owner) internal {
+        vm.store(address(collateral), _nodeToMinerSlot(hotkey, nodeId), bytes32(uint256(uint160(owner))));
     }
 
     /// @dev Test basic initialization
@@ -154,14 +119,7 @@ contract CollateralUpgradeableTest is Test {
         CollateralUpgradeable directImplementation = new CollateralUpgradeable();
 
         vm.expectRevert(); // Should revert due to _disableInitializers()
-        directImplementation.initialize(
-            NETUID,
-            TRUSTEE,
-            MIN_DEPOSIT,
-            DECISION_TIMEOUT,
-            ADMIN,
-            ALPHA_HOTKEY
-        );
+        directImplementation.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY);
     }
 
     /// @dev Test basic deposit functionality
@@ -189,11 +147,7 @@ contract CollateralUpgradeableTest is Test {
         bytes16 nodeId = bytes16(uint128(0xB1));
 
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                CollateralUpgradeable.AlphaRequiredForOwnership.selector
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.AlphaRequiredForOwnership.selector));
         collateral.deposit{value: 5 ether}(hotkey, nodeId, ALPHA_HOTKEY, 0);
     }
 
@@ -218,9 +172,7 @@ contract CollateralUpgradeableTest is Test {
         bytes32 hotkey = bytes32(uint256(0xA3));
         bytes16 nodeId = bytes16(uint128(0xB3));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector)
-        );
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector));
         depositor.claimNode(collateral, hotkey, nodeId, ALPHA_HOTKEY, 1);
     }
 
@@ -228,16 +180,8 @@ contract CollateralUpgradeableTest is Test {
         bytes32 hotkey = bytes32(uint256(0xA33));
         bytes16 nodeId = bytes16(uint128(0xB33));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector)
-        );
-        new ConstructorDepositorUpgradeable(
-            collateral,
-            hotkey,
-            nodeId,
-            ALPHA_HOTKEY,
-            1
-        );
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector));
+        new ConstructorDepositorUpgradeable(collateral, hotkey, nodeId, ALPHA_HOTKEY, 1);
     }
 
     /// @dev Test ADMIN functions
@@ -306,12 +250,7 @@ contract CollateralUpgradeableTest is Test {
         assertEq(collateral.getVersion(), 2);
 
         vm.prank(ALICE);
-        collateral.reclaimCollateral(
-            hotkey,
-            nodeId,
-            "https://example.com/reclaim",
-            bytes32(uint256(1))
-        );
+        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com/reclaim", bytes32(uint256(1)));
 
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
         uint256 aliceBalanceBefore = ALICE.balance;
@@ -350,11 +289,7 @@ contract CollateralUpgradeableTest is Test {
         bytes32 alphaColdkey,
         uint256 alphaAmount
     );
-    event Denied(
-        uint256 indexed reclaimRequestId,
-        string url,
-        bytes32 urlContentSha256
-    );
+    event Denied(uint256 indexed reclaimRequestId, string url, bytes32 urlContentSha256);
     event Slashed(
         bytes32 indexed hotkey,
         bytes16 indexed nodeId,
@@ -366,22 +301,13 @@ contract CollateralUpgradeableTest is Test {
     );
 
     // Upgrade event
-    event ContractUpgraded(
-        uint256 indexed newVersion,
-        address indexed newImplementation
-    );
+    event ContractUpgraded(uint256 indexed newVersion, address indexed newImplementation);
 
-    event TrusteeUpdated(
-        address indexed oldTrustee,
-        address indexed newTrustee
-    );
+    event TrusteeUpdated(address indexed oldTrustee, address indexed newTrustee);
 
     event DecisionTimeoutUpdated(uint64 oldTimeout, uint64 newTimeout);
 
-    event MinCollateralIncreaseUpdated(
-        uint256 oldMinIncrease,
-        uint256 newMinIncrease
-    );
+    event MinCollateralIncreaseUpdated(uint256 oldMinIncrease, uint256 newMinIncrease);
 
     /// @dev Test that denyReclaimRequest clears nodeToMiner after full slash
     function testDenyAfterFullSlashClearsNodeToMiner() public {
@@ -397,33 +323,17 @@ contract CollateralUpgradeableTest is Test {
 
         // 2. Alice starts a reclaim
         vm.prank(ALICE);
-        collateral.reclaimCollateral(
-            hotkey,
-            nodeId,
-            "https://example.com",
-            bytes16(0)
-        );
+        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com", bytes16(0));
 
         // 3. Trustee fully slashes (TAO collateral goes to zero, but pending reclaim keeps nodeToMiner)
         vm.prank(TRUSTEE);
-        collateral.slashCollateral(
-            hotkey,
-            nodeId,
-            5 ether,
-            0,
-            "https://example.com/slash",
-            bytes16(0)
-        );
+        collateral.slashCollateral(hotkey, nodeId, 5 ether, 0, "https://example.com/slash", bytes16(0));
         // nodeToMiner should still be set because of pending reclaim
         assertEq(collateral.nodeToMiner(hotkey, nodeId), ALICE);
 
         // 4. Trustee denies the reclaim — should now clear nodeToMiner
         vm.prank(TRUSTEE);
-        collateral.denyReclaimRequest(
-            0,
-            "https://example.com/deny",
-            bytes16(0)
-        );
+        collateral.denyReclaimRequest(0, "https://example.com/deny", bytes16(0));
         assertEq(
             collateral.nodeToMiner(hotkey, nodeId),
             address(0),
