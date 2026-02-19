@@ -235,7 +235,7 @@ contract CollateralBasicTest is Test {
             0
         );
 
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 8 ether);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 8 ether);
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
     }
 
@@ -268,7 +268,7 @@ contract CollateralBasicTest is Test {
         collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
 
         assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), ALICE);
-        assertEq(collateral.collaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
+        assertEq(collateral.taoCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
         assertGt(collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
 
         vm.prank(ALICE);
@@ -278,7 +278,7 @@ contract CollateralBasicTest is Test {
             ALPHA_HOTKEY,
             0
         );
-        assertEq(collateral.collaterals(HOTKEY_2, EXECUTOR_ID_2), 5 ether);
+        assertEq(collateral.taoCollaterals(HOTKEY_2, EXECUTOR_ID_2), 5 ether);
     }
 
     // ============ RECLAIM TESTS ============
@@ -467,7 +467,7 @@ contract CollateralBasicTest is Test {
 
         // Check state
         assertEq(ALICE.balance, aliceBalanceBefore + 5 ether);
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
     }
 
@@ -558,7 +558,7 @@ contract CollateralBasicTest is Test {
 
         // Alice receives only 2 ETH (5 deposited - 3 slashed)
         assertEq(ALICE.balance, aliceBalanceBefore + 2 ether);
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
     }
 
@@ -613,7 +613,7 @@ contract CollateralBasicTest is Test {
 
         // Alice receives nothing
         assertEq(ALICE.balance, aliceBalanceBefore);
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
         // Reclaim is cleaned up
         (,,,uint256 amount,,,) = collateral.reclaims(0);
         assertEq(amount, 0);
@@ -650,10 +650,10 @@ contract CollateralBasicTest is Test {
         // slot 2: CONTRACT_COLDKEY(b32)
         // slot 3: VALIDATOR_HOTKEY(b32)
         // slot 4: nodeToMiner mapping
-        // slot 5: collaterals mapping
+        // slot 5: taoCollaterals mapping
         // slot 6: alphaCollaterals mapping
         // slot 7: reclaims mapping
-        // slot 8: collateralUnderPendingReclaims mapping
+        // slot 8: taoCollateralUnderPendingReclaims mapping
         // slot 9: alphaCollateralUnderPendingReclaims mapping
         // slot 10: nextReclaimId
         // slot 11: ownerColdkeys mapping
@@ -738,7 +738,7 @@ contract CollateralBasicTest is Test {
 
         // Verify Alice got her 3 ETH back
         assertEq(ALICE.balance, aliceBalanceBefore + 3 ether);
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
     }
 
     function testMultiplePendingReclaimsNoTheftAfterSlash() public {
@@ -828,7 +828,7 @@ contract CollateralBasicTest is Test {
             1
         );
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), BOB);
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
     }
 
     function testSlashAllWithPendingReclaimKeepsOwnership() public {
@@ -862,7 +862,7 @@ contract CollateralBasicTest is Test {
 
         // nodeToMiner stays (pending reclaim exists)
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
 
         // Finalize reclaim — gets 0
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
@@ -971,7 +971,7 @@ contract CollateralBasicTest is Test {
         );
 
         // Check state
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
         assertEq(address(collateral).balance, contractBalanceBefore - 5 ether);
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE); // Still owned
     }
@@ -999,7 +999,7 @@ contract CollateralBasicTest is Test {
 
         // Check executor ownership is cleared
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
-        assertEq(collateral.collaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
     }
 
     function testSlashNotTrustee() public {

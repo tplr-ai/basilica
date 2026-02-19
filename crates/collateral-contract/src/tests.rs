@@ -151,7 +151,7 @@ async fn test_collateral_deploy() {
     assert_eq!(node_to_miner_result, signer.address());
 
     let collaterals_result = proxied
-        .collaterals(
+        .taoCollaterals(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
         )

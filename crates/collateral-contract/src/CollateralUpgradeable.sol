@@ -73,12 +73,12 @@ contract CollateralUpgradeable is
     bytes32 public VALIDATOR_HOTKEY;
 
     mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
-    mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
+    mapping(bytes32 => mapping(bytes16 => uint256)) public taoCollaterals;
     mapping(bytes32 => mapping(bytes16 => uint256)) public alphaCollaterals;
     mapping(uint256 => Reclaim) public reclaims;
 
     mapping(bytes32 => mapping(bytes16 => uint256))
-        private collateralUnderPendingReclaims;
+        private taoCollateralUnderPendingReclaims;
     mapping(bytes32 => mapping(bytes16 => uint256))
         private alphaCollateralUnderPendingReclaims;
     uint256 private nextReclaimId;
@@ -309,7 +309,7 @@ contract CollateralUpgradeable is
             alphaCollaterals[hotkey][nodeId] += actualAlphaAmount;
         }
 
-        collaterals[hotkey][nodeId] += msg.value;
+        taoCollaterals[hotkey][nodeId] += msg.value;
 
         emit Deposit(
             hotkey,
@@ -342,8 +342,8 @@ contract CollateralUpgradeable is
         }
 
         uint256 availableAmount = _saturatingSub(
-            collaterals[hotkey][nodeId],
-            collateralUnderPendingReclaims[hotkey][nodeId]
+            taoCollaterals[hotkey][nodeId],
+            taoCollateralUnderPendingReclaims[hotkey][nodeId]
         );
 
         uint256 availableAlphaAmount = _saturatingSub(
@@ -377,7 +377,7 @@ contract CollateralUpgradeable is
             denyTimeout: denyTimeout
         });
 
-        collateralUnderPendingReclaims[hotkey][nodeId] += availableAmount;
+        taoCollateralUnderPendingReclaims[hotkey][nodeId] += availableAmount;
         alphaCollateralUnderPendingReclaims[hotkey][
             nodeId
         ] += availableAlphaAmount;
@@ -425,15 +425,15 @@ contract CollateralUpgradeable is
 
         // --- Effects ---
         delete reclaims[reclaimRequestId];
-        collateralUnderPendingReclaims[hotkey][nodeId] -= amount;
+        taoCollateralUnderPendingReclaims[hotkey][nodeId] -= amount;
         alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= alphaAmount;
 
         // Cap TAO transfer to available balance (slash may have reduced it)
         uint256 actualAmount = amount;
-        if (collaterals[hotkey][nodeId] < amount) {
-            actualAmount = collaterals[hotkey][nodeId];
+        if (taoCollaterals[hotkey][nodeId] < amount) {
+            actualAmount = taoCollaterals[hotkey][nodeId];
         }
-        collaterals[hotkey][nodeId] -= actualAmount;
+        taoCollaterals[hotkey][nodeId] -= actualAmount;
 
         // Cap alpha transfer to available balance (slash may have reduced it)
         uint256 actualAlphaAmount = alphaAmount;
@@ -443,9 +443,9 @@ contract CollateralUpgradeable is
         alphaCollaterals[hotkey][nodeId] -= actualAlphaAmount;
 
         if (
-            collaterals[hotkey][nodeId] == 0 &&
+            taoCollaterals[hotkey][nodeId] == 0 &&
             alphaCollaterals[hotkey][nodeId] == 0 &&
-            collateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
+            taoCollateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
             alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
@@ -502,7 +502,7 @@ contract CollateralUpgradeable is
         bytes32 hotkey = reclaim.hotkey;
         bytes16 nodeId = reclaim.nodeId;
 
-        collateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.amount;
+        taoCollateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.amount;
         alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.alphaAmount;
         emit Denied(reclaimRequestId, url, urlContentSha256);
 
@@ -510,9 +510,9 @@ contract CollateralUpgradeable is
 
         // Clear ownership if all balances and pending reclaims are zero
         if (
-            collaterals[hotkey][nodeId] == 0 &&
+            taoCollaterals[hotkey][nodeId] == 0 &&
             alphaCollaterals[hotkey][nodeId] == 0 &&
-            collateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
+            taoCollateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
             alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
@@ -538,7 +538,7 @@ contract CollateralUpgradeable is
         string calldata url,
         bytes32 urlContentSha256
     ) external onlyTrustee {
-        uint256 amount = collaterals[hotkey][nodeId];
+        uint256 amount = taoCollaterals[hotkey][nodeId];
         uint256 alphaAmount = alphaCollaterals[hotkey][nodeId];
 
         if (amount == 0 && alphaAmount == 0) {
@@ -549,7 +549,7 @@ contract CollateralUpgradeable is
             revert InsufficientCollateralForSlash();
         }
 
-        collaterals[hotkey][nodeId] = amount - slashAmount;
+        taoCollaterals[hotkey][nodeId] = amount - slashAmount;
         alphaCollaterals[hotkey][nodeId] = alphaAmount - slashAlphaAmount;
         address miner = nodeToMiner[hotkey][nodeId];
 
@@ -561,7 +561,7 @@ contract CollateralUpgradeable is
         if (
             amount == slashAmount &&
             alphaAmount == slashAlphaAmount &&
-            collateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
+            taoCollateralUnderPendingReclaims[hotkey][nodeId] == 0 &&
             alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);

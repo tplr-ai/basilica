@@ -161,7 +161,7 @@ contract CollateralUpgradeableTest is Test {
         vm.prank(alice);
         collateral.deposit{value: 5 ether}(hotkey, nodeId, alphaHotkey, 0);
         // Verify state
-        assertEq(collateral.collaterals(hotkey, nodeId), 5 ether);
+        assertEq(collateral.taoCollaterals(hotkey, nodeId), 5 ether);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);
         assertEq(address(collateral).balance, 5 ether);
     }
@@ -188,12 +188,12 @@ contract CollateralUpgradeableTest is Test {
         vm.prank(alice);
         collateral.deposit(hotkey, nodeId, alphaHotkey, 1);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);
-        assertEq(collateral.collaterals(hotkey, nodeId), 0);
+        assertEq(collateral.taoCollaterals(hotkey, nodeId), 0);
         assertGt(collateral.alphaCollaterals(hotkey, nodeId), 0);
 
         vm.prank(alice);
         collateral.deposit{value: 2 ether}(hotkey, nodeId, alphaHotkey, 0);
-        assertEq(collateral.collaterals(hotkey, nodeId), 2 ether);
+        assertEq(collateral.taoCollaterals(hotkey, nodeId), 2 ether);
     }
 
     function testFirstOwnershipClaimMustBeEOA() public {
@@ -285,7 +285,7 @@ contract CollateralUpgradeableTest is Test {
         collateral.finalizeReclaim(0);
 
         assertEq(alice.balance, aliceBalanceBefore + 3 ether);
-        assertEq(collateral.collaterals(hotkey, nodeId), 0);
+        assertEq(collateral.taoCollaterals(hotkey, nodeId), 0);
     }
 
     event Deposit(
@@ -371,7 +371,7 @@ contract CollateralUpgradeableTest is Test {
             bytes16(0)
         );
 
-        // 3. Trustee fully slashes (collaterals go to zero, but pending reclaim keeps nodeToMiner)
+        // 3. Trustee fully slashes (TAO collateral goes to zero, but pending reclaim keeps nodeToMiner)
         vm.prank(trustee);
         collateral.slashCollateral(
             hotkey,

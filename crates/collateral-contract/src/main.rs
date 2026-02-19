@@ -160,8 +160,9 @@ enum QueryCommands {
         #[arg(long)]
         node_id: String,
     },
-    /// Get the collateral amount for an node
-    Collaterals {
+    /// Get the TAO collateral amount for an node
+    #[command(alias = "collaterals")]
+    TaoCollaterals {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
@@ -395,17 +396,17 @@ async fn handle_query_command(
             .await?;
             println!("Miner address for node {}: {}", node_id_clone, result);
         }
-        QueryCommands::Collaterals { hotkey, node_id } => {
+        QueryCommands::TaoCollaterals { hotkey, node_id } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let node_id_clone = node_id.clone();
             let node_uuid = Uuid::parse_str(&node_id)?;
-            let result = collateral_contract::collaterals(
+            let result = collateral_contract::tao_collaterals(
                 hotkey_bytes,
                 node_uuid.into_bytes(),
                 network_config,
             )
             .await?;
-            println!("Collateral for node {}: {} wei", node_id_clone, result);
+            println!("TAO collateral for node {}: {} wei", node_id_clone, result);
         }
         QueryCommands::AlphaCollaterals { hotkey, node_id } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;

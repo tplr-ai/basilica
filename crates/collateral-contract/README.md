@@ -243,8 +243,8 @@ collateral-cli query node-to-miner \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
-# Get collateral amount for node
-collateral-cli query collaterals \
+# Get TAO collateral amount for node
+collateral-cli query tao-collaterals \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
@@ -258,7 +258,7 @@ collateral-cli query reclaims \
   --reclaim-request-id 42
 
 # Query on different networks
-collateral-cli --network testnet query collaterals \
+collateral-cli --network testnet query tao-collaterals \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
   --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13
 

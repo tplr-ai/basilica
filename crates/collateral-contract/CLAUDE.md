@@ -112,15 +112,15 @@ Both miners and the trustee need TAO in their H160 wallets for gas.
 ### Dual-Mode Collateral State
 
 Per `(hotkey, nodeId)` the contract tracks:
-- `collaterals` -- total TAO locked (in wei, 1e18 = 1 TAO)
+- `taoCollaterals` -- total TAO locked (in wei, 1e18 = 1 TAO)
 - `alphaCollaterals` -- total alpha locked (in alpha units from staking precompile)
-- `collateralUnderPendingReclaims` -- TAO reserved for pending reclaims
+- `taoCollateralUnderPendingReclaims` -- TAO reserved for pending reclaims
 - `alphaCollateralUnderPendingReclaims` -- alpha reserved for pending reclaims
 - `nodeToMiner` -- the miner's H160 address (set on first deposit, cleared when all four balances are zero)
 
 ### TAO Collateral Flow
 
-- **Deposit:** Miner sends TAO as `msg.value`. Recorded in `collaterals[hotkey][nodeId]`.
+- **Deposit:** Miner sends TAO as `msg.value`. Recorded in `taoCollaterals[hotkey][nodeId]`.
 - **Reclaim:** TAO sent back to miner via `payable(miner).call{value: amount}`.
 - **Slash:** TAO sent to `address(0)` (burned).
 
