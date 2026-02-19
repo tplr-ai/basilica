@@ -73,6 +73,7 @@ contract Collateral {
     error ReclaimNotFound();
     error TransferFailed();
     error InsufficientCollateralForReclaim();
+    error MinerMustBeEOA();
 
     /// @notice Initializes a new Collateral contract with specified parameters
     /// @param netuid The netuid of the subnet
@@ -131,6 +132,9 @@ contract Collateral {
 
         address owner = nodeToMiner[hotkey][nodeId];
         if (owner == address(0)) {
+            if (msg.sender.code.length != 0) {
+                revert MinerMustBeEOA();
+            }
             nodeToMiner[hotkey][nodeId] = msg.sender;
         } else if (owner != msg.sender) {
             revert NodeNotOwned();
@@ -163,7 +167,9 @@ contract Collateral {
         uint256 pendingCollateral = collateralUnderPendingReclaims[hotkey][
             nodeId
         ];
-        uint256 amount = collateral - pendingCollateral;
+        uint256 amount = collateral > pendingCollateral
+            ? collateral - pendingCollateral
+            : 0;
 
         if (amount == 0) {
             revert AmountZero();
@@ -194,7 +200,7 @@ contract Collateral {
     /// @notice Finalizes a reclaim request and transfers the collateral to the depositor if conditions are met
     /// @dev Can be called by anyone
     /// @dev Requires that deny timeout has expired
-    /// @dev If the miner has been slashed and their collateral is insufficient for a reclaim, the reclaim is canceled but transactions completes successfully allowing to request another reclaim
+    /// @dev If the miner has been slashed, only the remaining collateral is paid out and reclaim state is cleaned up
     /// @param reclaimRequestId The ID of the reclaim request to finalize
     /// @dev Emits Reclaimed event with reclaim details if successful
     /// @dev Reverts with ReclaimNotFound if the reclaim request doesn't exist or was denied
@@ -217,21 +223,26 @@ contract Collateral {
         delete reclaims[reclaimRequestId];
         collateralUnderPendingReclaims[hotkey][nodeId] -= amount;
 
-        if (collaterals[hotkey][nodeId] < amount) {
-            // miner got slashed and can't withdraw
-            revert InsufficientCollateralForReclaim();
-        }
+        uint256 actualAmount = collaterals[hotkey][nodeId] < amount
+            ? collaterals[hotkey][nodeId]
+            : amount;
+        collaterals[hotkey][nodeId] -= actualAmount;
 
-        collaterals[hotkey][nodeId] -= amount;
-
-        emit Reclaimed(reclaimRequestId, hotkey, nodeId, miner, amount);
+        emit Reclaimed(reclaimRequestId, hotkey, nodeId, miner, actualAmount);
 
         // check-effect-interact pattern used to prevent reentrancy attacks
-        (bool success, ) = payable(miner).call{value: amount}("");
-        if (!success) {
-            revert TransferFailed();
+        if (actualAmount > 0) {
+            (bool success, ) = payable(miner).call{value: actualAmount}("");
+            if (!success) {
+                revert TransferFailed();
+            }
         }
-        nodeToMiner[hotkey][nodeId] = address(0);
+        if (
+            collaterals[hotkey][nodeId] == 0 &&
+            collateralUnderPendingReclaims[hotkey][nodeId] == 0
+        ) {
+            nodeToMiner[hotkey][nodeId] = address(0);
+        }
     }
 
     /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires
@@ -258,12 +269,20 @@ contract Collateral {
             revert PastDenyTimeout();
         }
 
+        bytes32 hotkey = reclaim.hotkey;
+        bytes16 nodeId = reclaim.nodeId;
         collateralUnderPendingReclaims[reclaim.hotkey][
             reclaim.nodeId
         ] -= reclaim.amount;
         emit Denied(reclaimRequestId, url, urlContentSha256);
 
         delete reclaims[reclaimRequestId];
+        if (
+            collaterals[hotkey][nodeId] == 0 &&
+            collateralUnderPendingReclaims[hotkey][nodeId] == 0
+        ) {
+            nodeToMiner[hotkey][nodeId] = address(0);
+        }
     }
 
     /// @notice Allows the trustee to slash a miner's collateral for a specific node
@@ -296,7 +315,9 @@ contract Collateral {
         if (!success) {
             revert TransferFailed();
         }
-        nodeToMiner[hotkey][nodeId] = address(0);
+        if (collateralUnderPendingReclaims[hotkey][nodeId] == 0) {
+            nodeToMiner[hotkey][nodeId] = address(0);
+        }
         emit Slashed(
             hotkey,
             nodeId,
@@ -343,7 +364,10 @@ contract Collateral {
         if (!success) {
             revert TransferFailed();
         }
-        if (collaterals[hotkey][nodeId] == 0) {
+        if (
+            collaterals[hotkey][nodeId] == 0 &&
+            collateralUnderPendingReclaims[hotkey][nodeId] == 0
+        ) {
             nodeToMiner[hotkey][nodeId] = address(0);
         }
         emit Slashed(

@@ -64,7 +64,7 @@ enum TxCommands {
         #[arg(long)]
         alpha_amount: String,
     },
-    /// Reclaim collateral for an node
+    /// Reclaim collateral for an node (alpha destination is owner-derived on-chain)
     ReclaimCollateral {
         /// Private key for signing the transaction (hex string)
         #[arg(long, env = "PRIVATE_KEY")]
@@ -75,9 +75,6 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
-        /// Alpha coldkey as hex string (32 bytes)
-        #[arg(long)]
-        alpha_coldkey: String,
         /// URL for proof of reclaim
         #[arg(long)]
         url: String,
@@ -263,14 +260,12 @@ async fn handle_tx_command(
             private_key,
             hotkey,
             node_id,
-            alpha_coldkey,
             url,
             url_content_sha256,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let checksum = parse_sha256_checksum(&url_content_sha256)?;
             let node_uuid = Uuid::parse_str(&node_id)?;
-            let alpha_coldkey_bytes = parse_hotkey(&alpha_coldkey)?;
 
             println!(
                 "Reclaiming collateral for node {} with hotkey {}",
@@ -280,7 +275,6 @@ async fn handle_tx_command(
                 &private_key,
                 hotkey_bytes,
                 node_uuid.into_bytes(),
-                alpha_coldkey_bytes,
                 &url,
                 checksum,
                 network_config,

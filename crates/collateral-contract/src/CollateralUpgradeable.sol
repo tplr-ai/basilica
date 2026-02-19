@@ -82,10 +82,11 @@ contract CollateralUpgradeable is
     mapping(bytes32 => mapping(bytes16 => uint256))
         private alphaCollateralUnderPendingReclaims;
     uint256 private nextReclaimId;
+    mapping(bytes32 => mapping(bytes16 => bytes32)) public ownerColdkeys;
 
     /// @dev Reserved storage gap for future upgrades.
     /// Reduce this array size by N when adding N new state variables above.
-    uint256[50] private __gap;
+    uint256[49] private __gap;
 
     struct Reclaim {
         bytes32 hotkey;
@@ -165,6 +166,8 @@ contract CollateralUpgradeable is
     error AddressMappingPrecompileCallFailed();
     error AddressMappingPrecompileInvalidResponse();
     error InvalidDerivedContractColdkey();
+    error InvalidDerivedOwnerColdkey();
+    error MinerMustBeEOA();
 
     /// @notice Initializes the upgradeable collateral contract
     /// @param netuid The netuid of the subnet
@@ -211,10 +214,10 @@ contract CollateralUpgradeable is
         _;
     }
 
-    function _deriveContractColdkey() internal view returns (bytes32) {
+    function _addressMapping(address evmAddress) internal view returns (bytes32) {
         (bool success, bytes memory returndata) = IADDRESS_MAPPING_ADDRESS
             .staticcall(
-                abi.encodeCall(IAddressMapping.addressMapping, (address(this)))
+                abi.encodeCall(IAddressMapping.addressMapping, (evmAddress))
             );
         if (!success) {
             revert AddressMappingPrecompileCallFailed();
@@ -223,12 +226,31 @@ contract CollateralUpgradeable is
             revert AddressMappingPrecompileInvalidResponse();
         }
 
-        bytes32 derivedColdkey = abi.decode(returndata, (bytes32));
+        return abi.decode(returndata, (bytes32));
+    }
+
+    function _deriveContractColdkey() internal view returns (bytes32) {
+        bytes32 derivedColdkey = _addressMapping(address(this));
         if (derivedColdkey == bytes32(0)) {
             revert InvalidDerivedContractColdkey();
         }
 
         return derivedColdkey;
+    }
+
+    function _deriveOwnerColdkey(address owner) internal view returns (bytes32) {
+        bytes32 derivedColdkey = _addressMapping(owner);
+        if (derivedColdkey == bytes32(0)) {
+            revert InvalidDerivedOwnerColdkey();
+        }
+        return derivedColdkey;
+    }
+
+    function _saturatingSub(
+        uint256 left,
+        uint256 right
+    ) internal pure returns (uint256) {
+        return left > right ? left - right : 0;
     }
 
     // Allow deposits only via deposit() function
@@ -265,9 +287,16 @@ contract CollateralUpgradeable is
             if (alphaAmount == 0) {
                 revert AlphaRequiredForOwnership();
             }
+            if (msg.sender.code.length != 0) {
+                revert MinerMustBeEOA();
+            }
             nodeToMiner[hotkey][nodeId] = msg.sender;
+            ownerColdkeys[hotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
         } else if (owner != msg.sender) {
             revert NodeNotOwned();
+        } else if (ownerColdkeys[hotkey][nodeId] == bytes32(0)) {
+            // Backfill owner coldkey for nodes that existed before this mapping.
+            ownerColdkeys[hotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
         }
 
         uint256 actualAlphaAmount = alphaAmount;
@@ -296,6 +325,7 @@ contract CollateralUpgradeable is
     /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after DECISION_TIMEOUT
     /// @param hotkey The netuid key for the subnet
     /// @param nodeId The ID of the node to reclaim collateral from
+    /// @dev Alpha payout destination is always derived from the owner address mapping.
     /// @param url URL containing information about the reclaim request
     /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits ReclaimProcessStarted event with reclaim details and timeout
@@ -304,7 +334,6 @@ contract CollateralUpgradeable is
     function reclaimCollateral(
         bytes32 hotkey,
         bytes16 nodeId,
-        bytes32 alphaColdkey,
         string calldata url,
         bytes32 urlContentSha256
     ) external {
@@ -312,17 +341,27 @@ contract CollateralUpgradeable is
             revert NodeNotOwned();
         }
 
-        uint256 availableAmount = collaterals[hotkey][nodeId] -
-            collateralUnderPendingReclaims[hotkey][nodeId];
+        uint256 availableAmount = _saturatingSub(
+            collaterals[hotkey][nodeId],
+            collateralUnderPendingReclaims[hotkey][nodeId]
+        );
 
-        uint256 availableAlphaAmount = alphaCollaterals[hotkey][nodeId] -
-            alphaCollateralUnderPendingReclaims[hotkey][nodeId];
+        uint256 availableAlphaAmount = _saturatingSub(
+            alphaCollaterals[hotkey][nodeId],
+            alphaCollateralUnderPendingReclaims[hotkey][nodeId]
+        );
 
         if (availableAmount == 0 && availableAlphaAmount == 0) {
             revert AmountZero();
         }
 
-        if (availableAlphaAmount > 0 && alphaColdkey == bytes32(0)) {
+        bytes32 ownerColdkey = ownerColdkeys[hotkey][nodeId];
+        if (ownerColdkey == bytes32(0)) {
+            ownerColdkey = _deriveOwnerColdkey(msg.sender);
+            ownerColdkeys[hotkey][nodeId] = ownerColdkey;
+        }
+
+        if (availableAlphaAmount > 0 && ownerColdkey == bytes32(0)) {
             revert InvalidAlphaColdkey();
         }
 
@@ -333,7 +372,7 @@ contract CollateralUpgradeable is
             nodeId: nodeId,
             miner: msg.sender,
             amount: availableAmount,
-            alphaColdkey: alphaColdkey,
+            alphaColdkey: ownerColdkey,
             alphaAmount: availableAlphaAmount,
             denyTimeout: denyTimeout
         });
@@ -349,7 +388,7 @@ contract CollateralUpgradeable is
             nodeId,
             msg.sender,
             availableAmount,
-            alphaColdkey,
+            ownerColdkey,
             availableAlphaAmount,
             denyTimeout,
             url,
@@ -410,6 +449,7 @@ contract CollateralUpgradeable is
             alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
+            ownerColdkeys[hotkey][nodeId] = bytes32(0);
         }
 
         emit Reclaimed(
@@ -476,6 +516,7 @@ contract CollateralUpgradeable is
             alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
+            ownerColdkeys[hotkey][nodeId] = bytes32(0);
         }
     }
 
@@ -524,6 +565,7 @@ contract CollateralUpgradeable is
             alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
+            ownerColdkeys[hotkey][nodeId] = bytes32(0);
         }
         emit Slashed(
             hotkey,

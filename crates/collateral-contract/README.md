@@ -152,12 +152,12 @@ collateral-cli tx deposit \
 #### Reclaim Collateral
 
 ```bash
+# Alpha reclaim destination is derived from the node owner's mapped coldkey.
 # Basic reclaim
 collateral-cli tx reclaim-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6 \
-  --alpha-coldkey 1111111111111111111111111111111111111111111111111111111111111111 \
   --url "https://example.com/reclaim-proof" \
   --url-content-sha256 abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890
 
@@ -166,7 +166,6 @@ collateral-cli --network testnet tx reclaim-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13 \
-  --alpha-coldkey 1111111111111111111111111111111111111111111111111111111111111111 \
   --url "https://proof-server.testnet.com/evidence/456" \
   --url-content-sha256 d41d8cd98f00b204e9800998ecf8427ed41d8cd98f00b204e9800998ecf8427e
 ```

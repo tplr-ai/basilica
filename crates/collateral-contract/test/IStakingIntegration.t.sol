@@ -279,7 +279,6 @@ contract IStakingIntegrationTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            ALICE_COLDKEY,
             TEST_URL,
             TEST_SHA256
         );

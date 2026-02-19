@@ -35,6 +35,23 @@ contract StakingV2PrecompileMock {
     }
 }
 
+contract ContractDepositorUpgradeable {
+    function claimNode(
+        CollateralUpgradeable collateral,
+        bytes32 hotkey,
+        bytes16 nodeId,
+        bytes32 alphaHotkey,
+        uint256 alphaAmount
+    ) external payable {
+        collateral.deposit{value: msg.value}(
+            hotkey,
+            nodeId,
+            alphaHotkey,
+            alphaAmount
+        );
+    }
+}
+
 contract CollateralUpgradeableTest is Test {
     CollateralUpgradeable public collateral;
     CollateralUpgradeable public implementation;
@@ -47,9 +64,7 @@ contract CollateralUpgradeableTest is Test {
     uint64 constant DECISION_TIMEOUT = 3600; // 1 hour
     address constant admin = address(0x456);
     address constant alice = address(0x789);
-    bytes32 constant zeroColdkey = bytes32(uint256(0));
     bytes32 constant alphaHotkey = bytes32(uint256(1));
-    bytes32 constant alphaColdkey = bytes32(uint256(2));
     uint256 constant alphaAmount = 1 ether;
     address constant ADDRESS_MAPPING_PRECOMPILE =
         0x000000000000000000000000000000000000080C;
@@ -181,6 +196,17 @@ contract CollateralUpgradeableTest is Test {
         assertEq(collateral.collaterals(hotkey, nodeId), 2 ether);
     }
 
+    function testFirstOwnershipClaimMustBeEOA() public {
+        ContractDepositorUpgradeable depositor = new ContractDepositorUpgradeable();
+        bytes32 hotkey = bytes32(uint256(0xA3));
+        bytes16 nodeId = bytes16(uint128(0xB3));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector)
+        );
+        depositor.claimNode(collateral, hotkey, nodeId, alphaHotkey, 1);
+    }
+
     /// @dev Test admin functions
     function testAdminFunctions() public {
         address newTrustee = makeAddr("newTrustee");
@@ -231,6 +257,37 @@ contract CollateralUpgradeableTest is Test {
         assertTrue(collateral.hasRole(collateral.UPGRADER_ROLE(), admin));
     }
 
+    function testUpgradePreservesFlow() public {
+        vm.deal(alice, 10 ether);
+        bytes32 hotkey = bytes32(uint256(0xA4));
+        bytes16 nodeId = bytes16(uint128(0xB4));
+
+        vm.prank(alice);
+        collateral.deposit(hotkey, nodeId, alphaHotkey, 1);
+        vm.prank(alice);
+        collateral.deposit{value: 3 ether}(hotkey, nodeId, alphaHotkey, 0);
+
+        CollateralUpgradeableV2 newImplementation = new CollateralUpgradeableV2();
+        vm.prank(admin);
+        collateral.upgradeToAndCall(address(newImplementation), "");
+        assertEq(collateral.getVersion(), 2);
+
+        vm.prank(alice);
+        collateral.reclaimCollateral(
+            hotkey,
+            nodeId,
+            "https://example.com/reclaim",
+            bytes32(uint256(1))
+        );
+
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        uint256 aliceBalanceBefore = alice.balance;
+        collateral.finalizeReclaim(0);
+
+        assertEq(alice.balance, aliceBalanceBefore + 3 ether);
+        assertEq(collateral.collaterals(hotkey, nodeId), 0);
+    }
+
     event Deposit(
         bytes32 indexed hotkey,
         bytes16 indexed nodeId,
@@ -245,6 +302,8 @@ contract CollateralUpgradeableTest is Test {
         bytes16 indexed nodeId,
         address miner,
         uint256 amount,
+        bytes32 alphaColdkey,
+        uint256 alphaAmount,
         uint64 expirationTime,
         string url,
         bytes32 urlContentSha256
@@ -308,7 +367,6 @@ contract CollateralUpgradeableTest is Test {
         collateral.reclaimCollateral(
             hotkey,
             nodeId,
-            alphaColdkey,
             "https://example.com",
             bytes16(0)
         );

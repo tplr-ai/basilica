@@ -34,6 +34,23 @@ contract StakingV2PrecompileMock {
     }
 }
 
+contract ContractDepositor {
+    function claimNode(
+        CollateralUpgradeable collateral,
+        bytes32 hotkey,
+        bytes16 nodeId,
+        bytes32 alphaHotkey,
+        uint256 alphaAmount
+    ) external payable {
+        collateral.deposit{value: msg.value}(
+            hotkey,
+            nodeId,
+            alphaHotkey,
+            alphaAmount
+        );
+    }
+}
+
 /**
  * @title CollateralBasicTest
  * @notice Basic tests for CollateralUpgradeable without alpha/IStaking interactions
@@ -122,6 +139,10 @@ contract CollateralBasicTest is Test {
             _nodeToMinerSlot(hotkey, nodeId),
             bytes32(uint256(uint160(owner)))
         );
+    }
+
+    function _mappedColdkey(address evmAddress) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(evmAddress)));
     }
 
     // ============ INITIALIZATION TESTS ============
@@ -233,6 +254,15 @@ contract CollateralBasicTest is Test {
         );
     }
 
+    function testFirstOwnershipClaimMustBeEOA() public {
+        ContractDepositor depositor = new ContractDepositor();
+
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector)
+        );
+        depositor.claimNode(collateral, HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+    }
+
     function testAlphaClaimAllowsSubsequentTaoTopUp() public {
         vm.prank(ALICE);
         collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
@@ -271,7 +301,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             ALICE,
             5 ether,
-            bytes32(0),
+            _mappedColdkey(ALICE),
             0,
             uint64(block.timestamp + DECISION_TIMEOUT),
             TEST_URL,
@@ -282,7 +312,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -293,7 +322,7 @@ contract CollateralBasicTest is Test {
             bytes16 executorId,
             address miner,
             uint256 amount,
-            ,
+            bytes32 alphaColdkey,
             ,
             uint64 denyTimeout
         ) = collateral.reclaims(0);
@@ -301,6 +330,7 @@ contract CollateralBasicTest is Test {
         assertEq(executorId, EXECUTOR_ID_1);
         assertEq(miner, ALICE);
         assertEq(amount, 5 ether);
+        assertEq(alphaColdkey, _mappedColdkey(ALICE));
         assertEq(denyTimeout, block.timestamp + DECISION_TIMEOUT);
     }
 
@@ -322,7 +352,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -342,7 +371,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -354,7 +382,45 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
+            TEST_URL,
+            TEST_SHA256
+        );
+    }
+
+    function testReclaimAfterFullSlashReturnsAmountZeroNotUnderflow() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            ALPHA_HOTKEY,
+            0
+        );
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            TEST_URL,
+            TEST_SHA256
+        );
+
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            5 ether,
+            0,
+            TEST_URL,
+            TEST_SHA256
+        );
+
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralUpgradeable.AmountZero.selector)
+        );
+        collateral.reclaimCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
             TEST_URL,
             TEST_SHA256
         );
@@ -376,7 +442,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -394,7 +459,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             ALICE,
             5 ether,
-            bytes32(0),
+            _mappedColdkey(ALICE),
             0
         );
 
@@ -420,7 +485,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -457,7 +521,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -486,7 +549,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             ALICE,
             2 ether,
-            bytes32(0),
+            _mappedColdkey(ALICE),
             0
         );
 
@@ -513,7 +576,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -542,7 +604,7 @@ contract CollateralBasicTest is Test {
             EXECUTOR_ID_1,
             ALICE,
             0,
-            bytes32(0),
+            _mappedColdkey(ALICE),
             0
         );
 
@@ -572,7 +634,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -594,6 +655,8 @@ contract CollateralBasicTest is Test {
         // slot 7: reclaims mapping
         // slot 8: collateralUnderPendingReclaims mapping
         // slot 9: alphaCollateralUnderPendingReclaims mapping
+        // slot 10: nextReclaimId
+        // slot 11: ownerColdkeys mapping
         uint256 RECLAIMS_SLOT = 7;
         bytes32 baseSlot = keccak256(abi.encode(uint256(0), RECLAIMS_SLOT));
         // Reclaim struct layout: +0=hotkey, +1=nodeId, +2=miner, +3=amount, +4=alphaColdkey, +5=alphaAmount, +6=denyTimeout
@@ -642,7 +705,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -665,7 +727,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -698,7 +759,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -716,7 +776,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -786,7 +845,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -830,7 +888,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );
@@ -865,7 +922,6 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(
             HOTKEY_1,
             EXECUTOR_ID_1,
-            bytes32(0),
             TEST_URL,
             TEST_SHA256
         );

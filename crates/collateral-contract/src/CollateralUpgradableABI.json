@@ -444,6 +444,30 @@
   },
   {
     "type": "function",
+    "name": "ownerColdkeys",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes16",
+        "internalType": "bytes16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "proxiableUUID",
     "inputs": [],
     "outputs": [
@@ -468,11 +492,6 @@
         "name": "nodeId",
         "type": "bytes16",
         "internalType": "bytes16"
-      },
-      {
-        "name": "alphaColdkey",
-        "type": "bytes32",
-        "internalType": "bytes32"
       },
       {
         "name": "url",
@@ -1141,6 +1160,11 @@
   },
   {
     "type": "error",
+    "name": "AlphaRequiredForOwnership",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AmountZero",
     "inputs": []
   },
@@ -1202,7 +1226,17 @@
   },
   {
     "type": "error",
+    "name": "InvalidDerivedOwnerColdkey",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MinerMustBeEOA",
     "inputs": []
   },
   {
