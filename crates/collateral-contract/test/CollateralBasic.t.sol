@@ -264,7 +264,7 @@ contract CollateralBasicTest is Test {
     }
 
     function testAlphaClaimAllowsSubsequentTaoTopUp() public {
-        vm.prank(ALICE);
+        vm.prank(ALICE, ALICE);
         collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
 
         assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), ALICE);
@@ -820,7 +820,7 @@ contract CollateralBasicTest is Test {
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
 
         // Step 10: Bob can now safely deposit
-        vm.prank(BOB);
+        vm.prank(BOB, BOB);
         collateral.deposit{value: 5 ether}(
             HOTKEY_1,
             EXECUTOR_ID_1,

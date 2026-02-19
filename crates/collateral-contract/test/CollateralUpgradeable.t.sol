@@ -52,6 +52,23 @@ contract ContractDepositorUpgradeable {
     }
 }
 
+contract ConstructorDepositorUpgradeable {
+    constructor(
+        CollateralUpgradeable collateral,
+        bytes32 hotkey,
+        bytes16 nodeId,
+        bytes32 alphaHotkey,
+        uint256 alphaAmount
+    ) payable {
+        collateral.deposit{value: msg.value}(
+            hotkey,
+            nodeId,
+            alphaHotkey,
+            alphaAmount
+        );
+    }
+}
+
 contract CollateralUpgradeableTest is Test {
     CollateralUpgradeable public collateral;
     CollateralUpgradeable public implementation;
@@ -185,7 +202,7 @@ contract CollateralUpgradeableTest is Test {
         bytes32 hotkey = bytes32(uint256(0xA2));
         bytes16 nodeId = bytes16(uint128(0xB2));
 
-        vm.prank(ALICE);
+        vm.prank(ALICE, ALICE);
         collateral.deposit(hotkey, nodeId, ALPHA_HOTKEY, 1);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), ALICE);
         assertEq(collateral.taoCollaterals(hotkey, nodeId), 0);
@@ -205,6 +222,22 @@ contract CollateralUpgradeableTest is Test {
             abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector)
         );
         depositor.claimNode(collateral, hotkey, nodeId, ALPHA_HOTKEY, 1);
+    }
+
+    function testFirstOwnershipClaimConstructorBypassBlocked() public {
+        bytes32 hotkey = bytes32(uint256(0xA33));
+        bytes16 nodeId = bytes16(uint128(0xB33));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector)
+        );
+        new ConstructorDepositorUpgradeable(
+            collateral,
+            hotkey,
+            nodeId,
+            ALPHA_HOTKEY,
+            1
+        );
     }
 
     /// @dev Test ADMIN functions
@@ -262,7 +295,7 @@ contract CollateralUpgradeableTest is Test {
         bytes32 hotkey = bytes32(uint256(0xA4));
         bytes16 nodeId = bytes16(uint128(0xB4));
 
-        vm.prank(ALICE);
+        vm.prank(ALICE, ALICE);
         collateral.deposit(hotkey, nodeId, ALPHA_HOTKEY, 1);
         vm.prank(ALICE);
         collateral.deposit{value: 3 ether}(hotkey, nodeId, ALPHA_HOTKEY, 0);
@@ -400,7 +433,7 @@ contract CollateralUpgradeableTest is Test {
         // 5. New miner (bob) can deposit on the same node
         address bob = address(0xB0B);
         vm.deal(bob, 10 ether);
-        vm.prank(bob);
+        vm.prank(bob, bob);
         collateral.deposit{value: 2 ether}(hotkey, nodeId, ALPHA_HOTKEY, 1);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), bob);
     }

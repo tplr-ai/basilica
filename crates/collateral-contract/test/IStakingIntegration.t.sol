@@ -257,7 +257,7 @@ contract IStakingIntegrationTest is Test {
         // Seed Alice alpha on the same hotkey to avoid moveStake path noise.
         mockStaking.setStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID, ALPHA_AMOUNT);
 
-        vm.prank(ALICE);
+        vm.prank(ALICE, ALICE);
         collateral.deposit(
             HOTKEY_1,
             EXECUTOR_ID_1,
@@ -293,6 +293,53 @@ contract IStakingIntegrationTest is Test {
         assertEq(
             mockStaking.getStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID),
             ALPHA_AMOUNT
+        );
+    }
+
+    function testSlashAlphaTransfersStakeToTrusteeColdkey() public {
+        bytes32 trusteeColdkey = bytes32(uint256(uint160(TRUSTEE)));
+        uint256 slashAlphaAmount = 2 ether;
+
+        mockStaking.setStake(VALIDATOR_HOTKEY, ALICE_COLDKEY, NETUID, ALPHA_AMOUNT);
+
+        vm.prank(ALICE, ALICE);
+        collateral.deposit(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            VALIDATOR_HOTKEY,
+            ALPHA_AMOUNT
+        );
+
+        assertEq(
+            mockStaking.getStake(VALIDATOR_HOTKEY, contractColdkey, NETUID),
+            ALPHA_AMOUNT
+        );
+        assertEq(
+            mockStaking.getStake(VALIDATOR_HOTKEY, trusteeColdkey, NETUID),
+            0
+        );
+
+        vm.prank(TRUSTEE, TRUSTEE);
+        collateral.slashCollateral(
+            HOTKEY_1,
+            EXECUTOR_ID_1,
+            0,
+            slashAlphaAmount,
+            TEST_URL,
+            TEST_SHA256
+        );
+
+        assertEq(
+            collateral.alphaCollaterals(HOTKEY_1, EXECUTOR_ID_1),
+            ALPHA_AMOUNT - slashAlphaAmount
+        );
+        assertEq(
+            mockStaking.getStake(VALIDATOR_HOTKEY, contractColdkey, NETUID),
+            ALPHA_AMOUNT - slashAlphaAmount
+        );
+        assertEq(
+            mockStaking.getStake(VALIDATOR_HOTKEY, trusteeColdkey, NETUID),
+            slashAlphaAmount
         );
     }
 }

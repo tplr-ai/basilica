@@ -5,6 +5,7 @@ pragma solidity ^0.8.24;
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
 interface IStaking {
     function transferStake(
@@ -40,7 +41,8 @@ interface IAddressMapping {
 contract CollateralUpgradeable is
     Initializable,
     UUPSUpgradeable,
-    AccessControlUpgradeable
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable
 {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -200,6 +202,7 @@ contract CollateralUpgradeable is
 
         __UUPSUpgradeable_init();
         __AccessControl_init();
+        __ReentrancyGuard_init();
 
         netuid = netuid_;
         trustee = trustee_;
@@ -284,7 +287,7 @@ contract CollateralUpgradeable is
         bytes16 nodeId,
         bytes32 alphaHotkey,
         uint256 alphaAmount
-    ) external payable {
+    ) external payable nonReentrant {
         if (msg.value == 0 && alphaAmount == 0) {
             revert AmountZero();
         }
@@ -297,7 +300,8 @@ contract CollateralUpgradeable is
             if (alphaAmount == 0) {
                 revert AlphaRequiredForOwnership();
             }
-            if (msg.sender.code.length != 0) {
+            // Block constructor-based bypasses where code.length is zero during creation.
+            if (msg.sender.code.length != 0 || tx.origin != msg.sender) {
                 revert MinerMustBeEOA();
             }
             nodeToMiner[hotkey][nodeId] = msg.sender;
@@ -346,7 +350,7 @@ contract CollateralUpgradeable is
         bytes16 nodeId,
         string calldata url,
         bytes32 urlContentSha256
-    ) external {
+    ) external nonReentrant {
         if (msg.sender != nodeToMiner[hotkey][nodeId]) {
             revert NodeNotOwned();
         }
@@ -417,7 +421,7 @@ contract CollateralUpgradeable is
     /// @dev Reverts with ReclaimNotFound if the reclaim request doesn't exist or was denied
     /// @dev Reverts with BeforeDenyTimeout if the deny timeout hasn't expired
     /// @dev Reverts with TransferFailed if the TAO transfer fails
-    function finalizeReclaim(uint256 reclaimRequestId) external {
+    function finalizeReclaim(uint256 reclaimRequestId) external nonReentrant {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
         if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
@@ -500,7 +504,7 @@ contract CollateralUpgradeable is
         uint256 reclaimRequestId,
         string calldata url,
         bytes32 urlContentSha256
-    ) external onlyTrustee {
+    ) external onlyTrustee nonReentrant {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
         if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
@@ -547,7 +551,7 @@ contract CollateralUpgradeable is
         uint256 slashAlphaAmount,
         string calldata url,
         bytes32 urlContentSha256
-    ) external onlyTrustee {
+    ) external onlyTrustee nonReentrant {
         uint256 amount = taoCollaterals[hotkey][nodeId];
         uint256 alphaAmount = alphaCollaterals[hotkey][nodeId];
 
@@ -562,12 +566,11 @@ contract CollateralUpgradeable is
         taoCollaterals[hotkey][nodeId] = amount - slashAmount;
         alphaCollaterals[hotkey][nodeId] = alphaAmount - slashAlphaAmount;
         address miner = nodeToMiner[hotkey][nodeId];
-
-        // burn the collateral, alpha locked in the contract
-        (bool success, ) = payable(address(0)).call{value: slashAmount}("");
-        if (!success) {
-            revert TransferFailed();
+        bytes32 trusteeColdkey = bytes32(0);
+        if (slashAlphaAmount > 0) {
+            trusteeColdkey = _deriveOwnerColdkey(msg.sender);
         }
+
         if (
             amount == slashAmount &&
             alphaAmount == slashAlphaAmount &&
@@ -576,6 +579,18 @@ contract CollateralUpgradeable is
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
             ownerColdkeys[hotkey][nodeId] = bytes32(0);
+        }
+
+        // burn the collateral
+        if (slashAmount > 0) {
+            (bool success, ) = payable(address(0)).call{value: slashAmount}("");
+            if (!success) {
+                revert TransferFailed();
+            }
+        }
+        // slash alpha by transferring ownership to trustee coldkey
+        if (slashAlphaAmount > 0) {
+            withdrawAlpha(trusteeColdkey, slashAlphaAmount);
         }
         emit Slashed(
             hotkey,
