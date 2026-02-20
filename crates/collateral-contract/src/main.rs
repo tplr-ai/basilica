@@ -17,11 +17,11 @@ use uuid::Uuid;
 #[command(version = "1.0")]
 struct Cli {
     /// Network to connect to
-    #[arg(long, value_enum, default_value = "mainnet")]
+    #[arg(long, env = "NETWORK", value_enum, default_value = "mainnet")]
     network: Network,
 
     /// Contract address to use
-    #[arg(long)]
+    #[arg(long, env = "CONTRACT_ADDRESS")]
     contract_address: Option<String>,
 
     #[command(flatten)]
