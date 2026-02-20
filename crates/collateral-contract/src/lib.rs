@@ -13,7 +13,7 @@ pub use CollateralUpgradeable::{Denied, Deposit, ReclaimProcessStarted, Reclaime
 #[cfg(test)]
 mod tests;
 
-use config::{CollateralNetworkConfig, MAX_BLOCKS_PER_SCAN};
+use config::CollateralNetworkConfig;
 
 sol!(
     #[allow(missing_docs)]
@@ -118,20 +118,15 @@ pub async fn scan_events(
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let current_block = provider.get_block_number().await?.saturating_sub(1);
+    let current_block = provider.get_block_number().await?;
 
     if from_block > current_block {
         return Err(anyhow::anyhow!(
-            "from_block must be less than current_block"
+            "from_block must be less than or equal to current_block"
         ));
     }
 
-    let mut to_block = from_block + MAX_BLOCKS_PER_SCAN;
-
-    if to_block > current_block {
-        to_block = current_block;
-    }
-    scan_events_with_scope(from_block, to_block, network_config).await
+    scan_events_with_scope(from_block, current_block, network_config).await
 }
 
 pub async fn scan_events_with_scope(

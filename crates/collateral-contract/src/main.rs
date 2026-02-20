@@ -191,12 +191,12 @@ enum QueryCommands {
 enum EventCommands {
     /// Scan for contract events
     Scan {
-        /// Starting block number
-        #[arg(long)]
+        /// Starting block number (defaults to 0)
+        #[arg(long, default_value_t = 0)]
         from_block: u64,
-        /// Ending block number
+        /// Ending block number (defaults to current chain head)
         #[arg(long)]
-        to_block: u64,
+        to_block: Option<u64>,
         /// Output format: json or pretty
         #[arg(long, default_value = "pretty")]
         format: String,
@@ -450,9 +450,17 @@ async fn handle_event_command(
             format,
         } => {
             println!("Scanning events from block {}", from_block);
-            let (to_block, events) =
-                collateral_contract::scan_events_with_scope(from_block, to_block, network_config)
-                    .await?;
+            let (to_block, events) = match to_block {
+                Some(to_block) => {
+                    collateral_contract::scan_events_with_scope(
+                        from_block,
+                        to_block,
+                        network_config,
+                    )
+                    .await?
+                }
+                None => collateral_contract::scan_events(from_block, network_config).await?,
+            };
 
             println!("Scanned blocks {} to {}", from_block, to_block);
 

@@ -281,20 +281,20 @@ collateral-cli --contract-address 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 que
 ### Event Scanning Commands
 
 ```bash
-# Scan events with pretty output (default)
-collateral-cli events scan --network testnet --from-block 0 --to-block 1000
+# Scan events with pretty output (default range: 0 to current block)
+collateral-cli events scan --network testnet
 
 # Scan events with JSON output
-collateral-cli events scan --network testnet --from-block 0 --to-block 1000 --format json
+collateral-cli events scan --network testnet --format json
 
 # Scan recent events (last 100 blocks from current)
 collateral-cli events scan --from-block $(echo "$(curl -s -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' https://lite.chain.opentensor.ai:443 | jq -r .result | sed 's/0x//' | awk '{print strtonum(\"0x\" $0)}') - 100" | bc)
 
 # Scan events on testnet
-collateral-cli --network testnet events scan --from-block 0 --to-block 1000 --format json
+collateral-cli --network testnet events scan --format json
 
 # Scan events with custom contract
-collateral-cli --contract-address 0x8464135c8F25Da09e49BC8782676a84730C318bC events scan --from-block 0 --to-block 1000
+collateral-cli --contract-address 0x8464135c8F25Da09e49BC8782676a84730C318bC events scan
 ```
 
 ## Testing Commands

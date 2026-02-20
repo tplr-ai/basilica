@@ -82,7 +82,7 @@ cc tx reclaim-collateral \
   --url "$URL" \
   --url-content-sha256 "$URL_CONTENT_SHA256"
 
-cc events scan --from-block "$FROM_BLOCK" --to-block "$TO_BLOCK" --format json
+cc events scan --format json
 # set RECLAIM_REQUEST_ID from the returned ReclaimProcessStarted event before finalize/deny
 
 cc tx finalize-reclaim --private-key "$PRIVATE_KEY" --reclaim-request-id "$RECLAIM_REQUEST_ID"

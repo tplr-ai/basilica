@@ -30,9 +30,6 @@ MIN_DEPLOYER_BALANCE_WEI="${MIN_DEPLOYER_BALANCE_WEI:-1000000000000000000}"
 FAUCET_FUND_AMOUNT_WEI="${FAUCET_FUND_AMOUNT_WEI:-5000000000000000000}"
 SKIP_FUNDING=false
 
-FROM_BLOCK=""
-TO_BLOCK=""
-
 deployer_address=""
 wallet_file_used=""
 wallet_file_created=false
@@ -65,8 +62,6 @@ Options:
   --netuid <uint>                     Contract netuid (default: 1)
   --min-collateral <uint>             Minimum collateral increase
   --decision-timeout <secs>           Reclaim decision timeout seconds
-  --from-block <uint>                 Optional FROM_BLOCK override
-  --to-block <uint>                   Optional TO_BLOCK override
   -h, --help                          Show this help
 
 Example:
@@ -313,16 +308,6 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || die "--decision-timeout requires a value"
       DECISION_TIMEOUT="$1"
       ;;
-    --from-block)
-      shift
-      [[ $# -gt 0 ]] || die "--from-block requires a value"
-      FROM_BLOCK="$1"
-      ;;
-    --to-block)
-      shift
-      [[ $# -gt 0 ]] || die "--to-block requires a value"
-      TO_BLOCK="$1"
-      ;;
     -h|--help)
       usage
       exit 0
@@ -370,20 +355,6 @@ proxy_address="$(printf '%s\n' "$deploy_output" | awk '/^Proxy:/ {print $2}' | t
 [[ -n "$implementation_address" ]] || die "failed to parse implementation address from deploy output"
 [[ -n "$proxy_address" ]] || die "failed to parse proxy address from deploy output"
 
-current_block="$(cast block-number --rpc-url "$RPC_URL")"
-
-if [[ -z "$FROM_BLOCK" ]]; then
-  if (( current_block > 50 )); then
-    FROM_BLOCK="$((current_block - 50))"
-  else
-    FROM_BLOCK=0
-  fi
-fi
-
-if [[ -z "$TO_BLOCK" ]]; then
-  TO_BLOCK="$((current_block + 100000))"
-fi
-
 mkdir -p "$(dirname "$ENV_FILE")"
 
 if [[ -f "$ENV_FILE" ]]; then
@@ -411,9 +382,6 @@ URL_CONTENT_SHA256=$URL_CONTENT_SHA256
 
 RECLAIM_REQUEST_ID=
 
-FROM_BLOCK=$FROM_BLOCK
-TO_BLOCK=$TO_BLOCK
-
 EVENTS_FORMAT=pretty
 EOF
 
@@ -422,8 +390,6 @@ echo "Wrote env file: $ENV_FILE"
 echo "Implementation: $implementation_address"
 echo "Proxy:          $proxy_address"
 echo "Deployer:       $deployer_address"
-echo "From block:     $FROM_BLOCK"
-echo "To block:       $TO_BLOCK"
 if [[ -n "$wallet_file_used" ]]; then
   if [[ "$wallet_file_created" == true ]]; then
     echo "Deployer wallet file created: $wallet_file_used"
