@@ -594,80 +594,46 @@ impl DeploymentManager {
             client.execute_ssh_command(&add_key_alt).await?;
         }
 
-        // Configure SSH to allow root login with key
-        let config_ssh = format!(
-            "docker exec {container_id} sh -c 'echo \"PermitRootLogin prohibit-password\" >> /etc/ssh/sshd_config && \
-             echo \"PubkeyAuthentication yes\" >> /etc/ssh/sshd_config && \
-             echo \"PasswordAuthentication no\" >> /etc/ssh/sshd_config && \
-             echo \"Banner /etc/issue.net\" >> /etc/ssh/sshd_config && \
-             echo \"PrintMotd no\" >> /etc/ssh/sshd_config'"
-        );
-        if let Err(e) = client.execute_ssh_command(&config_ssh).await {
-            debug!("Failed to configure sshd settings: {}", e);
-        }
-
-        // Install Basilica login branding at multiple layers:
-        // 1) SSH daemon banner (/etc/issue.net)
-        // 2) Traditional MOTD (/etc/motd)
-        // 3) Interactive shell startup script that clears provider output and prints Basilica logo
+        // Install Basilica SSH banner content.
         let set_login_banner = format!(
             r#"docker exec {container_id} sh -c "cat > /etc/issue.net <<'BASILICA_EOF'
 {banner}
-BASILICA_EOF
-cat /etc/issue.net > /etc/motd
-touch /root/.hushlogin""#,
+BASILICA_EOF""#,
             banner = BASILICA_SSH_LOGIN_BANNER
         );
         if let Err(e) = client.execute_ssh_command(&set_login_banner).await {
             debug!("Failed to install Basilica SSH daemon banner: {}", e);
         }
 
+        // Standard profile.d script for interactive shells.
         let install_shell_branding = format!(
             r#"docker exec {container_id} sh -c "mkdir -p /etc/profile.d
-cat > /etc/profile.d/zz-basilica-branding.sh <<'BASILICA_PROFILE_EOF'
-# Basilica-managed login branding for interactive shells.
-case "$-" in
-  *i*) ;;
-  *) return 0 2>/dev/null || exit 0 ;;
-esac
-
-# Avoid duplicate logo prints when nested shells are opened.
-if [ -n "$BASILICA_LOGO_SHOWN" ]; then
-  return 0 2>/dev/null || exit 0
-fi
+cat > /etc/profile.d/basilica-branding.sh <<'BASILICA_PROFILE_EOF'
+case "$-" in *i*) ;; *) return 0 2>/dev/null || exit 0 ;; esac
+[ -n "$BASILICA_LOGO_SHOWN" ] && return 0 2>/dev/null
 export BASILICA_LOGO_SHOWN=1
-
-# Force provider branding out of view, then show Basilica logo.
-clear 2>/dev/null || true
-cat <<'BASILICA_BANNER_EOF'
-{banner}
-BASILICA_BANNER_EOF
+cat /etc/issue.net
 BASILICA_PROFILE_EOF
-chmod 0644 /etc/profile.d/zz-basilica-branding.sh""#,
-            banner = BASILICA_SSH_LOGIN_BANNER
+chmod 0755 /etc/profile.d/basilica-branding.sh""#
         );
         if let Err(e) = client.execute_ssh_command(&install_shell_branding).await {
             debug!("Failed to install Basilica shell branding script: {}", e);
         }
 
-        // Ensure common startup files source the Basilica branding script.
-        // Appending the source line at the end makes this run after image-specific startup hooks.
-        let enforce_shell_branding = format!(
-            r#"docker exec {container_id} sh -c "for f in /root/.bashrc /root/.profile /root/.bash_profile /root/.zshrc /etc/profile /etc/bash.bashrc /etc/zsh/zshrc; do
-  [ -f \"$f\" ] || continue
-  grep -q 'zz-basilica-branding.sh' \"$f\" 2>/dev/null || printf '\n[ -f /etc/profile.d/zz-basilica-branding.sh ] && . /etc/profile.d/zz-basilica-branding.sh\n' >> \"$f\"
-done
-
-# Disable PAM dynamic MOTD hooks when present (common Ubuntu provider branding path).
-if [ -f /etc/pam.d/sshd ]; then
-  sed -i '/pam_motd\\.so/s/^/# basilica-disabled: /' /etc/pam.d/sshd 2>/dev/null || true
-fi
-
-# Disable executable update-motd scripts when present.
-chmod -x /etc/update-motd.d/* 2>/dev/null || true""#
+        // Configure SSH access and enforce Basilica banner settings.
+        // OpenSSH uses first-match-wins semantics, so comment existing directives first.
+        let config_ssh = format!(
+            r#"docker exec {container_id} sh -c "sed -i 's/^[[:space:]]*Banner[[:space:]].*/# basilica-override: &/; s/^[[:space:]]*PrintMotd[[:space:]].*/# basilica-override: &/' /etc/ssh/sshd_config 2>/dev/null || true
+cat >> /etc/ssh/sshd_config <<'BASILICA_SSHD_EOF'
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication no
+Banner /etc/issue.net
+PrintMotd no
+BASILICA_SSHD_EOF""#
         );
-        if let Err(e) = client.execute_ssh_command(&enforce_shell_branding).await {
-            debug!("Failed to enforce Basilica shell branding: {}", e);
+        if let Err(e) = client.execute_ssh_command(&config_ssh).await {
+            debug!("Failed to configure sshd settings: {}", e);
         }
 
         // Start SSH service (try multiple methods)
