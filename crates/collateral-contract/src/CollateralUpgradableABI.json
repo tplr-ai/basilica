@@ -66,6 +66,19 @@
   },
   {
     "type": "function",
+    "name": "TRUSTEE_ROLE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "UPGRADER_ROLE",
     "inputs": [],
     "outputs": [
@@ -1160,6 +1173,11 @@
   },
   {
     "type": "error",
+    "name": "AdminAddressZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AlphaRequiredForOwnership",
     "inputs": []
   },
@@ -1171,6 +1189,36 @@
   {
     "type": "error",
     "name": "BeforeDenyTimeout",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BurnRegisterCallFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ContractColdkeyZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ContractStakeDidNotIncrease",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ContractStakeTooLowForWithdraw",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DecisionTimeoutZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DepositAlphaCallFailed",
     "inputs": []
   },
   {
@@ -1197,11 +1245,6 @@
   {
     "type": "error",
     "name": "InsufficientAmount",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InsufficientCollateralForReclaim",
     "inputs": []
   },
   {
@@ -1236,7 +1279,22 @@
   },
   {
     "type": "error",
+    "name": "MinCollateralIncreaseZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "MinerMustBeEOA",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MoveStakeCallFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NewTrusteeAddressZero",
     "inputs": []
   },
   {
@@ -1247,11 +1305,6 @@
   {
     "type": "error",
     "name": "NotInitializing",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotTrustee",
     "inputs": []
   },
   {
@@ -1271,7 +1324,28 @@
   },
   {
     "type": "error",
+    "name": "SafeCastOverflowedUintDowncast",
+    "inputs": [
+      {
+        "name": "bits",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "TransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TrusteeAddressZero",
     "inputs": []
   },
   {
@@ -1289,5 +1363,15 @@
         "internalType": "bytes32"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ValidatorHotkeyZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WithdrawAlphaCallFailed",
+    "inputs": []
   }
 ]

@@ -112,6 +112,7 @@ contract CollateralUpgradeableTest is Test {
         // Check roles
         assertTrue(collateral.hasRole(collateral.DEFAULT_ADMIN_ROLE(), ADMIN));
         assertTrue(collateral.hasRole(collateral.UPGRADER_ROLE(), ADMIN));
+        assertTrue(collateral.hasRole(collateral.TRUSTEE_ROLE(), TRUSTEE));
     }
 
     /// @dev Test that implementation cannot be initialized directly
@@ -195,6 +196,8 @@ contract CollateralUpgradeableTest is Test {
         vm.prank(ADMIN);
         collateral.updateTrustee(newTrustee);
         assertEq(collateral.trustee(), newTrustee);
+        assertTrue(collateral.hasRole(collateral.TRUSTEE_ROLE(), newTrustee));
+        assertFalse(collateral.hasRole(collateral.TRUSTEE_ROLE(), TRUSTEE));
 
         // Test decision timeout update
         vm.prank(ADMIN);

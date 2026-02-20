@@ -128,6 +128,7 @@ contract CollateralBasicTest is Test {
         // Check roles
         assertTrue(collateral.hasRole(collateral.DEFAULT_ADMIN_ROLE(), ADMIN));
         assertTrue(collateral.hasRole(collateral.UPGRADER_ROLE(), ADMIN));
+        assertTrue(collateral.hasRole(collateral.TRUSTEE_ROLE(), TRUSTEE));
     }
 
     function testCannotInitializeTwice() public {
@@ -577,8 +578,12 @@ contract CollateralBasicTest is Test {
         collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
 
         // Non-trustee tries to deny
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), BOB, collateral.TRUSTEE_ROLE()
+            )
+        );
         vm.prank(BOB);
-        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.NotTrustee.selector));
         collateral.denyReclaimRequest(1, TEST_URL, TEST_SHA256);
     }
 
@@ -622,8 +627,12 @@ contract CollateralBasicTest is Test {
         vm.prank(ALICE);
         collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
 
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")), BOB, collateral.TRUSTEE_ROLE()
+            )
+        );
         vm.prank(BOB);
-        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.NotTrustee.selector));
         collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 5 ether, 0, TEST_URL, TEST_SHA256);
     }
 
@@ -645,6 +654,8 @@ contract CollateralBasicTest is Test {
         collateral.updateTrustee(newTrustee);
 
         assertEq(collateral.trustee(), newTrustee);
+        assertTrue(collateral.hasRole(collateral.TRUSTEE_ROLE(), newTrustee));
+        assertFalse(collateral.hasRole(collateral.TRUSTEE_ROLE(), TRUSTEE));
     }
 
     function testUpdateDecisionTimeout() public {
