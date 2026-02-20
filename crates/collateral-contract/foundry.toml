@@ -15,5 +15,4 @@ remappings = [
 local = "http://localhost:9944"
 
 [profile.local]
-fork_url = "http://localhost:9944"
-
+evm_version = "london"

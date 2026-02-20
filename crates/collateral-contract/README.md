@@ -31,12 +31,24 @@ export TRUSTEE_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
 export MIN_COLLATERAL=1000000000000000000
 export DECISION_TIMEOUT=3600
 export ADMIN_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
+export VALIDATOR_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000002
 export PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
 
-forge script script/DeployUpgradeable.s.sol \
- --rpc-url https://test.chain.opentensor.ai \
- --private-key YOUR_PRIVATE_KEY \
- --broadcast
+impl_out="$(forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
+  --rpc-url https://test.chain.opentensor.ai \
+  --private-key "$PRIVATE_KEY" \
+  --broadcast)"
+IMPLEMENTATION_ADDRESS="$(echo "$impl_out" | awk '/Deployed to:/ {print $3}')"
+
+INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint64,address,bytes32)" \
+  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY")"
+
+proxy_out="$(forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
+  --rpc-url https://test.chain.opentensor.ai \
+  --private-key "$PRIVATE_KEY" \
+  --broadcast \
+  --constructor-args "$IMPLEMENTATION_ADDRESS" "$INIT_DATA")"
+PROXY_ADDRESS="$(echo "$proxy_out" | awk '/Deployed to:/ {print $3}')"
 
 # Output like
 # CollateralUpgradeable
@@ -344,6 +356,8 @@ forge test -vvv
 # Run tests with gas reporting
 forge test --gas-report
 
-# Test contract deployment
-forge script script/DeployUpgradeable.s.sol
+# Test contract deployment flow used in this repo
+# (requires env vars: NETUID, TRUSTEE_ADDRESS, MIN_COLLATERAL,
+#  DECISION_TIMEOUT, ADMIN_ADDRESS, VALIDATOR_HOTKEY, PRIVATE_KEY, RPC_URL)
+bash ./deploy.sh
 ```

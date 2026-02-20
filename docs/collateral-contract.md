@@ -241,15 +241,29 @@ export TRUSTEE_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
 export MIN_COLLATERAL=1
 export DECISION_TIMEOUT=1
 export ADMIN_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
+export VALIDATOR_HOTKEY=0x900dd1d8d4d94772b09fc1c82a74ea4af1471ba5594371ccc10632a1611b1945
 # WARNING: never commit or paste real keys in scripts
 export PRIVATE_KEY=0x
 # export RPC_URL=https://lite.chain.opentensor.ai:443
 # export RPC_URL=https://test.finney.opentensor.ai
 export RPC_URL=http://localhost:9944
-forge script script/DeployUpgradeable.s.sol \
- --rpc-url "$RPC_URL" \
- --private-key "$PRIVATE_KEY" \
- --broadcast
+impl_out="$(FOUNDRY_PROFILE=local forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --legacy \
+  --broadcast)"
+IMPLEMENTATION_ADDRESS="$(echo "$impl_out" | awk '/Deployed to:/ {print $3}')"
+
+INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint64,address,bytes32)" \
+  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY")"
+
+proxy_out="$(FOUNDRY_PROFILE=local forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --legacy \
+  --broadcast \
+  --constructor-args "$IMPLEMENTATION_ADDRESS" "$INIT_DATA")"
+PROXY_ADDRESS="$(echo "$proxy_out" | awk '/Deployed to:/ {print $3}')"
 ```
 
 - Record the deployed contract address and publish it.

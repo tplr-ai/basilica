@@ -151,7 +151,8 @@ Per `(hotkey, nodeId)` the contract tracks:
 ### Deployment
 
 - Mainnet EVM deployment whitelist is **disabled** (open to all). Localnet init scripts also disable it automatically via sudo.
-- Uses `forge script script/DeployUpgradeable.s.sol` with ERC1967 proxy
+- Uses `bash ./deploy.sh` (implementation + ERC1967 proxy via `forge create`)
+- Proxy initialization is passed as constructor calldata when deploying `ERC1967Proxy`
 - After deployment, update ABI via `update_abi.py`
 
 ### Testing
