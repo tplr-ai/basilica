@@ -14,32 +14,6 @@
   },
   {
     "type": "function",
-    "name": "CONTRACT_COLDKEY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "DECISION_TIMEOUT",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "DEFAULT_ADMIN_ROLE",
     "inputs": [],
     "outputs": [
@@ -92,45 +66,6 @@
   },
   {
     "type": "function",
-    "name": "MIN_COLLATERAL_INCREASE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "NETUID",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "TRUSTEE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "UPGRADER_ROLE",
     "inputs": [],
     "outputs": [
@@ -151,19 +86,6 @@
         "name": "",
         "type": "string",
         "internalType": "string"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "VALIDATOR_HOTKEY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -198,6 +120,32 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "contractColdkey",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "decisionTimeout",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -361,22 +309,22 @@
     "name": "initialize",
     "inputs": [
       {
-        "name": "netuid",
+        "name": "netuid_",
         "type": "uint16",
         "internalType": "uint16"
       },
       {
-        "name": "trustee",
+        "name": "trustee_",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "minCollateralIncrease",
+        "name": "minCollateralIncrease_",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "decisionTimeout",
+        "name": "decisionTimeout_",
         "type": "uint64",
         "internalType": "uint64"
       },
@@ -386,13 +334,39 @@
         "internalType": "address"
       },
       {
-        "name": "validatorHotkey",
+        "name": "validatorHotkey_",
         "type": "bytes32",
         "internalType": "bytes32"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "minCollateralIncrease",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "netuid",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -651,6 +625,19 @@
   },
   {
     "type": "function",
+    "name": "trustee",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "updateDecisionTimeout",
     "inputs": [
       {
@@ -705,6 +692,19 @@
     ],
     "outputs": [],
     "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "validatorHotkey",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "event",
@@ -1262,6 +1262,11 @@
   {
     "type": "error",
     "name": "ReclaimNotFound",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
     "inputs": []
   },
   {

@@ -43,15 +43,15 @@ mod tests {
     // cargo test --package basilica-miner --test mod -- tests::test_deposit --exact --nocapture
     async fn test_deposit() -> anyhow::Result<()> {
         let contract = get_contract().await?;
-        println!("trustee: {:?}", contract.TRUSTEE().call().await.unwrap());
-        println!("netuid: {:?}", contract.NETUID().call().await.unwrap());
+        println!("trustee: {:?}", contract.trustee().call().await.unwrap());
+        println!("netuid: {:?}", contract.netuid().call().await.unwrap());
         println!(
             "decision_timeout: {:?}",
-            contract.DECISION_TIMEOUT().call().await.unwrap()
+            contract.decisionTimeout().call().await.unwrap()
         );
         println!(
             "min_collateral_increase: {:?}",
-            contract.MIN_COLLATERAL_INCREASE().call().await.unwrap()
+            contract.minCollateralIncrease().call().await.unwrap()
         );
 
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
