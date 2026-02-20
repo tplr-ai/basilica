@@ -20,15 +20,22 @@ contract DeployUpgradeableScript is Script {
     function setUp() public {}
 
     function run() public {
-        // Get deployment parameters from environment or use defaults
-        uint16 netuid = uint16(vm.envOr("NETUID", uint256(39)));
-        console.log("sender address is :", msg.sender);
-        console.log("msg.sender balance is :", msg.sender.balance);
-        address trustee = vm.envOr("TRUSTEE_ADDRESS", msg.sender);
-        uint256 minCollateralIncrease = vm.envOr("MIN_COLLATERAL", uint256(1 ether));
-        uint64 decisionTimeout = uint64(vm.envOr("DECISION_TIMEOUT", uint256(3600))); // 1 hour
-        address admin = vm.envOr("ADMIN_ADDRESS", msg.sender);
-        bytes32 validatorHotkey = vm.envOr("VALIDATOR_HOTKEY", bytes32(uint256(uint160(msg.sender))));
+        // Required deployment parameters; missing env vars should fail fast.
+        uint256 netuidRaw = vm.envUint("NETUID");
+        uint256 decisionTimeoutRaw = vm.envUint("DECISION_TIMEOUT");
+        require(netuidRaw <= type(uint16).max, "NETUID exceeds uint16 max");
+        require(decisionTimeoutRaw <= type(uint64).max, "DECISION_TIMEOUT exceeds uint64 max");
+        // casting is safe because bounds are enforced above
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint16 netuid = uint16(netuidRaw);
+        // casting is safe because bounds are enforced above
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint64 decisionTimeout = uint64(decisionTimeoutRaw);
+
+        address trustee = vm.envAddress("TRUSTEE_ADDRESS");
+        uint256 minCollateralIncrease = vm.envUint("MIN_COLLATERAL");
+        address admin = vm.envAddress("ADMIN_ADDRESS");
+        bytes32 validatorHotkey = vm.envBytes32("VALIDATOR_HOTKEY");
 
         console.log("Deploying Upgradeable Collateral contract with:");
         console.log("- NETUID:", netuid);

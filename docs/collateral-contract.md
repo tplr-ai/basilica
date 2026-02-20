@@ -4,7 +4,9 @@ This contract is derived from the upstream project at [Datura-ai/celium-collater
 
 > **Terminology Note**: This contract uses "executor" terminology to refer to **GPU nodes** (individual GPU machines). The Basilica executor binary has been deprecated and replaced with direct SSH access to GPU nodes. When you see "executor UUID" or "executor ID" in this document, it refers to the UUID/ID of a specific GPU node, not the deprecated executor software.
 
-> **Purpose**: Manage miner collateral in the Bittensor ecosystem and enable the subnet owner (contract admin)—or an explicitly authorized slasher—to penalize misbehavior. Slashing authority is currently centralized to the admin; future upgrades may delegate or decentralize this capability.
+> **Purpose**: Manage miner collateral in the Bittensor ecosystem and enable a trustee address to penalize misbehavior.
+> On-chain authority is currently **trustee-only** for `slashCollateral` and `denyReclaimRequest`.
+> The admin controls governance functions (e.g. trustee rotation and upgrades), but does not slash/deny unless also configured as trustee.
 
 > **Design**: One collateral contract per one subnet.
 
@@ -46,12 +48,12 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
   Validators may choose to favor miners with higher collateral when assigning tasks, incentivizing greater stakes for reliable performance.
 
-- **Admin Slashing**
-  The subnet owner (contract admin) or an explicitly authorized slasher can penalize a misbehaving miner by slashing some or all of the miner's collateral.
+- **Trustee Slashing**
+  The configured trustee address can penalize a misbehaving miner by slashing some or all of the miner's collateral.
 
 - **Automatic Release**
 
-  If the authorized slasher/admin does not respond to a miner's reclaim request within a configured deadline, the miner can reclaim their stake, preventing indefinite lock-ups.
+  If the trustee does not respond to a miner's reclaim request within a configured deadline, the miner can reclaim their stake, preventing indefinite lock-ups.
 
 - **Trustless & Auditable**
 
@@ -59,11 +61,11 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
 - **Off-Chain Justifications**
 
-  Functions `slashCollateral`, `reclaimCollateral`, and `denyReclaim` include URL fields (and content SHA-256 checksums) to reference off-chain
+  Functions `slashCollateral`, `reclaimCollateral`, and `denyReclaimRequest` include URL fields (and content SHA-256 checksums) to reference off-chain
   explanations or evidence for each action, ensuring decisions are transparent and auditable.
 
 - **Configurable Minimum Bond & Decision Deadline**
-  Defines a minimum stake requirement and a strict timeline for admin/slasher responses.
+  Defines a minimum stake requirement and a strict timeline for trustee responses.
 
 > **Important notice on addressing**
 >
@@ -111,7 +113,7 @@ Below is a typical sequence for integrating and using this collateral contract w
   - Confirm on-chain that your collateral has been successfully locked for that GPU node
 
 - **Slashing Misbehaving Miners**
-  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral(hotkey, nodeId, slashAmount, slashAlphaAmount, ...)` with justification details.
+  If a miner is found violating subnet rules (e.g., returning invalid responses), the trustee **calls** `slashCollateral(hotkey, nodeId, slashAmount, slashAlphaAmount, ...)` with justification details.
   Current validator/CLI slash policy is alpha-primary (`slashAmount` fixed to 0 in tx tooling).
 
 - **Reclaiming Collateral**
@@ -260,7 +262,7 @@ Depositing collateral not only demonstrates a miner's commitment to the network 
 
 ### When will a miner's deposit be slashed?
 
-Subnet owner will slash when miner stops providing GPU node access or fails to meet service commitments, such as when a customer loses SSH access to the rental container. In the future, all validators will take the responsibility and privilege to slash.
+The configured trustee will slash when miner stops providing GPU node access or fails to meet service commitments, such as when a customer loses SSH access to the rental container.
 
 ### When will a miner's reclaim request be declined?
 
