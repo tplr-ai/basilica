@@ -609,8 +609,8 @@ BASILICA_EOF""#,
         let install_shell_branding = format!(
             r#"docker exec {container_id} sh -c "mkdir -p /etc/profile.d
 cat > /etc/profile.d/basilica-branding.sh <<'BASILICA_PROFILE_EOF'
-case "$-" in *i*) ;; *) return 0 2>/dev/null || exit 0 ;; esac
-[ -n "$BASILICA_LOGO_SHOWN" ] && return 0 2>/dev/null
+case "\$-" in *i*) ;; *) return 0 2>/dev/null || exit 0 ;; esac
+[ -n "\$BASILICA_LOGO_SHOWN" ] && return 0 2>/dev/null
 export BASILICA_LOGO_SHOWN=1
 cat /etc/issue.net
 BASILICA_PROFILE_EOF
@@ -623,7 +623,7 @@ chmod 0755 /etc/profile.d/basilica-branding.sh""#
         // Configure SSH access and enforce Basilica banner settings.
         // OpenSSH uses first-match-wins semantics, so comment existing directives first.
         let config_ssh = format!(
-            r#"docker exec {container_id} sh -c "sed -i 's/^[[:space:]]*Banner[[:space:]].*/# basilica-override: &/; s/^[[:space:]]*PrintMotd[[:space:]].*/# basilica-override: &/' /etc/ssh/sshd_config 2>/dev/null || true
+            r#"docker exec {container_id} sh -c "sed -i 's/^[[:space:]]*\(Banner\|PrintMotd\|PermitRootLogin\|PubkeyAuthentication\|PasswordAuthentication\)[[:space:]].*/# basilica-override: &/' /etc/ssh/sshd_config 2>/dev/null || true
 cat >> /etc/ssh/sshd_config <<'BASILICA_SSHD_EOF'
 PermitRootLogin prohibit-password
 PubkeyAuthentication yes
@@ -633,7 +633,7 @@ PrintMotd no
 BASILICA_SSHD_EOF""#
         );
         if let Err(e) = client.execute_ssh_command(&config_ssh).await {
-            debug!("Failed to configure sshd settings: {}", e);
+            warn!("Failed to configure sshd settings: {}", e);
         }
 
         // Start SSH service (try multiple methods)
