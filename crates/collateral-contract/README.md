@@ -32,6 +32,8 @@ export MIN_COLLATERAL=1000000000000000000
 export DECISION_TIMEOUT=3600
 export ADMIN_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
 export VALIDATOR_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000002
+export TAO_DEPOSITS_ENABLED=true
+export ALPHA_DEPOSITS_ENABLED=true
 export PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
 
 impl_out="$(forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
@@ -40,8 +42,9 @@ impl_out="$(forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
   --broadcast)"
 IMPLEMENTATION_ADDRESS="$(echo "$impl_out" | awk '/Deployed to:/ {print $3}')"
 
-INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint64,address,bytes32)" \
-  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY")"
+INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint64,address,bytes32,bool,bool)" \
+  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY" \
+  "$TAO_DEPOSITS_ENABLED" "$ALPHA_DEPOSITS_ENABLED")"
 
 proxy_out="$(forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
   --rpc-url https://test.chain.opentensor.ai \

@@ -138,7 +138,7 @@ enum TxCommands {
         /// Private key for signing the transaction (hex string)
         #[arg(long, env = "PRIVATE_KEY")]
         private_key: String,
-        /// Whether TAO deposits should be enabled (true/false)
+        /// Whether TAO deposits should be enabled
         #[arg(long)]
         enabled: bool,
     },
@@ -147,7 +147,7 @@ enum TxCommands {
         /// Private key for signing the transaction (hex string)
         #[arg(long, env = "PRIVATE_KEY")]
         private_key: String,
-        /// Whether alpha deposits should be enabled (true/false)
+        /// Whether alpha deposits should be enabled
         #[arg(long)]
         enabled: bool,
     },

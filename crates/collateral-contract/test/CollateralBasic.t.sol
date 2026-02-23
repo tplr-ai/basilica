@@ -116,6 +116,25 @@ contract CollateralBasicTest is Test {
         return bytes32(uint256(uint160(evmAddress)));
     }
 
+    function _deployCollateralWithDepositToggles(bool taoEnabled, bool alphaEnabled)
+        internal
+        returns (CollateralUpgradeable collateralWithToggles)
+    {
+        bytes memory initData = abi.encodeWithSelector(
+            CollateralUpgradeable.initialize.selector,
+            NETUID,
+            TRUSTEE,
+            MIN_DEPOSIT,
+            DECISION_TIMEOUT,
+            ADMIN,
+            ALPHA_HOTKEY,
+            taoEnabled,
+            alphaEnabled
+        );
+        ERC1967Proxy localProxy = new ERC1967Proxy(address(implementation), initData);
+        collateralWithToggles = CollateralUpgradeable(payable(address(localProxy)));
+    }
+
     // ============ INITIALIZATION TESTS ============
 
     function testInitialization() public view {
@@ -751,6 +770,42 @@ contract CollateralBasicTest is Test {
         assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
     }
 
+    function testAlphaReclaimStillWorksAfterDisablingAlphaDeposits() public {
+        vm.prank(ALICE, ALICE);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        uint256 depositedAlpha = collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2);
+        assertGt(depositedAlpha, 0);
+
+        vm.prank(ADMIN);
+        collateral.updateAlphaDepositsEnabled(false);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2, TEST_URL, TEST_SHA256);
+        (,,, uint256 taoReclaimAmount,, uint256 alphaReclaimAmount,) = collateral.reclaims(0);
+        assertEq(taoReclaimAmount, 0);
+        assertEq(alphaReclaimAmount, depositedAlpha);
+
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        collateral.finalizeReclaim(0);
+        assertEq(collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
+        assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), address(0));
+    }
+
+    function testAlphaSlashStillWorksAfterDisablingAlphaDeposits() public {
+        vm.prank(ALICE, ALICE);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        uint256 depositedAlpha = collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2);
+        assertGt(depositedAlpha, 0);
+
+        vm.prank(ADMIN);
+        collateral.updateAlphaDepositsEnabled(false);
+
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(HOTKEY_2, EXECUTOR_ID_2, 0, depositedAlpha, TEST_URL, TEST_SHA256);
+        assertEq(collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
+        assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), address(0));
+    }
+
     function testOnlyAdminCanCallToggleFunctions() public {
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -788,6 +843,22 @@ contract CollateralBasicTest is Test {
     function testInitializationSetsDepositToggles() public view {
         assertTrue(collateral.taoDepositsEnabled());
         assertTrue(collateral.alphaDepositsEnabled());
+    }
+
+    function testInitializationSetsDepositTogglesFalseFalse() public {
+        CollateralUpgradeable collateralWithDisabledDeposits = _deployCollateralWithDepositToggles(false, false);
+        assertFalse(collateralWithDisabledDeposits.taoDepositsEnabled());
+        assertFalse(collateralWithDisabledDeposits.alphaDepositsEnabled());
+    }
+
+    function testInitializationSetsDepositTogglesMixed() public {
+        CollateralUpgradeable taoOnlyCollateral = _deployCollateralWithDepositToggles(true, false);
+        assertTrue(taoOnlyCollateral.taoDepositsEnabled());
+        assertFalse(taoOnlyCollateral.alphaDepositsEnabled());
+
+        CollateralUpgradeable alphaOnlyCollateral = _deployCollateralWithDepositToggles(false, true);
+        assertFalse(alphaOnlyCollateral.taoDepositsEnabled());
+        assertTrue(alphaOnlyCollateral.alphaDepositsEnabled());
     }
 
     // ============ UPGRADE TESTS ============

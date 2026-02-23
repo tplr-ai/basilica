@@ -71,8 +71,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     bool public alphaDepositsEnabled;
 
     /// @dev Reserved storage gap for future upgrades.
-    /// Reduce this array size by N when adding N new state variables above.
-    uint256[47] private _gap;
+    /// This contract is not deployed yet, so the original gap remains unchanged.
+    uint256[49] private _gap;
 
     struct Reclaim {
         bytes32 hotkey;
