@@ -234,7 +234,8 @@ async fn main() -> Result<()> {
     let base_filter = format!("basilica_protocol=info,{}", binary_name);
     let default_filter = format!("basilica_protocol=info,{}=info", binary_name);
     basilica_common::logging::init_logging(&cli.verbosity, &base_filter, &default_filter)?;
-    let network_config = CollateralNetworkConfig::from_network(&cli.network, cli.contract_address)?;
+    let network_config =
+        CollateralNetworkConfig::from_network(&cli.network, cli.contract_address, None)?;
 
     println!("Using network: {:?}", cli.network);
     println!("Contract address: {}", network_config.contract_address);

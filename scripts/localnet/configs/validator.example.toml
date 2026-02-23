@@ -127,6 +127,7 @@ listen_address = "0.0.0.0:50052"
 shadow_mode = true
 contract_address = "<required>"
 network = "local"
+rpc_url = "http://subtensor:9944"
 warning_threshold_multiplier = 1.5
 grace_period_hours = 24
 exclude_on_prolonged_price_failure = true

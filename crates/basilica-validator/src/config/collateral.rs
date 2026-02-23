@@ -26,6 +26,8 @@ pub struct CollateralConfig {
     #[serde(default = "default_minimum_usd_per_gpu")]
     pub minimum_usd_per_gpu: HashMap<String, Decimal>,
     pub contract_address: String,
+    #[serde(default)]
+    pub rpc_url: Option<String>,
     #[serde(default = "default_collateral_network")]
     pub network: String,
     #[serde(default = "default_slash_fraction")]
@@ -75,6 +77,7 @@ impl Default for CollateralConfig {
             exclude_on_prolonged_price_failure: default_exclude_on_prolonged_price_failure(),
             minimum_usd_per_gpu: default_minimum_usd_per_gpu(),
             contract_address: String::new(),
+            rpc_url: None,
             network: default_collateral_network(),
             slash_fraction: default_slash_fraction(),
             slash_cooldown_secs: default_slash_cooldown_secs(),

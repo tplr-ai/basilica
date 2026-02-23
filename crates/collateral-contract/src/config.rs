@@ -46,7 +46,7 @@ pub struct CollateralNetworkConfig {
 
 impl Default for CollateralNetworkConfig {
     fn default() -> Self {
-        Self::from_network(&Network::Mainnet, None)
+        Self::from_network(&Network::Mainnet, None, None)
             .expect("Failed to create default network config")
     }
 }
@@ -55,6 +55,7 @@ impl CollateralNetworkConfig {
     pub fn from_network(
         network: &Network,
         contract_address: Option<String>,
+        rpc_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let parsed_addr: Option<Address> = match contract_address {
             Some(s) => Some(
@@ -63,22 +64,15 @@ impl CollateralNetworkConfig {
             ),
             None => None,
         };
-        match network {
-            Network::Mainnet => Ok(CollateralNetworkConfig {
-                chain_id: CHAIN_ID,
-                rpc_url: RPC_URL.to_string(),
-                contract_address: parsed_addr.unwrap_or(COLLATERAL_ADDRESS),
-            }),
-            Network::Testnet => Ok(CollateralNetworkConfig {
-                chain_id: TEST_CHAIN_ID,
-                rpc_url: TEST_RPC_URL.to_string(),
-                contract_address: parsed_addr.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
-            }),
-            Network::Local => Ok(CollateralNetworkConfig {
-                chain_id: LOCAL_CHAIN_ID,
-                rpc_url: LOCAL_RPC_URL.to_string(),
-                contract_address: parsed_addr.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
-            }),
-        }
+        let (default_chain_id, default_rpc_url, default_contract_address) = match network {
+            Network::Mainnet => (CHAIN_ID, RPC_URL, COLLATERAL_ADDRESS),
+            Network::Testnet => (TEST_CHAIN_ID, TEST_RPC_URL, DEFAULT_CONTRACT_ADDRESS),
+            Network::Local => (LOCAL_CHAIN_ID, LOCAL_RPC_URL, DEFAULT_CONTRACT_ADDRESS),
+        };
+        Ok(CollateralNetworkConfig {
+            chain_id: default_chain_id,
+            rpc_url: rpc_url.unwrap_or_else(|| default_rpc_url.to_string()),
+            contract_address: parsed_addr.unwrap_or(default_contract_address),
+        })
     }
 }

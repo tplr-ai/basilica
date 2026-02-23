@@ -602,7 +602,11 @@ fn to_network_config(config: &CollateralConfig) -> Result<CollateralNetworkConfi
             anyhow::bail!("Unsupported collateral network: {}", other);
         }
     };
-    CollateralNetworkConfig::from_network(&network, Some(config.contract_address.clone()))
+    CollateralNetworkConfig::from_network(
+        &network,
+        Some(config.contract_address.clone()),
+        config.rpc_url.clone(),
+    )
 }
 
 fn hotkey_ss58_to_bytes(hotkey: &str) -> Result<[u8; 32]> {
