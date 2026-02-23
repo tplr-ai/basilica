@@ -133,6 +133,24 @@ enum TxCommands {
         #[arg(long, env = "PRIVATE_KEY")]
         private_key: String,
     },
+    /// Enable or disable TAO deposits
+    UpdateTaoDepositsEnabled {
+        /// Private key for signing the transaction (hex string)
+        #[arg(long, env = "PRIVATE_KEY")]
+        private_key: String,
+        /// Whether TAO deposits should be enabled (true/false)
+        #[arg(long)]
+        enabled: bool,
+    },
+    /// Enable or disable alpha deposits
+    UpdateAlphaDepositsEnabled {
+        /// Private key for signing the transaction (hex string)
+        #[arg(long, env = "PRIVATE_KEY")]
+        private_key: String,
+        /// Whether alpha deposits should be enabled (true/false)
+        #[arg(long)]
+        enabled: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -179,6 +197,10 @@ enum QueryCommands {
         #[arg(long)]
         node_id: String,
     },
+    /// Check if TAO deposits are enabled
+    TaoDepositsEnabled,
+    /// Check if alpha deposits are enabled
+    AlphaDepositsEnabled,
     /// Get reclaim details by request ID
     Reclaims {
         /// Reclaim request ID
@@ -347,6 +369,28 @@ async fn handle_tx_command(
             collateral_contract::burn_register(&private_key, network_config).await?;
             println!("Burn register completed successfully!");
         }
+        TxCommands::UpdateTaoDepositsEnabled {
+            private_key,
+            enabled,
+        } => {
+            println!("Setting TAO deposits enabled: {}", enabled);
+            collateral_contract::update_tao_deposits_enabled(&private_key, enabled, network_config)
+                .await?;
+            println!("TAO deposits enabled updated successfully!");
+        }
+        TxCommands::UpdateAlphaDepositsEnabled {
+            private_key,
+            enabled,
+        } => {
+            println!("Setting alpha deposits enabled: {}", enabled);
+            collateral_contract::update_alpha_deposits_enabled(
+                &private_key,
+                enabled,
+                network_config,
+            )
+            .await?;
+            println!("Alpha deposits enabled updated successfully!");
+        }
     }
     Ok(())
 }
@@ -383,6 +427,14 @@ async fn handle_query_command(
         QueryCommands::MinCollateralIncrease => {
             let result = collateral_contract::min_collateral_increase(network_config).await?;
             println!("Minimum collateral increase: {} wei", result);
+        }
+        QueryCommands::TaoDepositsEnabled => {
+            let result = collateral_contract::tao_deposits_enabled(network_config).await?;
+            println!("TAO deposits enabled: {}", result);
+        }
+        QueryCommands::AlphaDepositsEnabled => {
+            let result = collateral_contract::alpha_deposits_enabled(network_config).await?;
+            println!("Alpha deposits enabled: {}", result);
         }
         QueryCommands::NodeToMiner { hotkey, node_id } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;

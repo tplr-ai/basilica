@@ -31,14 +31,19 @@ if [ -z "$IMPLEMENTATION_ADDRESS" ]; then
   exit 1
 fi
 
+TAO_DEPOSITS_ENABLED="${TAO_DEPOSITS_ENABLED:-true}"
+ALPHA_DEPOSITS_ENABLED="${ALPHA_DEPOSITS_ENABLED:-true}"
+
 INIT_DATA="$(cast calldata \
-  "initialize(uint16,address,uint256,uint64,address,bytes32)" \
+  "initialize(uint16,address,uint256,uint64,address,bytes32,bool,bool)" \
   "$NETUID" \
   "$TRUSTEE_ADDRESS" \
   "$MIN_COLLATERAL" \
   "$DECISION_TIMEOUT" \
   "$ADMIN_ADDRESS" \
-  "$VALIDATOR_HOTKEY")"
+  "$VALIDATOR_HOTKEY" \
+  "$TAO_DEPOSITS_ENABLED" \
+  "$ALPHA_DEPOSITS_ENABLED")"
 
 echo "Deploying ERC1967Proxy with initialize calldata..."
 proxy_output="$(FOUNDRY_PROFILE=local forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \

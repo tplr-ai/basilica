@@ -67,9 +67,12 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     uint256 private nextReclaimId;
     mapping(bytes32 => mapping(bytes16 => bytes32)) public ownerColdkeys;
 
+    bool public taoDepositsEnabled;
+    bool public alphaDepositsEnabled;
+
     /// @dev Reserved storage gap for future upgrades.
     /// Reduce this array size by N when adding N new state variables above.
-    uint256[49] private _gap;
+    uint256[47] private _gap;
 
     struct Reclaim {
         bytes32 hotkey;
@@ -136,7 +139,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     error TransferFailed();
     error InsufficientCollateralForSlash();
     error InvalidAlphaColdkey();
-    error AlphaRequiredForOwnership();
+    error TaoDepositsDisabled();
+    error AlphaDepositsDisabled();
     error AddressMappingPrecompileCallFailed();
     error AddressMappingPrecompileInvalidResponse();
     error InvalidDerivedContractColdkey();
@@ -162,13 +166,17 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @param minCollateralIncrease_ The minimum amount that can be deposited or reclaimed
     /// @param decisionTimeout_ The time window (in seconds) for the trustee to deny a reclaim request
     /// @param admin Address that will have admin and upgrader roles
+    /// @param taoDepositsEnabled_ Whether TAO deposits are initially enabled
+    /// @param alphaDepositsEnabled_ Whether alpha deposits are initially enabled
     function initialize(
         uint16 netuid_,
         address trustee_,
         uint256 minCollateralIncrease_,
         uint64 decisionTimeout_,
         address admin,
-        bytes32 validatorHotkey_
+        bytes32 validatorHotkey_,
+        bool taoDepositsEnabled_,
+        bool alphaDepositsEnabled_
     ) public initializer {
         if (trustee_ == address(0)) {
             revert TrusteeAddressZero();
@@ -196,6 +204,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         decisionTimeout = decisionTimeout_;
         validatorHotkey = validatorHotkey_;
         contractColdkey = _deriveContractColdkey();
+        taoDepositsEnabled = taoDepositsEnabled_;
+        alphaDepositsEnabled = alphaDepositsEnabled_;
 
         // Set up roles
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
@@ -257,15 +267,18 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         if (msg.value == 0 && alphaAmount == 0) {
             revert AmountZero();
         }
+        if (msg.value > 0 && !taoDepositsEnabled) {
+            revert TaoDepositsDisabled();
+        }
+        if (alphaAmount > 0 && !alphaDepositsEnabled) {
+            revert AlphaDepositsDisabled();
+        }
         if (msg.value != 0 && msg.value < minCollateralIncrease) {
             revert InsufficientAmount();
         }
 
         address owner = nodeToMiner[hotkey][nodeId];
         if (owner == address(0)) {
-            if (alphaAmount == 0) {
-                revert AlphaRequiredForOwnership();
-            }
             // Block constructor-based bypasses where code.length is zero during creation.
             if (msg.sender.code.length != 0 || tx.origin != msg.sender) {
                 revert MinerMustBeEOA();
@@ -574,6 +587,16 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         emit MinCollateralIncreaseUpdated(oldMinIncrease, newMinIncrease);
     }
 
+    function updateTaoDepositsEnabled(bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        taoDepositsEnabled = enabled;
+        emit TaoDepositsEnabledUpdated(enabled);
+    }
+
+    function updateAlphaDepositsEnabled(bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        alphaDepositsEnabled = enabled;
+        emit AlphaDepositsEnabledUpdated(enabled);
+    }
+
     /// @dev Function to authorize upgrades, restricted to UPGRADER_ROLE
     function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) {
         emit ContractUpgraded(this.getVersion() + 1, newImplementation);
@@ -583,6 +606,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     event TrusteeUpdated(address indexed oldTrustee, address indexed newTrustee);
     event DecisionTimeoutUpdated(uint64 oldTimeout, uint64 newTimeout);
     event MinCollateralIncreaseUpdated(uint256 oldMinIncrease, uint256 newMinIncrease);
+    event TaoDepositsEnabledUpdated(bool enabled);
+    event AlphaDepositsEnabledUpdated(bool enabled);
 
     function getContractStake(bytes32 hotkey) public view returns (uint256) {
         return IStaking(ISTAKING_V2_ADDRESS).getStake(hotkey, contractColdkey, netuid);

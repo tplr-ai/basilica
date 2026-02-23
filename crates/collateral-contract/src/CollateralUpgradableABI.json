@@ -129,6 +129,19 @@
   },
   {
     "type": "function",
+    "name": "alphaDepositsEnabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "burnRegister",
     "inputs": [],
     "outputs": [],
@@ -350,6 +363,16 @@
         "name": "validatorHotkey_",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "taoDepositsEnabled_",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "alphaDepositsEnabled_",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -638,6 +661,19 @@
   },
   {
     "type": "function",
+    "name": "taoDepositsEnabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "trustee",
     "inputs": [],
     "outputs": [
@@ -648,6 +684,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "updateAlphaDepositsEnabled",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -670,6 +719,19 @@
         "name": "newMinIncrease",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updateTaoDepositsEnabled",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -718,6 +780,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "AlphaDepositsEnabledUpdated",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -1099,6 +1174,19 @@
   },
   {
     "type": "event",
+    "name": "TaoDepositsEnabledUpdated",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "TrusteeUpdated",
     "inputs": [
       {
@@ -1178,7 +1266,7 @@
   },
   {
     "type": "error",
-    "name": "AlphaRequiredForOwnership",
+    "name": "AlphaDepositsDisabled",
     "inputs": []
   },
   {
@@ -1337,6 +1425,11 @@
         "internalType": "uint256"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "TaoDepositsDisabled",
+    "inputs": []
   },
   {
     "type": "error",

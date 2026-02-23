@@ -82,7 +82,9 @@ contract CollateralBasicTest is Test {
             MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
-            ALPHA_HOTKEY
+            ALPHA_HOTKEY,
+            true,
+            true
         );
 
         // Deploy proxy
@@ -133,7 +135,7 @@ contract CollateralBasicTest is Test {
 
     function testCannotInitializeTwice() public {
         vm.expectRevert();
-        collateral.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY);
+        collateral.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true);
     }
 
     // ============ DEPOSIT TESTS (WITHOUT ALPHA) ============
@@ -168,10 +170,11 @@ contract CollateralBasicTest is Test {
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
     }
 
-    function testFirstDepositRequiresAlphaForOwnershipClaim() public {
-        vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.AlphaRequiredForOwnership.selector));
+    function testTaoOnlyFirstDepositSucceeds() public {
+        vm.prank(ALICE, ALICE);
         collateral.deposit{value: 5 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
+        assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), ALICE);
+        assertEq(collateral.taoCollaterals(HOTKEY_2, EXECUTOR_ID_2), 5 ether);
     }
 
     function testFirstOwnershipClaimMustBeEOA() public {
@@ -686,6 +689,107 @@ contract CollateralBasicTest is Test {
         assertEq(collateral.contractColdkey(), bytes32(uint256(uint160(address(proxy)))));
     }
 
+    // ============ DEPOSIT TYPE TOGGLE TESTS ============
+
+    function testDepositRevertsTaoDepositsDisabled() public {
+        vm.prank(ADMIN);
+        collateral.updateTaoDepositsEnabled(false);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.TaoDepositsDisabled.selector));
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+    }
+
+    function testDepositRevertsAlphaDepositsDisabled() public {
+        vm.prank(ADMIN);
+        collateral.updateAlphaDepositsEnabled(false);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.AlphaDepositsDisabled.selector));
+        collateral.deposit(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 1);
+    }
+
+    function testAlphaOnlyFirstDepositSucceedsWhenOnlyAlphaEnabled() public {
+        vm.prank(ADMIN);
+        collateral.updateTaoDepositsEnabled(false);
+
+        vm.prank(ALICE, ALICE);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), ALICE);
+        assertGt(collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
+    }
+
+    function testReclaimStillWorksAfterDisablingDepositedType() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        // Disable TAO deposits
+        vm.prank(ADMIN);
+        collateral.updateTaoDepositsEnabled(false);
+
+        // Reclaim should still work
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        uint256 aliceBalanceBefore = ALICE.balance;
+        collateral.finalizeReclaim(0);
+        assertEq(ALICE.balance, aliceBalanceBefore + 5 ether);
+    }
+
+    function testSlashStillWorksAfterDisablingDepositedType() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        // Disable TAO deposits
+        vm.prank(ADMIN);
+        collateral.updateTaoDepositsEnabled(false);
+
+        // Slash should still work
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 5 ether, 0, TEST_URL, TEST_SHA256);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+    }
+
+    function testOnlyAdminCanCallToggleFunctions() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                ALICE,
+                collateral.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(ALICE);
+        collateral.updateTaoDepositsEnabled(false);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                bytes4(keccak256("AccessControlUnauthorizedAccount(address,bytes32)")),
+                ALICE,
+                collateral.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(ALICE);
+        collateral.updateAlphaDepositsEnabled(false);
+    }
+
+    function testToggleEventsEmittedCorrectly() public {
+        vm.expectEmit(false, false, false, true, address(collateral));
+        emit TaoDepositsEnabledUpdated(false);
+        vm.prank(ADMIN);
+        collateral.updateTaoDepositsEnabled(false);
+
+        vm.expectEmit(false, false, false, true, address(collateral));
+        emit AlphaDepositsEnabledUpdated(true);
+        vm.prank(ADMIN);
+        collateral.updateAlphaDepositsEnabled(true);
+    }
+
+    function testInitializationSetsDepositToggles() public view {
+        assertTrue(collateral.taoDepositsEnabled());
+        assertTrue(collateral.alphaDepositsEnabled());
+    }
+
     // ============ UPGRADE TESTS ============
 
     function testUpgrade() public {
@@ -749,4 +853,7 @@ contract CollateralBasicTest is Test {
     event ContractUpgraded(uint256 indexed newVersion, address indexed newImplementation);
 
     event TrusteeUpdated(address indexed oldTrustee, address indexed newTrustee);
+
+    event TaoDepositsEnabledUpdated(bool enabled);
+    event AlphaDepositsEnabledUpdated(bool enabled);
 }

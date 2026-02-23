@@ -81,7 +81,9 @@ contract CollateralUpgradeableTest is Test {
             MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
-            ALPHA_HOTKEY
+            ALPHA_HOTKEY,
+            true,
+            true
         );
 
         // Deploy proxy
@@ -120,7 +122,7 @@ contract CollateralUpgradeableTest is Test {
         CollateralUpgradeable directImplementation = new CollateralUpgradeable();
 
         vm.expectRevert(); // Should revert due to _disableInitializers()
-        directImplementation.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY);
+        directImplementation.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true);
     }
 
     /// @dev Test basic deposit functionality
@@ -142,14 +144,15 @@ contract CollateralUpgradeableTest is Test {
         assertEq(address(collateral).balance, 5 ether);
     }
 
-    function testFirstDepositRequiresAlphaForOwnershipClaim() public {
+    function testTaoOnlyFirstDepositSucceeds() public {
         vm.deal(ALICE, 10 ether);
         bytes32 hotkey = bytes32(uint256(0xA1));
         bytes16 nodeId = bytes16(uint128(0xB1));
 
-        vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.AlphaRequiredForOwnership.selector));
+        vm.prank(ALICE, ALICE);
         collateral.deposit{value: 5 ether}(hotkey, nodeId, ALPHA_HOTKEY, 0);
+        assertEq(collateral.nodeToMiner(hotkey, nodeId), ALICE);
+        assertEq(collateral.taoCollaterals(hotkey, nodeId), 5 ether);
     }
 
     function testAlphaOwnershipClaimThenTaoTopUp() public {
