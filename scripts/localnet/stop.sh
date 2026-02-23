@@ -44,28 +44,25 @@ fi
 echo "========================================"
 echo ""
 
-# Stop containers
-echo "[1/3] Stopping containers..."
-docker compose down 2>/dev/null || true
-docker compose --profile network down 2>/dev/null || true
-docker compose --profile validator down 2>/dev/null || true
-docker compose --profile miner down 2>/dev/null || true
-
+# Stop containers (include all profiles so compose sees every service)
 if [ "$CLEAN" = true ]; then
-    echo ""
-    echo "[2/3] Removing Docker volumes..."
-    docker compose down -v 2>/dev/null || true
+    echo "[1/3] Stopping containers and removing volumes..."
+    docker compose --profile network --profile validator --profile miner down -v 2>/dev/null || true
 
-    # Also remove any orphaned volumes from this project
-    VOLUMES=$(docker volume ls --filter "label=com.docker.compose.project=localnet_basilica-localnet" -q)
+    echo ""
+    echo "[2/3] Removing orphaned volumes..."
+    VOLUMES=$(docker volume ls --filter "label=com.docker.compose.project=localnet" -q 2>/dev/null)
     if [ -n "$VOLUMES" ]; then
         docker volume rm $VOLUMES 2>/dev/null || true
     fi
 
     echo ""
     echo "[3/3] Removing Docker network..."
-    docker network rm localnet_basilica-localnet 2>/dev/null || true
+    docker network rm basilica-localnet 2>/dev/null || true
 else
+    echo "[1/3] Stopping containers..."
+    docker compose --profile network --profile validator --profile miner down 2>/dev/null || true
+
     echo ""
     echo "[2/3] Skipping volume removal (use --clean to remove)"
     echo "[3/3] Skipping network removal (use --clean to remove)"

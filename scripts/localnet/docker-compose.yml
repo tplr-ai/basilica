@@ -10,7 +10,7 @@ services:
   # Network Layer - Local Subtensor
   # =============================================================================
   subtensor:
-    image: ghcr.io/opentensor/subtensor-localnet:devnet-ready
+    image: ghcr.io/opentensor/subtensor-localnet:latest
     container_name: basilica-subtensor
     profiles: ["network", "validator", "miner", "all"]
     ports:
