@@ -56,14 +56,16 @@ There is **no general reverse mapping** from SS58 back to H160. The resulting SS
 
 ### StakingV2 Key Functions
 
+**CRITICAL: All StakingV2 precompile `amount` parameters use RAO (1e9 per TAO), NOT wei (1e18).** Despite being called from the EVM side, these precompiles bridge to Substrate which uses RAO. Passing wei values will either revert with `NotEnoughBalanceToStake` (amount too large) or stake a negligible amount (amount too small). Do NOT pass `msg.value` -- these functions deduct from the caller's free balance directly.
+
 | Function | Signature | What It Does |
 |---|---|---|
-| `addStake` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Stake TAO into subnet, receive alpha |
-| `removeStake` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Unstake alpha, receive TAO back |
-| `getStake` | `(bytes32 hotkey, bytes32 coldkey, uint256 netuid) -> uint256` view | Query alpha balance |
-| `transferStake` | `(bytes32 destination_coldkey, bytes32 hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount)` payable | Transfer alpha ownership to another coldkey |
-| `moveStake` | `(bytes32 origin_hotkey, bytes32 destination_hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount)` payable | Re-delegate alpha to another hotkey (same coldkey) |
-| `burnAlpha` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Burn alpha tokens |
+| `addStake` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Stake TAO into subnet, receive alpha. `amount` in **RAO**. |
+| `removeStake` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Unstake alpha, receive TAO back. `amount` in **RAO**. |
+| `getStake` | `(bytes32 hotkey, bytes32 coldkey, uint256 netuid) -> uint256` view | Query alpha balance. Returns **RAO**. |
+| `transferStake` | `(bytes32 destination_coldkey, bytes32 hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount)` payable | Transfer alpha ownership to another coldkey. `amount` in **RAO**. |
+| `moveStake` | `(bytes32 origin_hotkey, bytes32 destination_hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount)` payable | Re-delegate alpha to another hotkey (same coldkey). `amount` in **RAO**. |
+| `burnAlpha` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Burn alpha tokens. `amount` in **RAO**. |
 
 ### Network Config
 
@@ -75,8 +77,10 @@ There is **no general reverse mapping** from SS58 back to H160. The resulting SS
 
 ### Unit Conversion
 
-- EVM side: 1 TAO = 1e18 (18 decimals, like ETH wei)
-- Substrate side: 1 TAO = 1e9 RAO
+- **EVM side**: 1 TAO = 1e18 (18 decimals, like ETH wei). Used by: `msg.value`, `address.balance`, ERC-20 amounts, Solidity contract storage (e.g. `taoCollaterals`).
+- **Substrate side**: 1 TAO = 1e9 RAO. Used by: **all StakingV2 precompile parameters** (`addStake`, `removeStake`, `transferStake`, `moveStake`, `getStake`, `burnAlpha`), btcli commands, Substrate RPC.
+
+**The precompile boundary is the conversion point.** Solidity code that stores TAO in wei (1e18) must convert to RAO (1e9) before calling staking precompiles, and convert back when reading `getStake` results. The collateral contract's `alphaCollaterals` stores values in RAO (the unit returned by staking precompiles).
 
 ## Alpha Tokens
 

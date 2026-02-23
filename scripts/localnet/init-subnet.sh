@@ -30,6 +30,7 @@ show_help() {
     echo "  3. Funds wallets via Alice transfer (10,000 TAO each)"
     echo "  4. Registers validator on netuid=${NETUID}"
     echo "  5. Registers miner on netuid=${NETUID}"
+    echo "  6. Starts subnet (enables emissions and subtokens/alpha)"
     echo ""
     echo "Options:"
     echo "  -h, --help   Show this help"
@@ -51,7 +52,7 @@ echo ""
 # =============================================================================
 # Check Prerequisites
 # =============================================================================
-echo "[1/5] Checking prerequisites..."
+echo "[1/6] Checking prerequisites..."
 
 # Check uv
 if ! command -v uvx &> /dev/null; then
@@ -90,7 +91,7 @@ echo ""
 # =============================================================================
 # Disable EVM Deployment Whitelist (matching mainnet behavior)
 # =============================================================================
-echo "[1.5/5] Disabling EVM deployment whitelist..."
+echo "[1.5/6] Disabling EVM deployment whitelist..."
 
 uv run --python 3.12 --with substrate-interface python3 -c "
 from substrateinterface import SubstrateInterface, Keypair
@@ -108,7 +109,7 @@ echo ""
 # =============================================================================
 # Create Wallets
 # =============================================================================
-echo "[2/5] Creating wallets in ${WALLETS_DIR}..."
+echo "[2/6] Creating wallets in ${WALLETS_DIR}..."
 
 mkdir -p "${WALLETS_DIR}"
 
@@ -155,7 +156,7 @@ echo ""
 # =============================================================================
 # Create Alice Wallet (pre-funded account for transfers)
 # =============================================================================
-echo "[2.5/5] Creating Alice wallet from known seed..."
+echo "[2.5/6] Creating Alice wallet from known seed..."
 
 # Alice's well-known seed for Substrate dev chains
 ALICE_SEED="0xe5be9a5092b81bca64be81d212e7f2f9eba183bb7a90954f7b76361f6edb5c0a"
@@ -176,7 +177,7 @@ echo ""
 # =============================================================================
 # Fund Wallets (using Alice transfer instead of faucet - no torch required)
 # =============================================================================
-echo "[3/5] Funding wallets via Alice transfer..."
+echo "[3/6] Funding wallets via Alice transfer..."
 
 fund_wallet() {
     local wallet_name=$1
@@ -237,7 +238,7 @@ echo ""
 # =============================================================================
 # Register Validator (using pre-registered subnet 1 "apex")
 # =============================================================================
-echo "[4/5] Registering validator on netuid=${NETUID}..."
+echo "[4/6] Registering validator on netuid=${NETUID}..."
 
 reg_out=$(uvx --python 3.12 --from bittensor-cli btcli subnet register \
     --wallet-name "validator" \
@@ -263,7 +264,7 @@ echo ""
 # =============================================================================
 # Stake TAO to Validator (required for validator permit)
 # =============================================================================
-echo "[4.5/5] Staking TAO to validator hotkey for validator permit..."
+echo "[4.5/6] Staking TAO to validator hotkey for validator permit..."
 
 stake_out=$(uvx --python 3.12 --from bittensor-cli btcli stake add \
     --wallet-name "validator" \
@@ -288,7 +289,7 @@ echo ""
 # =============================================================================
 # Register Miner
 # =============================================================================
-echo "[5/5] Registering miner on netuid=${NETUID}..."
+echo "[5/6] Registering miner on netuid=${NETUID}..."
 
 reg_out=$(uvx --python 3.12 --from bittensor-cli btcli subnet register \
     --wallet-name "miner_1" \
@@ -310,6 +311,30 @@ if [ $reg_exit -ne 0 ]; then
 fi
 
 echo ""
+
+# =============================================================================
+# Start Subnet (activates emission schedule and enables subtokens/alpha)
+# =============================================================================
+echo "[6/6] Starting subnet (enabling emissions and subtokens)..."
+
+start_out=$(uvx --python 3.12 --from bittensor-cli btcli subnet start \
+    --netuid "${NETUID}" \
+    --wallet-name "validator" \
+    --wallet-path "${WALLETS_DIR}" \
+    --network local \
+    --no-prompt 2>&1)
+start_exit=$?
+
+if [ $start_exit -ne 0 ]; then
+    if echo "$start_out" | grep -qi "already.*started\|already.*enabled\|already.*active"; then
+        echo "  Subnet may already be started"
+    else
+        echo "  WARNING: Subnet start failed (subtokens/alpha may not work)"
+        echo "$start_out"
+    fi
+else
+    echo "  Subnet ${NETUID} started (emissions and subtokens enabled)"
+fi
 
 echo ""
 
