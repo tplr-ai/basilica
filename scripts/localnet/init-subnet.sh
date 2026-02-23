@@ -92,7 +92,7 @@ echo ""
 # =============================================================================
 echo "[1.5/5] Disabling EVM deployment whitelist..."
 
-uv run --with substrate-interface python3 -c "
+uv run --python 3.12 --with substrate-interface python3 -c "
 from substrateinterface import SubstrateInterface, Keypair
 substrate = SubstrateInterface(url='ws://localhost:9944')
 alice = Keypair.create_from_uri('//Alice')
@@ -122,9 +122,9 @@ create_wallet() {
             echo "  Coldkey '${wallet_name}' already exists"
         else
             echo "  Creating coldkey '${wallet_name}'..."
-            uvx --from bittensor-cli btcli wallet new_coldkey \
-                --wallet.name "${wallet_name}" \
-                --wallet.path "${WALLETS_DIR}" \
+            uvx --python 3.12 --from bittensor-cli btcli wallet new-coldkey \
+                --wallet-name "${wallet_name}" \
+                --wallet-path "${WALLETS_DIR}" \
                 --n-words 24 \
                 --no-use-password
         fi
@@ -133,10 +133,10 @@ create_wallet() {
             echo "  Hotkey '${wallet_name}/${hotkey_name}' already exists"
         else
             echo "  Creating hotkey '${wallet_name}/${hotkey_name}'..."
-            uvx --from bittensor-cli btcli wallet new_hotkey \
-                --wallet.name "${wallet_name}" \
-                --wallet.hotkey "${hotkey_name}" \
-                --wallet.path "${WALLETS_DIR}" \
+            uvx --python 3.12 --from bittensor-cli btcli wallet new-hotkey \
+                --wallet-name "${wallet_name}" \
+                --hotkey "${hotkey_name}" \
+                --wallet-path "${WALLETS_DIR}" \
                 --n-words 24
         fi
     fi
@@ -164,9 +164,9 @@ if [ -f "${WALLETS_DIR}/alice/coldkey" ]; then
     echo "  Alice coldkey already exists"
 else
     echo "  Regenerating Alice coldkey from seed..."
-    uvx --from bittensor-cli btcli wallet regen_coldkey \
-        --wallet.path "${WALLETS_DIR}" \
-        --wallet.name alice \
+    uvx --python 3.12 --from bittensor-cli btcli wallet regen-coldkey \
+        --wallet-path "${WALLETS_DIR}" \
+        --wallet-name alice \
         --seed "${ALICE_SEED}" \
         --no-use-password
 fi
@@ -184,11 +184,17 @@ fund_wallet() {
 
     # Check current balance first
     local current_balance
-    current_balance=$(uvx --from bittensor-cli btcli wallet balance \
+    local balance_json
+    balance_json=$(uvx --python 3.12 --from bittensor-cli btcli wallet balance \
         --wallet-path "${WALLETS_DIR}" \
         --wallet-name "${wallet_name}" \
         --network local \
-        --json-output 2>/dev/null | jq -r '.balance.free // "0"' | sed 's/[^0-9.]//g')
+        --json-output 2>&1) || {
+        echo "  WARNING: balance check failed for '${wallet_name}':"
+        echo "  ${balance_json}"
+        echo "  Proceeding with funding..."
+    }
+    current_balance=$(echo "$balance_json" | jq -r '.balance.free // "0"' 2>/dev/null | sed 's/[^0-9.]//g')
 
     # If balance > 0, skip funding
     if [ -n "$current_balance" ] && [ "$(echo "$current_balance > 0" | bc -l 2>/dev/null)" = "1" ]; then
@@ -198,10 +204,15 @@ fund_wallet() {
 
     echo "  Getting address for '${wallet_name}'..."
     local dest_addr
-    dest_addr=$(uvx --from bittensor-cli btcli wallet list \
+    local list_json
+    list_json=$(uvx --python 3.12 --from bittensor-cli btcli wallet list \
         --wallet-path "${WALLETS_DIR}" \
-        --wallet-name "${wallet_name}" \
-        --json-output 2>/dev/null | jq -r '.wallets[0].ss58_address')
+        --json-output 2>&1) || {
+        echo "  ERROR: wallet list failed for '${wallet_name}':"
+        echo "  ${list_json}"
+        return 1
+    }
+    dest_addr=$(echo "$list_json" | jq -r --arg name "${wallet_name}" '.wallets[] | select(.name == $name) | .ss58_address' 2>/dev/null)
 
     if [ -z "$dest_addr" ] || [ "$dest_addr" = "null" ]; then
         echo "  ERROR: Could not get address for ${wallet_name}"
@@ -209,9 +220,9 @@ fund_wallet() {
     fi
 
     echo "  Transferring ${amount} TAO to '${wallet_name}' (${dest_addr})..."
-    uvx --from bittensor-cli btcli wallet transfer \
-        --wallet.name alice \
-        --wallet.path "${WALLETS_DIR}" \
+    uvx --python 3.12 --from bittensor-cli btcli wallet transfer \
+        --wallet-name alice \
+        --wallet-path "${WALLETS_DIR}" \
         --destination "${dest_addr}" \
         --amount "${amount}" \
         --network local \
@@ -228,10 +239,10 @@ echo ""
 # =============================================================================
 echo "[4/5] Registering validator on netuid=${NETUID}..."
 
-reg_out=$(uvx --from bittensor-cli btcli subnet register \
-    --wallet.name "validator" \
-    --wallet.hotkey "default" \
-    --wallet.path "${WALLETS_DIR}" \
+reg_out=$(uvx --python 3.12 --from bittensor-cli btcli subnet register \
+    --wallet-name "validator" \
+    --hotkey "default" \
+    --wallet-path "${WALLETS_DIR}" \
     --netuid "${NETUID}" \
     --network local \
     --no-prompt 2>&1)
@@ -254,14 +265,13 @@ echo ""
 # =============================================================================
 echo "[4.5/5] Staking TAO to validator hotkey for validator permit..."
 
-stake_out=$(uvx --from bittensor-cli btcli stake add \
-    --wallet.name "validator" \
-    --wallet.hotkey "default" \
-    --wallet.path "${WALLETS_DIR}" \
+stake_out=$(uvx --python 3.12 --from bittensor-cli btcli stake add \
+    --wallet-name "validator" \
+    --hotkey "default" \
+    --wallet-path "${WALLETS_DIR}" \
     --netuid "${NETUID}" \
     --amount 1000 \
     --no-safe-staking \
-    --no-mev-protection \
     --network local \
     --no-prompt 2>&1)
 stake_exit=$?
@@ -280,10 +290,10 @@ echo ""
 # =============================================================================
 echo "[5/5] Registering miner on netuid=${NETUID}..."
 
-reg_out=$(uvx --from bittensor-cli btcli subnet register \
-    --wallet.name "miner_1" \
-    --wallet.hotkey "default" \
-    --wallet.path "${WALLETS_DIR}" \
+reg_out=$(uvx --python 3.12 --from bittensor-cli btcli subnet register \
+    --wallet-name "miner_1" \
+    --hotkey "default" \
+    --wallet-path "${WALLETS_DIR}" \
     --netuid "${NETUID}" \
     --network local \
     --no-prompt 2>&1)
@@ -314,10 +324,10 @@ echo "Wallets created in: ${WALLETS_DIR}"
 ls -la "${WALLETS_DIR}/"
 echo ""
 echo "Subnet info:"
-uvx --from bittensor-cli btcli subnet list --network local 2>/dev/null | head -20 || true
+uvx --python 3.12 --from bittensor-cli btcli subnet list --network local 2>/dev/null | head -20 || true
 echo ""
 echo "Metagraph (netuid=${NETUID}):"
-uvx --from bittensor-cli btcli subnet metagraph --netuid "${NETUID}" --network local 2>/dev/null | head -20 || true
+uvx --python 3.12 --from bittensor-cli btcli subnet metagraph --netuid "${NETUID}" --network local 2>/dev/null | head -20 || true
 echo ""
 echo "Next steps:"
 echo "  1. Start remaining services: ./start.sh miner"
