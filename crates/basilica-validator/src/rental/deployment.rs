@@ -605,21 +605,6 @@ BASILICA_EOF""#,
             debug!("Failed to install Basilica SSH daemon banner: {}", e);
         }
 
-        // Standard profile.d script for interactive shells.
-        let install_shell_branding = format!(
-            r#"docker exec {container_id} sh -c "mkdir -p /etc/profile.d
-cat > /etc/profile.d/basilica-branding.sh <<'BASILICA_PROFILE_EOF'
-case "\$-" in *i*) ;; *) return 0 2>/dev/null || exit 0 ;; esac
-[ -n "\$BASILICA_LOGO_SHOWN" ] && return 0 2>/dev/null
-export BASILICA_LOGO_SHOWN=1
-cat /etc/issue.net
-BASILICA_PROFILE_EOF
-chmod 0755 /etc/profile.d/basilica-branding.sh""#
-        );
-        if let Err(e) = client.execute_ssh_command(&install_shell_branding).await {
-            debug!("Failed to install Basilica shell branding script: {}", e);
-        }
-
         // Configure SSH access and enforce Basilica banner settings.
         // OpenSSH uses first-match-wins semantics, so comment existing directives first.
         let config_ssh = format!(
