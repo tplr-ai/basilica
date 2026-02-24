@@ -628,6 +628,7 @@ contract CollateralBasicTest is Test {
         // Check state
         assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
         assertEq(address(collateral).balance, contractBalanceBefore - 5 ether);
+        assertEq(TRUSTEE.balance, 5 ether);
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE); // Still owned
     }
 

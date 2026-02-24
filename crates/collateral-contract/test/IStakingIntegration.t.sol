@@ -162,7 +162,9 @@ contract IStakingIntegrationTest is Test {
             MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
-            VALIDATOR_HOTKEY
+            VALIDATOR_HOTKEY,
+            true,
+            true
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         collateral = CollateralUpgradeable(payable(address(proxy)));

@@ -483,7 +483,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
     /// @notice Allows the trustee to slash a miner's collateral for a specific node
     /// @dev Can only be called by the trustee (address set in initializer)
-    /// @dev Removes the collateral from the node and burns it
+    /// @dev Removes the collateral from the node and sends it to the trustee
     /// @param hotkey The netuid key for the subnet
     /// @param nodeId The ID of the node to slash
     /// @param url URL containing the reason for slashing
@@ -527,9 +527,9 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             ownerColdkeys[hotkey][nodeId] = bytes32(0);
         }
 
-        // burn the collateral
+        // send slashed TAO to the trustee
         if (slashAmount > 0) {
-            (bool success,) = payable(address(0)).call{value: slashAmount}("");
+            (bool success,) = payable(trustee).call{value: slashAmount}("");
             if (!success) {
                 revert TransferFailed();
             }

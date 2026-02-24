@@ -126,7 +126,7 @@ Per `(hotkey, nodeId)` the contract tracks:
 
 - **Deposit:** Miner sends TAO as `msg.value`. Recorded in `taoCollaterals[hotkey][nodeId]`.
 - **Reclaim:** TAO sent back to miner via `payable(miner).call{value: amount}`.
-- **Slash:** TAO sent to `address(0)` (burned).
+- **Slash:** TAO sent to the trustee's EVM address.
 
 ### Alpha Collateral Flow
 
