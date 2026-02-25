@@ -48,9 +48,9 @@ There is **no general reverse mapping** from SS58 back to H160. The resulting SS
 
 | Precompile | Address | Purpose |
 |---|---|---|
-| Ed25519Verify | `0x0000000000000000000000000000000000000402` | Verify Ed25519 signatures (prove SS58 key ownership from EVM) |
+| AddressMapping | `0x000000000000000000000000000000000000080C` | `addressMapping` -- derive Substrate AccountId32 from EVM H160 address |
 | INeuron | `0x0000000000000000000000000000000000000804` | `burnedRegister` -- register the contract on-chain |
-| StakingV2 | `0x0000000000000000000000000000000000000805` | `addStake`, `removeStake`, `getStake`, `transferStake`, `moveStake`, `burnAlpha` |
+| StakingV2 | `0x0000000000000000000000000000000000000805` | Staking operations: stake, unstake, query, transfer, and move alpha |
 
 **Staking precompile caveat:** When a smart contract calls the staking precompile via `call`, the **contract's EVM address** (mapped to its Substrate mirror via HashedAddressMapping) is the coldkey. Use `delegatecall` to preserve the original caller's identity.
 
@@ -104,12 +104,12 @@ Each Bittensor subnet has its own **alpha token**. Alpha is NOT an ERC-20 -- it 
 
 ### Contract Identity Model
 
-| Parameter | Type | What It Is |
+| State Variable | Type | What It Is |
 |---|---|---|
-| `CONTRACT_COLDKEY` | `bytes32` | Substrate coldkey. The contract's owner identity on the Substrate staking side. Derived once in `initialize()` from AddressMapping precompile (`0x...080C`) using `address(this)`. |
-| `VALIDATOR_HOTKEY` | `bytes32` | Substrate validator hotkey. Where the contract consolidates all alpha collateral. Set at `initialize()`. |
-| `TRUSTEE` | `address` (H160) | EVM address with admin powers: slash, deny reclaims, burn-register. |
-| `NETUID` | `uint16` | The Basilica subnet ID. All alpha operations use this netuid. |
+| `contractColdkey` | `bytes32` | Substrate coldkey. The contract's owner identity on the Substrate staking side. Derived once in `initialize()` from AddressMapping precompile (`0x...080C`) using `address(this)`. |
+| `validatorHotkey` | `bytes32` | Substrate validator hotkey. Where the contract consolidates all alpha collateral. Set at `initialize()`. |
+| `trustee` | `address` (H160) | EVM address with admin powers: slash, deny reclaims, burn-register. Updatable via `updateTrustee()`. |
+| `netuid` | `uint16` | The Basilica subnet ID. All alpha operations use this netuid. |
 
 Both miners and the trustee need TAO in their H160 wallets for gas.
 
@@ -132,25 +132,25 @@ Per `(hotkey, nodeId)` the contract tracks:
 
 **Deposit (`transferAlpha`):**
 1. Miner has alpha staked to `alphaHotkey` under their own coldkey on the Basilica subnet.
-2. Contract calls `IStaking.transferStake` via **`delegatecall`** -- preserves miner's identity as origin, so precompile sees the miner's coldkey. Alpha moves from miner's coldkey to `CONTRACT_COLDKEY` under `alphaHotkey`.
+2. Contract calls `IStaking.transferStake` via **`delegatecall`** -- preserves miner's identity as origin, so precompile sees the miner's coldkey. Alpha moves from miner's coldkey to `contractColdkey` under `alphaHotkey`.
 3. Actual amount received = `newContractStake - oldContractStake` (swap fees may reduce it).
-4. If `alphaHotkey != VALIDATOR_HOTKEY`, calls `IStaking.moveStake` via **`call`** to consolidate alpha from `alphaHotkey` to `VALIDATOR_HOTKEY` (uses contract's identity as coldkey).
+4. If `alphaHotkey != validatorHotkey`, calls `IStaking.moveStake` via **`call`** to consolidate alpha from `alphaHotkey` to `validatorHotkey` (uses contract's identity as coldkey).
 5. Recorded in `alphaCollaterals[hotkey][nodeId]`.
 
 **Reclaim (`withdrawAlpha`):**
-1. Calls `IStaking.transferStake(alphaColdkey, VALIDATOR_HOTKEY, NETUID, NETUID, alphaAmount)` via **`call`**.
-2. This changes **only the coldkey ownership** — alpha moves from `(VALIDATOR_HOTKEY, CONTRACT_COLDKEY, NETUID)` to `(VALIDATOR_HOTKEY, miner's alphaColdkey, NETUID)`.
-3. The alpha remains staked under `VALIDATOR_HOTKEY`. It is **not** unstaked or converted back to TAO. The miner must separately call `removeStake` to convert to TAO, or `moveStake` to re-delegate to a different hotkey.
+1. Calls `IStaking.transferStake(alphaColdkey, validatorHotkey, netuid, netuid, alphaAmount)` via **`call`**.
+2. This changes **only the coldkey ownership** — alpha moves from `(validatorHotkey, contractColdkey, netuid)` to `(validatorHotkey, miner's alphaColdkey, netuid)`.
+3. The alpha remains staked under `validatorHotkey`. It is **not** unstaked or converted back to TAO. The miner must separately call `removeStake` to convert to TAO, or `moveStake` to re-delegate to a different hotkey.
 
 **Slash:**
-- Alpha transferred to trustee's coldkey (`TRUSTEE_COLDKEY`) via `transferStake` (not left locked in the contract). Same as reclaim — only coldkey ownership changes, alpha stays staked under `VALIDATOR_HOTKEY`.
+- Alpha transferred to the trustee's derived coldkey via `transferStake` (not left locked in the contract). Same as reclaim — only coldkey ownership changes, alpha stays staked under `validatorHotkey`.
 
 ### `delegatecall` vs `call` (Critical)
 
 | Call Type | Precompile sees as origin | Used When |
 |---|---|---|
 | `delegatecall` | Original `msg.sender` (miner's EVM address -> miner's Substrate mirror) | `transferAlpha` step 1: moving alpha FROM miner's coldkey TO contract's coldkey |
-| `call` | Proxy contract's EVM address (-> contract's Substrate mirror) | `moveStake`: consolidating alpha under `VALIDATOR_HOTKEY`; `withdrawAlpha`: transferring alpha ownership from contract's coldkey to miner's coldkey |
+| `call` | Proxy contract's EVM address (-> contract's Substrate mirror) | `moveStake`: consolidating alpha under `validatorHotkey`; `withdrawAlpha`: transferring alpha ownership from contract's coldkey to miner's coldkey |
 
 ### Deployment
 
