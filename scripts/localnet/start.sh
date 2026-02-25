@@ -110,6 +110,7 @@ if ! command -v nc &> /dev/null; then
 fi
 
 SKIP_COLLATERAL_DEPLOY=false
+COLLATERAL_CONTRACT_CHANGED=false
 if ! command -v forge &> /dev/null || ! command -v cast &> /dev/null; then
     echo "WARNING: forge/cast (Foundry) not found — skipping collateral contract deploy"
     echo "Install: curl -L https://foundry.paradigm.xyz | bash && foundryup"
@@ -236,7 +237,19 @@ patch_validator_config() {
     echo "  Patched contract_address in $(basename "$config_file") → ${address}"
 }
 
-# Deploy the collateral contract and patch the validator config with the real address
+# Check whether an address has deployed contract code on-chain.
+# Returns 0 (true) if the address has non-empty code, 1 otherwise.
+contract_has_code() {
+    local address=$1
+    local code
+    code="$(cast code --rpc-url http://localhost:9944 "$address" 2>/dev/null || echo "")"
+    # cast code returns "0x" for an EOA / empty address
+    [[ -n "$code" && "$code" != "0x" ]]
+}
+
+# Deploy the collateral contract and patch the validator config with the real address.
+# Verifies the contract actually has code on-chain — if the chain was reset and the
+# saved address is stale, clears the stale state and redeploys.
 deploy_collateral() {
     if [ "$SKIP_COLLATERAL_DEPLOY" = true ]; then
         echo "  Skipping collateral deploy (Foundry not available)"
@@ -246,16 +259,24 @@ deploy_collateral() {
     local repo_root
     repo_root="$(cd "${SCRIPT_DIR}/../.." && pwd)"
     local env_file="${repo_root}/scripts/collateral/.env.local"
+    local deployer_wallet="${repo_root}/scripts/localnet/wallets/contract_deployer_evm.env"
     local config_file="${SCRIPT_DIR}/configs/validator.toml"
 
-    # Idempotency: if .env.local already has a valid CONTRACT_ADDRESS, skip deploy
+    # Idempotency: if .env.local has a CONTRACT_ADDRESS, verify it actually has code on-chain
     if [ -f "$env_file" ]; then
         local existing_addr
         existing_addr="$(awk -F= '/^CONTRACT_ADDRESS=/ {print $2}' "$env_file" | tr -d '[:space:]')"
         if [ -n "$existing_addr" ]; then
-            echo "  Collateral contract already deployed (${existing_addr}), skipping deploy"
-            patch_validator_config "$existing_addr" "$config_file"
-            return 0
+            if contract_has_code "$existing_addr"; then
+                echo "  Collateral contract verified at ${existing_addr}"
+                patch_validator_config "$existing_addr" "$config_file"
+                return 0
+            else
+                echo "  Contract ${existing_addr} has no code on-chain (chain was likely reset)"
+                echo "  Clearing stale .env.local and deployer wallet for fresh deploy..."
+                rm -f "$env_file"
+                rm -f "$deployer_wallet"
+            fi
         fi
     fi
 
@@ -273,6 +294,7 @@ deploy_collateral() {
     fi
 
     patch_validator_config "$contract_addr" "$config_file"
+    COLLATERAL_CONTRACT_CHANGED=true
 }
 
 # Create shared network if it doesn't exist
@@ -306,6 +328,16 @@ else
     echo "[5/5] Starting remaining services for profile: ${PROFILE}..."
 
     docker compose --profile "${PROFILE}" up -d ${BUILD_FLAG}
+
+    # If the collateral contract was redeployed, restart the validator so it
+    # picks up the updated config (the .toml is bind-mounted but the process
+    # already read the old address at startup).
+    if [ "$COLLATERAL_CONTRACT_CHANGED" = true ]; then
+        if docker ps --format '{{.Names}}' | grep -q '^basilica-validator$'; then
+            echo "  Restarting validator to pick up new contract address..."
+            docker restart basilica-validator >/dev/null
+        fi
+    fi
 
     echo ""
     echo "Waiting for services..."
