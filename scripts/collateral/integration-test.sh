@@ -63,6 +63,8 @@ TAO_100="100000000000000000000"
 
 # RAO amounts for staking precompile (1 TAO = 1e9 RAO)
 RAO_30_TAO="30000000000"  # 30 TAO in RAO — one-time stake during setup
+RAO_4_ALPHA="4000000000"  # 4 alpha in RAO — deposit amount per test
+RAO_1_ALPHA="1000000000"  # 1 alpha in RAO — partial slash amount
 
 TEST_URL="http://localhost:8080/evidence/test.json"
 TEST_SHA="0xd41d8cd98f00b204e9800998ecf8427ed41d8cd98f00b204e9800998ecf8427e"
@@ -216,9 +218,7 @@ MINER_ALPHA="$(cast_query "$STAKING_PRECOMPILE" \
     "$VALIDATOR_HOTKEY" "$MINER_COLDKEY" "$NETUID")"
 log_success "Miner staked 30 TAO, received ${MINER_ALPHA} alpha RAO"
 
-# Derive deposit amounts: split miner's alpha into 4 equal parts for T9, T10, T13, spare.
-ALPHA_DEPOSIT_RAO="$(python3 -c "print(int('${MINER_ALPHA}') // 4)")"
-log_info "Alpha deposit amount per test: ${ALPHA_DEPOSIT_RAO} RAO (1/4 of miner's alpha)"
+log_info "Alpha deposit amount per test: ${RAO_4_ALPHA} RAO (4 alpha)"
 
 log_info "Deploying contract..."
 deploy_output="$(
@@ -431,20 +431,20 @@ assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner cleared after full slash"
 
 section "T9: Combined TAO + Alpha Deposit -- Node 3"
 
-# Deposit both TAO (5 TAO via msg.value) and alpha (fixed ALPHA_DEPOSIT_RAO).
+# Deposit both TAO (5 TAO via msg.value) and alpha (4 alpha).
 # The contract's transferAlpha() uses delegatecall so the precompile sees the miner
 # as origin, transferring alpha from miner's coldkey to the contract's coldkey.
-log_info "Miner deposits 5 TAO + ${ALPHA_DEPOSIT_RAO} alpha RAO on (HOTKEY_3, NODE_ID_3)..."
+log_info "Miner deposits 5 TAO + ${RAO_4_ALPHA} alpha RAO on (HOTKEY_3, NODE_ID_3)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$HOTKEY_3" "$NODE_ID_3" "$VALIDATOR_HOTKEY" "$ALPHA_DEPOSIT_RAO" \
+    "$HOTKEY_3" "$NODE_ID_3" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA" \
     --value "$TAO_5"
 
 col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$HOTKEY_3" "$NODE_ID_3")"
 assert_eq "$col" "$TAO_5" "taoCollaterals(HOTKEY_3, NODE_ID_3) == 5 TAO"
 
 alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$HOTKEY_3" "$NODE_ID_3")"
-log_info "  alphaCollaterals = ${alpha_col} RAO (requested ${ALPHA_DEPOSIT_RAO})"
+log_info "  alphaCollaterals = ${alpha_col} RAO (requested ${RAO_4_ALPHA})"
 assert_gt "$alpha_col" "0" "alphaCollaterals(HOTKEY_3, NODE_ID_3) > 0"
 owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$HOTKEY_3" "$NODE_ID_3")"
 assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(HOTKEY_3, NODE_ID_3) == miner"
@@ -456,10 +456,10 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(HOTKEY_3, NODE_ID_3) == miner"
 section "T10: Alpha-only Deposit -- Node 4"
 
 # Deposit alpha-only: no --value flag, just alpha amount.
-log_info "Miner deposits ${ALPHA_DEPOSIT_RAO} alpha RAO (no TAO) on (HOTKEY_4, NODE_ID_4)..."
+log_info "Miner deposits ${RAO_4_ALPHA} alpha RAO (no TAO) on (HOTKEY_4, NODE_ID_4)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$HOTKEY_4" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$ALPHA_DEPOSIT_RAO"
+    "$HOTKEY_4" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA"
 
 tao_col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$HOTKEY_4" "$NODE_ID_4")"
 assert_eq "$tao_col" "0" "taoCollaterals(HOTKEY_4, NODE_ID_4) == 0 (alpha-only deposit)"
@@ -516,26 +516,24 @@ assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner(HOTKEY_4, NODE_ID_4) == address(0)"
 section "T13: Alpha Re-deposit + Partial Alpha Slash"
 
 # Re-deposit alpha-only on the now-cleared node using fixed amount.
-ALPHA_DEPOSIT_RAO_T13="$ALPHA_DEPOSIT_RAO"
-log_info "Miner deposits ${ALPHA_DEPOSIT_RAO_T13} alpha RAO on (HOTKEY_4, NODE_ID_4)..."
+log_info "Miner deposits ${RAO_4_ALPHA} alpha RAO (4 alpha) on (HOTKEY_4, NODE_ID_4)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$HOTKEY_4" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$ALPHA_DEPOSIT_RAO_T13"
+    "$HOTKEY_4" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA"
 
 alpha_col_full="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$HOTKEY_4" "$NODE_ID_4")"
 log_info "  alphaCollaterals after deposit = ${alpha_col_full} RAO"
 
-# Slash half the alpha (slashAmount=0 for TAO, slashAlphaAmount=half).
-slash_alpha="$(python3 -c "print(int('${alpha_col_full}') // 2)")"
-expected_remaining="$(python3 -c "print(int('${alpha_col_full}') - int('${slash_alpha}'))")"
-log_info "Trustee slashes ${slash_alpha} alpha RAO (half)..."
+# Slash 1 alpha (fixed amount). TAO slash = 0.
+expected_remaining="$(python3 -c "print(int('${alpha_col_full}') - int('${RAO_1_ALPHA}'))")"
+log_info "Trustee slashes ${RAO_1_ALPHA} alpha RAO (1 alpha)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$HOTKEY_4" "$NODE_ID_4" 0 "$slash_alpha" "$TEST_URL" "$TEST_SHA"
+    "$HOTKEY_4" "$NODE_ID_4" 0 "$RAO_1_ALPHA" "$TEST_URL" "$TEST_SHA"
 
 alpha_col_after="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$HOTKEY_4" "$NODE_ID_4")"
 log_info "  alphaCollaterals after slash = ${alpha_col_after} RAO"
-assert_eq "$alpha_col_after" "$expected_remaining" "alphaCollaterals == expected after partial slash"
+assert_eq "$alpha_col_after" "$expected_remaining" "alphaCollaterals == expected after partial slash (4 - 1 = 3 alpha)"
 
 owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$HOTKEY_4" "$NODE_ID_4")"
 assert_eq "$owner" "$MINER_ADDR" "nodeToMiner preserved after partial alpha slash"
