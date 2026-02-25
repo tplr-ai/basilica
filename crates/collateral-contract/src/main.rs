@@ -432,8 +432,7 @@ async fn handle_query_command(
             println!("Minimum collateral increase: {} wei", result);
         }
         QueryCommands::MinAlphaCollateralIncrease => {
-            let result =
-                collateral_contract::min_alpha_collateral_increase(network_config).await?;
+            let result = collateral_contract::min_alpha_collateral_increase(network_config).await?;
             println!("Minimum alpha collateral increase: {}", result);
         }
         QueryCommands::TaoDepositsEnabled => {

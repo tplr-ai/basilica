@@ -302,7 +302,11 @@ mod tests {
     fn test_u256_to_alpha_is_not_wei() {
         // Regression: old code divided by 1e18 (wei). Verify 1e9 RAO = 1 alpha, NOT 1e-9 alpha.
         let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64));
-        assert_ne!(alpha, Decimal::from_i128_with_scale(1, 9), "should NOT treat input as wei");
+        assert_ne!(
+            alpha,
+            Decimal::from_i128_with_scale(1, 9),
+            "should NOT treat input as wei"
+        );
         assert_eq!(alpha, Decimal::ONE, "1e9 RAO must equal 1 alpha");
     }
 
@@ -395,14 +399,8 @@ mod tests {
             Arc::new(TestBaselineFetcher),
             Arc::new(TestFetcher),
         ));
-        let manager = CollateralManager::new(
-            persistence,
-            api_client,
-            evaluator,
-            grace_tracker,
-            1,
-            None,
-        );
+        let manager =
+            CollateralManager::new(persistence, api_client, evaluator, grace_tracker, 1, None);
 
         let alpha = manager
             .get_collateral_alpha(hotkey, &node_id)
