@@ -350,6 +350,11 @@
         "internalType": "uint256"
       },
       {
+        "name": "minAlphaCollateralIncrease_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "decisionTimeout_",
         "type": "uint64",
         "internalType": "uint64"
@@ -377,6 +382,19 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "minAlphaCollateralIncrease",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -713,6 +731,19 @@
   },
   {
     "type": "function",
+    "name": "updateMinAlphaCollateralIncrease",
+    "inputs": [
+      {
+        "name": "newMinIncrease",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "updateMinCollateralIncrease",
     "inputs": [
       {
@@ -909,6 +940,25 @@
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MinAlphaCollateralIncreaseUpdated",
+    "inputs": [
+      {
+        "name": "oldMinIncrease",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newMinIncrease",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -1363,6 +1413,11 @@
   {
     "type": "error",
     "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MinAlphaCollateralIncreaseZero",
     "inputs": []
   },
   {

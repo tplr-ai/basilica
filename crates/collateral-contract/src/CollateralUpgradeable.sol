@@ -165,6 +165,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @param netuid_ The netuid of the subnet
     /// @param trustee_ Address of the trustee who has permissions to slash collateral or deny reclaim requests
     /// @param minCollateralIncrease_ The minimum TAO amount that can be deposited
+    /// @param minAlphaCollateralIncrease_ The minimum alpha amount that can be deposited
     /// @param decisionTimeout_ The time window (in seconds) for the trustee to deny a reclaim request
     /// @param admin Address that will have admin and upgrader roles
     /// @param validatorHotkey_ The Substrate hotkey of the validator where all alpha is consolidated
@@ -174,6 +175,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         uint16 netuid_,
         address trustee_,
         uint256 minCollateralIncrease_,
+        uint256 minAlphaCollateralIncrease_,
         uint64 decisionTimeout_,
         address admin,
         bytes32 validatorHotkey_,
@@ -192,6 +194,9 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         if (minCollateralIncrease_ == 0) {
             revert MinCollateralIncreaseZero();
         }
+        if (minAlphaCollateralIncrease_ == 0) {
+            revert MinAlphaCollateralIncreaseZero();
+        }
         if (decisionTimeout_ == 0) {
             revert DecisionTimeoutZero();
         }
@@ -203,6 +208,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         netuid = netuid_;
         trustee = trustee_;
         minCollateralIncrease = minCollateralIncrease_;
+        minAlphaCollateralIncrease = minAlphaCollateralIncrease_;
         decisionTimeout = decisionTimeout_;
         validatorHotkey = validatorHotkey_;
         contractColdkey = _deriveContractColdkey();
@@ -278,6 +284,9 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             revert AlphaDepositsDisabled();
         }
         if (msg.value != 0 && msg.value < minCollateralIncrease) {
+            revert InsufficientAmount();
+        }
+        if (alphaAmount != 0 && alphaAmount < minAlphaCollateralIncrease) {
             revert InsufficientAmount();
         }
 
@@ -592,6 +601,19 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         emit MinCollateralIncreaseUpdated(oldMinIncrease, newMinIncrease);
     }
 
+    /// @notice Updates the minimum alpha collateral increase
+    /// @param newMinIncrease The new minimum alpha collateral increase
+    /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
+    function updateMinAlphaCollateralIncrease(uint256 newMinIncrease) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newMinIncrease == 0) {
+            revert MinAlphaCollateralIncreaseZero();
+        }
+        uint256 oldMinIncrease = minAlphaCollateralIncrease;
+        minAlphaCollateralIncrease = newMinIncrease;
+
+        emit MinAlphaCollateralIncreaseUpdated(oldMinIncrease, newMinIncrease);
+    }
+
     function updateTaoDepositsEnabled(bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
         taoDepositsEnabled = enabled;
         emit TaoDepositsEnabledUpdated(enabled);
@@ -611,6 +633,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     event TrusteeUpdated(address indexed oldTrustee, address indexed newTrustee);
     event DecisionTimeoutUpdated(uint64 oldTimeout, uint64 newTimeout);
     event MinCollateralIncreaseUpdated(uint256 oldMinIncrease, uint256 newMinIncrease);
+    event MinAlphaCollateralIncreaseUpdated(uint256 oldMinIncrease, uint256 newMinIncrease);
     event TaoDepositsEnabledUpdated(bool enabled);
     event AlphaDepositsEnabledUpdated(bool enabled);
 

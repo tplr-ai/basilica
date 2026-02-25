@@ -9,7 +9,7 @@ use basilica_common::node_identity::NodeId;
 use basilica_common::types::GpuCategory;
 use clap::Parser;
 use collateral_contract::config::CollateralNetworkConfig;
-use collateral_contract::tao_collaterals;
+use collateral_contract::alpha_collaterals;
 use serde::Deserialize;
 use std::path::Path;
 use std::sync::Arc;
@@ -279,8 +279,8 @@ async fn log_collateral_status(miner_hotkey: &str, nodes: &[RegisteredNode]) -> 
 
     for node in nodes {
         let node_uuid = NodeId::new(&node.config.host)?.uuid;
-        let amount = tao_collaterals(hotkey_bytes, node_uuid.into_bytes(), &network_config).await?;
-        let alpha_amount = alpha_from_wei(amount);
+        let amount = alpha_collaterals(hotkey_bytes, node_uuid.into_bytes(), &network_config).await?;
+        let alpha_amount = alpha_from_rao(amount);
         // Parse to GpuCategory for consistent handling (validation done at config load time)
         let gpu_cat: GpuCategory = node.config.gpu_category.parse().unwrap();
         let min_usd = minimum_usd_per_gpu(&gpu_cat) * node.config.gpu_count as f64;
@@ -381,10 +381,11 @@ fn format_alpha(value: f64) -> String {
     format!("{:.2}", value)
 }
 
-fn alpha_from_wei(wei: alloy_primitives::U256) -> f64 {
+fn alpha_from_rao(rao: alloy_primitives::U256) -> f64 {
+    // alphaCollaterals stores RAO (1e9 = 1 alpha), not wei (1e18).
     // TODO: Switch to fixed-point decimal to avoid precision loss for large values.
-    let val = wei.to_string().parse::<f64>().unwrap_or(0.0);
-    val / 1e18_f64
+    let val = rao.to_string().parse::<f64>().unwrap_or(0.0);
+    val / 1e9_f64
 }
 
 fn build_table(headers: &[&str], rows: &[CollateralRow]) -> String {
@@ -563,9 +564,36 @@ mod tests {
     }
 
     #[test]
-    fn test_alpha_from_wei() {
-        let amount = alloy_primitives::U256::from(1_000_000_000_000_000_000u128);
-        let alpha = alpha_from_wei(amount);
+    fn test_alpha_from_rao_zero() {
+        let alpha = alpha_from_rao(alloy_primitives::U256::ZERO);
+        assert!((alpha - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_alpha_from_rao_one_alpha() {
+        // 1e9 RAO = 1 alpha
+        let alpha = alpha_from_rao(alloy_primitives::U256::from(1_000_000_000u128));
         assert!((alpha - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_alpha_from_rao_fractional() {
+        // 500_000_000 RAO = 0.5 alpha
+        let alpha = alpha_from_rao(alloy_primitives::U256::from(500_000_000u128));
+        assert!((alpha - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_alpha_from_rao_large_amount() {
+        // 100e9 RAO = 100 alpha
+        let alpha = alpha_from_rao(alloy_primitives::U256::from(100_000_000_000u128));
+        assert!((alpha - 100.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_alpha_from_rao_is_not_wei() {
+        // Regression: old code divided by 1e18 (wei). 1e9 RAO must yield 1.0, NOT 1e-9.
+        let alpha = alpha_from_rao(alloy_primitives::U256::from(1_000_000_000u128));
+        assert!(alpha > 0.999, "1e9 RAO must be ~1 alpha, not ~1e-9");
     }
 }

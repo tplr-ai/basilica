@@ -160,6 +160,7 @@ contract IStakingIntegrationTest is Test {
             NETUID,
             TRUSTEE,
             MIN_DEPOSIT,
+            MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
             VALIDATOR_HOTKEY,

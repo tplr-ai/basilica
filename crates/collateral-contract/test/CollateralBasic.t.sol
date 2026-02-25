@@ -80,6 +80,7 @@ contract CollateralBasicTest is Test {
             NETUID,
             TRUSTEE,
             MIN_DEPOSIT,
+            MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
             ALPHA_HOTKEY,
@@ -103,7 +104,7 @@ contract CollateralBasicTest is Test {
     }
 
     function _nodeToMinerSlot(bytes32 hotkey, bytes16 nodeId) internal pure returns (bytes32) {
-        uint256 nodeToMinerSlot = 4;
+        uint256 nodeToMinerSlot = 5;
         bytes32 levelOne = keccak256(abi.encode(hotkey, nodeToMinerSlot));
         return keccak256(abi.encode(nodeId, levelOne));
     }
@@ -124,6 +125,7 @@ contract CollateralBasicTest is Test {
             CollateralUpgradeable.initialize.selector,
             NETUID,
             TRUSTEE,
+            MIN_DEPOSIT,
             MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
@@ -154,7 +156,7 @@ contract CollateralBasicTest is Test {
 
     function testCannotInitializeTwice() public {
         vm.expectRevert();
-        collateral.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true);
+        collateral.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true);
     }
 
     // ============ DEPOSIT TESTS (WITHOUT ALPHA) ============
@@ -200,12 +202,12 @@ contract CollateralBasicTest is Test {
         ContractDepositor depositor = new ContractDepositor();
 
         vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector));
-        depositor.claimNode(collateral, HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        depositor.claimNode(collateral, HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1 ether);
     }
 
     function testAlphaClaimAllowsSubsequentTaoTopUp() public {
         vm.prank(ALICE, ALICE);
-        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1 ether);
 
         assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), ALICE);
         assertEq(collateral.taoCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
@@ -416,17 +418,18 @@ contract CollateralBasicTest is Test {
         // OZ v5 uses ERC-7201 namespaced storage, so our state vars start at slot 0:
         // slot 0: NETUID(u16) + TRUSTEE(addr) + DECISION_TIMEOUT(u64) packed
         // slot 1: MIN_COLLATERAL_INCREASE(u256)
-        // slot 2: CONTRACT_COLDKEY(b32)
-        // slot 3: VALIDATOR_HOTKEY(b32)
-        // slot 4: nodeToMiner mapping
-        // slot 5: taoCollaterals mapping
-        // slot 6: alphaCollaterals mapping
-        // slot 7: reclaims mapping
-        // slot 8: taoCollateralUnderPendingReclaims mapping
-        // slot 9: alphaCollateralUnderPendingReclaims mapping
-        // slot 10: nextReclaimId
-        // slot 11: ownerColdkeys mapping
-        uint256 reclaimsSlot = 7;
+        // slot 2: MIN_ALPHA_COLLATERAL_INCREASE(u256)
+        // slot 3: CONTRACT_COLDKEY(b32)
+        // slot 4: VALIDATOR_HOTKEY(b32)
+        // slot 5: nodeToMiner mapping
+        // slot 6: taoCollaterals mapping
+        // slot 7: alphaCollaterals mapping
+        // slot 8: reclaims mapping
+        // slot 9: taoCollateralUnderPendingReclaims mapping
+        // slot 10: alphaCollateralUnderPendingReclaims mapping
+        // slot 11: nextReclaimId
+        // slot 12: ownerColdkeys mapping
+        uint256 reclaimsSlot = 8;
         bytes32 baseSlot = keccak256(abi.encode(uint256(0), reclaimsSlot));
         // Reclaim struct layout: +0=hotkey, +1=nodeId, +2=miner, +3=amount, +4=alphaColdkey, +5=alphaAmount, +6=denyTimeout
         bytes32 amountSlot = bytes32(uint256(baseSlot) + 3);
@@ -440,7 +443,7 @@ contract CollateralBasicTest is Test {
         vm.store(address(collateral), alphaAmountSlot, bytes32(uint256(100 ether)));
 
         // Also set alphaCollateralUnderPendingReclaims so deny doesn't underflow
-        uint256 alphaPendingSlotIndex = 9;
+        uint256 alphaPendingSlotIndex = 10;
         bytes32 level1 = keccak256(abi.encode(HOTKEY_1, alphaPendingSlotIndex));
         bytes32 alphaPendingSlot = keccak256(abi.encode(EXECUTOR_ID_1, level1));
         vm.store(address(collateral), alphaPendingSlot, bytes32(uint256(100 ether)));
@@ -536,7 +539,7 @@ contract CollateralBasicTest is Test {
 
         // Step 10: Bob can now safely deposit
         vm.prank(BOB, BOB);
-        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 1);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 1 ether);
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), BOB);
         assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 5 ether);
     }
@@ -734,7 +737,7 @@ contract CollateralBasicTest is Test {
         collateral.updateTaoDepositsEnabled(false);
 
         vm.prank(ALICE, ALICE);
-        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1 ether);
         assertEq(collateral.nodeToMiner(HOTKEY_2, EXECUTOR_ID_2), ALICE);
         assertGt(collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2), 0);
     }
@@ -773,7 +776,7 @@ contract CollateralBasicTest is Test {
 
     function testAlphaReclaimStillWorksAfterDisablingAlphaDeposits() public {
         vm.prank(ALICE, ALICE);
-        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1 ether);
         uint256 depositedAlpha = collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2);
         assertGt(depositedAlpha, 0);
 
@@ -794,7 +797,7 @@ contract CollateralBasicTest is Test {
 
     function testAlphaSlashStillWorksAfterDisablingAlphaDeposits() public {
         vm.prank(ALICE, ALICE);
-        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1);
+        collateral.deposit(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 1 ether);
         uint256 depositedAlpha = collateral.alphaCollaterals(HOTKEY_2, EXECUTOR_ID_2);
         assertGt(depositedAlpha, 0);
 

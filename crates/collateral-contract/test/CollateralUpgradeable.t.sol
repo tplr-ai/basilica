@@ -79,6 +79,7 @@ contract CollateralUpgradeableTest is Test {
             NETUID,
             TRUSTEE,
             MIN_DEPOSIT,
+            MIN_DEPOSIT,
             DECISION_TIMEOUT,
             ADMIN,
             ALPHA_HOTKEY,
@@ -94,7 +95,7 @@ contract CollateralUpgradeableTest is Test {
     }
 
     function _nodeToMinerSlot(bytes32 hotkey, bytes16 nodeId) internal pure returns (bytes32) {
-        uint256 nodeToMinerSlot = 4;
+        uint256 nodeToMinerSlot = 5;
         bytes32 levelOne = keccak256(abi.encode(hotkey, nodeToMinerSlot));
         return keccak256(abi.encode(nodeId, levelOne));
     }
@@ -122,7 +123,7 @@ contract CollateralUpgradeableTest is Test {
         CollateralUpgradeable directImplementation = new CollateralUpgradeable();
 
         vm.expectRevert(); // Should revert due to _disableInitializers()
-        directImplementation.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true);
+        directImplementation.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true);
     }
 
     /// @dev Test basic deposit functionality
@@ -161,7 +162,7 @@ contract CollateralUpgradeableTest is Test {
         bytes16 nodeId = bytes16(uint128(0xB2));
 
         vm.prank(ALICE, ALICE);
-        collateral.deposit(hotkey, nodeId, ALPHA_HOTKEY, 1);
+        collateral.deposit(hotkey, nodeId, ALPHA_HOTKEY, 1 ether);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), ALICE);
         assertEq(collateral.taoCollaterals(hotkey, nodeId), 0);
         assertGt(collateral.alphaCollaterals(hotkey, nodeId), 0);
@@ -177,7 +178,7 @@ contract CollateralUpgradeableTest is Test {
         bytes16 nodeId = bytes16(uint128(0xB3));
 
         vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector));
-        depositor.claimNode(collateral, hotkey, nodeId, ALPHA_HOTKEY, 1);
+        depositor.claimNode(collateral, hotkey, nodeId, ALPHA_HOTKEY, 1 ether);
     }
 
     function testFirstOwnershipClaimConstructorBypassBlocked() public {
@@ -185,7 +186,7 @@ contract CollateralUpgradeableTest is Test {
         bytes16 nodeId = bytes16(uint128(0xB33));
 
         vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.MinerMustBeEOA.selector));
-        new ConstructorDepositorUpgradeable(collateral, hotkey, nodeId, ALPHA_HOTKEY, 1);
+        new ConstructorDepositorUpgradeable(collateral, hotkey, nodeId, ALPHA_HOTKEY, 1 ether);
     }
 
     /// @dev Test ADMIN functions
@@ -246,7 +247,7 @@ contract CollateralUpgradeableTest is Test {
         bytes16 nodeId = bytes16(uint128(0xB4));
 
         vm.prank(ALICE, ALICE);
-        collateral.deposit(hotkey, nodeId, ALPHA_HOTKEY, 1);
+        collateral.deposit(hotkey, nodeId, ALPHA_HOTKEY, 1 ether);
         vm.prank(ALICE);
         collateral.deposit{value: 3 ether}(hotkey, nodeId, ALPHA_HOTKEY, 0);
 
@@ -350,7 +351,7 @@ contract CollateralUpgradeableTest is Test {
         address bob = address(0xB0B);
         vm.deal(bob, 10 ether);
         vm.prank(bob, bob);
-        collateral.deposit{value: 2 ether}(hotkey, nodeId, ALPHA_HOTKEY, 1);
+        collateral.deposit{value: 2 ether}(hotkey, nodeId, ALPHA_HOTKEY, 1 ether);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), bob);
     }
 }

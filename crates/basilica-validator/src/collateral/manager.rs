@@ -183,15 +183,16 @@ pub fn node_id_to_hex(node_id: &str) -> Result<String> {
 
 fn u256_to_alpha(amount: alloy_primitives::U256) -> Decimal {
     let amount_str = amount.to_string();
+    // alphaCollaterals stores RAO (1e9 = 1 alpha), not wei (1e18).
     match Decimal::from_str(&amount_str) {
-        Ok(value) => value * Decimal::from_i128_with_scale(1, 18),
+        Ok(value) => value * Decimal::from_i128_with_scale(1, 9),
         Err(_) => {
             warn!(
                 "Collateral amount {} exceeds Decimal precision; capping at Decimal::MAX",
                 amount_str
             );
             // TODO: Switch to BigDecimal or fixed-point U256 conversion to avoid loss.
-            Decimal::MAX * Decimal::from_i128_with_scale(1, 18)
+            Decimal::MAX * Decimal::from_i128_with_scale(1, 9)
         }
     }
 }
@@ -263,6 +264,48 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_u256_to_alpha_zero() {
+        let alpha = u256_to_alpha(alloy_primitives::U256::ZERO);
+        assert_eq!(alpha, Decimal::ZERO);
+    }
+
+    #[test]
+    fn test_u256_to_alpha_one_rao() {
+        // 1 RAO = 1e-9 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1u64));
+        assert_eq!(alpha, Decimal::from_i128_with_scale(1, 9));
+    }
+
+    #[test]
+    fn test_u256_to_alpha_one_alpha() {
+        // 1e9 RAO = 1 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64));
+        assert_eq!(alpha, Decimal::ONE);
+    }
+
+    #[test]
+    fn test_u256_to_alpha_fractional() {
+        // 500_000_000 RAO = 0.5 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(500_000_000u64));
+        assert_eq!(alpha, Decimal::new(5, 1));
+    }
+
+    #[test]
+    fn test_u256_to_alpha_large_amount() {
+        // 5e9 RAO = 5 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(5_000_000_000u64));
+        assert_eq!(alpha, Decimal::from(5));
+    }
+
+    #[test]
+    fn test_u256_to_alpha_is_not_wei() {
+        // Regression: old code divided by 1e18 (wei). Verify 1e9 RAO = 1 alpha, NOT 1e-9 alpha.
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64));
+        assert_ne!(alpha, Decimal::from_i128_with_scale(1, 9), "should NOT treat input as wei");
+        assert_eq!(alpha, Decimal::ONE, "1e9 RAO must equal 1 alpha");
+    }
+
     #[tokio::test]
     async fn test_node_id_to_hex() {
         let uuid = Uuid::new_v4();
@@ -308,6 +351,64 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(alpha, Decimal::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_get_collateral_alpha_converts_rao_to_alpha() {
+        let persistence = Arc::new(SimplePersistence::for_testing().await.unwrap());
+        let hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+        let node_id = Uuid::new_v4().to_string();
+        let hotkey_hex = hotkey_ss58_to_hex(hotkey).unwrap();
+        let node_hex = node_id_to_hex(&node_id).unwrap();
+
+        // Insert 5e9 RAO (= 5 alpha) into the DB, mimicking on-chain event data.
+        sqlx::query(
+            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, pending_tao_reclaim, pending_alpha_reclaim, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        )
+        .bind(&hotkey_hex)
+        .bind(&node_hex)
+        .bind("0x0000000000000000000000000000000000000001")
+        .bind("0")
+        .bind("5000000000") // 5e9 RAO = 5 alpha
+        .bind("0")
+        .bind("0")
+        .execute(persistence.pool())
+        .await
+        .unwrap();
+
+        let config = CollateralConfig::default();
+        let grace_tracker = Arc::new(GracePeriodTracker::new(
+            persistence.clone(),
+            Duration::hours(24),
+        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(
+            config.clone(),
+            grace_tracker.clone(),
+        ));
+        let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
+        let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
+            "http://localhost".to_string(),
+            signer,
+            reqwest::Client::new(),
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+            Arc::new(TestBaselineFetcher),
+            Arc::new(TestFetcher),
+        ));
+        let manager = CollateralManager::new(
+            persistence,
+            api_client,
+            evaluator,
+            grace_tracker,
+            1,
+            None,
+        );
+
+        let alpha = manager
+            .get_collateral_alpha(hotkey, &node_id)
+            .await
+            .unwrap();
+        assert_eq!(alpha, Decimal::from(5), "5e9 RAO should convert to 5 alpha");
     }
 
     #[tokio::test]

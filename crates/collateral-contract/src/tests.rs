@@ -14,7 +14,7 @@ use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {
-    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint64 decisionTimeout, address admin, bytes32 alphaHotkey, bool taoDepositsEnabled, bool alphaDepositsEnabled);
+    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint256 minAlphaCollateralIncrease, uint64 decisionTimeout, address admin, bytes32 alphaHotkey, bool taoDepositsEnabled, bool alphaDepositsEnabled);
 }
 
 #[allow(dead_code)]
@@ -95,6 +95,7 @@ async fn test_collateral_deploy() {
             netuid,
             trustee,
             minCollateralIncrease: min_collateral_increase,
+            minAlphaCollateralIncrease: min_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
             alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),
@@ -221,6 +222,7 @@ async fn test_deploy_proxy_in_testnet() {
             netuid,
             trustee,
             minCollateralIncrease: min_collateral_increase,
+            minAlphaCollateralIncrease: min_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
             alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),

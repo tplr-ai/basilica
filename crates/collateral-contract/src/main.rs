@@ -169,6 +169,8 @@ enum QueryCommands {
     ContractHotkey,
     /// Get the minimum collateral increase
     MinCollateralIncrease,
+    /// Get the minimum alpha collateral increase
+    MinAlphaCollateralIncrease,
     /// Get the miner address for an node
     NodeToMiner {
         /// Hotkey as hex string (32 bytes)
@@ -428,6 +430,11 @@ async fn handle_query_command(
         QueryCommands::MinCollateralIncrease => {
             let result = collateral_contract::min_collateral_increase(network_config).await?;
             println!("Minimum collateral increase: {} wei", result);
+        }
+        QueryCommands::MinAlphaCollateralIncrease => {
+            let result =
+                collateral_contract::min_alpha_collateral_increase(network_config).await?;
+            println!("Minimum alpha collateral increase: {}", result);
         }
         QueryCommands::TaoDepositsEnabled => {
             let result = collateral_contract::tao_deposits_enabled(network_config).await?;

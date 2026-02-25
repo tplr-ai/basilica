@@ -77,8 +77,9 @@ There is **no general reverse mapping** from SS58 back to H160. The resulting SS
 
 ### Unit Conversion
 
-- **EVM side**: 1 TAO = 1e18 (18 decimals, like ETH wei). Used by: `msg.value`, `address.balance`, ERC-20 amounts, Solidity contract storage (e.g. `taoCollaterals`).
-- **Substrate side**: 1 TAO = 1e9 RAO. Used by: **all StakingV2 precompile parameters** (`addStake`, `removeStake`, `transferStake`, `moveStake`, `getStake`, `burnAlpha`), btcli commands, Substrate RPC.
+- **TAO on EVM**: 1 TAO = 1e18 (18 decimals, like ETH wei). Used by: `msg.value`, `address.balance`, ERC-20 amounts, Solidity contract storage (e.g. `taoCollaterals`).
+- **TAO on Substrate**: 1 TAO = 1e9 RAO. Used by: **all StakingV2 precompile parameters**, btcli commands, Substrate RPC.
+- **Alpha (everywhere)**: 1 Alpha = 1e9 RAO. Alpha has **no 1e18 representation** — it is always 1e9 RAO whether accessed from EVM precompiles or Substrate. Both `TaoCurrency` and `AlphaCurrency` are `u64` wrappers on-chain.
 
 **The precompile boundary is the conversion point.** Solidity code that stores TAO in wei (1e18) must convert to RAO (1e9) before calling staking precompiles, and convert back when reading `getStake` results. The collateral contract's `alphaCollaterals` stores values in RAO (the unit returned by staking precompiles).
 
