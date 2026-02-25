@@ -282,14 +282,14 @@ impl SlashExecutor {
         if collateral.is_zero() || self.config.slash_fraction >= Decimal::ONE {
             return collateral;
         }
-        let numerator = (self.config.slash_fraction * Decimal::from(10_000u64))
+        let numerator = (self.config.slash_fraction * Decimal::from(100u64))
             .round()
             .to_u64()
             .unwrap_or(0);
-        if numerator == 0 || numerator >= 10_000 {
+        if numerator == 0 || numerator >= 100 {
             return collateral;
         }
-        let amount = collateral * U256::from(numerator) / U256::from(10_000u64);
+        let amount = collateral * U256::from(numerator) / U256::from(100u64);
         if amount.is_zero() {
             U256::from(1u64)
         } else {
