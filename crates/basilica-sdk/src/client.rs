@@ -419,9 +419,31 @@ impl BasilicaClient {
     /// List secure cloud GPU offerings from datacenter providers
     /// Returns GPUs available from providers like Verda, Hyperstack, Lambda Labs, etc.
     pub async fn list_secure_cloud_gpus(&self) -> Result<Vec<crate::types::GpuOffering>> {
-        let response: crate::types::ListSecureCloudGpusResponse = self
-            .get("/secure-cloud/gpu-prices?available_only=true")
-            .await?;
+        self.list_secure_cloud_gpus_filtered(&Default::default())
+            .await
+    }
+
+    /// List secure cloud GPU offerings with flavour filters
+    ///
+    /// Accepts a `GpuPriceQuery` to filter by interconnect, geo, spot preferences.
+    pub async fn list_secure_cloud_gpus_filtered(
+        &self,
+        query: &crate::types::GpuPriceQuery,
+    ) -> Result<Vec<crate::types::GpuOffering>> {
+        let mut url = String::from("/secure-cloud/gpu-prices?available_only=true");
+        if let Some(ref interconnect) = query.interconnect {
+            url.push_str(&format!("&interconnect={}", interconnect));
+        }
+        if let Some(ref region) = query.region {
+            url.push_str(&format!("&region={}", region));
+        }
+        if let Some(true) = query.spot_only {
+            url.push_str("&spot_only=true");
+        }
+        if let Some(true) = query.exclude_spot {
+            url.push_str("&exclude_spot=true");
+        }
+        let response: crate::types::ListSecureCloudGpusResponse = self.get(&url).await?;
         Ok(response.nodes)
     }
 

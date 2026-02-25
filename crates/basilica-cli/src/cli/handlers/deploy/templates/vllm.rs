@@ -246,6 +246,10 @@ fn build_vllm_resources(
             model: gpu_models.to_vec(),
             min_cuda_version: None,
             min_gpu_memory_gb: None,
+            interconnect: None,
+            geo: None,
+            spot: None,
+            infiniband: None,
         })
     } else {
         None

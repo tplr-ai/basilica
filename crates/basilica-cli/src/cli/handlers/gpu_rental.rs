@@ -135,8 +135,19 @@ async fn fetch_and_filter_secure_cloud(
     gpu_category: Option<GpuCategory>,
     filters: &ListFilters,
 ) -> Result<Vec<basilica_common::types::GpuOffering>, CliError> {
+    let query = basilica_sdk::types::GpuPriceQuery {
+        interconnect: filters.interconnect.clone(),
+        region: filters.region.clone(),
+        spot_only: if filters.spot { Some(true) } else { None },
+        exclude_spot: if filters.exclude_spot {
+            Some(true)
+        } else {
+            None
+        },
+    };
+
     let gpus = api_client
-        .list_secure_cloud_gpus()
+        .list_secure_cloud_gpus_filtered(&query)
         .await
         .map_err(|e| -> CliError {
             CliError::Internal(
@@ -1100,6 +1111,14 @@ pub async fn handle_up(
         ComputeCategoryArg::CommunityCloud => ComputeCategory::CommunityCloud,
     });
 
+    // Build flavour filters from CLI options
+    let flavour = crate::cli::handlers::gpu_rental_helpers::FlavourFilters {
+        interconnect: options.interconnect.clone(),
+        region: options.region.clone(),
+        spot: options.spot,
+        exclude_spot: options.exclude_spot,
+    };
+
     // Use unified offering resolver for all paths
     let selected = resolve_offering_unified(
         &api_client,
@@ -1108,6 +1127,7 @@ pub async fn handle_up(
         options.country.as_deref(),
         None, // min_gpu_memory - not available in UpOptions
         cloud_filter,
+        &flavour,
     )
     .await
     .map_err(CliError::Internal)?;

@@ -499,6 +499,23 @@ pub struct RentalUsageResponse {
 // Re-export ComputeCategory and GpuOffering from basilica-common
 pub use basilica_common::types::{ComputeCategory, GpuOffering};
 
+/// Query parameters for filtering GPU price listings
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GpuPriceQuery {
+    /// Filter by interconnect type (e.g., "SXM", "SXM5", "PCIe")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interconnect: Option<String>,
+    /// Filter by region - accepts geo codes (US, CA, EU, APAC) or region substrings
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// Show only spot offerings
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spot_only: Option<bool>,
+    /// Exclude spot offerings
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude_spot: Option<bool>,
+}
+
 /// Secure cloud rental list item for PS command display
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecureCloudRentalListItem {
@@ -609,6 +626,14 @@ pub struct GpuRequirementsSpec {
     pub min_cuda_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_gpu_memory_gb: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interconnect: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spot: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub infiniband: Option<bool>,
 }
 
 /// Storage specification
@@ -1656,5 +1681,127 @@ mod tests {
         }"#;
         let summary: DeploymentSummary = serde_json::from_str(json).unwrap();
         assert!(summary.websocket.is_none());
+    }
+
+    // =========================================================================
+    // GPU Flavour Preferences - Serde contract tests
+    // =========================================================================
+
+    #[test]
+    fn test_gpu_price_query_serde_roundtrip() {
+        let query = GpuPriceQuery {
+            interconnect: Some("SXM5".to_string()),
+            region: Some("EU".to_string()),
+            spot_only: None,
+            exclude_spot: Some(true),
+        };
+        let json = serde_json::to_string(&query).unwrap();
+        let deserialized: GpuPriceQuery = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.interconnect.as_deref(), Some("SXM5"));
+        assert_eq!(deserialized.region.as_deref(), Some("EU"));
+        assert!(deserialized.spot_only.is_none());
+        assert_eq!(deserialized.exclude_spot, Some(true));
+    }
+
+    #[test]
+    fn test_gpu_price_query_serde_skip_none_fields() {
+        let query = GpuPriceQuery {
+            interconnect: Some("PCIe".to_string()),
+            region: None,
+            spot_only: None,
+            exclude_spot: None,
+        };
+        let json = serde_json::to_string(&query).unwrap();
+        assert!(json.contains("\"interconnect\":\"PCIe\""));
+        assert!(!json.contains("\"region\""));
+        assert!(!json.contains("\"spot_only\""));
+        assert!(!json.contains("\"exclude_spot\""));
+    }
+
+    #[test]
+    fn test_gpu_price_query_deserialize_empty_object() {
+        let json = "{}";
+        let query: GpuPriceQuery = serde_json::from_str(json).unwrap();
+        assert!(query.interconnect.is_none());
+        assert!(query.region.is_none());
+        assert!(query.spot_only.is_none());
+        assert!(query.exclude_spot.is_none());
+    }
+
+    #[test]
+    fn test_gpu_requirements_spec_with_flavour_fields() {
+        let spec = GpuRequirementsSpec {
+            count: 2,
+            model: vec!["H100".to_string()],
+            min_cuda_version: None,
+            min_gpu_memory_gb: None,
+            interconnect: Some("SXM".to_string()),
+            geo: Some("US".to_string()),
+            spot: Some(true),
+            infiniband: None,
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(json.contains("\"interconnect\":\"SXM\""));
+        assert!(json.contains("\"geo\":\"US\""));
+        assert!(json.contains("\"spot\":true"));
+        assert!(!json.contains("\"infiniband\""));
+    }
+
+    #[test]
+    fn test_gpu_requirements_spec_serde_roundtrip() {
+        let spec = GpuRequirementsSpec {
+            count: 1,
+            model: vec!["A100".to_string()],
+            min_cuda_version: Some("12.0".to_string()),
+            min_gpu_memory_gb: Some(80),
+            interconnect: Some("SXM5".to_string()),
+            geo: Some("EU".to_string()),
+            spot: Some(false),
+            infiniband: Some(true),
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        let deserialized: GpuRequirementsSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.count, 1);
+        assert_eq!(deserialized.model, vec!["A100"]);
+        assert_eq!(deserialized.interconnect.as_deref(), Some("SXM5"));
+        assert_eq!(deserialized.geo.as_deref(), Some("EU"));
+        assert_eq!(deserialized.spot, Some(false));
+        assert_eq!(deserialized.infiniband, Some(true));
+    }
+
+    #[test]
+    fn test_gpu_requirements_spec_backward_compat() {
+        // Existing JSON without flavour fields should deserialize with None
+        let json = r#"{
+            "count": 4,
+            "model": ["H100"],
+            "minCudaVersion": "12.0",
+            "minGpuMemoryGb": 80
+        }"#;
+        let spec: GpuRequirementsSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.count, 4);
+        assert_eq!(spec.model, vec!["H100"]);
+        assert!(spec.interconnect.is_none());
+        assert!(spec.geo.is_none());
+        assert!(spec.spot.is_none());
+        assert!(spec.infiniband.is_none());
+    }
+
+    #[test]
+    fn test_gpu_requirements_spec_camel_case_serialization() {
+        let spec = GpuRequirementsSpec {
+            count: 1,
+            model: vec!["H100".to_string()],
+            min_cuda_version: None,
+            min_gpu_memory_gb: Some(40),
+            interconnect: Some("PCIe".to_string()),
+            geo: None,
+            spot: None,
+            infiniband: None,
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        // Should use camelCase (minGpuMemoryGb, not min_gpu_memory_gb)
+        assert!(json.contains("\"minGpuMemoryGb\":40"));
+        assert!(json.contains("\"interconnect\":\"PCIe\""));
     }
 }

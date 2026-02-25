@@ -387,6 +387,22 @@ pub struct ListFilters {
     /// Filter by country code (e.g., US, UK, DE)
     #[arg(long)]
     pub country: Option<String>,
+
+    /// Filter by interconnect type (e.g., SXM, PCIe)
+    #[arg(long)]
+    pub interconnect: Option<String>,
+
+    /// Filter by region (geo codes: US, CA, EU, APAC or region substrings)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// Show only spot offerings
+    #[arg(long, conflicts_with = "exclude_spot")]
+    pub spot: bool,
+
+    /// Exclude spot offerings
+    #[arg(long, conflicts_with = "spot")]
+    pub exclude_spot: bool,
 }
 
 /// Options for provisioning instances
@@ -443,6 +459,22 @@ pub struct UpOptions {
     /// Create rental in detached mode (don't auto-connect via SSH)
     #[arg(short = 'd', long)]
     pub detach: bool,
+
+    /// Filter by interconnect type (e.g., SXM, PCIe)
+    #[arg(long)]
+    pub interconnect: Option<String>,
+
+    /// Filter by region (geo codes: US, CA, EU, APAC or region substrings)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// Prefer spot offerings
+    #[arg(long, conflicts_with = "exclude_spot")]
+    pub spot: bool,
+
+    /// Exclude spot offerings
+    #[arg(long, conflicts_with = "spot")]
+    pub exclude_spot: bool,
 }
 
 /// Filters for listing active rentals
@@ -620,6 +652,22 @@ pub struct GpuOptions {
     /// Required node affinity labels (hard constraint, format: key=value)
     #[arg(long, value_name = "KEY=VALUE")]
     pub require_node: Vec<String>,
+
+    /// GPU interconnect type (e.g., SXM, PCIe)
+    #[arg(long)]
+    pub interconnect: Option<String>,
+
+    /// Region preference (geo codes: US, CA, EU, APAC)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// Prefer spot instances (preferredDuringScheduling)
+    #[arg(long, conflicts_with = "exclude_spot")]
+    pub spot: bool,
+
+    /// Exclude spot instances (NotIn scheduling)
+    #[arg(long, conflicts_with = "spot")]
+    pub exclude_spot: bool,
 }
 
 /// Storage configuration options

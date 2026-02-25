@@ -63,6 +63,7 @@ from basilica._basilica import (
     DeploymentSummary,
     EnvVar,
     GpuOffering,
+    GpuPriceQuery,
     GpuRequirements,
     GpuSpec,
     HealthCheckConfig,
@@ -117,6 +118,10 @@ except ImportError:
         model: Optional[List[str]] = None
         min_cuda_version: Optional[str] = None
         min_gpu_memory_gb: Optional[int] = None
+        interconnect: Optional[str] = None
+        geo: Optional[str] = None
+        spot: Optional[bool] = None
+        infiniband: Optional[bool] = None
 
         def __init__(
             self,
@@ -124,11 +129,19 @@ except ImportError:
             model: Optional[List[str]] = None,
             min_cuda_version: Optional[str] = None,
             min_gpu_memory_gb: Optional[int] = None,
+            interconnect: Optional[str] = None,
+            geo: Optional[str] = None,
+            spot: Optional[bool] = None,
+            infiniband: Optional[bool] = None,
         ):
             self.count = count
             self.model = model or []
             self.min_cuda_version = min_cuda_version
             self.min_gpu_memory_gb = min_gpu_memory_gb
+            self.interconnect = interconnect
+            self.geo = geo
+            self.spot = spot
+            self.infiniband = infiniband
 
 
 from .decorators import DeployedFunction, deployment
@@ -271,6 +284,7 @@ __all__ = [
     "CpuRentalListItem",
     "ListCpuRentalsResponse",
     # GPU Rental types (secure cloud)
+    "GpuPriceQuery",
     "GpuOffering",
     "SecureCloudRentalListItem",
     "SecureCloudRentalResponse",
@@ -307,12 +321,10 @@ class BasilicaClient:
         ...     port=8000,
         ... )
 
-    Authentication:
-        The client requires an API token. Provide it via:
-        1. Environment variable: export BASILICA_API_TOKEN="basilica_..."
-        2. Direct parameter: BasilicaClient(api_key="basilica_...")
-
-        Create a token using: basilica tokens create
+    Authentication (tried in order):
+        1. Direct parameter: BasilicaClient(api_key="basilica_...")
+        2. Environment variable: export BASILICA_API_TOKEN="basilica_..."
+        3. CLI login tokens: run ``basilica login`` first
 
     Attributes:
         base_url: The API endpoint URL
@@ -326,10 +338,10 @@ class BasilicaClient:
             base_url: API endpoint URL. Defaults to BASILICA_API_URL env var
                      or https://api.basilica.ai
             api_key: Authentication token. Defaults to BASILICA_API_TOKEN env var.
-                    Create one using: basilica tokens create
+                    If neither is set, falls back to CLI login tokens.
 
         Raises:
-            AuthenticationError: If no API key is provided or found in environment
+            RuntimeError: If no authentication method is available
 
         Example:
             >>> # Auto-detect from environment
@@ -372,6 +384,10 @@ class BasilicaClient:
         pip_packages: Optional[List[str]],
         topology_spread: Optional[TopologySpreadConfig] = None,
         health_check: Optional[HealthCheckConfig] = None,
+        interconnect: Optional[str] = None,
+        geo: Optional[str] = None,
+        spot: Optional[bool] = None,
+        infiniband: Optional[bool] = None,
     ) -> CreateDeploymentRequest:
         """Build CreateDeploymentRequest from deploy parameters."""
         command = None
@@ -404,6 +420,10 @@ class BasilicaClient:
                 model=gpu_models or [],
                 min_cuda_version=min_cuda_version,
                 min_gpu_memory_gb=min_gpu_memory_gb,
+                interconnect=interconnect,
+                geo=geo,
+                spot=spot,
+                infiniband=infiniband,
             )
 
         resources = ResourceRequirements(cpu=cpu, memory=memory, gpus=gpu_spec)
@@ -445,6 +465,10 @@ class BasilicaClient:
         pip_packages: Optional[List[str]] = None,
         topology_spread: Optional[TopologySpreadConfig] = None,
         health_check: Optional[HealthCheckConfig] = None,
+        interconnect: Optional[str] = None,
+        geo: Optional[str] = None,
+        spot: Optional[bool] = None,
+        infiniband: Optional[bool] = None,
     ) -> Deployment:
         """
         Deploy an application to Basilica.
@@ -478,6 +502,10 @@ class BasilicaClient:
             gpu_models: Acceptable GPU models. Example: ["A100", "H100"]
             min_cuda_version: Minimum CUDA version. Example: "12.0"
             min_gpu_memory_gb: Minimum GPU VRAM in GB. Example: 40
+            interconnect: GPU interconnect type. "SXM" or "PCIe"
+            geo: Geographic region preference. "US", "EU", "CA", "APAC"
+            spot: Spot instance preference. True=prefer spot, False=exclude spot
+            infiniband: Require InfiniBand networking. True/False
             replicas: Number of instances. Default: 1
             ttl_seconds: Auto-delete after N seconds. None = never.
             public: Create public URL. Default: True
@@ -553,6 +581,10 @@ class BasilicaClient:
             pip_packages=pip_packages,
             topology_spread=topology_spread,
             health_check=health_check,
+            interconnect=interconnect,
+            geo=geo,
+            spot=spot,
+            infiniband=infiniband,
         )
 
         response = self._client.create_deployment(request)
@@ -589,6 +621,10 @@ class BasilicaClient:
         ttl_seconds: Optional[int] = None,
         timeout: int = 600,
         health_check: Optional[HealthCheckConfig] = None,
+        interconnect: Optional[str] = None,
+        geo: Optional[str] = None,
+        spot: Optional[bool] = None,
+        infiniband: Optional[bool] = None,
     ) -> Deployment:
         """
         Deploy a vLLM inference server.
@@ -614,6 +650,10 @@ class BasilicaClient:
             timeout: Wait timeout in seconds
             health_check: Custom health check configuration. If not provided,
                          uses sensible defaults for vLLM (10-minute startup tolerance).
+            interconnect: GPU interconnect type. "SXM" or "PCIe"
+            geo: Geographic region preference. "US", "EU", "CA", "APAC"
+            spot: Spot instance preference. True=prefer spot, False=exclude spot
+            infiniband: Require InfiniBand networking
 
         Returns:
             Deployment object with .url, .status(), .logs(), .delete() methods
@@ -686,6 +726,10 @@ class BasilicaClient:
             model=gpu_models or [],
             min_cuda_version=None,
             min_gpu_memory_gb=reqs.memory_gb,
+            interconnect=interconnect,
+            geo=geo,
+            spot=spot,
+            infiniband=infiniband,
         )
 
         # Build resources
@@ -743,6 +787,10 @@ class BasilicaClient:
         ttl_seconds: Optional[int] = None,
         timeout: int = 600,
         health_check: Optional[HealthCheckConfig] = None,
+        interconnect: Optional[str] = None,
+        geo: Optional[str] = None,
+        spot: Optional[bool] = None,
+        infiniband: Optional[bool] = None,
     ) -> Deployment:
         """
         Deploy an SGLang inference server.
@@ -764,6 +812,10 @@ class BasilicaClient:
             timeout: Wait timeout in seconds
             health_check: Custom health check configuration. If not provided,
                          uses sensible defaults for SGLang (10-minute startup tolerance).
+            interconnect: GPU interconnect type. "SXM" or "PCIe"
+            geo: Geographic region preference. "US", "EU", "CA", "APAC"
+            spot: Spot instance preference. True=prefer spot, False=exclude spot
+            infiniband: Require InfiniBand networking
 
         Returns:
             Deployment object with .url, .status(), .logs(), .delete() methods
@@ -829,6 +881,10 @@ class BasilicaClient:
             model=gpu_models or [],
             min_cuda_version=None,
             min_gpu_memory_gb=reqs.memory_gb,
+            interconnect=interconnect,
+            geo=geo,
+            spot=spot,
+            infiniband=infiniband,
         )
 
         # Build resources
@@ -1102,6 +1158,10 @@ class BasilicaClient:
         gpu_models: Optional[List[str]] = None,
         min_cuda_version: Optional[str] = None,
         min_gpu_memory_gb: Optional[int] = None,
+        interconnect: Optional[str] = None,
+        geo: Optional[str] = None,
+        spot: Optional[bool] = None,
+        infiniband: Optional[bool] = None,
         ttl_seconds: Optional[int] = None,
         public: bool = True,
         storage: Optional[Union[str, StorageSpec]] = None,
@@ -1129,6 +1189,10 @@ class BasilicaClient:
             gpu_models: Acceptable GPU models
             min_cuda_version: Minimum CUDA version
             min_gpu_memory_gb: Minimum GPU memory
+            interconnect: GPU interconnect type. "SXM" or "PCIe"
+            geo: Geographic region preference. "US", "EU", "CA", "APAC"
+            spot: Spot instance preference. True=prefer spot, False=exclude spot
+            infiniband: Require InfiniBand networking
             ttl_seconds: Auto-delete timeout
             public: Create public URL
             storage: Storage path or StorageSpec
@@ -1148,6 +1212,10 @@ class BasilicaClient:
                 model=gpu_models or [],
                 min_cuda_version=min_cuda_version,
                 min_gpu_memory_gb=min_gpu_memory_gb,
+                interconnect=interconnect,
+                geo=geo,
+                spot=spot,
+                infiniband=infiniband,
             )
 
         # Build resources
@@ -1378,12 +1446,18 @@ class BasilicaClient:
     # Secure Cloud GPU Rental Methods
     # -------------------------------------------------------------------------
 
-    def list_secure_cloud_gpus(self) -> List[GpuOffering]:
+    def list_secure_cloud_gpus(
+        self, query: Optional[GpuPriceQuery] = None
+    ) -> List[GpuOffering]:
         """
         List available GPU offerings from secure cloud providers.
 
         Returns GPU instances from datacenter providers like DataCrunch,
         Hyperstack, Lambda Labs, etc.
+
+        Args:
+            query: Optional GpuPriceQuery to filter by interconnect, region, spot.
+                   Example: GpuPriceQuery(interconnect="SXM", region="US")
 
         Returns:
             List of GpuOffering objects with GPU specs and pricing
@@ -1392,8 +1466,9 @@ class BasilicaClient:
             >>> offerings = client.list_secure_cloud_gpus()
             >>> for o in offerings:
             ...     print(f"{o.gpu_count}x {o.gpu_type} @ ${o.hourly_rate}/hr ({o.provider})")
+            >>> sxm = client.list_secure_cloud_gpus(GpuPriceQuery(interconnect="SXM"))
         """
-        return self._client.list_secure_cloud_gpus()
+        return self._client.list_secure_cloud_gpus(query=query)
 
     def start_secure_cloud_rental(
         self,
@@ -1492,6 +1567,10 @@ class BasilicaClient:
         pip_packages: Optional[List[str]] = None,
         topology_spread: Optional[TopologySpreadConfig] = None,
         health_check: Optional[HealthCheckConfig] = None,
+        interconnect: Optional[str] = None,
+        geo: Optional[str] = None,
+        spot: Optional[bool] = None,
+        infiniband: Optional[bool] = None,
     ) -> Deployment:
         """
         Deploy an application asynchronously.
@@ -1512,6 +1591,10 @@ class BasilicaClient:
             gpu_models: Acceptable GPU models.
             min_cuda_version: Minimum CUDA version.
             min_gpu_memory_gb: Minimum GPU VRAM in GB.
+            interconnect: GPU interconnect type. "SXM" or "PCIe"
+            geo: Geographic region preference. "US", "EU", "CA", "APAC"
+            spot: Spot instance preference. True=prefer spot, False=exclude spot
+            infiniband: Require InfiniBand networking. True/False
             replicas: Number of instances. Default: 1
             ttl_seconds: Auto-delete after N seconds.
             public: Create public URL. Default: True
@@ -1547,6 +1630,10 @@ class BasilicaClient:
             pip_packages=pip_packages,
             topology_spread=topology_spread,
             health_check=health_check,
+            interconnect=interconnect,
+            geo=geo,
+            spot=spot,
+            infiniband=infiniband,
         )
 
         loop = asyncio.get_running_loop()
@@ -1629,6 +1716,10 @@ class BasilicaClient:
         gpu_models: Optional[List[str]] = None,
         min_cuda_version: Optional[str] = None,
         min_gpu_memory_gb: Optional[int] = None,
+        interconnect: Optional[str] = None,
+        geo: Optional[str] = None,
+        spot: Optional[bool] = None,
+        infiniband: Optional[bool] = None,
         ttl_seconds: Optional[int] = None,
         public: bool = True,
         storage: Optional[Union[str, StorageSpec]] = None,
@@ -1649,6 +1740,10 @@ class BasilicaClient:
                 model=gpu_models or [],
                 min_cuda_version=min_cuda_version,
                 min_gpu_memory_gb=min_gpu_memory_gb,
+                interconnect=interconnect,
+                geo=geo,
+                spot=spot,
+                infiniband=infiniband,
             )
 
         resources = ResourceRequirements(cpu=cpu, memory=memory, gpus=gpu_spec)

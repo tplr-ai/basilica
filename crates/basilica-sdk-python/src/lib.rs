@@ -51,30 +51,31 @@ impl BasilicaClient {
     /// Args:
     ///     base_url: The base URL of the Basilica API
     ///     api_key: Optional authentication token from 'basilica tokens create'
+    ///
+    /// Authentication priority:
+    ///   1. Explicit `api_key` parameter
+    ///   2. `BASILICA_API_TOKEN` environment variable
+    ///   3. File-based auth (reads CLI tokens from `basilica login`)
     #[new]
     #[pyo3(signature = (base_url, api_key=None))]
     fn new(base_url: String, api_key: Option<String>) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
 
-        // Check for API key - either provided directly or from BASILICA_API_TOKEN env var
         let api_key = api_key.or_else(|| std::env::var("BASILICA_API_TOKEN").ok());
 
-        let api_key = api_key.ok_or_else(|| {
-            PyRuntimeError::new_err(
-                "No API key provided. Please provide an API key directly or set BASILICA_API_TOKEN environment variable. \
-                Create a key using: basilica tokens create"
-            )
-        })?;
+        let mut builder = ClientBuilder::default()
+            .base_url(base_url)
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
-        let client = runtime
-            .block_on(async {
-                ClientBuilder::default()
-                    .base_url(base_url)
-                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-                    .with_api_key(&api_key)
-                    .build()
-            })
+        if let Some(key) = api_key {
+            builder = builder.with_api_key(&key);
+        } else {
+            builder = builder.with_file_auth();
+        }
+
+        let client = builder
+            .build()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create client: {}", e)))?;
 
         Ok(Self {
@@ -82,10 +83,6 @@ impl BasilicaClient {
             runtime,
         })
     }
-
-    // Python SDK uses API key authentication
-    // Users should create API keys via CLI: `basilica tokens create`
-    // Then use the Python SDK with the key directly or via BASILICA_API_TOKEN environment variable
 
     /// Check the health of the API
     fn health_check(&self, py: Python) -> PyResult<HealthCheckResponse> {
@@ -601,13 +598,24 @@ impl BasilicaClient {
     // ===== GPU Rental Methods =====
 
     /// List available GPU offerings from secure cloud providers
-    fn list_secure_cloud_gpus(&self, py: Python) -> PyResult<Vec<types::GpuOffering>> {
+    ///
+    /// Args:
+    ///     query: Optional GpuPriceQuery to filter by interconnect, geo, spot
+    #[pyo3(signature = (query=None))]
+    fn list_secure_cloud_gpus(
+        &self,
+        py: Python,
+        query: Option<types::GpuPriceQuery>,
+    ) -> PyResult<Vec<types::GpuOffering>> {
         let client = Arc::clone(&self.inner);
+        let sdk_query: basilica_sdk::types::GpuPriceQuery =
+            query.map(Into::into).unwrap_or_default();
 
         let response = py
             .detach(|| {
-                self.runtime
-                    .block_on(async move { client.list_secure_cloud_gpus().await })
+                self.runtime.block_on(async move {
+                    client.list_secure_cloud_gpus_filtered(&sdk_query).await
+                })
             })
             .map_err(|e| self.map_error_to_python(e))?;
 
@@ -782,6 +790,7 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::ListCpuRentalsResponse>()?;
 
     // GPU Rental types (secure cloud)
+    m.add_class::<types::GpuPriceQuery>()?;
     m.add_class::<types::GpuOffering>()?;
     m.add_class::<types::StartSecureCloudRentalRequest>()?;
     m.add_class::<types::SecureCloudRentalResponse>()?;

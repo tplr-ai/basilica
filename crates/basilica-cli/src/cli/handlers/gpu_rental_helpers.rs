@@ -533,6 +533,15 @@ struct UnifiedOfferingItem {
 ///
 /// # Returns
 /// Returns `SelectedOffering` enum containing either secure or community cloud data
+/// Flavour preference filters for secure cloud offerings
+#[derive(Default)]
+pub struct FlavourFilters {
+    pub interconnect: Option<String>,
+    pub region: Option<String>,
+    pub spot: bool,
+    pub exclude_spot: bool,
+}
+
 pub async fn resolve_offering_unified(
     api_client: &BasilicaClient,
     gpu_filter: Option<&str>,
@@ -540,6 +549,7 @@ pub async fn resolve_offering_unified(
     country_filter: Option<&str>,
     min_gpu_memory_filter: Option<u32>,
     cloud_filter: Option<ComputeCategory>,
+    flavour: &FlavourFilters,
 ) -> Result<SelectedOffering> {
     let spinner_msg = match cloud_filter {
         Some(ComputeCategory::SecureCloud) => "Fetching available GPUs from The Citadel...",
@@ -561,12 +571,24 @@ pub async fn resolve_offering_unified(
         }),
     };
 
+    // Build GPU price query with flavour filters
+    let gpu_price_query = basilica_sdk::types::GpuPriceQuery {
+        interconnect: flavour.interconnect.clone(),
+        region: flavour.region.clone(),
+        spot_only: if flavour.spot { Some(true) } else { None },
+        exclude_spot: if flavour.exclude_spot {
+            Some(true)
+        } else {
+            None
+        },
+    };
+
     // Conditionally fetch based on cloud filter (include CPU offerings for secure cloud)
     let (secure_result, community_result, cpu_result) = match cloud_filter {
         Some(ComputeCategory::SecureCloud) => {
             // Fetch secure cloud GPU and CPU offerings
             let (secure, cpu) = tokio::join!(
-                api_client.list_secure_cloud_gpus(),
+                api_client.list_secure_cloud_gpus_filtered(&gpu_price_query),
                 api_client.list_cpu_offerings()
             );
             (secure, Err(ApiError::Timeout), cpu) // Dummy error for community - will be ignored
@@ -580,7 +602,7 @@ pub async fn resolve_offering_unified(
             // Fetch all in parallel
             let community_future = api_client.list_available_nodes(Some(community_query));
             let (secure, community, cpu) = tokio::join!(
-                api_client.list_secure_cloud_gpus(),
+                api_client.list_secure_cloud_gpus_filtered(&gpu_price_query),
                 with_validator_timeout(community_future),
                 api_client.list_cpu_offerings()
             );
