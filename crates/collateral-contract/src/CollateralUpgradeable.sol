@@ -54,6 +54,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     address public trustee;
     uint64 public decisionTimeout;
     uint256 public minCollateralIncrease;
+    uint256 public minAlphaCollateralIncrease;
     bytes32 public contractColdkey;
     bytes32 public validatorHotkey;
 
@@ -149,6 +150,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     error AdminAddressZero();
     error ValidatorHotkeyZero();
     error MinCollateralIncreaseZero();
+    error MinAlphaCollateralIncreaseZero();
     error DecisionTimeoutZero();
     error ContractColdkeyZero();
     error NewTrusteeAddressZero();
@@ -518,7 +520,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         address miner = nodeToMiner[hotkey][nodeId];
         bytes32 trusteeColdkey = bytes32(0);
         if (slashAlphaAmount > 0) {
-            trusteeColdkey = _deriveOwnerColdkey(msg.sender);
+            trusteeColdkey = _deriveOwnerColdkey(trustee);
         }
 
         if (

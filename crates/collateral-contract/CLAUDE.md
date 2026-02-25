@@ -117,7 +117,7 @@ Both miners and the trustee need TAO in their H160 wallets for gas.
 
 Per `(hotkey, nodeId)` the contract tracks:
 - `taoCollaterals` -- total TAO locked (in wei, 1e18 = 1 TAO)
-- `alphaCollaterals` -- total alpha locked (in alpha units from staking precompile)
+- `alphaCollaterals` -- total alpha locked (in RAO, 1e9 = 1 alpha, same scale as TAO)
 - `taoCollateralUnderPendingReclaims` -- TAO reserved for pending reclaims
 - `alphaCollateralUnderPendingReclaims` -- alpha reserved for pending reclaims
 - `nodeToMiner` -- the miner's H160 address (set on first deposit, cleared when all four balances are zero)
