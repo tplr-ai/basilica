@@ -71,7 +71,6 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     bool public alphaDepositsEnabled;
 
     /// @dev Reserved storage gap for future upgrades.
-    /// This contract is not deployed yet, so the original gap remains unchanged.
     uint256[49] private _gap;
 
     struct Reclaim {
@@ -163,9 +162,10 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @notice Initializes the upgradeable collateral contract
     /// @param netuid_ The netuid of the subnet
     /// @param trustee_ Address of the trustee who has permissions to slash collateral or deny reclaim requests
-    /// @param minCollateralIncrease_ The minimum amount that can be deposited or reclaimed
+    /// @param minCollateralIncrease_ The minimum TAO amount that can be deposited
     /// @param decisionTimeout_ The time window (in seconds) for the trustee to deny a reclaim request
     /// @param admin Address that will have admin and upgrader roles
+    /// @param validatorHotkey_ The Substrate hotkey of the validator where all alpha is consolidated
     /// @param taoDepositsEnabled_ Whether TAO deposits are initially enabled
     /// @param alphaDepositsEnabled_ Whether alpha deposits are initially enabled
     function initialize(
@@ -254,10 +254,12 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     }
 
     /// @notice Allows users to deposit collateral into the contract for a specific node
-    /// @param hotkey The netuid key for the subnet
+    /// @param hotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to deposit collateral for
-    /// @dev The first deposit for an nodeId sets the owner. Subsequent deposits must be from the owner.
-    /// @dev The deposited amount must be greater than or equal to minCollateralIncrease
+    /// @param alphaHotkey The hotkey under which the miner's alpha is currently staked
+    /// @param alphaAmount The amount of alpha to transfer as collateral (in RAO)
+    /// @dev The first deposit for a nodeId sets the owner. Subsequent deposits must be from the owner.
+    /// @dev The TAO deposit amount must be greater than or equal to minCollateralIncrease
     /// @dev Emits a Deposit event with the hotkey, nodeId, sender's address and deposited amount
     function deposit(bytes32 hotkey, bytes16 nodeId, bytes32 alphaHotkey, uint256 alphaAmount)
         external
@@ -308,7 +310,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
     /// @notice Initiates a process to reclaim all available collateral from a specific node
     /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after decisionTimeout
-    /// @param hotkey The netuid key for the subnet
+    /// @param hotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to reclaim collateral from
     /// @dev Alpha payout destination is always derived from the owner address mapping.
     /// @param url URL containing information about the reclaim request
@@ -377,8 +379,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
     /// @notice Finalizes a reclaim request after the deny timeout has expired
     /// @dev Can only be called after the deny timeout has passed for the specific reclaim request
-    /// @dev Transfers the collateral to the miner and removes the node-to-miner mapping if successful
-    /// @dev This fully closes the relationship, allowing to request another reclaim
+    /// @dev Transfers the collateral to the miner. Clears the node-to-miner mapping only when all balances and pending reclaims reach zero
     /// @param reclaimRequestId The ID of the reclaim request to finalize
     /// @dev Emits Reclaimed event with reclaim details if successful
     /// @dev Reverts with ReclaimNotFound if the reclaim request doesn't exist or was denied
@@ -438,7 +439,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     }
 
     /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires
-    /// @dev Can only be called by the trustee (address set in initializer)
+    /// @dev Can only be called by an account with TRUSTEE_ROLE
     /// @dev Must be called before the deny timeout expires
     /// @dev Removes the reclaim request and frees up the collateral for other reclaims
     /// @param reclaimRequestId The ID of the reclaim request to deny
@@ -482,10 +483,12 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     }
 
     /// @notice Allows the trustee to slash a miner's collateral for a specific node
-    /// @dev Can only be called by the trustee (address set in initializer)
+    /// @dev Can only be called by an account with TRUSTEE_ROLE
     /// @dev Removes the collateral from the node and sends it to the trustee
-    /// @param hotkey The netuid key for the subnet
+    /// @param hotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to slash
+    /// @param slashAmount The amount of TAO collateral to slash (in wei)
+    /// @param slashAlphaAmount The amount of alpha collateral to slash (in RAO)
     /// @param url URL containing the reason for slashing
     /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits Slashed event with the node's ID, miner's address and the amount slashed
@@ -632,14 +635,14 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         }
 
         // use the increased stake as the actual alpha amount, for the swap fee in the move stake call
-        // the contract will take it and get compensated by laster emission of alpha
+        // the contract will take it and get compensated by later emission of alpha
         uint256 actualAlphaAmount = newContractStake - contractStake;
 
         if (alphaHotkey != validatorHotkey) {
             data = abi.encodeWithSelector(
                 IStaking.moveStake.selector, alphaHotkey, validatorHotkey, netuid, netuid, actualAlphaAmount
             );
-            // call the origin is the proxy contract. the alpha just transfer betweend different hotkeys of contract as coldkey
+            // call the origin is the proxy contract. the alpha just transfers between different hotkeys of contract as coldkey
             (success,) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(data);
             if (!success) {
                 revert MoveStakeCallFailed();
