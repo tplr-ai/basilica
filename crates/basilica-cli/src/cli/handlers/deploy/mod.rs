@@ -277,10 +277,7 @@ async fn handle_scale(
 }
 
 /// Restart a deployment (rolling restart)
-async fn handle_restart(
-    client: &basilica_sdk::BasilicaClient,
-    name: &str,
-) -> Result<(), CliError> {
+async fn handle_restart(client: &basilica_sdk::BasilicaClient, name: &str) -> Result<(), CliError> {
     let spinner = create_spinner(&format!("Restarting summons '{}'...", name));
 
     // Verify deployment exists before restarting
