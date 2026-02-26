@@ -67,6 +67,42 @@ There is **no general reverse mapping** from SS58 back to H160. The resulting SS
 | `moveStake` | `(bytes32 origin_hotkey, bytes32 destination_hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount)` payable | Re-delegate alpha to another hotkey (same coldkey). `amount` in **RAO**. |
 | `burnAlpha` | `(bytes32 hotkey, uint256 amount, uint256 netuid)` payable | Burn alpha tokens. `amount` in **RAO**. |
 
+### StakingV2 Transfer Guarantees (Same-Subnet)
+
+**Both `transferStake` and `moveStake` are 1:1 when `origin_netuid == destination_netuid`.** This contract always uses the same `netuid` for both parameters, so these guarantees apply to all contract operations.
+
+**Code path** (verified in subtensor source):
+1. EVM precompile (`precompiles/src/staking.rs`) — pure pass-through to Substrate pallet, no transformations
+2. Pallet (`pallets/subtensor/src/staking/move_stake.rs`) — `transition_stake_internal` branches on netuid equality
+3. Same-subnet branch calls `transfer_stake_within_subnet` (`pallets/subtensor/src/staking/stake_utils.rs:850`) — direct share pool debit/credit, no AMM
+
+In `transfer_stake_within_subnet`, the debited amount feeds directly into the credit:
+```
+actual_alpha_decrease = decrease_stake_for_hotkey_and_coldkey_on_subnet(origin, alpha)
+actual_alpha_moved = increase_stake_for_hotkey_and_coldkey_on_subnet(destination, actual_alpha_decrease)
+```
+Events explicitly emit `0_u64` for the fee field. Source comments confirm: *"no slippage in this move"*.
+
+| Property | Same-subnet (this contract) | Cross-subnet |
+|---|---|---|
+| AMM swap | **No** | Yes (alpha->TAO->alpha) |
+| 0.05% liquidity fee | **No** | Yes |
+| Slippage | **No** | Yes |
+| Destination = Origin amount | **Yes** | No |
+
+**Edge cases (negligible):** Share pool uses `U64F64` fixed-point arithmetic, which can introduce sub-RAO (< 1e-9 TAO) rounding. Transaction fees are paid separately in TAO, not deducted from the moved alpha.
+
+### No Runtime-Level Validator Slashing
+
+Bittensor does **not** slash validator stake at the protocol level. There is no mechanism in Subtensor that automatically reduces staked alpha/TAO as a penalty. Verified by inspecting `pallets/subtensor/src/staking/` — no slash functions exist for staking balances.
+
+The only ways stake can decrease:
+- Explicit `removeStake` (unstaking)
+- Explicit `transferStake` or `moveStake`
+- Deregistration removes the validation *permit* but **does not touch stake balances**
+
+**Implication for this contract:** The internal `alphaCollaterals` accounting will not desync from the live precompile stake due to external events. The `withdrawAlpha` revert path (`contractStake < alphaAmount`) should never trigger from runtime-side balance reduction, only from contract-side slashing that reduces `alphaCollaterals` without a corresponding `transferStake`.
+
 ### Network Config
 
 | Network | RPC URL | Chain ID |

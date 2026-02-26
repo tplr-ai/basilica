@@ -238,7 +238,8 @@ set -euo pipefail
 
 export NETUID=39
 export TRUSTEE_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
-export MIN_COLLATERAL=1
+export MIN_COLLATERAL=100000000000000000
+export MIN_ALPHA_COLLATERAL=5000000000
 export DECISION_TIMEOUT=1
 export ADMIN_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
 export VALIDATOR_HOTKEY=0x900dd1d8d4d94772b09fc1c82a74ea4af1471ba5594371ccc10632a1611b1945
@@ -256,8 +257,8 @@ impl_out="$(FOUNDRY_PROFILE=local forge create src/CollateralUpgradeable.sol:Col
   --broadcast)"
 IMPLEMENTATION_ADDRESS="$(echo "$impl_out" | awk '/Deployed to:/ {print $3}')"
 
-INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint64,address,bytes32,bool,bool)" \
-  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY" \
+INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint256,uint64,address,bytes32,bool,bool)" \
+  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$MIN_ALPHA_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY" \
   "$TAO_DEPOSITS_ENABLED" "$ALPHA_DEPOSITS_ENABLED")"
 
 proxy_out="$(FOUNDRY_PROFILE=local forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \

@@ -29,6 +29,7 @@ forge test
 export NETUID=39
 export TRUSTEE_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
 export MIN_COLLATERAL=1000000000000000000
+export MIN_ALPHA_COLLATERAL=5000000000
 export DECISION_TIMEOUT=3600
 export ADMIN_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
 export VALIDATOR_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000002
@@ -42,8 +43,8 @@ impl_out="$(forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
   --broadcast)"
 IMPLEMENTATION_ADDRESS="$(echo "$impl_out" | awk '/Deployed to:/ {print $3}')"
 
-INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint64,address,bytes32,bool,bool)" \
-  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY" \
+INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint256,uint64,address,bytes32,bool,bool)" \
+  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$MIN_ALPHA_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY" \
   "$TAO_DEPOSITS_ENABLED" "$ALPHA_DEPOSITS_ENABLED")"
 
 proxy_out="$(forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
@@ -360,7 +361,8 @@ forge test -vvv
 forge test --gas-report
 
 # Test contract deployment flow used in this repo
-# (requires env vars: NETUID, TRUSTEE_ADDRESS, MIN_COLLATERAL,
-#  DECISION_TIMEOUT, ADMIN_ADDRESS, VALIDATOR_HOTKEY, PRIVATE_KEY, RPC_URL)
+# (requires env vars: NETUID, TRUSTEE_ADDRESS, MIN_COLLATERAL, MIN_ALPHA_COLLATERAL,
+#  DECISION_TIMEOUT, ADMIN_ADDRESS, VALIDATOR_HOTKEY, TAO_DEPOSITS_ENABLED,
+#  ALPHA_DEPOSITS_ENABLED, PRIVATE_KEY, RPC_URL)
 bash ./deploy.sh
 ```
