@@ -948,6 +948,13 @@ pub enum DeployAction {
         replicas: u32,
     },
 
+    /// Restart a deployment (rolling restart)
+    #[command(name = "restart")]
+    Restart {
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
+    },
+
     /// Manage share tokens for private deployments
     #[command(name = "share-token")]
     ShareToken {

@@ -1266,6 +1266,14 @@ class BasilicaClient:
         """Delete a deployment by name."""
         return self._client.delete_deployment(instance_name)
 
+    def restart_deployment(self, instance_name: str) -> DeploymentResponse:
+        """Restart a deployment (rolling restart).
+
+        Args:
+            instance_name: Deployment name
+        """
+        return self._client.restart_deployment(instance_name)
+
     def list_deployments(self) -> DeploymentListResponse:
         """List all deployments."""
         return self._client.list_deployments()
@@ -1800,6 +1808,17 @@ class BasilicaClient:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, self._client.delete_deployment, instance_name
+        )
+
+    async def restart_deployment_async(self, instance_name: str) -> DeploymentResponse:
+        """Restart a deployment (rolling restart) asynchronously.
+
+        Args:
+            instance_name: Deployment name
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, self._client.restart_deployment, instance_name
         )
 
     async def list_deployments_async(self) -> DeploymentListResponse:

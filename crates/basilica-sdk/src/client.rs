@@ -747,6 +747,28 @@ impl BasilicaClient {
         self.delete(&path).await
     }
 
+    /// Restart a deployment (rolling restart)
+    ///
+    /// Triggers a Kubernetes rolling restart by patching the pod template annotation.
+    /// No request body is required.
+    ///
+    /// # Arguments
+    ///
+    /// * `instance_name` - The deployment instance name to restart
+    ///
+    /// # Returns
+    ///
+    /// Returns the updated deployment state after restart is initiated
+    ///
+    /// # Errors
+    ///
+    /// * `ApiError::NotFound` - Deployment doesn't exist
+    /// * `ApiError::Authorization` - Insufficient permissions
+    pub async fn restart_deployment(&self, instance_name: &str) -> Result<DeploymentResponse> {
+        let path = format!("/deployments/{}/restart", instance_name);
+        self.post(&path, &serde_json::json!({})).await
+    }
+
     /// List all deployments for the authenticated user
     ///
     /// Returns a summary of all active deployments including their state and URLs.

@@ -264,6 +264,27 @@ impl BasilicaClient {
         Ok(response.into())
     }
 
+    /// Restart a deployment (rolling restart)
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    fn restart_deployment(
+        &self,
+        py: Python,
+        instance_name: String,
+    ) -> PyResult<DeploymentResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.restart_deployment(&instance_name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
     /// List all deployments for the authenticated user
     fn list_deployments(&self, py: Python) -> PyResult<DeploymentListResponse> {
         let client = Arc::clone(&self.inner);
