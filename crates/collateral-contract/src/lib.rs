@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use alloy::eips::BlockNumberOrTag;
 use alloy::rpc::types::Filter;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{Address, FixedBytes, U256};
@@ -13,7 +14,7 @@ pub use CollateralUpgradeable::{Denied, Deposit, ReclaimProcessStarted, Reclaime
 #[cfg(test)]
 mod tests;
 
-use config::CollateralNetworkConfig;
+use config::{CollateralNetworkConfig, MAX_BLOCKS_PER_SCAN};
 
 sol!(
     #[allow(missing_docs, clippy::too_many_arguments)]
@@ -118,15 +119,22 @@ pub async fn scan_events(
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let current_block = provider.get_block_number().await?;
+    let finalized_block = provider
+        .get_block_by_number(BlockNumberOrTag::Finalized)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Failed to fetch finalized block"))?
+        .header
+        .number;
 
-    if from_block > current_block {
+    if from_block > finalized_block {
         return Err(anyhow::anyhow!(
-            "from_block must be less than or equal to current_block"
+            "from_block ({}) is ahead of finalized block ({})",
+            from_block,
+            finalized_block,
         ));
     }
 
-    scan_events_with_scope(from_block, current_block, network_config).await
+    scan_events_with_scope(from_block, finalized_block, network_config).await
 }
 
 pub async fn scan_events_with_scope(
@@ -138,77 +146,88 @@ pub async fn scan_events_with_scope(
         .connect(&network_config.rpc_url)
         .await?;
 
-    let filter = Filter::new()
-        .address(network_config.contract_address)
-        .from_block(from_block)
-        .to_block(to_block);
-
-    let logs = provider.get_logs(&filter).await?;
-
     let mut result: HashMap<u64, Vec<CollateralEvent>> = HashMap::new();
+    let mut chunk_start = from_block;
 
-    for log in logs {
-        if log.removed {
-            continue;
+    while chunk_start <= to_block {
+        let chunk_end = (chunk_start + MAX_BLOCKS_PER_SCAN - 1).min(to_block);
+
+        let filter = Filter::new()
+            .address(network_config.contract_address)
+            .from_block(chunk_start)
+            .to_block(chunk_end);
+
+        let logs = provider.get_logs(&filter).await?;
+
+        for log in logs {
+            if log.removed {
+                continue;
+            }
+
+            let topics = log.inner.topics();
+            let topic0 = topics.first();
+            let block_number = log
+                .block_number
+                .ok_or(anyhow::anyhow!("Block number not available in event"))?;
+
+            let block_result = result.get_mut(&block_number);
+
+            let event = match topic0 {
+                Some(sig) if sig == &CollateralUpgradeable::Deposit::SIGNATURE_HASH => {
+                    let deposit = CollateralUpgradeable::Deposit::decode_raw_log(
+                        topics,
+                        log.data().data.as_ref(),
+                    )?;
+                    Some(CollateralEvent::Deposit(deposit))
+                }
+                Some(sig)
+                    if sig
+                        == &CollateralUpgradeable::ReclaimProcessStarted::SIGNATURE_HASH =>
+                {
+                    let reclaim_started =
+                        CollateralUpgradeable::ReclaimProcessStarted::decode_raw_log(
+                            topics,
+                            log.data().data.as_ref(),
+                        )?;
+                    Some(CollateralEvent::ReclaimProcessStarted(reclaim_started))
+                }
+                Some(sig) if sig == &CollateralUpgradeable::Denied::SIGNATURE_HASH => {
+                    let denied = CollateralUpgradeable::Denied::decode_raw_log(
+                        topics,
+                        log.data().data.as_ref(),
+                    )?;
+                    Some(CollateralEvent::Denied(denied))
+                }
+                Some(sig) if sig == &CollateralUpgradeable::Reclaimed::SIGNATURE_HASH => {
+                    let reclaimed = CollateralUpgradeable::Reclaimed::decode_raw_log(
+                        topics,
+                        log.data().data.as_ref(),
+                    )?;
+                    Some(CollateralEvent::Reclaimed(reclaimed))
+                }
+                Some(sig) if sig == &CollateralUpgradeable::Slashed::SIGNATURE_HASH => {
+                    let slashed = CollateralUpgradeable::Slashed::decode_raw_log(
+                        topics,
+                        log.data().data.as_ref(),
+                    )?;
+                    Some(CollateralEvent::Slashed(slashed))
+                }
+                _ => None,
+            };
+
+            if let Some(event) = event {
+                match block_result {
+                    Some(events) => {
+                        events.push(event);
+                    }
+                    None => {
+                        result.insert(block_number, vec![event]);
+                    }
+                }
+            }
         }
 
-        let topics = log.inner.topics();
-        let topic0 = topics.first();
-        let block_number = log
-            .block_number
-            .ok_or(anyhow::anyhow!("Block number not available in event"))?;
-
-        let block_result = result.get_mut(&block_number);
-
-        let event = match topic0 {
-            Some(sig) if sig == &CollateralUpgradeable::Deposit::SIGNATURE_HASH => {
-                let deposit = CollateralUpgradeable::Deposit::decode_raw_log(
-                    topics,
-                    log.data().data.as_ref(),
-                )?;
-                Some(CollateralEvent::Deposit(deposit))
-            }
-            Some(sig) if sig == &CollateralUpgradeable::ReclaimProcessStarted::SIGNATURE_HASH => {
-                let reclaim_started = CollateralUpgradeable::ReclaimProcessStarted::decode_raw_log(
-                    topics,
-                    log.data().data.as_ref(),
-                )?;
-                Some(CollateralEvent::ReclaimProcessStarted(reclaim_started))
-            }
-            Some(sig) if sig == &CollateralUpgradeable::Denied::SIGNATURE_HASH => {
-                let denied = CollateralUpgradeable::Denied::decode_raw_log(
-                    topics,
-                    log.data().data.as_ref(),
-                )?;
-                Some(CollateralEvent::Denied(denied))
-            }
-            Some(sig) if sig == &CollateralUpgradeable::Reclaimed::SIGNATURE_HASH => {
-                let reclaimed = CollateralUpgradeable::Reclaimed::decode_raw_log(
-                    topics,
-                    log.data().data.as_ref(),
-                )?;
-                Some(CollateralEvent::Reclaimed(reclaimed))
-            }
-            Some(sig) if sig == &CollateralUpgradeable::Slashed::SIGNATURE_HASH => {
-                let slashed = CollateralUpgradeable::Slashed::decode_raw_log(
-                    topics,
-                    log.data().data.as_ref(),
-                )?;
-                Some(CollateralEvent::Slashed(slashed))
-            }
-            _ => None,
-        };
-
-        if let Some(event) = event {
-            match block_result {
-                Some(events) => {
-                    events.push(event);
-                }
-                None => {
-                    result.insert(block_number, vec![event]);
-                }
-            }
-        }
+        chunk_start = chunk_end + 1;
     }
 
     info!(
