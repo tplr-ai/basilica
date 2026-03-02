@@ -239,6 +239,35 @@
   },
   {
     "type": "function",
+    "name": "getCollaterals",
+    "inputs": [
+      {
+        "name": "hotkey",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "nodeId",
+        "type": "bytes16",
+        "internalType": "bytes16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "taoCollateral",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "alphaCollateral",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getContractStake",
     "inputs": [
       {

@@ -172,6 +172,18 @@ async fn test_collateral_deploy() {
         .await
         .unwrap();
     assert_eq!(alpha_collaterals_result, alpha_amount);
+
+    // Test getCollaterals returns both values in a single call
+    let combined = proxied
+        .getCollaterals(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&node_id.to_be_bytes()),
+        )
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(combined.taoCollateral, U256::ZERO);
+    assert_eq!(combined.alphaCollateral, alpha_amount);
 }
 
 #[tokio::test]

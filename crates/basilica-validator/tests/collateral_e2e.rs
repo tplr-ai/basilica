@@ -58,13 +58,13 @@ impl MockChainClient {
 
 #[async_trait]
 impl CollateralChainClient for MockChainClient {
-    async fn alpha_collaterals(
+    async fn collaterals(
         &self,
         _hotkey_bytes: [u8; 32],
         _node_bytes: [u8; 16],
         _network_config: &collateral_contract::config::CollateralNetworkConfig,
-    ) -> Result<U256> {
-        Ok(self.alpha_collateral)
+    ) -> Result<(U256, U256)> {
+        Ok((U256::ZERO, self.alpha_collateral))
     }
 
     async fn submit_slash(

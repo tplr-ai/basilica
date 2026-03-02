@@ -11,7 +11,7 @@ use aws_config::Region;
 use aws_sdk_secretsmanager::Client as SecretsClient;
 use chrono::Utc;
 use collateral_contract::config::{CollateralNetworkConfig, Network};
-use collateral_contract::{alpha_collaterals, slash_collateral};
+use collateral_contract::slash_collateral;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
@@ -26,12 +26,12 @@ use tracing::{info, warn};
 
 #[async_trait]
 pub trait CollateralChainClient: Send + Sync {
-    async fn alpha_collaterals(
+    async fn collaterals(
         &self,
         hotkey_bytes: [u8; 32],
         node_bytes: [u8; 16],
         network_config: &CollateralNetworkConfig,
-    ) -> Result<U256>;
+    ) -> Result<(U256, U256)>;
 
     #[allow(clippy::too_many_arguments)]
     async fn submit_slash(
@@ -50,13 +50,13 @@ struct OnchainCollateralClient;
 
 #[async_trait]
 impl CollateralChainClient for OnchainCollateralClient {
-    async fn alpha_collaterals(
+    async fn collaterals(
         &self,
         hotkey_bytes: [u8; 32],
         node_bytes: [u8; 16],
         network_config: &CollateralNetworkConfig,
-    ) -> Result<U256> {
-        Ok(alpha_collaterals(hotkey_bytes, node_bytes, network_config).await?)
+    ) -> Result<(U256, U256)> {
+        Ok(collateral_contract::collaterals(hotkey_bytes, node_bytes, network_config).await?)
     }
 
     async fn submit_slash(
@@ -621,18 +621,18 @@ impl SlashExecutor {
         miner_hotkey: &str,
         node_id: &str,
     ) -> Result<U256> {
-        let amount = self
+        let (_, alpha) = self
             .chain_client
-            .alpha_collaterals(*hotkey_bytes, *node_bytes, network_config)
+            .collaterals(*hotkey_bytes, *node_bytes, network_config)
             .await?;
-        if amount.is_zero() {
+        if alpha.is_zero() {
             anyhow::bail!(
                 "alpha collateral is zero for node {} (hotkey: {})",
                 node_id,
                 miner_hotkey
             );
         }
-        Ok(amount)
+        Ok(alpha)
     }
 }
 

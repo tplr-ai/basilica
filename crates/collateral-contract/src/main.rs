@@ -180,18 +180,8 @@ enum QueryCommands {
         #[arg(long)]
         node_id: String,
     },
-    /// Get the TAO collateral amount for an node
-    #[command(alias = "collaterals")]
-    TaoCollaterals {
-        /// Hotkey as hex string (32 bytes)
-        #[arg(long)]
-        hotkey: String,
-        /// Node ID as string
-        #[arg(long)]
-        node_id: String,
-    },
-    /// Get the alpha collateral amount for an node
-    AlphaCollaterals {
+    /// Get both TAO and alpha collateral amounts for a node
+    Collaterals {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
@@ -455,32 +445,19 @@ async fn handle_query_command(
             .await?;
             println!("Miner address for node {}: {}", node_id_clone, result);
         }
-        QueryCommands::TaoCollaterals { hotkey, node_id } => {
+        QueryCommands::Collaterals { hotkey, node_id } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let node_id_clone = node_id.clone();
             let node_uuid = Uuid::parse_str(&node_id)?;
-            let result = collateral_contract::tao_collaterals(
+            let (tao, alpha) = collateral_contract::collaterals(
                 hotkey_bytes,
                 node_uuid.into_bytes(),
                 network_config,
             )
             .await?;
-            println!("TAO collateral for node {}: {} wei", node_id_clone, result);
-        }
-        QueryCommands::AlphaCollaterals { hotkey, node_id } => {
-            let hotkey_bytes = parse_hotkey(&hotkey)?;
-            let node_id_clone = node_id.clone();
-            let node_uuid = Uuid::parse_str(&node_id)?;
-            let result = collateral_contract::alpha_collaterals(
-                hotkey_bytes,
-                node_uuid.into_bytes(),
-                network_config,
-            )
-            .await?;
-            println!(
-                "Alpha collateral for node {}: {} wei",
-                node_id_clone, result
-            );
+            println!("Collaterals for node {}:", node_id_clone);
+            println!("  TAO:   {} wei", tao);
+            println!("  Alpha: {} wei", alpha);
         }
         QueryCommands::Reclaims { reclaim_request_id } => {
             let request_id = parse_u256(&reclaim_request_id)?;

@@ -637,6 +637,15 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     event TaoDepositsEnabledUpdated(bool enabled);
     event AlphaDepositsEnabledUpdated(bool enabled);
 
+    function getCollaterals(bytes32 hotkey, bytes16 nodeId)
+        external
+        view
+        returns (uint256 taoCollateral, uint256 alphaCollateral)
+    {
+        taoCollateral = taoCollaterals[hotkey][nodeId];
+        alphaCollateral = alphaCollaterals[hotkey][nodeId];
+    }
+
     function getContractStake(bytes32 hotkey) public view returns (uint256) {
         return IStaking(ISTAKING_V2_ADDRESS).getStake(hotkey, contractColdkey, netuid);
     }

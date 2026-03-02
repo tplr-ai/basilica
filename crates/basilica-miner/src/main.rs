@@ -8,7 +8,7 @@ use basilica_common::identity::{Hotkey, MinerUid};
 use basilica_common::node_identity::NodeId;
 use basilica_common::types::GpuCategory;
 use clap::Parser;
-use collateral_contract::alpha_collaterals;
+use collateral_contract::collaterals;
 use collateral_contract::config::CollateralNetworkConfig;
 use serde::Deserialize;
 use std::path::Path;
@@ -279,9 +279,9 @@ async fn log_collateral_status(miner_hotkey: &str, nodes: &[RegisteredNode]) -> 
 
     for node in nodes {
         let node_uuid = NodeId::new(&node.config.host)?.uuid;
-        let amount =
-            alpha_collaterals(hotkey_bytes, node_uuid.into_bytes(), &network_config).await?;
-        let alpha_amount = alpha_from_rao(amount);
+        let (_tao_collateral, alpha_collateral_rao) =
+            collaterals(hotkey_bytes, node_uuid.into_bytes(), &network_config).await?;
+        let alpha_amount = alpha_from_rao(alpha_collateral_rao);
         // Parse to GpuCategory for consistent handling (validation done at config load time)
         let gpu_cat: GpuCategory = node.config.gpu_category.parse().unwrap();
         let min_usd = minimum_usd_per_gpu(&gpu_cat) * node.config.gpu_count as f64;

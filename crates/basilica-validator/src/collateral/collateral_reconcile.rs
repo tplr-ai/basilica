@@ -111,15 +111,7 @@ impl CollateralReconciler {
         let hotkey = hex_to_fixed::<32>(&node.hotkey)?;
         let node_id = hex_to_fixed::<16>(&node.node_id)?;
 
-        let chain_tao = collateral_contract::tao_collaterals_at_block(
-            hotkey,
-            node_id,
-            block_number,
-            network_config,
-        )
-        .await?;
-
-        let chain_alpha = collateral_contract::alpha_collaterals_at_block(
+        let (chain_tao, chain_alpha) = collateral_contract::collaterals_at_block(
             hotkey,
             node_id,
             block_number,
