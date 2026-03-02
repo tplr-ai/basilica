@@ -217,23 +217,13 @@ impl SimplePersistence {
         }
     }
 
-    pub async fn get_collateral_amount(
-        &self,
-        hotkey: &str,
-        node_id: &str,
-    ) -> Result<Option<U256>, anyhow::Error> {
-        // TAO is retained for on-chain state sync and operator visibility.
-        // Eligibility and slash policy use alpha collateral.
-        self.get_collateral_amount_internal(hotkey, node_id, "tao_collateral")
-            .await
-    }
-
     pub async fn get_tao_collateral_amount(
         &self,
         hotkey: &str,
         node_id: &str,
     ) -> Result<Option<U256>, anyhow::Error> {
-        self.get_collateral_amount(hotkey, node_id).await
+        self.get_collateral_amount_internal(hotkey, node_id, "tao_collateral")
+            .await
     }
 
     pub async fn get_alpha_collateral_amount(
