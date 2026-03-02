@@ -500,8 +500,8 @@ impl SimplePersistence {
         deposit: &Deposit,
         tx: &mut Transaction<'_, Sqlite>,
     ) -> Result<(), anyhow::Error> {
-        let hotkey = deposit.hotkey.encode_hex::<String>();
-        let node_id = deposit.nodeId.encode_hex::<String>();
+        let hotkey = format!("0x{}", deposit.hotkey.encode_hex::<String>());
+        let node_id = format!("0x{}", deposit.nodeId.encode_hex::<String>());
         let miner = address_to_string(deposit.miner);
 
         if let Some(mut state) = self.load_node_state_with_tx(&hotkey, &node_id, tx).await? {
@@ -557,8 +557,8 @@ impl SimplePersistence {
             return Ok(());
         }
 
-        let hotkey = reclaim_started.hotkey.encode_hex::<String>();
-        let node_id = reclaim_started.nodeId.encode_hex::<String>();
+        let hotkey = format!("0x{}", reclaim_started.hotkey.encode_hex::<String>());
+        let node_id = format!("0x{}", reclaim_started.nodeId.encode_hex::<String>());
         let miner = address_to_string(reclaim_started.miner);
 
         let mut state = self
@@ -663,8 +663,8 @@ impl SimplePersistence {
                 )
             })?;
 
-        let event_hotkey = reclaimed.hotkey.encode_hex::<String>();
-        let event_node_id = reclaimed.nodeId.encode_hex::<String>();
+        let event_hotkey = format!("0x{}", reclaimed.hotkey.encode_hex::<String>());
+        let event_node_id = format!("0x{}", reclaimed.nodeId.encode_hex::<String>());
         if event_hotkey != reclaim.hotkey || event_node_id != reclaim.node_id {
             return Err(anyhow::anyhow!(
                 "Reclaim event node mismatch for request {}",
@@ -712,8 +712,8 @@ impl SimplePersistence {
         slashed: &Slashed,
         tx: &mut Transaction<'_, Sqlite>,
     ) -> Result<(), anyhow::Error> {
-        let hotkey = slashed.hotkey.encode_hex::<String>();
-        let node_id = slashed.nodeId.encode_hex::<String>();
+        let hotkey = format!("0x{}", slashed.hotkey.encode_hex::<String>());
+        let node_id = format!("0x{}", slashed.nodeId.encode_hex::<String>());
 
         let mut state = self
             .load_node_state_with_tx(&hotkey, &node_id, tx)
@@ -744,7 +744,7 @@ impl SimplePersistence {
         .bind(state.tao_collateral.to_string())
         .bind(state.alpha_collateral.to_string())
         .bind(slashed.url.clone())
-        .bind(slashed.urlContentSha256.encode_hex::<String>())
+        .bind(format!("0x{}", slashed.urlContentSha256.encode_hex::<String>()))
         .bind(Utc::now().to_rfc3339())
         .bind(state.id)
         .execute(&mut **tx)
@@ -862,8 +862,8 @@ mod tests {
         sqlx::query_as(
             "SELECT tao_collateral, alpha_collateral, pending_tao_reclaim, pending_alpha_reclaim, miner FROM collateral_status WHERE hotkey = ? AND node_id = ?",
         )
-        .bind(hk.encode_hex::<String>())
-        .bind(ex.encode_hex::<String>())
+        .bind(format!("0x{}", hk.encode_hex::<String>()))
+        .bind(format!("0x{}", ex.encode_hex::<String>()))
         .fetch_one(persistence.pool())
         .await
         .unwrap()
@@ -941,8 +941,8 @@ mod tests {
         let d = ev_deposit(hk, ex, make_miner(6), 123, 456);
         persistence.handle_deposit(&d).await.unwrap();
 
-        let hotkey_hex = d.hotkey.encode_hex::<String>();
-        let node_hex = d.nodeId.encode_hex::<String>();
+        let hotkey_hex = format!("0x{}", d.hotkey.encode_hex::<String>());
+        let node_hex = format!("0x{}", d.nodeId.encode_hex::<String>());
 
         let tao = persistence
             .get_tao_collateral_amount(&hotkey_hex, &node_hex)
@@ -1115,8 +1115,8 @@ mod tests {
         let (url, checksum): (String, String) = sqlx::query_as(
             "SELECT url, url_content_sha256 FROM collateral_status WHERE hotkey = ? AND node_id = ?",
         )
-        .bind(hk.encode_hex::<String>())
-        .bind(ex.encode_hex::<String>())
+        .bind(format!("0x{}", hk.encode_hex::<String>()))
+        .bind(format!("0x{}", ex.encode_hex::<String>()))
         .fetch_one(persistence.pool())
         .await
         .unwrap();
@@ -1124,7 +1124,7 @@ mod tests {
         assert_eq!(url, "https://example.com/proof");
         assert_eq!(
             checksum,
-            "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
         );
     }
 
@@ -1139,7 +1139,10 @@ mod tests {
         let initial_block = persistence.get_last_scanned_block_number().await.unwrap();
 
         let events = vec![
-            wrap_event(CollateralEvent::Deposit(ev_deposit(hk, ex, miner, 7, 11)), 0),
+            wrap_event(
+                CollateralEvent::Deposit(ev_deposit(hk, ex, miner, 7, 11)),
+                0,
+            ),
             wrap_event(CollateralEvent::Denied(ev_denied(404)), 1),
         ];
 
@@ -1226,14 +1229,14 @@ mod tests {
 
         let n1 = nodes
             .iter()
-            .find(|n| n.hotkey == hk1.encode_hex::<String>())
+            .find(|n| n.hotkey == format!("0x{}", hk1.encode_hex::<String>()))
             .unwrap();
         assert_eq!(n1.tao_collateral, U256::from(100u64));
         assert_eq!(n1.alpha_collateral, U256::from(200u64));
 
         let n2 = nodes
             .iter()
-            .find(|n| n.hotkey == hk2.encode_hex::<String>())
+            .find(|n| n.hotkey == format!("0x{}", hk2.encode_hex::<String>()))
             .unwrap();
         assert_eq!(n2.tao_collateral, U256::from(300u64));
         assert_eq!(n2.alpha_collateral, U256::from(400u64));
@@ -1251,8 +1254,8 @@ mod tests {
             .await
             .unwrap();
 
-        let hotkey_hex = hk.encode_hex::<String>();
-        let node_hex = ex.encode_hex::<String>();
+        let hotkey_hex = format!("0x{}", hk.encode_hex::<String>());
+        let node_hex = format!("0x{}", ex.encode_hex::<String>());
 
         // Reconcile with different values
         persistence
@@ -1276,5 +1279,116 @@ mod tests {
 
         assert_eq!(tao, Some(U256::from(999u64)));
         assert_eq!(alpha, Some(U256::from(888u64)));
+    }
+
+    #[tokio::test]
+    async fn test_event_log_written_on_block_apply() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(40);
+        let ex = make_node_id(41);
+        let miner = make_miner(42);
+
+        let events = vec![wrap_event(
+            CollateralEvent::Deposit(ev_deposit(hk, ex, miner, 10, 100)),
+            0,
+        )];
+
+        persistence
+            .apply_collateral_events_for_block(1000, &events)
+            .await
+            .unwrap();
+
+        let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM collateral_event_log")
+            .fetch_one(persistence.pool())
+            .await
+            .unwrap();
+        assert_eq!(row_count, 1);
+
+        let (event_type, block_number, hotkey, node_id): (
+            String,
+            i64,
+            Option<String>,
+            Option<String>,
+        ) = sqlx::query_as(
+            "SELECT event_type, block_number, hotkey, node_id FROM collateral_event_log LIMIT 1",
+        )
+        .fetch_one(persistence.pool())
+        .await
+        .unwrap();
+
+        assert_eq!(event_type, "Deposit");
+        assert_eq!(block_number, 1000);
+        assert!(hotkey.unwrap().starts_with("0x"));
+        assert!(node_id.unwrap().starts_with("0x"));
+    }
+
+    #[tokio::test]
+    async fn test_event_log_deduplication() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(43);
+        let ex = make_node_id(44);
+        let miner = make_miner(45);
+
+        let events = vec![wrap_event(
+            CollateralEvent::Deposit(ev_deposit(hk, ex, miner, 10, 100)),
+            0,
+        )];
+
+        persistence
+            .apply_collateral_events_for_block(2000, &events)
+            .await
+            .unwrap();
+
+        // Applying the same events again (same tx_hash + log_index) should not duplicate rows.
+        // The block number advances but the INSERT OR IGNORE deduplicates on (tx_hash, log_index).
+        persistence
+            .apply_collateral_events_for_block(2001, &events)
+            .await
+            .unwrap();
+
+        let row_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM collateral_event_log")
+            .fetch_one(persistence.pool())
+            .await
+            .unwrap();
+        assert_eq!(row_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_event_log_json_content() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(46);
+        let ex = make_node_id(47);
+        let miner = make_miner(48);
+
+        let events = vec![wrap_event(
+            CollateralEvent::Deposit(ev_deposit(hk, ex, miner, 77, 999)),
+            0,
+        )];
+
+        persistence
+            .apply_collateral_events_for_block(3000, &events)
+            .await
+            .unwrap();
+
+        let event_data: String =
+            sqlx::query_scalar("SELECT event_data FROM collateral_event_log LIMIT 1")
+                .fetch_one(persistence.pool())
+                .await
+                .unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&event_data).unwrap();
+        assert!(json.get("hotkey").is_some());
+        assert!(json.get("nodeId").is_some());
+        assert!(json.get("miner").is_some());
+        assert!(
+            json.get("amount").is_some(),
+            "TAO amount field missing from event JSON"
+        );
+        assert!(json.get("alphaAmount").is_some());
+        assert_eq!(json["amount"].as_str().unwrap(), "77");
+        assert_eq!(json["alphaAmount"].as_str().unwrap(), "999");
     }
 }

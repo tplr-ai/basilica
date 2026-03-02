@@ -13,4 +13,5 @@ CREATE TABLE IF NOT EXISTS collateral_event_log (
 
 CREATE INDEX IF NOT EXISTS idx_event_log_block ON collateral_event_log(block_number);
 CREATE INDEX IF NOT EXISTS idx_event_log_hotkey ON collateral_event_log(hotkey);
+CREATE INDEX IF NOT EXISTS idx_event_log_node_id ON collateral_event_log(node_id);
 CREATE INDEX IF NOT EXISTS idx_event_log_type ON collateral_event_log(event_type);

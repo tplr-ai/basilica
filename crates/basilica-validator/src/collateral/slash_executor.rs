@@ -597,7 +597,7 @@ fn to_network_config(config: &CollateralConfig) -> Result<CollateralNetworkConfi
 
 fn hotkey_ss58_to_bytes(hotkey: &str) -> Result<[u8; 32]> {
     let hex = hotkey_ss58_to_hex(hotkey)?;
-    let decoded = hex::decode(hex)?;
+    let decoded = hex::decode(hex.strip_prefix("0x").unwrap_or(&hex))?;
     let bytes: [u8; 32] = decoded
         .as_slice()
         .try_into()
@@ -607,7 +607,7 @@ fn hotkey_ss58_to_bytes(hotkey: &str) -> Result<[u8; 32]> {
 
 fn node_id_to_bytes(node_id: &str) -> Result<[u8; 16]> {
     let hex = node_id_to_hex(node_id)?;
-    let decoded = hex::decode(hex)?;
+    let decoded = hex::decode(hex.strip_prefix("0x").unwrap_or(&hex))?;
     let bytes: [u8; 16] = decoded
         .as_slice()
         .try_into()

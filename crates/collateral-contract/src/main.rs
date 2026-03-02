@@ -463,11 +463,11 @@ async fn handle_query_command(
             let request_id = parse_u256(&reclaim_request_id)?;
             let result = collateral_contract::reclaims(request_id, network_config).await?;
             println!("Reclaim details for request {}:", reclaim_request_id);
-            println!("  Hotkey: {}", hex::encode(result.hotkey));
+            println!("  Hotkey: 0x{}", hex::encode(result.hotkey));
             println!("  Node ID: {}", Uuid::from_bytes(result.node_id));
             println!("  Miner: {}", result.miner);
             println!("  Amount: {} wei", result.amount);
-            println!("  Alpha coldkey: {}", hex::encode(result.alpha_coldkey));
+            println!("  Alpha coldkey: 0x{}", hex::encode(result.alpha_coldkey));
             println!("  Alpha amount: {} wei", result.alpha_amount);
             println!("  Deny timeout: {}", result.deny_timeout);
         }
@@ -551,16 +551,21 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
     for (block_number, block_events) in events {
         println!("\nBlock {}: {} events", block_number, block_events.len());
         for (i, event_with_meta) in block_events.iter().enumerate() {
-            println!("  Event {} (tx: {}, log_index: {}):", i + 1, event_with_meta.tx_hash, event_with_meta.log_index);
+            println!(
+                "  Event {} (tx: {}, log_index: {}):",
+                i + 1,
+                event_with_meta.tx_hash,
+                event_with_meta.log_index
+            );
             let event = &event_with_meta.event;
             match event {
                 CollateralEvent::Deposit(deposit) => {
                     println!("    Type: Deposit");
-                    println!("    Hotkey: {}", hex::encode(deposit.hotkey.as_slice()));
-                    println!("    Node ID: {}", hex::encode(deposit.nodeId.as_slice()));
+                    println!("    Hotkey: 0x{}", hex::encode(deposit.hotkey.as_slice()));
+                    println!("    Node ID: 0x{}", hex::encode(deposit.nodeId.as_slice()));
                     println!("    Miner: {}", deposit.miner);
                     println!(
-                        "    Alpha Hotkey: {}",
+                        "    Alpha Hotkey: 0x{}",
                         hex::encode(deposit.alphaHotkey.as_slice())
                     );
                     println!("    Alpha Amount: {} wei", deposit.alphaAmount);
@@ -569,24 +574,24 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
                     println!("    Type: ReclaimProcessStarted");
                     println!("    Request ID: {}", reclaim_started.reclaimRequestId);
                     println!(
-                        "    Hotkey: {}",
+                        "    Hotkey: 0x{}",
                         hex::encode(reclaim_started.hotkey.as_slice())
                     );
                     println!(
-                        "    Node ID: {}",
+                        "    Node ID: 0x{}",
                         hex::encode(reclaim_started.nodeId.as_slice())
                     );
                     println!("    Miner: {}", reclaim_started.miner);
                     println!("    TAO Amount: {} wei", reclaim_started.amount);
                     println!(
-                        "    Alpha Coldkey: {}",
+                        "    Alpha Coldkey: 0x{}",
                         hex::encode(reclaim_started.alphaColdkey.as_slice())
                     );
                     println!("    Alpha Amount: {} wei", reclaim_started.alphaAmount);
                     println!("    Expiration: {}", reclaim_started.expirationTime);
                     println!("    URL: {}", reclaim_started.url);
                     println!(
-                        "    URL Content SHA-256: {}",
+                        "    URL Content SHA-256: 0x{}",
                         hex::encode(reclaim_started.urlContentSha256.as_slice())
                     );
                 }
@@ -595,31 +600,34 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
                     println!("    Request ID: {}", denied.reclaimRequestId);
                     println!("    URL: {}", denied.url);
                     println!(
-                        "    URL Content SHA-256: {}",
+                        "    URL Content SHA-256: 0x{}",
                         hex::encode(denied.urlContentSha256.as_slice())
                     );
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
                     println!("    Type: Reclaimed");
                     println!("    Request ID: {}", reclaimed.reclaimRequestId);
-                    println!("    Hotkey: {}", hex::encode(reclaimed.hotkey.as_slice()));
-                    println!("    Node ID: {}", hex::encode(reclaimed.nodeId.as_slice()));
+                    println!("    Hotkey: 0x{}", hex::encode(reclaimed.hotkey.as_slice()));
+                    println!(
+                        "    Node ID: 0x{}",
+                        hex::encode(reclaimed.nodeId.as_slice())
+                    );
                     println!("    Miner: {}", reclaimed.miner);
                     println!(
-                        "    Alpha Coldkey: {}",
+                        "    Alpha Coldkey: 0x{}",
                         hex::encode(reclaimed.alphaColdkey.as_slice())
                     );
                     println!("    Alpha Amount: {} wei", reclaimed.alphaAmount);
                 }
                 CollateralEvent::Slashed(slashed) => {
                     println!("    Type: Slashed");
-                    println!("    Hotkey: {}", hex::encode(slashed.hotkey.as_slice()));
-                    println!("    Node ID: {}", hex::encode(slashed.nodeId.as_slice()));
+                    println!("    Hotkey: 0x{}", hex::encode(slashed.hotkey.as_slice()));
+                    println!("    Node ID: 0x{}", hex::encode(slashed.nodeId.as_slice()));
                     println!("    Miner: {}", slashed.miner);
                     println!("    Alpha Amount: {} wei", slashed.slashAlphaAmount);
                     println!("    URL: {}", slashed.url);
                     println!(
-                        "    URL Content SHA-256: {}",
+                        "    URL Content SHA-256: 0x{}",
                         hex::encode(slashed.urlContentSha256.as_slice())
                     );
                 }

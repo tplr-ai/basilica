@@ -118,9 +118,7 @@ impl CollateralEvent {
 
     pub fn node_id_hex(&self) -> Option<String> {
         match self {
-            CollateralEvent::Deposit(d) => {
-                Some(format!("0x{}", hex::encode(d.nodeId.as_slice())))
-            }
+            CollateralEvent::Deposit(d) => Some(format!("0x{}", hex::encode(d.nodeId.as_slice()))),
             CollateralEvent::ReclaimProcessStarted(r) => {
                 Some(format!("0x{}", hex::encode(r.nodeId.as_slice())))
             }
@@ -128,9 +126,7 @@ impl CollateralEvent {
             CollateralEvent::Reclaimed(r) => {
                 Some(format!("0x{}", hex::encode(r.nodeId.as_slice())))
             }
-            CollateralEvent::Slashed(s) => {
-                Some(format!("0x{}", hex::encode(s.nodeId.as_slice())))
-            }
+            CollateralEvent::Slashed(s) => Some(format!("0x{}", hex::encode(s.nodeId.as_slice()))),
         }
     }
 
@@ -140,6 +136,7 @@ impl CollateralEvent {
                 "hotkey": format!("0x{}", hex::encode(d.hotkey.as_slice())),
                 "nodeId": format!("0x{}", hex::encode(d.nodeId.as_slice())),
                 "miner": d.miner.to_string(),
+                "amount": d.amount.to_string(),
                 "alphaHotkey": format!("0x{}", hex::encode(d.alphaHotkey.as_slice())),
                 "alphaAmount": d.alphaAmount.to_string(),
             }),
@@ -165,6 +162,7 @@ impl CollateralEvent {
                 "hotkey": format!("0x{}", hex::encode(r.hotkey.as_slice())),
                 "nodeId": format!("0x{}", hex::encode(r.nodeId.as_slice())),
                 "miner": r.miner.to_string(),
+                "amount": r.amount.to_string(),
                 "alphaColdkey": format!("0x{}", hex::encode(r.alphaColdkey.as_slice())),
                 "alphaAmount": r.alphaAmount.to_string(),
             }),
@@ -172,6 +170,7 @@ impl CollateralEvent {
                 "hotkey": format!("0x{}", hex::encode(s.hotkey.as_slice())),
                 "nodeId": format!("0x{}", hex::encode(s.nodeId.as_slice())),
                 "miner": s.miner.to_string(),
+                "slashAmount": s.slashAmount.to_string(),
                 "slashAlphaAmount": s.slashAlphaAmount.to_string(),
                 "url": s.url.clone(),
                 "urlContentSha256": format!("0x{}", hex::encode(s.urlContentSha256.as_slice())),
@@ -282,8 +281,7 @@ pub async fn scan_events_with_scope(
                     Some(CollateralEvent::Deposit(deposit))
                 }
                 Some(sig)
-                    if sig
-                        == &CollateralUpgradeable::ReclaimProcessStarted::SIGNATURE_HASH =>
+                    if sig == &CollateralUpgradeable::ReclaimProcessStarted::SIGNATURE_HASH =>
                 {
                     let reclaim_started =
                         CollateralUpgradeable::ReclaimProcessStarted::decode_raw_log(

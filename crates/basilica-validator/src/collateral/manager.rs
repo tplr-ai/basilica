@@ -147,12 +147,12 @@ pub fn hotkey_ss58_to_hex(hotkey: &str) -> Result<String> {
         .to_account_id()
         .map_err(|e| anyhow::anyhow!("hotkey conversion failed: {e}"))?;
     let account_bytes: &[u8] = account_id.as_ref();
-    Ok(encode(account_bytes))
+    Ok(format!("0x{}", encode(account_bytes)))
 }
 
 pub fn node_id_to_hex(node_id: &str) -> Result<String> {
     let uuid = Uuid::parse_str(node_id)?;
-    Ok(encode(uuid.as_bytes()))
+    Ok(format!("0x{}", encode(uuid.as_bytes())))
 }
 
 fn u256_to_alpha(amount: alloy_primitives::U256) -> Decimal {
@@ -287,7 +287,8 @@ mod tests {
     async fn test_node_id_to_hex() {
         let uuid = Uuid::new_v4();
         let hex = node_id_to_hex(&uuid.to_string()).unwrap();
-        assert_eq!(hex.len(), 32);
+        assert_eq!(hex.len(), 34); // "0x" + 32 hex chars
+        assert!(hex.starts_with("0x"));
     }
 
     #[tokio::test]

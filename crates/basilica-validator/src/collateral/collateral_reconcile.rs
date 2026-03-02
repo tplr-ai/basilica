@@ -182,7 +182,7 @@ impl CollateralReconciler {
 }
 
 fn hex_to_fixed<const N: usize>(hex_str: &str) -> Result<[u8; N], anyhow::Error> {
-    let bytes = hex::decode(hex_str)?;
+    let bytes = hex::decode(hex_str.strip_prefix("0x").unwrap_or(hex_str))?;
     if bytes.len() != N {
         return Err(anyhow::anyhow!(
             "Expected {} bytes, got {} from hex '{}'",
