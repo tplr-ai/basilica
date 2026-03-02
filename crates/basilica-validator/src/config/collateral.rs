@@ -112,8 +112,9 @@ impl CollateralConfig {
         if self.minimum_usd_per_gpu.is_empty() {
             anyhow::bail!("collateral.minimum_usd_per_gpu cannot be empty");
         }
-        if !(Decimal::ZERO < self.slash_fraction && self.slash_fraction <= Decimal::ONE) {
-            anyhow::bail!("collateral.slash_fraction must be within (0.0, 1.0]");
+        let one_percent = Decimal::new(1, 2); // 0.01
+        if !(one_percent <= self.slash_fraction && self.slash_fraction <= Decimal::ONE) {
+            anyhow::bail!("collateral.slash_fraction must be within [0.01, 1.0]");
         }
         if self.slash_cooldown_secs == 0 {
             anyhow::bail!("collateral.slash_cooldown_secs must be > 0");

@@ -279,7 +279,10 @@ impl SlashExecutor {
             .round()
             .to_u64()
             .unwrap_or(0);
-        if numerator == 0 || numerator >= 100 {
+        if numerator == 0 {
+            return U256::from(1u64);
+        }
+        if numerator >= 100 {
             return collateral;
         }
         let amount = collateral * U256::from(numerator) / U256::from(100u64);
@@ -697,5 +700,45 @@ mod tests {
             U256::from(500u64)
         );
         assert_eq!(executor.compute_slash_amount(U256::ZERO), U256::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_compute_slash_amount_one_percent() {
+        let temp = tempdir().unwrap();
+        let config = CollateralConfig {
+            slash_fraction: Decimal::new(1, 2), // 0.01 = 1%
+            evidence_storage_path: temp.path().to_path_buf(),
+            contract_address: "0x0000000000000000000000000000000000000001".to_string(),
+            ..CollateralConfig::default()
+        };
+        let store = EvidenceStore::new_local(
+            config.evidence_base_url.clone(),
+            config.evidence_storage_path.clone(),
+        );
+        let executor = SlashExecutor::new(config, store, None, None);
+        assert_eq!(
+            executor.compute_slash_amount(U256::from(10000u64)),
+            U256::from(100u64)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compute_slash_amount_one_percent_minimum_floor() {
+        let temp = tempdir().unwrap();
+        let config = CollateralConfig {
+            slash_fraction: Decimal::new(1, 2), // 0.01 = 1%
+            evidence_storage_path: temp.path().to_path_buf(),
+            contract_address: "0x0000000000000000000000000000000000000001".to_string(),
+            ..CollateralConfig::default()
+        };
+        let store = EvidenceStore::new_local(
+            config.evidence_base_url.clone(),
+            config.evidence_storage_path.clone(),
+        );
+        let executor = SlashExecutor::new(config, store, None, None);
+        assert_eq!(
+            executor.compute_slash_amount(U256::from(1u64)),
+            U256::from(1u64)
+        );
     }
 }
