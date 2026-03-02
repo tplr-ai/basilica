@@ -914,18 +914,19 @@ impl SimplePersistence {
     // currently claimed for a rental. When NULL the node is available; when set
     // it holds the rental_id that owns the node.
     //
-    // INVARIANT: active_rental_id MUST be cleared on EVERY termination path:
-    //   1. stop_rental()                    -- user stops rental
-    //   2. deploy_container failure         -- container deploy fails
-    //   3. finalize_rental failure          -- DB save fails after deploy
-    //   4. ensure_not_banned failure        -- node is banned
-    //   5. require_ssh_endpoint failure     -- SSH endpoint missing
-    //   6. require_node_details failure     -- node details missing
-    //   7. ensure_recent_validation failure -- validation too old
-    //   8. health check timeout             -- monitoring.rs
-    //   9. health check error               -- monitoring.rs
-    //  10. container unhealthy              -- monitoring.rs
-    //  11. restart failure                  -- restart_rental() fails
+    // INVARIANT: active_rental_id MUST be cleared on EVERY termination path.
+    //
+    // Rental creation (`start_rental`):
+    //   - `claim_node()` sets active_rental_id as the FIRST step.
+    //   - All subsequent work runs inside `start_rental_inner()`.
+    //   - If `start_rental_inner` returns Err, `start_rental` calls
+    //     `release_node()` in a single catch-all handler — individual
+    //     validation/deploy helpers do NOT call release_node themselves.
+    //
+    // Rental lifecycle:
+    //   1. stop_rental()       -- user stops rental
+    //   2. restart failure     -- restart_rental() fails
+    //   3. health check        -- monitoring.rs detects terminal state
     //
     // There is NO TTL. If release_node is not called, the node stays claimed
     // forever. This is by design to avoid silent data corruption.

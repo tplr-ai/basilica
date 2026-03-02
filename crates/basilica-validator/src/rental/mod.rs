@@ -362,19 +362,39 @@ impl RentalManager {
     pub async fn start_rental(&self, request: RentalRequest) -> Result<RentalResponse> {
         let rental_id = format!("rental-{}", Uuid::new_v4());
 
-        // 1. Find winning bid (required - no fallback)
+        // 1. Find winning bid and claim node (sets active_rental_id)
         let selection = self.select_node_from_bids(&request, &rental_id).await?;
 
+        // 2. Run the rest of the flow — if ANY step fails, release the node claim.
+        match self
+            .start_rental_inner(&request, &rental_id, &selection)
+            .await
+        {
+            Ok(response) => Ok(response),
+            Err(e) => {
+                self.release_node(&selection, &rental_id).await;
+                Err(e)
+            }
+        }
+    }
+
+    /// Inner rental flow executed after the node is claimed.
+    /// On error the caller (`start_rental`) releases the node claim.
+    async fn start_rental_inner(
+        &self,
+        request: &RentalRequest,
+        rental_id: &str,
+        selection: &RentalSelection,
+    ) -> Result<RentalResponse> {
         // 2. Validate node is not banned
-        self.ensure_not_banned(&selection, &rental_id).await?;
+        self.ensure_not_banned(selection).await?;
 
         // 3. Ensure node has recent validation (PR #331 requirement)
-        self.ensure_recent_validation(&selection, &rental_id)
-            .await?;
+        self.ensure_recent_validation(selection).await?;
 
         // 4. Get SSH endpoint and node details
-        let ssh_endpoint = self.require_ssh_endpoint(&selection, &rental_id).await?;
-        let node_details = self.require_node_details(&selection, &rental_id).await?;
+        let ssh_endpoint = self.require_ssh_endpoint(selection).await?;
+        let node_details = self.require_node_details(selection).await?;
 
         tracing::info!(
             node_id = %selection.node_id,
@@ -393,9 +413,9 @@ impl RentalManager {
         let container_info = self
             .deploy_container_or_log_failure(
                 &container_client,
-                &request,
-                &rental_id,
-                &selection,
+                request,
+                rental_id,
+                selection,
                 &ssh_credentials,
             )
             .await?;
@@ -404,27 +424,19 @@ impl RentalManager {
             self.resolve_end_user_ssh_credentials(&ssh_endpoint, &container_info);
 
         // 6. Finalize rental — on success, active_rental_id stays set for the
-        // lifetime of the rental. On failure, release the node claim.
-        let finalize_result = self
+        // lifetime of the rental.
+        let rental_info = self
             .finalize_rental(
-                &request,
-                &rental_id,
-                &selection,
+                request,
+                rental_id,
+                selection,
                 &ssh_credentials,
                 &node_details,
                 &container_info,
             )
-            .await;
+            .await?;
 
-        let rental_info = match finalize_result {
-            Ok(info) => info,
-            Err(e) => {
-                self.release_node(&selection, &rental_id).await;
-                return Err(e);
-            }
-        };
-
-        self.record_rental_metrics(&selection, &rental_info);
+        self.record_rental_metrics(selection, &rental_info);
 
         tracing::info!(
             node_id = %selection.node_id,
@@ -437,7 +449,7 @@ impl RentalManager {
         );
 
         Ok(RentalResponse {
-            rental_id,
+            rental_id: rental_id.to_string(),
             ssh_credentials: end_user_ssh_credentials,
             container_info,
         })
@@ -598,14 +610,13 @@ impl RentalManager {
         ordered
     }
 
-    async fn ensure_not_banned(&self, selection: &RentalSelection, rental_id: &str) -> Result<()> {
+    async fn ensure_not_banned(&self, selection: &RentalSelection) -> Result<()> {
         if let Some(miner_uid) = selection.miner_uid {
             if let Some(ban_expiry) = self
                 .ban_manager
                 .get_ban_expiry(miner_uid, &selection.node_id)
                 .await?
             {
-                self.release_node(selection, rental_id).await;
                 tracing::warn!(
                     node_id = %selection.node_id,
                     miner_id = %selection.miner_id,
@@ -623,32 +634,24 @@ impl RentalManager {
         Ok(())
     }
 
-    async fn require_ssh_endpoint(
-        &self,
-        selection: &RentalSelection,
-        rental_id: &str,
-    ) -> Result<String> {
+    async fn require_ssh_endpoint(&self, selection: &RentalSelection) -> Result<String> {
         let ssh_endpoint = self
             .persistence
             .get_node_ssh_endpoint(&selection.node_id, &selection.miner_id)
             .await?;
         match ssh_endpoint {
             Some(endpoint) => Ok(endpoint),
-            None => {
-                self.release_node(selection, rental_id).await;
-                Err(anyhow::anyhow!(
-                    "SSH endpoint not found for node {} (miner: {})",
-                    selection.node_id,
-                    selection.miner_id
-                ))
-            }
+            None => Err(anyhow::anyhow!(
+                "SSH endpoint not found for node {} (miner: {})",
+                selection.node_id,
+                selection.miner_id
+            )),
         }
     }
 
     async fn require_node_details(
         &self,
         selection: &RentalSelection,
-        rental_id: &str,
     ) -> Result<crate::api::types::NodeDetails> {
         let node_details = self
             .persistence
@@ -657,11 +660,9 @@ impl RentalManager {
         match node_details {
             Some(details) => Ok(details),
             None => {
-                self.release_node(selection, rental_id).await;
                 tracing::warn!(
                     node_id = %selection.node_id,
                     miner_uid = selection.miner_uid,
-                    rental_id = %rental_id,
                     "Node details not found for node {} (miner: {})",
                     selection.node_id,
                     selection.miner_id
@@ -675,11 +676,7 @@ impl RentalManager {
         }
     }
 
-    async fn ensure_recent_validation(
-        &self,
-        selection: &RentalSelection,
-        rental_id: &str,
-    ) -> Result<()> {
+    async fn ensure_recent_validation(&self, selection: &RentalSelection) -> Result<()> {
         let Some(miner_uid) = selection.miner_uid else {
             return Ok(());
         };
@@ -707,7 +704,6 @@ impl RentalManager {
             .unwrap_or(true);
 
         if is_stale {
-            self.release_node(selection, rental_id).await;
             // TODO: Consider auto-triggering a full validation on stale rentals instead of rejecting.
             return Err(anyhow::anyhow!(
                 "Node {} requires a recent full validation before rental (miner_uid: {})",
@@ -770,7 +766,6 @@ impl RentalManager {
         {
             Ok(info) => Ok(info),
             Err(e) => {
-                self.release_node(selection, rental_id).await;
                 tracing::error!(
                     node_id = %selection.node_id,
                     rental_id = %rental_id,
