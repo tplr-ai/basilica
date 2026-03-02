@@ -595,13 +595,6 @@ impl RentalManager {
             match preference {
                 CollateralPreference::Preferred => preferred.push(candidate),
                 CollateralPreference::Fallback => fallback.push(candidate),
-                CollateralPreference::Excluded => {
-                    tracing::info!(
-                        node_id = %candidate.node_id,
-                        miner_uid = candidate.miner_uid,
-                        "Skipping excluded node due to insufficient collateral"
-                    );
-                }
             }
         }
 

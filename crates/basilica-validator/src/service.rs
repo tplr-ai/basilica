@@ -4,7 +4,6 @@ use crate::bittensor_core::{ChainRegistration, WeightSetter};
 use crate::collateral::collateral_scan::Collateral;
 use crate::collateral::evaluator::CollateralEvaluator;
 use crate::collateral::evidence::EvidenceStore;
-use crate::collateral::grace_tracker::GracePeriodTracker;
 use crate::collateral::manager::CollateralManager;
 use crate::collateral::SlashExecutor;
 use crate::config::ValidatorConfig;
@@ -267,7 +266,6 @@ impl ValidatorService {
             api_client,
             gpu_profile_repo,
             validator_metrics.map(|m| Arc::new(m.clone())),
-            self.config.collateral.as_ref().map(|c| c.grace_period()),
         )?;
         Ok(Arc::new(weight_setter))
     }
@@ -312,19 +310,11 @@ impl ValidatorService {
         if collateral_config.shadow_mode {
             warn!("Collateral shadow_mode is enabled; on-chain slashing is disabled");
         }
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            persistence.clone(),
-            collateral_config.grace_period(),
-        ));
-        let evaluator = Arc::new(CollateralEvaluator::new(
-            collateral_config.clone(),
-            grace_tracker.clone(),
-        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(collateral_config.clone()));
         let collateral_manager = Arc::new(CollateralManager::new(
             persistence.clone(),
             api_client,
             evaluator,
-            grace_tracker.clone(),
             self.config.bittensor.common.netuid,
             collateral_metrics.clone(),
         ));
@@ -332,7 +322,6 @@ impl ValidatorService {
         let slash_executor = Arc::new(SlashExecutor::new(
             collateral_config,
             evidence_store,
-            grace_tracker,
             collateral_metrics,
             Some(signer),
         ));

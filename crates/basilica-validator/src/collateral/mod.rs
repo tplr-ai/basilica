@@ -1,7 +1,6 @@
 pub mod collateral_scan;
 pub mod evaluator;
 pub mod evidence;
-pub mod grace_tracker;
 pub mod manager;
 pub mod slash_executor;
 

@@ -3,7 +3,6 @@ use anyhow::Result;
 use async_trait::async_trait;
 use basilica_validator::basilica_api::ValidatorSigner;
 use basilica_validator::collateral::evidence::EvidenceStore;
-use basilica_validator::collateral::grace_tracker::GracePeriodTracker;
 use basilica_validator::collateral::{CollateralChainClient, SlashExecutor};
 use basilica_validator::config::collateral::{CollateralConfig, TrusteeKeySource};
 use basilica_validator::metrics::ValidatorPrometheusMetrics;
@@ -112,7 +111,6 @@ async fn build_persistence() -> Result<Arc<SimplePersistence>> {
 async fn build_executor(
     mut config: CollateralConfig,
     temp_path: &std::path::Path,
-    persistence: Arc<SimplePersistence>,
     chain_client: Arc<dyn CollateralChainClient>,
     metrics: Option<Arc<ValidatorPrometheusMetrics>>,
     signer: Option<Arc<dyn ValidatorSigner>>,
@@ -128,14 +126,9 @@ async fn build_executor(
         config.evidence_base_url.clone(),
         config.evidence_storage_path.clone(),
     );
-    let grace_tracker = Arc::new(GracePeriodTracker::new(
-        persistence.clone(),
-        config.grace_period(),
-    ));
     let executor = SlashExecutor::new_with_chain_client(
         config,
         store,
-        grace_tracker,
         metrics,
         signer,
         chain_client,
@@ -155,7 +148,6 @@ async fn test_slash_flow_executes_and_emits_metrics() -> Result<()> {
     let executor = build_executor(
         CollateralConfig::default(),
         temp.path(),
-        persistence,
         chain_client.clone(),
         Some(metrics),
         Some(signer),
@@ -214,11 +206,9 @@ async fn test_rate_limiter_blocks_repeat_slash() -> Result<()> {
         ..Default::default()
     };
     let signer = Arc::new(TestSigner);
-    let persistence = build_persistence().await?;
     let executor = build_executor(
         config,
         temp.path(),
-        persistence,
         chain_client,
         None,
         Some(signer),
@@ -265,11 +255,9 @@ async fn test_circuit_breaker_trips_on_burst() -> Result<()> {
         ..Default::default()
     };
     let signer = Arc::new(TestSigner);
-    let persistence = build_persistence().await?;
     let executor = build_executor(
         config,
         temp.path(),
-        persistence,
         chain_client,
         None,
         Some(signer),

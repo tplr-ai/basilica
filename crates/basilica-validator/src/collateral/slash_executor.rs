@@ -1,6 +1,5 @@
 use crate::basilica_api::ValidatorSigner;
 use crate::collateral::evidence::{EvidenceStore, SlashEvidence};
-use crate::collateral::grace_tracker::GracePeriodTracker;
 use crate::collateral::manager::{hotkey_ss58_to_hex, node_id_to_hex};
 use crate::config::collateral::{CollateralConfig, TrusteeKeySource};
 use crate::metrics::ValidatorPrometheusMetrics;
@@ -88,7 +87,6 @@ impl CollateralChainClient for OnchainCollateralClient {
 pub struct SlashExecutor {
     config: CollateralConfig,
     evidence_store: EvidenceStore,
-    grace_tracker: Arc<GracePeriodTracker>,
     metrics: Option<Arc<ValidatorPrometheusMetrics>>,
     rate_limiter: Arc<SlashRateLimiter>,
     signer: Option<Arc<dyn ValidatorSigner>>,
@@ -175,14 +173,12 @@ impl SlashExecutor {
     pub fn new(
         config: CollateralConfig,
         evidence_store: EvidenceStore,
-        grace_tracker: Arc<GracePeriodTracker>,
         metrics: Option<Arc<ValidatorPrometheusMetrics>>,
         signer: Option<Arc<dyn ValidatorSigner>>,
     ) -> Self {
         Self::new_with_chain_client(
             config,
             evidence_store,
-            grace_tracker,
             metrics,
             signer,
             Arc::new(OnchainCollateralClient),
@@ -196,7 +192,6 @@ impl SlashExecutor {
     pub fn new_with_chain_client(
         config: CollateralConfig,
         evidence_store: EvidenceStore,
-        grace_tracker: Arc<GracePeriodTracker>,
         metrics: Option<Arc<ValidatorPrometheusMetrics>>,
         signer: Option<Arc<dyn ValidatorSigner>>,
         chain_client: Arc<dyn CollateralChainClient>,
@@ -205,7 +200,6 @@ impl SlashExecutor {
         Self {
             config,
             evidence_store,
-            grace_tracker,
             metrics,
             rate_limiter,
             signer,
@@ -233,7 +227,6 @@ impl SlashExecutor {
             )
             .await?;
         self.record_slash_triggered(misbehaviour_type);
-        self.exclude_node(miner_hotkey, node_id).await;
 
         let hotkey_bytes = hotkey_ss58_to_bytes(miner_hotkey)?;
         let node_bytes = node_id_to_bytes(node_id)?;
@@ -354,16 +347,6 @@ impl SlashExecutor {
     fn record_slash_triggered(&self, misbehaviour_type: &str) {
         if let Some(metrics) = &self.metrics {
             metrics.record_collateral_slash_triggered(misbehaviour_type);
-        }
-    }
-
-    async fn exclude_node(&self, miner_hotkey: &str, node_id: &str) {
-        if let Err(err) = self
-            .grace_tracker
-            .force_exclude(miner_hotkey, node_id)
-            .await
-        {
-            warn!("Failed to mark node excluded after slash trigger: {}", err);
         }
     }
 
@@ -681,15 +664,7 @@ mod tests {
             config.evidence_base_url.clone(),
             config.evidence_storage_path.clone(),
         );
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            Arc::new(
-                crate::persistence::SimplePersistence::for_testing()
-                    .await
-                    .unwrap(),
-            ),
-            config.grace_period(),
-        ));
-        let executor = SlashExecutor::new(config, store, grace_tracker, None, None);
+        let executor = SlashExecutor::new(config, store, None, None);
         executor
             .execute_slash(
                 "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
@@ -716,15 +691,7 @@ mod tests {
             config.evidence_base_url.clone(),
             config.evidence_storage_path.clone(),
         );
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            Arc::new(
-                crate::persistence::SimplePersistence::for_testing()
-                    .await
-                    .unwrap(),
-            ),
-            config.grace_period(),
-        ));
-        let executor = SlashExecutor::new(config, store, grace_tracker, None, None);
+        let executor = SlashExecutor::new(config, store, None, None);
         assert_eq!(
             executor.compute_slash_amount(U256::from(1000u64)),
             U256::from(500u64)

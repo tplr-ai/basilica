@@ -1,6 +1,5 @@
 use crate::basilica_api::BasilicaApiClient;
 use crate::collateral::evaluator::{CollateralEvaluator, CollateralState, CollateralStatus};
-use crate::collateral::grace_tracker::GracePeriodTracker;
 use crate::metrics::ValidatorPrometheusMetrics;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
@@ -17,7 +16,6 @@ use uuid::Uuid;
 pub enum CollateralPreference {
     Preferred,
     Fallback,
-    Excluded,
 }
 
 #[derive(Clone)]
@@ -25,7 +23,6 @@ pub struct CollateralManager {
     persistence: Arc<SimplePersistence>,
     api_client: Arc<BasilicaApiClient>,
     evaluator: Arc<CollateralEvaluator>,
-    grace_tracker: Arc<GracePeriodTracker>,
     netuid: u16,
     metrics: Option<Arc<ValidatorPrometheusMetrics>>,
 }
@@ -35,7 +32,6 @@ impl CollateralManager {
         persistence: Arc<SimplePersistence>,
         api_client: Arc<BasilicaApiClient>,
         evaluator: Arc<CollateralEvaluator>,
-        grace_tracker: Arc<GracePeriodTracker>,
         netuid: u16,
         metrics: Option<Arc<ValidatorPrometheusMetrics>>,
     ) -> Self {
@@ -43,7 +39,6 @@ impl CollateralManager {
             persistence,
             api_client,
             evaluator,
-            grace_tracker,
             netuid,
             metrics,
         }
@@ -111,7 +106,6 @@ impl CollateralManager {
                 CollateralState::Undercollateralized { .. } | CollateralState::Unknown { .. } => {
                     CollateralPreference::Fallback
                 }
-                CollateralState::Excluded { .. } => CollateralPreference::Excluded,
             },
             Err(_) => CollateralPreference::Fallback,
         }
@@ -119,26 +113,6 @@ impl CollateralManager {
 
     pub async fn refresh_price_cache(&self) {
         // TTL-only pricing: no background refresh loop
-    }
-
-    pub async fn is_eligible_for_bids(
-        &self,
-        hotkey: &str,
-        node_id: &str,
-        gpu_category: &str,
-        gpu_count: u32,
-    ) -> bool {
-        match self
-            .get_collateral_status(hotkey, node_id, gpu_category, gpu_count)
-            .await
-        {
-            Ok((state, _)) => !matches!(state, CollateralState::Excluded { .. }),
-            Err(_) => true,
-        }
-    }
-
-    pub async fn force_exclude(&self, hotkey: &str, node_id: &str) -> Result<()> {
-        self.grace_tracker.force_exclude(hotkey, node_id).await
     }
 
     pub async fn get_collateral_alpha(&self, hotkey: &str, node_id: &str) -> Result<Decimal> {
@@ -206,7 +180,6 @@ mod tests {
     };
     use crate::config::collateral::CollateralConfig;
     use crate::persistence::SimplePersistence;
-    use chrono::Duration;
     use rust_decimal::Decimal;
     use std::collections::HashMap;
 
@@ -321,14 +294,7 @@ mod tests {
     async fn test_get_collateral_alpha_missing_returns_zero() {
         let persistence = Arc::new(SimplePersistence::for_testing().await.unwrap());
         let config = CollateralConfig::default();
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            persistence.clone(),
-            Duration::hours(24),
-        ));
-        let evaluator = Arc::new(CollateralEvaluator::new(
-            config.clone(),
-            grace_tracker.clone(),
-        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(config.clone()));
         let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
         let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
             "http://localhost".to_string(),
@@ -343,7 +309,6 @@ mod tests {
             persistence.clone(),
             api_client,
             evaluator,
-            grace_tracker,
             1,
             None,
         );
@@ -381,14 +346,7 @@ mod tests {
         .unwrap();
 
         let config = CollateralConfig::default();
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            persistence.clone(),
-            Duration::hours(24),
-        ));
-        let evaluator = Arc::new(CollateralEvaluator::new(
-            config.clone(),
-            grace_tracker.clone(),
-        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(config.clone()));
         let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
         let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
             "http://localhost".to_string(),
@@ -400,7 +358,7 @@ mod tests {
             Arc::new(TestFetcher),
         ));
         let manager =
-            CollateralManager::new(persistence, api_client, evaluator, grace_tracker, 1, None);
+            CollateralManager::new(persistence, api_client, evaluator, 1, None);
 
         let alpha = manager
             .get_collateral_alpha(hotkey, &node_id)
@@ -433,14 +391,7 @@ mod tests {
         .unwrap();
 
         let config = CollateralConfig::default();
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            persistence.clone(),
-            Duration::hours(24),
-        ));
-        let evaluator = Arc::new(CollateralEvaluator::new(
-            config.clone(),
-            grace_tracker.clone(),
-        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(config.clone()));
         let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
         let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
             "http://localhost".to_string(),
@@ -452,7 +403,7 @@ mod tests {
             Arc::new(FixedPriceFetcher),
         ));
         let manager =
-            CollateralManager::new(persistence, api_client, evaluator, grace_tracker, 1, None);
+            CollateralManager::new(persistence, api_client, evaluator, 1, None);
 
         let (state, status) = manager
             .get_collateral_status(hotkey, &node_id, "H100", 1)

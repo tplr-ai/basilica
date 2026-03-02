@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::Duration;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,10 +18,6 @@ pub struct CollateralConfig {
     pub shadow_mode: bool,
     #[serde(default = "default_warning_threshold_multiplier")]
     pub warning_threshold_multiplier: Decimal,
-    #[serde(default = "default_grace_period_hours")]
-    pub grace_period_hours: u64,
-    #[serde(default = "default_exclude_on_prolonged_price_failure")]
-    pub exclude_on_prolonged_price_failure: bool,
     #[serde(default = "default_minimum_usd_per_gpu")]
     pub minimum_usd_per_gpu: HashMap<String, Decimal>,
     pub contract_address: String,
@@ -73,8 +68,6 @@ impl Default for CollateralConfig {
         Self {
             shadow_mode: default_shadow_mode(),
             warning_threshold_multiplier: default_warning_threshold_multiplier(),
-            grace_period_hours: default_grace_period_hours(),
-            exclude_on_prolonged_price_failure: default_exclude_on_prolonged_price_failure(),
             minimum_usd_per_gpu: default_minimum_usd_per_gpu(),
             contract_address: String::new(),
             rpc_url: None,
@@ -102,19 +95,12 @@ impl Default for CollateralConfig {
 }
 
 impl CollateralConfig {
-    pub fn grace_period(&self) -> Duration {
-        Duration::hours(self.grace_period_hours as i64)
-    }
-
     pub fn validate(&self) -> Result<()> {
         if self.contract_address.trim().is_empty() {
             anyhow::bail!("collateral.contract_address is required when collateral is configured");
         }
         if self.warning_threshold_multiplier < Decimal::ONE {
             anyhow::bail!("collateral.warning_threshold_multiplier must be >= 1.0");
-        }
-        if self.grace_period_hours == 0 {
-            anyhow::bail!("collateral.grace_period_hours must be > 0");
         }
         if self.minimum_usd_per_gpu.is_empty() {
             anyhow::bail!("collateral.minimum_usd_per_gpu cannot be empty");
@@ -213,14 +199,6 @@ fn default_trustee_key_source() -> TrusteeKeySource {
 
 fn default_warning_threshold_multiplier() -> Decimal {
     Decimal::new(15, 1)
-}
-
-fn default_grace_period_hours() -> u64 {
-    24
-}
-
-fn default_exclude_on_prolonged_price_failure() -> bool {
-    true
 }
 
 fn default_minimum_usd_per_gpu() -> HashMap<String, Decimal> {

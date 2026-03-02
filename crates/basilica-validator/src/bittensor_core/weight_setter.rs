@@ -23,7 +23,7 @@ use basilica_protocol::billing::MinerDelivery;
 use bittensor::{Metagraph, NormalizedWeight, Service as BittensorService};
 use chrono::{DateTime, Utc};
 use sqlx::Row;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;
@@ -64,7 +64,6 @@ pub struct WeightSetter {
     api_client: Arc<BasilicaApiClient>,
     gpu_profile_repo: Arc<GpuProfileRepository>,
     metrics: Option<Arc<ValidatorMetrics>>,
-    collateral_grace_period: Option<chrono::Duration>,
 }
 
 impl WeightSetter {
@@ -81,7 +80,6 @@ impl WeightSetter {
         api_client: Arc<BasilicaApiClient>,
         gpu_profile_repo: Arc<GpuProfileRepository>,
         metrics: Option<Arc<ValidatorMetrics>>,
-        collateral_grace_period: Option<chrono::Duration>,
     ) -> Result<Self> {
         // Create weight allocation engine
         let weight_allocation_engine =
@@ -104,7 +102,6 @@ impl WeightSetter {
             api_client,
             gpu_profile_repo,
             metrics,
-            collateral_grace_period,
         })
     }
 
@@ -245,9 +242,8 @@ impl WeightSetter {
             .get_deliveries_for_window(epoch.period_start, epoch.period_end, None)
             .await?;
         let hotkey_to_uid = self.build_hotkey_to_uid_map(&metagraph);
-        let excluded_nodes = self.fetch_excluded_nodes().await?;
         let miners_by_category =
-            self.group_deliveries_by_category(deliveries, &hotkey_to_uid, &excluded_nodes);
+            self.group_deliveries_by_category(deliveries, &hotkey_to_uid);
 
         self.log_tao_price().await;
 
@@ -356,18 +352,9 @@ impl WeightSetter {
         &self,
         deliveries: Vec<MinerDelivery>,
         hotkey_to_uid: &HashMap<String, u16>,
-        excluded_nodes: &HashSet<(String, String)>,
     ) -> HashMap<String, Vec<(MinerUid, f64)>> {
         let mut miners_by_category: HashMap<String, Vec<(MinerUid, f64)>> = HashMap::new();
         for delivery in deliveries {
-            if excluded_nodes.contains(&(delivery.miner_hotkey.clone(), delivery.node_id.clone())) {
-                debug!(
-                    miner_hotkey = %delivery.miner_hotkey,
-                    node_id = %delivery.node_id,
-                    "Skipping delivery for collateral-excluded node"
-                );
-                continue;
-            }
             let current_uid = match hotkey_to_uid.get(&delivery.miner_hotkey) {
                 Some(&uid) => uid,
                 None => {
@@ -434,13 +421,6 @@ impl WeightSetter {
         );
 
         miners_by_category
-    }
-
-    async fn fetch_excluded_nodes(&self) -> Result<HashSet<(String, String)>> {
-        let Some(grace_period) = self.collateral_grace_period else {
-            return Ok(HashSet::new());
-        };
-        self.persistence.get_excluded_nodes(grace_period).await
     }
 
     async fn log_tao_price(&self) {
