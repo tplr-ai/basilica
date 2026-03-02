@@ -1,6 +1,7 @@
 pub mod collateral_reconcile;
 pub mod collateral_scan;
 pub mod evaluator;
+pub mod event_handler;
 pub mod evidence;
 pub mod manager;
 pub mod slash_executor;

@@ -1,3 +1,4 @@
+use crate::collateral::event_handler::CollateralEventHandler;
 use crate::config::collateral::CollateralConfig;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
@@ -11,6 +12,7 @@ pub struct Collateral {
     config: crate::config::VerificationConfig,
     collateral_config: CollateralConfig,
     persistence: Arc<SimplePersistence>,
+    event_handler: Arc<CollateralEventHandler>,
     cancellation_token: CancellationToken,
 }
 
@@ -20,10 +22,12 @@ impl Collateral {
         collateral_config: CollateralConfig,
         persistence: Arc<SimplePersistence>,
     ) -> Self {
+        let event_handler = Arc::new(CollateralEventHandler::new(persistence.clone()));
         Self {
             config,
             collateral_config,
             persistence,
+            event_handler,
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -83,7 +87,7 @@ impl Collateral {
         sorted_events_map.sort_by(|a, b| a.0.cmp(b.0));
 
         for (block_number, events_vec) in sorted_events_map.iter() {
-            self.persistence
+            self.event_handler
                 .apply_collateral_events_for_block(**block_number, events_vec.as_slice())
                 .await?;
         }
