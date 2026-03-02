@@ -1,3 +1,4 @@
+pub mod collateral_reconcile;
 pub mod collateral_scan;
 pub mod evaluator;
 pub mod evidence;

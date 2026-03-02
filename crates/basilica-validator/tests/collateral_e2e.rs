@@ -126,13 +126,8 @@ async fn build_executor(
         config.evidence_base_url.clone(),
         config.evidence_storage_path.clone(),
     );
-    let executor = SlashExecutor::new_with_chain_client(
-        config,
-        store,
-        metrics,
-        signer,
-        chain_client,
-    );
+    let executor =
+        SlashExecutor::new_with_chain_client(config, store, metrics, signer, chain_client);
     Ok(executor)
 }
 
@@ -206,14 +201,7 @@ async fn test_rate_limiter_blocks_repeat_slash() -> Result<()> {
         ..Default::default()
     };
     let signer = Arc::new(TestSigner);
-    let executor = build_executor(
-        config,
-        temp.path(),
-        chain_client,
-        None,
-        Some(signer),
-    )
-    .await?;
+    let executor = build_executor(config, temp.path(), chain_client, None, Some(signer)).await?;
 
     let node_id = Uuid::new_v4().to_string();
     executor
@@ -255,14 +243,7 @@ async fn test_circuit_breaker_trips_on_burst() -> Result<()> {
         ..Default::default()
     };
     let signer = Arc::new(TestSigner);
-    let executor = build_executor(
-        config,
-        temp.path(),
-        chain_client,
-        None,
-        Some(signer),
-    )
-    .await?;
+    let executor = build_executor(config, temp.path(), chain_client, None, Some(signer)).await?;
 
     executor
         .execute_slash(

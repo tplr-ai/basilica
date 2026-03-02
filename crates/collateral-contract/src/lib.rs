@@ -530,6 +530,27 @@ pub async fn tao_collaterals(
     Ok(tao_collateral)
 }
 
+pub async fn tao_collaterals_at_block(
+    hotkey: [u8; 32],
+    node_id: [u8; 16],
+    block_number: u64,
+    network_config: &CollateralNetworkConfig,
+) -> Result<U256, anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
+    let tao_collateral = contract
+        .taoCollaterals(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&node_id),
+        )
+        .block(alloy::eips::BlockId::number(block_number))
+        .call()
+        .await?;
+    Ok(tao_collateral)
+}
+
 pub async fn alpha_collaterals(
     hotkey: [u8; 32],
     node_id: [u8; 16],
@@ -544,6 +565,27 @@ pub async fn alpha_collaterals(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id),
         )
+        .call()
+        .await?;
+    Ok(collaterals)
+}
+
+pub async fn alpha_collaterals_at_block(
+    hotkey: [u8; 32],
+    node_id: [u8; 16],
+    block_number: u64,
+    network_config: &CollateralNetworkConfig,
+) -> Result<U256, anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
+    let collaterals = contract
+        .alphaCollaterals(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&node_id),
+        )
+        .block(alloy::eips::BlockId::number(block_number))
         .call()
         .await?;
     Ok(collaterals)

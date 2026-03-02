@@ -38,6 +38,14 @@ fn zero_address_string() -> String {
     address_to_string(Address::ZERO)
 }
 
+#[derive(Debug, Clone)]
+pub struct CollateralNodeRecord {
+    pub hotkey: String,
+    pub node_id: String,
+    pub tao_collateral: U256,
+    pub alpha_collateral: U256,
+}
+
 impl SimplePersistence {
     pub async fn get_last_scanned_block_number(&self) -> Result<u64, anyhow::Error> {
         let query = "SELECT last_scanned_block_number FROM collateral_scan_status WHERE id = 1";
@@ -201,6 +209,66 @@ impl SimplePersistence {
     ) -> Result<Option<U256>, anyhow::Error> {
         self.get_collateral_amount_internal(hotkey, node_id, "alpha_collateral")
             .await
+    }
+
+    pub async fn get_all_collateral_nodes(
+        &self,
+    ) -> Result<Vec<CollateralNodeRecord>, anyhow::Error> {
+        let rows = sqlx::query(
+            "SELECT hotkey, node_id, tao_collateral, alpha_collateral FROM collateral_status",
+        )
+        .fetch_all(self.pool())
+        .await?;
+
+        let mut records = Vec::with_capacity(rows.len());
+        for row in rows {
+            let hotkey: String = row.get("hotkey");
+            let node_id: String = row.get("node_id");
+            let tao_collateral =
+                parse_u256_decimal(&row.get::<String, _>("tao_collateral"), "tao_collateral")?;
+            let alpha_collateral = parse_u256_decimal(
+                &row.get::<String, _>("alpha_collateral"),
+                "alpha_collateral",
+            )?;
+            records.push(CollateralNodeRecord {
+                hotkey,
+                node_id,
+                tao_collateral,
+                alpha_collateral,
+            });
+        }
+        Ok(records)
+    }
+
+    pub async fn reconcile_collateral(
+        &self,
+        hotkey: &str,
+        node_id: &str,
+        tao_collateral: U256,
+        alpha_collateral: U256,
+    ) -> Result<(), anyhow::Error> {
+        let now = Utc::now().to_rfc3339();
+        let result = sqlx::query(
+            "UPDATE collateral_status SET tao_collateral = ?, alpha_collateral = ?, updated_at = ? WHERE hotkey = ? AND node_id = ?",
+        )
+        .bind(tao_collateral.to_string())
+        .bind(alpha_collateral.to_string())
+        .bind(now)
+        .bind(hotkey)
+        .bind(node_id)
+        .execute(self.pool())
+        .await?;
+
+        warn!(
+            hotkey = hotkey,
+            node_id = node_id,
+            tao_collateral = %tao_collateral,
+            alpha_collateral = %alpha_collateral,
+            rows_affected = result.rows_affected(),
+            "Reconciliation overwrote collateral values in DB"
+        );
+
+        Ok(())
     }
 
     pub async fn handle_deposit(&self, deposit: &Deposit) -> Result<(), anyhow::Error> {
@@ -1086,5 +1154,85 @@ mod tests {
         .unwrap();
 
         assert_eq!(initial_block as u64, CONTRACT_DEPLOYED_BLOCK_NUMBER);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_collateral_nodes() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        // Initially empty
+        let nodes = persistence.get_all_collateral_nodes().await.unwrap();
+        assert!(nodes.is_empty());
+
+        // Insert two deposits for different nodes
+        let hk1 = make_hotkey(30);
+        let ex1 = make_node_id(31);
+        let hk2 = make_hotkey(32);
+        let ex2 = make_node_id(33);
+
+        persistence
+            .handle_deposit(&ev_deposit(hk1, ex1, make_miner(34), 100, 200))
+            .await
+            .unwrap();
+        persistence
+            .handle_deposit(&ev_deposit(hk2, ex2, make_miner(35), 300, 400))
+            .await
+            .unwrap();
+
+        let nodes = persistence.get_all_collateral_nodes().await.unwrap();
+        assert_eq!(nodes.len(), 2);
+
+        let n1 = nodes
+            .iter()
+            .find(|n| n.hotkey == hk1.encode_hex::<String>())
+            .unwrap();
+        assert_eq!(n1.tao_collateral, U256::from(100u64));
+        assert_eq!(n1.alpha_collateral, U256::from(200u64));
+
+        let n2 = nodes
+            .iter()
+            .find(|n| n.hotkey == hk2.encode_hex::<String>())
+            .unwrap();
+        assert_eq!(n2.tao_collateral, U256::from(300u64));
+        assert_eq!(n2.alpha_collateral, U256::from(400u64));
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_collateral() {
+        let persistence = SimplePersistence::for_testing().await.unwrap();
+
+        let hk = make_hotkey(36);
+        let ex = make_node_id(37);
+
+        persistence
+            .handle_deposit(&ev_deposit(hk, ex, make_miner(38), 100, 200))
+            .await
+            .unwrap();
+
+        let hotkey_hex = hk.encode_hex::<String>();
+        let node_hex = ex.encode_hex::<String>();
+
+        // Reconcile with different values
+        persistence
+            .reconcile_collateral(
+                &hotkey_hex,
+                &node_hex,
+                U256::from(999u64),
+                U256::from(888u64),
+            )
+            .await
+            .unwrap();
+
+        let tao = persistence
+            .get_tao_collateral_amount(&hotkey_hex, &node_hex)
+            .await
+            .unwrap();
+        let alpha = persistence
+            .get_alpha_collateral_amount(&hotkey_hex, &node_hex)
+            .await
+            .unwrap();
+
+        assert_eq!(tao, Some(U256::from(999u64)));
+        assert_eq!(alpha, Some(U256::from(888u64)));
     }
 }

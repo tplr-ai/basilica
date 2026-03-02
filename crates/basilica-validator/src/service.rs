@@ -1,6 +1,7 @@
 use crate::api::ApiHandler;
 use crate::basilica_api::{BasilicaApiClient, ValidatorSigner};
 use crate::bittensor_core::{ChainRegistration, WeightSetter};
+use crate::collateral::collateral_reconcile::CollateralReconciler;
 use crate::collateral::collateral_scan::Collateral;
 use crate::collateral::evaluator::CollateralEvaluator;
 use crate::collateral::evidence::EvidenceStore;
@@ -40,6 +41,7 @@ struct RuntimeHandles {
     registration_server_task: JoinHandle<()>,
     cleanup_task: Option<JoinHandle<()>>,
     collateral_scan_task: JoinHandle<()>,
+    collateral_reconcile_task: JoinHandle<()>,
 }
 
 struct TaskInputs {
@@ -457,6 +459,28 @@ impl ValidatorService {
             tokio::spawn(async { info!("Collateral scan disabled (no collateral config)") })
         };
 
+        let collateral_reconcile_task = if let Some(ref collateral_config) = self.config.collateral
+        {
+            if let Some(interval_secs) = collateral_config.reconcile_interval_secs {
+                let reconciler = CollateralReconciler::new(
+                    collateral_config.clone(),
+                    inputs.persistence.clone(),
+                    StdDuration::from_secs(interval_secs),
+                );
+                tokio::spawn(async move {
+                    reconciler.start().await;
+                })
+            } else {
+                tokio::spawn(async {
+                    info!("Collateral reconciliation disabled (reconcile_interval_secs not set)")
+                })
+            }
+        } else {
+            tokio::spawn(async {
+                info!("Collateral reconciliation disabled (no collateral config)")
+            })
+        };
+
         RuntimeHandles {
             scoring_task,
             weight_setter_task,
@@ -465,6 +489,7 @@ impl ValidatorService {
             registration_server_task,
             cleanup_task,
             collateral_scan_task,
+            collateral_reconcile_task,
         }
     }
 
@@ -478,6 +503,7 @@ impl ValidatorService {
         handles.api_handler_task.abort();
         handles.registration_server_task.abort();
         handles.collateral_scan_task.abort();
+        handles.collateral_reconcile_task.abort();
     }
 
     /// Stop all running validator processes

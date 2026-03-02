@@ -242,8 +242,7 @@ impl WeightSetter {
             .get_deliveries_for_window(epoch.period_start, epoch.period_end, None)
             .await?;
         let hotkey_to_uid = self.build_hotkey_to_uid_map(&metagraph);
-        let miners_by_category =
-            self.group_deliveries_by_category(deliveries, &hotkey_to_uid);
+        let miners_by_category = self.group_deliveries_by_category(deliveries, &hotkey_to_uid);
 
         self.log_tao_price().await;
 

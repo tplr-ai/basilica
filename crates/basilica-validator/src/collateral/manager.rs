@@ -305,13 +305,7 @@ mod tests {
             Arc::new(TestBaselineFetcher),
             Arc::new(TestFetcher),
         ));
-        let manager = CollateralManager::new(
-            persistence.clone(),
-            api_client,
-            evaluator,
-            1,
-            None,
-        );
+        let manager = CollateralManager::new(persistence.clone(), api_client, evaluator, 1, None);
         let alpha = manager
             .get_collateral_alpha(
                 "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
@@ -357,8 +351,7 @@ mod tests {
             Arc::new(TestBaselineFetcher),
             Arc::new(TestFetcher),
         ));
-        let manager =
-            CollateralManager::new(persistence, api_client, evaluator, 1, None);
+        let manager = CollateralManager::new(persistence, api_client, evaluator, 1, None);
 
         let alpha = manager
             .get_collateral_alpha(hotkey, &node_id)
@@ -402,8 +395,7 @@ mod tests {
             Arc::new(TestBaselineFetcher),
             Arc::new(FixedPriceFetcher),
         ));
-        let manager =
-            CollateralManager::new(persistence, api_client, evaluator, 1, None);
+        let manager = CollateralManager::new(persistence, api_client, evaluator, 1, None);
 
         let (state, status) = manager
             .get_collateral_status(hotkey, &node_id, "H100", 1)
