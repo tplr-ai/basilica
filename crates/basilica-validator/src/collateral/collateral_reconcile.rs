@@ -3,12 +3,15 @@ use crate::persistence::SimplePersistence;
 use collateral_contract::config::CollateralNetworkConfig;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+#[derive(Clone)]
 pub struct CollateralReconciler {
     collateral_config: CollateralConfig,
     persistence: Arc<SimplePersistence>,
     interval: Duration,
+    cancellation_token: CancellationToken,
 }
 
 impl CollateralReconciler {
@@ -21,10 +24,24 @@ impl CollateralReconciler {
             collateral_config,
             persistence,
             interval,
+            cancellation_token: CancellationToken::new(),
         }
     }
 
-    pub async fn start(&self) {
+    /// Spawn the collateral reconciliation loop on a background task
+    pub fn start(&self) {
+        let reconciler = self.clone();
+        tokio::spawn(async move {
+            reconciler.reconcile_loop().await;
+        });
+    }
+
+    /// Stop the collateral reconciliation loop
+    pub fn stop(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    async fn reconcile_loop(&self) {
         info!(
             interval_secs = self.interval.as_secs(),
             "Starting collateral reconciliation loop"
@@ -32,9 +49,16 @@ impl CollateralReconciler {
         let mut interval = tokio::time::interval(self.interval);
 
         loop {
-            interval.tick().await;
-            if let Err(e) = self.reconcile().await {
-                error!("Collateral reconciliation tick failed: {}", e);
+            tokio::select! {
+                _ = self.cancellation_token.cancelled() => {
+                    info!("Collateral reconciliation loop stopped");
+                    break;
+                }
+                _ = interval.tick() => {
+                    if let Err(e) = self.reconcile().await {
+                        error!("Collateral reconciliation tick failed: {}", e);
+                    }
+                }
             }
         }
     }

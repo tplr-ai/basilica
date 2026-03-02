@@ -3,12 +3,15 @@ use crate::persistence::SimplePersistence;
 use anyhow::Result;
 use collateral_contract::config::CollateralNetworkConfig;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+#[derive(Clone)]
 pub struct Collateral {
     config: crate::config::VerificationConfig,
     collateral_config: CollateralConfig,
     persistence: Arc<SimplePersistence>,
+    cancellation_token: CancellationToken,
 }
 
 impl Collateral {
@@ -21,16 +24,33 @@ impl Collateral {
             config,
             collateral_config,
             persistence,
+            cancellation_token: CancellationToken::new(),
         }
     }
 
-    /// Start the collateral event scan loop
-    pub async fn start(&mut self) -> Result<()> {
+    /// Spawn the collateral event scan loop on a background task
+    pub fn start(&self) {
+        let scanner = self.clone();
+        tokio::spawn(async move {
+            scanner.scan_loop().await;
+        });
+    }
+
+    /// Stop the collateral event scan loop
+    pub fn stop(&self) {
+        self.cancellation_token.cancel();
+    }
+
+    async fn scan_loop(&self) {
         info!("Starting collateral event scan loop");
         let mut interval = tokio::time::interval(self.config.collateral_event_scan_interval);
 
         loop {
             tokio::select! {
+                _ = self.cancellation_token.cancelled() => {
+                    info!("Collateral event scan loop stopped");
+                    break;
+                }
                 _ = interval.tick() => {
                     if let Err(e) = self.scan_handle_collateral_events().await {
                         error!("Collateral event scan failed: {}", e);

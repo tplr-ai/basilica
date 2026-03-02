@@ -40,8 +40,8 @@ struct RuntimeHandles {
     api_handler_task: JoinHandle<()>,
     registration_server_task: JoinHandle<()>,
     cleanup_task: Option<JoinHandle<()>>,
-    collateral_scan_task: JoinHandle<()>,
-    collateral_reconcile_task: JoinHandle<()>,
+    collateral_scanner: Option<Collateral>,
+    collateral_reconciler: Option<CollateralReconciler>,
 }
 
 struct TaskInputs {
@@ -445,40 +445,35 @@ impl ValidatorService {
             None
         };
 
-        let collateral_scan_task = if let Some(collateral_config) = self.config.collateral.clone() {
-            let verification_config = self.config.verification.clone();
-            let persistence = inputs.persistence.clone();
-            tokio::spawn(async move {
-                let mut collateral_scan =
-                    Collateral::new(verification_config, collateral_config, persistence);
-                if let Err(e) = collateral_scan.start().await {
-                    error!("Collateral scan task failed: {}", e);
-                }
-            })
+        let collateral_scanner = if let Some(collateral_config) = self.config.collateral.clone() {
+            let scanner = Collateral::new(
+                self.config.verification.clone(),
+                collateral_config,
+                inputs.persistence.clone(),
+            );
+            scanner.start();
+            Some(scanner)
         } else {
-            tokio::spawn(async { info!("Collateral scan disabled (no collateral config)") })
+            info!("Collateral scan disabled (no collateral config)");
+            None
         };
 
-        let collateral_reconcile_task = if let Some(ref collateral_config) = self.config.collateral
-        {
+        let collateral_reconciler = if let Some(ref collateral_config) = self.config.collateral {
             if let Some(interval_secs) = collateral_config.reconcile_interval_secs {
                 let reconciler = CollateralReconciler::new(
                     collateral_config.clone(),
                     inputs.persistence.clone(),
                     StdDuration::from_secs(interval_secs),
                 );
-                tokio::spawn(async move {
-                    reconciler.start().await;
-                })
+                reconciler.start();
+                Some(reconciler)
             } else {
-                tokio::spawn(async {
-                    info!("Collateral reconciliation disabled (reconcile_interval_secs not set)")
-                })
+                info!("Collateral reconciliation disabled (reconcile_interval_secs not set)");
+                None
             }
         } else {
-            tokio::spawn(async {
-                info!("Collateral reconciliation disabled (no collateral config)")
-            })
+            info!("Collateral reconciliation disabled (no collateral config)");
+            None
         };
 
         RuntimeHandles {
@@ -488,8 +483,8 @@ impl ValidatorService {
             api_handler_task,
             registration_server_task,
             cleanup_task,
-            collateral_scan_task,
-            collateral_reconcile_task,
+            collateral_scanner,
+            collateral_reconciler,
         }
     }
 
@@ -502,8 +497,12 @@ impl ValidatorService {
         }
         handles.api_handler_task.abort();
         handles.registration_server_task.abort();
-        handles.collateral_scan_task.abort();
-        handles.collateral_reconcile_task.abort();
+        if let Some(scanner) = &handles.collateral_scanner {
+            scanner.stop();
+        }
+        if let Some(reconciler) = &handles.collateral_reconciler {
+            reconciler.stop();
+        }
     }
 
     /// Stop all running validator processes
