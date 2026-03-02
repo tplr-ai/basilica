@@ -2,7 +2,8 @@ use crate::persistence::SimplePersistence;
 use alloy_primitives::{Address, U256};
 use chrono::Utc;
 use collateral_contract::{
-    CollateralEvent, Denied, Deposit, ReclaimProcessStarted, Reclaimed, Slashed,
+    CollateralEvent, CollateralEventWithMeta, Denied, Deposit, ReclaimProcessStarted, Reclaimed,
+    Slashed,
 };
 use hex::ToHex;
 use sqlx::{Row, Sqlite, Transaction};
@@ -94,17 +95,50 @@ impl SimplePersistence {
     pub async fn apply_collateral_events_for_block(
         &self,
         block_number: u64,
-        events: &[CollateralEvent],
+        events: &[CollateralEventWithMeta],
     ) -> Result<(), anyhow::Error> {
         let mut tx = self.pool().begin().await?;
 
-        for event in events {
-            self.apply_collateral_event(event, &mut tx).await?;
+        for event_with_meta in events {
+            self.insert_raw_event_with_tx(block_number, event_with_meta, &mut tx)
+                .await?;
+            self.apply_collateral_event(&event_with_meta.event, &mut tx)
+                .await?;
         }
 
         self.update_last_scanned_block_number_with_tx(block_number, &mut tx)
             .await?;
         tx.commit().await?;
+
+        Ok(())
+    }
+
+    async fn insert_raw_event_with_tx(
+        &self,
+        block_number: u64,
+        event_with_meta: &CollateralEventWithMeta,
+        tx: &mut Transaction<'_, Sqlite>,
+    ) -> Result<(), anyhow::Error> {
+        let event = &event_with_meta.event;
+        let event_type = event.event_type();
+        let hotkey = event.hotkey_hex();
+        let node_id = event.node_id_hex();
+        let event_data = event.to_json().to_string();
+
+        sqlx::query(
+            "INSERT OR IGNORE INTO collateral_event_log \
+             (event_type, block_number, tx_hash, log_index, hotkey, node_id, event_data) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(event_type)
+        .bind(block_number as i64)
+        .bind(&event_with_meta.tx_hash)
+        .bind(event_with_meta.log_index as i64)
+        .bind(hotkey)
+        .bind(node_id)
+        .bind(event_data)
+        .execute(&mut **tx)
+        .await?;
 
         Ok(())
     }
@@ -741,6 +775,14 @@ mod tests {
         Address::from_slice(&[byte; 20])
     }
 
+    fn wrap_event(event: CollateralEvent, log_index: u64) -> CollateralEventWithMeta {
+        CollateralEventWithMeta {
+            event,
+            tx_hash: format!("0x{}", hex::encode([0xaa; 32])),
+            log_index,
+        }
+    }
+
     fn ev_deposit(hk: [u8; 32], ex: [u8; 16], miner: Address, tao: u64, alpha: u64) -> Deposit {
         Deposit {
             hotkey: FixedBytes::from_slice(&hk),
@@ -1097,8 +1139,8 @@ mod tests {
         let initial_block = persistence.get_last_scanned_block_number().await.unwrap();
 
         let events = vec![
-            CollateralEvent::Deposit(ev_deposit(hk, ex, miner, 7, 11)),
-            CollateralEvent::Denied(ev_denied(404)),
+            wrap_event(CollateralEvent::Deposit(ev_deposit(hk, ex, miner, 7, 11)), 0),
+            wrap_event(CollateralEvent::Denied(ev_denied(404)), 1),
         ];
 
         let result = persistence

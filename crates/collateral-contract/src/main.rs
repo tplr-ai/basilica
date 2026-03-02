@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
 use collateral_contract::{
     config::{CollateralNetworkConfig, Network},
-    CollateralEvent,
+    CollateralEvent, CollateralEventWithMeta,
 };
 use hex::FromHex;
 use std::collections::HashMap;
@@ -542,7 +542,7 @@ fn parse_sha256_checksum(checksum: &str) -> Result<[u8; 32]> {
     Ok(array)
 }
 
-fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
+fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
     if events.is_empty() {
         println!("No events found");
         return;
@@ -550,8 +550,9 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
 
     for (block_number, block_events) in events {
         println!("\nBlock {}: {} events", block_number, block_events.len());
-        for (i, event) in block_events.iter().enumerate() {
-            println!("  Event {}:", i + 1);
+        for (i, event_with_meta) in block_events.iter().enumerate() {
+            println!("  Event {} (tx: {}, log_index: {}):", i + 1, event_with_meta.tx_hash, event_with_meta.log_index);
+            let event = &event_with_meta.event;
             match event {
                 CollateralEvent::Deposit(deposit) => {
                     println!("    Type: Deposit");
@@ -627,70 +628,28 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
     }
 }
 
-fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> {
+fn print_events_json(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) -> Result<()> {
     let mut json_events = serde_json::Map::new();
 
     for (block_number, block_events) in events {
         let mut json_block_events = Vec::new();
 
-        for event in block_events {
-            let json_event = match event {
-                CollateralEvent::Deposit(deposit) => {
-                    serde_json::json!({
-                        "type": "Deposit",
-                        "hotkey": hex::encode(deposit.hotkey.as_slice()),
-                        "nodeId": hex::encode(deposit.nodeId.as_slice()),
-                        "miner": deposit.miner.to_string(),
-                        "alphaHotkey": hex::encode(deposit.alphaHotkey.as_slice()),
-                        "alphaAmount": deposit.alphaAmount.to_string()
-                    })
-                }
-                CollateralEvent::ReclaimProcessStarted(reclaim_started) => {
-                    serde_json::json!({
-                        "type": "ReclaimProcessStarted",
-                        "reclaimRequestId": reclaim_started.reclaimRequestId.to_string(),
-                        "hotkey": hex::encode(reclaim_started.hotkey.as_slice()),
-                        "nodeId": hex::encode(reclaim_started.nodeId.as_slice()),
-                        "miner": reclaim_started.miner.to_string(),
-                        "amount": reclaim_started.amount.to_string(),
-                        "alphaColdkey": hex::encode(reclaim_started.alphaColdkey.as_slice()),
-                        "alphaAmount": reclaim_started.alphaAmount.to_string(),
-                        "expirationTime": reclaim_started.expirationTime,
-                        "url": reclaim_started.url,
-                        "urlContentSha256": hex::encode(reclaim_started.urlContentSha256.as_slice())
-                    })
-                }
-                CollateralEvent::Denied(denied) => {
-                    serde_json::json!({
-                        "type": "Denied",
-                        "reclaimRequestId": denied.reclaimRequestId.to_string(),
-                        "url": denied.url,
-                        "urlContentSha256": hex::encode(denied.urlContentSha256.as_slice())
-                    })
-                }
-                CollateralEvent::Reclaimed(reclaimed) => {
-                    serde_json::json!({
-                        "type": "Reclaimed",
-                        "reclaimRequestId": reclaimed.reclaimRequestId.to_string(),
-                        "hotkey": hex::encode(reclaimed.hotkey.as_slice()),
-                        "nodeId": hex::encode(reclaimed.nodeId.as_slice()),
-                        "miner": reclaimed.miner.to_string(),
-                        "alphaColdkey": hex::encode(reclaimed.alphaColdkey.as_slice()),
-                        "alphaAmount": reclaimed.alphaAmount.to_string()
-                    })
-                }
-                CollateralEvent::Slashed(slashed) => {
-                    serde_json::json!({
-                        "type": "Slashed",
-                        "hotkey": hex::encode(slashed.hotkey.as_slice()),
-                        "nodeId": hex::encode(slashed.nodeId.as_slice()),
-                        "miner": slashed.miner.to_string(),
-                        "alphaAmount": slashed.slashAlphaAmount.to_string(),
-                        "url": slashed.url,
-                        "urlContentSha256": hex::encode(slashed.urlContentSha256.as_slice())
-                    })
-                }
-            };
+        for event_with_meta in block_events {
+            let mut json_event = event_with_meta.event.to_json();
+            if let serde_json::Value::Object(ref mut map) = json_event {
+                map.insert(
+                    "type".to_string(),
+                    serde_json::Value::String(event_with_meta.event.event_type().to_string()),
+                );
+                map.insert(
+                    "txHash".to_string(),
+                    serde_json::Value::String(event_with_meta.tx_hash.clone()),
+                );
+                map.insert(
+                    "logIndex".to_string(),
+                    serde_json::json!(event_with_meta.log_index),
+                );
+            }
             json_block_events.push(json_event);
         }
 

@@ -91,6 +91,101 @@ pub enum CollateralEvent {
     Slashed(CollateralUpgradeable::Slashed),
 }
 
+impl CollateralEvent {
+    pub fn event_type(&self) -> &'static str {
+        match self {
+            CollateralEvent::Deposit(_) => "Deposit",
+            CollateralEvent::ReclaimProcessStarted(_) => "ReclaimProcessStarted",
+            CollateralEvent::Denied(_) => "Denied",
+            CollateralEvent::Reclaimed(_) => "Reclaimed",
+            CollateralEvent::Slashed(_) => "Slashed",
+        }
+    }
+
+    pub fn hotkey_hex(&self) -> Option<String> {
+        match self {
+            CollateralEvent::Deposit(d) => Some(format!("0x{}", hex::encode(d.hotkey.as_slice()))),
+            CollateralEvent::ReclaimProcessStarted(r) => {
+                Some(format!("0x{}", hex::encode(r.hotkey.as_slice())))
+            }
+            CollateralEvent::Denied(_) => None,
+            CollateralEvent::Reclaimed(r) => {
+                Some(format!("0x{}", hex::encode(r.hotkey.as_slice())))
+            }
+            CollateralEvent::Slashed(s) => Some(format!("0x{}", hex::encode(s.hotkey.as_slice()))),
+        }
+    }
+
+    pub fn node_id_hex(&self) -> Option<String> {
+        match self {
+            CollateralEvent::Deposit(d) => {
+                Some(format!("0x{}", hex::encode(d.nodeId.as_slice())))
+            }
+            CollateralEvent::ReclaimProcessStarted(r) => {
+                Some(format!("0x{}", hex::encode(r.nodeId.as_slice())))
+            }
+            CollateralEvent::Denied(_) => None,
+            CollateralEvent::Reclaimed(r) => {
+                Some(format!("0x{}", hex::encode(r.nodeId.as_slice())))
+            }
+            CollateralEvent::Slashed(s) => {
+                Some(format!("0x{}", hex::encode(s.nodeId.as_slice())))
+            }
+        }
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        match self {
+            CollateralEvent::Deposit(d) => serde_json::json!({
+                "hotkey": format!("0x{}", hex::encode(d.hotkey.as_slice())),
+                "nodeId": format!("0x{}", hex::encode(d.nodeId.as_slice())),
+                "miner": d.miner.to_string(),
+                "alphaHotkey": format!("0x{}", hex::encode(d.alphaHotkey.as_slice())),
+                "alphaAmount": d.alphaAmount.to_string(),
+            }),
+            CollateralEvent::ReclaimProcessStarted(r) => serde_json::json!({
+                "reclaimRequestId": r.reclaimRequestId.to_string(),
+                "hotkey": format!("0x{}", hex::encode(r.hotkey.as_slice())),
+                "nodeId": format!("0x{}", hex::encode(r.nodeId.as_slice())),
+                "miner": r.miner.to_string(),
+                "amount": r.amount.to_string(),
+                "alphaColdkey": format!("0x{}", hex::encode(r.alphaColdkey.as_slice())),
+                "alphaAmount": r.alphaAmount.to_string(),
+                "expirationTime": r.expirationTime,
+                "url": r.url.clone(),
+                "urlContentSha256": format!("0x{}", hex::encode(r.urlContentSha256.as_slice())),
+            }),
+            CollateralEvent::Denied(d) => serde_json::json!({
+                "reclaimRequestId": d.reclaimRequestId.to_string(),
+                "url": d.url.clone(),
+                "urlContentSha256": format!("0x{}", hex::encode(d.urlContentSha256.as_slice())),
+            }),
+            CollateralEvent::Reclaimed(r) => serde_json::json!({
+                "reclaimRequestId": r.reclaimRequestId.to_string(),
+                "hotkey": format!("0x{}", hex::encode(r.hotkey.as_slice())),
+                "nodeId": format!("0x{}", hex::encode(r.nodeId.as_slice())),
+                "miner": r.miner.to_string(),
+                "alphaColdkey": format!("0x{}", hex::encode(r.alphaColdkey.as_slice())),
+                "alphaAmount": r.alphaAmount.to_string(),
+            }),
+            CollateralEvent::Slashed(s) => serde_json::json!({
+                "hotkey": format!("0x{}", hex::encode(s.hotkey.as_slice())),
+                "nodeId": format!("0x{}", hex::encode(s.nodeId.as_slice())),
+                "miner": s.miner.to_string(),
+                "slashAlphaAmount": s.slashAlphaAmount.to_string(),
+                "url": s.url.clone(),
+                "urlContentSha256": format!("0x{}", hex::encode(s.urlContentSha256.as_slice())),
+            }),
+        }
+    }
+}
+
+pub struct CollateralEventWithMeta {
+    pub event: CollateralEvent,
+    pub tx_hash: String,
+    pub log_index: u64,
+}
+
 // get the collateral contract instance with custom network config
 pub async fn get_collateral(
     private_key: &str,
@@ -115,7 +210,7 @@ pub async fn get_collateral(
 pub async fn scan_events(
     from_block: u64,
     network_config: &CollateralNetworkConfig,
-) -> Result<(u64, HashMap<u64, Vec<CollateralEvent>>), anyhow::Error> {
+) -> Result<(u64, HashMap<u64, Vec<CollateralEventWithMeta>>), anyhow::Error> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
@@ -141,12 +236,12 @@ pub async fn scan_events_with_scope(
     from_block: u64,
     to_block: u64,
     network_config: &CollateralNetworkConfig,
-) -> Result<(u64, HashMap<u64, Vec<CollateralEvent>>), anyhow::Error> {
+) -> Result<(u64, HashMap<u64, Vec<CollateralEventWithMeta>>), anyhow::Error> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
 
-    let mut result: HashMap<u64, Vec<CollateralEvent>> = HashMap::new();
+    let mut result: HashMap<u64, Vec<CollateralEventWithMeta>> = HashMap::new();
     let mut chunk_start = from_block;
 
     while chunk_start <= to_block {
@@ -169,6 +264,12 @@ pub async fn scan_events_with_scope(
             let block_number = log
                 .block_number
                 .ok_or(anyhow::anyhow!("Block number not available in event"))?;
+            let tx_hash = log
+                .transaction_hash
+                .ok_or(anyhow::anyhow!("Transaction hash not available in event"))?;
+            let log_index = log
+                .log_index
+                .ok_or(anyhow::anyhow!("Log index not available in event"))?;
 
             let block_result = result.get_mut(&block_number);
 
@@ -216,12 +317,17 @@ pub async fn scan_events_with_scope(
             };
 
             if let Some(event) = event {
+                let event_with_meta = CollateralEventWithMeta {
+                    event,
+                    tx_hash: format!("0x{}", hex::encode(tx_hash.as_slice())),
+                    log_index,
+                };
                 match block_result {
                     Some(events) => {
-                        events.push(event);
+                        events.push(event_with_meta);
                     }
                     None => {
-                        result.insert(block_number, vec![event]);
+                        result.insert(block_number, vec![event_with_meta]);
                     }
                 }
             }
