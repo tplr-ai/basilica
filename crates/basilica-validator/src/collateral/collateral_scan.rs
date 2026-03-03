@@ -73,11 +73,26 @@ impl Collateral {
             self.collateral_config.rpc_url.clone(),
         )?;
 
-        // Fetch all active nodes and reclaims from the contract
-        let nodes = collateral_contract::get_all_collaterals(&network_config).await?;
-        let reclaims = collateral_contract::get_all_reclaims(&network_config).await?;
+        let snapshot_block = collateral_contract::get_latest_block_number(&network_config).await?;
+        let sync_page_size = self.collateral_config.sync_page_size;
+
+        // Fetch a block-pinned snapshot via pagination to avoid missing/duplicated rows during iteration.
+        let nodes = collateral_contract::get_all_collaterals_at_block(
+            &network_config,
+            snapshot_block,
+            sync_page_size,
+        )
+        .await?;
+        let reclaims = collateral_contract::get_all_reclaims_at_block(
+            &network_config,
+            snapshot_block,
+            sync_page_size,
+        )
+        .await?;
 
         info!(
+            snapshot_block,
+            sync_page_size,
             nodes = nodes.len(),
             reclaims = reclaims.len(),
             "Syncing collateral state from contract"
@@ -86,6 +101,9 @@ impl Collateral {
         // Sync to database
         self.persistence.sync_all_collateral_nodes(&nodes).await?;
         self.persistence.sync_all_reclaims(&reclaims).await?;
+        self.persistence
+            .update_last_scanned_block_number(snapshot_block)
+            .await?;
 
         Ok(())
     }

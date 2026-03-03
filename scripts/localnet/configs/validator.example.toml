@@ -137,6 +137,7 @@ slash_circuit_breaker_threshold = 10
 slash_circuit_breaker_window_secs = 300
 slash_circuit_breaker_cooldown_secs = 1800
 trustee_key_source = "env_var"
+sync_page_size = 500
 evidence_base_url = "http://localhost:8080/evidence"
 evidence_storage_path = "/opt/basilica/data/evidence"
 

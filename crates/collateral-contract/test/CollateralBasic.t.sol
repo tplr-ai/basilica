@@ -137,6 +137,14 @@ contract CollateralBasicTest is Test {
         collateralWithToggles = CollateralUpgradeable(payable(address(localProxy)));
     }
 
+    function _allCollaterals() internal view returns (CollateralUpgradeable.NodeCollateral[] memory) {
+        return collateral.getAllCollateralsPaginated(0, type(uint256).max);
+    }
+
+    function _allReclaims() internal view returns (CollateralUpgradeable.ReclaimInfo[] memory) {
+        return collateral.getAllReclaimsPaginated(0, type(uint256).max);
+    }
+
     // ============ INITIALIZATION TESTS ============
 
     function testInitialization() public view {
@@ -870,7 +878,7 @@ contract CollateralBasicTest is Test {
     // ============ ACTIVE NODE TRACKING TESTS ============
 
     function testGetAllCollateralsEmptyInitially() public view {
-        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 0);
         assertEq(collateral.getActiveNodeCount(), 0);
     }
@@ -879,7 +887,7 @@ contract CollateralBasicTest is Test {
         vm.prank(ALICE);
         collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
 
-        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 1);
         assertEq(results[0].hotkey, HOTKEY_1);
         assertEq(results[0].nodeId, EXECUTOR_ID_1);
@@ -896,7 +904,7 @@ contract CollateralBasicTest is Test {
         vm.prank(BOB, BOB);
         collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
 
-        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 2);
         assertEq(collateral.getActiveNodeCount(), 2);
     }
@@ -910,7 +918,7 @@ contract CollateralBasicTest is Test {
         collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 5 ether, 0, TEST_URL, TEST_SHA256);
 
         assertEq(collateral.getActiveNodeCount(), 0);
-        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 0);
     }
 
@@ -922,7 +930,7 @@ contract CollateralBasicTest is Test {
         collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 5 ether, 0, TEST_URL, TEST_SHA256);
 
         assertEq(collateral.getActiveNodeCount(), 1);
-        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 1);
         assertEq(results[0].taoCollateral, 5 ether);
     }
@@ -983,7 +991,7 @@ contract CollateralBasicTest is Test {
 
         // Should have A and C remaining
         assertEq(collateral.getActiveNodeCount(), 2);
-        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 2);
 
         // After swap-and-pop: A should be at index 0, C should be at index 1
@@ -999,7 +1007,7 @@ contract CollateralBasicTest is Test {
         collateral.deposit{value: 3 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
 
         assertEq(collateral.getActiveNodeCount(), 1);
-        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 1);
         assertEq(results[0].taoCollateral, 8 ether);
     }
@@ -1007,7 +1015,7 @@ contract CollateralBasicTest is Test {
     // ============ ACTIVE RECLAIM TRACKING TESTS ============
 
     function testGetAllReclaimsEmptyInitially() public view {
-        CollateralUpgradeable.ReclaimInfo[] memory results = collateral.getAllReclaims();
+        CollateralUpgradeable.ReclaimInfo[] memory results = _allReclaims();
         assertEq(results.length, 0);
         assertEq(collateral.getActiveReclaimCount(), 0);
     }
@@ -1019,7 +1027,7 @@ contract CollateralBasicTest is Test {
         vm.prank(ALICE);
         collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
 
-        CollateralUpgradeable.ReclaimInfo[] memory results = collateral.getAllReclaims();
+        CollateralUpgradeable.ReclaimInfo[] memory results = _allReclaims();
         assertEq(results.length, 1);
         assertEq(results[0].reclaimRequestId, 0);
         assertEq(results[0].hotkey, HOTKEY_1);
@@ -1040,7 +1048,7 @@ contract CollateralBasicTest is Test {
         collateral.finalizeReclaim(0);
 
         assertEq(collateral.getActiveReclaimCount(), 0);
-        CollateralUpgradeable.ReclaimInfo[] memory results = collateral.getAllReclaims();
+        CollateralUpgradeable.ReclaimInfo[] memory results = _allReclaims();
         assertEq(results.length, 0);
     }
 

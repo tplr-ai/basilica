@@ -67,6 +67,8 @@ pub struct CollateralConfig {
     /// for the most recent 256 blocks.
     #[serde(default)]
     pub reconcile_interval_secs: Option<u64>,
+    #[serde(default = "default_sync_page_size")]
+    pub sync_page_size: u64,
 }
 
 impl Default for CollateralConfig {
@@ -97,6 +99,7 @@ impl Default for CollateralConfig {
             evidence_r2_bucket: None,
             evidence_public_url_base: None,
             reconcile_interval_secs: None,
+            sync_page_size: default_sync_page_size(),
         }
     }
 }
@@ -133,6 +136,9 @@ impl CollateralConfig {
         }
         if self.slash_circuit_breaker_cooldown_secs == 0 {
             anyhow::bail!("collateral.slash_circuit_breaker_cooldown_secs must be > 0");
+        }
+        if self.sync_page_size == 0 {
+            anyhow::bail!("collateral.sync_page_size must be > 0");
         }
         if !self.shadow_mode {
             let missing = [
@@ -257,4 +263,32 @@ fn default_evidence_base_url() -> String {
 
 fn default_evidence_storage_path() -> PathBuf {
     PathBuf::from("./evidence")
+}
+
+fn default_sync_page_size() -> u64 {
+    500
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_sync_page_size_is_non_zero() {
+        let config = CollateralConfig::default();
+        assert_eq!(config.sync_page_size, 500);
+    }
+
+    #[test]
+    fn validate_rejects_zero_sync_page_size() {
+        let mut config = CollateralConfig::default();
+        config.contract_address = "0x0000000000000000000000000000000000000001".to_string();
+        config.sync_page_size = 0;
+        let err = config
+            .validate()
+            .expect_err("validation should fail for zero page size");
+        assert!(err
+            .to_string()
+            .contains("collateral.sync_page_size must be > 0"));
+    }
 }

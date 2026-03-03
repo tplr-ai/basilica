@@ -786,42 +786,6 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         uint64 denyTimeout;
     }
 
-    /// @notice Returns all active node collateral data
-    function getAllCollaterals() external view returns (NodeCollateral[] memory results) {
-        uint256 len = activeNodeKeys.length;
-        results = new NodeCollateral[](len);
-        for (uint256 i = 0; i < len; i++) {
-            NodeKey storage key = activeNodeKeys[i];
-            results[i] = NodeCollateral({
-                hotkey: key.hotkey,
-                nodeId: key.nodeId,
-                miner: nodeToMiner[key.hotkey][key.nodeId],
-                taoCollateral: taoCollaterals[key.hotkey][key.nodeId],
-                alphaCollateral: alphaCollaterals[key.hotkey][key.nodeId]
-            });
-        }
-    }
-
-    /// @notice Returns all pending reclaim data
-    function getAllReclaims() external view returns (ReclaimInfo[] memory results) {
-        uint256 len = activeReclaimIds.length;
-        results = new ReclaimInfo[](len);
-        for (uint256 i = 0; i < len; i++) {
-            uint256 id = activeReclaimIds[i];
-            Reclaim storage r = reclaims[id];
-            results[i] = ReclaimInfo({
-                reclaimRequestId: id,
-                hotkey: r.hotkey,
-                nodeId: r.nodeId,
-                miner: r.miner,
-                amount: r.amount,
-                alphaColdkey: r.alphaColdkey,
-                alphaAmount: r.alphaAmount,
-                denyTimeout: r.denyTimeout
-            });
-        }
-    }
-
     /// @notice Returns the number of active nodes
     function getActiveNodeCount() external view returns (uint256) {
         return activeNodeKeys.length;
