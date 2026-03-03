@@ -138,11 +138,11 @@ contract CollateralBasicTest is Test {
     }
 
     function _allCollaterals() internal view returns (CollateralUpgradeable.NodeCollateral[] memory) {
-        return collateral.getAllCollateralsPaginated(0, type(uint256).max);
+        return collateral.getAllCollaterals(0, type(uint256).max);
     }
 
     function _allReclaims() internal view returns (CollateralUpgradeable.ReclaimInfo[] memory) {
-        return collateral.getAllReclaimsPaginated(0, type(uint256).max);
+        return collateral.getAllReclaims(0, type(uint256).max);
     }
 
     // ============ INITIALIZATION TESTS ============
@@ -1075,30 +1075,30 @@ contract CollateralBasicTest is Test {
         collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
 
         // Page 1: offset=0, limit=1
-        CollateralUpgradeable.NodeCollateral[] memory page1 = collateral.getAllCollateralsPaginated(0, 1);
+        CollateralUpgradeable.NodeCollateral[] memory page1 = collateral.getAllCollaterals(0, 1);
         assertEq(page1.length, 1);
         assertEq(page1[0].hotkey, HOTKEY_1);
 
         // Page 2: offset=1, limit=1
-        CollateralUpgradeable.NodeCollateral[] memory page2 = collateral.getAllCollateralsPaginated(1, 1);
+        CollateralUpgradeable.NodeCollateral[] memory page2 = collateral.getAllCollaterals(1, 1);
         assertEq(page2.length, 1);
         assertEq(page2[0].hotkey, HOTKEY_2);
 
         // Offset beyond array
-        CollateralUpgradeable.NodeCollateral[] memory empty = collateral.getAllCollateralsPaginated(10, 5);
+        CollateralUpgradeable.NodeCollateral[] memory empty = collateral.getAllCollaterals(10, 5);
         assertEq(empty.length, 0);
 
         // Zero limit
-        CollateralUpgradeable.NodeCollateral[] memory zeroLimit = collateral.getAllCollateralsPaginated(0, 0);
+        CollateralUpgradeable.NodeCollateral[] memory zeroLimit = collateral.getAllCollaterals(0, 0);
         assertEq(zeroLimit.length, 0);
 
         // Limit larger than remaining
-        CollateralUpgradeable.NodeCollateral[] memory all = collateral.getAllCollateralsPaginated(0, 100);
+        CollateralUpgradeable.NodeCollateral[] memory all = collateral.getAllCollaterals(0, 100);
         assertEq(all.length, 2);
 
         // Max limit should not overflow and should clamp to remaining
         CollateralUpgradeable.NodeCollateral[] memory maxLimit =
-            collateral.getAllCollateralsPaginated(1, type(uint256).max);
+            collateral.getAllCollaterals(1, type(uint256).max);
         assertEq(maxLimit.length, 1);
         assertEq(maxLimit[0].hotkey, HOTKEY_2);
     }
@@ -1116,21 +1116,21 @@ contract CollateralBasicTest is Test {
         vm.prank(ALICE);
         collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
 
-        CollateralUpgradeable.ReclaimInfo[] memory page = collateral.getAllReclaimsPaginated(0, 1);
+        CollateralUpgradeable.ReclaimInfo[] memory page = collateral.getAllReclaims(0, 1);
         assertEq(page.length, 1);
         assertEq(page[0].reclaimRequestId, 0);
 
-        CollateralUpgradeable.ReclaimInfo[] memory page2 = collateral.getAllReclaimsPaginated(1, 1);
+        CollateralUpgradeable.ReclaimInfo[] memory page2 = collateral.getAllReclaims(1, 1);
         assertEq(page2.length, 1);
         assertEq(page2[0].reclaimRequestId, 1);
 
-        CollateralUpgradeable.ReclaimInfo[] memory empty = collateral.getAllReclaimsPaginated(10, 5);
+        CollateralUpgradeable.ReclaimInfo[] memory empty = collateral.getAllReclaims(10, 5);
         assertEq(empty.length, 0);
 
-        CollateralUpgradeable.ReclaimInfo[] memory zeroLimit = collateral.getAllReclaimsPaginated(0, 0);
+        CollateralUpgradeable.ReclaimInfo[] memory zeroLimit = collateral.getAllReclaims(0, 0);
         assertEq(zeroLimit.length, 0);
 
-        CollateralUpgradeable.ReclaimInfo[] memory maxLimit = collateral.getAllReclaimsPaginated(1, type(uint256).max);
+        CollateralUpgradeable.ReclaimInfo[] memory maxLimit = collateral.getAllReclaims(1, type(uint256).max);
         assertEq(maxLimit.length, 1);
         assertEq(maxLimit[0].reclaimRequestId, 1);
     }

@@ -281,9 +281,11 @@ mod tests {
 
     #[test]
     fn validate_rejects_zero_sync_page_size() {
-        let mut config = CollateralConfig::default();
-        config.contract_address = "0x0000000000000000000000000000000000000001".to_string();
-        config.sync_page_size = 0;
+        let config = CollateralConfig {
+            contract_address: "0x0000000000000000000000000000000000000001".to_string(),
+            sync_page_size: 0,
+            ..Default::default()
+        };
         let err = config
             .validate()
             .expect_err("validation should fail for zero page size");

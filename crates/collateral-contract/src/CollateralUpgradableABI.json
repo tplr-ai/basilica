@@ -265,7 +265,7 @@
   },
   {
     "type": "function",
-    "name": "getAllCollateralsPaginated",
+    "name": "getAllCollaterals",
     "inputs": [
       {
         "name": "offset",
@@ -316,7 +316,7 @@
   },
   {
     "type": "function",
-    "name": "getAllReclaimsPaginated",
+    "name": "getAllReclaims",
     "inputs": [
       {
         "name": "offset",

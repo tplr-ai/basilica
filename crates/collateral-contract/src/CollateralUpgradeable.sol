@@ -799,7 +799,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @notice Returns a paginated slice of active node collateral data
     /// @param offset Starting index in the activeNodeKeys array
     /// @param limit Maximum number of entries to return
-    function getAllCollateralsPaginated(uint256 offset, uint256 limit)
+    function getAllCollaterals(uint256 offset, uint256 limit)
         external
         view
         returns (NodeCollateral[] memory results)
@@ -826,7 +826,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @notice Returns a paginated slice of active reclaim data
     /// @param offset Starting index in the activeReclaimIds array
     /// @param limit Maximum number of entries to return
-    function getAllReclaimsPaginated(uint256 offset, uint256 limit)
+    function getAllReclaims(uint256 offset, uint256 limit)
         external
         view
         returns (ReclaimInfo[] memory results)
