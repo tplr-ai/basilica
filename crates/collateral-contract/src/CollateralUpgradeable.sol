@@ -605,6 +605,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             _removeActiveNode(hotkey, nodeId);
         }
 
+        emit Slashed(hotkey, nodeId, miner, slashAmount, slashAlphaAmount, url, urlContentSha256);
+
         // send slashed TAO to the trustee
         if (slashAmount > 0) {
             (bool success,) = payable(trustee).call{value: slashAmount}("");
@@ -616,7 +618,6 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         if (slashAlphaAmount > 0) {
             withdrawAlpha(trusteeColdkey, slashAlphaAmount);
         }
-        emit Slashed(hotkey, nodeId, miner, slashAmount, slashAlphaAmount, url, urlContentSha256);
     }
 
     /// @notice Updates the trustee address

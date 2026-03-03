@@ -1,20 +1,15 @@
-use std::collections::HashMap;
-
 use alloy::eips::BlockNumberOrTag;
-use alloy::rpc::types::Filter;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{Address, FixedBytes, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use alloy_sol_types::{sol, SolEvent};
+use alloy_sol_types::sol;
 pub mod config;
 pub mod proxy;
-use tracing::info;
-pub use CollateralUpgradeable::{Denied, Deposit, ReclaimProcessStarted, Reclaimed, Slashed};
 
 #[cfg(test)]
 mod tests;
 
-use config::{CollateralNetworkConfig, MAX_BLOCKS_PER_SCAN};
+use config::CollateralNetworkConfig;
 
 const DEFAULT_SNAPSHOT_PAGE_SIZE: u64 = 500;
 
@@ -104,108 +99,6 @@ impl
     }
 }
 
-pub enum CollateralEvent {
-    Deposit(CollateralUpgradeable::Deposit),
-    ReclaimProcessStarted(CollateralUpgradeable::ReclaimProcessStarted),
-    Denied(CollateralUpgradeable::Denied),
-    Reclaimed(CollateralUpgradeable::Reclaimed),
-    Slashed(CollateralUpgradeable::Slashed),
-}
-
-impl CollateralEvent {
-    pub fn event_type(&self) -> &'static str {
-        match self {
-            CollateralEvent::Deposit(_) => "Deposit",
-            CollateralEvent::ReclaimProcessStarted(_) => "ReclaimProcessStarted",
-            CollateralEvent::Denied(_) => "Denied",
-            CollateralEvent::Reclaimed(_) => "Reclaimed",
-            CollateralEvent::Slashed(_) => "Slashed",
-        }
-    }
-
-    pub fn hotkey_hex(&self) -> Option<String> {
-        match self {
-            CollateralEvent::Deposit(d) => Some(format!("0x{}", hex::encode(d.hotkey.as_slice()))),
-            CollateralEvent::ReclaimProcessStarted(r) => {
-                Some(format!("0x{}", hex::encode(r.hotkey.as_slice())))
-            }
-            CollateralEvent::Denied(_) => None,
-            CollateralEvent::Reclaimed(r) => {
-                Some(format!("0x{}", hex::encode(r.hotkey.as_slice())))
-            }
-            CollateralEvent::Slashed(s) => Some(format!("0x{}", hex::encode(s.hotkey.as_slice()))),
-        }
-    }
-
-    pub fn node_id_hex(&self) -> Option<String> {
-        match self {
-            CollateralEvent::Deposit(d) => Some(format!("0x{}", hex::encode(d.nodeId.as_slice()))),
-            CollateralEvent::ReclaimProcessStarted(r) => {
-                Some(format!("0x{}", hex::encode(r.nodeId.as_slice())))
-            }
-            CollateralEvent::Denied(_) => None,
-            CollateralEvent::Reclaimed(r) => {
-                Some(format!("0x{}", hex::encode(r.nodeId.as_slice())))
-            }
-            CollateralEvent::Slashed(s) => Some(format!("0x{}", hex::encode(s.nodeId.as_slice()))),
-        }
-    }
-
-    pub fn to_json(&self) -> serde_json::Value {
-        match self {
-            CollateralEvent::Deposit(d) => serde_json::json!({
-                "hotkey": format!("0x{}", hex::encode(d.hotkey.as_slice())),
-                "nodeId": format!("0x{}", hex::encode(d.nodeId.as_slice())),
-                "miner": d.miner.to_string(),
-                "amount": d.amount.to_string(),
-                "alphaHotkey": format!("0x{}", hex::encode(d.alphaHotkey.as_slice())),
-                "alphaAmount": d.alphaAmount.to_string(),
-            }),
-            CollateralEvent::ReclaimProcessStarted(r) => serde_json::json!({
-                "reclaimRequestId": r.reclaimRequestId.to_string(),
-                "hotkey": format!("0x{}", hex::encode(r.hotkey.as_slice())),
-                "nodeId": format!("0x{}", hex::encode(r.nodeId.as_slice())),
-                "miner": r.miner.to_string(),
-                "amount": r.amount.to_string(),
-                "alphaColdkey": format!("0x{}", hex::encode(r.alphaColdkey.as_slice())),
-                "alphaAmount": r.alphaAmount.to_string(),
-                "expirationTime": r.expirationTime,
-                "url": r.url.clone(),
-                "urlContentSha256": format!("0x{}", hex::encode(r.urlContentSha256.as_slice())),
-            }),
-            CollateralEvent::Denied(d) => serde_json::json!({
-                "reclaimRequestId": d.reclaimRequestId.to_string(),
-                "url": d.url.clone(),
-                "urlContentSha256": format!("0x{}", hex::encode(d.urlContentSha256.as_slice())),
-            }),
-            CollateralEvent::Reclaimed(r) => serde_json::json!({
-                "reclaimRequestId": r.reclaimRequestId.to_string(),
-                "hotkey": format!("0x{}", hex::encode(r.hotkey.as_slice())),
-                "nodeId": format!("0x{}", hex::encode(r.nodeId.as_slice())),
-                "miner": r.miner.to_string(),
-                "amount": r.amount.to_string(),
-                "alphaColdkey": format!("0x{}", hex::encode(r.alphaColdkey.as_slice())),
-                "alphaAmount": r.alphaAmount.to_string(),
-            }),
-            CollateralEvent::Slashed(s) => serde_json::json!({
-                "hotkey": format!("0x{}", hex::encode(s.hotkey.as_slice())),
-                "nodeId": format!("0x{}", hex::encode(s.nodeId.as_slice())),
-                "miner": s.miner.to_string(),
-                "slashAmount": s.slashAmount.to_string(),
-                "slashAlphaAmount": s.slashAlphaAmount.to_string(),
-                "url": s.url.clone(),
-                "urlContentSha256": format!("0x{}", hex::encode(s.urlContentSha256.as_slice())),
-            }),
-        }
-    }
-}
-
-pub struct CollateralEventWithMeta {
-    pub event: CollateralEvent,
-    pub tx_hash: String,
-    pub log_index: u64,
-}
-
 // get the collateral contract instance with custom network config
 pub async fn get_collateral(
     private_key: &str,
@@ -227,142 +120,6 @@ pub async fn get_collateral(
     Ok(proxied)
 }
 
-pub async fn scan_events(
-    from_block: u64,
-    network_config: &CollateralNetworkConfig,
-) -> Result<(u64, HashMap<u64, Vec<CollateralEventWithMeta>>), anyhow::Error> {
-    let provider = ProviderBuilder::new()
-        .connect(&network_config.rpc_url)
-        .await?;
-    let finalized_block = provider
-        .get_block_by_number(BlockNumberOrTag::Finalized)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Failed to fetch finalized block"))?
-        .header
-        .number;
-
-    if from_block > finalized_block {
-        return Err(anyhow::anyhow!(
-            "from_block ({}) is ahead of finalized block ({})",
-            from_block,
-            finalized_block,
-        ));
-    }
-
-    scan_events_with_scope(from_block, finalized_block, network_config).await
-}
-
-pub async fn scan_events_with_scope(
-    from_block: u64,
-    to_block: u64,
-    network_config: &CollateralNetworkConfig,
-) -> Result<(u64, HashMap<u64, Vec<CollateralEventWithMeta>>), anyhow::Error> {
-    let provider = ProviderBuilder::new()
-        .connect(&network_config.rpc_url)
-        .await?;
-
-    let mut result: HashMap<u64, Vec<CollateralEventWithMeta>> = HashMap::new();
-    let mut chunk_start = from_block;
-
-    while chunk_start <= to_block {
-        let chunk_end = (chunk_start + MAX_BLOCKS_PER_SCAN - 1).min(to_block);
-
-        let filter = Filter::new()
-            .address(network_config.contract_address)
-            .from_block(chunk_start)
-            .to_block(chunk_end);
-
-        let logs = provider.get_logs(&filter).await?;
-
-        for log in logs {
-            if log.removed {
-                continue;
-            }
-
-            let topics = log.inner.topics();
-            let topic0 = topics.first();
-            let block_number = log
-                .block_number
-                .ok_or(anyhow::anyhow!("Block number not available in event"))?;
-            let tx_hash = log
-                .transaction_hash
-                .ok_or(anyhow::anyhow!("Transaction hash not available in event"))?;
-            let log_index = log
-                .log_index
-                .ok_or(anyhow::anyhow!("Log index not available in event"))?;
-
-            let block_result = result.get_mut(&block_number);
-
-            let event = match topic0 {
-                Some(sig) if sig == &CollateralUpgradeable::Deposit::SIGNATURE_HASH => {
-                    let deposit = CollateralUpgradeable::Deposit::decode_raw_log(
-                        topics,
-                        log.data().data.as_ref(),
-                    )?;
-                    Some(CollateralEvent::Deposit(deposit))
-                }
-                Some(sig)
-                    if sig == &CollateralUpgradeable::ReclaimProcessStarted::SIGNATURE_HASH =>
-                {
-                    let reclaim_started =
-                        CollateralUpgradeable::ReclaimProcessStarted::decode_raw_log(
-                            topics,
-                            log.data().data.as_ref(),
-                        )?;
-                    Some(CollateralEvent::ReclaimProcessStarted(reclaim_started))
-                }
-                Some(sig) if sig == &CollateralUpgradeable::Denied::SIGNATURE_HASH => {
-                    let denied = CollateralUpgradeable::Denied::decode_raw_log(
-                        topics,
-                        log.data().data.as_ref(),
-                    )?;
-                    Some(CollateralEvent::Denied(denied))
-                }
-                Some(sig) if sig == &CollateralUpgradeable::Reclaimed::SIGNATURE_HASH => {
-                    let reclaimed = CollateralUpgradeable::Reclaimed::decode_raw_log(
-                        topics,
-                        log.data().data.as_ref(),
-                    )?;
-                    Some(CollateralEvent::Reclaimed(reclaimed))
-                }
-                Some(sig) if sig == &CollateralUpgradeable::Slashed::SIGNATURE_HASH => {
-                    let slashed = CollateralUpgradeable::Slashed::decode_raw_log(
-                        topics,
-                        log.data().data.as_ref(),
-                    )?;
-                    Some(CollateralEvent::Slashed(slashed))
-                }
-                _ => None,
-            };
-
-            if let Some(event) = event {
-                let event_with_meta = CollateralEventWithMeta {
-                    event,
-                    tx_hash: format!("0x{}", hex::encode(tx_hash.as_slice())),
-                    log_index,
-                };
-                match block_result {
-                    Some(events) => {
-                        events.push(event_with_meta);
-                    }
-                    None => {
-                        result.insert(block_number, vec![event_with_meta]);
-                    }
-                }
-            }
-        }
-
-        chunk_start = chunk_end + 1;
-    }
-
-    info!(
-        "Scanned blocks {} to {}, {} events are found",
-        from_block,
-        to_block,
-        result.values().map(|v| v.len()).sum::<usize>()
-    );
-    Ok((to_block, result))
-}
 // transactions
 pub async fn deposit(
     private_key: &str,
@@ -718,14 +475,19 @@ pub async fn reclaims(
     Ok(reclaim)
 }
 
-pub async fn get_latest_block_number(
+pub async fn get_finalized_block_number(
     network_config: &CollateralNetworkConfig,
 ) -> Result<u64, anyhow::Error> {
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let block_number = provider.get_block_number().await?;
-    Ok(block_number)
+    let finalized_block = provider
+        .get_block_by_number(BlockNumberOrTag::Finalized)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Failed to fetch finalized block"))?
+        .header
+        .number;
+    Ok(finalized_block)
 }
 
 pub async fn get_all_collaterals_at_block(
@@ -789,7 +551,7 @@ pub async fn get_all_collaterals_at_block(
 pub async fn get_all_collaterals(
     network_config: &CollateralNetworkConfig,
 ) -> Result<Vec<NodeCollateralInfo>, anyhow::Error> {
-    let block_number = get_latest_block_number(network_config).await?;
+    let block_number = get_finalized_block_number(network_config).await?;
     get_all_collaterals_at_block(network_config, block_number, DEFAULT_SNAPSHOT_PAGE_SIZE).await
 }
 
@@ -857,7 +619,7 @@ pub async fn get_all_reclaims_at_block(
 pub async fn get_all_reclaims(
     network_config: &CollateralNetworkConfig,
 ) -> Result<Vec<ReclaimInfo>, anyhow::Error> {
-    let block_number = get_latest_block_number(network_config).await?;
+    let block_number = get_finalized_block_number(network_config).await?;
     get_all_reclaims_at_block(network_config, block_number, DEFAULT_SNAPSHOT_PAGE_SIZE).await
 }
 

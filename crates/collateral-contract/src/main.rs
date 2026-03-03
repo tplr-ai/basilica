@@ -2,12 +2,8 @@ use alloy_primitives::U256;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::{InfoLevel, Verbosity};
-use collateral_contract::{
-    config::{CollateralNetworkConfig, Network},
-    CollateralEvent, CollateralEventWithMeta,
-};
+use collateral_contract::config::{CollateralNetworkConfig, Network};
 use hex::FromHex;
-use std::collections::HashMap;
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -39,9 +35,6 @@ enum Commands {
     /// Query commands
     #[command(subcommand)]
     Query(QueryCommands),
-    /// Event scanning commands
-    #[command(subcommand)]
-    Events(EventCommands),
 }
 
 #[derive(Subcommand)]
@@ -209,22 +202,6 @@ enum QueryCommands {
     ActiveReclaimCount,
 }
 
-#[derive(Subcommand)]
-enum EventCommands {
-    /// Scan for contract events
-    Scan {
-        /// Starting block number (defaults to 0)
-        #[arg(long, default_value_t = 0)]
-        from_block: u64,
-        /// Ending block number (defaults to current chain head)
-        #[arg(long)]
-        to_block: Option<u64>,
-        /// Output format: json or pretty
-        #[arg(long, default_value = "pretty")]
-        format: String,
-    },
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -244,7 +221,6 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Tx(tx_cmd) => handle_tx_command(tx_cmd, &network_config).await,
         Commands::Query(query_cmd) => handle_query_command(query_cmd, &network_config).await,
-        Commands::Events(event_cmd) => handle_event_command(event_cmd, &network_config).await,
     }
 }
 
@@ -521,41 +497,6 @@ async fn handle_query_command(
     Ok(())
 }
 
-async fn handle_event_command(
-    cmd: EventCommands,
-    network_config: &CollateralNetworkConfig,
-) -> Result<()> {
-    match cmd {
-        EventCommands::Scan {
-            from_block,
-            to_block,
-            format,
-        } => {
-            println!("Scanning events from block {}", from_block);
-            let (to_block, events) = match to_block {
-                Some(to_block) => {
-                    collateral_contract::scan_events_with_scope(
-                        from_block,
-                        to_block,
-                        network_config,
-                    )
-                    .await?
-                }
-                None => collateral_contract::scan_events(from_block, network_config).await?,
-            };
-
-            println!("Scanned blocks {} to {}", from_block, to_block);
-
-            if format == "json" {
-                print_events_json(&events)?;
-            } else {
-                print_events_pretty(&events);
-            }
-        }
-    }
-    Ok(())
-}
-
 // Helper functions for parsing inputs
 
 fn parse_hotkey(hotkey: &str) -> Result<[u8; 32]> {
@@ -586,134 +527,4 @@ fn parse_sha256_checksum(checksum: &str) -> Result<[u8; 32]> {
     let mut array = [0u8; 32];
     array.copy_from_slice(&bytes);
     Ok(array)
-}
-
-fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
-    if events.is_empty() {
-        println!("No events found");
-        return;
-    }
-
-    for (block_number, block_events) in events {
-        println!("\nBlock {}: {} events", block_number, block_events.len());
-        for (i, event_with_meta) in block_events.iter().enumerate() {
-            println!(
-                "  Event {} (tx: {}, log_index: {}):",
-                i + 1,
-                event_with_meta.tx_hash,
-                event_with_meta.log_index
-            );
-            let event = &event_with_meta.event;
-            match event {
-                CollateralEvent::Deposit(deposit) => {
-                    println!("    Type: Deposit");
-                    println!("    Hotkey: 0x{}", hex::encode(deposit.hotkey.as_slice()));
-                    println!("    Node ID: 0x{}", hex::encode(deposit.nodeId.as_slice()));
-                    println!("    Miner: {}", deposit.miner);
-                    println!(
-                        "    Alpha Hotkey: 0x{}",
-                        hex::encode(deposit.alphaHotkey.as_slice())
-                    );
-                    println!("    Alpha Amount: {} rao", deposit.alphaAmount);
-                }
-                CollateralEvent::ReclaimProcessStarted(reclaim_started) => {
-                    println!("    Type: ReclaimProcessStarted");
-                    println!("    Request ID: {}", reclaim_started.reclaimRequestId);
-                    println!(
-                        "    Hotkey: 0x{}",
-                        hex::encode(reclaim_started.hotkey.as_slice())
-                    );
-                    println!(
-                        "    Node ID: 0x{}",
-                        hex::encode(reclaim_started.nodeId.as_slice())
-                    );
-                    println!("    Miner: {}", reclaim_started.miner);
-                    println!("    TAO Amount: {} wei", reclaim_started.amount);
-                    println!(
-                        "    Alpha Coldkey: 0x{}",
-                        hex::encode(reclaim_started.alphaColdkey.as_slice())
-                    );
-                    println!("    Alpha Amount: {} rao", reclaim_started.alphaAmount);
-                    println!("    Expiration: {}", reclaim_started.expirationTime);
-                    println!("    URL: {}", reclaim_started.url);
-                    println!(
-                        "    URL Content SHA-256: 0x{}",
-                        hex::encode(reclaim_started.urlContentSha256.as_slice())
-                    );
-                }
-                CollateralEvent::Denied(denied) => {
-                    println!("    Type: Denied");
-                    println!("    Request ID: {}", denied.reclaimRequestId);
-                    println!("    URL: {}", denied.url);
-                    println!(
-                        "    URL Content SHA-256: 0x{}",
-                        hex::encode(denied.urlContentSha256.as_slice())
-                    );
-                }
-                CollateralEvent::Reclaimed(reclaimed) => {
-                    println!("    Type: Reclaimed");
-                    println!("    Request ID: {}", reclaimed.reclaimRequestId);
-                    println!("    Hotkey: 0x{}", hex::encode(reclaimed.hotkey.as_slice()));
-                    println!(
-                        "    Node ID: 0x{}",
-                        hex::encode(reclaimed.nodeId.as_slice())
-                    );
-                    println!("    Miner: {}", reclaimed.miner);
-                    println!(
-                        "    Alpha Coldkey: 0x{}",
-                        hex::encode(reclaimed.alphaColdkey.as_slice())
-                    );
-                    println!("    Alpha Amount: {} rao", reclaimed.alphaAmount);
-                }
-                CollateralEvent::Slashed(slashed) => {
-                    println!("    Type: Slashed");
-                    println!("    Hotkey: 0x{}", hex::encode(slashed.hotkey.as_slice()));
-                    println!("    Node ID: 0x{}", hex::encode(slashed.nodeId.as_slice()));
-                    println!("    Miner: {}", slashed.miner);
-                    println!("    Alpha Amount: {} rao", slashed.slashAlphaAmount);
-                    println!("    URL: {}", slashed.url);
-                    println!(
-                        "    URL Content SHA-256: 0x{}",
-                        hex::encode(slashed.urlContentSha256.as_slice())
-                    );
-                }
-            }
-        }
-    }
-}
-
-fn print_events_json(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) -> Result<()> {
-    let mut json_events = serde_json::Map::new();
-
-    for (block_number, block_events) in events {
-        let mut json_block_events = Vec::new();
-
-        for event_with_meta in block_events {
-            let mut json_event = event_with_meta.event.to_json();
-            if let serde_json::Value::Object(ref mut map) = json_event {
-                map.insert(
-                    "type".to_string(),
-                    serde_json::Value::String(event_with_meta.event.event_type().to_string()),
-                );
-                map.insert(
-                    "txHash".to_string(),
-                    serde_json::Value::String(event_with_meta.tx_hash.clone()),
-                );
-                map.insert(
-                    "logIndex".to_string(),
-                    serde_json::json!(event_with_meta.log_index),
-                );
-            }
-            json_block_events.push(json_event);
-        }
-
-        json_events.insert(
-            block_number.to_string(),
-            serde_json::Value::Array(json_block_events),
-        );
-    }
-
-    let output = serde_json::Value::Object(json_events);
-    println!("{}", serde_json::to_string_pretty(&output)?);
-    Ok(())
 }

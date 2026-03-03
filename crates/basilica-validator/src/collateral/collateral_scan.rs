@@ -73,7 +73,8 @@ impl Collateral {
             self.collateral_config.rpc_url.clone(),
         )?;
 
-        let snapshot_block = collateral_contract::get_latest_block_number(&network_config).await?;
+        let snapshot_block =
+            collateral_contract::get_finalized_block_number(&network_config).await?;
         let sync_page_size = self.collateral_config.sync_page_size;
 
         // Fetch a block-pinned snapshot via pagination to avoid missing/duplicated rows during iteration.
