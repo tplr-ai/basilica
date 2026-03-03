@@ -529,7 +529,7 @@ impl SlashRateLimiter {
             state.circuit_open_until = None;
         }
 
-        state.prune(now, self.window, self.breaker_window);
+        state.prune(now, self.window, self.breaker_window, self.cooldown);
 
         if let Some(last_slash) = state.per_miner_last_slash.get(miner_hotkey) {
             if now.duration_since(*last_slash) < self.cooldown {
@@ -558,9 +558,17 @@ impl SlashRateLimiter {
 }
 
 impl SlashRateLimiterState {
-    fn prune(&mut self, now: Instant, window: StdDuration, breaker_window: StdDuration) {
+    fn prune(
+        &mut self,
+        now: Instant,
+        window: StdDuration,
+        breaker_window: StdDuration,
+        cooldown: StdDuration,
+    ) {
         Self::prune_queue(&mut self.global_slashes, now, window);
         Self::prune_queue(&mut self.breaker_events, now, breaker_window);
+        self.per_miner_last_slash
+            .retain(|_, last_slash| now.duration_since(*last_slash) < cooldown);
     }
 
     fn prune_queue(queue: &mut VecDeque<Instant>, now: Instant, window: StdDuration) {
