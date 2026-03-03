@@ -14,7 +14,7 @@ PRIVATE_KEY="${PRIVATE_KEY:-}"
 HOTKEY="${HOTKEY:-}"
 ALPHA_HOTKEY="${ALPHA_HOTKEY:-}"
 NODE_ID="${NODE_ID:-6339ba4f-60f9-45c2-9d95-2b755bb57ca6}"
-ALPHA_AMOUNT_WEI="${ALPHA_AMOUNT_WEI:-1000000000000000000}"
+ALPHA_AMOUNT_RAO="${ALPHA_AMOUNT_RAO:-${ALPHA_AMOUNT_WEI:-5000000000}}"
 NETUID="${NETUID:-1}"
 MIN_COLLATERAL="${MIN_COLLATERAL:-1}"
 DECISION_TIMEOUT="${DECISION_TIMEOUT:-3600}"
@@ -58,7 +58,7 @@ Options:
   --hotkey <64-hex>                   HOTKEY for collateral ops (defaults from validator wallet file)
   --alpha-hotkey <64-hex>             ALPHA_HOTKEY for deposit ops (default: HOTKEY)
   --node-id <uuid>                    Node UUID for ops scripts
-  --alpha-amount-wei <uint>           Alpha amount for deposits
+  --alpha-amount-rao <uint>           Alpha amount for deposits (RAO)
   --netuid <uint>                     Contract netuid (default: 1)
   --min-collateral <uint>             Minimum collateral increase
   --decision-timeout <secs>           Reclaim decision timeout seconds
@@ -288,10 +288,16 @@ while [[ $# -gt 0 ]]; do
       [[ $# -gt 0 ]] || die "--node-id requires a value"
       NODE_ID="$1"
       ;;
+    --alpha-amount-rao)
+      shift
+      [[ $# -gt 0 ]] || die "--alpha-amount-rao requires a value"
+      ALPHA_AMOUNT_RAO="$1"
+      ;;
     --alpha-amount-wei)
       shift
       [[ $# -gt 0 ]] || die "--alpha-amount-wei requires a value"
-      ALPHA_AMOUNT_WEI="$1"
+      echo "WARN: --alpha-amount-wei is deprecated; use --alpha-amount-rao." >&2
+      ALPHA_AMOUNT_RAO="$1"
       ;;
     --netuid)
       shift
@@ -331,6 +337,7 @@ if ! cast block-number --rpc-url "$RPC_URL" >/dev/null 2>&1; then
 fi
 
 load_hotkey_defaults
+require_uint "ALPHA_AMOUNT_RAO" "$ALPHA_AMOUNT_RAO"
 load_or_create_deployer_wallet
 ensure_deployer_funded
 
@@ -369,7 +376,7 @@ PRIVATE_KEY=$PRIVATE_KEY
 HOTKEY=$HOTKEY
 NODE_ID=$NODE_ID
 ALPHA_HOTKEY=$ALPHA_HOTKEY
-ALPHA_AMOUNT_WEI=$ALPHA_AMOUNT_WEI
+ALPHA_AMOUNT_RAO=$ALPHA_AMOUNT_RAO
 
 URL=$URL
 URL_CONTENT_SHA256=$URL_CONTENT_SHA256
@@ -396,4 +403,4 @@ echo "Next:"
 echo "  source \"$ENV_FILE\""
 echo "  cc() { collateral-cli --network \"\$NETWORK\" --contract-address \"\$CONTRACT_ADDRESS\" \"\$@\"; }"
 echo "  cc query trustee"
-echo "  cc tx deposit --private-key \"\$PRIVATE_KEY\" --hotkey \"\$HOTKEY\" --node-id \"\$NODE_ID\" --alpha-hotkey \"\$ALPHA_HOTKEY\" --alpha-amount \"\$ALPHA_AMOUNT_WEI\""
+echo "  cc tx deposit --private-key \"\$PRIVATE_KEY\" --hotkey \"\$HOTKEY\" --node-id \"\$NODE_ID\" --alpha-hotkey \"\$ALPHA_HOTKEY\" --alpha-amount \"\$ALPHA_AMOUNT_RAO\""

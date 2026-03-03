@@ -60,7 +60,7 @@ enum TxCommands {
         /// Alpha hotkey as hex string (32 bytes). Required when claiming ownership on a new node.
         #[arg(long)]
         alpha_hotkey: String,
-        /// Alpha amount to deposit in wei
+        /// Alpha amount to deposit in RAO (1e9 = 1 alpha)
         #[arg(long)]
         alpha_amount: String,
     },
@@ -117,7 +117,7 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
-        /// Alpha amount to slash in wei
+        /// Alpha amount to slash in RAO (1e9 = 1 alpha)
         #[arg(long)]
         slash_alpha_amount: String,
         /// URL for proof of slashing
@@ -266,7 +266,7 @@ async fn handle_tx_command(
             let alpha_amount_u256 = parse_u256(&alpha_amount)?;
 
             println!(
-                "Depositing {} alpha (wei) for node {} with hotkey {} (TAO msg.value is fixed to 0 in this CLI path)",
+                "Depositing {} alpha (rao) for node {} with hotkey {} (TAO msg.value is fixed to 0 in this CLI path)",
                 alpha_amount, node_id, hotkey
             );
             collateral_contract::deposit(
@@ -350,7 +350,7 @@ async fn handle_tx_command(
             let alpha_amount = parse_u256(&slash_alpha_amount)?;
 
             println!(
-                "Slashing {} alpha (wei) for node {} with hotkey {} (TAO slash amount is fixed to 0 in this CLI path)",
+                "Slashing {} alpha (rao) for node {} with hotkey {} (TAO slash amount is fixed to 0 in this CLI path)",
                 slash_alpha_amount, node_id, hotkey
             );
             collateral_contract::slash_collateral(
@@ -465,7 +465,7 @@ async fn handle_query_command(
             .await?;
             println!("Collaterals for node {}:", node_id_clone);
             println!("  TAO:   {} wei", tao);
-            println!("  Alpha: {} wei", alpha);
+            println!("  Alpha: {} rao", alpha);
         }
         QueryCommands::Reclaims { reclaim_request_id } => {
             let request_id = parse_u256(&reclaim_request_id)?;
@@ -476,7 +476,7 @@ async fn handle_query_command(
             println!("  Miner: {}", result.miner);
             println!("  Amount: {} wei", result.amount);
             println!("  Alpha coldkey: 0x{}", hex::encode(result.alpha_coldkey));
-            println!("  Alpha amount: {} wei", result.alpha_amount);
+            println!("  Alpha amount: {} rao", result.alpha_amount);
             println!("  Deny timeout: {}", result.deny_timeout);
         }
         QueryCommands::AllCollaterals => {
@@ -484,7 +484,7 @@ async fn handle_query_command(
             println!("Active nodes: {}", nodes.len());
             for node in &nodes {
                 println!(
-                    "  Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} wei",
+                    "  Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} rao",
                     hex::encode(node.hotkey),
                     Uuid::from_bytes(node.node_id),
                     node.miner,
@@ -498,7 +498,7 @@ async fn handle_query_command(
             println!("Active reclaims: {}", reclaims.len());
             for r in &reclaims {
                 println!(
-                    "  ID: {}, Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} wei, Timeout: {}",
+                    "  ID: {}, Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} rao, Timeout: {}",
                     r.reclaim_request_id,
                     hex::encode(r.hotkey),
                     Uuid::from_bytes(r.node_id),
@@ -614,7 +614,7 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
                         "    Alpha Hotkey: 0x{}",
                         hex::encode(deposit.alphaHotkey.as_slice())
                     );
-                    println!("    Alpha Amount: {} wei", deposit.alphaAmount);
+                    println!("    Alpha Amount: {} rao", deposit.alphaAmount);
                 }
                 CollateralEvent::ReclaimProcessStarted(reclaim_started) => {
                     println!("    Type: ReclaimProcessStarted");
@@ -633,7 +633,7 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
                         "    Alpha Coldkey: 0x{}",
                         hex::encode(reclaim_started.alphaColdkey.as_slice())
                     );
-                    println!("    Alpha Amount: {} wei", reclaim_started.alphaAmount);
+                    println!("    Alpha Amount: {} rao", reclaim_started.alphaAmount);
                     println!("    Expiration: {}", reclaim_started.expirationTime);
                     println!("    URL: {}", reclaim_started.url);
                     println!(
@@ -663,14 +663,14 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEventWithMeta>>) {
                         "    Alpha Coldkey: 0x{}",
                         hex::encode(reclaimed.alphaColdkey.as_slice())
                     );
-                    println!("    Alpha Amount: {} wei", reclaimed.alphaAmount);
+                    println!("    Alpha Amount: {} rao", reclaimed.alphaAmount);
                 }
                 CollateralEvent::Slashed(slashed) => {
                     println!("    Type: Slashed");
                     println!("    Hotkey: 0x{}", hex::encode(slashed.hotkey.as_slice()));
                     println!("    Node ID: 0x{}", hex::encode(slashed.nodeId.as_slice()));
                     println!("    Miner: {}", slashed.miner);
-                    println!("    Alpha Amount: {} wei", slashed.slashAlphaAmount);
+                    println!("    Alpha Amount: {} rao", slashed.slashAlphaAmount);
                     println!("    URL: {}", slashed.url);
                     println!(
                         "    URL Content SHA-256: 0x{}",

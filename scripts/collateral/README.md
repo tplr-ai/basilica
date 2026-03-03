@@ -55,7 +55,7 @@ cc query trustee
 cc query min-collateral-increase
 cc query decision-timeout
 cc query netuid
-cc query contract-hotkey
+cc query contract-hotkey  # prints the validator hotkey
 ```
 
 Deposit alpha:
@@ -66,10 +66,10 @@ cc tx deposit \
   --hotkey "$HOTKEY" \
   --node-id "$NODE_ID" \
   --alpha-hotkey "$ALPHA_HOTKEY" \
-  --alpha-amount "$ALPHA_AMOUNT_WEI"
+  --alpha-amount "$ALPHA_AMOUNT_RAO"
 
 cc query node-to-miner --hotkey "$HOTKEY" --node-id "$NODE_ID"
-cc query alpha-collaterals --hotkey "$HOTKEY" --node-id "$NODE_ID"
+cc query collaterals --hotkey "$HOTKEY" --node-id "$NODE_ID"
 ```
 
 Reclaim flow:
@@ -104,3 +104,4 @@ cc tx burn-register --private-key "$PRIVATE_KEY"
 
 - Keep private keys out of version control.
 - This flow is localnet-first but works on other networks with the right env values.
+- Alpha amounts are in RAO (`1e9 = 1 alpha`).

@@ -128,6 +128,7 @@ collateral-cli --contract-address 0x1234567890123456789012345678901234567890
 
 > Transaction policy in this CLI is alpha-primary: deposit and slash commands only expose alpha inputs.
 > TAO state remains available via query and event sync.
+> Alpha amount arguments are in RAO (1e9 = 1 alpha).
 
 #### Deposit Collateral
 
@@ -138,7 +139,7 @@ collateral-cli tx deposit \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6 \
   --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --alpha-amount 1000000000000000000
+  --alpha-amount 5000000000
 
 # Deposit on testnet
 collateral-cli --network testnet tx deposit \
@@ -146,7 +147,7 @@ collateral-cli --network testnet tx deposit \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13 \
   --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --alpha-amount 5000000000000000000
+  --alpha-amount 10000000000
 
 # Deposit with custom contract address
 collateral-cli --contract-address 0x5FbDB2315678afecb367f032d93F642f64180aa3 tx deposit \
@@ -154,7 +155,7 @@ collateral-cli --contract-address 0x5FbDB2315678afecb367f032d93F642f64180aa3 tx 
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 1f4b20b4-1fdd-4fbb-8904-4310ec6df456 \
   --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --alpha-amount 2000000000000000000
+  --alpha-amount 7000000000
 
 # Using environment variable for private key
 export PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12
@@ -162,7 +163,7 @@ collateral-cli tx deposit \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 12c61943-7ce0-470f-a3aa-14df501f15e2 \
   --alpha-hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
-  --alpha-amount 1500000000000000000
+  --alpha-amount 6000000000
 ```
 
 #### Reclaim Collateral
@@ -219,7 +220,7 @@ collateral-cli tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6 \
-  --slash-alpha-amount 1000000000000000000 \
+  --slash-alpha-amount 5000000000 \
   --url "https://evidence.example.com/slash-proof" \
   --url-content-sha256 aab03e786183b16c8a0b15f6b40ff607aab03e786183b16c8a0b15f6b40ff607
 
@@ -228,7 +229,7 @@ collateral-cli --network testnet tx slash-collateral \
   --private-key $PRIVATE_KEY \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
   --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13 \
-  --slash-alpha-amount 5000000000000000000 \
+  --slash-alpha-amount 10000000000 \
   --url "https://audit.testnet.com/violations/999" \
   --url-content-sha256 098f6bcd4621d373cade4e832627b4f6098f6bcd4621d373cade4e832627b4f6
 ```
@@ -249,6 +250,13 @@ collateral-cli query decision-timeout
 
 # Get minimum collateral increase
 collateral-cli query min-collateral-increase
+
+# Get minimum alpha collateral increase
+collateral-cli query min-alpha-collateral-increase
+
+# Check deposit toggles
+collateral-cli query tao-deposits-enabled
+collateral-cli query alpha-deposits-enabled
 ```
 
 #### Node-Specific Queries
@@ -259,13 +267,8 @@ collateral-cli query node-to-miner \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
-# Get TAO collateral amount for node
-collateral-cli query tao-collaterals \
-  --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
-
-# Get alpha collateral amount for node
-collateral-cli query alpha-collaterals \
+# Get TAO + alpha collateral amounts for node
+collateral-cli query collaterals \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
@@ -274,9 +277,13 @@ collateral-cli query reclaims \
   --reclaim-request-id 42
 
 # Query on different networks
-collateral-cli --network testnet query tao-collaterals \
+collateral-cli --network testnet query collaterals \
   --hotkey fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 \
   --node-id 9e0a4d34-3110-48d1-b3c5-580f44270f13
+
+# List active nodes/reclaims
+collateral-cli query all-collaterals
+collateral-cli query all-reclaims
 
 # Query with custom contract
 collateral-cli --contract-address 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 query netuid
@@ -286,10 +293,10 @@ collateral-cli --contract-address 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0 que
 
 ```bash
 # Scan events with pretty output (default range: 0 to current block)
-collateral-cli events scan --network testnet
+collateral-cli --network testnet events scan
 
 # Scan events with JSON output
-collateral-cli events scan --network testnet --format json
+collateral-cli --network testnet events scan --format json
 
 # Scan recent events (last 100 blocks from current)
 collateral-cli events scan --from-block $(echo "$(curl -s -X POST -H 'Content-Type: application/json' --data '{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}' https://lite.chain.opentensor.ai:443 | jq -r .result | sed 's/0x//' | awk '{print strtonum(\"0x\" $0)}') - 100" | bc)

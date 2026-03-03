@@ -499,8 +499,8 @@ message CollateralStatus {
   double current_alpha = 1;           // Raw Alpha amount deposited
   double current_usd_value = 2;       // USD value at current price
   double minimum_usd_required = 3;    // Minimum for this GPU category
-  string status = 4;                  // "sufficient", "warning", "undercollateralized", "excluded"
-  string grace_period_remaining = 5;  // e.g. "23h 45m" or empty
+  string status = 4;                  // "sufficient", "warning", "undercollateralized", "unknown"
+  string grace_period_remaining = 5;  // Currently empty (reserved for compatibility)
   string action_required = 6;         // e.g. "Deposit 25 Alpha (~$50) to maintain eligibility"
   double alpha_usd_price = 7;         // Current Alpha/USD price used
   bool price_stale = 8;              // True if price data is > 1hr old
@@ -511,8 +511,8 @@ message CollateralStatus {
 |---|---|
 | `sufficient` | Collateral meets requirements |
 | `warning` | Collateral is low — action recommended |
-| `undercollateralized` | Below minimum — may be excluded soon |
-| `excluded` | Insufficient collateral — excluded from rentals |
+| `undercollateralized` | Below minimum — node is treated as fallback |
+| `unknown` | Price/collateral data unavailable — node is treated as fallback |
 
 ---
 
@@ -813,8 +813,8 @@ The BidManager runs automatically after validator discovery and registers your n
 |---|---|
 | `sufficient` | Collateral meets requirements — no action needed |
 | `warning` | Collateral is low — deposit more Alpha to maintain eligibility |
-| `undercollateralized` | Below minimum — may be excluded from rentals soon |
-| `excluded` | Insufficient collateral — nodes are excluded from rental selection |
+| `undercollateralized` | Below minimum — node is treated as fallback in selection |
+| `unknown` | Price/collateral data unavailable — node is treated as fallback |
 
 #### 5. SSH Access Configuration
 

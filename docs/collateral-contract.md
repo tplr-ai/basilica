@@ -160,7 +160,7 @@ You need replace the variable with the correct value like contract address.
   export HOTKEY=0x
   export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
   export ALPHA_HOTKEY=0x
-  export ALPHA_AMOUNT=1000000000000000000
+  export ALPHA_AMOUNT=5000000000  # RAO (1e9 = 1 alpha)
   # WARNING: never commit or paste real keys in scripts
   export PRIVATE_KEY=0x
   # deposit
@@ -172,7 +172,7 @@ You need replace the variable with the correct value like contract address.
   --alpha-amount "$ALPHA_AMOUNT"
   ```
 
-  - Confirm on-chain that your collateral has been successfully locked for that validator via `query node-to-miner` and `query alpha-collaterals`.
+  - Confirm on-chain that your collateral has been successfully locked for that validator via `query node-to-miner` and `query collaterals`.
 
   ```shell
   #!/usr/bin/env bash
@@ -189,9 +189,9 @@ You need replace the variable with the correct value like contract address.
   --hotkey "$HOTKEY" \
   --node-id "$NODE_ID"
 
-  # check alpha collateral should reflect your deposit
+  # check TAO + alpha collateral should reflect your deposit
 
-  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query alpha-collaterals \
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query collaterals \
   --hotkey "$HOTKEY" \
   --node-id "$NODE_ID"
   ```
@@ -204,7 +204,7 @@ You need replace the variable with the correct value like contract address.
 
 ### As a validator.
 
-The validators won't evaluate or list the miners' executors as available, if the miner hasn't backed their executors with a collateral stake. Thus, the miner will only receive weights, based on the available executors.
+Validators prioritize nodes with stronger collateral (`sufficient`/`warning`) and treat `undercollateralized`/`unknown` nodes as fallback candidates. In the current policy, collateral does not hard-exclude nodes from rental selection by itself.
 
 ### As a Owner, you can:
 

@@ -7,7 +7,7 @@ export CONTRACT_ADDRESS=0x970951a12F975E6762482ACA81E57D5A2A4e73F4
 export HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000001
 export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 export ALPHA_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000002
-export ALPHA_AMOUNT=1000000000000000000
+export ALPHA_AMOUNT=5000000000 # RAO (1e9 = 1 alpha)
 export PRIVATE_KEY=0x
 
 # deposit (alpha-only tx path in CLI; TAO msg.value is fixed to zero)
@@ -28,8 +28,8 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query
   --hotkey "$HOTKEY" \
   --node-id "$NODE_ID"
 
-# check alpha collateral (expected to be > 0)
-collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query alpha-collaterals \
+# check TAO + alpha collateral (expected TAO=0, alpha>0 in this alpha-only CLI flow)
+collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query collaterals \
   --hotkey "$HOTKEY" \
   --node-id "$NODE_ID"
 
@@ -63,9 +63,6 @@ collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query
 
 # check TAO and alpha collaterals should be 0 after finalize
 collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query collaterals \
-  --hotkey "$HOTKEY" \
-  --node-id "$NODE_ID"
-collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query alpha-collaterals \
   --hotkey "$HOTKEY" \
   --node-id "$NODE_ID"
 
