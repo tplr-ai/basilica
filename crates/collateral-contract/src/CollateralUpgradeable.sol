@@ -71,6 +71,19 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     bool public taoDepositsEnabled;
     bool public alphaDepositsEnabled;
 
+    // --- Active node tracking ---
+    struct NodeKey {
+        bytes32 hotkey;
+        bytes16 nodeId;
+    }
+
+    NodeKey[] private activeNodeKeys;
+    mapping(bytes32 => uint256) private activeNodeKeyIndex; // keccak256(hotkey, nodeId) => 1-based index
+
+    // --- Active reclaim tracking ---
+    uint256[] private activeReclaimIds;
+    mapping(uint256 => uint256) private activeReclaimIdIndex; // reclaimId => 1-based index
+
     /// @dev Reserved storage gap for future upgrades.
     uint256[49] private _gap;
 
@@ -261,6 +274,48 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         revert InvalidDepositMethod();
     }
 
+    // --- Internal helpers for active tracking (swap-and-pop) ---
+
+    function _addActiveNode(bytes32 hotkey, bytes16 nodeId) private {
+        bytes32 key = keccak256(abi.encode(hotkey, nodeId));
+        if (activeNodeKeyIndex[key] != 0) return; // already tracked
+        activeNodeKeys.push(NodeKey({hotkey: hotkey, nodeId: nodeId}));
+        activeNodeKeyIndex[key] = activeNodeKeys.length; // 1-based
+    }
+
+    function _removeActiveNode(bytes32 hotkey, bytes16 nodeId) private {
+        bytes32 key = keccak256(abi.encode(hotkey, nodeId));
+        uint256 idx = activeNodeKeyIndex[key];
+        if (idx == 0) return; // not tracked
+        uint256 lastIdx = activeNodeKeys.length;
+        if (idx != lastIdx) {
+            NodeKey storage lastKey = activeNodeKeys[lastIdx - 1];
+            activeNodeKeys[idx - 1] = lastKey;
+            activeNodeKeyIndex[keccak256(abi.encode(lastKey.hotkey, lastKey.nodeId))] = idx;
+        }
+        activeNodeKeys.pop();
+        delete activeNodeKeyIndex[key];
+    }
+
+    function _addActiveReclaim(uint256 reclaimId) private {
+        if (activeReclaimIdIndex[reclaimId] != 0) return; // already tracked
+        activeReclaimIds.push(reclaimId);
+        activeReclaimIdIndex[reclaimId] = activeReclaimIds.length; // 1-based
+    }
+
+    function _removeActiveReclaim(uint256 reclaimId) private {
+        uint256 idx = activeReclaimIdIndex[reclaimId];
+        if (idx == 0) return; // not tracked
+        uint256 lastIdx = activeReclaimIds.length;
+        if (idx != lastIdx) {
+            uint256 lastId = activeReclaimIds[lastIdx - 1];
+            activeReclaimIds[idx - 1] = lastId;
+            activeReclaimIdIndex[lastId] = idx;
+        }
+        activeReclaimIds.pop();
+        delete activeReclaimIdIndex[reclaimId];
+    }
+
     /// @notice Allows users to deposit collateral into the contract for a specific node
     /// @param hotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to deposit collateral for
@@ -304,6 +359,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             // Backfill owner coldkey for nodes that existed before this mapping.
             ownerColdkeys[hotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
         }
+
+        _addActiveNode(hotkey, nodeId);
 
         uint256 actualAlphaAmount = alphaAmount;
         if (alphaAmount > 0) {
@@ -372,6 +429,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         taoCollateralUnderPendingReclaims[hotkey][nodeId] += availableAmount;
         alphaCollateralUnderPendingReclaims[hotkey][nodeId] += availableAlphaAmount;
 
+        _addActiveReclaim(nextReclaimId);
+
         emit ReclaimProcessStarted(
             nextReclaimId,
             hotkey,
@@ -413,6 +472,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         uint256 alphaAmount = reclaim.alphaAmount;
 
         // --- Effects ---
+        _removeActiveReclaim(reclaimRequestId);
         delete reclaims[reclaimRequestId];
         taoCollateralUnderPendingReclaims[hotkey][nodeId] -= amount;
         alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= alphaAmount;
@@ -432,6 +492,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
             ownerColdkeys[hotkey][nodeId] = bytes32(0);
+            _removeActiveNode(hotkey, nodeId);
         }
 
         emit Reclaimed(reclaimRequestId, hotkey, nodeId, miner, actualAmount, alphaColdkey, actualAlphaAmount);
@@ -480,6 +541,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.alphaAmount;
         emit Denied(reclaimRequestId, url, urlContentSha256);
 
+        _removeActiveReclaim(reclaimRequestId);
         delete reclaims[reclaimRequestId];
 
         // Clear ownership if all balances and pending reclaims are zero
@@ -490,6 +552,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
             ownerColdkeys[hotkey][nodeId] = bytes32(0);
+            _removeActiveNode(hotkey, nodeId);
         }
     }
 
@@ -539,6 +602,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         ) {
             nodeToMiner[hotkey][nodeId] = address(0);
             ownerColdkeys[hotkey][nodeId] = bytes32(0);
+            _removeActiveNode(hotkey, nodeId);
         }
 
         // send slashed TAO to the trustee
@@ -637,13 +701,12 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     event TaoDepositsEnabledUpdated(bool enabled);
     event AlphaDepositsEnabledUpdated(bool enabled);
 
-    function getCollaterals(bytes32 hotkey, bytes16 nodeId)
-        external
-        view
-        returns (uint256 taoCollateral, uint256 alphaCollateral)
-    {
-        taoCollateral = taoCollaterals[hotkey][nodeId];
-        alphaCollateral = alphaCollaterals[hotkey][nodeId];
+    struct NodeCollateral {
+        bytes32 hotkey;
+        bytes16 nodeId;
+        address miner;
+        uint256 taoCollateral;
+        uint256 alphaCollateral;
     }
 
     function getContractStake(bytes32 hotkey) public view returns (uint256) {
@@ -707,6 +770,123 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         (bool success,) = address(INEURON_ADDRESS).call{gas: gasleft()}(data);
         if (!success) {
             revert BurnRegisterCallFailed();
+        }
+    }
+
+    // ============ VIEW FUNCTIONS FOR ACTIVE TRACKING ============
+
+    struct ReclaimInfo {
+        uint256 reclaimRequestId;
+        bytes32 hotkey;
+        bytes16 nodeId;
+        address miner;
+        uint256 amount;
+        bytes32 alphaColdkey;
+        uint256 alphaAmount;
+        uint64 denyTimeout;
+    }
+
+    /// @notice Returns all active node collateral data
+    function getAllCollaterals() external view returns (NodeCollateral[] memory results) {
+        uint256 len = activeNodeKeys.length;
+        results = new NodeCollateral[](len);
+        for (uint256 i = 0; i < len; i++) {
+            NodeKey storage key = activeNodeKeys[i];
+            results[i] = NodeCollateral({
+                hotkey: key.hotkey,
+                nodeId: key.nodeId,
+                miner: nodeToMiner[key.hotkey][key.nodeId],
+                taoCollateral: taoCollaterals[key.hotkey][key.nodeId],
+                alphaCollateral: alphaCollaterals[key.hotkey][key.nodeId]
+            });
+        }
+    }
+
+    /// @notice Returns all pending reclaim data
+    function getAllReclaims() external view returns (ReclaimInfo[] memory results) {
+        uint256 len = activeReclaimIds.length;
+        results = new ReclaimInfo[](len);
+        for (uint256 i = 0; i < len; i++) {
+            uint256 id = activeReclaimIds[i];
+            Reclaim storage r = reclaims[id];
+            results[i] = ReclaimInfo({
+                reclaimRequestId: id,
+                hotkey: r.hotkey,
+                nodeId: r.nodeId,
+                miner: r.miner,
+                amount: r.amount,
+                alphaColdkey: r.alphaColdkey,
+                alphaAmount: r.alphaAmount,
+                denyTimeout: r.denyTimeout
+            });
+        }
+    }
+
+    /// @notice Returns the number of active nodes
+    function getActiveNodeCount() external view returns (uint256) {
+        return activeNodeKeys.length;
+    }
+
+    /// @notice Returns the number of active reclaims
+    function getActiveReclaimCount() external view returns (uint256) {
+        return activeReclaimIds.length;
+    }
+
+    /// @notice Returns a paginated slice of active node collateral data
+    /// @param offset Starting index in the activeNodeKeys array
+    /// @param limit Maximum number of entries to return
+    function getAllCollateralsPaginated(uint256 offset, uint256 limit)
+        external
+        view
+        returns (NodeCollateral[] memory results)
+    {
+        uint256 len = activeNodeKeys.length;
+        if (offset >= len) {
+            return new NodeCollateral[](0);
+        }
+        uint256 remaining = len - offset;
+        uint256 count = limit > remaining ? remaining : limit;
+        results = new NodeCollateral[](count);
+        for (uint256 i = 0; i < count; i++) {
+            NodeKey storage key = activeNodeKeys[offset + i];
+            results[i] = NodeCollateral({
+                hotkey: key.hotkey,
+                nodeId: key.nodeId,
+                miner: nodeToMiner[key.hotkey][key.nodeId],
+                taoCollateral: taoCollaterals[key.hotkey][key.nodeId],
+                alphaCollateral: alphaCollaterals[key.hotkey][key.nodeId]
+            });
+        }
+    }
+
+    /// @notice Returns a paginated slice of active reclaim data
+    /// @param offset Starting index in the activeReclaimIds array
+    /// @param limit Maximum number of entries to return
+    function getAllReclaimsPaginated(uint256 offset, uint256 limit)
+        external
+        view
+        returns (ReclaimInfo[] memory results)
+    {
+        uint256 len = activeReclaimIds.length;
+        if (offset >= len) {
+            return new ReclaimInfo[](0);
+        }
+        uint256 remaining = len - offset;
+        uint256 count = limit > remaining ? remaining : limit;
+        results = new ReclaimInfo[](count);
+        for (uint256 i = 0; i < count; i++) {
+            uint256 id = activeReclaimIds[offset + i];
+            Reclaim storage r = reclaims[id];
+            results[i] = ReclaimInfo({
+                reclaimRequestId: id,
+                hotkey: r.hotkey,
+                nodeId: r.nodeId,
+                miner: r.miner,
+                amount: r.amount,
+                alphaColdkey: r.alphaColdkey,
+                alphaAmount: r.alphaAmount,
+                denyTimeout: r.denyTimeout
+            });
         }
     }
 }

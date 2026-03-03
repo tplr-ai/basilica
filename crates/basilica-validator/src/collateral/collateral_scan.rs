@@ -1,4 +1,3 @@
-use crate::collateral::event_handler::CollateralEventHandler;
 use crate::config::collateral::CollateralConfig;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
@@ -12,7 +11,6 @@ pub struct Collateral {
     config: crate::config::VerificationConfig,
     collateral_config: CollateralConfig,
     persistence: Arc<SimplePersistence>,
-    event_handler: Arc<CollateralEventHandler>,
     cancellation_token: CancellationToken,
 }
 
@@ -22,51 +20,47 @@ impl Collateral {
         collateral_config: CollateralConfig,
         persistence: Arc<SimplePersistence>,
     ) -> Self {
-        let event_handler = Arc::new(CollateralEventHandler::new(persistence.clone()));
         Self {
             config,
             collateral_config,
             persistence,
-            event_handler,
             cancellation_token: CancellationToken::new(),
         }
     }
 
-    /// Spawn the collateral event scan loop on a background task
+    /// Spawn the collateral sync loop on a background task
     pub fn start(&self) {
         let scanner = self.clone();
         tokio::spawn(async move {
-            scanner.scan_loop().await;
+            scanner.sync_loop().await;
         });
     }
 
-    /// Stop the collateral event scan loop
+    /// Stop the collateral sync loop
     pub fn stop(&self) {
         self.cancellation_token.cancel();
     }
 
-    async fn scan_loop(&self) {
-        info!("Starting collateral event scan loop");
+    async fn sync_loop(&self) {
+        info!("Starting collateral sync loop (RPC-based)");
         let mut interval = tokio::time::interval(self.config.collateral_event_scan_interval);
 
         loop {
             tokio::select! {
                 _ = self.cancellation_token.cancelled() => {
-                    info!("Collateral event scan loop stopped");
+                    info!("Collateral sync loop stopped");
                     break;
                 }
                 _ = interval.tick() => {
-                    if let Err(e) = self.scan_handle_collateral_events().await {
-                        error!("Collateral event scan failed: {}", e);
+                    if let Err(e) = self.sync_collateral_state().await {
+                        error!("Collateral sync failed: {}", e);
                     }
                 }
             }
         }
     }
 
-    pub async fn scan_handle_collateral_events(&self) -> Result<()> {
-        let last_block = self.persistence.get_last_scanned_block_number().await?;
-        let from_block = last_block + 1;
+    pub async fn sync_collateral_state(&self) -> Result<()> {
         let network = match self.collateral_config.network.as_str() {
             "mainnet" => collateral_contract::config::Network::Mainnet,
             "testnet" => collateral_contract::config::Network::Testnet,
@@ -78,24 +72,20 @@ impl Collateral {
             Some(self.collateral_config.contract_address.clone()),
             self.collateral_config.rpc_url.clone(),
         )?;
-        let (to_block, events_map) =
-            collateral_contract::scan_events(from_block, &network_config).await?;
 
-        let mut sorted_events_map = events_map.iter().collect::<Vec<_>>();
+        // Fetch all active nodes and reclaims from the contract
+        let nodes = collateral_contract::get_all_collaterals(&network_config).await?;
+        let reclaims = collateral_contract::get_all_reclaims(&network_config).await?;
 
-        // sort the events by block number
-        sorted_events_map.sort_by(|a, b| a.0.cmp(b.0));
+        info!(
+            nodes = nodes.len(),
+            reclaims = reclaims.len(),
+            "Syncing collateral state from contract"
+        );
 
-        for (block_number, events_vec) in sorted_events_map.iter() {
-            self.event_handler
-                .apply_collateral_events_for_block(**block_number, events_vec.as_slice())
-                .await?;
-        }
-
-        // update the last scanned block number after handling all blocks
-        self.persistence
-            .update_last_scanned_block_number(to_block)
-            .await?;
+        // Sync to database
+        self.persistence.sync_all_collateral_nodes(&nodes).await?;
+        self.persistence.sync_all_reclaims(&reclaims).await?;
 
         Ok(())
     }

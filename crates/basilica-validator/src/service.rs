@@ -1,7 +1,6 @@
 use crate::api::ApiHandler;
 use crate::basilica_api::{BasilicaApiClient, ValidatorSigner};
 use crate::bittensor_core::{ChainRegistration, WeightSetter};
-use crate::collateral::collateral_reconcile::CollateralReconciler;
 use crate::collateral::collateral_scan::Collateral;
 use crate::collateral::evaluator::CollateralEvaluator;
 use crate::collateral::evidence::EvidenceStore;
@@ -41,7 +40,6 @@ struct RuntimeHandles {
     registration_server_task: JoinHandle<()>,
     cleanup_task: Option<JoinHandle<()>>,
     collateral_scanner: Option<Collateral>,
-    collateral_reconciler: Option<CollateralReconciler>,
 }
 
 struct TaskInputs {
@@ -458,24 +456,6 @@ impl ValidatorService {
             None
         };
 
-        let collateral_reconciler = if let Some(ref collateral_config) = self.config.collateral {
-            if let Some(interval_secs) = collateral_config.reconcile_interval_secs {
-                let reconciler = CollateralReconciler::new(
-                    collateral_config.clone(),
-                    inputs.persistence.clone(),
-                    StdDuration::from_secs(interval_secs),
-                );
-                reconciler.start();
-                Some(reconciler)
-            } else {
-                info!("Collateral reconciliation disabled (reconcile_interval_secs not set)");
-                None
-            }
-        } else {
-            info!("Collateral reconciliation disabled (no collateral config)");
-            None
-        };
-
         RuntimeHandles {
             scoring_task,
             weight_setter_task,
@@ -484,7 +464,6 @@ impl ValidatorService {
             registration_server_task,
             cleanup_task,
             collateral_scanner,
-            collateral_reconciler,
         }
     }
 
@@ -499,9 +478,6 @@ impl ValidatorService {
         handles.registration_server_task.abort();
         if let Some(scanner) = &handles.collateral_scanner {
             scanner.stop();
-        }
-        if let Some(reconciler) = &handles.collateral_reconciler {
-            reconciler.stop();
         }
     }
 

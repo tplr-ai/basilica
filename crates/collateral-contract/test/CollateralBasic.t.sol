@@ -156,7 +156,9 @@ contract CollateralBasicTest is Test {
 
     function testCannotInitializeTwice() public {
         vm.expectRevert();
-        collateral.initialize(NETUID, TRUSTEE, MIN_DEPOSIT, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true);
+        collateral.initialize(
+            NETUID, TRUSTEE, MIN_DEPOSIT, MIN_DEPOSIT, DECISION_TIMEOUT, ADMIN, ALPHA_HOTKEY, true, true
+        );
     }
 
     // ============ DEPOSIT TESTS (WITHOUT ALPHA) ============
@@ -863,6 +865,266 @@ contract CollateralBasicTest is Test {
         CollateralUpgradeable alphaOnlyCollateral = _deployCollateralWithDepositToggles(false, true);
         assertFalse(alphaOnlyCollateral.taoDepositsEnabled());
         assertTrue(alphaOnlyCollateral.alphaDepositsEnabled());
+    }
+
+    // ============ ACTIVE NODE TRACKING TESTS ============
+
+    function testGetAllCollateralsEmptyInitially() public view {
+        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        assertEq(results.length, 0);
+        assertEq(collateral.getActiveNodeCount(), 0);
+    }
+
+    function testGetAllCollateralsAfterDeposit() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        assertEq(results.length, 1);
+        assertEq(results[0].hotkey, HOTKEY_1);
+        assertEq(results[0].nodeId, EXECUTOR_ID_1);
+        assertEq(results[0].miner, ALICE);
+        assertEq(results[0].taoCollateral, 5 ether);
+        assertEq(results[0].alphaCollateral, 0);
+        assertEq(collateral.getActiveNodeCount(), 1);
+    }
+
+    function testGetAllCollateralsMultipleNodes() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(BOB, BOB);
+        collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
+
+        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        assertEq(results.length, 2);
+        assertEq(collateral.getActiveNodeCount(), 2);
+    }
+
+    function testNodeRemovedFromAllCollateralsAfterFullSlash() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+        assertEq(collateral.getActiveNodeCount(), 1);
+
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 5 ether, 0, TEST_URL, TEST_SHA256);
+
+        assertEq(collateral.getActiveNodeCount(), 0);
+        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        assertEq(results.length, 0);
+    }
+
+    function testNodeNotRemovedAfterPartialSlash() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 10 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 5 ether, 0, TEST_URL, TEST_SHA256);
+
+        assertEq(collateral.getActiveNodeCount(), 1);
+        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        assertEq(results.length, 1);
+        assertEq(results[0].taoCollateral, 5 ether);
+    }
+
+    function testNodeRemovedAfterFullReclaim() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        collateral.finalizeReclaim(0);
+
+        assertEq(collateral.getActiveNodeCount(), 0);
+    }
+
+    function testNodeRemovedAfterDenyWithZeroBalance() public {
+        // Deposit, reclaim, slash all, then deny — should remove node
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 5 ether, 0, TEST_URL, TEST_SHA256);
+
+        // Node still active (pending reclaim)
+        assertEq(collateral.getActiveNodeCount(), 1);
+
+        vm.prank(TRUSTEE);
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
+
+        // Now everything is zero
+        assertEq(collateral.getActiveNodeCount(), 0);
+    }
+
+    function testSwapAndPopOrdering() public {
+        // Deposit A, B, C
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(BOB, BOB);
+        collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
+
+        bytes32 HOTKEY_3 = bytes32(uint256(102));
+        bytes16 EXECUTOR_ID_3 = bytes16(uint128(3));
+        _seedNodeOwner(HOTKEY_3, EXECUTOR_ID_3, CHARLIE);
+        vm.prank(CHARLIE);
+        collateral.deposit{value: 2 ether}(HOTKEY_3, EXECUTOR_ID_3, ALPHA_HOTKEY, 0);
+
+        assertEq(collateral.getActiveNodeCount(), 3);
+
+        // Slash B (middle element)
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(HOTKEY_2, EXECUTOR_ID_2, 3 ether, 0, TEST_URL, TEST_SHA256);
+
+        // Should have A and C remaining
+        assertEq(collateral.getActiveNodeCount(), 2);
+        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        assertEq(results.length, 2);
+
+        // After swap-and-pop: A should be at index 0, C should be at index 1
+        assertEq(results[0].hotkey, HOTKEY_1);
+        assertEq(results[1].hotkey, HOTKEY_3);
+    }
+
+    function testDuplicateDepositDoesNotDuplicateTracking() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.deposit{value: 3 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        assertEq(collateral.getActiveNodeCount(), 1);
+        CollateralUpgradeable.NodeCollateral[] memory results = collateral.getAllCollaterals();
+        assertEq(results.length, 1);
+        assertEq(results[0].taoCollateral, 8 ether);
+    }
+
+    // ============ ACTIVE RECLAIM TRACKING TESTS ============
+
+    function testGetAllReclaimsEmptyInitially() public view {
+        CollateralUpgradeable.ReclaimInfo[] memory results = collateral.getAllReclaims();
+        assertEq(results.length, 0);
+        assertEq(collateral.getActiveReclaimCount(), 0);
+    }
+
+    function testGetAllReclaimsAfterReclaimStarted() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        CollateralUpgradeable.ReclaimInfo[] memory results = collateral.getAllReclaims();
+        assertEq(results.length, 1);
+        assertEq(results[0].reclaimRequestId, 0);
+        assertEq(results[0].hotkey, HOTKEY_1);
+        assertEq(results[0].nodeId, EXECUTOR_ID_1);
+        assertEq(results[0].miner, ALICE);
+        assertEq(results[0].amount, 5 ether);
+        assertEq(collateral.getActiveReclaimCount(), 1);
+    }
+
+    function testReclaimRemovedAfterFinalize() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        collateral.finalizeReclaim(0);
+
+        assertEq(collateral.getActiveReclaimCount(), 0);
+        CollateralUpgradeable.ReclaimInfo[] memory results = collateral.getAllReclaims();
+        assertEq(results.length, 0);
+    }
+
+    function testReclaimRemovedAfterDeny() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        vm.prank(TRUSTEE);
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
+
+        assertEq(collateral.getActiveReclaimCount(), 0);
+    }
+
+    // ============ PAGINATION TESTS ============
+
+    function testGetAllCollateralsPaginated() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(BOB, BOB);
+        collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
+
+        // Page 1: offset=0, limit=1
+        CollateralUpgradeable.NodeCollateral[] memory page1 = collateral.getAllCollateralsPaginated(0, 1);
+        assertEq(page1.length, 1);
+        assertEq(page1[0].hotkey, HOTKEY_1);
+
+        // Page 2: offset=1, limit=1
+        CollateralUpgradeable.NodeCollateral[] memory page2 = collateral.getAllCollateralsPaginated(1, 1);
+        assertEq(page2.length, 1);
+        assertEq(page2[0].hotkey, HOTKEY_2);
+
+        // Offset beyond array
+        CollateralUpgradeable.NodeCollateral[] memory empty = collateral.getAllCollateralsPaginated(10, 5);
+        assertEq(empty.length, 0);
+
+        // Zero limit
+        CollateralUpgradeable.NodeCollateral[] memory zeroLimit = collateral.getAllCollateralsPaginated(0, 0);
+        assertEq(zeroLimit.length, 0);
+
+        // Limit larger than remaining
+        CollateralUpgradeable.NodeCollateral[] memory all = collateral.getAllCollateralsPaginated(0, 100);
+        assertEq(all.length, 2);
+
+        // Max limit should not overflow and should clamp to remaining
+        CollateralUpgradeable.NodeCollateral[] memory maxLimit =
+            collateral.getAllCollateralsPaginated(1, type(uint256).max);
+        assertEq(maxLimit.length, 1);
+        assertEq(maxLimit[0].hotkey, HOTKEY_2);
+    }
+
+    function testGetAllReclaimsPaginated() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 10 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        CollateralUpgradeable.ReclaimInfo[] memory page = collateral.getAllReclaimsPaginated(0, 1);
+        assertEq(page.length, 1);
+        assertEq(page[0].reclaimRequestId, 0);
+
+        CollateralUpgradeable.ReclaimInfo[] memory page2 = collateral.getAllReclaimsPaginated(1, 1);
+        assertEq(page2.length, 1);
+        assertEq(page2[0].reclaimRequestId, 1);
+
+        CollateralUpgradeable.ReclaimInfo[] memory empty = collateral.getAllReclaimsPaginated(10, 5);
+        assertEq(empty.length, 0);
+
+        CollateralUpgradeable.ReclaimInfo[] memory zeroLimit = collateral.getAllReclaimsPaginated(0, 0);
+        assertEq(zeroLimit.length, 0);
+
+        CollateralUpgradeable.ReclaimInfo[] memory maxLimit = collateral.getAllReclaimsPaginated(1, type(uint256).max);
+        assertEq(maxLimit.length, 1);
+        assertEq(maxLimit[0].reclaimRequestId, 1);
     }
 
     // ============ UPGRADE TESTS ============

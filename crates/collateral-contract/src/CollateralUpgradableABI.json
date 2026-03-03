@@ -239,29 +239,238 @@
   },
   {
     "type": "function",
-    "name": "getCollaterals",
+    "name": "getActiveNodeCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getActiveReclaimCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllCollaterals",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "results",
+        "type": "tuple[]",
+        "internalType": "struct CollateralUpgradeable.NodeCollateral[]",
+        "components": [
+          {
+            "name": "hotkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "nodeId",
+            "type": "bytes16",
+            "internalType": "bytes16"
+          },
+          {
+            "name": "miner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "taoCollateral",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "alphaCollateral",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllCollateralsPaginated",
     "inputs": [
       {
-        "name": "hotkey",
-        "type": "bytes32",
-        "internalType": "bytes32"
+        "name": "offset",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
-        "name": "nodeId",
-        "type": "bytes16",
-        "internalType": "bytes16"
+        "name": "limit",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "taoCollateral",
+        "name": "results",
+        "type": "tuple[]",
+        "internalType": "struct CollateralUpgradeable.NodeCollateral[]",
+        "components": [
+          {
+            "name": "hotkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "nodeId",
+            "type": "bytes16",
+            "internalType": "bytes16"
+          },
+          {
+            "name": "miner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "taoCollateral",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "alphaCollateral",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllReclaims",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "results",
+        "type": "tuple[]",
+        "internalType": "struct CollateralUpgradeable.ReclaimInfo[]",
+        "components": [
+          {
+            "name": "reclaimRequestId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "hotkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "nodeId",
+            "type": "bytes16",
+            "internalType": "bytes16"
+          },
+          {
+            "name": "miner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "amount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "alphaColdkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "alphaAmount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "denyTimeout",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllReclaimsPaginated",
+    "inputs": [
+      {
+        "name": "offset",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "alphaCollateral",
+        "name": "limit",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "results",
+        "type": "tuple[]",
+        "internalType": "struct CollateralUpgradeable.ReclaimInfo[]",
+        "components": [
+          {
+            "name": "reclaimRequestId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "hotkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "nodeId",
+            "type": "bytes16",
+            "internalType": "bytes16"
+          },
+          {
+            "name": "miner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "amount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "alphaColdkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "alphaAmount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "denyTimeout",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
       }
     ],
     "stateMutability": "view"

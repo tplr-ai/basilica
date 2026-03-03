@@ -199,6 +199,14 @@ enum QueryCommands {
         #[arg(long)]
         reclaim_request_id: String,
     },
+    /// Get all active node collateral data
+    AllCollaterals,
+    /// Get all pending reclaim data
+    AllReclaims,
+    /// Get the number of active nodes
+    ActiveNodeCount,
+    /// Get the number of active reclaims
+    ActiveReclaimCount,
 }
 
 #[derive(Subcommand)]
@@ -470,6 +478,44 @@ async fn handle_query_command(
             println!("  Alpha coldkey: 0x{}", hex::encode(result.alpha_coldkey));
             println!("  Alpha amount: {} wei", result.alpha_amount);
             println!("  Deny timeout: {}", result.deny_timeout);
+        }
+        QueryCommands::AllCollaterals => {
+            let nodes = collateral_contract::get_all_collaterals(network_config).await?;
+            println!("Active nodes: {}", nodes.len());
+            for node in &nodes {
+                println!(
+                    "  Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} wei",
+                    hex::encode(node.hotkey),
+                    Uuid::from_bytes(node.node_id),
+                    node.miner,
+                    node.tao_collateral,
+                    node.alpha_collateral
+                );
+            }
+        }
+        QueryCommands::AllReclaims => {
+            let reclaims = collateral_contract::get_all_reclaims(network_config).await?;
+            println!("Active reclaims: {}", reclaims.len());
+            for r in &reclaims {
+                println!(
+                    "  ID: {}, Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} wei, Timeout: {}",
+                    r.reclaim_request_id,
+                    hex::encode(r.hotkey),
+                    Uuid::from_bytes(r.node_id),
+                    r.miner,
+                    r.amount,
+                    r.alpha_amount,
+                    r.deny_timeout
+                );
+            }
+        }
+        QueryCommands::ActiveNodeCount => {
+            let count = collateral_contract::get_active_node_count(network_config).await?;
+            println!("Active node count: {}", count);
+        }
+        QueryCommands::ActiveReclaimCount => {
+            let count = collateral_contract::get_active_reclaim_count(network_config).await?;
+            println!("Active reclaim count: {}", count);
         }
     }
     Ok(())
