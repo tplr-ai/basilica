@@ -16,3 +16,5 @@ local = "http://localhost:9944"
 
 [profile.local]
 evm_version = "london"
+optimizer = true
+optimizer_runs = 200

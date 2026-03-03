@@ -69,11 +69,11 @@ HOTKEY_2="0x0000000000000000000000000000000000000000000000000000e2e2${RAND_SUFFI
 NODE_ID_1="0x00000000000000000000e2e1${RAND_SUFFIX}"  # bytes16
 NODE_ID_2="0x00000000000000000000e2e2${RAND_SUFFIX}"  # bytes16
 
-# Hex without 0x prefix — how the validator stores them in SQLite (encode_hex::<String>())
-HEX_HOTKEY_1="${HOTKEY_1#0x}"
-HEX_HOTKEY_2="${HOTKEY_2#0x}"
-HEX_NODE_ID_1="${NODE_ID_1#0x}"
-HEX_NODE_ID_2="${NODE_ID_2#0x}"
+# Hex with 0x prefix — how the validator stores them in SQLite (RPC snapshot: format!("0x{}", hex::encode(...)))
+HEX_HOTKEY_1="${HOTKEY_1}"
+HEX_HOTKEY_2="${HOTKEY_2}"
+HEX_NODE_ID_1="${NODE_ID_1}"
+HEX_NODE_ID_2="${NODE_ID_2}"
 
 # TAO amounts in wei (1 TAO = 1e18 wei)
 TAO_1="1000000000000000000"
@@ -82,8 +82,10 @@ TAO_5="5000000000000000000"
 TAO_10="10000000000000000000"
 
 # RAO amounts for staking precompile (1 TAO = 1e9 RAO)
-RAO_5_TAO="5000000000"    # 5 TAO in RAO — stake during setup
-RAO_1_ALPHA="1000000000"  # 1 alpha in RAO — deposit amount
+# minAlphaCollateralIncrease on localnet is 5e9 RAO (5 alpha).
+# Stake 10 TAO to ensure the miner receives >= 5 alpha after AMM conversion.
+RAO_5_TAO="10000000000"   # 10 TAO in RAO — stake during setup (buffer for AMM rate)
+RAO_1_ALPHA="5000000000"  # 5 alpha in RAO — deposit amount (matches minAlphaCollateralIncrease)
 
 TEST_URL="http://localhost:8080/evidence/e2e-test.json"
 TEST_SHA="0xd41d8cd98f00b204e9800998ecf8427ed41d8cd98f00b204e9800998ecf8427e"
@@ -342,10 +344,11 @@ log_info "Miner address: $MINER_ADDR"
 # Miner address as stored in DB (lowercase with 0x prefix, from address_to_string)
 MINER_ADDR_DB="${MINER_ADDR,,}"
 
-log_info "Funding miner with 10 TAO from faucet..."
+MINER_FUND="20000000000000000000"  # 20 TAO in wei
+log_info "Funding miner with 20 TAO from faucet..."
 cast send --rpc-url "$RPC_URL" --private-key "$FAUCET_KEY" --legacy \
-    "$MINER_ADDR" --value "$TAO_10" >/dev/null
-log_success "Miner funded ($(wei_compare fmt "$TAO_10"))"
+    "$MINER_ADDR" --value "$MINER_FUND" >/dev/null
+log_success "Miner funded ($(wei_compare fmt "$MINER_FUND"))"
 
 log_info "Staking 5 TAO as alpha for later alpha deposit tests..."
 cast_send "$MINER_KEY" "$STAKING_PRECOMPILE" \
@@ -434,13 +437,7 @@ log_info "Extracted reclaimRequestId=$RECLAIM_ID from event log"
 
 wait_for_scan "T3 reclaim start"
 
-PENDING_TAO="$(db_query "SELECT pending_tao_reclaim FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'")"
-if wei_compare gt "$PENDING_TAO" "0"; then
-    pass "DB: pending_tao_reclaim > 0 after reclaim start (got: $PENDING_TAO)"
-else
-    fail "DB: pending_tao_reclaim > 0 after reclaim start (got: $PENDING_TAO)"
-fi
-
+# RPC snapshot approach: pending reclaim state is tracked in collateral_reclaims (not collateral_status.pending_tao_reclaim)
 # Check collateral_reclaims row exists
 RECLAIM_ROW="$(db_query "SELECT reclaim_request_id FROM collateral_reclaims WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'")"
 assert_eq "$RECLAIM_ROW" "$RECLAIM_ID" "DB: collateral_reclaims row exists with correct reclaim_request_id"
@@ -460,21 +457,12 @@ cast_send "$MINER_KEY" "$PROXY" "finalizeReclaim(uint256)" "$RECLAIM_ID"
 
 wait_for_scan "T4 finalize reclaim"
 
+# RPC snapshot approach: nodes with zero collateral are removed from activeNodeKeys[] on-chain
+# and subsequently deleted from collateral_status DB (not zeroed).
 assert_db_eq \
-    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT COUNT(*) FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'" \
     "0" \
-    "DB: tao_collateral == 0 after finalize for node 1"
-
-assert_db_eq \
-    "SELECT pending_tao_reclaim FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'" \
-    "0" \
-    "DB: pending_tao_reclaim == 0 after finalize for node 1"
-
-# Ownership cleared — no alpha on this node, so all balances are zero
-assert_db_eq \
-    "SELECT miner FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'" \
-    "$ZERO_ADDR" \
-    "DB: miner cleared (0x0) after full reclaim for node 1"
+    "DB: collateral_status row deleted after full reclaim for node 1 (new behavior: no zero-balance rows)"
 
 # Reclaim record should be deleted
 RECLAIM_COUNT="$(db_query "SELECT COUNT(*) FROM collateral_reclaims WHERE reclaim_request_id = '$RECLAIM_ID'")"
@@ -530,15 +518,12 @@ cast_send "$DEPLOYER_KEY" "$PROXY" \
 
 wait_for_scan "T6 full slash"
 
+# RPC snapshot approach: nodes with zero collateral are removed from activeNodeKeys[] on-chain
+# and subsequently deleted from collateral_status DB (not zeroed).
 assert_db_eq \
-    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT COUNT(*) FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'" \
     "0" \
-    "DB: tao_collateral == 0 after full slash"
-
-assert_db_eq \
-    "SELECT miner FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'" \
-    "$ZERO_ADDR" \
-    "DB: miner cleared (0x0) after full slash"
+    "DB: collateral_status row deleted after full slash (new behavior: no zero-balance rows)"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  T7: Validator Logs Verification
@@ -552,27 +537,27 @@ log_grep() {
     (set +o pipefail; docker logs "$VALIDATOR_CONTAINER" 2>&1 | grep -q "$1")
 }
 
-if log_grep "Starting collateral event scan loop"; then
-    pass "Validator log: 'Starting collateral event scan loop' found"
+if log_grep "Starting collateral sync loop (RPC-based)"; then
+    pass "Validator log: 'Starting collateral sync loop (RPC-based)' found"
 else
-    fail "Validator log: 'Starting collateral event scan loop' not found"
+    fail "Validator log: 'Starting collateral sync loop (RPC-based)' not found"
 fi
 
-if log_grep "Scanned blocks"; then
-    pass "Validator log: 'Scanned blocks' messages found"
+if log_grep "Syncing collateral state from contract"; then
+    pass "Validator log: 'Syncing collateral state from contract' messages found"
 else
-    fail "Validator log: 'Scanned blocks' messages not found"
+    fail "Validator log: 'Syncing collateral state from contract' messages not found"
 fi
 
-# Only flag persistent/real scan failures — exclude transient "database is locked"
+# Only flag persistent/real sync failures — exclude transient "database is locked"
 # errors which our db_query (docker cp) can cause.
 if (set +o pipefail; docker logs "$VALIDATOR_CONTAINER" 2>&1 \
-    | grep "Collateral event scan failed" \
+    | grep "Collateral sync failed" \
     | grep -v "database is locked" \
     | grep -q .); then
-    fail "Validator log: 'Collateral event scan failed' found (non-transient)"
+    fail "Validator log: 'Collateral sync failed' found (non-transient)"
 else
-    pass "Validator log: no persistent 'Collateral event scan failed' errors"
+    pass "Validator log: no persistent 'Collateral sync failed' errors"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
