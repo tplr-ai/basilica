@@ -69,7 +69,10 @@ impl CollateralManager {
         let collateral_alpha = self
             .get_collateral_alpha(hotkey, node_id)
             .await
-            .unwrap_or(Decimal::ZERO);
+            .unwrap_or_else(|e| {
+                warn!("Failed to get collateral alpha for {hotkey}/{node_id}: {e}");
+                Decimal::ZERO
+            });
 
         let (state, status) = self
             .evaluator
@@ -136,7 +139,7 @@ impl CollateralManager {
             .get_alpha_collateral_amount(&hotkey_hex, &node_hex)
             .await?;
         let amount = amount.unwrap_or_default();
-        Ok(u256_to_alpha(amount))
+        u256_to_alpha(amount)
     }
 }
 
@@ -155,20 +158,15 @@ pub fn node_id_to_hex(node_id: &str) -> Result<String> {
     Ok(format!("0x{}", encode(uuid.as_bytes())))
 }
 
-fn u256_to_alpha(amount: alloy_primitives::U256) -> Decimal {
+fn u256_to_alpha(amount: alloy_primitives::U256) -> Result<Decimal> {
     let amount_str = amount.to_string();
-    // alphaCollaterals stores RAO (1e9 = 1 alpha), not wei (1e18).
-    match Decimal::from_str(&amount_str) {
-        Ok(value) => value * Decimal::from_i128_with_scale(1, 9),
-        Err(_) => {
-            warn!(
-                "Collateral amount {} exceeds Decimal precision; capping at Decimal::MAX",
-                amount_str
-            );
-            // TODO: Switch to BigDecimal or fixed-point U256 conversion to avoid loss.
-            Decimal::MAX * Decimal::from_i128_with_scale(1, 9)
-        }
-    }
+    let value = Decimal::from_str(&amount_str).map_err(|e| {
+        anyhow::anyhow!(
+            "Collateral amount {} exceeds Decimal precision: {e}",
+            amount_str
+        )
+    })?;
+    Ok(value * Decimal::from_i128_with_scale(1, 9))
 }
 
 #[cfg(test)]
@@ -239,48 +237,54 @@ mod tests {
 
     #[test]
     fn test_u256_to_alpha_zero() {
-        let alpha = u256_to_alpha(alloy_primitives::U256::ZERO);
+        let alpha = u256_to_alpha(alloy_primitives::U256::ZERO).unwrap();
         assert_eq!(alpha, Decimal::ZERO);
     }
 
     #[test]
     fn test_u256_to_alpha_one_rao() {
         // 1 RAO = 1e-9 alpha
-        let alpha = u256_to_alpha(alloy_primitives::U256::from(1u64));
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1u64)).unwrap();
         assert_eq!(alpha, Decimal::from_i128_with_scale(1, 9));
     }
 
     #[test]
     fn test_u256_to_alpha_one_alpha() {
         // 1e9 RAO = 1 alpha
-        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64));
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64)).unwrap();
         assert_eq!(alpha, Decimal::ONE);
     }
 
     #[test]
     fn test_u256_to_alpha_fractional() {
         // 500_000_000 RAO = 0.5 alpha
-        let alpha = u256_to_alpha(alloy_primitives::U256::from(500_000_000u64));
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(500_000_000u64)).unwrap();
         assert_eq!(alpha, Decimal::new(5, 1));
     }
 
     #[test]
     fn test_u256_to_alpha_large_amount() {
         // 5e9 RAO = 5 alpha
-        let alpha = u256_to_alpha(alloy_primitives::U256::from(5_000_000_000u64));
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(5_000_000_000u64)).unwrap();
         assert_eq!(alpha, Decimal::from(5));
     }
 
     #[test]
     fn test_u256_to_alpha_is_not_wei() {
         // Regression: old code divided by 1e18 (wei). Verify 1e9 RAO = 1 alpha, NOT 1e-9 alpha.
-        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64));
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64)).unwrap();
         assert_ne!(
             alpha,
             Decimal::from_i128_with_scale(1, 9),
             "should NOT treat input as wei"
         );
         assert_eq!(alpha, Decimal::ONE, "1e9 RAO must equal 1 alpha");
+    }
+
+    #[test]
+    fn test_u256_to_alpha_overflow_returns_error() {
+        let result = u256_to_alpha(alloy_primitives::U256::MAX);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
