@@ -471,14 +471,7 @@ fn compute_sha256_checksum(contents: &[u8]) -> [u8; 32] {
 }
 
 fn to_network_config(config: &CollateralConfig) -> Result<CollateralNetworkConfig> {
-    let network = match config.network.as_str() {
-        "mainnet" => Network::Mainnet,
-        "testnet" => Network::Testnet,
-        "local" => Network::Local,
-        other => {
-            anyhow::bail!("Unsupported collateral network: {}", other);
-        }
-    };
+    let network: Network = config.network.parse()?;
     CollateralNetworkConfig::from_network(
         &network,
         Some(config.contract_address.clone()),

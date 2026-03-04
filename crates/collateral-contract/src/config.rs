@@ -34,6 +34,19 @@ pub enum Network {
     Local,
 }
 
+impl std::str::FromStr for Network {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mainnet" => Ok(Network::Mainnet),
+            "testnet" => Ok(Network::Testnet),
+            "local" => Ok(Network::Local),
+            other => Err(anyhow::anyhow!("Unsupported collateral network: {}", other)),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CollateralNetworkConfig {
     pub chain_id: u64,

@@ -61,12 +61,8 @@ impl Collateral {
     }
 
     pub async fn sync_collateral_state(&self) -> Result<()> {
-        let network = match self.collateral_config.network.as_str() {
-            "mainnet" => collateral_contract::config::Network::Mainnet,
-            "testnet" => collateral_contract::config::Network::Testnet,
-            "local" => collateral_contract::config::Network::Local,
-            other => anyhow::bail!("Unsupported collateral network: {}", other),
-        };
+        let network: collateral_contract::config::Network =
+            self.collateral_config.network.parse()?;
         let network_config = CollateralNetworkConfig::from_network(
             &network,
             Some(self.collateral_config.contract_address.clone()),
