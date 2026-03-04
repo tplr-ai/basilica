@@ -15,13 +15,10 @@ use collateral_contract::slash_collateral;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, VecDeque};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration as StdDuration, Instant};
 use tokio::fs;
-use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 #[async_trait]
@@ -88,7 +85,6 @@ pub struct SlashExecutor {
     config: CollateralConfig,
     evidence_store: EvidenceStore,
     metrics: Option<Arc<ValidatorPrometheusMetrics>>,
-    rate_limiter: Arc<SlashRateLimiter>,
     signer: Option<Arc<dyn ValidatorSigner>>,
     chain_client: Arc<dyn CollateralChainClient>,
 }
@@ -196,12 +192,10 @@ impl SlashExecutor {
         signer: Option<Arc<dyn ValidatorSigner>>,
         chain_client: Arc<dyn CollateralChainClient>,
     ) -> Self {
-        let rate_limiter = Arc::new(SlashRateLimiter::new(&config));
         Self {
             config,
             evidence_store,
             metrics,
-            rate_limiter,
             signer,
             chain_client,
         }
@@ -245,7 +239,6 @@ impl SlashExecutor {
             return Ok(());
         }
 
-        self.enforce_rate_limit(miner_hotkey, node_id).await?;
         let private_key = self.load_private_key().await?;
         let alpha_amount = self
             .resolve_slash_amount(
@@ -392,17 +385,6 @@ impl SlashExecutor {
         Ok(())
     }
 
-    async fn enforce_rate_limit(&self, miner_hotkey: &str, node_id: &str) -> Result<()> {
-        if let Err(err) = self.rate_limiter.check_and_record(miner_hotkey).await {
-            warn!(
-                "Slash rate limited for miner {} (node {}): {}",
-                miner_hotkey, node_id, err
-            );
-            return Err(err);
-        }
-        Ok(())
-    }
-
     async fn load_private_key(&self) -> Result<String> {
         let provider: Box<dyn KeyProvider> = match self.config.trustee_key_source {
             TrusteeKeySource::File => {
@@ -481,105 +463,6 @@ struct SlashSubmission<'a> {
     url: &'a str,
     checksum: [u8; 32],
     network_config: &'a CollateralNetworkConfig,
-}
-
-struct SlashRateLimiter {
-    cooldown: StdDuration,
-    max_per_window: usize,
-    window: StdDuration,
-    breaker_threshold: usize,
-    breaker_window: StdDuration,
-    breaker_cooldown: StdDuration,
-    state: Mutex<SlashRateLimiterState>,
-}
-
-struct SlashRateLimiterState {
-    per_miner_last_slash: HashMap<String, Instant>,
-    global_slashes: VecDeque<Instant>,
-    breaker_events: VecDeque<Instant>,
-    circuit_open_until: Option<Instant>,
-}
-
-impl SlashRateLimiter {
-    fn new(config: &CollateralConfig) -> Self {
-        Self {
-            cooldown: StdDuration::from_secs(config.slash_cooldown_secs),
-            max_per_window: config.slash_max_per_window as usize,
-            window: StdDuration::from_secs(config.slash_window_secs),
-            breaker_threshold: config.slash_circuit_breaker_threshold as usize,
-            breaker_window: StdDuration::from_secs(config.slash_circuit_breaker_window_secs),
-            breaker_cooldown: StdDuration::from_secs(config.slash_circuit_breaker_cooldown_secs),
-            state: Mutex::new(SlashRateLimiterState {
-                per_miner_last_slash: HashMap::new(),
-                global_slashes: VecDeque::new(),
-                breaker_events: VecDeque::new(),
-                circuit_open_until: None,
-            }),
-        }
-    }
-
-    async fn check_and_record(&self, miner_hotkey: &str) -> Result<()> {
-        let mut state = self.state.lock().await;
-        let now = Instant::now();
-
-        if let Some(open_until) = state.circuit_open_until {
-            if now < open_until {
-                anyhow::bail!("circuit breaker open; retry after cooldown");
-            }
-            state.circuit_open_until = None;
-        }
-
-        state.prune(now, self.window, self.breaker_window, self.cooldown);
-
-        if let Some(last_slash) = state.per_miner_last_slash.get(miner_hotkey) {
-            if now.duration_since(*last_slash) < self.cooldown {
-                anyhow::bail!("per-miner slash cooldown active");
-            }
-        }
-
-        if state.global_slashes.len() >= self.max_per_window {
-            anyhow::bail!("global slash rate limit exceeded");
-        }
-
-        state
-            .per_miner_last_slash
-            .insert(miner_hotkey.to_string(), now);
-        state.global_slashes.push_back(now);
-        state.breaker_events.push_back(now);
-
-        if state.breaker_events.len() >= self.breaker_threshold {
-            state.circuit_open_until = now.checked_add(self.breaker_cooldown);
-            state.breaker_events.clear();
-            anyhow::bail!("slash circuit breaker opened");
-        }
-
-        Ok(())
-    }
-}
-
-impl SlashRateLimiterState {
-    fn prune(
-        &mut self,
-        now: Instant,
-        window: StdDuration,
-        breaker_window: StdDuration,
-        cooldown: StdDuration,
-    ) {
-        Self::prune_queue(&mut self.global_slashes, now, window);
-        Self::prune_queue(&mut self.breaker_events, now, breaker_window);
-        self.per_miner_last_slash
-            .retain(|_, last_slash| now.duration_since(*last_slash) < cooldown);
-    }
-
-    fn prune_queue(queue: &mut VecDeque<Instant>, now: Instant, window: StdDuration) {
-        let Some(cutoff) = now.checked_sub(window) else {
-            queue.clear();
-            return;
-        };
-        while queue.front().is_some_and(|ts| *ts < cutoff) {
-            queue.pop_front();
-        }
-    }
 }
 
 fn compute_sha256_checksum(contents: &[u8]) -> [u8; 32] {

@@ -27,18 +27,6 @@ pub struct CollateralConfig {
     pub network: String,
     #[serde(default = "default_slash_fraction")]
     pub slash_fraction: Decimal,
-    #[serde(default = "default_slash_cooldown_secs")]
-    pub slash_cooldown_secs: u64,
-    #[serde(default = "default_slash_max_per_window")]
-    pub slash_max_per_window: u64,
-    #[serde(default = "default_slash_window_secs")]
-    pub slash_window_secs: u64,
-    #[serde(default = "default_slash_circuit_breaker_threshold")]
-    pub slash_circuit_breaker_threshold: u64,
-    #[serde(default = "default_slash_circuit_breaker_window_secs")]
-    pub slash_circuit_breaker_window_secs: u64,
-    #[serde(default = "default_slash_circuit_breaker_cooldown_secs")]
-    pub slash_circuit_breaker_cooldown_secs: u64,
     #[serde(default)]
     pub trustee_private_key_file: Option<PathBuf>,
     #[serde(default = "default_trustee_key_source")]
@@ -81,12 +69,6 @@ impl Default for CollateralConfig {
             rpc_url: None,
             network: default_collateral_network(),
             slash_fraction: default_slash_fraction(),
-            slash_cooldown_secs: default_slash_cooldown_secs(),
-            slash_max_per_window: default_slash_max_per_window(),
-            slash_window_secs: default_slash_window_secs(),
-            slash_circuit_breaker_threshold: default_slash_circuit_breaker_threshold(),
-            slash_circuit_breaker_window_secs: default_slash_circuit_breaker_window_secs(),
-            slash_circuit_breaker_cooldown_secs: default_slash_circuit_breaker_cooldown_secs(),
             trustee_private_key_file: None,
             trustee_key_source: default_trustee_key_source(),
             aws_secret_name: None,
@@ -118,24 +100,6 @@ impl CollateralConfig {
         let one_percent = Decimal::new(1, 2); // 0.01
         if !(one_percent <= self.slash_fraction && self.slash_fraction <= Decimal::ONE) {
             anyhow::bail!("collateral.slash_fraction must be within [0.01, 1.0]");
-        }
-        if self.slash_cooldown_secs == 0 {
-            anyhow::bail!("collateral.slash_cooldown_secs must be > 0");
-        }
-        if self.slash_max_per_window == 0 {
-            anyhow::bail!("collateral.slash_max_per_window must be > 0");
-        }
-        if self.slash_window_secs == 0 {
-            anyhow::bail!("collateral.slash_window_secs must be > 0");
-        }
-        if self.slash_circuit_breaker_threshold == 0 {
-            anyhow::bail!("collateral.slash_circuit_breaker_threshold must be > 0");
-        }
-        if self.slash_circuit_breaker_window_secs == 0 {
-            anyhow::bail!("collateral.slash_circuit_breaker_window_secs must be > 0");
-        }
-        if self.slash_circuit_breaker_cooldown_secs == 0 {
-            anyhow::bail!("collateral.slash_circuit_breaker_cooldown_secs must be > 0");
         }
         if self.sync_page_size == 0 {
             anyhow::bail!("collateral.sync_page_size must be > 0");
@@ -231,30 +195,6 @@ fn default_collateral_network() -> String {
 
 fn default_slash_fraction() -> Decimal {
     Decimal::ONE
-}
-
-fn default_slash_cooldown_secs() -> u64 {
-    3600
-}
-
-fn default_slash_max_per_window() -> u64 {
-    20
-}
-
-fn default_slash_window_secs() -> u64 {
-    3600
-}
-
-fn default_slash_circuit_breaker_threshold() -> u64 {
-    10
-}
-
-fn default_slash_circuit_breaker_window_secs() -> u64 {
-    300
-}
-
-fn default_slash_circuit_breaker_cooldown_secs() -> u64 {
-    1800
 }
 
 fn default_evidence_base_url() -> String {
