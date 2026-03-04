@@ -425,5 +425,4 @@ mod tests {
         assert_eq!(n2.tao_collateral, U256::from(300u64));
         assert_eq!(n2.alpha_collateral, U256::from(400u64));
     }
-
 }

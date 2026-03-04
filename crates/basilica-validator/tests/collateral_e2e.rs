@@ -190,4 +190,3 @@ async fn test_slash_flow_executes_and_emits_metrics() -> Result<()> {
     assert!(rendered.contains("basilica_validator_collateral_slash_executed_total"));
     Ok(())
 }
-
