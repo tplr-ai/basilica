@@ -8,6 +8,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -153,15 +154,14 @@ impl TokenPriceFetcher for HttpTokenPriceFetcher {
         let payload: TokenPricesResponse = client.read_json_response(response).await?;
 
         Ok(TokenPriceSnapshot {
-            tao_price_usd: Decimal::from_str_exact(&payload.tao_price_usd)
+            tao_price_usd: Decimal::from_str(&payload.tao_price_usd)
                 .context("Invalid tao_price_usd")?,
-            alpha_price_usd: Decimal::from_str_exact(&payload.alpha_price_usd)
+            alpha_price_usd: Decimal::from_str(&payload.alpha_price_usd)
                 .context("Invalid alpha_price_usd")?,
-            alpha_price_tao: Decimal::from_str_exact(&payload.alpha_price_tao)
+            alpha_price_tao: Decimal::from_str(&payload.alpha_price_tao)
                 .context("Invalid alpha_price_tao")?,
-            tao_reserve: Decimal::from_str_exact(&payload.tao_reserve)
-                .context("Invalid tao_reserve")?,
-            alpha_reserve: Decimal::from_str_exact(&payload.alpha_reserve)
+            tao_reserve: Decimal::from_str(&payload.tao_reserve).context("Invalid tao_reserve")?,
+            alpha_reserve: Decimal::from_str(&payload.alpha_reserve)
                 .context("Invalid alpha_reserve")?,
             fetched_at: payload.fetched_at,
         })

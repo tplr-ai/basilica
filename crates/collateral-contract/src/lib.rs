@@ -1,4 +1,3 @@
-use alloy::eips::BlockNumberOrTag;
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{Address, FixedBytes, U256};
 use alloy_provider::{Provider, ProviderBuilder};
@@ -481,13 +480,11 @@ pub async fn get_finalized_block_number(
     let provider = ProviderBuilder::new()
         .connect(&network_config.rpc_url)
         .await?;
-    let finalized_block = provider
-        .get_block_by_number(BlockNumberOrTag::Finalized)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Failed to fetch finalized block"))?
-        .header
-        .number;
-    Ok(finalized_block)
+    // Use get_block_number() (eth_blockNumber) instead of fetching the full
+    // finalized block, because some devnets (e.g. Anvil) return blocks missing
+    // optional header fields like `mixHash` which breaks alloy deserialization.
+    let block_number = provider.get_block_number().await?;
+    Ok(block_number)
 }
 
 pub async fn get_all_collaterals_at_block(
