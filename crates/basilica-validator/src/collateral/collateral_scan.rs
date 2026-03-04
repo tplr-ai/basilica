@@ -65,7 +65,7 @@ impl Collateral {
             "mainnet" => collateral_contract::config::Network::Mainnet,
             "testnet" => collateral_contract::config::Network::Testnet,
             "local" => collateral_contract::config::Network::Local,
-            _ => collateral_contract::config::Network::Mainnet,
+            other => anyhow::bail!("Unsupported collateral network: {}", other),
         };
         let network_config = CollateralNetworkConfig::from_network(
             &network,

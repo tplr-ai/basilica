@@ -168,7 +168,7 @@ impl CollateralConfig {
 }
 
 fn default_shadow_mode() -> bool {
-    false
+    true
 }
 
 fn default_trustee_key_source() -> TrusteeKeySource {
