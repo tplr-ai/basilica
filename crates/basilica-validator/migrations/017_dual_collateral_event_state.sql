@@ -12,8 +12,6 @@ CREATE TABLE collateral_status (
   miner TEXT NOT NULL,
   tao_collateral TEXT NOT NULL DEFAULT '0',
   alpha_collateral TEXT NOT NULL DEFAULT '0',
-  pending_tao_reclaim TEXT NOT NULL DEFAULT '0',
-  pending_alpha_reclaim TEXT NOT NULL DEFAULT '0',
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(hotkey, node_id)
 );

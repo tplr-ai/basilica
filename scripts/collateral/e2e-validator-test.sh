@@ -437,7 +437,6 @@ log_info "Extracted reclaimRequestId=$RECLAIM_ID from event log"
 
 wait_for_scan "T3 reclaim start"
 
-# RPC snapshot approach: pending reclaim state is tracked in collateral_reclaims (not collateral_status.pending_tao_reclaim)
 # Check collateral_reclaims row exists
 RECLAIM_ROW="$(db_query "SELECT reclaim_request_id FROM collateral_reclaims WHERE hotkey = '${HEX_HOTKEY_1}' AND node_id = '${HEX_NODE_ID_1}'")"
 assert_eq "$RECLAIM_ROW" "$RECLAIM_ID" "DB: collateral_reclaims row exists with correct reclaim_request_id"

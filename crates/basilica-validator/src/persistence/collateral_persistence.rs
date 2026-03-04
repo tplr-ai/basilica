@@ -171,8 +171,8 @@ impl SimplePersistence {
 
             // Upsert: INSERT OR REPLACE
             sqlx::query(
-                "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, pending_tao_reclaim, pending_alpha_reclaim, updated_at)
-                 VALUES (?, ?, ?, ?, ?, '0', '0', ?)
+                "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?)
                  ON CONFLICT(hotkey, node_id) DO UPDATE SET
                    miner = excluded.miner,
                    tao_collateral = excluded.tao_collateral,
@@ -290,15 +290,13 @@ mod tests {
         alpha: u64,
     ) {
         sqlx::query(
-            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, pending_tao_reclaim, pending_alpha_reclaim, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(hotkey)
         .bind(node_id)
         .bind(miner)
         .bind(U256::from(tao).to_string())
         .bind(U256::from(alpha).to_string())
-        .bind(U256::ZERO.to_string())
-        .bind(U256::ZERO.to_string())
         .bind(Utc::now().to_rfc3339())
         .execute(persistence.pool())
         .await

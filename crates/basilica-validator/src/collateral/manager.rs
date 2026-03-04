@@ -331,15 +331,13 @@ mod tests {
 
         // Insert 5e9 RAO (= 5 alpha) into the DB, mimicking on-chain event data.
         sqlx::query(
-            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, pending_tao_reclaim, pending_alpha_reclaim, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
         )
         .bind(&hotkey_hex)
         .bind(&node_hex)
         .bind("0x0000000000000000000000000000000000000001")
         .bind("0")
         .bind("5000000000") // 5e9 RAO = 5 alpha
-        .bind("0")
-        .bind("0")
         .execute(persistence.pool())
         .await
         .unwrap();
@@ -375,14 +373,12 @@ mod tests {
 
         // Persist very high TAO with zero alpha to prove policy uses alpha only.
         sqlx::query(
-            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, pending_tao_reclaim, pending_alpha_reclaim, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
         )
         .bind(hotkey_hex)
         .bind(node_hex)
         .bind("0x0000000000000000000000000000000000000001")
         .bind("1000000000000000000000000")
-        .bind("0")
-        .bind("0")
         .bind("0")
         .execute(persistence.pool())
         .await
