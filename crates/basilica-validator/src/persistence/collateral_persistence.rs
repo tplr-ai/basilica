@@ -240,7 +240,8 @@ impl SimplePersistence {
         Ok(())
     }
 
-    /// Replace the entire collateral_reclaims table with on-chain reclaim data.
+    /// Sync the collateral_reclaims table with on-chain reclaim data.
+    /// Reclaims present on-chain are upserted; DB rows not present on-chain are deleted.
     pub async fn sync_all_reclaims(
         &self,
         reclaims: &[collateral_contract::ReclaimInfo],
@@ -248,10 +249,9 @@ impl SimplePersistence {
         let mut tx = self.pool().begin().await?;
         let now = Utc::now().to_rfc3339();
 
-        // Delete all existing reclaims and re-insert from on-chain state
-        sqlx::query("DELETE FROM collateral_reclaims")
-            .execute(&mut *tx)
-            .await?;
+        // Build a set of on-chain reclaim_request_ids
+        let mut on_chain_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::with_capacity(reclaims.len());
 
         for r in reclaims {
             let reclaim_request_id = r.reclaim_request_id.to_string();
@@ -259,9 +259,20 @@ impl SimplePersistence {
             let node_id = format!("0x{}", hex::encode(r.node_id));
             let miner = address_to_string(r.miner);
 
+            on_chain_ids.insert(reclaim_request_id.clone());
+
+            // Upsert: INSERT OR UPDATE on primary key conflict
             sqlx::query(
                 "INSERT INTO collateral_reclaims (reclaim_request_id, hotkey, node_id, miner, requested_tao_amount, requested_alpha_amount, deny_timeout, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(reclaim_request_id) DO UPDATE SET
+                   hotkey = excluded.hotkey,
+                   node_id = excluded.node_id,
+                   miner = excluded.miner,
+                   requested_tao_amount = excluded.requested_tao_amount,
+                   requested_alpha_amount = excluded.requested_alpha_amount,
+                   deny_timeout = excluded.deny_timeout,
+                   updated_at = excluded.updated_at",
             )
             .bind(&reclaim_request_id)
             .bind(&hotkey)
@@ -273,6 +284,21 @@ impl SimplePersistence {
             .bind(&now)
             .execute(&mut *tx)
             .await?;
+        }
+
+        // Delete DB rows that are no longer on-chain
+        let db_ids: Vec<(String,)> =
+            sqlx::query_as("SELECT reclaim_request_id FROM collateral_reclaims")
+                .fetch_all(&mut *tx)
+                .await?;
+
+        for (id,) in &db_ids {
+            if !on_chain_ids.contains(id) {
+                sqlx::query("DELETE FROM collateral_reclaims WHERE reclaim_request_id = ?")
+                    .bind(id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
         }
 
         tx.commit().await?;
