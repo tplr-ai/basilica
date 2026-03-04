@@ -448,8 +448,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         nextReclaimId++;
     }
 
-    /// @notice Finalizes a reclaim request after the deny timeout has expired
-    /// @dev Can only be called after the deny timeout has passed for the specific reclaim request
+    /// @notice Finalizes a reclaim request at or after the deny timeout
+    /// @dev Can only be called when block.timestamp >= denyTimeout for the specific reclaim request
     /// @dev Transfers the collateral to the miner. Clears the node-to-miner mapping only when all balances and pending reclaims reach zero
     /// @param reclaimRequestId The ID of the reclaim request to finalize
     /// @dev Emits Reclaimed event with reclaim details if successful
@@ -461,7 +461,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
         }
-        if (reclaim.denyTimeout >= block.timestamp) {
+        if (block.timestamp < reclaim.denyTimeout) {
             revert BeforeDenyTimeout();
         }
 
@@ -511,9 +511,9 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         }
     }
 
-    /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires
+    /// @notice Allows the trustee to deny a pending reclaim request strictly before the timeout
     /// @dev Can only be called by an account with TRUSTEE_ROLE
-    /// @dev Must be called before the deny timeout expires
+    /// @dev Must be called only when block.timestamp < denyTimeout
     /// @dev Removes the reclaim request and frees up the collateral for other reclaims
     /// @param reclaimRequestId The ID of the reclaim request to deny
     /// @param url URL containing the reason of denial
@@ -521,7 +521,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @dev Emits Denied event with the reclaim request ID
     /// @dev Reverts with AccessControlUnauthorizedAccount if called by non-trustee address
     /// @dev Reverts with ReclaimNotFound if the reclaim request doesn't exist
-    /// @dev Reverts with PastDenyTimeout if the timeout has already expired
+    /// @dev Reverts with PastDenyTimeout if the timeout has reached or passed
     function denyReclaimRequest(uint256 reclaimRequestId, string calldata url, bytes32 urlContentSha256)
         external
         onlyRole(TRUSTEE_ROLE)
@@ -531,7 +531,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
         }
-        if (reclaim.denyTimeout < block.timestamp) {
+        if (block.timestamp >= reclaim.denyTimeout) {
             revert PastDenyTimeout();
         }
 

@@ -53,7 +53,10 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
 - **Automatic Release**
 
-  If the trustee does not respond to a miner's reclaim request within a configured deadline, the miner can reclaim their stake, preventing indefinite lock-ups.
+  Reclaim timeout uses explicit boundary semantics:
+  - Trustee denial is valid only while `now < denyTimeout`.
+  - Finalization is valid when `now >= denyTimeout`.
+  This prevents indefinite lock-ups and removes cutoff ambiguity.
 
 - **Trustless & Auditable**
 
@@ -118,7 +121,9 @@ Below is a typical sequence for integrating and using this collateral contract w
 
 - **Reclaiming Collateral**
   - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract) associated with the collateral.
-  - If the validator does not deny the request before the deadline, miners (or anyone) can **finalize** it using `finalizeReclaim()`, thus unlocking and returning the collateral.
+  - Timeout boundary is explicit:
+    - Validator/trustee can deny only when `now < denyTimeout`.
+    - Miners (or anyone) can finalize when `now >= denyTimeout`.
 
 ## Usage Guides
 
@@ -199,7 +204,10 @@ You need replace the variable with the correct value like contract address.
 - **Reclaim Collateral**
 - Initiate the reclaim process by running `collateral-cli tx reclaim-collateral`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
 - Wait for the validator's response or for the configured inactivity timeout to pass.
-- If the validator does not deny your request by the deadline, running `collateral-cli tx finalize-reclaim`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+- Deny/finalize cutoff semantics are explicit:
+  - `denyReclaimRequest` is valid only while `now < denyTimeout`.
+  - `finalizeReclaim` is valid when `now >= denyTimeout`.
+- If the timeout has reached or passed, run `collateral-cli tx finalize-reclaim`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
 - Verify on-chain that your balance has been updated accordingly.
 
 ### As a validator.

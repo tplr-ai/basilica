@@ -343,6 +343,25 @@ contract CollateralBasicTest is Test {
         collateral.finalizeReclaim(0);
     }
 
+    function testFinalizeReclaimAtExactTimeoutSucceeds() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        uint64 denyTimeout;
+        (,,,,,, denyTimeout) = collateral.reclaims(0);
+        vm.warp(uint256(denyTimeout));
+
+        uint256 aliceBalanceBefore = ALICE.balance;
+        collateral.finalizeReclaim(0);
+
+        assertEq(ALICE.balance, aliceBalanceBefore + 5 ether);
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 0);
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), address(0));
+    }
+
     function testFinalizeReclaimNotFound() public {
         vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.ReclaimNotFound.selector));
         collateral.finalizeReclaim(999);
@@ -600,6 +619,41 @@ contract CollateralBasicTest is Test {
         collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
 
         // Check reclaim was deleted
+        (,,, amount,,,) = collateral.reclaims(0);
+        assertEq(amount, 0);
+    }
+
+    function testDenyReclaimAtExactTimeoutReverts() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        uint64 denyTimeout;
+        (,,,,,, denyTimeout) = collateral.reclaims(0);
+        vm.warp(uint256(denyTimeout));
+
+        vm.prank(TRUSTEE);
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.PastDenyTimeout.selector));
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
+    }
+
+    function testDenyReclaimJustBeforeTimeoutSucceeds() public {
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+
+        uint64 denyTimeout;
+        (,,,,,, denyTimeout) = collateral.reclaims(0);
+        vm.warp(uint256(denyTimeout) - 1);
+
+        vm.prank(TRUSTEE);
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
+
+        uint256 amount;
         (,,, amount,,,) = collateral.reclaims(0);
         assertEq(amount, 0);
     }
