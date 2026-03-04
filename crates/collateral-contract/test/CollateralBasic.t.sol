@@ -694,6 +694,65 @@ contract CollateralBasicTest is Test {
         assertFalse(collateral.hasRole(collateral.TRUSTEE_ROLE(), TRUSTEE));
     }
 
+    // --- TRUSTEE_ROLE direct modification prevention tests ---
+
+    function testGrantRoleTrusteeRoleReverts() public {
+        address attacker = makeAddr("attacker");
+        bytes32 trusteeRole = collateral.TRUSTEE_ROLE();
+        vm.prank(ADMIN);
+        vm.expectRevert(CollateralUpgradeable.TrusteeRoleDirectModificationForbidden.selector);
+        collateral.grantRole(trusteeRole, attacker);
+    }
+
+    function testRevokeRoleTrusteeRoleReverts() public {
+        bytes32 trusteeRole = collateral.TRUSTEE_ROLE();
+        vm.prank(ADMIN);
+        vm.expectRevert(CollateralUpgradeable.TrusteeRoleDirectModificationForbidden.selector);
+        collateral.revokeRole(trusteeRole, TRUSTEE);
+    }
+
+    function testRenounceRoleTrusteeRoleReverts() public {
+        bytes32 trusteeRole = collateral.TRUSTEE_ROLE();
+        vm.prank(TRUSTEE);
+        vm.expectRevert(CollateralUpgradeable.TrusteeRoleDirectModificationForbidden.selector);
+        collateral.renounceRole(trusteeRole, TRUSTEE);
+    }
+
+    function testGrantRoleNonTrusteeStillWorks() public {
+        address newUpgrader = makeAddr("newUpgrader");
+        bytes32 upgraderRole = collateral.UPGRADER_ROLE();
+        vm.prank(ADMIN);
+        collateral.grantRole(upgraderRole, newUpgrader);
+        assertTrue(collateral.hasRole(upgraderRole, newUpgrader));
+    }
+
+    function testRevokeRoleNonTrusteeStillWorks() public {
+        bytes32 upgraderRole = collateral.UPGRADER_ROLE();
+        // ADMIN already has UPGRADER_ROLE from initialize
+        vm.prank(ADMIN);
+        collateral.revokeRole(upgraderRole, ADMIN);
+        assertFalse(collateral.hasRole(upgraderRole, ADMIN));
+    }
+
+    function testRenounceRoleNonTrusteeStillWorks() public {
+        bytes32 adminRole = collateral.DEFAULT_ADMIN_ROLE();
+        // ADMIN has DEFAULT_ADMIN_ROLE from initialize
+        vm.prank(ADMIN);
+        collateral.renounceRole(adminRole, ADMIN);
+        assertFalse(collateral.hasRole(adminRole, ADMIN));
+    }
+
+    function testUpdateTrusteeStillWorksAfterOverrides() public {
+        address newTrustee = makeAddr("newTrustee2");
+        bytes32 trusteeRole = collateral.TRUSTEE_ROLE();
+        vm.prank(ADMIN);
+        collateral.updateTrustee(newTrustee);
+
+        assertEq(collateral.trustee(), newTrustee);
+        assertTrue(collateral.hasRole(trusteeRole, newTrustee));
+        assertFalse(collateral.hasRole(trusteeRole, TRUSTEE));
+    }
+
     function testUpdateDecisionTimeout() public {
         vm.prank(ADMIN);
         collateral.updateDecisionTimeout(7200);

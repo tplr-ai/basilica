@@ -173,6 +173,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     error ContractStakeTooLowForWithdraw();
     error WithdrawAlphaCallFailed();
     error BurnRegisterCallFailed();
+    error TrusteeRoleDirectModificationForbidden();
 
     /// @notice Initializes the upgradeable collateral contract
     /// @param netuid_ The netuid of the subnet
@@ -636,6 +637,30 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
         // Emit an event for the trustee change
         emit TrusteeUpdated(oldTrustee, newTrustee);
+    }
+
+    /// @notice Prevents direct grant of TRUSTEE_ROLE; use updateTrustee instead.
+    function grantRole(bytes32 role, address account) public override {
+        if (role == TRUSTEE_ROLE) {
+            revert TrusteeRoleDirectModificationForbidden();
+        }
+        super.grantRole(role, account);
+    }
+
+    /// @notice Prevents direct revocation of TRUSTEE_ROLE; use updateTrustee instead.
+    function revokeRole(bytes32 role, address account) public override {
+        if (role == TRUSTEE_ROLE) {
+            revert TrusteeRoleDirectModificationForbidden();
+        }
+        super.revokeRole(role, account);
+    }
+
+    /// @notice Prevents renouncing TRUSTEE_ROLE; use updateTrustee instead.
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        if (role == TRUSTEE_ROLE) {
+            revert TrusteeRoleDirectModificationForbidden();
+        }
+        super.renounceRole(role, callerConfirmation);
     }
 
     /// @notice Updates the decision timeout
