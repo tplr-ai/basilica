@@ -368,7 +368,7 @@ impl SlashExecutor {
             Ok(collateral) => {
                 let amount = self.compute_slash_amount(collateral);
                 info!(
-                    "[SHADOW] Would slash {} alpha (wei) for node {} (hotkey: {}). Evidence: {}",
+                    "[SHADOW] Would slash {} alpha (rao) for node {} (hotkey: {}). Evidence: {}",
                     amount, node_id, miner_hotkey, url
                 );
             }

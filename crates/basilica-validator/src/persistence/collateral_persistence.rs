@@ -149,37 +149,6 @@ impl SimplePersistence {
         Ok(records)
     }
 
-    pub async fn reconcile_collateral(
-        &self,
-        hotkey: &str,
-        node_id: &str,
-        tao_collateral: U256,
-        alpha_collateral: U256,
-    ) -> Result<(), anyhow::Error> {
-        let now = Utc::now().to_rfc3339();
-        let result = sqlx::query(
-            "UPDATE collateral_status SET tao_collateral = ?, alpha_collateral = ?, updated_at = ? WHERE hotkey = ? AND node_id = ?",
-        )
-        .bind(tao_collateral.to_string())
-        .bind(alpha_collateral.to_string())
-        .bind(now)
-        .bind(hotkey)
-        .bind(node_id)
-        .execute(self.pool())
-        .await?;
-
-        tracing::warn!(
-            hotkey = hotkey,
-            node_id = node_id,
-            tao_collateral = %tao_collateral,
-            alpha_collateral = %alpha_collateral,
-            rows_affected = result.rows_affected(),
-            "Reconciliation overwrote collateral values in DB"
-        );
-
-        Ok(())
-    }
-
     /// Replace the entire collateral_status table with on-chain node data.
     /// Nodes present on-chain are upserted; DB rows not present on-chain are deleted.
     pub async fn sync_all_collateral_nodes(
@@ -459,37 +428,4 @@ mod tests {
         assert_eq!(n2.alpha_collateral, U256::from(400u64));
     }
 
-    #[tokio::test]
-    async fn test_reconcile_collateral() {
-        let persistence = SimplePersistence::for_testing().await.unwrap();
-
-        let hotkey = "0x2424242424242424242424242424242424242424242424242424242424242424";
-        let node_id = "0x25252525252525252525252525252525";
-        insert_collateral_row(
-            &persistence,
-            hotkey,
-            node_id,
-            "0x2626262626262626262626262626262626262626",
-            100,
-            200,
-        )
-        .await;
-
-        persistence
-            .reconcile_collateral(hotkey, node_id, U256::from(999u64), U256::from(888u64))
-            .await
-            .unwrap();
-
-        let tao = persistence
-            .get_tao_collateral_amount(hotkey, node_id)
-            .await
-            .unwrap();
-        let alpha = persistence
-            .get_alpha_collateral_amount(hotkey, node_id)
-            .await
-            .unwrap();
-
-        assert_eq!(tao, Some(U256::from(999u64)));
-        assert_eq!(alpha, Some(U256::from(888u64)));
-    }
 }

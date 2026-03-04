@@ -49,12 +49,6 @@ pub struct CollateralConfig {
     pub evidence_r2_bucket: Option<String>,
     #[serde(default)]
     pub evidence_public_url_base: Option<String>,
-    /// Interval in seconds for the background reconciliation loop.
-    /// Must be kept well under ~51 minutes (256 Bittensor blocks at ~12s/block)
-    /// because the lite RPC endpoint only supports historical state queries
-    /// for the most recent 256 blocks.
-    #[serde(default)]
-    pub reconcile_interval_secs: Option<u64>,
     #[serde(default = "default_sync_page_size")]
     pub sync_page_size: u64,
 }
@@ -80,7 +74,6 @@ impl Default for CollateralConfig {
             evidence_r2_secret_access_key: None,
             evidence_r2_bucket: None,
             evidence_public_url_base: None,
-            reconcile_interval_secs: None,
             sync_page_size: default_sync_page_size(),
         }
     }

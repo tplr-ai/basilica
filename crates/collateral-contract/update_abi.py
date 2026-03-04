@@ -14,7 +14,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 COMPILED_JSON = SCRIPT_DIR / "out/CollateralUpgradeable.sol/CollateralUpgradeable.json"
 
-ABI_OUTPUT = SCRIPT_DIR / "src/CollateralUpgradableABI.json"
+ABI_OUTPUT = SCRIPT_DIR / "src/CollateralUpgradeableABI.json"
 LIB_RS = SCRIPT_DIR / "src/lib.rs"
 
 
