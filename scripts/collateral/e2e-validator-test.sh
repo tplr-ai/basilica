@@ -99,8 +99,8 @@ ORIGINAL_DECISION_TIMEOUT=""
 
 # ─── Helper Functions ────────────────────────────────────────────────────────
 
-wei_compare() {
-    python3 "${SCRIPT_DIR}/wei_compare.py" "$@"
+bigcmp() {
+    python3 "${SCRIPT_DIR}/bigint_compare.py" "$@"
 }
 
 banner() {
@@ -144,7 +144,7 @@ assert_gt() {
     local actual="$1"
     local threshold="$2"
     local desc="$3"
-    if wei_compare gt "$actual" "$threshold"; then
+    if bigcmp gt "$actual" "$threshold"; then
         pass "$desc"
     else
         fail "$desc (got: $actual, expected > $threshold)"
@@ -348,7 +348,7 @@ MINER_FUND="20000000000000000000"  # 20 TAO in wei
 log_info "Funding miner with 20 TAO from faucet..."
 cast send --rpc-url "$RPC_URL" --private-key "$FAUCET_KEY" --legacy \
     "$MINER_ADDR" --value "$MINER_FUND" >/dev/null
-log_success "Miner funded ($(wei_compare fmt "$MINER_FUND"))"
+log_success "Miner funded ($(bigcmp fmt_tao "$MINER_FUND"))"
 
 log_info "Staking 5 TAO as alpha for later alpha deposit tests..."
 cast_send "$MINER_KEY" "$STAKING_PRECOMPILE" \
@@ -412,7 +412,7 @@ assert_db_eq \
     "DB: tao_collateral == 1 TAO for node 2"
 
 ALPHA_COL="$(db_query "SELECT alpha_collateral FROM collateral_status WHERE hotkey = '${HEX_HOTKEY_2}' AND node_id = '${HEX_NODE_ID_2}'")"
-if wei_compare gt "$ALPHA_COL" "0"; then
+if bigcmp gt "$ALPHA_COL" "0"; then
     pass "DB: alpha_collateral > 0 for node 2 (got: $ALPHA_COL)"
 else
     fail "DB: alpha_collateral > 0 for node 2 (got: $ALPHA_COL)"

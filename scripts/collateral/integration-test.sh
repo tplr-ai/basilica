@@ -78,8 +78,8 @@ NEXT_RECLAIM_ID=0  # mirrors contract's nextReclaimId — increment after each r
 
 # ─── Helper Functions ────────────────────────────────────────────────────────
 
-wei_compare() {
-    python3 "${SCRIPT_DIR}/wei_compare.py" "$@"
+bigcmp() {
+    python3 "${SCRIPT_DIR}/bigint_compare.py" "$@"
 }
 
 banner() {
@@ -123,7 +123,7 @@ assert_gt() {
     local actual="$1"
     local threshold="$2"
     local desc="$3"
-    if wei_compare gt "$actual" "$threshold"; then
+    if bigcmp gt "$actual" "$threshold"; then
         pass "$desc"
     else
         fail "$desc (got: $actual, expected > $threshold)"
@@ -204,7 +204,7 @@ log_info "  Miner address: $MINER_ADDR"
 log_info "Funding miner with 100 TAO from faucet..."
 cast send --rpc-url "$RPC_URL" --private-key "$FAUCET_KEY" --legacy \
     "$MINER_ADDR" --value "$TAO_100" >/dev/null
-log_success "Miner funded ($(wei_compare fmt "$TAO_100"))"
+log_success "Miner funded ($(bigcmp fmt_tao "$TAO_100"))"
 
 log_info "Staking 30 TAO as alpha for later alpha deposit tests..."
 cast_send "$MINER_KEY" "$STAKING_PRECOMPILE" \
@@ -316,13 +316,13 @@ log_info "Sleeping ${SLEEP_SECS}s for timeout to expire..."
 sleep "$SLEEP_SECS"
 
 bal_before="$(get_balance "$MINER_ADDR")"
-log_info "Miner balance before: $(wei_compare fmt "$bal_before")"
+log_info "Miner balance before: $(bigcmp fmt_tao "$bal_before")"
 
 log_info "Calling finalizeReclaim($RECLAIM_ID)..."
 cast_send "$MINER_KEY" "$PROXY" "finalizeReclaim(uint256)" "$RECLAIM_ID"
 
 bal_after="$(get_balance "$MINER_ADDR")"
-log_info "Miner balance after:  $(wei_compare fmt "$bal_after")"
+log_info "Miner balance after:  $(bigcmp fmt_tao "$bal_after")"
 
 col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$HOTKEY_1" "$NODE_ID_1")"
 assert_eq "$col" "0" "taoCollaterals(HOTKEY_1, NODE_ID_1) == 0"
@@ -357,7 +357,7 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(HOTKEY_1, NODE_ID_1) == miner"
 section "T6: Partial Slash -- 3 TAO on Node 1"
 
 trustee_bal_before="$(get_balance "$DEPLOYER_ADDR")"
-log_info "Trustee balance before: $(wei_compare fmt "$trustee_bal_before")"
+log_info "Trustee balance before: $(bigcmp fmt_tao "$trustee_bal_before")"
 
 log_info "Trustee slashes 3 TAO on (HOTKEY_1, NODE_ID_1)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
@@ -365,7 +365,7 @@ cast_send "$FAUCET_KEY" "$PROXY" \
     "$HOTKEY_1" "$NODE_ID_1" "$TAO_3" 0 "$TEST_URL" "$TEST_SHA"
 
 trustee_bal_after="$(get_balance "$DEPLOYER_ADDR")"
-log_info "Trustee balance after:  $(wei_compare fmt "$trustee_bal_after")"
+log_info "Trustee balance after:  $(bigcmp fmt_tao "$trustee_bal_after")"
 
 assert_gt "$trustee_bal_after" "$trustee_bal_before" "trustee balance increased after slash"
 
@@ -382,7 +382,7 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner preserved after partial slash"
 section "T7: Full Slash -- 5 TAO on Node 1"
 
 trustee_bal_before="$(get_balance "$DEPLOYER_ADDR")"
-log_info "Trustee balance before: $(wei_compare fmt "$trustee_bal_before")"
+log_info "Trustee balance before: $(bigcmp fmt_tao "$trustee_bal_before")"
 
 log_info "Trustee slashes remaining 5 TAO on (HOTKEY_1, NODE_ID_1)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
@@ -390,7 +390,7 @@ cast_send "$FAUCET_KEY" "$PROXY" \
     "$HOTKEY_1" "$NODE_ID_1" "$TAO_5" 0 "$TEST_URL" "$TEST_SHA"
 
 trustee_bal_after="$(get_balance "$DEPLOYER_ADDR")"
-log_info "Trustee balance after:  $(wei_compare fmt "$trustee_bal_after")"
+log_info "Trustee balance after:  $(bigcmp fmt_tao "$trustee_bal_after")"
 
 assert_gt "$trustee_bal_after" "$trustee_bal_before" "trustee balance increased after slash"
 
@@ -407,7 +407,7 @@ assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner cleared after full slash"
 section "T8: Full Slash -- 5 TAO on Node 2"
 
 trustee_bal_before="$(get_balance "$DEPLOYER_ADDR")"
-log_info "Trustee balance before: $(wei_compare fmt "$trustee_bal_before")"
+log_info "Trustee balance before: $(bigcmp fmt_tao "$trustee_bal_before")"
 
 log_info "Trustee slashes 5 TAO on (HOTKEY_2, NODE_ID_2)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
@@ -415,7 +415,7 @@ cast_send "$FAUCET_KEY" "$PROXY" \
     "$HOTKEY_2" "$NODE_ID_2" "$TAO_5" 0 "$TEST_URL" "$TEST_SHA"
 
 trustee_bal_after="$(get_balance "$DEPLOYER_ADDR")"
-log_info "Trustee balance after:  $(wei_compare fmt "$trustee_bal_after")"
+log_info "Trustee balance after:  $(bigcmp fmt_tao "$trustee_bal_after")"
 
 assert_gt "$trustee_bal_after" "$trustee_bal_before" "trustee balance increased after slash"
 

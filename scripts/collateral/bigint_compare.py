@@ -3,17 +3,18 @@
 # requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Big-integer comparison for EVM balance values.
+"""Big-integer comparison and formatting for EVM balance values.
 
 Bash overflows at 2^63, which is less than 10 TAO in wei (10e18).
 
 Usage:
-    python3 wei_compare.py gt  <a> <b>   # exit 0 if a > b
-    python3 wei_compare.py gte <a> <b>   # exit 0 if a >= b
-    python3 wei_compare.py eq  <a> <b>   # exit 0 if a == b
-    python3 wei_compare.py lt  <a> <b>   # exit 0 if a < b
-    python3 wei_compare.py lte <a> <b>   # exit 0 if a <= b
-    python3 wei_compare.py fmt <wei>     # print human-readable TAO value
+    python3 bigint_compare.py gt  <a> <b>       # exit 0 if a > b
+    python3 bigint_compare.py gte <a> <b>       # exit 0 if a >= b
+    python3 bigint_compare.py eq  <a> <b>       # exit 0 if a == b
+    python3 bigint_compare.py lt  <a> <b>       # exit 0 if a < b
+    python3 bigint_compare.py lte <a> <b>       # exit 0 if a <= b
+    python3 bigint_compare.py fmt_tao   <wei>   # print human-readable TAO value
+    python3 bigint_compare.py fmt_alpha <rao>   # print human-readable alpha value
 
 Handles hex (0x...) and decimal inputs.
 Exit codes: 0 = true, 1 = false, 2 = usage error.
@@ -34,6 +35,12 @@ def fmt_tao(wei: int) -> str:
     return f"{whole}.{frac:018d} TAO ({wei} wei)"
 
 
+def fmt_alpha(rao: int) -> str:
+    whole = rao // 10**9
+    frac = rao % 10**9
+    return f"{whole}.{frac:09d} alpha ({rao} rao)"
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         print(__doc__, file=sys.stderr)
@@ -41,8 +48,12 @@ def main() -> int:
 
     cmd = sys.argv[1]
 
-    if cmd == "fmt":
+    if cmd == "fmt_tao":
         print(fmt_tao(parse_int(sys.argv[2])))
+        return 0
+
+    if cmd == "fmt_alpha":
+        print(fmt_alpha(parse_int(sys.argv[2])))
         return 0
 
     if len(sys.argv) < 4:
