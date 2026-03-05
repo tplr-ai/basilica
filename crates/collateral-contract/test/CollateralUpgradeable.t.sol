@@ -354,4 +354,53 @@ contract CollateralUpgradeableTest is Test {
         collateral.deposit{value: 2 ether}(hotkey, nodeId, ALPHA_HOTKEY, 1 ether);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), bob);
     }
+
+    /// @dev Test that finalizeReclaim reverts before the decision timeout elapses
+    function testFinalizeReclaimBeforeTimeoutReverts() public {
+        vm.deal(ALICE, 10 ether);
+        bytes32 hotkey = bytes32(uint256(1));
+        bytes16 nodeId = bytes16(uint128(1));
+        _seedNodeOwner(hotkey, nodeId, ALICE);
+
+        // Alice deposits TAO
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(hotkey, nodeId, ALPHA_HOTKEY, 0);
+
+        // Alice starts a reclaim
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com", bytes32(0));
+
+        // Immediately try to finalize — should revert (timeout hasn't elapsed)
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.BeforeDenyTimeout.selector));
+        collateral.finalizeReclaim(0);
+
+        // Warp past timeout and verify finalize succeeds
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+        collateral.finalizeReclaim(0);
+        assertEq(collateral.taoCollaterals(hotkey, nodeId), 0);
+    }
+
+    /// @dev Test that denyReclaimRequest reverts after the decision timeout elapses
+    function testDenyReclaimAfterTimeoutReverts() public {
+        vm.deal(ALICE, 10 ether);
+        bytes32 hotkey = bytes32(uint256(1));
+        bytes16 nodeId = bytes16(uint128(1));
+        _seedNodeOwner(hotkey, nodeId, ALICE);
+
+        // Alice deposits TAO
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(hotkey, nodeId, ALPHA_HOTKEY, 0);
+
+        // Alice starts a reclaim
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com", bytes32(0));
+
+        // Warp past the decision timeout
+        vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
+
+        // Trustee tries to deny — should revert (timeout has passed)
+        vm.prank(TRUSTEE);
+        vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.PastDenyTimeout.selector));
+        collateral.denyReclaimRequest(0, "https://example.com/deny", bytes32(0));
+    }
 }
