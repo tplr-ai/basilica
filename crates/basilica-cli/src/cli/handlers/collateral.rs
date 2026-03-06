@@ -41,7 +41,7 @@ pub async fn handle_collateral(
         }
         CollateralAction::Deposit {
             hotkey,
-            node_id,
+            ip,
             alpha_hotkey,
             amount,
             yes,
@@ -54,7 +54,7 @@ pub async fn handle_collateral(
                 alpha_hotkey.as_deref(),
                 config,
             )?;
-            handle_deposit(&params, node_id, *amount, *yes).await
+            handle_deposit(&params, ip, *amount, *yes).await
         }
         CollateralAction::Status { hotkey, node_id } => {
             let params = resolve_params(
@@ -159,6 +159,12 @@ fn parse_node_id(input: &str) -> Result<[u8; 16], CliError> {
     Ok(*id.as_bytes())
 }
 
+fn resolve_node_id_from_ip(ip: &str) -> Result<[u8; 16], CliError> {
+    let node_id = basilica_common::node_identity::NodeId::new(ip)
+        .map_err(|e| eyre!("Failed to derive node ID from IP '{}': {}", ip, e))?;
+    Ok(*node_id.uuid.as_bytes())
+}
+
 fn alpha_to_rao(alpha: f64) -> Result<U256, CliError> {
     if alpha <= 0.0 {
         return Err(eyre!("Amount must be positive, got {}", alpha).into());
@@ -256,19 +262,20 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
 
 async fn handle_deposit(
     params: &CollateralParams,
-    node_id: &str,
+    ip: &str,
     amount: f64,
     yes: bool,
 ) -> Result<(), CliError> {
     let hotkey = require_hotkey(params)?;
     let alpha_hotkey = require_alpha_hotkey(params)?;
-    let node_id_bytes = parse_node_id(node_id)?;
+    let node_id_bytes = resolve_node_id_from_ip(ip)?;
+    let node_uuid = uuid::Uuid::from_bytes(node_id_bytes);
     let rao_amount = alpha_to_rao(amount)?;
 
     if !yes {
         println!("{}", style("Deposit Summary").bold());
         println!("  Hotkey:       0x{}", hex::encode(hotkey));
-        println!("  Node ID:      {}", node_id);
+        println!("  Node:         {} ({})", ip, node_uuid);
         println!("  Alpha Hotkey: 0x{}", hex::encode(alpha_hotkey));
         println!("  Amount:       {:.9} alpha ({} RAO)", amount, rao_amount);
         println!();
@@ -300,10 +307,11 @@ async fn handle_deposit(
 
     complete_spinner_and_clear(spinner);
     println!(
-        "{} Deposited {:.9} alpha for node {}",
+        "{} Deposited {:.9} alpha for node {} ({})",
         style("✓").green().bold(),
         amount,
-        node_id
+        ip,
+        node_uuid
     );
 
     Ok(())

@@ -365,9 +365,9 @@ pub enum CollateralAction {
         #[arg(long)]
         hotkey: Option<String>,
 
-        /// Node UUID (e.g. "550e8400-e29b-41d4-a716-446655440000")
+        /// IP address of the node (used to derive the on-chain node ID)
         #[arg(long)]
-        node_id: String,
+        ip: String,
 
         /// Hotkey where alpha is staked (32-byte hex)
         #[arg(long)]
