@@ -193,12 +193,8 @@ section "Setup: Deploy & Fund"
 DEPLOYER_ADDR="$(cast wallet address --private-key "$FAUCET_KEY")"
 log_info "Deployer/Trustee: $DEPLOYER_ADDR"
 
-log_info "Creating miner wallet..."
-wallet_json="$(cast wallet new --json)"
-MINER_KEY="$(printf '%s\n' "$wallet_json" | awk -F'"' '/"private_key"/ {print $4; exit}')"
-MINER_ADDR="$(printf '%s\n' "$wallet_json" | awk -F'"' '/"address"/ {print $4; exit}')"
-[[ -n "$MINER_KEY" ]]  || { log_error "Failed to parse miner private key"; exit 1; }
-[[ -n "$MINER_ADDR" ]] || { log_error "Failed to parse miner address"; exit 1; }
+MINER_KEY="${MINER_PRIVATE_KEY:?MINER_PRIVATE_KEY not set in .env.local}"
+MINER_ADDR="${MINER_ADDRESS:?MINER_ADDRESS not set in .env.local}"
 log_info "  Miner address: $MINER_ADDR"
 
 log_info "Funding miner with 100 TAO from faucet..."

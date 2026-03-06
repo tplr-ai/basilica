@@ -332,13 +332,9 @@ log_info "Setting decision timeout to ${DECISION_TIMEOUT}s..."
 cast_send "$DEPLOYER_KEY" "$PROXY" "updateDecisionTimeout(uint64)" "$DECISION_TIMEOUT"
 log_success "Decision timeout updated"
 
-# Create fresh miner wallet
-log_info "Creating miner wallet..."
-wallet_json="$(cast wallet new --json)"
-MINER_KEY="$(printf '%s\n' "$wallet_json" | awk -F'"' '/"private_key"/ {print $4; exit}')"
-MINER_ADDR="$(printf '%s\n' "$wallet_json" | awk -F'"' '/"address"/ {print $4; exit}')"
-[[ -n "$MINER_KEY" ]]  || { log_error "Failed to parse miner private key"; exit 1; }
-[[ -n "$MINER_ADDR" ]] || { log_error "Failed to parse miner address"; exit 1; }
+# Use pre-generated miner wallet from .env.local
+MINER_KEY="${MINER_PRIVATE_KEY:?MINER_PRIVATE_KEY not set in .env.local}"
+MINER_ADDR="${MINER_ADDRESS:?MINER_ADDRESS not set in .env.local}"
 log_info "Miner address: $MINER_ADDR"
 
 # Miner address as stored in DB (lowercase with 0x prefix, from address_to_string)

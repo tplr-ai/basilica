@@ -112,7 +112,8 @@ fn resolve_params(
 
     let alpha_hotkey = cli_alpha_hotkey
         .map(|s| s.to_string())
-        .or(collateral_cfg.alpha_hotkey);
+        .or(collateral_cfg.alpha_hotkey)
+        .or_else(|| hotkey.clone());
 
     Ok(CollateralParams {
         private_key,
