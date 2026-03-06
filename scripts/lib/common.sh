@@ -71,7 +71,7 @@ read_hotkey() {
         log_error "Hotkey file not found: $pubfile"
         return 1
     fi
-    echo "0x$(awk -F'"' '/"publicKey"/ {print $4; exit}' "$pubfile" | sed 's/^0x//')"
+    python3 -c "import json,sys; print(json.load(sys.stdin)['publicKey'])" < "$pubfile"
 }
 
 # Compute the on-chain bytes16 node ID from a seed string (e.g. an IP address).
