@@ -204,6 +204,24 @@ pub enum Commands {
         #[command(subcommand)]
         action: VolumeAction,
     },
+
+    /// Collateral staking commands (deposit, withdraw, balance, status)
+    Collateral {
+        #[command(subcommand)]
+        action: CollateralAction,
+
+        /// Path to file containing EVM private key (hex).
+        #[arg(long, global = true, value_hint = ValueHint::FilePath)]
+        key_file: Option<PathBuf>,
+
+        /// Network: mainnet, testnet, local. Overrides config.
+        #[arg(long, global = true)]
+        network: Option<String>,
+
+        /// Contract address override.
+        #[arg(long, global = true)]
+        contract_address: Option<String>,
+    },
 }
 
 /// Fund management actions
@@ -331,6 +349,77 @@ pub enum VolumeAction {
     },
 }
 
+/// Collateral staking actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum CollateralAction {
+    /// Show EVM wallet's TAO balance and alpha staked balance
+    Balance {
+        /// Hotkey where alpha is staked (32-byte hex, with or without 0x prefix)
+        #[arg(long)]
+        alpha_hotkey: Option<String>,
+    },
+
+    /// Deposit alpha to the collateral contract for a node
+    Deposit {
+        /// Miner's Bittensor hotkey (32-byte hex)
+        #[arg(long)]
+        hotkey: Option<String>,
+
+        /// Node UUID (e.g. "550e8400-e29b-41d4-a716-446655440000")
+        #[arg(long)]
+        node_id: String,
+
+        /// Hotkey where alpha is staked (32-byte hex)
+        #[arg(long)]
+        alpha_hotkey: Option<String>,
+
+        /// Amount of alpha to deposit (human-readable, e.g. 5.0)
+        #[arg(long)]
+        amount: f64,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
+    /// Show collateral amounts per node
+    Status {
+        /// Miner's Bittensor hotkey (32-byte hex)
+        #[arg(long)]
+        hotkey: Option<String>,
+
+        /// Specific node UUID to query
+        #[arg(long)]
+        node_id: Option<String>,
+    },
+
+    /// Initiate collateral reclaim (withdraw)
+    Withdraw {
+        /// Miner's Bittensor hotkey (32-byte hex)
+        #[arg(long)]
+        hotkey: Option<String>,
+
+        /// Node UUID
+        #[arg(long)]
+        node_id: String,
+
+        /// URL for the reclaim request
+        #[arg(long)]
+        url: String,
+
+        /// SHA256 hash of URL content (32-byte hex)
+        #[arg(long)]
+        url_hash: String,
+    },
+
+    /// Finalize a pending reclaim
+    Finalize {
+        /// Reclaim request ID (decimal number)
+        #[arg(long)]
+        request_id: String,
+    },
+}
+
 impl Commands {
     /// Check if this command requires authentication
     pub fn requires_auth(&self) -> bool {
@@ -357,6 +446,9 @@ impl Commands {
 
             // Authentication commands don't require auth
             Commands::Login { .. } | Commands::Logout | Commands::Upgrade { .. } => false,
+
+            // Collateral commands are on-chain ops, not API ops
+            Commands::Collateral { .. } => false,
 
             // Test auth command requires authentication
             #[cfg(debug_assertions)]

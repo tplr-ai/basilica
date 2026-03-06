@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod balance;
+pub mod collateral;
 pub mod deploy;
 pub mod fund;
 pub mod gpu_rental;

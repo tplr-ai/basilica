@@ -1929,6 +1929,8 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 name = "basilica-cli"
 version = "0.21.0"
 dependencies = [
+ "alloy-primitives",
+ "alloy-provider",
  "axum 0.7.9",
  "base64 0.21.7",
  "basilica-common",
@@ -1938,6 +1940,7 @@ dependencies = [
  "clap",
  "clap-verbosity-flag",
  "clap_complete",
+ "collateral-contract",
  "color-eyre",
  "console",
  "dialoguer",
@@ -1945,6 +1948,7 @@ dependencies = [
  "eventsource-stream",
  "futures",
  "futures-util",
+ "hex",
  "indicatif",
  "oauth2",
  "rand 0.8.5",

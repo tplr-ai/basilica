@@ -73,5 +73,11 @@ urlencoding = { workspace = true }
 basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
+collateral-contract = { path = "../collateral-contract" }
+
+# Alloy (EVM) dependencies used by collateral handlers
+alloy-primitives = { workspace = true }
+alloy-provider = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]

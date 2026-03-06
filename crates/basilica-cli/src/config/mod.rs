@@ -9,6 +9,58 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 use crate::CliError;
+use collateral_contract::config::{CollateralNetworkConfig, Network};
+
+/// Collateral CLI configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollateralCliConfig {
+    /// Network: "mainnet", "testnet", or "local"
+    #[serde(default)]
+    pub network: String,
+
+    /// Contract address override
+    pub contract_address: Option<String>,
+
+    /// Path to file containing EVM private key
+    pub private_key_file: Option<PathBuf>,
+
+    /// Miner's Bittensor hotkey (32-byte hex)
+    pub hotkey: Option<String>,
+
+    /// Hotkey where alpha is staked (32-byte hex)
+    pub alpha_hotkey: Option<String>,
+}
+
+impl Default for CollateralCliConfig {
+    fn default() -> Self {
+        Self {
+            network: "mainnet".to_string(),
+            contract_address: None,
+            private_key_file: None,
+            hotkey: None,
+            alpha_hotkey: None,
+        }
+    }
+}
+
+impl CollateralCliConfig {
+    /// Build a `CollateralNetworkConfig` from the stored values, with optional CLI overrides.
+    pub fn to_network_config(
+        &self,
+        network_override: Option<&str>,
+        contract_address_override: Option<&str>,
+    ) -> Result<CollateralNetworkConfig, CliError> {
+        let network_str = network_override.unwrap_or(&self.network);
+        let network: Network = network_str
+            .parse()
+            .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
+        let contract_addr = contract_address_override
+            .map(|s| s.to_string())
+            .or_else(|| self.contract_address.clone());
+        CollateralNetworkConfig::from_network(&network, contract_addr, None)
+            .map_err(|e| color_eyre::eyre::eyre!("{}", e).into())
+    }
+}
 
 /// CLI configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -24,6 +76,9 @@ pub struct CliConfig {
 
     /// Wallet configuration
     pub wallet: WalletConfig,
+
+    /// Collateral configuration
+    pub collateral: Option<CollateralCliConfig>,
 }
 
 /// API configuration
@@ -195,6 +250,14 @@ impl CliConfig {
         if let Some(path_str) = self.wallet.base_wallet_path.to_str() {
             let expanded = shellexpand::tilde(path_str);
             self.wallet.base_wallet_path = PathBuf::from(expanded.as_ref());
+        }
+        if let Some(ref mut collateral) = self.collateral {
+            if let Some(ref mut pkf) = collateral.private_key_file {
+                if let Some(path_str) = pkf.to_str() {
+                    let expanded = shellexpand::tilde(path_str);
+                    *pkf = PathBuf::from(expanded.as_ref());
+                }
+            }
         }
     }
 

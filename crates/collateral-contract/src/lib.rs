@@ -1,5 +1,5 @@
 use alloy::signers::{local::PrivateKeySigner, Signer};
-use alloy_primitives::{Address, FixedBytes, U256};
+use alloy_primitives::{address, Address, FixedBytes, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use alloy_sol_types::sol;
 pub mod config;
@@ -640,4 +640,77 @@ pub async fn get_active_reclaim_count(
     let contract = CollateralUpgradeable::new(network_config.contract_address, provider);
     let count = contract.getActiveReclaimCount().call().await?;
     Ok(count)
+}
+
+// Precompile bindings for balance queries
+sol! {
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    interface IStakingV2 {
+        function getStake(bytes32 hotkey, bytes32 coldkey, uint256 netuid) external view returns (uint256);
+    }
+
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    interface IAddressMapping {
+        function addressMapping(address evmAddress) external view returns (bytes32);
+    }
+}
+
+const STAKING_V2_PRECOMPILE: Address = address!("0x0000000000000000000000000000000000000805");
+const ADDRESS_MAPPING_PRECOMPILE: Address = address!("0x000000000000000000000000000000000000080C");
+
+/// Derive an EVM address from a hex private key string.
+pub fn address_from_private_key(private_key: &str) -> Result<Address, anyhow::Error> {
+    let signer: PrivateKeySigner = private_key.parse()?;
+    Ok(signer.address())
+}
+
+/// Get the TAO (wei) balance of an EVM address
+pub async fn get_tao_balance(
+    address: Address,
+    network_config: &CollateralNetworkConfig,
+) -> Result<U256, anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let balance = provider.get_balance(address).await?;
+    Ok(balance)
+}
+
+/// Get the alpha staked balance for a coldkey under a hotkey on a netuid.
+/// Returns RAO (1e9 = 1 alpha).
+pub async fn get_alpha_balance(
+    alpha_hotkey: [u8; 32],
+    coldkey: [u8; 32],
+    netuid: u16,
+    network_config: &CollateralNetworkConfig,
+) -> Result<U256, anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let staking = IStakingV2::new(STAKING_V2_PRECOMPILE, provider);
+    let stake = staking
+        .getStake(
+            FixedBytes::from_slice(&alpha_hotkey),
+            FixedBytes::from_slice(&coldkey),
+            U256::from(netuid),
+        )
+        .call()
+        .await?;
+    Ok(stake)
+}
+
+/// Derive the Substrate mirror coldkey (AccountId32) from an EVM address
+/// via the AddressMapping precompile at 0x...080C.
+pub async fn derive_coldkey(
+    evm_address: Address,
+    network_config: &CollateralNetworkConfig,
+) -> Result<[u8; 32], anyhow::Error> {
+    let provider = ProviderBuilder::new()
+        .connect(&network_config.rpc_url)
+        .await?;
+    let mapping = IAddressMapping::new(ADDRESS_MAPPING_PRECOMPILE, provider);
+    let result = mapping.addressMapping(evm_address).call().await?;
+    Ok(result.into())
 }
