@@ -12,6 +12,7 @@ RPC_URL="http://localhost:9944"
 
 PRIVATE_KEY="${PRIVATE_KEY:-}"
 HOTKEY="${HOTKEY:-}"
+MINER_HOTKEY="${MINER_HOTKEY:-}"
 ALPHA_HOTKEY="${ALPHA_HOTKEY:-}"
 NODE_ID="${NODE_ID:-6339ba4f-60f9-45c2-9d95-2b755bb57ca6}"
 ALPHA_AMOUNT_RAO="${ALPHA_AMOUNT_RAO:-${ALPHA_AMOUNT_WEI:-5000000000}}"
@@ -20,6 +21,7 @@ MIN_COLLATERAL="${MIN_COLLATERAL:-1}"
 DECISION_TIMEOUT="${DECISION_TIMEOUT:-3600}"
 
 VALIDATOR_HOTKEY_FILE="${VALIDATOR_HOTKEY_FILE:-${LOCALNET_WALLETS_DIR}/validator/hotkeys/defaultpub.txt}"
+MINER_HOTKEY_FILE="${MINER_HOTKEY_FILE:-${LOCALNET_WALLETS_DIR}/miner_1/hotkeys/defaultpub.txt}"
 DEPLOYER_WALLET_FILE="${DEPLOYER_WALLET_FILE:-${LOCALNET_WALLETS_DIR}/contract_deployer_evm.env}"
 MINER_WALLET_FILE="${MINER_WALLET_FILE:-${LOCALNET_WALLETS_DIR}/miner_evm.env}"
 
@@ -59,8 +61,10 @@ Options:
   --min-deployer-balance-wei <uint>   Min wallet balance before top-up (default: 1000000000000000000)
   --faucet-fund-amount-wei <uint>     Top-up amount when balance is below minimum (default: 5000000000000000000)
   --skip-funding                      Do not auto-fund deployer wallet
-  --hotkey <64-hex>                   HOTKEY for collateral ops (defaults from validator wallet file)
-  --alpha-hotkey <64-hex>             ALPHA_HOTKEY for deposit ops (default: HOTKEY)
+  --hotkey <64-hex>                   Validator hotkey for contract deploy (defaults from validator wallet file)
+  --miner-hotkey <64-hex>             Miner hotkey for deposit ops (defaults from miner wallet file)
+  --miner-hotkey-file <path>          Miner hotkey JSON file (default: scripts/localnet/wallets/miner_1/hotkeys/defaultpub.txt)
+  --alpha-hotkey <64-hex>             ALPHA_HOTKEY for alpha staking (default: validator HOTKEY)
   --node-id <uuid>                    Node UUID for ops scripts
   --alpha-amount-rao <uint>           Alpha amount for deposits (RAO)
   --netuid <uint>                     Contract netuid (default: 1)
@@ -259,9 +263,18 @@ load_hotkey_defaults() {
     HOTKEY="$(normalize_hotkey "$HOTKEY")"
   else
     [[ -f "$VALIDATOR_HOTKEY_FILE" ]] || die "validator hotkey file not found: ${VALIDATOR_HOTKEY_FILE}"
-    HOTKEY="$(awk -F'"' '/"publicKey"/ {print $4; exit}' "$VALIDATOR_HOTKEY_FILE")"
+    HOTKEY="$(python3 -c "import json,sys; print(json.load(sys.stdin)['publicKey'])" < "$VALIDATOR_HOTKEY_FILE")"
     [[ -n "$HOTKEY" ]] || die "failed to read publicKey from ${VALIDATOR_HOTKEY_FILE}"
     HOTKEY="$(normalize_hotkey "$HOTKEY")"
+  fi
+
+  if [[ -n "$MINER_HOTKEY" ]]; then
+    MINER_HOTKEY="$(normalize_hotkey "$MINER_HOTKEY")"
+  else
+    [[ -f "$MINER_HOTKEY_FILE" ]] || die "miner hotkey file not found: ${MINER_HOTKEY_FILE}"
+    MINER_HOTKEY="$(python3 -c "import json,sys; print(json.load(sys.stdin)['publicKey'])" < "$MINER_HOTKEY_FILE")"
+    [[ -n "$MINER_HOTKEY" ]] || die "failed to read publicKey from ${MINER_HOTKEY_FILE}"
+    MINER_HOTKEY="$(normalize_hotkey "$MINER_HOTKEY")"
   fi
 
   if [[ -z "$ALPHA_HOTKEY" ]]; then
@@ -320,6 +333,16 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || die "--hotkey requires a value"
       HOTKEY="$1"
+      ;;
+    --miner-hotkey)
+      shift
+      [[ $# -gt 0 ]] || die "--miner-hotkey requires a value"
+      MINER_HOTKEY="$1"
+      ;;
+    --miner-hotkey-file)
+      shift
+      [[ $# -gt 0 ]] || die "--miner-hotkey-file requires a value"
+      MINER_HOTKEY_FILE="$1"
       ;;
     --alpha-hotkey)
       shift
@@ -421,7 +444,7 @@ PRIVATE_KEY=$PRIVATE_KEY
 MINER_PRIVATE_KEY=$miner_private_key
 MINER_ADDRESS=$miner_address
 
-HOTKEY=$HOTKEY
+MINER_HOTKEY=$MINER_HOTKEY
 NODE_ID=$NODE_ID
 ALPHA_HOTKEY=$ALPHA_HOTKEY
 ALPHA_AMOUNT_RAO=$ALPHA_AMOUNT_RAO
@@ -455,4 +478,4 @@ echo "Next:"
 echo "  source \"$ENV_FILE\""
 echo "  cc() { collateral-cli --network \"\$NETWORK\" --contract-address \"\$CONTRACT_ADDRESS\" \"\$@\"; }"
 echo "  cc query trustee"
-echo "  cc tx deposit --private-key \"\$PRIVATE_KEY\" --hotkey \"\$HOTKEY\" --node-id \"\$NODE_ID\" --alpha-hotkey \"\$ALPHA_HOTKEY\" --alpha-amount \"\$ALPHA_AMOUNT_RAO\""
+echo "  cc tx deposit --private-key \"\$PRIVATE_KEY\" --hotkey \"\$MINER_HOTKEY\" --node-id \"\$NODE_ID\" --alpha-hotkey \"\$ALPHA_HOTKEY\" --alpha-amount \"\$ALPHA_AMOUNT_RAO\""
