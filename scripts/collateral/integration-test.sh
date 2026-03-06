@@ -32,7 +32,7 @@ NETUID=1
 # Use the real localnet wallet hotkeys so alpha staking works with precompiles.
 LOCALNET_WALLETS_DIR="${REPO_ROOT}/scripts/localnet/wallets"
 VALIDATOR_HOTKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/validator/hotkeys/defaultpub.txt")"
-MINER_HOTKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/miner_1/hotkeys/defaultpub.txt")"
+MINER_PUBKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/miner_1/hotkeys/defaultpub.txt")"
 NODE_ID_1="$(compute_node_id "127.0.0.1")"  # bytes16
 NODE_ID_2="$(compute_node_id "127.0.0.2")"  # bytes16
 NODE_ID_3="$(compute_node_id "127.0.0.3")"  # bytes16
@@ -245,17 +245,17 @@ assert_eq "$trustee_val" "$DEPLOYER_ADDR" "trustee() == deployer"
 
 section "T1: Deposit 10 TAO -- Node 1"
 
-log_info "Miner deposits 10 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Miner deposits 10 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
+    "$MINER_PUBKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
     --value "$TAO_10"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$col" "$TAO_10" "taoCollaterals(MINER_HOTKEY, NODE_ID_1) == 10 TAO"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$col" "$TAO_10" "taoCollaterals(MINER_PUBKEY, NODE_ID_1) == 10 TAO"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_1) == miner"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_PUBKEY, NODE_ID_1) == miner"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  T2: Deposit 5 TAO — Node 2
@@ -263,17 +263,17 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_1) == miner"
 
 section "T2: Deposit 5 TAO -- Node 2"
 
-log_info "Miner deposits 5 TAO on (MINER_HOTKEY, NODE_ID_2)..."
+log_info "Miner deposits 5 TAO on (MINER_PUBKEY, NODE_ID_2)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_2" "$ZERO_BYTES32" 0 \
+    "$MINER_PUBKEY" "$NODE_ID_2" "$ZERO_BYTES32" 0 \
     --value "$TAO_5"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_2")"
-assert_eq "$col" "$TAO_5" "taoCollaterals(MINER_HOTKEY, NODE_ID_2) == 5 TAO"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_2")"
+assert_eq "$col" "$TAO_5" "taoCollaterals(MINER_PUBKEY, NODE_ID_2) == 5 TAO"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_2")"
-assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_2) == miner"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_2")"
+assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_PUBKEY, NODE_ID_2) == miner"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  T3: Early Finalize Reverts
@@ -282,10 +282,10 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_2) == miner"
 section "T3: Early Finalize Reverts"
 
 RECLAIM_ID=$NEXT_RECLAIM_ID
-log_info "Miner starts reclaim on (MINER_HOTKEY, NODE_ID_1) [reclaimId=$RECLAIM_ID]..."
+log_info "Miner starts reclaim on (MINER_PUBKEY, NODE_ID_1) [reclaimId=$RECLAIM_ID]..."
 cast_send "$MINER_KEY" "$PROXY" \
     "reclaimCollateral(bytes32,bytes16)" \
-    "$MINER_HOTKEY" "$NODE_ID_1"
+    "$MINER_PUBKEY" "$NODE_ID_1"
 NEXT_RECLAIM_ID=$((NEXT_RECLAIM_ID + 1))
 
 log_info "Immediately calling finalizeReclaim($RECLAIM_ID) -- should revert..."
@@ -311,11 +311,11 @@ cast_send "$MINER_KEY" "$PROXY" "finalizeReclaim(uint256)" "$RECLAIM_ID"
 bal_after="$(get_balance "$MINER_ADDR")"
 log_info "Miner balance after:  $(bigcmp fmt_tao "$bal_after")"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$col" "0" "taoCollaterals(MINER_HOTKEY, NODE_ID_1) == 0"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$col" "0" "taoCollaterals(MINER_PUBKEY, NODE_ID_1) == 0"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_1) == address(0)"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner(MINER_PUBKEY, NODE_ID_1) == address(0)"
 
 assert_gt "$bal_after" "$bal_before" "miner balance increased after finalize"
 
@@ -325,17 +325,17 @@ assert_gt "$bal_after" "$bal_before" "miner balance increased after finalize"
 
 section "T5: Re-deposit 8 TAO -- Node 1"
 
-log_info "Miner deposits 8 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Miner deposits 8 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
+    "$MINER_PUBKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
     --value "$TAO_8"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$col" "$TAO_8" "taoCollaterals(MINER_HOTKEY, NODE_ID_1) == 8 TAO"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$col" "$TAO_8" "taoCollaterals(MINER_PUBKEY, NODE_ID_1) == 8 TAO"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_1) == miner"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_PUBKEY, NODE_ID_1) == miner"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  T6: Partial Slash — 3 TAO on Node 1
@@ -346,20 +346,20 @@ section "T6: Partial Slash -- 3 TAO on Node 1"
 trustee_bal_before="$(get_balance "$DEPLOYER_ADDR")"
 log_info "Trustee balance before: $(bigcmp fmt_tao "$trustee_bal_before")"
 
-log_info "Trustee slashes 3 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Trustee slashes 3 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$TAO_3" 0 "$TEST_URL" "$TEST_SHA"
+    "$MINER_PUBKEY" "$NODE_ID_1" "$TAO_3" 0 "$TEST_URL" "$TEST_SHA"
 
 trustee_bal_after="$(get_balance "$DEPLOYER_ADDR")"
 log_info "Trustee balance after:  $(bigcmp fmt_tao "$trustee_bal_after")"
 
 assert_gt "$trustee_bal_after" "$trustee_bal_before" "trustee balance increased after slash"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$col" "$TAO_5" "taoCollaterals(MINER_HOTKEY, NODE_ID_1) == 5 TAO (8 - 3)"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$col" "$TAO_5" "taoCollaterals(MINER_PUBKEY, NODE_ID_1) == 5 TAO (8 - 3)"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_1")"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_1")"
 assert_eq "$owner" "$MINER_ADDR" "nodeToMiner preserved after partial slash"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -371,20 +371,20 @@ section "T7: Full Slash -- 5 TAO on Node 1"
 trustee_bal_before="$(get_balance "$DEPLOYER_ADDR")"
 log_info "Trustee balance before: $(bigcmp fmt_tao "$trustee_bal_before")"
 
-log_info "Trustee slashes remaining 5 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Trustee slashes remaining 5 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$TAO_5" 0 "$TEST_URL" "$TEST_SHA"
+    "$MINER_PUBKEY" "$NODE_ID_1" "$TAO_5" 0 "$TEST_URL" "$TEST_SHA"
 
 trustee_bal_after="$(get_balance "$DEPLOYER_ADDR")"
 log_info "Trustee balance after:  $(bigcmp fmt_tao "$trustee_bal_after")"
 
 assert_gt "$trustee_bal_after" "$trustee_bal_before" "trustee balance increased after slash"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_1")"
-assert_eq "$col" "0" "taoCollaterals(MINER_HOTKEY, NODE_ID_1) == 0"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_1")"
+assert_eq "$col" "0" "taoCollaterals(MINER_PUBKEY, NODE_ID_1) == 0"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_1")"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_1")"
 assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner cleared after full slash"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -396,20 +396,20 @@ section "T8: Full Slash -- 5 TAO on Node 2"
 trustee_bal_before="$(get_balance "$DEPLOYER_ADDR")"
 log_info "Trustee balance before: $(bigcmp fmt_tao "$trustee_bal_before")"
 
-log_info "Trustee slashes 5 TAO on (MINER_HOTKEY, NODE_ID_2)..."
+log_info "Trustee slashes 5 TAO on (MINER_PUBKEY, NODE_ID_2)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$MINER_HOTKEY" "$NODE_ID_2" "$TAO_5" 0 "$TEST_URL" "$TEST_SHA"
+    "$MINER_PUBKEY" "$NODE_ID_2" "$TAO_5" 0 "$TEST_URL" "$TEST_SHA"
 
 trustee_bal_after="$(get_balance "$DEPLOYER_ADDR")"
 log_info "Trustee balance after:  $(bigcmp fmt_tao "$trustee_bal_after")"
 
 assert_gt "$trustee_bal_after" "$trustee_bal_before" "trustee balance increased after slash"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_2")"
-assert_eq "$col" "0" "taoCollaterals(MINER_HOTKEY, NODE_ID_2) == 0"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_2")"
+assert_eq "$col" "0" "taoCollaterals(MINER_PUBKEY, NODE_ID_2) == 0"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_2")"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_2")"
 assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner cleared after full slash"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -421,20 +421,20 @@ section "T9: Combined TAO + Alpha Deposit -- Node 3"
 # Deposit both TAO (5 TAO via msg.value) and alpha (4 alpha).
 # The contract's transferAlpha() uses delegatecall so the precompile sees the miner
 # as origin, transferring alpha from miner's coldkey to the contract's coldkey.
-log_info "Miner deposits 5 TAO + ${RAO_4_ALPHA} alpha RAO on (MINER_HOTKEY, NODE_ID_3)..."
+log_info "Miner deposits 5 TAO + ${RAO_4_ALPHA} alpha RAO on (MINER_PUBKEY, NODE_ID_3)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_3" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA" \
+    "$MINER_PUBKEY" "$NODE_ID_3" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA" \
     --value "$TAO_5"
 
-col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_3")"
-assert_eq "$col" "$TAO_5" "taoCollaterals(MINER_HOTKEY, NODE_ID_3) == 5 TAO"
+col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_3")"
+assert_eq "$col" "$TAO_5" "taoCollaterals(MINER_PUBKEY, NODE_ID_3) == 5 TAO"
 
-alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_3")"
+alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_3")"
 log_info "  alphaCollaterals = ${alpha_col} RAO (requested ${RAO_4_ALPHA})"
-assert_gt "$alpha_col" "0" "alphaCollaterals(MINER_HOTKEY, NODE_ID_3) > 0"
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_3")"
-assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_3) == miner"
+assert_gt "$alpha_col" "0" "alphaCollaterals(MINER_PUBKEY, NODE_ID_3) > 0"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_3")"
+assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_PUBKEY, NODE_ID_3) == miner"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  T10: Alpha-only Deposit — Node 4
@@ -443,20 +443,20 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_3) == miner"
 section "T10: Alpha-only Deposit -- Node 4"
 
 # Deposit alpha-only: no --value flag, just alpha amount.
-log_info "Miner deposits ${RAO_4_ALPHA} alpha RAO (no TAO) on (MINER_HOTKEY, NODE_ID_4)..."
+log_info "Miner deposits ${RAO_4_ALPHA} alpha RAO (no TAO) on (MINER_PUBKEY, NODE_ID_4)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA"
+    "$MINER_PUBKEY" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA"
 
-tao_col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
-assert_eq "$tao_col" "0" "taoCollaterals(MINER_HOTKEY, NODE_ID_4) == 0 (alpha-only deposit)"
+tao_col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
+assert_eq "$tao_col" "0" "taoCollaterals(MINER_PUBKEY, NODE_ID_4) == 0 (alpha-only deposit)"
 
-alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
+alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
 log_info "  alphaCollaterals = ${alpha_col} RAO"
-assert_gt "$alpha_col" "0" "alphaCollaterals(MINER_HOTKEY, NODE_ID_4) > 0"
+assert_gt "$alpha_col" "0" "alphaCollaterals(MINER_PUBKEY, NODE_ID_4) > 0"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_4")"
-assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_4) == miner"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_4")"
+assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_PUBKEY, NODE_ID_4) == miner"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  T11: Alpha Reclaim — Early Finalize Reverts
@@ -465,10 +465,10 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_4) == miner"
 section "T11: Alpha Reclaim -- Early Finalize Reverts"
 
 RECLAIM_ID=$NEXT_RECLAIM_ID
-log_info "Miner starts reclaim on (MINER_HOTKEY, NODE_ID_4) [reclaimId=$RECLAIM_ID]..."
+log_info "Miner starts reclaim on (MINER_PUBKEY, NODE_ID_4) [reclaimId=$RECLAIM_ID]..."
 cast_send "$MINER_KEY" "$PROXY" \
     "reclaimCollateral(bytes32,bytes16)" \
-    "$MINER_HOTKEY" "$NODE_ID_4"
+    "$MINER_PUBKEY" "$NODE_ID_4"
 NEXT_RECLAIM_ID=$((NEXT_RECLAIM_ID + 1))
 
 log_info "Immediately calling finalizeReclaim($RECLAIM_ID) -- should revert..."
@@ -487,14 +487,14 @@ sleep "$SLEEP_SECS"
 log_info "Calling finalizeReclaim($RECLAIM_ID)..."
 cast_send "$MINER_KEY" "$PROXY" "finalizeReclaim(uint256)" "$RECLAIM_ID"
 
-tao_col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
-assert_eq "$tao_col" "0" "taoCollaterals(MINER_HOTKEY, NODE_ID_4) == 0"
+tao_col="$(cast_query "$PROXY" "taoCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
+assert_eq "$tao_col" "0" "taoCollaterals(MINER_PUBKEY, NODE_ID_4) == 0"
 
-alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
-assert_eq "$alpha_col" "0" "alphaCollaterals(MINER_HOTKEY, NODE_ID_4) == 0 after finalize"
+alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
+assert_eq "$alpha_col" "0" "alphaCollaterals(MINER_PUBKEY, NODE_ID_4) == 0 after finalize"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_4")"
-assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_4) == address(0)"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_4")"
+assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner(MINER_PUBKEY, NODE_ID_4) == address(0)"
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  T13: Alpha Re-deposit + Partial Alpha Slash
@@ -503,12 +503,12 @@ assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner(MINER_HOTKEY, NODE_ID_4) == address
 section "T13: Alpha Re-deposit + Partial Alpha Slash"
 
 # Re-deposit alpha-only on the now-cleared node using fixed amount.
-log_info "Miner deposits ${RAO_4_ALPHA} alpha RAO (4 alpha) on (MINER_HOTKEY, NODE_ID_4)..."
+log_info "Miner deposits ${RAO_4_ALPHA} alpha RAO (4 alpha) on (MINER_PUBKEY, NODE_ID_4)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA"
+    "$MINER_PUBKEY" "$NODE_ID_4" "$VALIDATOR_HOTKEY" "$RAO_4_ALPHA"
 
-alpha_col_full="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
+alpha_col_full="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
 log_info "  alphaCollaterals after deposit = ${alpha_col_full} RAO"
 
 # Slash 1 alpha (fixed amount). TAO slash = 0.
@@ -516,13 +516,13 @@ expected_remaining="$(python3 -c "print(int('${alpha_col_full}') - int('${RAO_1_
 log_info "Trustee slashes ${RAO_1_ALPHA} alpha RAO (1 alpha)..."
 cast_send "$FAUCET_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$MINER_HOTKEY" "$NODE_ID_4" 0 "$RAO_1_ALPHA" "$TEST_URL" "$TEST_SHA"
+    "$MINER_PUBKEY" "$NODE_ID_4" 0 "$RAO_1_ALPHA" "$TEST_URL" "$TEST_SHA"
 
-alpha_col_after="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
+alpha_col_after="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
 log_info "  alphaCollaterals after slash = ${alpha_col_after} RAO"
 assert_eq "$alpha_col_after" "$expected_remaining" "alphaCollaterals == expected after partial slash (4 - 1 = 3 alpha)"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_4")"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_4")"
 assert_eq "$owner" "$MINER_ADDR" "nodeToMiner preserved after partial alpha slash"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -531,16 +531,16 @@ assert_eq "$owner" "$MINER_ADDR" "nodeToMiner preserved after partial alpha slas
 
 section "T14: Full Alpha Slash -- Node 4"
 
-remaining_alpha="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
+remaining_alpha="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
 log_info "Trustee slashes remaining ${remaining_alpha} alpha RAO..."
 cast_send "$FAUCET_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$MINER_HOTKEY" "$NODE_ID_4" 0 "$remaining_alpha" "$TEST_URL" "$TEST_SHA"
+    "$MINER_PUBKEY" "$NODE_ID_4" 0 "$remaining_alpha" "$TEST_URL" "$TEST_SHA"
 
-alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_HOTKEY" "$NODE_ID_4")"
-assert_eq "$alpha_col" "0" "alphaCollaterals(MINER_HOTKEY, NODE_ID_4) == 0"
+alpha_col="$(cast_query "$PROXY" "alphaCollaterals(bytes32,bytes16)(uint256)" "$MINER_PUBKEY" "$NODE_ID_4")"
+assert_eq "$alpha_col" "0" "alphaCollaterals(MINER_PUBKEY, NODE_ID_4) == 0"
 
-owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_HOTKEY" "$NODE_ID_4")"
+owner="$(cast_query "$PROXY" "nodeToMiner(bytes32,bytes16)(address)" "$MINER_PUBKEY" "$NODE_ID_4")"
 assert_eq "$owner" "$ZERO_ADDR" "nodeToMiner cleared after full alpha slash"
 
 # ═════════════════════════════════════════════════════════════════════════════

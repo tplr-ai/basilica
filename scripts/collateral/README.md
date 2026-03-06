@@ -63,13 +63,13 @@ Deposit alpha:
 ```bash
 cc tx deposit \
   --private-key "$PRIVATE_KEY" \
-  --hotkey "$MINER_HOTKEY" \
+  --hotkey "$MINER_PUBKEY" \
   --node-id "$NODE_ID" \
   --alpha-hotkey "$ALPHA_HOTKEY" \
   --alpha-amount "$ALPHA_AMOUNT_RAO"
 
-cc query node-to-miner --hotkey "$MINER_HOTKEY" --node-id "$NODE_ID"
-cc query collaterals --hotkey "$MINER_HOTKEY" --node-id "$NODE_ID"
+cc query node-to-miner --hotkey "$MINER_PUBKEY" --node-id "$NODE_ID"
+cc query collaterals --hotkey "$MINER_PUBKEY" --node-id "$NODE_ID"
 ```
 
 Reclaim flow:
@@ -77,7 +77,7 @@ Reclaim flow:
 ```bash
 cc tx reclaim-collateral \
   --private-key "$PRIVATE_KEY" \
-  --hotkey "$MINER_HOTKEY" \
+  --hotkey "$MINER_PUBKEY" \
   --node-id "$NODE_ID" \
   --url "$URL" \
   --url-content-sha256 "$URL_CONTENT_SHA256"

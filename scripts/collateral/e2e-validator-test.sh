@@ -51,7 +51,7 @@ ADDRESS_MAPPING="0x000000000000000000000000000000000000080C"
 # Use the real localnet wallet hotkeys so alpha staking works with precompiles.
 LOCALNET_WALLETS_DIR="${REPO_ROOT}/scripts/localnet/wallets"
 VALIDATOR_HOTKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/validator/hotkeys/defaultpub.txt")"
-MINER_HOTKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/miner_1/hotkeys/defaultpub.txt")"
+MINER_PUBKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/miner_1/hotkeys/defaultpub.txt")"
 
 ZERO_BYTES32="0x0000000000000000000000000000000000000000000000000000000000000000"
 ZERO_ADDR="0x0000000000000000000000000000000000000000"
@@ -60,7 +60,7 @@ NODE_ID_1="$(compute_node_id "127.0.0.1")"  # bytes16
 NODE_ID_2="$(compute_node_id "127.0.0.2")"  # bytes16
 
 # Hex with 0x prefix — how the validator stores them in SQLite (RPC snapshot: format!("0x{}", hex::encode(...)))
-HEX_MINER_HOTKEY="${MINER_HOTKEY}"
+HEX_MINER_PUBKEY="${MINER_PUBKEY}"
 HEX_NODE_ID_1="${NODE_ID_1}"
 HEX_NODE_ID_2="${NODE_ID_2}"
 
@@ -351,21 +351,21 @@ log_info "Initial last_scanned_block_number: $INITIAL_SCAN_BLOCK"
 
 section "T1: TAO Deposit (1 TAO) -- Node 1"
 
-log_info "Miner deposits 1 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Miner deposits 1 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
+    "$MINER_PUBKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
     --value "$TAO_1"
 
 wait_for_scan "T1 deposit"
 
 assert_db_eq \
-    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
     "$TAO_1" \
     "DB: tao_collateral == 1 TAO for node 1"
 
 assert_db_eq \
-    "SELECT miner FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT miner FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
     "$MINER_ADDR_DB" \
     "DB: miner matches depositor for node 1"
 
@@ -383,20 +383,20 @@ fi
 
 section "T2: Combined TAO + Alpha Deposit -- Node 2"
 
-log_info "Miner deposits 1 TAO + ${RAO_1_ALPHA} alpha RAO on (MINER_HOTKEY, NODE_ID_2)..."
+log_info "Miner deposits 1 TAO + ${RAO_1_ALPHA} alpha RAO on (MINER_PUBKEY, NODE_ID_2)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_2" "$VALIDATOR_HOTKEY" "$RAO_1_ALPHA" \
+    "$MINER_PUBKEY" "$NODE_ID_2" "$VALIDATOR_HOTKEY" "$RAO_1_ALPHA" \
     --value "$TAO_1"
 
 wait_for_scan "T2 combined deposit"
 
 assert_db_eq \
-    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_2}'" \
+    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_2}'" \
     "$TAO_1" \
     "DB: tao_collateral == 1 TAO for node 2"
 
-ALPHA_COL="$(db_query "SELECT alpha_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_2}'")"
+ALPHA_COL="$(db_query "SELECT alpha_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_2}'")"
 if bigcmp gt "$ALPHA_COL" "0"; then
     pass "DB: alpha_collateral > 0 for node 2 (got: $ALPHA_COL)"
 else
@@ -409,10 +409,10 @@ fi
 
 section "T3: Reclaim Start -- Node 1"
 
-log_info "Miner starts reclaim on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Miner starts reclaim on (MINER_PUBKEY, NODE_ID_1)..."
 RECLAIM_RECEIPT="$(cast_send_json "$MINER_KEY" "$PROXY" \
     "reclaimCollateral(bytes32,bytes16)" \
-    "$MINER_HOTKEY" "$NODE_ID_1")"
+    "$MINER_PUBKEY" "$NODE_ID_1")"
 RECLAIM_ID="$(extract_reclaim_id "$RECLAIM_RECEIPT")"
 if [[ "$RECLAIM_ID" == "__NOT_FOUND__" ]]; then
     log_error "Could not extract reclaimRequestId from tx receipt"
@@ -423,7 +423,7 @@ log_info "Extracted reclaimRequestId=$RECLAIM_ID from event log"
 wait_for_scan "T3 reclaim start"
 
 # Check collateral_reclaims row exists
-RECLAIM_ROW="$(db_query "SELECT reclaim_request_id FROM collateral_reclaims WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'")"
+RECLAIM_ROW="$(db_query "SELECT reclaim_request_id FROM collateral_reclaims WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'")"
 assert_eq "$RECLAIM_ROW" "$RECLAIM_ID" "DB: collateral_reclaims row exists with correct reclaim_request_id"
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -444,7 +444,7 @@ wait_for_scan "T4 finalize reclaim"
 # RPC snapshot approach: nodes with zero collateral are removed from activeNodeKeys[] on-chain
 # and subsequently deleted from collateral_status DB (not zeroed).
 assert_db_eq \
-    "SELECT COUNT(*) FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT COUNT(*) FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
     "0" \
     "DB: collateral_status row deleted after full reclaim for node 1 (new behavior: no zero-balance rows)"
 
@@ -458,34 +458,34 @@ assert_eq "$RECLAIM_COUNT" "0" "DB: collateral_reclaims row deleted after finali
 
 section "T5: Partial Slash -- Node 1"
 
-log_info "Miner deposits 2 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Miner deposits 2 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$MINER_KEY" "$PROXY" \
     "deposit(bytes32,bytes16,bytes32,uint256)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
+    "$MINER_PUBKEY" "$NODE_ID_1" "$ZERO_BYTES32" 0 \
     --value "$TAO_2"
 
 wait_for_scan "T5 deposit"
 
 assert_db_eq \
-    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
     "$TAO_2" \
     "DB: tao_collateral == 2 TAO after re-deposit"
 
-log_info "Trustee slashes 1 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Trustee slashes 1 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$DEPLOYER_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$TAO_1" 0 "$TEST_URL" "$TEST_SHA"
+    "$MINER_PUBKEY" "$NODE_ID_1" "$TAO_1" 0 "$TEST_URL" "$TEST_SHA"
 
 wait_for_scan "T5 partial slash"
 
 assert_db_eq \
-    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT tao_collateral FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
     "$TAO_1" \
     "DB: tao_collateral == 1 TAO after partial slash (2 - 1)"
 
 # Miner still set after partial slash
 assert_db_eq \
-    "SELECT miner FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT miner FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
     "$MINER_ADDR_DB" \
     "DB: miner preserved after partial slash"
 
@@ -495,17 +495,17 @@ assert_db_eq \
 
 section "T6: Full Slash -- Node 1"
 
-log_info "Trustee slashes remaining 1 TAO on (MINER_HOTKEY, NODE_ID_1)..."
+log_info "Trustee slashes remaining 1 TAO on (MINER_PUBKEY, NODE_ID_1)..."
 cast_send "$DEPLOYER_KEY" "$PROXY" \
     "slashCollateral(bytes32,bytes16,uint256,uint256,string,bytes32)" \
-    "$MINER_HOTKEY" "$NODE_ID_1" "$TAO_1" 0 "$TEST_URL" "$TEST_SHA"
+    "$MINER_PUBKEY" "$NODE_ID_1" "$TAO_1" 0 "$TEST_URL" "$TEST_SHA"
 
 wait_for_scan "T6 full slash"
 
 # RPC snapshot approach: nodes with zero collateral are removed from activeNodeKeys[] on-chain
 # and subsequently deleted from collateral_status DB (not zeroed).
 assert_db_eq \
-    "SELECT COUNT(*) FROM collateral_status WHERE hotkey = '${HEX_MINER_HOTKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
+    "SELECT COUNT(*) FROM collateral_status WHERE hotkey = '${HEX_MINER_PUBKEY}' AND node_id = '${HEX_NODE_ID_1}'" \
     "0" \
     "DB: collateral_status row deleted after full slash (new behavior: no zero-balance rows)"
 
