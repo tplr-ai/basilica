@@ -639,16 +639,6 @@
         "name": "nodeId",
         "type": "bytes16",
         "internalType": "bytes16"
-      },
-      {
-        "name": "url",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "urlContentSha256",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -1176,18 +1166,6 @@
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
-      },
-      {
-        "name": "url",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      },
-      {
-        "name": "urlContentSha256",
-        "type": "bytes32",
-        "indexed": false,
-        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -1637,6 +1615,11 @@
   {
     "type": "error",
     "name": "TrusteeAddressZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TrusteeRoleDirectModificationForbidden",
     "inputs": []
   },
   {

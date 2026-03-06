@@ -184,7 +184,7 @@ extract_reclaim_id() {
     local receipt_json="$1"
     # ReclaimProcessStarted event signature topic[0]
     local event_sig_hash
-    event_sig_hash="$(cast keccak "ReclaimProcessStarted(uint256,bytes32,bytes16,address,uint256,bytes32,uint256,uint64,string,bytes32)")"
+    event_sig_hash="$(cast keccak "ReclaimProcessStarted(uint256,bytes32,bytes16,address,uint256,bytes32,uint256,uint64)")"
     local reclaim_id_hex
     reclaim_id_hex="$(printf '%s' "$receipt_json" | python3 -c "
 import json, sys
@@ -422,8 +422,8 @@ section "T3: Reclaim Start -- Node 1"
 
 log_info "Miner starts reclaim on (HOTKEY_1, NODE_ID_1)..."
 RECLAIM_RECEIPT="$(cast_send_json "$MINER_KEY" "$PROXY" \
-    "reclaimCollateral(bytes32,bytes16,string,bytes32)" \
-    "$HOTKEY_1" "$NODE_ID_1" "$TEST_URL" "$TEST_SHA")"
+    "reclaimCollateral(bytes32,bytes16)" \
+    "$HOTKEY_1" "$NODE_ID_1")"
 RECLAIM_ID="$(extract_reclaim_id "$RECLAIM_RECEIPT")"
 if [[ "$RECLAIM_ID" == "__NOT_FOUND__" ]]; then
     log_error "Could not extract reclaimRequestId from tx receipt"

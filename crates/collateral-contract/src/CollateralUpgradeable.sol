@@ -114,9 +114,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         uint256 amount,
         bytes32 alphaColdkey,
         uint256 alphaAmount,
-        uint64 expirationTime,
-        string url,
-        bytes32 urlContentSha256
+        uint64 expirationTime
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
@@ -382,12 +380,10 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @param hotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to reclaim collateral from
     /// @dev Alpha payout destination is always derived from the owner address mapping.
-    /// @param url URL containing information about the reclaim request
-    /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits ReclaimProcessStarted event with reclaim details and timeout
     /// @dev Reverts with NodeNotOwned if caller is not the owner of the node
     /// @dev Reverts with AmountZero if there is no available collateral to reclaim
-    function reclaimCollateral(bytes32 hotkey, bytes16 nodeId, string calldata url, bytes32 urlContentSha256)
+    function reclaimCollateral(bytes32 hotkey, bytes16 nodeId)
         external
         nonReentrant
     {
@@ -440,9 +436,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             availableAmount,
             ownerColdkey,
             availableAlphaAmount,
-            denyTimeout,
-            url,
-            urlContentSha256
+            denyTimeout
         );
 
         nextReclaimId++;

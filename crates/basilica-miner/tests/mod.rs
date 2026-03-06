@@ -113,13 +113,9 @@ mod tests {
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
-        let url = "example.com";
-        let url_checksum = 123_u128;
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
-            url.to_owned(),
-            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
         let reclaim_receipt = reclaim_tx.send().await?.get_receipt().await?;
 
@@ -170,13 +166,9 @@ mod tests {
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
-        let url = "example.com";
-        let url_checksum = 123_u128;
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
-            url.to_owned(),
-            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
         let reclaim_receipt = reclaim_tx.send().await?.get_receipt().await?;
 

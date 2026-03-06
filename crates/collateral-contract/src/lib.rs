@@ -174,8 +174,6 @@ pub async fn reclaim_collateral(
     private_key: &str,
     hotkey: [u8; 32],
     node_id: [u8; 16],
-    url: &str,
-    url_content_sha256: [u8; 32],
     network_config: &CollateralNetworkConfig,
 ) -> Result<(), anyhow::Error> {
     let contract = get_collateral(private_key, network_config).await?;
@@ -183,8 +181,6 @@ pub async fn reclaim_collateral(
     let tx = contract.reclaimCollateral(
         FixedBytes::from_slice(&hotkey),
         FixedBytes::from_slice(&node_id),
-        url.to_string(),
-        FixedBytes::from_slice(&url_content_sha256),
     );
     let tx = tx.send().await?;
     tx.get_receipt().await?;

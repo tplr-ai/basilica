@@ -189,7 +189,7 @@ contract IStakingIntegrationTest is Test {
         assertEq(mockStaking.getStake(VALIDATOR_HOTKEY, contractColdkey, NETUID), ALPHA_AMOUNT);
 
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
 
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
         collateral.finalizeReclaim(0);

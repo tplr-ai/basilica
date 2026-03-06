@@ -70,8 +70,6 @@ pub async fn handle_collateral(
         CollateralAction::Withdraw {
             hotkey,
             node_id,
-            url,
-            url_hash,
         } => {
             let params = resolve_params(
                 key_file,
@@ -81,7 +79,7 @@ pub async fn handle_collateral(
                 None,
                 config,
             )?;
-            handle_withdraw(&params, node_id, url, url_hash).await
+            handle_withdraw(&params, node_id).await
         }
         CollateralAction::Finalize { request_id } => {
             let params = resolve_params(key_file, network, contract_address, None, None, config)?;
@@ -159,17 +157,6 @@ fn parse_hotkey(input: &str) -> Result<[u8; 32], CliError> {
 fn parse_node_id(input: &str) -> Result<[u8; 16], CliError> {
     let id = uuid::Uuid::parse_str(input).map_err(|e| eyre!("Invalid node UUID: {}", e))?;
     Ok(*id.as_bytes())
-}
-
-fn parse_hash(input: &str) -> Result<[u8; 32], CliError> {
-    let hex_str = input.strip_prefix("0x").unwrap_or(input);
-    let bytes = hex::decode(hex_str).map_err(|e| eyre!("Invalid hash hex: {}", e))?;
-    if bytes.len() != 32 {
-        return Err(eyre!("Hash must be 32 bytes, got {}", bytes.len()).into());
-    }
-    let mut arr = [0u8; 32];
-    arr.copy_from_slice(&bytes);
-    Ok(arr)
 }
 
 fn alpha_to_rao(alpha: f64) -> Result<U256, CliError> {
@@ -410,12 +397,9 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
 async fn handle_withdraw(
     params: &CollateralParams,
     node_id: &str,
-    url: &str,
-    url_hash: &str,
 ) -> Result<(), CliError> {
     let hotkey = require_hotkey(params)?;
     let node_id_bytes = parse_node_id(node_id)?;
-    let hash_bytes = parse_hash(url_hash)?;
 
     let spinner = create_spinner("Initiating collateral reclaim...");
 
@@ -423,8 +407,6 @@ async fn handle_withdraw(
         &params.private_key,
         hotkey,
         node_id_bytes,
-        url,
-        hash_bytes,
         &params.network_config,
     )
     .await

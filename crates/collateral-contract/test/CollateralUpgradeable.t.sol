@@ -257,7 +257,7 @@ contract CollateralUpgradeableTest is Test {
         assertEq(collateral.getVersion(), 2);
 
         vm.prank(ALICE);
-        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com/reclaim", bytes32(uint256(1)));
+        collateral.reclaimCollateral(hotkey, nodeId);
 
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
         uint256 aliceBalanceBefore = ALICE.balance;
@@ -283,9 +283,7 @@ contract CollateralUpgradeableTest is Test {
         uint256 amount,
         bytes32 alphaColdkey,
         uint256 alphaAmount,
-        uint64 expirationTime,
-        string url,
-        bytes32 urlContentSha256
+        uint64 expirationTime
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
@@ -330,7 +328,7 @@ contract CollateralUpgradeableTest is Test {
 
         // 2. Alice starts a reclaim
         vm.prank(ALICE);
-        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com", bytes16(0));
+        collateral.reclaimCollateral(hotkey, nodeId);
 
         // 3. Trustee fully slashes (TAO collateral goes to zero, but pending reclaim keeps nodeToMiner)
         vm.prank(TRUSTEE);
@@ -368,7 +366,7 @@ contract CollateralUpgradeableTest is Test {
 
         // Alice starts a reclaim
         vm.prank(ALICE);
-        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com", bytes32(0));
+        collateral.reclaimCollateral(hotkey, nodeId);
 
         // Immediately try to finalize — should revert (timeout hasn't elapsed)
         vm.expectRevert(abi.encodeWithSelector(CollateralUpgradeable.BeforeDenyTimeout.selector));
@@ -393,7 +391,7 @@ contract CollateralUpgradeableTest is Test {
 
         // Alice starts a reclaim
         vm.prank(ALICE);
-        collateral.reclaimCollateral(hotkey, nodeId, "https://example.com", bytes32(0));
+        collateral.reclaimCollateral(hotkey, nodeId);
 
         // Warp past the decision timeout
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);

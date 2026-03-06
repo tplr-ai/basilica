@@ -402,14 +402,6 @@ pub enum CollateralAction {
         /// Node UUID
         #[arg(long)]
         node_id: String,
-
-        /// URL for the reclaim request
-        #[arg(long)]
-        url: String,
-
-        /// SHA256 hash of URL content (32-byte hex)
-        #[arg(long)]
-        url_hash: String,
     },
 
     /// Finalize a pending reclaim

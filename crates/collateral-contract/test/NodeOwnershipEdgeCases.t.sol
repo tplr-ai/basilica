@@ -126,7 +126,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
 
         // Alice initiates reclaim
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
 
         // Warp past decision timeout and finalize
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
@@ -162,7 +162,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
         collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
 
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
 
         // it preserves ownership for original miner during pending reclaim
         assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
@@ -221,7 +221,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
 
         // Alice initiates reclaim (reclaimId=0)
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
 
         // Trustee denies — no slash, so taoCollaterals stays at 5 ether
         vm.prank(TRUSTEE);
@@ -245,7 +245,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
 
         // Alice reclaims again (reclaimId=1, since reclaimId=0 was denied/deleted)
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
 
         // Warp past timeout and finalize — Alice should receive 8 ether
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
@@ -450,21 +450,21 @@ contract NodeOwnershipEdgeCasesTest is Test {
         vm.prank(ALICE);
         collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
         // reclaimId = 0
 
         // Node B: Bob on HOTKEY_2 (first claim)
         vm.prank(BOB, BOB);
         collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
         vm.prank(BOB);
-        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2);
         // reclaimId = 1
 
         // Node C: Charlie on HOTKEY_3 (first claim)
         vm.prank(CHARLIE, CHARLIE);
         collateral.deposit{value: 2 ether}(HOTKEY_3, EXECUTOR_ID_3, ALPHA_HOTKEY, 0);
         vm.prank(CHARLIE);
-        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3);
         // reclaimId = 2
 
         // activeReclaimIds = [0, 1, 2]
@@ -500,21 +500,21 @@ contract NodeOwnershipEdgeCasesTest is Test {
         vm.prank(ALICE);
         collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
         // reclaimId = 0
 
         // Node B: Bob on HOTKEY_2 (first claim)
         vm.prank(BOB, BOB);
         collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
         vm.prank(BOB);
-        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2);
         // reclaimId = 1
 
         // Node C: Charlie on HOTKEY_3 (first claim)
         vm.prank(CHARLIE, CHARLIE);
         collateral.deposit{value: 2 ether}(HOTKEY_3, EXECUTOR_ID_3, ALPHA_HOTKEY, 0);
         vm.prank(CHARLIE);
-        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3);
         // reclaimId = 2
 
         // activeReclaimIds = [0, 1, 2]
@@ -555,21 +555,21 @@ contract NodeOwnershipEdgeCasesTest is Test {
         vm.prank(ALICE);
         collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
         // reclaimId = 0
 
         // Node B: Bob on HOTKEY_2 (first claim)
         vm.prank(BOB, BOB);
         collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
         vm.prank(BOB);
-        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2);
         // reclaimId = 1
 
         // Node C: Charlie on HOTKEY_3 (first claim)
         vm.prank(CHARLIE, CHARLIE);
         collateral.deposit{value: 2 ether}(HOTKEY_3, EXECUTOR_ID_3, ALPHA_HOTKEY, 0);
         vm.prank(CHARLIE);
-        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3);
         // reclaimId = 2
 
         // activeReclaimIds = [0, 1, 2]
@@ -617,7 +617,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
 
         // Alice initiates reclaim → reclaimId=0, pending=10 ether
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
 
         assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 10 ether);
 
@@ -644,7 +644,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
 
         // it allows subsequent reclaim of the extra deposit
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
         // reclaimId = 1
 
         vm.warp(block.timestamp + DECISION_TIMEOUT + 1);
@@ -675,28 +675,28 @@ contract NodeOwnershipEdgeCasesTest is Test {
         vm.prank(ALICE);
         collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
         vm.prank(ALICE);
-        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
         // reclaimId = 0 (R0)
 
         // Node B: Bob on HOTKEY_2 (first claim)
         vm.prank(BOB, BOB);
         collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
         vm.prank(BOB);
-        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_2, EXECUTOR_ID_2);
         // reclaimId = 1 (R1)
 
         // Node C: Charlie on HOTKEY_3 (first claim)
         vm.prank(CHARLIE, CHARLIE);
         collateral.deposit{value: 2 ether}(HOTKEY_3, EXECUTOR_ID_3, ALPHA_HOTKEY, 0);
         vm.prank(CHARLIE);
-        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_3, EXECUTOR_ID_3);
         // reclaimId = 2 (R2)
 
         // Node D: Dave on HOTKEY_4 (first claim)
         vm.prank(DAVE, DAVE);
         collateral.deposit{value: 4 ether}(HOTKEY_4, EXECUTOR_ID_4, ALPHA_HOTKEY, 0);
         vm.prank(DAVE);
-        collateral.reclaimCollateral(HOTKEY_4, EXECUTOR_ID_4, TEST_URL, TEST_SHA256);
+        collateral.reclaimCollateral(HOTKEY_4, EXECUTOR_ID_4);
         // reclaimId = 3 (R3)
 
         // activeReclaimIds = [R0, R1, R2, R3]; activeReclaimIdIndex[R3] = 4

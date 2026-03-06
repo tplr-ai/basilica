@@ -293,8 +293,8 @@ section "T3: Early Finalize Reverts"
 RECLAIM_ID=$NEXT_RECLAIM_ID
 log_info "Miner starts reclaim on (HOTKEY_1, NODE_ID_1) [reclaimId=$RECLAIM_ID]..."
 cast_send "$MINER_KEY" "$PROXY" \
-    "reclaimCollateral(bytes32,bytes16,string,bytes32)" \
-    "$HOTKEY_1" "$NODE_ID_1" "$TEST_URL" "$TEST_SHA"
+    "reclaimCollateral(bytes32,bytes16)" \
+    "$HOTKEY_1" "$NODE_ID_1"
 NEXT_RECLAIM_ID=$((NEXT_RECLAIM_ID + 1))
 
 log_info "Immediately calling finalizeReclaim($RECLAIM_ID) -- should revert..."
@@ -476,8 +476,8 @@ section "T11: Alpha Reclaim -- Early Finalize Reverts"
 RECLAIM_ID=$NEXT_RECLAIM_ID
 log_info "Miner starts reclaim on (HOTKEY_4, NODE_ID_4) [reclaimId=$RECLAIM_ID]..."
 cast_send "$MINER_KEY" "$PROXY" \
-    "reclaimCollateral(bytes32,bytes16,string,bytes32)" \
-    "$HOTKEY_4" "$NODE_ID_4" "$TEST_URL" "$TEST_SHA"
+    "reclaimCollateral(bytes32,bytes16)" \
+    "$HOTKEY_4" "$NODE_ID_4"
 NEXT_RECLAIM_ID=$((NEXT_RECLAIM_ID + 1))
 
 log_info "Immediately calling finalizeReclaim($RECLAIM_ID) -- should revert..."
