@@ -62,3 +62,10 @@ crate_exists() {
     local crate=$1
     [ -d "$CRATES_DIR/$crate" ] && [ -f "$CRATES_DIR/$crate/Cargo.toml" ]
 }
+
+# Compute the on-chain bytes16 node ID from a seed string (e.g. an IP address).
+# Uses the same NodeId::new() derivation as the validator and miner.
+compute_node_id() {
+    local seed="$1"
+    cargo run -q --example compute_node_id -p basilica-common -- "$seed"
+}

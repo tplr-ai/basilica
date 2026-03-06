@@ -60,14 +60,14 @@ fi
 ZERO_BYTES32="0x0000000000000000000000000000000000000000000000000000000000000000"
 ZERO_ADDR="0x0000000000000000000000000000000000000000"
 
-# Generate random hotkey/node_id suffixes so each run uses fresh identifiers.
+# Generate random hotkey suffixes so each run uses fresh identifiers.
 # This avoids NodeNotOwned errors from previous runs' stale deposits.
 RAND_SUFFIX="$(openssl rand -hex 4)"
 # bytes32 = 64 hex chars; bytes16 = 32 hex chars
 HOTKEY_1="0x0000000000000000000000000000000000000000000000000000e2e1${RAND_SUFFIX}"
 HOTKEY_2="0x0000000000000000000000000000000000000000000000000000e2e2${RAND_SUFFIX}"
-NODE_ID_1="0x00000000000000000000e2e1${RAND_SUFFIX}"  # bytes16
-NODE_ID_2="0x00000000000000000000e2e2${RAND_SUFFIX}"  # bytes16
+NODE_ID_1="$(compute_node_id "127.0.0.1")"  # bytes16
+NODE_ID_2="$(compute_node_id "127.0.0.2")"  # bytes16
 
 # Hex with 0x prefix — how the validator stores them in SQLite (RPC snapshot: format!("0x{}", hex::encode(...)))
 HEX_HOTKEY_1="${HOTKEY_1}"
