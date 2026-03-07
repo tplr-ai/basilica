@@ -32,8 +32,8 @@ fi
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 
-# CONTRACT_ADDRESS and PRIVATE_KEY come from .env.local
-PROXY="${CONTRACT_ADDRESS:?CONTRACT_ADDRESS not set in .env.local}"
+# BASILICA_COLLATERAL_CONTRACT_ADDRESS and PRIVATE_KEY come from .env.local
+PROXY="${BASILICA_COLLATERAL_CONTRACT_ADDRESS:?BASILICA_COLLATERAL_CONTRACT_ADDRESS not set in .env.local}"
 DEPLOYER_KEY="${PRIVATE_KEY:?PRIVATE_KEY not set in .env.local}"
 
 # ─── Constants ───────────────────────────────────────────────────────────────
