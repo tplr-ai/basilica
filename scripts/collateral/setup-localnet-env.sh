@@ -13,7 +13,6 @@ RPC_URL="http://localhost:9944"
 PRIVATE_KEY="${PRIVATE_KEY:-}"
 HOTKEY="${HOTKEY:-}"
 MINER_PUBKEY="${MINER_PUBKEY:-}"
-ALPHA_HOTKEY="${ALPHA_HOTKEY:-}"
 NODE_ID="${NODE_ID:-6339ba4f-60f9-45c2-9d95-2b755bb57ca6}"
 ALPHA_AMOUNT_RAO="${ALPHA_AMOUNT_RAO:-${ALPHA_AMOUNT_WEI:-5000000000}}"
 NETUID="${NETUID:-1}"
@@ -64,7 +63,6 @@ Options:
   --hotkey <64-hex>                   Validator hotkey for contract deploy (defaults from validator wallet file)
   --miner-pubkey <64-hex>             Miner public key for deposit ops (defaults from miner wallet file)
   --miner-pubkey-file <path>          Miner wallet JSON file (default: scripts/localnet/wallets/miner_1/hotkeys/defaultpub.txt)
-  --alpha-hotkey <64-hex>             ALPHA_HOTKEY for alpha staking (default: validator HOTKEY)
   --node-id <uuid>                    Node UUID for ops scripts
   --alpha-amount-rao <uint>           Alpha amount for deposits (RAO)
   --netuid <uint>                     Contract netuid (default: 1)
@@ -276,12 +274,6 @@ load_hotkey_defaults() {
     [[ -n "$MINER_PUBKEY" ]] || die "failed to read publicKey from ${MINER_PUBKEY_FILE}"
     MINER_PUBKEY="$(normalize_hotkey "$MINER_PUBKEY")"
   fi
-
-  if [[ -z "$ALPHA_HOTKEY" ]]; then
-    ALPHA_HOTKEY="$HOTKEY"
-  else
-    ALPHA_HOTKEY="$(normalize_hotkey "$ALPHA_HOTKEY")"
-  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -343,11 +335,6 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ $# -gt 0 ]] || die "--miner-pubkey-file requires a value"
       MINER_PUBKEY_FILE="$1"
-      ;;
-    --alpha-hotkey)
-      shift
-      [[ $# -gt 0 ]] || die "--alpha-hotkey requires a value"
-      ALPHA_HOTKEY="$1"
       ;;
     --node-id)
       shift
@@ -446,7 +433,6 @@ MINER_ADDRESS=$miner_address
 
 MINER_PUBKEY=$MINER_PUBKEY
 NODE_ID=$NODE_ID
-BASILICA_COLLATERAL_ALPHA_HOTKEY=$ALPHA_HOTKEY
 ALPHA_AMOUNT_RAO=$ALPHA_AMOUNT_RAO
 
 RECLAIM_REQUEST_ID=

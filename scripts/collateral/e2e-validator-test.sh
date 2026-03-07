@@ -44,13 +44,14 @@ VALIDATOR_CONTAINER="basilica-validator"
 VALIDATOR_DB_PATH="/opt/basilica/data/validator.db"
 SCAN_WAIT=20  # seconds to wait for validator scan cycle (12s interval + buffer)
 
-NETUID=1
 STAKING_PRECOMPILE="0x0000000000000000000000000000000000000805"
 ADDRESS_MAPPING="0x000000000000000000000000000000000000080C"
 
-# Use the real localnet wallet hotkeys so alpha staking works with precompiles.
+# Query NETUID and VALIDATOR_HOTKEY from the deployed contract (set during initialize()).
+NETUID="$(cast call --rpc-url "$RPC_URL" "$PROXY" "netuid()(uint16)")"
+VALIDATOR_HOTKEY="$(cast call --rpc-url "$RPC_URL" "$PROXY" "validatorHotkey()(bytes32)")"
+
 LOCALNET_WALLETS_DIR="${REPO_ROOT}/scripts/localnet/wallets"
-VALIDATOR_HOTKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/validator/hotkeys/defaultpub.txt")"
 MINER_PUBKEY="$(read_hotkey "${LOCALNET_WALLETS_DIR}/miner_1/hotkeys/defaultpub.txt")"
 
 ZERO_BYTES32="0x0000000000000000000000000000000000000000000000000000000000000000"
