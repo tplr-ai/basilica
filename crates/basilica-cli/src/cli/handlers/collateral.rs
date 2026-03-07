@@ -7,7 +7,6 @@ use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
 use crate::cli::commands::CollateralAction;
-use crate::config::CliConfig;
 use crate::error::CliError;
 use crate::progress::{complete_spinner_and_clear, create_spinner};
 
@@ -24,11 +23,10 @@ struct CollateralParams {
 pub async fn handle_collateral(
     action: &CollateralAction,
     key_file: Option<&Path>,
-    config: &CliConfig,
 ) -> Result<(), CliError> {
     match action {
         CollateralAction::Balance => {
-            let params = resolve_params(key_file, None, config)?;
+            let params = resolve_params(key_file, None)?;
             handle_balance(&params).await
         }
         CollateralAction::Deposit {
@@ -37,19 +35,19 @@ pub async fn handle_collateral(
             amount,
             yes,
         } => {
-            let params = resolve_params(key_file, hotkey.as_deref(), config)?;
+            let params = resolve_params(key_file, hotkey.as_deref())?;
             handle_deposit(&params, node_ip, *amount, *yes).await
         }
         CollateralAction::Status { hotkey, node_id } => {
-            let params = resolve_params(key_file, hotkey.as_deref(), config)?;
+            let params = resolve_params(key_file, hotkey.as_deref())?;
             handle_status(&params, node_id.as_deref()).await
         }
         CollateralAction::Reclaim { hotkey, node_id } => {
-            let params = resolve_params(key_file, hotkey.as_deref(), config)?;
+            let params = resolve_params(key_file, hotkey.as_deref())?;
             handle_reclaim(&params, node_id).await
         }
         CollateralAction::Finalize { request_id } => {
-            let params = resolve_params(key_file, None, config)?;
+            let params = resolve_params(key_file, None)?;
             handle_finalize(&params, request_id).await
         }
     }
@@ -62,11 +60,10 @@ pub async fn handle_collateral(
 fn resolve_params(
     cli_key_file: Option<&Path>,
     cli_hotkey: Option<&str>,
-    config: &CliConfig,
 ) -> Result<CollateralParams, CliError> {
-    let collateral_cfg = config.collateral.clone().unwrap_or_default();
-
-    let private_key = read_private_key(cli_key_file, collateral_cfg.private_key_file.as_deref())?;
+    let key_file = cli_key_file
+        .ok_or_else(|| eyre!("--key-file is required"))?;
+    let private_key = read_private_key(key_file)?;
 
     // Resolve network: env var → default ("mainnet")
     let network_str =
@@ -79,7 +76,7 @@ fn resolve_params(
     let network_config = CollateralNetworkConfig::from_network(&network, contract_address, None)
         .map_err(|e| eyre!("{}", e))?;
 
-    let hotkey = cli_hotkey.map(|s| s.to_string()).or(collateral_cfg.hotkey);
+    let hotkey = cli_hotkey.map(|s| s.to_string());
 
     // Resolve alpha_hotkey: env var → fall back to hotkey
     let alpha_hotkey = std::env::var("BASILICA_COLLATERAL_ALPHA_HOTKEY")
@@ -94,15 +91,7 @@ fn resolve_params(
     })
 }
 
-/// Read the private key from a file. CLI --key-file takes priority over config.
-fn read_private_key(
-    cli_key_file: Option<&Path>,
-    config_key_file: Option<&Path>,
-) -> Result<String, CliError> {
-    let path = cli_key_file.or(config_key_file).ok_or_else(|| {
-        eyre!("No key file provided. Use --key-file or set collateral.private_key_file in config")
-    })?;
-
+fn read_private_key(path: &Path) -> Result<String, CliError> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| eyre!("Failed to read key file {}: {}", path.display(), e))?;
     let key = content.trim().to_string();
@@ -156,7 +145,7 @@ fn rao_to_alpha(rao: U256) -> f64 {
 
 fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
     let hk = params.hotkey.as_deref().ok_or_else(|| {
-        eyre!("--hotkey is required. Provide it via CLI flag or collateral.hotkey in config")
+        eyre!("--hotkey is required")
     })?;
     parse_hotkey(hk)
 }
@@ -164,7 +153,7 @@ fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
 fn require_alpha_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
     let ahk = params.alpha_hotkey.as_deref().ok_or_else(|| {
         eyre!(
-            "alpha_hotkey is required. Set BASILICA_COLLATERAL_ALPHA_HOTKEY env var or collateral.alpha_hotkey in config"
+            "alpha_hotkey is required. Set BASILICA_COLLATERAL_ALPHA_HOTKEY env var"
         )
     })?;
     parse_hotkey(ahk)
@@ -214,7 +203,7 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
         println!("  Alpha Staked:  {:.2} alpha", rao_to_alpha(alpha));
     } else {
         println!(
-            "  Alpha Staked:  {} (set BASILICA_COLLATERAL_ALPHA_HOTKEY or collateral.alpha_hotkey in config)",
+            "  Alpha Staked:  {} (set BASILICA_COLLATERAL_ALPHA_HOTKEY env var)",
             style("N/A").dim()
         );
     }

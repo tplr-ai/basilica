@@ -10,16 +10,6 @@ use tracing::{debug, info};
 
 use crate::CliError;
 
-/// Collateral CLI configuration
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct CollateralCliConfig {
-    /// Path to file containing EVM private key
-    pub private_key_file: Option<PathBuf>,
-
-    /// Miner's Bittensor hotkey (32-byte hex)
-    pub hotkey: Option<String>,
-}
-
 /// CLI configuration structure
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CliConfig {
@@ -35,8 +25,6 @@ pub struct CliConfig {
     /// Wallet configuration
     pub wallet: WalletConfig,
 
-    /// Collateral configuration
-    pub collateral: Option<CollateralCliConfig>,
 }
 
 /// API configuration
@@ -208,14 +196,6 @@ impl CliConfig {
         if let Some(path_str) = self.wallet.base_wallet_path.to_str() {
             let expanded = shellexpand::tilde(path_str);
             self.wallet.base_wallet_path = PathBuf::from(expanded.as_ref());
-        }
-        if let Some(ref mut collateral) = self.collateral {
-            if let Some(ref mut pkf) = collateral.private_key_file {
-                if let Some(path_str) = pkf.to_str() {
-                    let expanded = shellexpand::tilde(path_str);
-                    *pkf = PathBuf::from(expanded.as_ref());
-                }
-            }
         }
     }
 
