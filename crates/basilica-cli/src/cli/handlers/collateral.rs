@@ -3,6 +3,7 @@ use color_eyre::eyre::eyre;
 use console::style;
 use std::path::Path;
 use std::str::FromStr;
+use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
 use crate::cli::commands::CollateralAction;
@@ -409,7 +410,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
                 .collect();
 
             println!("{}", style("Collateral Status").bold());
-            println!("{}", Table::new(rows));
+            println!("{}", Table::new(rows).with(Style::modern()));
         }
     }
 
@@ -470,7 +471,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
             .collect();
 
         println!("{}", style("Pending Reclaims").bold());
-        println!("{}", Table::new(rows));
+        println!("{}", Table::new(rows).with(Style::modern()));
     }
 
     Ok(())
