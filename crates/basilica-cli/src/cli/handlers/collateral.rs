@@ -22,7 +22,7 @@ struct CollateralParams {
 
 pub async fn handle_collateral(
     action: &CollateralAction,
-    key_file: Option<&Path>,
+    key_file: &Path,
 ) -> Result<(), CliError> {
     match action {
         CollateralAction::Balance => {
@@ -35,15 +35,15 @@ pub async fn handle_collateral(
             amount,
             yes,
         } => {
-            let params = resolve_params(key_file, hotkey.as_deref())?;
+            let params = resolve_params(key_file, Some(hotkey))?;
             handle_deposit(&params, node_ip, *amount, *yes).await
         }
         CollateralAction::Status { hotkey, node_id } => {
-            let params = resolve_params(key_file, hotkey.as_deref())?;
+            let params = resolve_params(key_file, Some(hotkey))?;
             handle_status(&params, node_id.as_deref()).await
         }
         CollateralAction::Reclaim { hotkey, node_id } => {
-            let params = resolve_params(key_file, hotkey.as_deref())?;
+            let params = resolve_params(key_file, Some(hotkey))?;
             handle_reclaim(&params, node_id).await
         }
         CollateralAction::Finalize { request_id } => {
@@ -58,11 +58,9 @@ pub async fn handle_collateral(
 // ---------------------------------------------------------------------------
 
 fn resolve_params(
-    cli_key_file: Option<&Path>,
+    key_file: &Path,
     cli_hotkey: Option<&str>,
 ) -> Result<CollateralParams, CliError> {
-    let key_file = cli_key_file
-        .ok_or_else(|| eyre!("--key-file is required"))?;
     let private_key = read_private_key(key_file)?;
 
     // Resolve network: env var → default ("mainnet")

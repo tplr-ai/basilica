@@ -212,7 +212,7 @@ pub enum Commands {
 
         /// Path to file containing EVM private key (hex).
         #[arg(long, global = true, value_hint = ValueHint::FilePath)]
-        key_file: Option<PathBuf>,
+        key_file: PathBuf,
     },
 }
 
@@ -351,7 +351,7 @@ pub enum CollateralAction {
     Deposit {
         /// Miner's Bittensor hotkey (32-byte hex)
         #[arg(long)]
-        hotkey: Option<String>,
+        hotkey: String,
 
         /// IP address of the node (used to derive the on-chain node ID)
         #[arg(long)]
@@ -370,7 +370,7 @@ pub enum CollateralAction {
     Status {
         /// Miner's Bittensor hotkey (32-byte hex)
         #[arg(long)]
-        hotkey: Option<String>,
+        hotkey: String,
 
         /// Specific node UUID to query
         #[arg(long)]
@@ -381,7 +381,7 @@ pub enum CollateralAction {
     Reclaim {
         /// Miner's Bittensor hotkey (32-byte hex)
         #[arg(long)]
-        hotkey: Option<String>,
+        hotkey: String,
 
         /// Node UUID
         #[arg(long)]
