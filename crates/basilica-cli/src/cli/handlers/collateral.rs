@@ -144,7 +144,7 @@ fn alpha_to_rao(alpha: f64) -> Result<U256, CliError> {
     }
     let rao = (alpha * 1e9).round() as u128;
     if rao == 0 {
-        return Err(eyre!("Amount too small, rounds to 0 RAO").into());
+        return Err(eyre!("Amount too small").into());
     }
     Ok(U256::from(rao))
 }
@@ -152,11 +152,6 @@ fn alpha_to_rao(alpha: f64) -> Result<U256, CliError> {
 fn rao_to_alpha(rao: U256) -> f64 {
     let rao_u128: u128 = rao.try_into().unwrap_or(u128::MAX);
     rao_u128 as f64 / 1e9
-}
-
-fn wei_to_tao(wei: U256) -> f64 {
-    let wei_u128: u128 = wei.try_into().unwrap_or(u128::MAX);
-    wei_u128 as f64 / 1e18
 }
 
 fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
@@ -189,11 +184,6 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
 
     let evm_address = evm_address_from_private_key(&params.private_key)?;
 
-    // TAO balance (wei)
-    let tao_balance = collateral_contract::get_tao_balance(evm_address, &params.network_config)
-        .await
-        .map_err(|e| eyre!("Failed to get TAO balance: {}", e))?;
-
     // Alpha balance (requires alpha_hotkey and the contract's netuid)
     let alpha_balance = if params.alpha_hotkey.is_some() {
         let alpha_hotkey = require_alpha_hotkey(params)?;
@@ -220,9 +210,8 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
 
     println!("{}", style("Collateral Balances").bold());
     println!("  EVM Address:   {}", evm_address);
-    println!("  TAO Balance:   {:.9} TAO", wei_to_tao(tao_balance));
     if let Some(alpha) = alpha_balance {
-        println!("  Alpha Staked:  {:.9} alpha", rao_to_alpha(alpha));
+        println!("  Alpha Staked:  {:.2} alpha", rao_to_alpha(alpha));
     } else {
         println!(
             "  Alpha Staked:  {} (set BASILICA_COLLATERAL_ALPHA_HOTKEY or collateral.alpha_hotkey in config)",
@@ -250,7 +239,7 @@ async fn handle_deposit(
         println!("  Hotkey:       0x{}", hex::encode(hotkey));
         println!("  Node:         {} ({})", ip, node_uuid);
         println!("  Alpha Hotkey: 0x{}", hex::encode(alpha_hotkey));
-        println!("  Amount:       {:.9} alpha ({} RAO)", amount, rao_amount);
+        println!("  Amount:       {:.2} alpha", amount);
         println!();
 
         let confirm = dialoguer::Confirm::new()
@@ -280,7 +269,7 @@ async fn handle_deposit(
 
     complete_spinner_and_clear(spinner);
     println!(
-        "{} Deposited {:.9} alpha for node {} ({})",
+        "{} Deposited {:.2} alpha for node {} ({})",
         style("✓").green().bold(),
         amount,
         ip,
@@ -298,8 +287,6 @@ struct ReclaimRow {
     hotkey: String,
     #[tabled(rename = "Node ID")]
     node_id: String,
-    #[tabled(rename = "TAO")]
-    tao_amount: String,
     #[tabled(rename = "Alpha")]
     alpha_amount: String,
     #[tabled(rename = "Finalizable At")]
@@ -316,9 +303,7 @@ struct CollateralRow {
     node_id: String,
     #[tabled(rename = "Miner")]
     miner: String,
-    #[tabled(rename = "TAO (wei)")]
-    tao_collateral: String,
-    #[tabled(rename = "Alpha (RAO)")]
+    #[tabled(rename = "Alpha")]
     alpha_collateral: String,
 }
 
@@ -330,7 +315,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
         let hotkey = require_hotkey(params)?;
         let node_id_bytes = parse_node_id(node_id_str)?;
 
-        let (tao, alpha) =
+        let (_tao, alpha) =
             collateral_contract::collaterals(hotkey, node_id_bytes, &params.network_config)
                 .await
                 .map_err(|e| eyre!("Failed to query collateral: {}", e))?;
@@ -340,12 +325,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
         println!("{}", style("Collateral Status").bold());
         println!("  Hotkey:     0x{}", hex::encode(hotkey));
         println!("  Node ID:    {}", node_id_str);
-        println!("  TAO:        {:.9} TAO ({} wei)", wei_to_tao(tao), tao);
-        println!(
-            "  Alpha:      {:.9} alpha ({} RAO)",
-            rao_to_alpha(alpha),
-            alpha
-        );
+        println!("  Alpha:      {:.2} alpha", rao_to_alpha(alpha));
     } else {
         // All nodes - optionally filter by hotkey
         let all = collateral_contract::get_all_collaterals(&params.network_config)
@@ -378,8 +358,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
                         ),
                         node_id: node_uuid.to_string(),
                         miner: format!("{}", n.miner),
-                        tao_collateral: format!("{:.4} TAO", wei_to_tao(n.tao_collateral)),
-                        alpha_collateral: format!("{:.4} alpha", rao_to_alpha(n.alpha_collateral)),
+                        alpha_collateral: format!("{:.2} alpha", rao_to_alpha(n.alpha_collateral)),
                     }
                 })
                 .collect();
@@ -437,8 +416,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
                         &hex::encode(&r.hotkey[30..])
                     ),
                     node_id: node_uuid.to_string(),
-                    tao_amount: format!("{:.4} TAO", wei_to_tao(r.amount)),
-                    alpha_amount: format!("{:.4} alpha", rao_to_alpha(r.alpha_amount)),
+                    alpha_amount: format!("{:.2} alpha", rao_to_alpha(r.alpha_amount)),
                     finalizable_at: finalizable_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
                     status,
                 }
@@ -485,11 +463,7 @@ async fn handle_reclaim(params: &CollateralParams, node_id: &str) -> Result<(), 
     println!("{}", style("Reclaim Details").bold());
     println!("  Request ID:      {}", request_id);
     println!(
-        "  TAO amount:      {:.9} TAO",
-        wei_to_tao(reclaim_info.amount)
-    );
-    println!(
-        "  Alpha amount:    {:.9} alpha",
+        "  Alpha amount:    {:.2} alpha",
         rao_to_alpha(reclaim_info.alpha_amount)
     );
     println!(
