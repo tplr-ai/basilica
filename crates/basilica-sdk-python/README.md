@@ -164,6 +164,92 @@ deployment = client.deploy(
 )
 ```
 
+### GPU Flavour Preferences
+
+Filter GPU offerings and control hardware placement with interconnect, region, and spot preferences.
+
+#### Query GPU offerings
+
+```python
+from basilica import BasilicaClient, GpuPriceQuery
+
+client = BasilicaClient()
+
+# SXM interconnect in the US
+gpus = client.list_secure_cloud_gpus(
+    query=GpuPriceQuery(interconnect="SXM", region="US")
+)
+
+# Non-spot offerings only
+gpus = client.list_secure_cloud_gpus(
+    query=GpuPriceQuery(exclude_spot=True)
+)
+
+# Spot offerings only
+gpus = client.list_secure_cloud_gpus(
+    query=GpuPriceQuery(spot_only=True)
+)
+```
+
+#### Deploy with flavour constraints
+
+All deployment methods (`deploy`, `create_deployment`, `deploy_vllm`, `deploy_sglang`,
+and the `@deployment` decorator) accept flavour parameters:
+
+```python
+# create_deployment with flavour
+resp = client.create_deployment(
+    instance_name="my-inference",
+    image="nginx:alpine",
+    port=80,
+    gpu_count=1,
+    gpu_models=["H100"],
+    interconnect="SXM",       # SXM or PCIe
+    geo="US",                 # US, EU, CA, APAC
+    spot=True,                # True=prefer spot, False=exclude spot
+    ttl_seconds=600,
+)
+
+# deploy() with flavour (waits until ready)
+deployment = client.deploy(
+    name="gpu-app",
+    source="app.py",
+    port=8000,
+    gpu_count=1,
+    gpu_models=["H100"],
+    interconnect="SXM",
+    geo="US",
+    spot=False,
+)
+
+# deploy_vllm with flavour
+deployment = client.deploy_vllm(
+    model="Qwen/Qwen3-0.6B",
+    interconnect="SXM",
+    geo="US",
+    spot=True,
+)
+
+# Decorator API with flavour
+@basilica.deployment(
+    name="my-service",
+    port=8000,
+    gpu_count=1,
+    interconnect="SXM",
+    geo="US",
+    spot=True,
+)
+def serve():
+    ...
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `interconnect` | GPU interconnect type: `"SXM"` or `"PCIe"` |
+| `geo` | Geographic region: `"US"`, `"EU"`, `"CA"`, `"APAC"` |
+| `spot` | `True` = prefer spot instances, `False` = exclude spot |
+| `infiniband` | `True` = require InfiniBand networking |
+
 ### Persistent Storage
 
 Enable persistent storage mounted at `/data`:
@@ -331,6 +417,10 @@ def deploy(
     gpu_models: Optional[List[str]] = None, # GPU model requirements
     min_cuda_version: Optional[str] = None, # Minimum CUDA version
     min_gpu_memory_gb: Optional[int] = None,# Minimum GPU VRAM
+    interconnect: Optional[str] = None,     # GPU interconnect (SXM, PCIe)
+    geo: Optional[str] = None,              # Region (US, EU, CA, APAC)
+    spot: Optional[bool] = None,            # Spot preference (True/False)
+    infiniband: Optional[bool] = None,      # Require InfiniBand
     replicas: int = 1,                      # Number of instances
     ttl_seconds: Optional[int] = None,      # Auto-delete timeout
     public: bool = True,                    # Create public URL
@@ -439,6 +529,29 @@ response = client.list_deployments()
 logs = client.get_deployment_logs("my-app", tail=100)
 ```
 
+### GPU Offerings (Secure Cloud)
+
+```python
+from basilica import GpuPriceQuery
+
+# List all GPU offerings
+gpus = client.list_secure_cloud_gpus()
+
+# Filter by interconnect, region, spot
+gpus = client.list_secure_cloud_gpus(
+    query=GpuPriceQuery(interconnect="SXM", region="US", exclude_spot=True)
+)
+for g in gpus:
+    print(f"{g.gpu_type} x{g.gpu_count}  {g.interconnect}  {g.region}  ${g.hourly_rate}/hr")
+
+# Start a secure cloud GPU rental
+rental = client.start_secure_cloud_rental(offering_id=gpus[0].id)
+print(f"SSH: {rental.ssh_command}")
+
+# Stop rental
+client.stop_secure_cloud_rental(rental.rental_id)
+```
+
 ### GPU Rentals (Legacy API)
 
 For direct GPU node access via SSH:
@@ -490,6 +603,9 @@ For complete working examples, see the [examples directory](https://github.com/o
 | `12_lobe_chat.py` | Self-hosted chat UI |
 | `13_lobe_chat_vllm.py` | Full AI stack (LobeChat + vLLM) |
 | `14_streamlit.py` | Interactive Streamlit app |
+| `34_gpu_flavour_preferences.py` | Query GPU offerings with flavour filters |
+| `35_deploy_with_flavour.py` | Deploy with interconnect, region, spot preferences |
+| `36_gpu_flavour_cli/` | CLI usage with flavour flags |
 | `deploy_sglang_health_check.py` | SGLang with custom health check probes |
 
 ## Development

@@ -753,6 +753,8 @@ pub enum CloudProvider {
     HydraHost,
     /// Verda cloud provider (replacement for DataCrunch)
     Verda,
+    /// Mass Compute - VM-based GPU rental provider (polling-based, no webhooks)
+    MassCompute,
     /// The Priory - VIP managed machines (not a real cloud provider, but uses Deployment model)
     Vip,
 }
@@ -764,6 +766,7 @@ impl CloudProvider {
             CloudProvider::Lambda => "lambda",
             CloudProvider::HydraHost => "hydrahost",
             CloudProvider::Verda => "verda",
+            CloudProvider::MassCompute => "masscompute",
             CloudProvider::Vip => "vip",
         }
     }
@@ -785,6 +788,7 @@ impl FromStr for CloudProvider {
             "lambda" => Ok(CloudProvider::Lambda),
             "hydrahost" => Ok(CloudProvider::HydraHost),
             "verda" => Ok(CloudProvider::Verda),
+            "masscompute" | "mass_compute" | "mass-compute" => Ok(CloudProvider::MassCompute),
             "vip" => Ok(CloudProvider::Vip),
             _ => Err(format!("Unknown provider: {}", s)),
         }
@@ -817,4 +821,143 @@ pub struct GpuOffering {
     pub fetched_at: DateTime<Utc>,
     #[serde(skip)]
     pub raw_metadata: serde_json::Value,
+}
+
+#[cfg(test)]
+mod cloud_provider_tests {
+    use super::*;
+
+    #[test]
+    fn test_cloud_provider_as_str() {
+        assert_eq!(CloudProvider::Hyperstack.as_str(), "hyperstack");
+        assert_eq!(CloudProvider::Lambda.as_str(), "lambda");
+        assert_eq!(CloudProvider::HydraHost.as_str(), "hydrahost");
+        assert_eq!(CloudProvider::Verda.as_str(), "verda");
+        assert_eq!(CloudProvider::MassCompute.as_str(), "masscompute");
+        assert_eq!(CloudProvider::Vip.as_str(), "vip");
+    }
+
+    #[test]
+    fn test_cloud_provider_display() {
+        assert_eq!(CloudProvider::MassCompute.to_string(), "masscompute");
+        assert_eq!(CloudProvider::Hyperstack.to_string(), "hyperstack");
+    }
+
+    #[test]
+    fn test_cloud_provider_from_str() {
+        assert_eq!(
+            "masscompute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "mass_compute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "mass-compute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "MassCompute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "MASSCOMPUTE".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+    }
+
+    #[test]
+    fn test_cloud_provider_from_str_existing() {
+        assert_eq!(
+            "hyperstack".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Hyperstack
+        );
+        assert_eq!(
+            "lambda".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Lambda
+        );
+        assert_eq!(
+            "hydrahost".parse::<CloudProvider>().unwrap(),
+            CloudProvider::HydraHost
+        );
+        assert_eq!(
+            "verda".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Verda
+        );
+        assert_eq!(
+            "datacrunch".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Verda
+        );
+        assert_eq!("vip".parse::<CloudProvider>().unwrap(), CloudProvider::Vip);
+    }
+
+    #[test]
+    fn test_cloud_provider_from_str_invalid() {
+        assert!("unknown".parse::<CloudProvider>().is_err());
+        assert!("".parse::<CloudProvider>().is_err());
+    }
+
+    #[test]
+    fn test_cloud_provider_serde_roundtrip() {
+        let provider = CloudProvider::MassCompute;
+        let json = serde_json::to_string(&provider).unwrap();
+        assert_eq!(json, "\"masscompute\"");
+
+        let deserialized: CloudProvider = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, CloudProvider::MassCompute);
+    }
+
+    #[test]
+    fn test_cloud_provider_serde_all_variants() {
+        let variants = vec![
+            (CloudProvider::Hyperstack, "\"hyperstack\""),
+            (CloudProvider::Lambda, "\"lambda\""),
+            (CloudProvider::HydraHost, "\"hydrahost\""),
+            (CloudProvider::Verda, "\"verda\""),
+            (CloudProvider::MassCompute, "\"masscompute\""),
+            (CloudProvider::Vip, "\"vip\""),
+        ];
+
+        for (variant, expected_json) in variants {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(
+                json, expected_json,
+                "Serialization failed for {:?}",
+                variant
+            );
+
+            let deserialized: CloudProvider = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                deserialized, variant,
+                "Deserialization failed for {}",
+                expected_json
+            );
+        }
+    }
+
+    #[test]
+    fn test_gpu_offering_with_masscompute_provider() {
+        let json = r#"{
+            "id": "masscompute-8x-h100-us-east",
+            "provider": "masscompute",
+            "gpu_type": "H100",
+            "gpu_memory_gb_per_gpu": 80,
+            "gpu_count": 8,
+            "interconnect": "NVLink",
+            "system_memory_gb": 1800,
+            "vcpu_count": 208,
+            "region": "US-EAST",
+            "hourly_rate_per_gpu": "2.49",
+            "availability": true,
+            "is_spot": false,
+            "fetched_at": "2025-01-01T00:00:00Z"
+        }"#;
+
+        let offering: GpuOffering = serde_json::from_str(json).unwrap();
+        assert_eq!(offering.provider, CloudProvider::MassCompute);
+        assert_eq!(offering.gpu_type, GpuCategory::H100);
+        assert_eq!(offering.gpu_count, 8);
+        assert_eq!(offering.region, "US-EAST");
+    }
 }

@@ -150,6 +150,7 @@ message GpuSpec {
 message TrackRentalResponse {
     bool success = 1;
     string tracking_id = 2;
+    string current_status = 3;
 }
 
 message UpdateRentalStatusRequest {

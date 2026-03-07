@@ -72,6 +72,10 @@ class DeployedFunction:
             gpu_models=gpu_models,
             min_cuda_version=self._spec.min_cuda_version,
             min_gpu_memory_gb=self._spec.min_gpu_memory_gb,
+            interconnect=self._spec.interconnect,
+            geo=self._spec.geo,
+            spot=self._spec.spot,
+            infiniband=self._spec.infiniband,
             storage=storage,
             env=self._spec.env,
             pip_packages=self._spec.pip_packages,
@@ -141,6 +145,10 @@ def deployment(
     gpu_models: Optional[List[str]] = None,
     min_cuda_version: Optional[str] = None,
     min_gpu_memory_gb: Optional[int] = None,
+    interconnect: Optional[str] = None,
+    geo: Optional[str] = None,
+    spot: Optional[bool] = None,
+    infiniband: Optional[bool] = None,
     volumes: Optional[Dict[str, Volume]] = None,
     env: Optional[Dict[str, str]] = None,
     pip_packages: Optional[List[str]] = None,
@@ -167,6 +175,10 @@ def deployment(
         gpu_models: Acceptable GPU models list. Example: ["A100", "H100"]
         min_cuda_version: Minimum CUDA version
         min_gpu_memory_gb: Minimum GPU VRAM in GB
+        interconnect: GPU interconnect type. "SXM" or "PCIe"
+        geo: Geographic region preference. "US", "EU", "CA", "APAC"
+        spot: Spot instance preference. True=prefer spot, False=exclude spot
+        infiniband: Require InfiniBand networking
         volumes: Volume mounts. Example: {"/data": Volume.from_name("cache")}
         env: Environment variables
         pip_packages: Additional pip packages to install
@@ -203,6 +215,10 @@ def deployment(
             gpu_models=gpu_models,
             min_cuda_version=min_cuda_version,
             min_gpu_memory_gb=min_gpu_memory_gb,
+            interconnect=interconnect,
+            geo=geo,
+            spot=spot,
+            infiniband=infiniband,
             volumes=volumes,
             env=env,
             pip_packages=pip_packages,

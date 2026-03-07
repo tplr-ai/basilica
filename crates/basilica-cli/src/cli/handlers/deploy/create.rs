@@ -382,6 +382,16 @@ fn build_resources(cmd: &DeployCommand) -> ResourceRequirements {
         model: cmd.gpu.gpu_model.clone(),
         min_cuda_version: cmd.gpu.cuda_version.clone(),
         min_gpu_memory_gb: cmd.gpu.gpu_memory_gb,
+        interconnect: cmd.gpu.interconnect.clone(),
+        geo: cmd.gpu.region.clone(),
+        spot: if cmd.gpu.spot {
+            Some(true)
+        } else if cmd.gpu.exclude_spot {
+            Some(false)
+        } else {
+            None
+        },
+        infiniband: None,
     });
 
     // Use explicit requests or default to limits

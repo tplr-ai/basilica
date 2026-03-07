@@ -25,6 +25,10 @@ class DeploymentSpec:
     gpu_models: Optional[List[str]] = None
     min_cuda_version: Optional[str] = None
     min_gpu_memory_gb: Optional[int] = None
+    interconnect: Optional[str] = None
+    geo: Optional[str] = None
+    spot: Optional[bool] = None
+    infiniband: Optional[bool] = None
     volumes: Optional[Dict[str, "Volume"]] = None
     env: Optional[Dict[str, str]] = None
     pip_packages: Optional[List[str]] = None

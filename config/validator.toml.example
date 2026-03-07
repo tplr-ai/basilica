@@ -124,10 +124,8 @@ weight_version_key = 0
 # are distributed across GPU categories
 # Must sum to exactly 100.0
 [emission.gpu_allocations]
-A100 = { weight = 10.0, min_gpu_count = 8, min_gpu_vram = 1 }
-H100 = { weight = 20.0, min_gpu_count = 8, min_gpu_vram = 1 }
-H200 = { weight = 20.0, min_gpu_count = 8, min_gpu_vram = 1 }
-B200 = { weight = 50.0, min_gpu_count = 8, min_gpu_vram = 1 }
+A100 = { weight = 45.0, min_gpu_count = 8, min_gpu_vram = 1 }
+H100 = { weight = 55.0, min_gpu_count = 8, min_gpu_vram = 1 }
 
 [bid_grpc]
 listen_address = "0.0.0.0:50052"

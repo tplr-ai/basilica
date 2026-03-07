@@ -53,6 +53,10 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
             let name = helpers::resolve_deployment_name(name, &client).await?;
             handle_scale(&client, &name, replicas).await
         }
+        Some(DeployAction::Restart { name }) => {
+            let name = helpers::resolve_deployment_name(name, &client).await?;
+            handle_restart(&client, &name).await
+        }
         Some(DeployAction::ShareToken { action }) => {
             share_token::handle_share_token(&client, action).await
         }
@@ -268,6 +272,34 @@ async fn handle_scale(
         "Summons '{}' scaled to {} replicas",
         name, replicas
     ));
+
+    Ok(())
+}
+
+/// Restart a deployment (rolling restart)
+async fn handle_restart(client: &basilica_sdk::BasilicaClient, name: &str) -> Result<(), CliError> {
+    let spinner = create_spinner(&format!("Restarting summons '{}'...", name));
+
+    // Verify deployment exists before restarting
+    let verify_result = client.get_deployment(name).await;
+    if let Err(e) = verify_result {
+        complete_spinner_and_clear(spinner);
+        return Err(
+            if matches!(e, basilica_sdk::error::ApiError::NotFound { .. }) {
+                CliError::Deploy(DeployError::NotFound {
+                    name: name.to_string(),
+                })
+            } else {
+                CliError::Api(e)
+            },
+        );
+    }
+
+    let restart_result = client.restart_deployment(name).await;
+    complete_spinner_and_clear(spinner);
+    restart_result.map_err(CliError::Api)?;
+
+    print_success(&format!("Summons '{}' restart initiated", name));
 
     Ok(())
 }

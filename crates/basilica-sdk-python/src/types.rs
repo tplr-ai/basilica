@@ -9,8 +9,8 @@
 use basilica_sdk::types::{
     AvailabilityInfo as SdkAvailabilityInfo, AvailableNode as SdkAvailableNode,
     CpuOffering as SdkCpuOffering, CpuSpec as SdkCpuSpec, GpuOffering as SdkGpuOffering,
-    GpuRequirements as SdkGpuRequirements, GpuSpec as SdkGpuSpec,
-    HealthCheckConfig as SdkHealthCheckConfig,
+    GpuPriceQuery as SdkGpuPriceQuery, GpuRequirements as SdkGpuRequirements,
+    GpuSpec as SdkGpuSpec, HealthCheckConfig as SdkHealthCheckConfig,
     ListAvailableNodesQuery as SdkListAvailableNodesQuery, ListRentalsQuery as SdkListRentalsQuery,
     ListSecureCloudRentalsResponse as SdkListSecureCloudRentalsResponse,
     NodeDetails as SdkNodeDetails, PortMappingRequest as SdkPortMappingRequest,
@@ -734,24 +734,41 @@ pub struct GpuRequirementsSpec {
     pub min_cuda_version: Option<String>,
     #[pyo3(get, set)]
     pub min_gpu_memory_gb: Option<u32>,
+    #[pyo3(get, set)]
+    pub interconnect: Option<String>,
+    #[pyo3(get, set)]
+    pub geo: Option<String>,
+    #[pyo3(get, set)]
+    pub spot: Option<bool>,
+    #[pyo3(get, set)]
+    pub infiniband: Option<bool>,
 }
 
 #[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl GpuRequirementsSpec {
     #[new]
-    #[pyo3(signature = (count, model, min_cuda_version=None, min_gpu_memory_gb=None))]
+    #[pyo3(signature = (count, model, min_cuda_version=None, min_gpu_memory_gb=None, interconnect=None, geo=None, spot=None, infiniband=None))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         count: u32,
         model: Vec<String>,
         min_cuda_version: Option<String>,
         min_gpu_memory_gb: Option<u32>,
+        interconnect: Option<String>,
+        geo: Option<String>,
+        spot: Option<bool>,
+        infiniband: Option<bool>,
     ) -> Self {
         Self {
             count,
             model,
             min_cuda_version,
             min_gpu_memory_gb,
+            interconnect,
+            geo,
+            spot,
+            infiniband,
         }
     }
 }
@@ -763,6 +780,10 @@ impl From<GpuRequirementsSpec> for SdkGpuRequirementsSpec {
             model: gpu.model,
             min_cuda_version: gpu.min_cuda_version,
             min_gpu_memory_gb: gpu.min_gpu_memory_gb,
+            interconnect: gpu.interconnect,
+            geo: gpu.geo,
+            spot: gpu.spot,
+            infiniband: gpu.infiniband,
         }
     }
 }
@@ -774,6 +795,10 @@ impl From<SdkGpuRequirementsSpec> for GpuRequirementsSpec {
             model: gpu.model,
             min_cuda_version: gpu.min_cuda_version,
             min_gpu_memory_gb: gpu.min_gpu_memory_gb,
+            interconnect: gpu.interconnect,
+            geo: gpu.geo,
+            spot: gpu.spot,
+            infiniband: gpu.infiniband,
         }
     }
 }
@@ -1824,6 +1849,52 @@ impl From<SdkListSecureCloudRentalsResponse> for ListCpuRentalsResponse {
 // GPU Rental Types (Secure Cloud)
 // ============================================================================
 
+/// Query parameters for filtering GPU price listings
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
+#[pyclass]
+#[derive(Clone, Default)]
+pub struct GpuPriceQuery {
+    #[pyo3(get, set)]
+    pub interconnect: Option<String>,
+    #[pyo3(get, set)]
+    pub region: Option<String>,
+    #[pyo3(get, set)]
+    pub spot_only: Option<bool>,
+    #[pyo3(get, set)]
+    pub exclude_spot: Option<bool>,
+}
+
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
+#[pymethods]
+impl GpuPriceQuery {
+    #[new]
+    #[pyo3(signature = (interconnect=None, region=None, spot_only=None, exclude_spot=None))]
+    fn new(
+        interconnect: Option<String>,
+        region: Option<String>,
+        spot_only: Option<bool>,
+        exclude_spot: Option<bool>,
+    ) -> Self {
+        Self {
+            interconnect,
+            region,
+            spot_only,
+            exclude_spot,
+        }
+    }
+}
+
+impl From<GpuPriceQuery> for SdkGpuPriceQuery {
+    fn from(q: GpuPriceQuery) -> Self {
+        Self {
+            interconnect: q.interconnect,
+            region: q.region,
+            spot_only: q.spot_only,
+            exclude_spot: q.exclude_spot,
+        }
+    }
+}
+
 /// GPU offering from secure cloud providers
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
@@ -1853,6 +1924,10 @@ pub struct GpuOffering {
     pub is_spot: bool,
     #[pyo3(get)]
     pub fetched_at: String,
+    #[pyo3(get)]
+    pub interconnect: Option<String>,
+    #[pyo3(get)]
+    pub gpu_memory_gb_per_gpu: Option<u32>,
 }
 
 impl From<SdkGpuOffering> for GpuOffering {
@@ -1870,6 +1945,8 @@ impl From<SdkGpuOffering> for GpuOffering {
             availability: offering.availability,
             is_spot: offering.is_spot,
             fetched_at: offering.fetched_at.to_rfc3339(),
+            interconnect: offering.interconnect,
+            gpu_memory_gb_per_gpu: offering.gpu_memory_gb_per_gpu,
         }
     }
 }
