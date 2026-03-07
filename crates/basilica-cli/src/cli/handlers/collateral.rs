@@ -39,7 +39,7 @@ pub async fn handle_collateral(
             handle_deposit(&params, node_ip, *amount, *yes).await
         }
         CollateralAction::Status { hotkey, node_id } => {
-            let params = resolve_params(key_file, Some(hotkey))?;
+            let params = resolve_params(key_file, hotkey.as_deref())?;
             handle_status(&params, node_id.as_deref()).await
         }
         CollateralAction::Reclaim { hotkey, node_id } => {
@@ -321,19 +321,10 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
 
         complete_spinner_and_clear(spinner);
 
-        let filtered: Vec<_> = if let Some(ref hk) = params.hotkey {
-            let hotkey_bytes = parse_hotkey(hk)?;
-            all.into_iter()
-                .filter(|n| n.hotkey == hotkey_bytes)
-                .collect()
-        } else {
-            all
-        };
-
-        if filtered.is_empty() {
+        if all.is_empty() {
             println!("No collateral found.");
         } else {
-            let rows: Vec<CollateralRow> = filtered
+            let rows: Vec<CollateralRow> = all
                 .iter()
                 .map(|n| {
                     let node_uuid = uuid::Uuid::from_bytes(n.node_id);
@@ -364,22 +355,12 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
 
     complete_spinner_and_clear(reclaim_spinner);
 
-    let filtered_reclaims: Vec<_> = if let Some(ref hk) = params.hotkey {
-        let hotkey_bytes = parse_hotkey(hk)?;
-        all_reclaims
-            .into_iter()
-            .filter(|r| r.hotkey == hotkey_bytes)
-            .collect()
-    } else {
-        all_reclaims
-    };
-
     println!();
-    if filtered_reclaims.is_empty() {
+    if all_reclaims.is_empty() {
         println!("No pending reclaims.");
     } else {
         let now = chrono::Utc::now();
-        let rows: Vec<ReclaimRow> = filtered_reclaims
+        let rows: Vec<ReclaimRow> = all_reclaims
             .iter()
             .map(|r| {
                 let node_uuid = uuid::Uuid::from_bytes(r.node_id);

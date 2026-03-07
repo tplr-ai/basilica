@@ -212,7 +212,7 @@ pub enum Commands {
 
         /// Path to file containing EVM private key (hex).
         #[arg(long, global = true, value_hint = ValueHint::FilePath)]
-        key_file: PathBuf,
+        key_file: Option<PathBuf>,
     },
 }
 
@@ -368,11 +368,11 @@ pub enum CollateralAction {
 
     /// Show collateral amounts per node
     Status {
-        /// Miner's Bittensor hotkey (32-byte hex)
+        /// Miner's Bittensor hotkey (32-byte hex, required with --node-id)
         #[arg(long)]
-        hotkey: String,
+        hotkey: Option<String>,
 
-        /// Specific node UUID to query
+        /// Specific node UUID to query (requires --hotkey)
         #[arg(long)]
         node_id: Option<String>,
     },
