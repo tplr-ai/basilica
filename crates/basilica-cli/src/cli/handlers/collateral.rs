@@ -17,7 +17,6 @@ struct CollateralParams {
     private_key: String,
     network_config: CollateralNetworkConfig,
     hotkey: Option<String>,
-    alpha_hotkey: Option<String>,
 }
 
 pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Result<(), CliError> {
@@ -55,10 +54,9 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             to,
             amount,
             token,
-            hotkey,
             yes,
         } => {
-            let params = resolve_params(key_file, hotkey.as_deref())?;
+            let params = resolve_params(key_file, None)?;
             handle_send(&params, to, *amount, *token, *yes).await
         }
     }
@@ -84,16 +82,10 @@ fn resolve_params(key_file: &Path, cli_hotkey: Option<&str>) -> Result<Collatera
 
     let hotkey = cli_hotkey.map(|s| s.to_string());
 
-    // Resolve alpha_hotkey: env var → fall back to hotkey
-    let alpha_hotkey = std::env::var("BASILICA_COLLATERAL_ALPHA_HOTKEY")
-        .ok()
-        .or_else(|| hotkey.clone());
-
     Ok(CollateralParams {
         private_key,
         network_config,
         hotkey,
-        alpha_hotkey,
     })
 }
 
@@ -162,13 +154,6 @@ fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
     parse_hotkey(hk)
 }
 
-fn require_alpha_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
-    let ahk = params.alpha_hotkey.as_deref().ok_or_else(|| {
-        eyre!("alpha_hotkey is required. Set BASILICA_COLLATERAL_ALPHA_HOTKEY env var")
-    })?;
-    parse_hotkey(ahk)
-}
-
 fn evm_address_from_private_key(private_key: &str) -> Result<Address, CliError> {
     collateral_contract::address_from_private_key(private_key)
         .map_err(|e| eyre!("Invalid private key: {}", e).into())
@@ -187,41 +172,31 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
         .await
         .map_err(|e| eyre!("Failed to get TAO balance: {}", e))?;
 
-    // Alpha balance (requires alpha_hotkey and the contract's netuid)
-    let alpha_balance = if params.alpha_hotkey.is_some() {
-        let alpha_hotkey = require_alpha_hotkey(params)?;
-        let netuid = collateral_contract::netuid(&params.network_config)
-            .await
-            .map_err(|e| eyre!("Failed to get netuid: {}", e))?;
-        let coldkey = collateral_contract::derive_coldkey(evm_address, &params.network_config)
-            .await
-            .map_err(|e| eyre!("Failed to derive coldkey: {}", e))?;
-        let balance = collateral_contract::get_alpha_balance(
-            alpha_hotkey,
-            coldkey,
-            netuid,
-            &params.network_config,
-        )
+    // Alpha balance (fetch validator hotkey from contract)
+    let alpha_hotkey = collateral_contract::validator_hotkey(&params.network_config)
         .await
-        .map_err(|e| eyre!("Failed to get alpha balance: {}", e))?;
-        Some(balance)
-    } else {
-        None
-    };
+        .map_err(|e| eyre!("Failed to get validator hotkey: {}", e))?;
+    let netuid = collateral_contract::netuid(&params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to get netuid: {}", e))?;
+    let coldkey = collateral_contract::derive_coldkey(evm_address, &params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to derive coldkey: {}", e))?;
+    let alpha_balance = collateral_contract::get_alpha_balance(
+        alpha_hotkey,
+        coldkey,
+        netuid,
+        &params.network_config,
+    )
+    .await
+    .map_err(|e| eyre!("Failed to get alpha balance: {}", e))?;
 
     complete_spinner_and_clear(spinner);
 
     println!("{}", style("Collateral Balances").bold());
     println!("  EVM Address:   {}", evm_address);
     println!("  TAO Balance:   {:.4} TAO", wei_to_tao(tao_balance));
-    if let Some(alpha) = alpha_balance {
-        println!("  Alpha Staked:  {:.2} alpha", rao_to_alpha(alpha));
-    } else {
-        println!(
-            "  Alpha Staked:  {} (set BASILICA_COLLATERAL_ALPHA_HOTKEY env var)",
-            style("N/A").dim()
-        );
-    }
+    println!("  Alpha Staked:  {:.2} alpha", rao_to_alpha(alpha_balance));
 
     Ok(())
 }
@@ -260,7 +235,9 @@ async fn handle_deposit(
     yes: bool,
 ) -> Result<(), CliError> {
     let hotkey = require_hotkey(params)?;
-    let alpha_hotkey = require_alpha_hotkey(params)?;
+    let alpha_hotkey = collateral_contract::validator_hotkey(&params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to get validator hotkey: {}", e))?;
     let node_id_bytes = resolve_node_id_from_ip(ip)?;
     let node_uuid = uuid::Uuid::from_bytes(node_id_bytes);
     let rao_amount = alpha_to_rao(amount)?;
@@ -592,7 +569,9 @@ async fn handle_send(
             );
         }
         SendToken::Alpha => {
-            let hotkey = require_hotkey(params)?;
+            let hotkey = collateral_contract::validator_hotkey(&params.network_config)
+                .await
+                .map_err(|e| eyre!("Failed to get validator hotkey: {}", e))?;
             let netuid = collateral_contract::netuid(&params.network_config)
                 .await
                 .map_err(|e| eyre!("Failed to get netuid: {}", e))?;

@@ -414,10 +414,6 @@ pub enum CollateralAction {
         #[arg(long, value_enum)]
         token: SendToken,
 
-        /// Hotkey for alpha transfer (32-byte hex, required for alpha)
-        #[arg(long)]
-        hotkey: Option<String>,
-
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
         yes: bool,
