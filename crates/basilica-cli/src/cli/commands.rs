@@ -367,7 +367,7 @@ pub enum CollateralAction {
 
         /// IP address of the node (used to derive the on-chain node ID)
         #[arg(long)]
-        ip: String,
+        node_ip: String,
 
         /// Hotkey where alpha is staked (32-byte hex)
         #[arg(long)]

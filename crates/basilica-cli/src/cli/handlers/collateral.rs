@@ -41,7 +41,7 @@ pub async fn handle_collateral(
         }
         CollateralAction::Deposit {
             hotkey,
-            ip,
+            node_ip,
             alpha_hotkey,
             amount,
             yes,
@@ -54,7 +54,7 @@ pub async fn handle_collateral(
                 alpha_hotkey.as_deref(),
                 config,
             )?;
-            handle_deposit(&params, ip, *amount, *yes).await
+            handle_deposit(&params, node_ip, *amount, *yes).await
         }
         CollateralAction::Status { hotkey, node_id } => {
             let params = resolve_params(
