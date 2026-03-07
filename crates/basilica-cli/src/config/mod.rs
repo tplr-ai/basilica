@@ -24,7 +24,6 @@ pub struct CliConfig {
 
     /// Wallet configuration
     pub wallet: WalletConfig,
-
 }
 
 /// API configuration

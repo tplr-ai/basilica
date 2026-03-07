@@ -1214,6 +1214,35 @@ contract CollateralBasicTest is Test {
         assertEq(maxLimit[0].hotkey, HOTKEY_2);
     }
 
+    function testGetAllCollateralsSubtractsPendingReclaims() public {
+        // Alice deposits TAO
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        // Verify full collateral is visible
+        CollateralUpgradeable.NodeCollateral[] memory before = _allCollaterals();
+        assertEq(before.length, 1);
+        assertEq(before[0].taoCollateral, 5 ether);
+
+        // Alice initiates reclaim (all collateral goes under pending reclaim)
+        vm.prank(ALICE);
+        collateral.reclaimCollateral(HOTKEY_1, EXECUTOR_ID_1);
+
+        // getAllCollaterals should now show 0 effective collateral
+        CollateralUpgradeable.NodeCollateral[] memory during = _allCollaterals();
+        assertEq(during.length, 1);
+        assertEq(during[0].taoCollateral, 0);
+
+        // Deny the reclaim — collateral should be restored
+        vm.prank(TRUSTEE);
+        collateral.denyReclaimRequest(0, TEST_URL, TEST_SHA256);
+
+        // getAllCollaterals should show full collateral again
+        CollateralUpgradeable.NodeCollateral[] memory after_ = _allCollaterals();
+        assertEq(after_.length, 1);
+        assertEq(after_[0].taoCollateral, 5 ether);
+    }
+
     function testGetAllReclaimsPaginated() public {
         vm.prank(ALICE);
         collateral.deposit{value: 10 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);

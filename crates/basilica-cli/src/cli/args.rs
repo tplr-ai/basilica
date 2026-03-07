@@ -343,8 +343,7 @@ impl Args {
                         "--key-file is required for collateral commands"
                     ))
                 })?;
-                handlers::collateral::handle_collateral(action, key_file)
-                    .await?;
+                handlers::collateral::handle_collateral(action, key_file).await?;
             }
 
             // Upgrade command is handled in main.rs before entering async runtime

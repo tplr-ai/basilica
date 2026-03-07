@@ -816,7 +816,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         return activeReclaimIds.length;
     }
 
-    /// @notice Returns a paginated slice of active node collateral data
+    /// @notice Returns a paginated slice of active node collateral data.
+    ///         Amounts reflect effective collateral (total minus any pending reclaims).
     /// @param offset Starting index in the activeNodeKeys array
     /// @param limit Maximum number of entries to return
     function getAllCollaterals(uint256 offset, uint256 limit)
@@ -837,8 +838,8 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
                 hotkey: key.hotkey,
                 nodeId: key.nodeId,
                 miner: nodeToMiner[key.hotkey][key.nodeId],
-                taoCollateral: taoCollaterals[key.hotkey][key.nodeId],
-                alphaCollateral: alphaCollaterals[key.hotkey][key.nodeId]
+                taoCollateral: Math.saturatingSub(taoCollaterals[key.hotkey][key.nodeId], taoCollateralUnderPendingReclaims[key.hotkey][key.nodeId]),
+                alphaCollateral: Math.saturatingSub(alphaCollaterals[key.hotkey][key.nodeId], alphaCollateralUnderPendingReclaims[key.hotkey][key.nodeId])
             });
         }
     }

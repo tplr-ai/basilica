@@ -20,10 +20,7 @@ struct CollateralParams {
     alpha_hotkey: Option<String>,
 }
 
-pub async fn handle_collateral(
-    action: &CollateralAction,
-    key_file: &Path,
-) -> Result<(), CliError> {
+pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Result<(), CliError> {
     match action {
         CollateralAction::Balance => {
             let params = resolve_params(key_file, None)?;
@@ -57,10 +54,7 @@ pub async fn handle_collateral(
 // Param resolution
 // ---------------------------------------------------------------------------
 
-fn resolve_params(
-    key_file: &Path,
-    cli_hotkey: Option<&str>,
-) -> Result<CollateralParams, CliError> {
+fn resolve_params(key_file: &Path, cli_hotkey: Option<&str>) -> Result<CollateralParams, CliError> {
     let private_key = read_private_key(key_file)?;
 
     // Resolve network: env var → default ("mainnet")
@@ -142,17 +136,16 @@ fn rao_to_alpha(rao: U256) -> f64 {
 }
 
 fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
-    let hk = params.hotkey.as_deref().ok_or_else(|| {
-        eyre!("--hotkey is required")
-    })?;
+    let hk = params
+        .hotkey
+        .as_deref()
+        .ok_or_else(|| eyre!("--hotkey is required"))?;
     parse_hotkey(hk)
 }
 
 fn require_alpha_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
     let ahk = params.alpha_hotkey.as_deref().ok_or_else(|| {
-        eyre!(
-            "alpha_hotkey is required. Set BASILICA_COLLATERAL_ALPHA_HOTKEY env var"
-        )
+        eyre!("alpha_hotkey is required. Set BASILICA_COLLATERAL_ALPHA_HOTKEY env var")
     })?;
     parse_hotkey(ahk)
 }
