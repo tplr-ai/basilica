@@ -262,10 +262,10 @@ deploy_collateral() {
     local deployer_wallet="${repo_root}/scripts/localnet/wallets/contract_deployer_evm.env"
     local config_file="${SCRIPT_DIR}/configs/validator.toml"
 
-    # Idempotency: if .env.local has a CONTRACT_ADDRESS, verify it actually has code on-chain
+    # Idempotency: if .env.local has a contract address, verify it actually has code on-chain
     if [ -f "$env_file" ]; then
         local existing_addr
-        existing_addr="$(awk -F= '/^CONTRACT_ADDRESS=/ {print $2}' "$env_file" | tr -d '[:space:]')"
+        existing_addr="$(awk -F= '/^BASILICA_COLLATERAL_CONTRACT_ADDRESS=/ {print $2}' "$env_file" | tr -d '[:space:]')"
         if [ -n "$existing_addr" ]; then
             if contract_has_code "$existing_addr"; then
                 echo "  Collateral contract verified at ${existing_addr}"
@@ -287,9 +287,9 @@ deploy_collateral() {
     fi
 
     local contract_addr
-    contract_addr="$(awk -F= '/^CONTRACT_ADDRESS=/ {print $2}' "$env_file" | tr -d '[:space:]')"
+    contract_addr="$(awk -F= '/^BASILICA_COLLATERAL_CONTRACT_ADDRESS=/ {print $2}' "$env_file" | tr -d '[:space:]')"
     if [ -z "$contract_addr" ]; then
-        echo "  WARNING: CONTRACT_ADDRESS not found in ${env_file} after deploy"
+        echo "  WARNING: BASILICA_COLLATERAL_CONTRACT_ADDRESS not found in ${env_file} after deploy"
         return 0
     fi
 
