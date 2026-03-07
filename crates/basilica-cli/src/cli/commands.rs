@@ -213,14 +213,6 @@ pub enum Commands {
         /// Path to file containing EVM private key (hex).
         #[arg(long, global = true, value_hint = ValueHint::FilePath)]
         key_file: Option<PathBuf>,
-
-        /// Network: mainnet, testnet, local. Overrides config.
-        #[arg(long, global = true)]
-        network: Option<String>,
-
-        /// Contract address override.
-        #[arg(long, global = true)]
-        contract_address: Option<String>,
     },
 }
 
@@ -353,11 +345,7 @@ pub enum VolumeAction {
 #[derive(Subcommand, Debug, Clone)]
 pub enum CollateralAction {
     /// Show EVM wallet's TAO balance and alpha staked balance
-    Balance {
-        /// Hotkey where alpha is staked (32-byte hex, with or without 0x prefix)
-        #[arg(long)]
-        alpha_hotkey: Option<String>,
-    },
+    Balance,
 
     /// Deposit alpha to the collateral contract for a node
     Deposit {
@@ -368,10 +356,6 @@ pub enum CollateralAction {
         /// IP address of the node (used to derive the on-chain node ID)
         #[arg(long)]
         node_ip: String,
-
-        /// Hotkey where alpha is staked (32-byte hex)
-        #[arg(long)]
-        alpha_hotkey: Option<String>,
 
         /// Amount of alpha to deposit (human-readable, e.g. 5.0)
         #[arg(long)]
