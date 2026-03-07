@@ -1,6 +1,6 @@
 [package]
 name = "basilica-sdk-python"
-version = "0.20.2"
+version = "0.22.0"
 edition = "2021"
 authors = ["Basilica Team"]
 description = "Python bindings for the Basilica SDK"

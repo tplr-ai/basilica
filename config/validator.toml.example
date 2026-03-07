@@ -24,22 +24,15 @@ external_ip = "YOUR_PUBLIC_IP_HERE"
 
 [verification]
 max_concurrent_verifications = 50
-max_concurrent_full_validations = 1  # Limit resource-intensive full validations to 1 at a time
+max_concurrent_full_validations = 25
 min_score_threshold = 0.1
 verification_interval = { secs = 600 }
 challenge_timeout = { secs = 120 }
-retry_attempts = 3
-retry_delay = { secs = 5 }
 use_dynamic_discovery = true
 discovery_timeout = { secs = 30 }
 fallback_to_static = true
 cache_miner_info_ttl = { secs = 300 }
-
-# Worker Queue Configuration (Advanced)
-# Enable decoupled validation execution for better scalability
-# When enabled, validations are processed asynchronously by worker pools
-# This improves throughput but uses more memory
-enable_worker_queue = false  # Set to true to enable worker queue
+enable_worker_queue = false  # Enable for decoupled async validation execution
 
 [verification.binary_validation]
 enabled = true
@@ -65,44 +58,30 @@ output_format = "json"
 # Maximum storage PoW duration in milliseconds (validates storage I/O performance)
 # max_storage_duration_ms = 5000
 
-[ssh_validation]
-enabled = true
-timeout = { secs = 60 }
-max_file_size = "10MB"
-allowed_commands = ["gpu-attestor", "nvidia-smi"]
-temp_dir = "/tmp/basilica-validation"
+[verification.docker_validation]
+docker_image = "nvidia/cuda:12.8.0-runtime-ubuntu22.04"
+pull_timeout_secs = 2400
 
-[scoring]
-gpu_weight = 0.4
-cpu_weight = 0.2
-memory_weight = 0.2
-network_weight = 0.1
-reliability_weight = 0.1
+[verification.storage_validation]
+min_required_storage_bytes = 109951162777  # 0.1TB in bytes
 
 [metrics]
 enabled = true
+retention_period = { secs = 604800 }
+collection_interval = { secs = 30 }
+
+[metrics.prometheus]
 host = "0.0.0.0"
 port = 9090
 path = "/metrics"
-retention_period = { secs = 604800 }
-
-[logging]
-level = "info"  # Options: "debug", "info", "warn", "error"
-format = "json"
-output = "./validator.log"
-max_file_size = 104857600
-max_files = 10
 
 [api]
-enabled = true
-swagger_enabled = true
-cors_enabled = true
-cors_origins = ["*"]
-rate_limit = 100
+# api_key = "YOUR_API_KEY"  # Optional external authentication key
+max_body_size = 1048576      # 1MB
+bind_address = "0.0.0.0:8080"
 
 [storage]
 data_dir = "/opt/basilica/data"
-
 
 [ssh_session]
 ssh_key_directory = "/opt/basilica/data/ssh_keys"
@@ -113,7 +92,7 @@ rental_session_duration = 3600
 key_cleanup_interval = { secs = 60, nanos = 0 }
 enable_automated_sessions = true
 max_concurrent_sessions = 5
-session_rate_limit = 200
+session_rate_limit = 20
 enable_audit_logging = true
 audit_log_path = "/opt/basilica/data/ssh_audit.log"
 ssh_connection_timeout = { secs = 30, nanos = 0 }
@@ -140,12 +119,15 @@ min_miners_per_category = 1
 # This prevents replay attacks by incrementing with each weight set
 weight_version_key = 0
 
-
 # GPU model allocation percentages
 # These percentages determine how emissions
 # are distributed across GPU categories
 # Must sum to exactly 100.0
 [emission.gpu_allocations]
-A100 = { weight = 100.0, min_gpu_count = 1, min_gpu_vram = 1 }
-# H100 = { weight = 12.0, min_gpu_count = 1, min_gpu_vram = 1 }
-# B200 = { weight = 80.0, min_gpu_count = 8, min_gpu_vram = 1 }
+A100 = { weight = 10.0, min_gpu_count = 8, min_gpu_vram = 1 }
+H100 = { weight = 20.0, min_gpu_count = 8, min_gpu_vram = 1 }
+H200 = { weight = 20.0, min_gpu_count = 8, min_gpu_vram = 1 }
+B200 = { weight = 50.0, min_gpu_count = 8, min_gpu_vram = 1 }
+
+[bid_grpc]
+listen_address = "0.0.0.0:50052"

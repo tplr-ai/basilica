@@ -64,6 +64,7 @@ services:
     ports:
       - "8080:8080"   # API
       - "9090:9090"   # Metrics
+      - "50052:50052" # Bidding gRPC
     networks:
       basilica-localnet:
         ipv4_address: 172.28.0.20

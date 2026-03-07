@@ -323,19 +323,40 @@ fn build_openclaw_storage() -> StorageSpec {
 }
 
 fn build_openclaw_health_check() -> HealthCheckConfig {
-    let probe = ProbeConfig {
+    let liveness = ProbeConfig {
         path: "/".to_string(),
         port: Some(OPENCLAW_PORT as u16),
-        initial_delay_seconds: 30,
+        initial_delay_seconds: 10,
         period_seconds: 10,
         timeout_seconds: 5,
         failure_threshold: 3,
     };
 
+    let readiness = ProbeConfig {
+        path: "/".to_string(),
+        port: Some(OPENCLAW_PORT as u16),
+        initial_delay_seconds: 5,
+        period_seconds: 5,
+        timeout_seconds: 5,
+        failure_threshold: 2,
+    };
+
+    // 5s period * 36 failures = 180s (3 min) max startup window.
+    // Covers: FUSE wait (60s) + config write + gateway start + proxy start.
+    // Liveness/readiness probes are suspended until startup probe passes.
+    let startup = ProbeConfig {
+        path: "/".to_string(),
+        port: Some(OPENCLAW_PORT as u16),
+        initial_delay_seconds: 5,
+        period_seconds: 5,
+        timeout_seconds: 5,
+        failure_threshold: 36,
+    };
+
     HealthCheckConfig {
-        liveness: Some(probe.clone()),
-        readiness: Some(probe),
-        startup: None,
+        liveness: Some(liveness),
+        readiness: Some(readiness),
+        startup: Some(startup),
     }
 }
 
