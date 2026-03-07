@@ -56,11 +56,10 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             amount,
             token,
             hotkey,
-            netuid,
             yes,
         } => {
             let params = resolve_params(key_file, hotkey.as_deref())?;
-            handle_send(&params, to, *amount, *token, netuid, *yes).await
+            handle_send(&params, to, *amount, *token, *yes).await
         }
     }
 }
@@ -547,7 +546,6 @@ async fn handle_send(
     to: &str,
     amount: f64,
     token: SendToken,
-    netuid: &Option<u16>,
     yes: bool,
 ) -> Result<(), CliError> {
     let destination = parse_ss58_address(to)?;
@@ -595,8 +593,9 @@ async fn handle_send(
         }
         SendToken::Alpha => {
             let hotkey = require_hotkey(params)?;
-            let netuid = netuid
-                .ok_or_else(|| eyre!("--netuid is required for alpha transfers"))?;
+            let netuid = collateral_contract::netuid(&params.network_config)
+                .await
+                .map_err(|e| eyre!("Failed to get netuid: {}", e))?;
             let amount_rao = alpha_to_rao(amount)?;
 
             if !yes {

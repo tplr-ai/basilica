@@ -418,10 +418,6 @@ pub enum CollateralAction {
         #[arg(long)]
         hotkey: Option<String>,
 
-        /// Subnet UID for alpha transfer (required for alpha)
-        #[arg(long)]
-        netuid: Option<u16>,
-
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
         yes: bool,
