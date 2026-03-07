@@ -181,11 +181,10 @@ mod tests {
         });
 
         // Test denyReclaimRequest (trustee only)
-        let deny_tx = contract.denyReclaimRequest(
-            reclaim_id,
-            url.to_owned(),
-            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
-        );
+        let url = "https://example.com/proof".to_string();
+        let url_checksum = [0u8; 32];
+        let deny_tx =
+            contract.denyReclaimRequest(reclaim_id, url, FixedBytes::from_slice(&url_checksum));
         let deny_receipt = deny_tx.send().await?.get_receipt().await?;
 
         // Check for Denied event

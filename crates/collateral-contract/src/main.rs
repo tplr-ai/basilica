@@ -68,12 +68,6 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
-        /// URL for proof of reclaim
-        #[arg(long)]
-        url: String,
-        /// SHA-256 checksum of URL content as hex string (32 bytes)
-        #[arg(long)]
-        url_content_sha256: String,
     },
     /// Finalize a reclaim request
     FinalizeReclaim {
@@ -260,11 +254,8 @@ async fn handle_tx_command(
             private_key,
             hotkey,
             node_id,
-            url,
-            url_content_sha256,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
-            let checksum = parse_sha256_checksum(&url_content_sha256)?;
             let node_uuid = Uuid::parse_str(&node_id)?;
 
             println!(
@@ -275,8 +266,6 @@ async fn handle_tx_command(
                 &private_key,
                 hotkey_bytes,
                 node_uuid.into_bytes(),
-                &url,
-                checksum,
                 network_config,
             )
             .await?;

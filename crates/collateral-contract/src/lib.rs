@@ -1,7 +1,7 @@
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy_primitives::{address, Address, FixedBytes, U256};
 use alloy_provider::{Provider, ProviderBuilder};
-use alloy_sol_types::sol;
+use alloy_sol_types::{sol, SolInterface};
 pub mod config;
 pub mod proxy;
 
@@ -98,6 +98,87 @@ impl
     }
 }
 
+/// Decode raw hex revert data into a human-readable error message.
+pub fn decode_revert_data(hex_data: &str) -> Option<String> {
+    let hex_data = hex_data.strip_prefix("0x").unwrap_or(hex_data);
+    let bytes = alloy_primitives::hex::decode(hex_data).ok()?;
+    let err = CollateralUpgradeable::CollateralUpgradeableErrors::abi_decode(&bytes).ok()?;
+    Some(describe_error(&err))
+}
+
+fn describe_error(err: &CollateralUpgradeable::CollateralUpgradeableErrors) -> String {
+    use CollateralUpgradeable::CollateralUpgradeableErrors::*;
+    match err {
+        AmountZero(_) => "Deposit amount must be greater than zero".into(),
+        InsufficientAmount(_) => "Amount is below the minimum required collateral".into(),
+        NodeNotOwned(_) => "This node is registered to a different miner".into(),
+        BeforeDenyTimeout(_) => "Cannot finalize yet — deny timeout has not passed".into(),
+        PastDenyTimeout(_) => "Cannot deny — deny timeout has already passed".into(),
+        ReclaimNotFound(_) => "No reclaim request found with this ID".into(),
+        TransferFailed(_) => "TAO transfer failed".into(),
+        InsufficientCollateralForSlash(_) => {
+            "Not enough collateral to cover the slash amount".into()
+        }
+        InvalidAlphaColdkey(_) => "Invalid alpha coldkey for this operation".into(),
+        MinerMustBeEOA(_) => {
+            "Miner address must be an externally owned account, not a contract".into()
+        }
+        TaoDepositsDisabled(_) => "TAO deposits are currently disabled".into(),
+        AlphaDepositsDisabled(_) => "Alpha deposits are currently disabled".into(),
+        InvalidDepositMethod(_) => {
+            "Cannot deposit via fallback or receive — use the deposit function".into()
+        }
+        AddressMappingPrecompileCallFailed(_) => "Address mapping precompile call failed".into(),
+        AddressMappingPrecompileInvalidResponse(_) => {
+            "Address mapping precompile returned invalid response".into()
+        }
+        InvalidDerivedContractColdkey(_) => "Contract coldkey derivation returned zero".into(),
+        InvalidDerivedOwnerColdkey(_) => "Owner coldkey derivation returned zero".into(),
+        TrusteeAddressZero(_) => "Trustee address cannot be zero".into(),
+        AdminAddressZero(_) => "Admin address cannot be zero".into(),
+        ValidatorHotkeyZero(_) => "Validator hotkey cannot be zero".into(),
+        MinCollateralIncreaseZero(_) => "Minimum collateral increase cannot be zero".into(),
+        MinAlphaCollateralIncreaseZero(_) => {
+            "Minimum alpha collateral increase cannot be zero".into()
+        }
+        DecisionTimeoutZero(_) => "Decision timeout cannot be zero".into(),
+        ContractColdkeyZero(_) => "Contract coldkey cannot be zero".into(),
+        NewTrusteeAddressZero(_) => "New trustee address cannot be zero".into(),
+        DepositAlphaCallFailed(_) => "Alpha deposit precompile call failed".into(),
+        ContractStakeDidNotIncrease(_) => "Contract stake did not increase after deposit".into(),
+        MoveStakeCallFailed(_) => "Move stake precompile call failed".into(),
+        ContractStakeTooLowForWithdraw(_) => {
+            "Contract does not have enough staked alpha to withdraw".into()
+        }
+        WithdrawAlphaCallFailed(_) => "Alpha withdrawal precompile call failed".into(),
+        BurnRegisterCallFailed(_) => "Burn register precompile call failed".into(),
+        TrusteeRoleDirectModificationForbidden(_) => {
+            "Cannot modify trustee role directly — use updateTrustee".into()
+        }
+        other => {
+            let hex = alloy_primitives::hex::encode(SolInterface::abi_encode(other));
+            format!("Contract error (selector 0x{})", &hex[..8.min(hex.len())])
+        }
+    }
+}
+
+/// Extract hex revert data from an error message, decode it, and return an enriched error.
+pub fn decode_contract_revert(err: anyhow::Error) -> anyhow::Error {
+    let msg = err.to_string();
+    let Some(start) = msg.find("data: \"0x") else {
+        return err;
+    };
+    let hex_start = start + "data: \"".len();
+    let Some(end) = msg[hex_start..].find('"') else {
+        return err;
+    };
+    let hex_data = &msg[hex_start..hex_start + end];
+    match decode_revert_data(hex_data) {
+        Some(decoded) => anyhow::anyhow!("Contract reverted: {decoded}"),
+        None => err,
+    }
+}
+
 // get the collateral contract instance with custom network config
 pub async fn get_collateral(
     private_key: &str,
@@ -139,7 +220,10 @@ pub async fn deposit(
             alpha_amount,
         )
         .value(U256::ZERO);
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     let receipt = tx.get_receipt().await?;
     tracing::info!("{receipt:?}");
     Ok(())
@@ -164,7 +248,10 @@ pub async fn deposit_with_config(
             alpha_amount,
         )
         .value(U256::ZERO);
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     let receipt = tx.get_receipt().await?;
     tracing::info!("{receipt:?}");
     Ok(())
@@ -182,7 +269,10 @@ pub async fn reclaim_collateral(
         FixedBytes::from_slice(&hotkey),
         FixedBytes::from_slice(&node_id),
     );
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     let receipt = tx.get_receipt().await?;
 
     // Decode ReclaimProcessStarted event from receipt logs
@@ -219,7 +309,10 @@ pub async fn finalize_reclaim(
     let contract = get_collateral(private_key, network_config).await?;
 
     let tx = contract.finalizeReclaim(reclaim_request_id);
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     tx.get_receipt().await?;
     Ok(())
 }
@@ -238,7 +331,10 @@ pub async fn deny_reclaim(
         url.to_string(),
         FixedBytes::from_slice(&url_content_sha256),
     );
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     tx.get_receipt().await?;
     Ok(())
 }
@@ -263,7 +359,10 @@ pub async fn slash_collateral(
         url.to_string(),
         FixedBytes::from_slice(&url_content_sha256),
     );
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     tx.get_receipt().await?;
     Ok(())
 }
@@ -275,7 +374,10 @@ pub async fn burn_register(
     let contract = get_collateral(private_key, network_config).await?;
 
     let tx = contract.burnRegister();
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     tx.get_receipt().await?;
     Ok(())
 }
@@ -288,7 +390,10 @@ pub async fn update_tao_deposits_enabled(
     let contract = get_collateral(private_key, network_config).await?;
 
     let tx = contract.updateTaoDepositsEnabled(enabled);
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     tx.get_receipt().await?;
     Ok(())
 }
@@ -301,7 +406,10 @@ pub async fn update_alpha_deposits_enabled(
     let contract = get_collateral(private_key, network_config).await?;
 
     let tx = contract.updateAlphaDepositsEnabled(enabled);
-    let tx = tx.send().await?;
+    let tx = tx
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
     tx.get_receipt().await?;
     Ok(())
 }
@@ -733,4 +841,50 @@ pub async fn derive_coldkey(
     let mapping = IAddressMapping::new(ADDRESS_MAPPING_PRECOMPILE, provider);
     let result = mapping.addressMapping(evm_address).call().await?;
     Ok(result.into())
+}
+
+#[cfg(test)]
+mod decode_tests {
+    use super::*;
+    use alloy_sol_types::SolError;
+
+    #[test]
+    fn test_decode_known_error() {
+        let encoded = SolError::abi_encode(&CollateralUpgradeable::NodeNotOwned {});
+        let hex = alloy_primitives::hex::encode(&encoded);
+        let result = decode_revert_data(&hex);
+        assert!(result.unwrap().contains("different miner"));
+    }
+
+    #[test]
+    fn test_decode_with_0x_prefix() {
+        let encoded = SolError::abi_encode(&CollateralUpgradeable::AmountZero {});
+        let hex = format!("0x{}", alloy_primitives::hex::encode(&encoded));
+        let result = decode_revert_data(&hex);
+        assert!(result.unwrap().contains("greater than zero"));
+    }
+
+    #[test]
+    fn test_decode_contract_revert_rewrites_message() {
+        let hex = alloy_primitives::hex::encode(SolError::abi_encode(
+            &CollateralUpgradeable::AmountZero {},
+        ));
+        let err = anyhow::anyhow!("error code -32603: revert, data: \"0x{hex}\"");
+        let decoded = decode_contract_revert(err);
+        assert!(decoded.to_string().contains("greater than zero"));
+        assert!(!decoded.to_string().contains("0x"));
+    }
+
+    #[test]
+    fn test_unknown_selector_returns_none() {
+        assert!(decode_revert_data("deadbeef").is_none());
+    }
+
+    #[test]
+    fn test_decode_contract_revert_passes_through_non_revert() {
+        let original = "connection refused";
+        let err = anyhow::anyhow!(original.to_string());
+        let result = decode_contract_revert(err);
+        assert_eq!(result.to_string(), original);
+    }
 }
