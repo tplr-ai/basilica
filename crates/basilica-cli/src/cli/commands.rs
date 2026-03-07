@@ -393,8 +393,8 @@ pub enum CollateralAction {
         node_id: Option<String>,
     },
 
-    /// Initiate collateral reclaim (withdraw)
-    Withdraw {
+    /// Initiate collateral reclaim
+    Reclaim {
         /// Miner's Bittensor hotkey (32-byte hex)
         #[arg(long)]
         hotkey: Option<String>,

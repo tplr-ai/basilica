@@ -67,10 +67,7 @@ pub async fn handle_collateral(
             )?;
             handle_status(&params, node_id.as_deref()).await
         }
-        CollateralAction::Withdraw {
-            hotkey,
-            node_id,
-        } => {
+        CollateralAction::Reclaim { hotkey, node_id } => {
             let params = resolve_params(
                 key_file,
                 network,
@@ -79,7 +76,7 @@ pub async fn handle_collateral(
                 None,
                 config,
             )?;
-            handle_withdraw(&params, node_id).await
+            handle_reclaim(&params, node_id).await
         }
         CollateralAction::Finalize { request_id } => {
             let params = resolve_params(key_file, network, contract_address, None, None, config)?;
@@ -318,6 +315,24 @@ async fn handle_deposit(
 }
 
 #[derive(Tabled)]
+struct ReclaimRow {
+    #[tabled(rename = "Request ID")]
+    request_id: String,
+    #[tabled(rename = "Hotkey")]
+    hotkey: String,
+    #[tabled(rename = "Node ID")]
+    node_id: String,
+    #[tabled(rename = "TAO")]
+    tao_amount: String,
+    #[tabled(rename = "Alpha")]
+    alpha_amount: String,
+    #[tabled(rename = "Finalizable At")]
+    finalizable_at: String,
+    #[tabled(rename = "Status")]
+    status: String,
+}
+
+#[derive(Tabled)]
 struct CollateralRow {
     #[tabled(rename = "Hotkey")]
     hotkey: String,
@@ -374,44 +389,100 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
 
         if filtered.is_empty() {
             println!("No collateral found.");
-            return Ok(());
-        }
+        } else {
+            let rows: Vec<CollateralRow> = filtered
+                .iter()
+                .map(|n| {
+                    let node_uuid = uuid::Uuid::from_bytes(n.node_id);
+                    CollateralRow {
+                        hotkey: format!(
+                            "0x{}..{}",
+                            &hex::encode(&n.hotkey[..2]),
+                            &hex::encode(&n.hotkey[30..])
+                        ),
+                        node_id: node_uuid.to_string(),
+                        miner: format!("{}", n.miner),
+                        tao_collateral: format!("{:.4} TAO", wei_to_tao(n.tao_collateral)),
+                        alpha_collateral: format!("{:.4} alpha", rao_to_alpha(n.alpha_collateral)),
+                    }
+                })
+                .collect();
 
-        let rows: Vec<CollateralRow> = filtered
+            println!("{}", style("Collateral Status").bold());
+            println!("{}", Table::new(rows));
+        }
+    }
+
+    // Pending reclaims section
+    let reclaim_spinner = create_spinner("Querying pending reclaims...");
+
+    let all_reclaims = collateral_contract::get_all_reclaims(&params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to query reclaims: {}", e))?;
+
+    complete_spinner_and_clear(reclaim_spinner);
+
+    let filtered_reclaims: Vec<_> = if let Some(ref hk) = params.hotkey {
+        let hotkey_bytes = parse_hotkey(hk)?;
+        all_reclaims
+            .into_iter()
+            .filter(|r| r.hotkey == hotkey_bytes)
+            .collect()
+    } else {
+        all_reclaims
+    };
+
+    println!();
+    if filtered_reclaims.is_empty() {
+        println!("No pending reclaims.");
+    } else {
+        let now = chrono::Utc::now();
+        let rows: Vec<ReclaimRow> = filtered_reclaims
             .iter()
-            .map(|n| {
-                let node_uuid = uuid::Uuid::from_bytes(n.node_id);
-                CollateralRow {
+            .map(|r| {
+                let node_uuid = uuid::Uuid::from_bytes(r.node_id);
+                let finalizable_at =
+                    chrono::DateTime::from_timestamp(r.deny_timeout as i64, 0).unwrap_or_default();
+                let remaining = finalizable_at.signed_duration_since(now);
+
+                let status = if remaining.num_seconds() <= 0 {
+                    style("Ready").green().to_string()
+                } else {
+                    let hours = remaining.num_hours();
+                    let mins = remaining.num_minutes() % 60;
+                    format!("Waiting ({}h {}m remaining)", hours, mins)
+                };
+
+                ReclaimRow {
+                    request_id: r.reclaim_request_id.to_string(),
                     hotkey: format!(
                         "0x{}..{}",
-                        &hex::encode(&n.hotkey[..2]),
-                        &hex::encode(&n.hotkey[30..])
+                        &hex::encode(&r.hotkey[..2]),
+                        &hex::encode(&r.hotkey[30..])
                     ),
                     node_id: node_uuid.to_string(),
-                    miner: format!("{}", n.miner),
-                    tao_collateral: format!("{:.4} TAO", wei_to_tao(n.tao_collateral)),
-                    alpha_collateral: format!("{:.4} alpha", rao_to_alpha(n.alpha_collateral)),
+                    tao_amount: format!("{:.4} TAO", wei_to_tao(r.amount)),
+                    alpha_amount: format!("{:.4} alpha", rao_to_alpha(r.alpha_amount)),
+                    finalizable_at: finalizable_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+                    status,
                 }
             })
             .collect();
 
-        println!("{}", style("Collateral Status").bold());
+        println!("{}", style("Pending Reclaims").bold());
         println!("{}", Table::new(rows));
     }
 
     Ok(())
 }
 
-async fn handle_withdraw(
-    params: &CollateralParams,
-    node_id: &str,
-) -> Result<(), CliError> {
+async fn handle_reclaim(params: &CollateralParams, node_id: &str) -> Result<(), CliError> {
     let hotkey = require_hotkey(params)?;
     let node_id_bytes = parse_node_id(node_id)?;
 
     let spinner = create_spinner("Initiating collateral reclaim...");
 
-    collateral_contract::reclaim_collateral(
+    let reclaim_info = collateral_contract::reclaim_collateral(
         &params.private_key,
         hotkey,
         node_id_bytes,
@@ -425,6 +496,47 @@ async fn handle_withdraw(
         "{} Reclaim initiated for node {}",
         style("✓").green().bold(),
         node_id
+    );
+
+    let request_id = reclaim_info.reclaim_request_id;
+    let timeout_secs = reclaim_info.deny_timeout;
+    let finalizable_at =
+        chrono::DateTime::from_timestamp(timeout_secs as i64, 0).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let remaining = finalizable_at.signed_duration_since(now);
+
+    println!();
+    println!("{}", style("Reclaim Details").bold());
+    println!("  Request ID:      {}", request_id);
+    println!(
+        "  TAO amount:      {:.9} TAO",
+        wei_to_tao(reclaim_info.amount)
+    );
+    println!(
+        "  Alpha amount:    {:.9} alpha",
+        rao_to_alpha(reclaim_info.alpha_amount)
+    );
+    println!(
+        "  Finalizable at:  {} UTC",
+        finalizable_at.format("%Y-%m-%d %H:%M:%S")
+    );
+
+    if remaining.num_seconds() > 0 {
+        let hours = remaining.num_hours();
+        let mins = remaining.num_minutes() % 60;
+        println!("  Time remaining:  {}h {}m", hours, mins);
+    } else {
+        println!("  Time remaining:  {}", style("Ready to finalize").green());
+    }
+
+    println!();
+    println!(
+        "Run {} after the timeout to complete the reclaim.",
+        style(format!(
+            "basilica collateral finalize --request-id {}",
+            request_id
+        ))
+        .cyan()
     );
 
     Ok(())

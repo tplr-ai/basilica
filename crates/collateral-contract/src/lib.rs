@@ -175,7 +175,7 @@ pub async fn reclaim_collateral(
     hotkey: [u8; 32],
     node_id: [u8; 16],
     network_config: &CollateralNetworkConfig,
-) -> Result<(), anyhow::Error> {
+) -> Result<ReclaimInfo, anyhow::Error> {
     let contract = get_collateral(private_key, network_config).await?;
 
     let tx = contract.reclaimCollateral(
@@ -183,8 +183,32 @@ pub async fn reclaim_collateral(
         FixedBytes::from_slice(&node_id),
     );
     let tx = tx.send().await?;
-    tx.get_receipt().await?;
-    Ok(())
+    let receipt = tx.get_receipt().await?;
+
+    // Decode ReclaimProcessStarted event from receipt logs
+    for log in receipt.inner.logs() {
+        if let Ok(event) = log.log_decode::<CollateralUpgradeable::ReclaimProcessStarted>() {
+            let e = &event.inner.data;
+            // reclaimRequestId is topic[1] (indexed)
+            let request_id = U256::from_be_bytes(log.topics()[1].0);
+            return Ok(ReclaimInfo {
+                reclaim_request_id: request_id,
+                hotkey,
+                node_id,
+                miner: e.miner,
+                amount: e.amount,
+                alpha_coldkey: {
+                    let mut ck = [0u8; 32];
+                    ck.copy_from_slice(e.alphaColdkey.as_slice());
+                    ck
+                },
+                alpha_amount: e.alphaAmount,
+                deny_timeout: e.expirationTime,
+            });
+        }
+    }
+
+    anyhow::bail!("ReclaimProcessStarted event not found in transaction receipt")
 }
 
 pub async fn finalize_reclaim(
