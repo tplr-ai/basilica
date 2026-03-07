@@ -6,7 +6,7 @@ use std::str::FromStr;
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
-use crate::cli::commands::CollateralAction;
+use crate::cli::commands::{CollateralAction, SendToken};
 use crate::error::CliError;
 use crate::progress::{complete_spinner_and_clear, create_spinner};
 
@@ -26,6 +26,10 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             let params = resolve_params(key_file, None)?;
             handle_balance(&params).await
         }
+        CollateralAction::Receive => {
+            let params = resolve_params(key_file, None)?;
+            handle_receive(&params).await
+        }
         CollateralAction::Deposit {
             hotkey,
             node_ip,
@@ -39,13 +43,24 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             let params = resolve_params(key_file, hotkey.as_deref())?;
             handle_status(&params, node_id.as_deref()).await
         }
-        CollateralAction::Reclaim { hotkey, node_id } => {
+        CollateralAction::ReclaimStart { hotkey, node_id } => {
             let params = resolve_params(key_file, Some(hotkey))?;
             handle_reclaim(&params, node_id).await
         }
-        CollateralAction::Finalize { request_id } => {
+        CollateralAction::ReclaimFinalize { request_id } => {
             let params = resolve_params(key_file, None)?;
             handle_finalize(&params, request_id).await
+        }
+        CollateralAction::Send {
+            to,
+            amount,
+            token,
+            hotkey,
+            netuid,
+            yes,
+        } => {
+            let params = resolve_params(key_file, hotkey.as_deref())?;
+            handle_send(&params, to, *amount, *token, netuid, *yes).await
         }
     }
 }
@@ -135,6 +150,11 @@ fn rao_to_alpha(rao: U256) -> f64 {
     rao_u128 as f64 / 1e9
 }
 
+fn wei_to_tao(wei: U256) -> f64 {
+    let wei_u128: u128 = wei.try_into().unwrap_or(u128::MAX);
+    wei_u128 as f64 / 1e18
+}
+
 fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
     let hk = params
         .hotkey
@@ -164,6 +184,10 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
 
     let evm_address = evm_address_from_private_key(&params.private_key)?;
 
+    let tao_balance = collateral_contract::get_tao_balance(evm_address, &params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to get TAO balance: {}", e))?;
+
     // Alpha balance (requires alpha_hotkey and the contract's netuid)
     let alpha_balance = if params.alpha_hotkey.is_some() {
         let alpha_hotkey = require_alpha_hotkey(params)?;
@@ -190,6 +214,7 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
 
     println!("{}", style("Collateral Balances").bold());
     println!("  EVM Address:   {}", evm_address);
+    println!("  TAO Balance:   {:.4} TAO", wei_to_tao(tao_balance));
     if let Some(alpha) = alpha_balance {
         println!("  Alpha Staked:  {:.2} alpha", rao_to_alpha(alpha));
     } else {
@@ -198,6 +223,33 @@ async fn handle_balance(params: &CollateralParams) -> Result<(), CliError> {
             style("N/A").dim()
         );
     }
+
+    Ok(())
+}
+
+async fn handle_receive(params: &CollateralParams) -> Result<(), CliError> {
+    use sp_core::crypto::{AccountId32, Ss58Codec};
+
+    let spinner = create_spinner("Deriving SS58 address...");
+
+    let evm_address = evm_address_from_private_key(&params.private_key)?;
+    let coldkey_bytes = collateral_contract::derive_coldkey(evm_address, &params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to derive coldkey: {}", e))?;
+
+    let account = AccountId32::new(coldkey_bytes);
+    let ss58 = account.to_ss58check();
+
+    complete_spinner_and_clear(spinner);
+
+    println!("{}", style("Receive Address").bold());
+    println!("  EVM Address:  {}", evm_address);
+    println!("  SS58 Address: {}", ss58);
+    println!();
+    println!(
+        "Send TAO or alpha to {} to fund this EVM wallet.",
+        style(&ss58).cyan()
+    );
 
     Ok(())
 }
@@ -468,6 +520,127 @@ async fn handle_finalize(params: &CollateralParams, request_id: &str) -> Result<
         style("✓").green().bold(),
         request_id
     );
+
+    Ok(())
+}
+
+fn parse_ss58_address(ss58: &str) -> Result<[u8; 32], CliError> {
+    use sp_core::crypto::{AccountId32, Ss58Codec};
+    let account =
+        AccountId32::from_ss58check(ss58).map_err(|e| eyre!("Invalid SS58 address: {:?}", e))?;
+    Ok(account.into())
+}
+
+fn tao_to_wei(amount: f64) -> Result<U256, CliError> {
+    if amount <= 0.0 {
+        return Err(eyre!("Amount must be positive, got {}", amount).into());
+    }
+    let wei = (amount * 1e18).round() as u128;
+    if wei == 0 {
+        return Err(eyre!("Amount too small").into());
+    }
+    Ok(U256::from(wei))
+}
+
+async fn handle_send(
+    params: &CollateralParams,
+    to: &str,
+    amount: f64,
+    token: SendToken,
+    netuid: &Option<u16>,
+    yes: bool,
+) -> Result<(), CliError> {
+    let destination = parse_ss58_address(to)?;
+
+    match token {
+        SendToken::Tao => {
+            let amount_wei = tao_to_wei(amount)?;
+
+            if !yes {
+                println!("{}", style("Send TAO Summary").bold());
+                println!("  Destination: {}", to);
+                println!("  Amount:      {:.4} TAO", amount);
+                println!();
+
+                let confirm = dialoguer::Confirm::new()
+                    .with_prompt("Proceed with TAO transfer?")
+                    .default(false)
+                    .interact()
+                    .map_err(|e| eyre!("Prompt error: {}", e))?;
+
+                if !confirm {
+                    println!("Transfer cancelled.");
+                    return Ok(());
+                }
+            }
+
+            let spinner = create_spinner("Sending TAO...");
+
+            collateral_contract::send_tao(
+                &params.private_key,
+                destination,
+                amount_wei,
+                &params.network_config,
+            )
+            .await
+            .map_err(|e| eyre!("TAO transfer failed: {}", e))?;
+
+            complete_spinner_and_clear(spinner);
+            println!(
+                "{} Sent {:.4} TAO to {}",
+                style("✓").green().bold(),
+                amount,
+                to
+            );
+        }
+        SendToken::Alpha => {
+            let hotkey = require_hotkey(params)?;
+            let netuid = netuid
+                .ok_or_else(|| eyre!("--netuid is required for alpha transfers"))?;
+            let amount_rao = alpha_to_rao(amount)?;
+
+            if !yes {
+                println!("{}", style("Send Alpha Summary").bold());
+                println!("  Destination: {}", to);
+                println!("  Hotkey:      0x{}", hex::encode(hotkey));
+                println!("  Netuid:      {}", netuid);
+                println!("  Amount:      {:.2} alpha", amount);
+                println!();
+
+                let confirm = dialoguer::Confirm::new()
+                    .with_prompt("Proceed with alpha transfer?")
+                    .default(false)
+                    .interact()
+                    .map_err(|e| eyre!("Prompt error: {}", e))?;
+
+                if !confirm {
+                    println!("Transfer cancelled.");
+                    return Ok(());
+                }
+            }
+
+            let spinner = create_spinner("Sending alpha...");
+
+            collateral_contract::send_alpha(
+                &params.private_key,
+                destination,
+                hotkey,
+                netuid,
+                amount_rao,
+                &params.network_config,
+            )
+            .await
+            .map_err(|e| eyre!("Alpha transfer failed: {}", e))?;
+
+            complete_spinner_and_clear(spinner);
+            println!(
+                "{} Sent {:.2} alpha to {}",
+                style("✓").green().bold(),
+                amount,
+                to
+            );
+        }
+    }
 
     Ok(())
 }

@@ -79,5 +79,6 @@ collateral-contract = { path = "../collateral-contract" }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 hex = { workspace = true }
+sp-core = { workspace = true }
 
 [dev-dependencies]

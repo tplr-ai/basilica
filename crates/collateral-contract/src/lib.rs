@@ -770,12 +770,13 @@ pub async fn get_active_reclaim_count(
     Ok(count)
 }
 
-// Precompile bindings for balance queries
+// Precompile bindings for balance queries and transfers
 sol! {
     #[allow(missing_docs)]
     #[sol(rpc)]
     interface IStakingV2 {
         function getStake(bytes32 hotkey, bytes32 coldkey, uint256 netuid) external view returns (uint256);
+        function transferStake(bytes32 destination_coldkey, bytes32 hotkey, uint256 origin_netuid, uint256 destination_netuid, uint256 amount) external payable;
     }
 
     #[allow(missing_docs)]
@@ -783,10 +784,17 @@ sol! {
     interface IAddressMapping {
         function addressMapping(address evmAddress) external view returns (bytes32);
     }
+
+    #[allow(missing_docs)]
+    #[sol(rpc)]
+    interface IBalanceTransfer {
+        function transfer(bytes32 data) external payable;
+    }
 }
 
 const STAKING_V2_PRECOMPILE: Address = address!("0x0000000000000000000000000000000000000805");
 const ADDRESS_MAPPING_PRECOMPILE: Address = address!("0x000000000000000000000000000000000000080C");
+const BALANCE_TRANSFER_PRECOMPILE: Address = address!("0x0000000000000000000000000000000000000800");
 
 /// Derive an EVM address from a hex private key string.
 pub fn address_from_private_key(private_key: &str) -> Result<Address, anyhow::Error> {
@@ -827,6 +835,71 @@ pub async fn get_alpha_balance(
         .call()
         .await?;
     Ok(stake)
+}
+
+/// Send TAO from the EVM wallet to a substrate (SS58) destination.
+/// `destination` is the 32-byte public key decoded from the SS58 address.
+/// `amount_wei` is the TAO amount in wei (1e18 = 1 TAO).
+pub async fn send_tao(
+    private_key: &str,
+    destination: [u8; 32],
+    amount_wei: U256,
+    network_config: &CollateralNetworkConfig,
+) -> Result<(), anyhow::Error> {
+    let mut signer: PrivateKeySigner = private_key.parse()?;
+    signer.set_chain_id(Some(network_config.chain_id));
+
+    let provider = ProviderBuilder::new()
+        .wallet(signer)
+        .connect(&network_config.rpc_url)
+        .await?;
+
+    let precompile = IBalanceTransfer::new(BALANCE_TRANSFER_PRECOMPILE, provider);
+    let tx = precompile
+        .transfer(FixedBytes::from_slice(&destination))
+        .value(amount_wei)
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
+    tx.get_receipt().await?;
+    Ok(())
+}
+
+/// Send alpha from the EVM wallet to a substrate (SS58) destination coldkey.
+/// This calls `transferStake` on the StakingV2 precompile, transferring alpha
+/// ownership from the caller's coldkey to the destination coldkey.
+/// `amount_rao` is the alpha amount in RAO (1e9 = 1 alpha).
+pub async fn send_alpha(
+    private_key: &str,
+    destination_coldkey: [u8; 32],
+    hotkey: [u8; 32],
+    netuid: u16,
+    amount_rao: U256,
+    network_config: &CollateralNetworkConfig,
+) -> Result<(), anyhow::Error> {
+    let mut signer: PrivateKeySigner = private_key.parse()?;
+    signer.set_chain_id(Some(network_config.chain_id));
+
+    let provider = ProviderBuilder::new()
+        .wallet(signer)
+        .connect(&network_config.rpc_url)
+        .await?;
+
+    let staking = IStakingV2::new(STAKING_V2_PRECOMPILE, provider);
+    let netuid_u256 = U256::from(netuid);
+    let tx = staking
+        .transferStake(
+            FixedBytes::from_slice(&destination_coldkey),
+            FixedBytes::from_slice(&hotkey),
+            netuid_u256,
+            netuid_u256,
+            amount_rao,
+        )
+        .send()
+        .await
+        .map_err(|e| decode_contract_revert(e.into()))?;
+    tx.get_receipt().await?;
+    Ok(())
 }
 
 /// Derive the Substrate mirror coldkey (AccountId32) from an EVM address

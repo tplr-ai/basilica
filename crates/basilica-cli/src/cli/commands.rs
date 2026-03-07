@@ -347,6 +347,9 @@ pub enum CollateralAction {
     /// Show EVM wallet's TAO balance and alpha staked balance
     Balance,
 
+    /// Show the SS58 substrate address mapped to your EVM wallet (for receiving tokens)
+    Receive,
+
     /// Deposit alpha to the collateral contract for a node
     Deposit {
         /// Miner's Bittensor hotkey (32-byte hex)
@@ -378,7 +381,8 @@ pub enum CollateralAction {
     },
 
     /// Initiate collateral reclaim
-    Reclaim {
+    #[command(name = "reclaim-start")]
+    ReclaimStart {
         /// Miner's Bittensor hotkey (32-byte hex)
         #[arg(long)]
         hotkey: String,
@@ -389,11 +393,46 @@ pub enum CollateralAction {
     },
 
     /// Finalize a pending reclaim
-    Finalize {
+    #[command(name = "reclaim-finalize")]
+    ReclaimFinalize {
         /// Reclaim request ID (decimal number)
         #[arg(long)]
         request_id: String,
     },
+
+    /// Send TAO or alpha from EVM wallet to a substrate (SS58) address
+    Send {
+        /// Destination substrate wallet address (SS58 format)
+        #[arg(long)]
+        to: String,
+
+        /// Amount to send (human-readable, e.g. 5.0)
+        #[arg(long)]
+        amount: f64,
+
+        /// Token type to send
+        #[arg(long, value_enum)]
+        token: SendToken,
+
+        /// Hotkey for alpha transfer (32-byte hex, required for alpha)
+        #[arg(long)]
+        hotkey: Option<String>,
+
+        /// Subnet UID for alpha transfer (required for alpha)
+        #[arg(long)]
+        netuid: Option<u16>,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
+/// Token type for the `collateral send` command
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum SendToken {
+    Tao,
+    Alpha,
 }
 
 impl Commands {
