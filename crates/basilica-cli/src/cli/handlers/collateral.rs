@@ -1,6 +1,7 @@
 use alloy_primitives::{Address, U256};
 use color_eyre::eyre::eyre;
 use console::style;
+use dialoguer::{theme::ColorfulTheme, Input, Select};
 use std::path::Path;
 use std::str::FromStr;
 use tabled::settings::Style;
@@ -35,20 +36,20 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             amount,
             yes,
         } => {
-            let params = resolve_params(key_file, Some(hotkey))?;
-            handle_deposit(&params, node_ip, *amount, *yes).await
+            let params = resolve_params(key_file, hotkey.as_deref())?;
+            handle_deposit(&params, node_ip.as_deref(), *amount, *yes).await
         }
         CollateralAction::Status { hotkey, node_id } => {
             let params = resolve_params(key_file, hotkey.as_deref())?;
             handle_status(&params, node_id.as_deref()).await
         }
-        CollateralAction::ReclaimStart { hotkey, node_id } => {
-            let params = resolve_params(key_file, Some(hotkey))?;
-            handle_reclaim(&params, node_id).await
+        CollateralAction::ReclaimStart => {
+            let params = resolve_params(key_file, None)?;
+            handle_reclaim(&params).await
         }
         CollateralAction::ReclaimFinalize { request_id } => {
             let params = resolve_params(key_file, None)?;
-            handle_finalize(&params, request_id).await
+            handle_finalize(&params, request_id.as_deref()).await
         }
         CollateralAction::Send {
             to,
@@ -57,7 +58,7 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             yes,
         } => {
             let params = resolve_params(key_file, None)?;
-            handle_send(&params, to, *amount, *token, *yes).await
+            handle_send(&params, to.as_deref(), *amount, *token, *yes).await
         }
     }
 }
@@ -69,12 +70,12 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
 fn resolve_params(key_file: &Path, cli_hotkey: Option<&str>) -> Result<CollateralParams, CliError> {
     let private_key = read_private_key(key_file)?;
 
-    // Resolve network: env var → default ("mainnet")
+    // Resolve network: env var -> default ("mainnet")
     let network_str =
         std::env::var("BASILICA_COLLATERAL_NETWORK").unwrap_or_else(|_| "mainnet".to_string());
     let network: Network = network_str.parse().map_err(|e| eyre!("{}", e))?;
 
-    // Resolve contract address: env var → built-in default
+    // Resolve contract address: env var -> built-in default
     let contract_address = std::env::var("BASILICA_COLLATERAL_CONTRACT_ADDRESS").ok();
 
     let network_config = CollateralNetworkConfig::from_network(&network, contract_address, None)
@@ -159,6 +160,35 @@ fn evm_address_from_private_key(private_key: &str) -> Result<Address, CliError> 
         .map_err(|e| eyre!("Invalid private key: {}", e).into())
 }
 
+fn prompt_input(prompt: &str) -> Result<String, CliError> {
+    Input::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .interact_text()
+        .map_err(|e| eyre!("Prompt error: {}", e).into())
+}
+
+fn prompt_amount(prompt: &str) -> Result<f64, CliError> {
+    Input::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .validate_with(|input: &f64| {
+            if *input > 0.0 {
+                Ok(())
+            } else {
+                Err("Amount must be positive")
+            }
+        })
+        .interact_text()
+        .map_err(|e| eyre!("Prompt error: {}", e).into())
+}
+
+fn format_hotkey_short(hotkey: &[u8; 32]) -> String {
+    format!(
+        "0x{}..{}",
+        &hex::encode(&hotkey[..2]),
+        &hex::encode(&hotkey[30..])
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
@@ -230,22 +260,40 @@ async fn handle_receive(params: &CollateralParams) -> Result<(), CliError> {
 
 async fn handle_deposit(
     params: &CollateralParams,
-    ip: &str,
-    amount: f64,
+    ip: Option<&str>,
+    amount: Option<f64>,
     yes: bool,
 ) -> Result<(), CliError> {
-    let hotkey = require_hotkey(params)?;
+    // Prompt for missing params
+    let hotkey = match &params.hotkey {
+        Some(hk) => parse_hotkey(hk)?,
+        None => {
+            let hk = prompt_input("Miner's Bittensor hotkey (32-byte hex)")?;
+            parse_hotkey(&hk)?
+        }
+    };
+
+    let ip_str = match ip {
+        Some(ip) => ip.to_string(),
+        None => prompt_input("Node IP address")?,
+    };
+
+    let amount = match amount {
+        Some(a) => a,
+        None => prompt_amount("Amount of alpha to deposit")?,
+    };
+
     let alpha_hotkey = collateral_contract::validator_hotkey(&params.network_config)
         .await
         .map_err(|e| eyre!("Failed to get validator hotkey: {}", e))?;
-    let node_id_bytes = resolve_node_id_from_ip(ip)?;
+    let node_id_bytes = resolve_node_id_from_ip(&ip_str)?;
     let node_uuid = uuid::Uuid::from_bytes(node_id_bytes);
     let rao_amount = alpha_to_rao(amount)?;
 
     if !yes {
         println!("{}", style("Deposit Summary").bold());
         println!("  Hotkey:       0x{}", hex::encode(hotkey));
-        println!("  Node:         {} ({})", ip, node_uuid);
+        println!("  Node:         {} ({})", ip_str, node_uuid);
         println!("  Alpha Hotkey: 0x{}", hex::encode(alpha_hotkey));
         println!("  Amount:       {:.2} alpha", amount);
         println!();
@@ -280,7 +328,7 @@ async fn handle_deposit(
         "{} Deposited {:.2} alpha for node {} ({})",
         style("✓").green().bold(),
         amount,
-        ip,
+        ip_str,
         node_uuid
     );
 
@@ -350,11 +398,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
                 .map(|n| {
                     let node_uuid = uuid::Uuid::from_bytes(n.node_id);
                     CollateralRow {
-                        hotkey: format!(
-                            "0x{}..{}",
-                            &hex::encode(&n.hotkey[..2]),
-                            &hex::encode(&n.hotkey[30..])
-                        ),
+                        hotkey: format_hotkey_short(&n.hotkey),
                         node_id: node_uuid.to_string(),
                         miner: format!("{}", n.miner),
                         alpha_collateral: format!("{:.2} alpha", rao_to_alpha(n.alpha_collateral)),
@@ -399,11 +443,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
 
                 ReclaimRow {
                     request_id: r.reclaim_request_id.to_string(),
-                    hotkey: format!(
-                        "0x{}..{}",
-                        &hex::encode(&r.hotkey[..2]),
-                        &hex::encode(&r.hotkey[30..])
-                    ),
+                    hotkey: format_hotkey_short(&r.hotkey),
                     node_id: node_uuid.to_string(),
                     alpha_amount: format!("{:.2} alpha", rao_to_alpha(r.alpha_amount)),
                     finalizable_at: finalizable_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
@@ -419,9 +459,49 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
     Ok(())
 }
 
-async fn handle_reclaim(params: &CollateralParams, node_id: &str) -> Result<(), CliError> {
-    let hotkey = require_hotkey(params)?;
-    let node_id_bytes = parse_node_id(node_id)?;
+async fn handle_reclaim(params: &CollateralParams) -> Result<(), CliError> {
+    let evm_address = evm_address_from_private_key(&params.private_key)?;
+
+    let spinner = create_spinner("Fetching your collaterals...");
+    let all = collateral_contract::get_all_collaterals(&params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to query collaterals: {}", e))?;
+    complete_spinner_and_clear(spinner);
+
+    let mine: Vec<_> = all.iter().filter(|c| c.miner == evm_address).collect();
+
+    if mine.is_empty() {
+        return Err(eyre!(
+            "No collaterals found for your address ({}). Nothing to reclaim.",
+            evm_address
+        )
+        .into());
+    }
+
+    let labels: Vec<String> = mine
+        .iter()
+        .map(|c| {
+            let node_uuid = uuid::Uuid::from_bytes(c.node_id);
+            format!(
+                "Hotkey: {}  Node: {}  Alpha: {:.2}",
+                format_hotkey_short(&c.hotkey),
+                node_uuid,
+                rao_to_alpha(c.alpha_collateral),
+            )
+        })
+        .collect();
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("Select collateral to reclaim")
+        .items(&labels)
+        .default(0)
+        .interact()
+        .map_err(|e| eyre!("Prompt error: {}", e))?;
+
+    let chosen = mine[selection];
+    let hotkey = chosen.hotkey;
+    let node_id_bytes = chosen.node_id;
+    let node_uuid = uuid::Uuid::from_bytes(node_id_bytes);
 
     let spinner = create_spinner("Initiating collateral reclaim...");
 
@@ -438,7 +518,7 @@ async fn handle_reclaim(params: &CollateralParams, node_id: &str) -> Result<(), 
     println!(
         "{} Reclaim initiated for node {}",
         style("✓").green().bold(),
-        node_id
+        node_uuid
     );
 
     let request_id = reclaim_info.reclaim_request_id;
@@ -472,7 +552,7 @@ async fn handle_reclaim(params: &CollateralParams, node_id: &str) -> Result<(), 
     println!(
         "Run {} after the timeout to complete the reclaim.",
         style(format!(
-            "basilica collateral finalize --request-id {}",
+            "basilica collateral reclaim-finalize --request-id {}",
             request_id
         ))
         .cyan()
@@ -481,8 +561,74 @@ async fn handle_reclaim(params: &CollateralParams, node_id: &str) -> Result<(), 
     Ok(())
 }
 
-async fn handle_finalize(params: &CollateralParams, request_id: &str) -> Result<(), CliError> {
-    let id = U256::from_str(request_id).map_err(|e| eyre!("Invalid request ID: {}", e))?;
+async fn handle_finalize(
+    params: &CollateralParams,
+    request_id: Option<&str>,
+) -> Result<(), CliError> {
+    let request_id_str = match request_id {
+        Some(id) => id.to_string(),
+        None => {
+            // Fetch pending reclaims and let user select
+            let evm_address = evm_address_from_private_key(&params.private_key)?;
+
+            let spinner = create_spinner("Fetching your pending reclaims...");
+            let all_reclaims = collateral_contract::get_all_reclaims(&params.network_config)
+                .await
+                .map_err(|e| eyre!("Failed to query reclaims: {}", e))?;
+            complete_spinner_and_clear(spinner);
+
+            let mine: Vec<_> = all_reclaims
+                .iter()
+                .filter(|r| r.miner == evm_address)
+                .collect();
+
+            if mine.is_empty() {
+                return Err(eyre!(
+                    "No pending reclaims found for your address ({}). Nothing to finalize.",
+                    evm_address
+                )
+                .into());
+            }
+
+            let now = chrono::Utc::now();
+            let labels: Vec<String> = mine
+                .iter()
+                .map(|r| {
+                    let node_uuid = uuid::Uuid::from_bytes(r.node_id);
+                    let finalizable_at = chrono::DateTime::from_timestamp(r.deny_timeout as i64, 0)
+                        .unwrap_or_default();
+                    let remaining = finalizable_at.signed_duration_since(now);
+
+                    let status = if remaining.num_seconds() <= 0 {
+                        "Ready".to_string()
+                    } else {
+                        let hours = remaining.num_hours();
+                        let mins = remaining.num_minutes() % 60;
+                        format!("{}h {}m remaining", hours, mins)
+                    };
+
+                    format!(
+                        "ID: {}  Node: {}  Alpha: {:.2}  [{}]",
+                        r.reclaim_request_id,
+                        node_uuid,
+                        rao_to_alpha(r.alpha_amount),
+                        status,
+                    )
+                })
+                .collect();
+
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select reclaim to finalize")
+                .items(&labels)
+                .default(0)
+                .interact()
+                .map_err(|e| eyre!("Prompt error: {}", e))?;
+
+            mine[selection].reclaim_request_id.to_string()
+        }
+    };
+
+    let id = U256::from_str(&request_id_str).map_err(|e| eyre!("Invalid request ID: {}", e))?;
 
     let spinner = create_spinner("Finalizing reclaim...");
 
@@ -494,7 +640,7 @@ async fn handle_finalize(params: &CollateralParams, request_id: &str) -> Result<
     println!(
         "{} Reclaim {} finalized",
         style("✓").green().bold(),
-        request_id
+        request_id_str
     );
 
     Ok(())
@@ -520,12 +666,48 @@ fn tao_to_wei(amount: f64) -> Result<U256, CliError> {
 
 async fn handle_send(
     params: &CollateralParams,
-    to: &str,
-    amount: f64,
-    token: SendToken,
+    to: Option<&str>,
+    amount: Option<f64>,
+    token: Option<SendToken>,
     yes: bool,
 ) -> Result<(), CliError> {
-    let destination = parse_ss58_address(to)?;
+    // Prompt for token type if missing
+    let token = match token {
+        Some(t) => t,
+        None => {
+            let items = &["TAO", "Alpha"];
+            let selection = Select::with_theme(&ColorfulTheme::default())
+                .with_prompt("Token type to send")
+                .items(items)
+                .default(0)
+                .interact()
+                .map_err(|e| eyre!("Prompt error: {}", e))?;
+            match selection {
+                0 => SendToken::Tao,
+                _ => SendToken::Alpha,
+            }
+        }
+    };
+
+    // Prompt for destination if missing
+    let to_str = match to {
+        Some(t) => t.to_string(),
+        None => prompt_input("Destination SS58 address")?,
+    };
+
+    // Prompt for amount if missing
+    let amount = match amount {
+        Some(a) => a,
+        None => {
+            let unit = match token {
+                SendToken::Tao => "TAO",
+                SendToken::Alpha => "alpha",
+            };
+            prompt_amount(&format!("Amount of {} to send", unit))?
+        }
+    };
+
+    let destination = parse_ss58_address(&to_str)?;
 
     match token {
         SendToken::Tao => {
@@ -533,7 +715,7 @@ async fn handle_send(
 
             if !yes {
                 println!("{}", style("Send TAO Summary").bold());
-                println!("  Destination: {}", to);
+                println!("  Destination: {}", to_str);
                 println!("  Amount:      {:.4} TAO", amount);
                 println!();
 
@@ -565,7 +747,7 @@ async fn handle_send(
                 "{} Sent {:.4} TAO to {}",
                 style("✓").green().bold(),
                 amount,
-                to
+                to_str
             );
         }
         SendToken::Alpha => {
@@ -579,7 +761,7 @@ async fn handle_send(
 
             if !yes {
                 println!("{}", style("Send Alpha Summary").bold());
-                println!("  Destination: {}", to);
+                println!("  Destination: {}", to_str);
                 println!("  Hotkey:      0x{}", hex::encode(hotkey));
                 println!("  Netuid:      {}", netuid);
                 println!("  Amount:      {:.2} alpha", amount);
@@ -615,7 +797,7 @@ async fn handle_send(
                 "{} Sent {:.2} alpha to {}",
                 style("✓").green().bold(),
                 amount,
-                to
+                to_str
             );
         }
     }

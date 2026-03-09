@@ -354,15 +354,15 @@ pub enum CollateralAction {
     Deposit {
         /// Miner's Bittensor hotkey (32-byte hex)
         #[arg(long)]
-        hotkey: String,
+        hotkey: Option<String>,
 
         /// IP address of the node (used to derive the on-chain node ID)
         #[arg(long)]
-        node_ip: String,
+        node_ip: Option<String>,
 
         /// Amount of alpha to deposit (human-readable, e.g. 5.0)
         #[arg(long)]
-        amount: f64,
+        amount: Option<f64>,
 
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
@@ -380,39 +380,31 @@ pub enum CollateralAction {
         node_id: Option<String>,
     },
 
-    /// Initiate collateral reclaim
+    /// Initiate collateral reclaim (selects from your on-chain collaterals)
     #[command(name = "reclaim-start")]
-    ReclaimStart {
-        /// Miner's Bittensor hotkey (32-byte hex)
-        #[arg(long)]
-        hotkey: String,
-
-        /// Node UUID
-        #[arg(long)]
-        node_id: String,
-    },
+    ReclaimStart,
 
     /// Finalize a pending reclaim
     #[command(name = "reclaim-finalize")]
     ReclaimFinalize {
-        /// Reclaim request ID (decimal number)
+        /// Reclaim request ID (decimal number, will prompt if not provided)
         #[arg(long)]
-        request_id: String,
+        request_id: Option<String>,
     },
 
     /// Send TAO or alpha from EVM wallet to a substrate (SS58) address
     Send {
         /// Destination substrate wallet address (SS58 format)
         #[arg(long)]
-        to: String,
+        to: Option<String>,
 
         /// Amount to send (human-readable, e.g. 5.0)
         #[arg(long)]
-        amount: f64,
+        amount: Option<f64>,
 
         /// Token type to send
         #[arg(long, value_enum)]
-        token: SendToken,
+        token: Option<SendToken>,
 
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
