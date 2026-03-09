@@ -211,8 +211,8 @@ pub enum Commands {
         action: CollateralAction,
 
         /// Path to file containing EVM private key (hex).
-        #[arg(long, global = true, value_hint = ValueHint::FilePath)]
-        key_file: Option<PathBuf>,
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        key_file: PathBuf,
     },
 }
 

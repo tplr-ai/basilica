@@ -338,11 +338,6 @@ impl Args {
 
             // Collateral staking commands
             Commands::Collateral { action, key_file } => {
-                let key_file = key_file.as_deref().ok_or_else(|| {
-                    CliError::from(color_eyre::eyre::eyre!(
-                        "--key-file is required for collateral commands"
-                    ))
-                })?;
                 handlers::collateral::handle_collateral(action, key_file).await?;
             }
 
