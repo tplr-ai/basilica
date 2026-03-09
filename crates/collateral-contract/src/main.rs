@@ -236,7 +236,7 @@ async fn handle_tx_command(
             let alpha_amount_u256 = parse_u256(&alpha_amount)?;
 
             println!(
-                "Depositing {} alpha (rao) for node {} with hotkey {} (TAO msg.value is fixed to 0 in this CLI path)",
+                "Depositing {} alpha (rao) for node {} with miner hotkey {} (TAO msg.value is fixed to 0 in this CLI path)",
                 alpha_amount, node_id, hotkey
             );
             collateral_contract::deposit(
@@ -259,7 +259,7 @@ async fn handle_tx_command(
             let node_uuid = Uuid::parse_str(&node_id)?;
 
             println!(
-                "Reclaiming collateral for node {} with hotkey {}",
+                "Reclaiming collateral for node {} with miner hotkey {}",
                 node_id, hotkey
             );
             collateral_contract::reclaim_collateral(
@@ -315,7 +315,7 @@ async fn handle_tx_command(
             let alpha_amount = parse_u256(&slash_alpha_amount)?;
 
             println!(
-                "Slashing {} alpha (rao) for node {} with hotkey {} (TAO slash amount is fixed to 0 in this CLI path)",
+                "Slashing {} alpha (rao) for node {} with miner hotkey {} (TAO slash amount is fixed to 0 in this CLI path)",
                 slash_alpha_amount, node_id, hotkey
             );
             collateral_contract::slash_collateral(
@@ -436,7 +436,10 @@ async fn handle_query_command(
             let request_id = parse_u256(&reclaim_request_id)?;
             let result = collateral_contract::reclaims(request_id, network_config).await?;
             println!("Reclaim details for request {}:", reclaim_request_id);
-            println!("  Hotkey: 0x{}", hex::encode(result.hotkey));
+            println!(
+                "  Miner Hotkey: 0x{}",
+                hex::encode(result.miner_hotkey)
+            );
             println!("  Node ID: {}", Uuid::from_bytes(result.node_id));
             println!("  Miner: {}", result.miner);
             println!("  Amount: {} wei", result.amount);
@@ -449,8 +452,8 @@ async fn handle_query_command(
             println!("Active nodes: {}", nodes.len());
             for node in &nodes {
                 println!(
-                    "  Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} rao",
-                    hex::encode(node.hotkey),
+                    "  Miner Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} rao",
+                    hex::encode(node.miner_hotkey),
                     Uuid::from_bytes(node.node_id),
                     node.miner,
                     node.tao_collateral,
@@ -463,9 +466,9 @@ async fn handle_query_command(
             println!("Active reclaims: {}", reclaims.len());
             for r in &reclaims {
                 println!(
-                    "  ID: {}, Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} rao, Timeout: {}",
+                    "  ID: {}, Miner Hotkey: 0x{}, Node: {}, Miner: {}, TAO: {} wei, Alpha: {} rao, Timeout: {}",
                     r.reclaim_request_id,
-                    hex::encode(r.hotkey),
+                    hex::encode(r.miner_hotkey),
                     Uuid::from_bytes(r.node_id),
                     r.miner,
                     r.amount,

@@ -458,7 +458,7 @@ contract CollateralBasicTest is Test {
         // slot 12: ownerColdkeys mapping
         uint256 reclaimsSlot = 8;
         bytes32 baseSlot = keccak256(abi.encode(uint256(0), reclaimsSlot));
-        // Reclaim struct layout: +0=hotkey, +1=nodeId, +2=miner, +3=amount, +4=alphaColdkey, +5=alphaAmount, +6=denyTimeout
+        // Reclaim struct layout: +0=minerHotkey, +1=nodeId, +2=miner, +3=amount, +4=alphaColdkey, +5=alphaAmount, +6=denyTimeout
         bytes32 amountSlot = bytes32(uint256(baseSlot) + 3);
         bytes32 alphaAmountSlot = bytes32(uint256(baseSlot) + 5);
 
@@ -1000,7 +1000,7 @@ contract CollateralBasicTest is Test {
 
         CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 1);
-        assertEq(results[0].hotkey, HOTKEY_1);
+        assertEq(results[0].minerHotkey, HOTKEY_1);
         assertEq(results[0].nodeId, EXECUTOR_ID_1);
         assertEq(results[0].miner, ALICE);
         assertEq(results[0].taoCollateral, 5 ether);
@@ -1106,8 +1106,8 @@ contract CollateralBasicTest is Test {
         assertEq(results.length, 2);
 
         // After swap-and-pop: A should be at index 0, C should be at index 1
-        assertEq(results[0].hotkey, HOTKEY_1);
-        assertEq(results[1].hotkey, HOTKEY_3);
+        assertEq(results[0].minerHotkey, HOTKEY_1);
+        assertEq(results[1].minerHotkey, HOTKEY_3);
     }
 
     function testDuplicateDepositDoesNotDuplicateTracking() public {
@@ -1141,7 +1141,7 @@ contract CollateralBasicTest is Test {
         CollateralUpgradeable.ReclaimInfo[] memory results = _allReclaims();
         assertEq(results.length, 1);
         assertEq(results[0].reclaimRequestId, 0);
-        assertEq(results[0].hotkey, HOTKEY_1);
+        assertEq(results[0].minerHotkey, HOTKEY_1);
         assertEq(results[0].nodeId, EXECUTOR_ID_1);
         assertEq(results[0].miner, ALICE);
         assertEq(results[0].amount, 5 ether);
@@ -1188,12 +1188,12 @@ contract CollateralBasicTest is Test {
         // Page 1: offset=0, limit=1
         CollateralUpgradeable.NodeCollateral[] memory page1 = collateral.getAllCollaterals(0, 1);
         assertEq(page1.length, 1);
-        assertEq(page1[0].hotkey, HOTKEY_1);
+        assertEq(page1[0].minerHotkey, HOTKEY_1);
 
         // Page 2: offset=1, limit=1
         CollateralUpgradeable.NodeCollateral[] memory page2 = collateral.getAllCollaterals(1, 1);
         assertEq(page2.length, 1);
-        assertEq(page2[0].hotkey, HOTKEY_2);
+        assertEq(page2[0].minerHotkey, HOTKEY_2);
 
         // Offset beyond array
         CollateralUpgradeable.NodeCollateral[] memory empty = collateral.getAllCollaterals(10, 5);
@@ -1211,7 +1211,7 @@ contract CollateralBasicTest is Test {
         CollateralUpgradeable.NodeCollateral[] memory maxLimit =
             collateral.getAllCollaterals(1, type(uint256).max);
         assertEq(maxLimit.length, 1);
-        assertEq(maxLimit[0].hotkey, HOTKEY_2);
+        assertEq(maxLimit[0].minerHotkey, HOTKEY_2);
     }
 
     function testGetAllCollateralsSubtractsPendingReclaims() public {
@@ -1292,7 +1292,7 @@ contract CollateralBasicTest is Test {
     // ============ EVENTS ============
 
     event Deposit(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed executorId,
         address indexed miner,
         uint256 amount,
@@ -1302,7 +1302,7 @@ contract CollateralBasicTest is Test {
 
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed executorId,
         address miner,
         uint256 amount,
@@ -1313,7 +1313,7 @@ contract CollateralBasicTest is Test {
 
     event Reclaimed(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed executorId,
         address miner,
         uint256 amount,
@@ -1324,7 +1324,7 @@ contract CollateralBasicTest is Test {
     event Denied(uint256 indexed reclaimRequestId, string url, bytes32 urlContentSha256);
 
     event Slashed(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed executorId,
         address indexed miner,
         uint256 slashAmount,

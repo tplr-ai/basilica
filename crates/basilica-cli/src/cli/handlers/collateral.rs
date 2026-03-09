@@ -187,12 +187,9 @@ fn format_time_remaining(remaining: &chrono::Duration) -> String {
     }
 }
 
-fn format_hotkey_short(hotkey: &[u8; 32]) -> String {
-    format!(
-        "0x{}..{}",
-        &hex::encode(&hotkey[..2]),
-        &hex::encode(&hotkey[30..])
-    )
+fn hotkey_to_ss58(pubkey: &[u8; 32]) -> String {
+    use sp_core::crypto::{AccountId32, Ss58Codec};
+    AccountId32::new(*pubkey).to_ss58check()
 }
 
 // ---------------------------------------------------------------------------
@@ -298,7 +295,7 @@ async fn handle_deposit(
 
     if !yes {
         println!("{}", style("Deposit Summary").bold());
-        println!("  Hotkey:       0x{}", hex::encode(hotkey));
+        println!("  Miner Hotkey:    {}", hotkey_to_ss58(&hotkey));
         println!("  Node:         {} ({})", ip_str, node_uuid);
         println!("  Alpha Hotkey: 0x{}", hex::encode(alpha_hotkey));
         println!("  Amount:       {:.2} alpha", amount);
@@ -345,7 +342,7 @@ async fn handle_deposit(
 struct ReclaimRow {
     #[tabled(rename = "Request ID")]
     request_id: String,
-    #[tabled(rename = "Hotkey")]
+    #[tabled(rename = "Miner Hotkey")]
     hotkey: String,
     #[tabled(rename = "Node ID")]
     node_id: String,
@@ -359,7 +356,7 @@ struct ReclaimRow {
 
 #[derive(Tabled)]
 struct CollateralRow {
-    #[tabled(rename = "Hotkey")]
+    #[tabled(rename = "Miner Hotkey")]
     hotkey: String,
     #[tabled(rename = "Node ID")]
     node_id: String,
@@ -385,7 +382,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
         complete_spinner_and_clear(spinner);
 
         println!("{}", style("Collateral Status").bold());
-        println!("  Hotkey:     0x{}", hex::encode(hotkey));
+        println!("  Miner Hotkey:  {}", hotkey_to_ss58(&hotkey));
         println!("  Node ID:    {}", node_id_str);
         println!("  Alpha:      {:.2} alpha", rao_to_alpha(alpha));
     } else {
@@ -404,7 +401,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
                 .map(|n| {
                     let node_uuid = uuid::Uuid::from_bytes(n.node_id);
                     CollateralRow {
-                        hotkey: format_hotkey_short(&n.hotkey),
+                        hotkey: hotkey_to_ss58(&n.miner_hotkey),
                         node_id: node_uuid.to_string(),
                         miner: format!("{}", n.miner),
                         alpha_collateral: format!("{:.2} alpha", rao_to_alpha(n.alpha_collateral)),
@@ -448,7 +445,7 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
 
                 ReclaimRow {
                     request_id: r.reclaim_request_id.to_string(),
-                    hotkey: format_hotkey_short(&r.hotkey),
+                    hotkey: hotkey_to_ss58(&r.miner_hotkey),
                     node_id: node_uuid.to_string(),
                     alpha_amount: format!("{:.2} alpha", rao_to_alpha(r.alpha_amount)),
                     finalizable_at: finalizable_at.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
@@ -489,7 +486,7 @@ async fn handle_reclaim(params: &CollateralParams) -> Result<(), CliError> {
             let node_uuid = uuid::Uuid::from_bytes(c.node_id);
             format!(
                 "Hotkey: {}  Node: {}  Alpha: {:.2}",
-                format_hotkey_short(&c.hotkey),
+                hotkey_to_ss58(&c.miner_hotkey),
                 node_uuid,
                 rao_to_alpha(c.alpha_collateral),
             )
@@ -504,7 +501,7 @@ async fn handle_reclaim(params: &CollateralParams) -> Result<(), CliError> {
         .map_err(|e| eyre!("Prompt error: {}", e))?;
 
     let chosen = mine[selection];
-    let hotkey = chosen.hotkey;
+    let hotkey = chosen.miner_hotkey;
     let node_id_bytes = chosen.node_id;
     let node_uuid = uuid::Uuid::from_bytes(node_id_bytes);
 

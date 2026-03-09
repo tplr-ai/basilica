@@ -163,7 +163,7 @@ impl SimplePersistence {
             std::collections::HashSet::with_capacity(nodes.len());
 
         for node in nodes {
-            let hotkey = format!("0x{}", hex::encode(node.hotkey));
+            let hotkey = format!("0x{}", hex::encode(node.miner_hotkey));
             let node_id = format!("0x{}", hex::encode(node.node_id));
             let miner = address_to_string(node.miner);
 
@@ -224,7 +224,7 @@ impl SimplePersistence {
 
         for r in reclaims {
             let reclaim_request_id = r.reclaim_request_id.to_string();
-            let hotkey = format!("0x{}", hex::encode(r.hotkey));
+            let hotkey = format!("0x{}", hex::encode(r.miner_hotkey));
             let node_id = format!("0x{}", hex::encode(r.node_id));
             let miner = address_to_string(r.miner);
 

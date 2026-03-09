@@ -110,7 +110,7 @@ async fn test_collateral_deploy() {
         .unwrap();
 
     // Test deposit
-    let hotkey = [1u8; 32];
+    let miner_hotkey = [1u8; 32];
     let node_id = 1u128;
     let alpha_hotkey = [2u8; 32];
     let alpha_amount = U256::from(2_000_000_000_000_000_000u128); // 2 Alpha
@@ -120,7 +120,7 @@ async fn test_collateral_deploy() {
 
     let tx = proxied
         .deposit(
-            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
             FixedBytes::from_slice(&alpha_hotkey),
             alpha_amount,
@@ -145,7 +145,7 @@ async fn test_collateral_deploy() {
 
     let node_to_miner_result = proxied
         .nodeToMiner(
-            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
         )
         .call()
@@ -155,7 +155,7 @@ async fn test_collateral_deploy() {
 
     let collaterals_result = proxied
         .taoCollaterals(
-            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
         )
         .call()
@@ -165,7 +165,7 @@ async fn test_collateral_deploy() {
 
     let alpha_collaterals_result = proxied
         .alphaCollaterals(
-            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
         )
         .call()

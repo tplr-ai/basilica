@@ -268,7 +268,7 @@ contract CollateralUpgradeableTest is Test {
     }
 
     event Deposit(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address indexed miner,
         uint256 amount,
@@ -277,7 +277,7 @@ contract CollateralUpgradeableTest is Test {
     );
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address miner,
         uint256 amount,
@@ -287,7 +287,7 @@ contract CollateralUpgradeableTest is Test {
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address miner,
         uint256 amount,
@@ -296,7 +296,7 @@ contract CollateralUpgradeableTest is Test {
     );
     event Denied(uint256 indexed reclaimRequestId, string url, bytes32 urlContentSha256);
     event Slashed(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address indexed miner,
         uint256 slashAmount,

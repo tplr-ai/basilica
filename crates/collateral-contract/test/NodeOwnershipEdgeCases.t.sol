@@ -294,9 +294,9 @@ contract NodeOwnershipEdgeCasesTest is Test {
         // A should remain at index 0, B at index 1
         CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
         assertEq(results.length, 2);
-        assertEq(results[0].hotkey, HOTKEY_1);
+        assertEq(results[0].minerHotkey, HOTKEY_1);
         assertEq(results[0].nodeId, EXECUTOR_ID_1);
-        assertEq(results[1].hotkey, HOTKEY_2);
+        assertEq(results[1].minerHotkey, HOTKEY_2);
         assertEq(results[1].nodeId, EXECUTOR_ID_2);
 
         // it allows re-claiming the vacated node slot
@@ -346,12 +346,12 @@ contract NodeOwnershipEdgeCasesTest is Test {
         assertEq(results.length, 2);
 
         // it moves last element (C) into first position
-        assertEq(results[0].hotkey, HOTKEY_3);
+        assertEq(results[0].minerHotkey, HOTKEY_3);
         assertEq(results[0].nodeId, EXECUTOR_ID_3);
 
         // it preserves remaining nodes collateral data after swap
         // B is still at index 1 with its original collateral
-        assertEq(results[1].hotkey, HOTKEY_2);
+        assertEq(results[1].minerHotkey, HOTKEY_2);
         assertEq(results[1].nodeId, EXECUTOR_ID_2);
         assertEq(results[0].taoCollateral, 2 ether); // C's balance unchanged
         assertEq(results[1].taoCollateral, 3 ether); // B's balance unchanged
@@ -400,9 +400,9 @@ contract NodeOwnershipEdgeCasesTest is Test {
         {
             CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
             assertEq(results.length, 3);
-            assertEq(results[0].hotkey, HOTKEY_1); // A at slot 0
-            assertEq(results[1].hotkey, HOTKEY_4); // D swapped to slot 1
-            assertEq(results[2].hotkey, HOTKEY_3); // C at slot 2
+            assertEq(results[0].minerHotkey, HOTKEY_1); // A at slot 0
+            assertEq(results[1].minerHotkey, HOTKEY_4); // D swapped to slot 1
+            assertEq(results[2].minerHotkey, HOTKEY_3); // C at slot 2
         }
 
         // Step 2: Slash D fully — C (last) swaps to D's slot → [A, C]
@@ -414,8 +414,8 @@ contract NodeOwnershipEdgeCasesTest is Test {
         {
             CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
             assertEq(results.length, 2);
-            assertEq(results[0].hotkey, HOTKEY_1); // A at slot 0
-            assertEq(results[1].hotkey, HOTKEY_3); // C swapped to slot 1
+            assertEq(results[0].minerHotkey, HOTKEY_1); // A at slot 0
+            assertEq(results[1].minerHotkey, HOTKEY_3); // C swapped to slot 1
         }
 
         // Step 3: Slash A fully — only C remains
@@ -427,7 +427,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
         {
             CollateralUpgradeable.NodeCollateral[] memory results = _allCollaterals();
             assertEq(results.length, 1);
-            assertEq(results[0].hotkey, HOTKEY_3);
+            assertEq(results[0].minerHotkey, HOTKEY_3);
             assertEq(results[0].nodeId, EXECUTOR_ID_3);
             assertEq(results[0].miner, CHARLIE);
             assertEq(results[0].taoCollateral, 2 ether);
@@ -481,9 +481,9 @@ contract NodeOwnershipEdgeCasesTest is Test {
         CollateralUpgradeable.ReclaimInfo[] memory results = _allReclaims();
         assertEq(results.length, 2);
         assertEq(results[0].reclaimRequestId, 0);
-        assertEq(results[0].hotkey, HOTKEY_1);
+        assertEq(results[0].minerHotkey, HOTKEY_1);
         assertEq(results[1].reclaimRequestId, 2);
-        assertEq(results[1].hotkey, HOTKEY_3);
+        assertEq(results[1].minerHotkey, HOTKEY_3);
     }
 
     // ---------------------------------------------------------------------------
@@ -531,9 +531,9 @@ contract NodeOwnershipEdgeCasesTest is Test {
         CollateralUpgradeable.ReclaimInfo[] memory results = _allReclaims();
         assertEq(results.length, 2);
         assertEq(results[0].reclaimRequestId, 2);
-        assertEq(results[0].hotkey, HOTKEY_3);
+        assertEq(results[0].minerHotkey, HOTKEY_3);
         assertEq(results[1].reclaimRequestId, 1);
-        assertEq(results[1].hotkey, HOTKEY_2);
+        assertEq(results[1].minerHotkey, HOTKEY_2);
 
         // it preserves remaining reclaims after swap: Alice received her 5 ether back
         assertEq(ALICE.balance, aliceBalanceBefore + 5 ether);
@@ -598,7 +598,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
             CollateralUpgradeable.ReclaimInfo[] memory results = _allReclaims();
             assertEq(results.length, 1);
             assertEq(results[0].reclaimRequestId, 2);
-            assertEq(results[0].hotkey, HOTKEY_3);
+            assertEq(results[0].minerHotkey, HOTKEY_3);
         }
     }
 
@@ -732,7 +732,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
 
     event Denied(uint256 indexed reclaimRequestId, string url, bytes32 urlContentSha256);
     event Slashed(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed executorId,
         address indexed miner,
         uint256 slashAmount,
@@ -742,7 +742,7 @@ contract NodeOwnershipEdgeCasesTest is Test {
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed executorId,
         address miner,
         uint256 amount,

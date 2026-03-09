@@ -352,7 +352,7 @@ pub enum CollateralAction {
 
     /// Deposit alpha to the collateral contract for a node
     Deposit {
-        /// Miner's Bittensor hotkey (32-byte hex)
+        /// Miner's Bittensor hotkey (SS58 format)
         #[arg(long)]
         hotkey: Option<String>,
 
@@ -371,7 +371,7 @@ pub enum CollateralAction {
 
     /// Show collateral amounts per node
     Status {
-        /// Miner's Bittensor hotkey (32-byte hex, required with --node-id)
+        /// Miner's Bittensor hotkey (SS58 format, required with --node-id)
         #[arg(long)]
         hotkey: Option<String>,
 

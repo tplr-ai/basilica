@@ -73,12 +73,12 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
     // --- Active node tracking ---
     struct NodeKey {
-        bytes32 hotkey;
+        bytes32 minerHotkey;
         bytes16 nodeId;
     }
 
     NodeKey[] private activeNodeKeys;
-    mapping(bytes32 => uint256) private activeNodeKeyIndex; // keccak256(hotkey, nodeId) => 1-based index
+    mapping(bytes32 => uint256) private activeNodeKeyIndex; // keccak256(minerHotkey, nodeId) => 1-based index
 
     // --- Active reclaim tracking ---
     uint256[] private activeReclaimIds;
@@ -88,7 +88,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     uint256[49] private _gap;
 
     struct Reclaim {
-        bytes32 hotkey;
+        bytes32 minerHotkey;
         bytes16 nodeId;
         address miner;
         uint256 amount;
@@ -99,7 +99,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
     // Events
     event Deposit(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address indexed miner,
         uint256 amount,
@@ -108,7 +108,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     );
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address miner,
         uint256 amount,
@@ -118,7 +118,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address miner,
         uint256 amount,
@@ -127,7 +127,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     );
     event Denied(uint256 indexed reclaimRequestId, string url, bytes32 urlContentSha256);
     event Slashed(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address indexed miner,
         uint256 slashAmount,
@@ -275,22 +275,22 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
     // --- Internal helpers for active tracking (swap-and-pop) ---
 
-    function _addActiveNode(bytes32 hotkey, bytes16 nodeId) private {
-        bytes32 key = keccak256(abi.encode(hotkey, nodeId));
+    function _addActiveNode(bytes32 minerHotkey, bytes16 nodeId) private {
+        bytes32 key = keccak256(abi.encode(minerHotkey, nodeId));
         if (activeNodeKeyIndex[key] != 0) return; // already tracked
-        activeNodeKeys.push(NodeKey({hotkey: hotkey, nodeId: nodeId}));
+        activeNodeKeys.push(NodeKey({minerHotkey: minerHotkey, nodeId: nodeId}));
         activeNodeKeyIndex[key] = activeNodeKeys.length; // 1-based
     }
 
-    function _removeActiveNode(bytes32 hotkey, bytes16 nodeId) private {
-        bytes32 key = keccak256(abi.encode(hotkey, nodeId));
+    function _removeActiveNode(bytes32 minerHotkey, bytes16 nodeId) private {
+        bytes32 key = keccak256(abi.encode(minerHotkey, nodeId));
         uint256 idx = activeNodeKeyIndex[key];
         if (idx == 0) return; // not tracked
         uint256 lastIdx = activeNodeKeys.length;
         if (idx != lastIdx) {
             NodeKey storage lastKey = activeNodeKeys[lastIdx - 1];
             activeNodeKeys[idx - 1] = lastKey;
-            activeNodeKeyIndex[keccak256(abi.encode(lastKey.hotkey, lastKey.nodeId))] = idx;
+            activeNodeKeyIndex[keccak256(abi.encode(lastKey.minerHotkey, lastKey.nodeId))] = idx;
         }
         activeNodeKeys.pop();
         delete activeNodeKeyIndex[key];
@@ -316,14 +316,14 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     }
 
     /// @notice Allows users to deposit collateral into the contract for a specific node
-    /// @param hotkey The miner's Bittensor hotkey under which the node is registered
+    /// @param minerHotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to deposit collateral for
     /// @param alphaHotkey The hotkey under which the miner's alpha is currently staked
     /// @param alphaAmount The amount of alpha to transfer as collateral (in RAO)
     /// @dev The first deposit for a nodeId sets the owner. Subsequent deposits must be from the owner.
     /// @dev The TAO deposit amount must be greater than or equal to minCollateralIncrease
-    /// @dev Emits a Deposit event with the hotkey, nodeId, sender's address and deposited amount
-    function deposit(bytes32 hotkey, bytes16 nodeId, bytes32 alphaHotkey, uint256 alphaAmount)
+    /// @dev Emits a Deposit event with the minerHotkey, nodeId, sender's address and deposited amount
+    function deposit(bytes32 minerHotkey, bytes16 nodeId, bytes32 alphaHotkey, uint256 alphaAmount)
         external
         payable
         nonReentrant
@@ -344,22 +344,22 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             revert InsufficientAmount();
         }
 
-        address owner = nodeToMiner[hotkey][nodeId];
+        address owner = nodeToMiner[minerHotkey][nodeId];
         if (owner == address(0)) {
             // Block constructor-based bypasses where code.length is zero during creation.
             if (msg.sender.code.length != 0 || tx.origin != msg.sender) {
                 revert MinerMustBeEOA();
             }
-            nodeToMiner[hotkey][nodeId] = msg.sender;
-            ownerColdkeys[hotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
+            nodeToMiner[minerHotkey][nodeId] = msg.sender;
+            ownerColdkeys[minerHotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
         } else if (owner != msg.sender) {
             revert NodeNotOwned();
-        } else if (ownerColdkeys[hotkey][nodeId] == bytes32(0)) {
+        } else if (ownerColdkeys[minerHotkey][nodeId] == bytes32(0)) {
             // Backfill owner coldkey for nodes that existed before this mapping.
-            ownerColdkeys[hotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
+            ownerColdkeys[minerHotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
         }
 
-        _addActiveNode(hotkey, nodeId);
+        _addActiveNode(minerHotkey, nodeId);
 
         uint256 actualAlphaAmount = alphaAmount;
         if (alphaAmount > 0) {
@@ -367,44 +367,44 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
                 revert ContractColdkeyZero();
             }
             actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
-            alphaCollaterals[hotkey][nodeId] += actualAlphaAmount;
+            alphaCollaterals[minerHotkey][nodeId] += actualAlphaAmount;
         }
 
-        taoCollaterals[hotkey][nodeId] += msg.value;
+        taoCollaterals[minerHotkey][nodeId] += msg.value;
 
-        emit Deposit(hotkey, nodeId, msg.sender, msg.value, alphaHotkey, actualAlphaAmount);
+        emit Deposit(minerHotkey, nodeId, msg.sender, msg.value, alphaHotkey, actualAlphaAmount);
     }
 
     /// @notice Initiates a process to reclaim all available collateral from a specific node
     /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after decisionTimeout
-    /// @param hotkey The miner's Bittensor hotkey under which the node is registered
+    /// @param minerHotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to reclaim collateral from
     /// @dev Alpha payout destination is always derived from the owner address mapping.
     /// @dev Emits ReclaimProcessStarted event with reclaim details and timeout
     /// @dev Reverts with NodeNotOwned if caller is not the owner of the node
     /// @dev Reverts with AmountZero if there is no available collateral to reclaim
-    function reclaimCollateral(bytes32 hotkey, bytes16 nodeId)
+    function reclaimCollateral(bytes32 minerHotkey, bytes16 nodeId)
         external
         nonReentrant
     {
-        if (msg.sender != nodeToMiner[hotkey][nodeId]) {
+        if (msg.sender != nodeToMiner[minerHotkey][nodeId]) {
             revert NodeNotOwned();
         }
 
         uint256 availableAmount =
-            Math.saturatingSub(taoCollaterals[hotkey][nodeId], taoCollateralUnderPendingReclaims[hotkey][nodeId]);
+            Math.saturatingSub(taoCollaterals[minerHotkey][nodeId], taoCollateralUnderPendingReclaims[minerHotkey][nodeId]);
 
         uint256 availableAlphaAmount =
-            Math.saturatingSub(alphaCollaterals[hotkey][nodeId], alphaCollateralUnderPendingReclaims[hotkey][nodeId]);
+            Math.saturatingSub(alphaCollaterals[minerHotkey][nodeId], alphaCollateralUnderPendingReclaims[minerHotkey][nodeId]);
 
         if (availableAmount == 0 && availableAlphaAmount == 0) {
             revert AmountZero();
         }
 
-        bytes32 ownerColdkey = ownerColdkeys[hotkey][nodeId];
+        bytes32 ownerColdkey = ownerColdkeys[minerHotkey][nodeId];
         if (ownerColdkey == bytes32(0)) {
             ownerColdkey = _deriveOwnerColdkey(msg.sender);
-            ownerColdkeys[hotkey][nodeId] = ownerColdkey;
+            ownerColdkeys[minerHotkey][nodeId] = ownerColdkey;
         }
 
         if (availableAlphaAmount > 0 && ownerColdkey == bytes32(0)) {
@@ -414,7 +414,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         uint64 denyTimeout = SafeCast.toUint64(block.timestamp + decisionTimeout);
 
         reclaims[nextReclaimId] = Reclaim({
-            hotkey: hotkey,
+            minerHotkey: minerHotkey,
             nodeId: nodeId,
             miner: msg.sender,
             amount: availableAmount,
@@ -423,14 +423,14 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             denyTimeout: denyTimeout
         });
 
-        taoCollateralUnderPendingReclaims[hotkey][nodeId] += availableAmount;
-        alphaCollateralUnderPendingReclaims[hotkey][nodeId] += availableAlphaAmount;
+        taoCollateralUnderPendingReclaims[minerHotkey][nodeId] += availableAmount;
+        alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] += availableAlphaAmount;
 
         _addActiveReclaim(nextReclaimId);
 
         emit ReclaimProcessStarted(
             nextReclaimId,
-            hotkey,
+            minerHotkey,
             nodeId,
             msg.sender,
             availableAmount,
@@ -459,7 +459,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             revert BeforeDenyTimeout();
         }
 
-        bytes32 hotkey = reclaim.hotkey;
+        bytes32 minerHotkey = reclaim.minerHotkey;
         bytes16 nodeId = reclaim.nodeId;
         address miner = reclaim.miner;
         uint256 amount = reclaim.amount;
@@ -469,28 +469,28 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         // --- Effects ---
         _removeActiveReclaim(reclaimRequestId);
         delete reclaims[reclaimRequestId];
-        taoCollateralUnderPendingReclaims[hotkey][nodeId] -= amount;
-        alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= alphaAmount;
+        taoCollateralUnderPendingReclaims[minerHotkey][nodeId] -= amount;
+        alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] -= alphaAmount;
 
         // Cap TAO transfer to available balance (slash may have reduced it)
-        uint256 actualAmount = Math.min(amount, taoCollaterals[hotkey][nodeId]);
-        taoCollaterals[hotkey][nodeId] -= actualAmount;
+        uint256 actualAmount = Math.min(amount, taoCollaterals[minerHotkey][nodeId]);
+        taoCollaterals[minerHotkey][nodeId] -= actualAmount;
 
         // Cap alpha transfer to available balance (slash may have reduced it)
-        uint256 actualAlphaAmount = Math.min(alphaAmount, alphaCollaterals[hotkey][nodeId]);
-        alphaCollaterals[hotkey][nodeId] -= actualAlphaAmount;
+        uint256 actualAlphaAmount = Math.min(alphaAmount, alphaCollaterals[minerHotkey][nodeId]);
+        alphaCollaterals[minerHotkey][nodeId] -= actualAlphaAmount;
 
         if (
-            taoCollaterals[hotkey][nodeId] == 0 && alphaCollaterals[hotkey][nodeId] == 0
-                && taoCollateralUnderPendingReclaims[hotkey][nodeId] == 0
-                && alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
+            taoCollaterals[minerHotkey][nodeId] == 0 && alphaCollaterals[minerHotkey][nodeId] == 0
+                && taoCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+                && alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
         ) {
-            nodeToMiner[hotkey][nodeId] = address(0);
-            ownerColdkeys[hotkey][nodeId] = bytes32(0);
-            _removeActiveNode(hotkey, nodeId);
+            nodeToMiner[minerHotkey][nodeId] = address(0);
+            ownerColdkeys[minerHotkey][nodeId] = bytes32(0);
+            _removeActiveNode(minerHotkey, nodeId);
         }
 
-        emit Reclaimed(reclaimRequestId, hotkey, nodeId, miner, actualAmount, alphaColdkey, actualAlphaAmount);
+        emit Reclaimed(reclaimRequestId, minerHotkey, nodeId, miner, actualAmount, alphaColdkey, actualAlphaAmount);
 
         // --- Interactions ---
         if (actualAmount > 0) {
@@ -529,11 +529,11 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             revert PastDenyTimeout();
         }
 
-        bytes32 hotkey = reclaim.hotkey;
+        bytes32 minerHotkey = reclaim.minerHotkey;
         bytes16 nodeId = reclaim.nodeId;
 
-        taoCollateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.amount;
-        alphaCollateralUnderPendingReclaims[hotkey][nodeId] -= reclaim.alphaAmount;
+        taoCollateralUnderPendingReclaims[minerHotkey][nodeId] -= reclaim.amount;
+        alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] -= reclaim.alphaAmount;
         emit Denied(reclaimRequestId, url, urlContentSha256);
 
         _removeActiveReclaim(reclaimRequestId);
@@ -541,20 +541,20 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
         // Clear ownership if all balances and pending reclaims are zero
         if (
-            taoCollaterals[hotkey][nodeId] == 0 && alphaCollaterals[hotkey][nodeId] == 0
-                && taoCollateralUnderPendingReclaims[hotkey][nodeId] == 0
-                && alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
+            taoCollaterals[minerHotkey][nodeId] == 0 && alphaCollaterals[minerHotkey][nodeId] == 0
+                && taoCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+                && alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
         ) {
-            nodeToMiner[hotkey][nodeId] = address(0);
-            ownerColdkeys[hotkey][nodeId] = bytes32(0);
-            _removeActiveNode(hotkey, nodeId);
+            nodeToMiner[minerHotkey][nodeId] = address(0);
+            ownerColdkeys[minerHotkey][nodeId] = bytes32(0);
+            _removeActiveNode(minerHotkey, nodeId);
         }
     }
 
     /// @notice Allows the trustee to slash a miner's collateral for a specific node
     /// @dev Can only be called by an account with TRUSTEE_ROLE
     /// @dev Removes the collateral from the node and sends it to the trustee
-    /// @param hotkey The miner's Bittensor hotkey under which the node is registered
+    /// @param minerHotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to slash
     /// @param slashAmount The amount of TAO collateral to slash (in wei)
     /// @param slashAlphaAmount The amount of alpha collateral to slash (in RAO)
@@ -564,15 +564,15 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     /// @dev Reverts with AmountZero if there is no collateral to slash
     /// @dev Reverts with TransferFailed if the TAO transfer fails
     function slashCollateral(
-        bytes32 hotkey,
+        bytes32 minerHotkey,
         bytes16 nodeId,
         uint256 slashAmount,
         uint256 slashAlphaAmount,
         string calldata url,
         bytes32 urlContentSha256
     ) external onlyRole(TRUSTEE_ROLE) nonReentrant {
-        uint256 amount = taoCollaterals[hotkey][nodeId];
-        uint256 alphaAmount = alphaCollaterals[hotkey][nodeId];
+        uint256 amount = taoCollaterals[minerHotkey][nodeId];
+        uint256 alphaAmount = alphaCollaterals[minerHotkey][nodeId];
 
         if (amount == 0 && alphaAmount == 0) {
             revert AmountZero();
@@ -582,9 +582,9 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             revert InsufficientCollateralForSlash();
         }
 
-        taoCollaterals[hotkey][nodeId] = amount - slashAmount;
-        alphaCollaterals[hotkey][nodeId] = alphaAmount - slashAlphaAmount;
-        address miner = nodeToMiner[hotkey][nodeId];
+        taoCollaterals[minerHotkey][nodeId] = amount - slashAmount;
+        alphaCollaterals[minerHotkey][nodeId] = alphaAmount - slashAlphaAmount;
+        address miner = nodeToMiner[minerHotkey][nodeId];
         bytes32 trusteeColdkey = bytes32(0);
         if (slashAlphaAmount > 0) {
             trusteeColdkey = _deriveOwnerColdkey(trustee);
@@ -592,15 +592,15 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
         if (
             amount == slashAmount && alphaAmount == slashAlphaAmount
-                && taoCollateralUnderPendingReclaims[hotkey][nodeId] == 0
-                && alphaCollateralUnderPendingReclaims[hotkey][nodeId] == 0
+                && taoCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+                && alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
         ) {
-            nodeToMiner[hotkey][nodeId] = address(0);
-            ownerColdkeys[hotkey][nodeId] = bytes32(0);
-            _removeActiveNode(hotkey, nodeId);
+            nodeToMiner[minerHotkey][nodeId] = address(0);
+            ownerColdkeys[minerHotkey][nodeId] = bytes32(0);
+            _removeActiveNode(minerHotkey, nodeId);
         }
 
-        emit Slashed(hotkey, nodeId, miner, slashAmount, slashAlphaAmount, url, urlContentSha256);
+        emit Slashed(minerHotkey, nodeId, miner, slashAmount, slashAlphaAmount, url, urlContentSha256);
 
         // send slashed TAO to the trustee
         if (slashAmount > 0) {
@@ -722,7 +722,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
     event AlphaDepositsEnabledUpdated(bool enabled);
 
     struct NodeCollateral {
-        bytes32 hotkey;
+        bytes32 minerHotkey;
         bytes16 nodeId;
         address miner;
         uint256 taoCollateral;
@@ -797,7 +797,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
 
     struct ReclaimInfo {
         uint256 reclaimRequestId;
-        bytes32 hotkey;
+        bytes32 minerHotkey;
         bytes16 nodeId;
         address miner;
         uint256 amount;
@@ -835,11 +835,11 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
         for (uint256 i = 0; i < count; i++) {
             NodeKey storage key = activeNodeKeys[offset + i];
             results[i] = NodeCollateral({
-                hotkey: key.hotkey,
+                minerHotkey: key.minerHotkey,
                 nodeId: key.nodeId,
-                miner: nodeToMiner[key.hotkey][key.nodeId],
-                taoCollateral: Math.saturatingSub(taoCollaterals[key.hotkey][key.nodeId], taoCollateralUnderPendingReclaims[key.hotkey][key.nodeId]),
-                alphaCollateral: Math.saturatingSub(alphaCollaterals[key.hotkey][key.nodeId], alphaCollateralUnderPendingReclaims[key.hotkey][key.nodeId])
+                miner: nodeToMiner[key.minerHotkey][key.nodeId],
+                taoCollateral: Math.saturatingSub(taoCollaterals[key.minerHotkey][key.nodeId], taoCollateralUnderPendingReclaims[key.minerHotkey][key.nodeId]),
+                alphaCollateral: Math.saturatingSub(alphaCollaterals[key.minerHotkey][key.nodeId], alphaCollateralUnderPendingReclaims[key.minerHotkey][key.nodeId])
             });
         }
     }
@@ -864,7 +864,7 @@ contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlU
             Reclaim storage r = reclaims[id];
             results[i] = ReclaimInfo({
                 reclaimRequestId: id,
-                hotkey: r.hotkey,
+                minerHotkey: r.minerHotkey,
                 nodeId: r.nodeId,
                 miner: r.miner,
                 amount: r.amount,
