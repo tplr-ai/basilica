@@ -283,7 +283,7 @@ pub async fn reclaim_collateral(
             let request_id = U256::from_be_bytes(log.topics()[1].0);
             return Ok(ReclaimInfo {
                 reclaim_request_id: request_id,
-                miner_hotkey: miner_hotkey,
+                miner_hotkey,
                 node_id,
                 miner: e.miner,
                 amount: e.amount,
