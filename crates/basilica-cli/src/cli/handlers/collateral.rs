@@ -104,17 +104,6 @@ fn read_private_key(path: &Path) -> Result<String, CliError> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn parse_hotkey(input: &str) -> Result<[u8; 32], CliError> {
-    let hex_str = input.strip_prefix("0x").unwrap_or(input);
-    let bytes = hex::decode(hex_str).map_err(|e| eyre!("Invalid hotkey hex: {}", e))?;
-    if bytes.len() != 32 {
-        return Err(eyre!("Hotkey must be 32 bytes, got {}", bytes.len()).into());
-    }
-    let mut arr = [0u8; 32];
-    arr.copy_from_slice(&bytes);
-    Ok(arr)
-}
-
 fn parse_node_id(input: &str) -> Result<[u8; 16], CliError> {
     let id = uuid::Uuid::parse_str(input).map_err(|e| eyre!("Invalid node UUID: {}", e))?;
     Ok(*id.as_bytes())
@@ -152,7 +141,7 @@ fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
         .hotkey
         .as_deref()
         .ok_or_else(|| eyre!("--hotkey is required"))?;
-    parse_hotkey(hk)
+    parse_ss58_address(hk)
 }
 
 fn evm_address_from_private_key(private_key: &str) -> Result<Address, CliError> {
@@ -283,10 +272,10 @@ async fn handle_deposit(
 ) -> Result<(), CliError> {
     // Prompt for missing params
     let hotkey = match &params.hotkey {
-        Some(hk) => parse_hotkey(hk)?,
+        Some(hk) => parse_ss58_address(hk)?,
         None => {
-            let hk = prompt_input("Miner's Bittensor hotkey (32-byte hex)")?;
-            parse_hotkey(&hk)?
+            let hk = prompt_input("Miner's Bittensor hotkey")?;
+            parse_ss58_address(&hk)?
         }
     };
 
