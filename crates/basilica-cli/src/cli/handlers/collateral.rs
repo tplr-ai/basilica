@@ -181,6 +181,23 @@ fn prompt_amount(prompt: &str) -> Result<f64, CliError> {
         .map_err(|e| eyre!("Prompt error: {}", e).into())
 }
 
+fn format_time_remaining(remaining: &chrono::Duration) -> String {
+    if remaining.num_seconds() <= 0 {
+        "Ready".to_string()
+    } else {
+        let hours = remaining.num_hours();
+        let mins = remaining.num_minutes() % 60;
+        let secs = remaining.num_seconds() % 60;
+        if hours > 0 {
+            format!("{}h {}m remaining", hours, mins)
+        } else if mins > 0 {
+            format!("{}m {}s remaining", mins, secs)
+        } else {
+            format!("{}s remaining", secs)
+        }
+    }
+}
+
 fn format_hotkey_short(hotkey: &[u8; 32]) -> String {
     format!(
         "0x{}..{}",
@@ -433,12 +450,11 @@ async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Resu
                     chrono::DateTime::from_timestamp(r.deny_timeout as i64, 0).unwrap_or_default();
                 let remaining = finalizable_at.signed_duration_since(now);
 
+                let time_str = format_time_remaining(&remaining);
                 let status = if remaining.num_seconds() <= 0 {
-                    style("Ready").green().to_string()
+                    style(&time_str).green().to_string()
                 } else {
-                    let hours = remaining.num_hours();
-                    let mins = remaining.num_minutes() % 60;
-                    format!("Waiting ({}h {}m remaining)", hours, mins)
+                    format!("Waiting ({})", time_str)
                 };
 
                 ReclaimRow {
@@ -540,10 +556,9 @@ async fn handle_reclaim(params: &CollateralParams) -> Result<(), CliError> {
         finalizable_at.format("%Y-%m-%d %H:%M:%S")
     );
 
+    let time_str = format_time_remaining(&remaining);
     if remaining.num_seconds() > 0 {
-        let hours = remaining.num_hours();
-        let mins = remaining.num_minutes() % 60;
-        println!("  Time remaining:  {}h {}m", hours, mins);
+        println!("  Time remaining:  {}", time_str);
     } else {
         println!("  Time remaining:  {}", style("Ready to finalize").green());
     }
@@ -599,13 +614,7 @@ async fn handle_finalize(
                         .unwrap_or_default();
                     let remaining = finalizable_at.signed_duration_since(now);
 
-                    let status = if remaining.num_seconds() <= 0 {
-                        "Ready".to_string()
-                    } else {
-                        let hours = remaining.num_hours();
-                        let mins = remaining.num_minutes() % 60;
-                        format!("{}h {}m remaining", hours, mins)
-                    };
+                    let status = format_time_remaining(&remaining);
 
                     format!(
                         "ID: {}  Node: {}  Alpha: {:.2}  [{}]",
@@ -675,17 +684,15 @@ async fn handle_send(
     let token = match token {
         Some(t) => t,
         None => {
-            let items = &["TAO", "Alpha"];
+            let variants = [SendToken::Tao, SendToken::Alpha];
+            let labels: Vec<String> = variants.iter().map(|t| t.to_string()).collect();
             let selection = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt("Token type to send")
-                .items(items)
+                .items(&labels)
                 .default(0)
                 .interact()
                 .map_err(|e| eyre!("Prompt error: {}", e))?;
-            match selection {
-                0 => SendToken::Tao,
-                _ => SendToken::Alpha,
-            }
+            variants[selection]
         }
     };
 

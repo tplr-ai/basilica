@@ -419,6 +419,15 @@ pub enum SendToken {
     Alpha,
 }
 
+impl std::fmt::Display for SendToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SendToken::Tao => write!(f, "TAO"),
+            SendToken::Alpha => write!(f, "Alpha"),
+        }
+    }
+}
+
 impl Commands {
     /// Check if this command requires authentication
     pub fn requires_auth(&self) -> bool {
