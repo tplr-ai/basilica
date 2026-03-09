@@ -436,10 +436,7 @@ async fn handle_query_command(
             let request_id = parse_u256(&reclaim_request_id)?;
             let result = collateral_contract::reclaims(request_id, network_config).await?;
             println!("Reclaim details for request {}:", reclaim_request_id);
-            println!(
-                "  Miner Hotkey: 0x{}",
-                hex::encode(result.miner_hotkey)
-            );
+            println!("  Miner Hotkey: 0x{}", hex::encode(result.miner_hotkey));
             println!("  Node ID: {}", Uuid::from_bytes(result.node_id));
             println!("  Miner: {}", result.miner);
             println!("  Amount: {} wei", result.amount);

@@ -295,9 +295,12 @@ async fn handle_deposit(
 
     if !yes {
         println!("{}", style("Deposit Summary").bold());
-        println!("  Miner Hotkey:    {}", hotkey_to_ss58(&hotkey));
-        println!("  Node:         {} ({})", ip_str, node_uuid);
-        println!("  Alpha Hotkey: 0x{}", hex::encode(alpha_hotkey));
+        println!("  Miner Hotkey:  {}", hotkey_to_ss58(&hotkey));
+        println!("  Node:          {} ({})", ip_str, node_uuid);
+        println!(
+            "  Staked under:  {} (validator)",
+            hotkey_to_ss58(&alpha_hotkey)
+        );
         println!("  Amount:       {:.2} alpha", amount);
         println!();
 
@@ -755,7 +758,7 @@ async fn handle_send(
             if !yes {
                 println!("{}", style("Send Alpha Summary").bold());
                 println!("  Destination: {}", to_str);
-                println!("  Hotkey:      0x{}", hex::encode(hotkey));
+                println!("  Staked under: {} (validator)", hotkey_to_ss58(&hotkey));
                 println!("  Netuid:      {}", netuid);
                 println!("  Amount:      {:.2} alpha", amount);
                 println!();
