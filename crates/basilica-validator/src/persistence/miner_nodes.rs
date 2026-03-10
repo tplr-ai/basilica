@@ -44,9 +44,10 @@ pub struct RegisteredNodeBidMetadata {
 }
 
 pub(crate) fn extract_gpu_memory_gb(gpu_name: &str) -> u32 {
+    use once_cell::sync::Lazy;
     use regex::Regex;
-    let re = Regex::new(r"(\d+)GB").unwrap();
-    if let Some(captures) = re.captures(gpu_name) {
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d+)GB").expect("valid regex"));
+    if let Some(captures) = RE.captures(gpu_name) {
         captures[1].parse().unwrap_or(0)
     } else {
         0

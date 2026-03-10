@@ -95,17 +95,14 @@ impl CollateralManager {
                 Decimal::ZERO
             });
 
-        let (state, status) = self
-            .evaluator
-            .evaluate(
-                hotkey,
-                node_id,
-                gpu_category,
-                gpu_count,
-                collateral_alpha,
-                alpha_price_usd,
-            )
-            .await?;
+        let (state, status) = self.evaluator.evaluate(
+            hotkey,
+            node_id,
+            gpu_category,
+            gpu_count,
+            collateral_alpha,
+            alpha_price_usd,
+        )?;
         if let Some(metrics) = &self.metrics {
             metrics.record_collateral_node_status(hotkey, node_id, gpu_category, &status.status);
         }

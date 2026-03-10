@@ -208,18 +208,14 @@ impl Collateral {
             None => Decimal::ZERO,
         };
 
-        match self
-            .evaluator
-            .evaluate(
-                &node.hotkey_ss58,
-                &node.node_id,
-                gpu_category,
-                node.gpu_count,
-                collateral_alpha,
-                alpha_price_usd,
-            )
-            .await
-        {
+        match self.evaluator.evaluate(
+            &node.hotkey_ss58,
+            &node.node_id,
+            gpu_category,
+            node.gpu_count,
+            collateral_alpha,
+            alpha_price_usd,
+        ) {
             Ok((state, _)) => match state {
                 CollateralState::Sufficient { .. } | CollateralState::Warning { .. } => {
                     CollateralPreference::Preferred

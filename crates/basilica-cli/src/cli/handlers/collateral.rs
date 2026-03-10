@@ -2,6 +2,7 @@ use alloy_primitives::{Address, U256};
 use color_eyre::eyre::eyre;
 use console::style;
 use dialoguer::{theme::ColorfulTheme, Input, Select};
+use rust_decimal::Decimal;
 use std::path::Path;
 use std::str::FromStr;
 use tabled::settings::Style;
@@ -115,20 +116,25 @@ fn resolve_node_id_from_ip(ip: &str) -> Result<[u8; 16], CliError> {
     Ok(*node_id.uuid.as_bytes())
 }
 
-fn alpha_to_rao(alpha: f64) -> Result<U256, CliError> {
-    if alpha <= 0.0 {
+fn alpha_to_rao(alpha: Decimal) -> Result<U256, CliError> {
+    if alpha <= Decimal::ZERO {
         return Err(eyre!("Amount must be positive, got {}", alpha).into());
     }
-    let rao = (alpha * 1e9).round() as u128;
+    let rao = alpha * Decimal::from(1_000_000_000u64);
+    let rao = rao
+        .round()
+        .to_string()
+        .parse::<u128>()
+        .map_err(|_| eyre!("Amount too large to convert"))?;
     if rao == 0 {
         return Err(eyre!("Amount too small").into());
     }
     Ok(U256::from(rao))
 }
 
-fn rao_to_alpha(rao: U256) -> f64 {
+fn rao_to_alpha(rao: U256) -> Decimal {
     let rao_u128: u128 = rao.try_into().unwrap_or(u128::MAX);
-    rao_u128 as f64 / 1e9
+    Decimal::from(rao_u128) / Decimal::from(1_000_000_000u64)
 }
 
 fn wei_to_tao(wei: U256) -> f64 {
@@ -291,7 +297,8 @@ async fn handle_deposit(
         .map_err(|e| eyre!("Failed to get validator hotkey: {}", e))?;
     let node_id_bytes = resolve_node_id_from_ip(&ip_str)?;
     let node_uuid = uuid::Uuid::from_bytes(node_id_bytes);
-    let rao_amount = alpha_to_rao(amount)?;
+    let amount_dec = Decimal::try_from(amount).map_err(|e| eyre!("Invalid amount: {}", e))?;
+    let rao_amount = alpha_to_rao(amount_dec)?;
 
     if !yes {
         println!("{}", style("Deposit Summary").bold());
@@ -301,7 +308,7 @@ async fn handle_deposit(
             "  Staked under:  {} (validator)",
             hotkey_to_ss58(&alpha_hotkey)
         );
-        println!("  Amount:       {:.2} alpha", amount);
+        println!("  Amount:       {:.2} alpha", amount_dec);
         println!();
 
         let confirm = dialoguer::Confirm::new()
@@ -753,14 +760,16 @@ async fn handle_send(
             let netuid = collateral_contract::netuid(&params.network_config)
                 .await
                 .map_err(|e| eyre!("Failed to get netuid: {}", e))?;
-            let amount_rao = alpha_to_rao(amount)?;
+            let amount_dec =
+                Decimal::try_from(amount).map_err(|e| eyre!("Invalid amount: {}", e))?;
+            let amount_rao = alpha_to_rao(amount_dec)?;
 
             if !yes {
                 println!("{}", style("Send Alpha Summary").bold());
                 println!("  Destination: {}", to_str);
                 println!("  Staked under: {} (validator)", hotkey_to_ss58(&hotkey));
                 println!("  Netuid:      {}", netuid);
-                println!("  Amount:      {:.2} alpha", amount);
+                println!("  Amount:      {:.2} alpha", amount_dec);
                 println!();
 
                 let confirm = dialoguer::Confirm::new()

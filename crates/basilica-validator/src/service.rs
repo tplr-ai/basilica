@@ -48,6 +48,7 @@ struct TaskInputs {
     api_handler: ApiHandler,
     persistence: Arc<SimplePersistence>,
     collateral_manager: Option<Arc<CollateralManager>>,
+    collateral_evaluator: Option<Arc<CollateralEvaluator>>,
     gpu_profile_repo: Arc<GpuProfileRepository>,
     validator_ssh_public_key: String,
     api_client: Arc<BasilicaApiClient>,
@@ -99,7 +100,7 @@ impl ValidatorService {
         );
 
         let collateral_metrics = validator_metrics.as_ref().map(|m| m.prometheus());
-        let (collateral_manager, slash_executor) = self
+        let (collateral_manager, slash_executor, collateral_evaluator) = self
             .init_collateral_components(
                 persistence_arc.clone(),
                 collateral_metrics.clone(),
@@ -146,6 +147,7 @@ impl ValidatorService {
                 api_handler,
                 persistence: persistence_arc.clone(),
                 collateral_manager: collateral_manager.clone(),
+                collateral_evaluator,
                 gpu_profile_repo: gpu_profile_repo.clone(),
                 validator_ssh_public_key,
                 api_client,
@@ -302,9 +304,13 @@ impl ValidatorService {
         collateral_metrics: Option<Arc<ValidatorPrometheusMetrics>>,
         signer: Arc<BittensorService>,
         api_client: Arc<BasilicaApiClient>,
-    ) -> Result<(Option<Arc<CollateralManager>>, Option<Arc<SlashExecutor>>)> {
+    ) -> Result<(
+        Option<Arc<CollateralManager>>,
+        Option<Arc<SlashExecutor>>,
+        Option<Arc<CollateralEvaluator>>,
+    )> {
         let Some(collateral_config) = self.config.collateral.clone() else {
-            return Ok((None, None));
+            return Ok((None, None, None));
         };
         if collateral_config.shadow_mode {
             warn!("Collateral shadow_mode is enabled; on-chain slashing is disabled");
@@ -313,7 +319,7 @@ impl ValidatorService {
         let collateral_manager = Arc::new(CollateralManager::new(
             persistence.clone(),
             api_client,
-            evaluator,
+            evaluator.clone(),
             self.config.bittensor.common.netuid,
             collateral_metrics.clone(),
         ));
@@ -324,7 +330,11 @@ impl ValidatorService {
             collateral_metrics,
             Some(signer),
         ));
-        Ok((Some(collateral_manager), Some(slash_executor)))
+        Ok((
+            Some(collateral_manager),
+            Some(slash_executor),
+            Some(evaluator),
+        ))
     }
 
     fn init_miner_prover(
@@ -440,8 +450,9 @@ impl ValidatorService {
             None
         };
 
-        let collateral_scanner = if let Some(collateral_config) = self.config.collateral.clone() {
-            let evaluator = Arc::new(CollateralEvaluator::new(collateral_config.clone()));
+        let collateral_scanner = if let (Some(collateral_config), Some(evaluator)) =
+            (self.config.collateral.clone(), inputs.collateral_evaluator)
+        {
             let scanner = Collateral::new(
                 self.config.verification.clone(),
                 collateral_config,

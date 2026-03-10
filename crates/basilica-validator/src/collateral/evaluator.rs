@@ -53,7 +53,7 @@ impl CollateralEvaluator {
         per_gpu * Decimal::from(gpu_count)
     }
 
-    pub async fn evaluate(
+    pub fn evaluate(
         &self,
         _hotkey: &str,
         _node_id: &str,
@@ -192,8 +192,8 @@ impl CollateralEvaluator {
         let needed_alpha = (needed_usd / alpha_usd_price).round_dp(2);
         let needed_usd = needed_usd.round_dp(2);
         Some(format!(
-            "Deposit {:.2} Alpha (~${:.2}) to reach safe level (1.5x minimum)",
-            needed_alpha, needed_usd
+            "Deposit {needed_alpha:.2} Alpha (~${needed_usd:.2}) to reach safe level ({}x minimum)",
+            self.config.warning_threshold_multiplier
         ))
     }
 
@@ -228,8 +228,8 @@ mod tests {
     use super::*;
     use rust_decimal::Decimal;
 
-    #[tokio::test]
-    async fn test_evaluator_sufficient() {
+    #[test]
+    fn test_evaluator_sufficient() {
         let evaluator = CollateralEvaluator::new(CollateralConfig::default());
         let (state, status) = evaluator
             .evaluate(
@@ -240,33 +240,30 @@ mod tests {
                 Decimal::from(200),
                 Some(Decimal::ONE),
             )
-            .await
             .unwrap();
         assert!(matches!(state, CollateralState::Sufficient { .. }));
         assert_eq!(status.status, "sufficient");
         assert_eq!(status.minimum_usd_required, Decimal::from(100));
     }
 
-    #[tokio::test]
-    async fn test_evaluator_undercollateralized() {
+    #[test]
+    fn test_evaluator_undercollateralized() {
         let evaluator = CollateralEvaluator::new(CollateralConfig::default());
         let (state, status) = evaluator
             .evaluate("hk", "node", "H100", 1, Decimal::ONE, Some(Decimal::ONE))
-            .await
             .unwrap();
         assert!(matches!(state, CollateralState::Undercollateralized { .. }));
         assert_eq!(status.status, "undercollateralized");
     }
 
-    #[tokio::test]
-    async fn test_undercollateralized_never_becomes_excluded() {
+    #[test]
+    fn test_undercollateralized_never_becomes_excluded() {
         let evaluator = CollateralEvaluator::new(CollateralConfig::default());
 
         // Evaluate multiple times — should remain undercollateralized, never excluded
         for _ in 0..3 {
             let (state, status) = evaluator
                 .evaluate("hk", "node", "H100", 1, Decimal::ONE, Some(Decimal::ONE))
-                .await
                 .unwrap();
             assert!(
                 matches!(state, CollateralState::Undercollateralized { .. }),
