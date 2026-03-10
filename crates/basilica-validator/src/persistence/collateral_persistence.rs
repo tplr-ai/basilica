@@ -279,8 +279,6 @@ impl SimplePersistence {
 mod tests {
     use super::*;
     use alloy_primitives::U256;
-    use collateral_contract::config::CONTRACT_DEPLOYED_BLOCK_NUMBER;
-
     async fn insert_collateral_row(
         persistence: &SimplePersistence,
         hotkey: &str,
@@ -360,27 +358,6 @@ mod tests {
 
         assert_eq!(tao, Some(U256::from(123u64)));
         assert_eq!(alpha, Some(U256::from(456u64)));
-    }
-
-    #[tokio::test]
-    async fn test_scan_status_table_initialization() {
-        let persistence = SimplePersistence::for_testing().await.unwrap();
-
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM collateral_scan_status")
-            .fetch_one(persistence.pool())
-            .await
-            .unwrap();
-
-        assert_eq!(count, 1);
-
-        let initial_block: i64 = sqlx::query_scalar(
-            "SELECT last_scanned_block_number FROM collateral_scan_status WHERE id = 1",
-        )
-        .fetch_one(persistence.pool())
-        .await
-        .unwrap();
-
-        assert_eq!(initial_block as u64, CONTRACT_DEPLOYED_BLOCK_NUMBER);
     }
 
     #[tokio::test]

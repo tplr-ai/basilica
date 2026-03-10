@@ -79,7 +79,10 @@ fn resolve_params(key_file: &Path, cli_hotkey: Option<&str>) -> Result<Collatera
     // Resolve contract address: env var -> built-in default
     let contract_address = std::env::var("BASILICA_COLLATERAL_CONTRACT_ADDRESS").ok();
 
-    let network_config = CollateralNetworkConfig::from_network(&network, contract_address, None)
+    // Resolve RPC URL: env var -> built-in default
+    let rpc_url = std::env::var("BASILICA_COLLATERAL_RPC_URL").ok();
+
+    let network_config = CollateralNetworkConfig::from_network(&network, contract_address, rpc_url)
         .map_err(|e| eyre!("{}", e))?;
 
     let hotkey = cli_hotkey.map(|s| s.to_string());

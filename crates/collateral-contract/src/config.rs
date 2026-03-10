@@ -17,12 +17,6 @@ pub const LOCAL_CHAIN_ID: u64 = 42;
 pub const LOCAL_RPC_URL: &str = "http://localhost:9944";
 pub const LOCAL_WS_URL: &str = "ws://localhost:9944";
 
-/// Block number at which the collateral contract was deployed.
-pub const CONTRACT_DEPLOYED_BLOCK_NUMBER: u64 = 0;
-
-pub const DEFAULT_CONTRACT_ADDRESS: Address =
-    address!("0x0000000000000000000000000000000000000002");
-
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum Network {
     /// Mainnet (default)
@@ -74,15 +68,26 @@ impl CollateralNetworkConfig {
             ),
             None => None,
         };
-        let (default_chain_id, default_rpc_url, default_contract_address) = match network {
-            Network::Mainnet => (CHAIN_ID, RPC_URL, COLLATERAL_ADDRESS),
-            Network::Testnet => (TEST_CHAIN_ID, TEST_RPC_URL, DEFAULT_CONTRACT_ADDRESS),
-            Network::Local => (LOCAL_CHAIN_ID, LOCAL_RPC_URL, DEFAULT_CONTRACT_ADDRESS),
-        };
-        Ok(CollateralNetworkConfig {
-            chain_id: default_chain_id,
-            rpc_url: rpc_url.unwrap_or_else(|| default_rpc_url.to_string()),
-            contract_address: parsed_addr.unwrap_or(default_contract_address),
-        })
+        match network {
+            Network::Mainnet => Ok(CollateralNetworkConfig {
+                chain_id: CHAIN_ID,
+                rpc_url: rpc_url.unwrap_or_else(|| RPC_URL.to_string()),
+                contract_address: parsed_addr.unwrap_or(COLLATERAL_ADDRESS),
+            }),
+            Network::Testnet => Ok(CollateralNetworkConfig {
+                chain_id: TEST_CHAIN_ID,
+                rpc_url: rpc_url.unwrap_or_else(|| TEST_RPC_URL.to_string()),
+                contract_address: parsed_addr.ok_or_else(|| {
+                    anyhow::anyhow!("Contract address is required for Testnet network")
+                })?,
+            }),
+            Network::Local => Ok(CollateralNetworkConfig {
+                chain_id: LOCAL_CHAIN_ID,
+                rpc_url: rpc_url.unwrap_or_else(|| LOCAL_RPC_URL.to_string()),
+                contract_address: parsed_addr.ok_or_else(|| {
+                    anyhow::anyhow!("Contract address is required for Local network")
+                })?,
+            }),
+        }
     }
 }
