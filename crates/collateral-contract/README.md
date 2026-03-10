@@ -108,14 +108,37 @@ The script performs pre-flight checks (RPC reachability, proxy existence, UPGRAD
 
 **Upgrade safety rules:**
 
+*Storage layout:*
+
 1. **Never reorder or remove existing storage variables** — the proxy's storage layout must stay compatible. New variables go after existing ones (before the `_gap`).
 2. **Shrink `_gap` when adding new storage** — if you add N new storage slots, reduce `_gap` from `[49]` to `[49-N]` to keep total slot count stable.
 3. **Never change the type of an existing variable** — e.g. changing `uint256` to `address` corrupts storage.
 4. **Never change inheritance order** — parent contracts occupy storage slots too; reordering them shifts everything.
-5. **Bump `getVersion()`** — the upgrade script checks that the new version is greater than the current one.
-6. **No constructors with state** — the existing `constructor() { _disableInitializers(); }` is correct. Never add state-setting logic to constructors since it won't affect the proxy.
-7. **Use a migration function for new state** — if the new version needs to initialize new variables, add a `migrateVN()` function and pass its calldata via `MIGRATE_CALLDATA`. Guard it with `reinitializer(N)` to ensure it runs exactly once.
-8. **Constants and immutables are safe to change** — they're stored in bytecode, not storage slots.
+5. **Do not set initial values on state variable declarations** — e.g. `uint256 public x = 42` runs in the implementation's constructor context, not the proxy's. The proxy never sees it. Set all initial values in `initialize()` or a migration function.
+6. **Do not add state variables in parent/base contracts without shrinking their gap** — adding a stateful base contract mid-inheritance chain shifts all downstream storage slots.
+
+*Initialization:*
+
+7. **No constructors with state** — the existing `constructor() { _disableInitializers(); }` is correct. Never add state-setting logic to constructors since it won't affect the proxy.
+8. **Use a migration function for new state** — if the new version needs to initialize new variables, add a `migrateVN()` function and pass its calldata via `MIGRATE_CALLDATA`. Guard it with `reinitializer(N)` to ensure it runs exactly once.
+9. **Call every parent initializer exactly once** — Solidity does not auto-call parent initializers. Missing one silently leaves that module uninitialized.
+
+*UUPS-specific:*
+
+10. **Never remove or break the upgrade mechanism** — every new implementation MUST inherit `UUPSUpgradeable` and include a working `_authorizeUpgrade`. If a new implementation is deployed without upgrade logic, the proxy is permanently bricked with no recovery path.
+11. **Bump `getVersion()`** — the upgrade script checks that the new version is greater than the current one.
+12. **Never use `selfdestruct`** — if executed in the implementation's context via `delegatecall`, it destroys the proxy's state. Post-Cancun this is less dangerous but the rule stands as defense-in-depth.
+13. **Never use unrestricted `delegatecall` to user-supplied addresses** — the target executes in the proxy's storage context. Our contract only `delegatecall`s to hardcoded precompile addresses, which is safe.
+
+*ABI compatibility:*
+
+14. **Do not remove or change the signature of existing external/public functions** — other contracts and off-chain systems call the proxy by selector. You can add new functions freely.
+
+*Operational:*
+
+15. **Constants and immutables are safe to change** — they're stored in bytecode, not storage slots.
+16. **Test upgrades against a fork of production state** — dry-run `upgradeToAndCall` on a mainnet/testnet fork to verify existing state is preserved. Use `forge inspect` to diff storage layouts between old and new implementations.
+17. **Use a multisig or timelock for `UPGRADER_ROLE` in production** — a compromised single EOA with upgrade authority can replace the implementation with a malicious contract.
 
 ### CLI Development
 
