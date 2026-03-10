@@ -751,18 +751,16 @@ impl RentalManager {
                         Some(ssh_credentials),
                     );
 
-                    if let Err(log_err) = tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().block_on(async {
-                            self.ban_manager
-                                .log_misbehaviour(
-                                    miner_uid,
-                                    &selection.node_id,
-                                    MisbehaviourType::DeploymentFailed,
-                                    &details,
-                                )
-                                .await
-                        })
-                    }) {
+                    if let Err(log_err) = self
+                        .ban_manager
+                        .log_misbehaviour(
+                            miner_uid,
+                            &selection.node_id,
+                            MisbehaviourType::DeploymentFailed,
+                            &details,
+                        )
+                        .await
+                    {
                         tracing::warn!(
                             "Failed to log misbehaviour for node {}: {}",
                             selection.node_id,

@@ -229,34 +229,6 @@ pub async fn deposit(
     Ok(())
 }
 
-pub async fn deposit_with_config(
-    private_key: &str,
-    miner_hotkey: [u8; 32],
-    node_id: [u8; 16],
-    alpha_hotkey: [u8; 32],
-    alpha_amount: U256,
-    network_config: &CollateralNetworkConfig,
-) -> Result<(), anyhow::Error> {
-    let contract = get_collateral(private_key, network_config).await?;
-
-    // Product policy: tx surface is alpha-primary. We intentionally do not send TAO msg.value.
-    let tx = contract
-        .deposit(
-            FixedBytes::from_slice(&miner_hotkey),
-            FixedBytes::from_slice(&node_id),
-            FixedBytes::from_slice(&alpha_hotkey),
-            alpha_amount,
-        )
-        .value(U256::ZERO);
-    let tx = tx
-        .send()
-        .await
-        .map_err(|e| decode_contract_revert(e.into()))?;
-    let receipt = tx.get_receipt().await?;
-    tracing::info!("{receipt:?}");
-    Ok(())
-}
-
 pub async fn reclaim_collateral(
     private_key: &str,
     miner_hotkey: [u8; 32],
