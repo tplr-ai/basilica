@@ -44,7 +44,7 @@ Deployment is handled by [`deploy.sh`](./deploy.sh), which deploys the implement
 | `NETUID` | `39` | Subnet ID |
 | `MIN_COLLATERAL` | `100000000000000000` | Minimum TAO collateral increase (wei) |
 | `MIN_ALPHA_COLLATERAL` | `5000000000` | Minimum alpha collateral increase (RAO) |
-| `DECISION_TIMEOUT` | `1` | Reclaim decision window (seconds) |
+| `DECISION_TIMEOUT` | `86400` | Reclaim decision window (seconds; default = 1 day) |
 | `TAO_DEPOSITS_ENABLED` | `true` | Whether TAO deposits are accepted |
 | `ALPHA_DEPOSITS_ENABLED` | `true` | Whether alpha deposits are accepted |
 
@@ -56,7 +56,7 @@ export RPC_URL="https://test.chain.opentensor.ai"
 export TRUSTEE_ADDRESS="0x<trustee-address>"
 export ADMIN_ADDRESS="0x<admin-address>"
 export VALIDATOR_HOTKEY="0x<validator-hotkey>"
-export DECISION_TIMEOUT=3600
+export DECISION_TIMEOUT=86400
 
 bash ./deploy.sh
 ```
@@ -69,7 +69,7 @@ export RPC_URL="https://lite.chain.opentensor.ai"
 export TRUSTEE_ADDRESS="0x<trustee-address>"
 export ADMIN_ADDRESS="0x<admin-address>"
 export VALIDATOR_HOTKEY="0x<validator-hotkey>"
-export DECISION_TIMEOUT=3600
+export DECISION_TIMEOUT=86400
 
 bash ./deploy.sh
 ```
