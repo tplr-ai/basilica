@@ -8,6 +8,7 @@ use anyhow::Result;
 use collateral_contract::config::CollateralNetworkConfig;
 use rust_decimal::Decimal;
 use std::sync::Arc;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -43,11 +44,11 @@ impl Collateral {
     }
 
     /// Spawn the collateral sync loop on a background task
-    pub fn start(&self) {
+    pub fn start(&self) -> JoinHandle<()> {
         let scanner = self.clone();
         tokio::spawn(async move {
             scanner.sync_loop().await;
-        });
+        })
     }
 
     /// Stop the collateral sync loop

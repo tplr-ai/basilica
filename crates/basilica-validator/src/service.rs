@@ -40,6 +40,7 @@ struct RuntimeHandles {
     registration_server_task: JoinHandle<()>,
     cleanup_task: Option<JoinHandle<()>>,
     collateral_scanner: Option<Collateral>,
+    collateral_scanner_task: Option<JoinHandle<()>>,
 }
 
 struct TaskInputs {
@@ -158,7 +159,7 @@ impl ValidatorService {
         signal::ctrl_c().await?;
         info!("Shutdown signal received, stopping validator...");
 
-        self.shutdown(handles);
+        self.shutdown(handles).await;
 
         info!("Validator shutdown complete");
         Ok(())
@@ -450,23 +451,24 @@ impl ValidatorService {
             None
         };
 
-        let collateral_scanner = if let (Some(collateral_config), Some(evaluator)) =
-            (self.config.collateral.clone(), inputs.collateral_evaluator)
-        {
-            let scanner = Collateral::new(
-                self.config.verification.clone(),
-                collateral_config,
-                inputs.persistence.clone(),
-                inputs.api_client.clone(),
-                evaluator,
-                self.config.bittensor.common.netuid,
-            );
-            scanner.start();
-            Some(scanner)
-        } else {
-            info!("Collateral scan disabled (no collateral config)");
-            None
-        };
+        let (collateral_scanner, collateral_scanner_task) =
+            if let (Some(collateral_config), Some(evaluator)) =
+                (self.config.collateral.clone(), inputs.collateral_evaluator)
+            {
+                let scanner = Collateral::new(
+                    self.config.verification.clone(),
+                    collateral_config,
+                    inputs.persistence.clone(),
+                    inputs.api_client.clone(),
+                    evaluator,
+                    self.config.bittensor.common.netuid,
+                );
+                let task = scanner.start();
+                (Some(scanner), Some(task))
+            } else {
+                info!("Collateral scan disabled (no collateral config)");
+                (None, None)
+            };
 
         RuntimeHandles {
             scoring_task,
@@ -476,10 +478,11 @@ impl ValidatorService {
             registration_server_task,
             cleanup_task,
             collateral_scanner,
+            collateral_scanner_task,
         }
     }
 
-    fn shutdown(&self, handles: RuntimeHandles) {
+    async fn shutdown(&self, handles: RuntimeHandles) {
         handles.scoring_task.abort();
         handles.weight_setter_task.abort();
         handles.miner_prover_task.abort();
@@ -490,6 +493,9 @@ impl ValidatorService {
         handles.registration_server_task.abort();
         if let Some(scanner) = &handles.collateral_scanner {
             scanner.stop();
+        }
+        if let Some(task) = handles.collateral_scanner_task {
+            let _ = task.await;
         }
     }
 
