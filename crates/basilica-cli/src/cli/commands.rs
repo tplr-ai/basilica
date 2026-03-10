@@ -362,7 +362,7 @@ pub enum CollateralAction {
 
         /// Amount of alpha to deposit (human-readable, e.g. 5.0)
         #[arg(long)]
-        amount: Option<f64>,
+        amount: Option<String>,
 
         /// Skip confirmation prompt
         #[arg(long, short = 'y')]
@@ -400,7 +400,7 @@ pub enum CollateralAction {
 
         /// Amount to send (human-readable, e.g. 5.0)
         #[arg(long)]
-        amount: Option<f64>,
+        amount: Option<String>,
 
         /// Token type to send
         #[arg(long, value_enum)]

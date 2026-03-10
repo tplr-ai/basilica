@@ -38,7 +38,7 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             yes,
         } => {
             let params = resolve_params(key_file, hotkey.as_deref())?;
-            handle_deposit(&params, node_ip.as_deref(), *amount, *yes).await
+            handle_deposit(&params, node_ip.as_deref(), amount.as_deref(), *yes).await
         }
         CollateralAction::Status { hotkey, node_id } => {
             let params = resolve_params(key_file, hotkey.as_deref())?;
@@ -59,7 +59,7 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             yes,
         } => {
             let params = resolve_params(key_file, None)?;
-            handle_send(&params, to.as_deref(), *amount, *token, *yes).await
+            handle_send(&params, to.as_deref(), amount.as_deref(), *token, *yes).await
         }
     }
 }
@@ -165,18 +165,23 @@ fn prompt_input(prompt: &str) -> Result<String, CliError> {
         .map_err(|e| eyre!("Prompt error: {}", e).into())
 }
 
-fn prompt_amount(prompt: &str) -> Result<f64, CliError> {
-    Input::with_theme(&ColorfulTheme::default())
+fn prompt_amount(prompt: &str) -> Result<Decimal, CliError> {
+    let input: String = Input::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt)
-        .validate_with(|input: &f64| {
-            if *input > 0.0 {
-                Ok(())
-            } else {
-                Err("Amount must be positive")
-            }
+        .validate_with(|input: &String| {
+            Decimal::from_str(input)
+                .map_err(|_| "Invalid number".to_string())
+                .and_then(|d| {
+                    if d > Decimal::ZERO {
+                        Ok(())
+                    } else {
+                        Err("Amount must be positive".to_string())
+                    }
+                })
         })
         .interact_text()
-        .map_err(|e| eyre!("Prompt error: {}", e).into())
+        .map_err(|e| eyre!("Prompt error: {}", e))?;
+    Ok(Decimal::from_str(&input).expect("already validated"))
 }
 
 fn format_time_remaining(remaining: &chrono::Duration) -> String {
@@ -273,7 +278,7 @@ async fn handle_receive(params: &CollateralParams) -> Result<(), CliError> {
 async fn handle_deposit(
     params: &CollateralParams,
     ip: Option<&str>,
-    amount: Option<f64>,
+    amount: Option<&str>,
     yes: bool,
 ) -> Result<(), CliError> {
     // Prompt for missing params
@@ -290,8 +295,8 @@ async fn handle_deposit(
         None => prompt_input("Node IP address")?,
     };
 
-    let amount = match amount {
-        Some(a) => a,
+    let amount_dec = match amount {
+        Some(a) => Decimal::from_str(a).map_err(|e| eyre!("Invalid amount '{}': {}", a, e))?,
         None => prompt_amount("Amount of alpha to deposit")?,
     };
 
@@ -300,7 +305,6 @@ async fn handle_deposit(
         .map_err(|e| eyre!("Failed to get validator hotkey: {}", e))?;
     let node_id_bytes = resolve_node_id_from_ip(&ip_str)?;
     let node_uuid = uuid::Uuid::from_bytes(node_id_bytes);
-    let amount_dec = Decimal::try_from(amount).map_err(|e| eyre!("Invalid amount: {}", e))?;
     let rao_amount = alpha_to_rao(amount_dec)?;
 
     if !yes {
@@ -343,7 +347,7 @@ async fn handle_deposit(
     println!(
         "{} Deposited {:.2} alpha for node {} ({})",
         style("✓").green().bold(),
-        amount,
+        amount_dec,
         ip_str,
         node_uuid
     );
@@ -661,11 +665,16 @@ fn parse_ss58_address(ss58: &str) -> Result<[u8; 32], CliError> {
     Ok(account.into())
 }
 
-fn tao_to_wei(amount: f64) -> Result<U256, CliError> {
-    if amount <= 0.0 {
+fn tao_to_wei(amount: Decimal) -> Result<U256, CliError> {
+    if amount <= Decimal::ZERO {
         return Err(eyre!("Amount must be positive, got {}", amount).into());
     }
-    let wei = (amount * 1e18).round() as u128;
+    let wei = amount * Decimal::from(1_000_000_000_000_000_000u64);
+    let wei = wei
+        .round()
+        .to_string()
+        .parse::<u128>()
+        .map_err(|_| eyre!("Amount too large to convert"))?;
     if wei == 0 {
         return Err(eyre!("Amount too small").into());
     }
@@ -675,7 +684,7 @@ fn tao_to_wei(amount: f64) -> Result<U256, CliError> {
 async fn handle_send(
     params: &CollateralParams,
     to: Option<&str>,
-    amount: Option<f64>,
+    amount: Option<&str>,
     token: Option<SendToken>,
     yes: bool,
 ) -> Result<(), CliError> {
@@ -702,8 +711,8 @@ async fn handle_send(
     };
 
     // Prompt for amount if missing
-    let amount = match amount {
-        Some(a) => a,
+    let amount_dec = match amount {
+        Some(a) => Decimal::from_str(a).map_err(|e| eyre!("Invalid amount '{}': {}", a, e))?,
         None => {
             let unit = match token {
                 SendToken::Tao => "TAO",
@@ -717,12 +726,12 @@ async fn handle_send(
 
     match token {
         SendToken::Tao => {
-            let amount_wei = tao_to_wei(amount)?;
+            let amount_wei = tao_to_wei(amount_dec)?;
 
             if !yes {
                 println!("{}", style("Send TAO Summary").bold());
                 println!("  Destination: {}", to_str);
-                println!("  Amount:      {:.4} TAO", amount);
+                println!("  Amount:      {:.4} TAO", amount_dec);
                 println!();
 
                 let confirm = dialoguer::Confirm::new()
@@ -752,7 +761,7 @@ async fn handle_send(
             println!(
                 "{} Sent {:.4} TAO to {}",
                 style("✓").green().bold(),
-                amount,
+                amount_dec,
                 to_str
             );
         }
@@ -763,8 +772,6 @@ async fn handle_send(
             let netuid = collateral_contract::netuid(&params.network_config)
                 .await
                 .map_err(|e| eyre!("Failed to get netuid: {}", e))?;
-            let amount_dec =
-                Decimal::try_from(amount).map_err(|e| eyre!("Invalid amount: {}", e))?;
             let amount_rao = alpha_to_rao(amount_dec)?;
 
             if !yes {
@@ -804,7 +811,7 @@ async fn handle_send(
             println!(
                 "{} Sent {:.2} alpha to {}",
                 style("✓").green().bold(),
-                amount,
+                amount_dec,
                 to_str
             );
         }
