@@ -12,10 +12,31 @@ use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CollateralPreference {
     Preferred,
+    #[default]
     Fallback,
+}
+
+impl CollateralPreference {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Preferred => "preferred",
+            Self::Fallback => "fallback",
+        }
+    }
+}
+
+impl FromStr for CollateralPreference {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "preferred" => Ok(Self::Preferred),
+            "fallback" => Ok(Self::Fallback),
+            other => anyhow::bail!("unknown collateral preference: {other}"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -91,33 +112,6 @@ impl CollateralManager {
         Ok((state, status))
     }
 
-    pub async fn get_preference(
-        &self,
-        hotkey: &str,
-        node_id: &str,
-        gpu_category: &str,
-        gpu_count: u32,
-    ) -> CollateralPreference {
-        match self
-            .get_collateral_status(hotkey, node_id, gpu_category, gpu_count)
-            .await
-        {
-            Ok((state, _)) => match state {
-                CollateralState::Sufficient { .. } | CollateralState::Warning { .. } => {
-                    CollateralPreference::Preferred
-                }
-                CollateralState::Undercollateralized { .. } | CollateralState::Unknown { .. } => {
-                    CollateralPreference::Fallback
-                }
-            },
-            Err(_) => CollateralPreference::Fallback,
-        }
-    }
-
-    pub async fn refresh_price_cache(&self) {
-        // TTL-only pricing: no background refresh loop
-    }
-
     pub async fn get_collateral_alpha(&self, hotkey: &str, node_id: &str) -> Result<Decimal> {
         let hotkey_hex = match hotkey_ss58_to_hex(hotkey) {
             Ok(val) => val,
@@ -158,7 +152,7 @@ pub fn node_id_to_hex(node_id: &str) -> Result<String> {
     Ok(format!("0x{}", encode(uuid.as_bytes())))
 }
 
-fn u256_to_alpha(amount: alloy_primitives::U256) -> Result<Decimal> {
+pub fn u256_to_alpha(amount: alloy_primitives::U256) -> Result<Decimal> {
     let amount_str = amount.to_string();
     let value = Decimal::from_str(&amount_str).map_err(|e| {
         anyhow::anyhow!(

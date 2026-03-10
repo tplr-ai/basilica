@@ -21,7 +21,7 @@ pub use types::*;
 
 use crate::ban_system::BanManager;
 use crate::billing::BillingClient;
-use crate::collateral::{CollateralManager, CollateralPreference};
+use crate::collateral::CollateralPreference;
 use crate::metrics::ValidatorPrometheusMetrics;
 use crate::persistence::entities::MisbehaviourType;
 use crate::persistence::miner_nodes::NodeBidCandidate;
@@ -46,8 +46,6 @@ pub struct RentalManager {
     metrics: Arc<ValidatorPrometheusMetrics>,
     /// Ban manager for logging misbehaviours
     ban_manager: Arc<BanManager>,
-    /// Collateral manager for bid selection and eligibility
-    collateral_manager: Option<Arc<CollateralManager>>,
     /// Max age for full validation before allowing a rental
     pre_rental_full_validation_max_age: std::time::Duration,
 }
@@ -185,7 +183,6 @@ impl RentalManager {
             ssh_key_manager: Some(ssh_key_manager),
             metrics,
             ban_manager,
-            collateral_manager: None,
             // TODO: Wire this from config for callers using `new`.
             pre_rental_full_validation_max_age: std::time::Duration::from_secs(12 * 60 * 60),
         }
@@ -197,7 +194,6 @@ impl RentalManager {
         config: &crate::config::ValidatorConfig,
         persistence: Arc<SimplePersistence>,
         metrics: Arc<ValidatorPrometheusMetrics>,
-        collateral_manager: Option<Arc<CollateralManager>>,
         slash_executor: Option<Arc<crate::collateral::SlashExecutor>>,
         validator_hotkey: Option<String>,
     ) -> Result<Self> {
@@ -252,7 +248,6 @@ impl RentalManager {
             ssh_key_manager: Some(ssh_key_manager),
             metrics,
             ban_manager,
-            collateral_manager,
             pre_rental_full_validation_max_age: config.verification.node_validation_interval,
         })
     }
@@ -572,32 +567,12 @@ impl RentalManager {
     async fn rank_bid_candidates(
         &self,
         candidates: Vec<NodeBidCandidate>,
-        gpu_category: &str,
-        gpu_count: u32,
+        _gpu_category: &str,
+        _gpu_count: u32,
     ) -> Vec<NodeBidCandidate> {
-        let mut preferred = Vec::new();
-        let mut fallback = Vec::new();
-
-        for candidate in candidates {
-            let preference = match &self.collateral_manager {
-                Some(collateral) => {
-                    collateral
-                        .get_preference(
-                            &candidate.miner_hotkey,
-                            &candidate.node_id,
-                            gpu_category,
-                            gpu_count,
-                        )
-                        .await
-                }
-                None => CollateralPreference::Fallback,
-            };
-            match preference {
-                CollateralPreference::Preferred => preferred.push(candidate),
-                CollateralPreference::Fallback => fallback.push(candidate),
-            }
-        }
-
+        let (preferred, fallback): (Vec<_>, Vec<_>) = candidates
+            .into_iter()
+            .partition(|c| c.collateral_preference == CollateralPreference::Preferred);
         let mut ordered = preferred;
         ordered.extend(fallback);
         ordered

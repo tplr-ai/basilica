@@ -118,7 +118,6 @@ impl ValidatorService {
             .init_rental_manager(
                 persistence_arc.clone(),
                 validator_metrics.as_ref(),
-                collateral_manager.clone(),
                 slash_executor.clone(),
                 &validator_hotkey,
             )
@@ -349,7 +348,6 @@ impl ValidatorService {
         &self,
         persistence: Arc<SimplePersistence>,
         validator_metrics: Option<&ValidatorMetrics>,
-        collateral_manager: Option<Arc<CollateralManager>>,
         slash_executor: Option<Arc<SlashExecutor>>,
         validator_hotkey: &basilica_common::identity::Hotkey,
     ) -> Result<Option<crate::rental::RentalManager>> {
@@ -361,7 +359,6 @@ impl ValidatorService {
             &self.config,
             persistence,
             metrics.prometheus(),
-            collateral_manager,
             slash_executor,
             Some(validator_hotkey.as_str().to_string()),
         )
@@ -444,10 +441,14 @@ impl ValidatorService {
         };
 
         let collateral_scanner = if let Some(collateral_config) = self.config.collateral.clone() {
+            let evaluator = Arc::new(CollateralEvaluator::new(collateral_config.clone()));
             let scanner = Collateral::new(
                 self.config.verification.clone(),
                 collateral_config,
                 inputs.persistence.clone(),
+                inputs.api_client.clone(),
+                evaluator,
+                self.config.bittensor.common.netuid,
             );
             scanner.start();
             Some(scanner)

@@ -2,6 +2,7 @@
 //!
 //! This module contains all SQL operations related to miner-node relationships.
 
+use crate::collateral::CollateralPreference;
 use crate::miner_prover::types::MinerInfo;
 use crate::persistence::types::{AvailableNodeData, NodeData};
 use crate::persistence::SimplePersistence;
@@ -22,6 +23,17 @@ pub struct NodeBidCandidate {
     pub miner_uid: i64,
     pub hourly_rate_cents: u32,
     pub gpu_count: i64,
+    pub collateral_preference: CollateralPreference,
+}
+
+/// GPU info for a node, used by the collateral preference computation.
+#[derive(Debug, Clone)]
+pub struct NodeGpuInfo {
+    pub miner_id: String,
+    pub node_id: String,
+    pub hotkey_ss58: String,
+    pub gpu_category: Option<String>,
+    pub gpu_count: u32,
 }
 
 /// Stored bid metadata for a registered node.
@@ -851,6 +863,7 @@ impl SimplePersistence {
                 m.hotkey  AS miner_hotkey,
                 CAST(REPLACE(m.id, 'miner_', '') AS INTEGER) AS miner_uid,
                 me.hourly_rate_cents,
+                me.collateral_preference,
                 COUNT(DISTINCT gua.gpu_uuid) AS gpu_count,
                 GROUP_CONCAT(gua.gpu_name) AS gpu_names
             FROM miner_nodes me
@@ -862,7 +875,7 @@ impl SimplePersistence {
                 AND me.bid_active = 1
                 AND me.hourly_rate_cents IS NOT NULL
                 AND me.hourly_rate_cents <= ?
-            GROUP BY me.node_id, me.miner_id, m.hotkey, m.id, me.hourly_rate_cents
+            GROUP BY me.node_id, me.miner_id, m.hotkey, m.id, me.hourly_rate_cents, me.collateral_preference
             HAVING COUNT(DISTINCT gua.gpu_uuid) >= ?
             ORDER BY me.hourly_rate_cents ASC
             LIMIT ?
@@ -893,6 +906,10 @@ impl SimplePersistence {
                 continue;
             }
 
+            let pref_str: String = row.get("collateral_preference");
+            let collateral_preference =
+                CollateralPreference::from_str(&pref_str).unwrap_or_default();
+
             candidates.push(NodeBidCandidate {
                 node_id: row.get("node_id"),
                 miner_id: row.get("miner_id"),
@@ -900,10 +917,74 @@ impl SimplePersistence {
                 miner_uid: row.get("miner_uid"),
                 hourly_rate_cents: row.get::<i64, _>("hourly_rate_cents") as u32,
                 gpu_count: row.get("gpu_count"),
+                collateral_preference,
             });
         }
 
         Ok(candidates)
+    }
+
+    /// Get all bid-active nodes with GPU info for collateral preference computation.
+    /// JOINs `miner_nodes` + `miners` + `gpu_uuid_assignments` to get GPU category.
+    pub async fn get_all_nodes_with_gpu_info(&self) -> Result<Vec<NodeGpuInfo>> {
+        let query = r#"
+            SELECT
+                me.miner_id,
+                me.node_id,
+                m.hotkey AS hotkey_ss58,
+                gua.gpu_name AS gpu_name,
+                COUNT(DISTINCT gua.gpu_uuid) AS gpu_count
+            FROM miner_nodes me
+            JOIN miners m ON me.miner_id = m.id
+            LEFT JOIN gpu_uuid_assignments gua
+                ON me.node_id = gua.node_id AND gua.miner_id = me.miner_id
+            WHERE me.bid_active = 1
+            GROUP BY me.miner_id, me.node_id, m.hotkey, gua.gpu_name
+        "#;
+
+        let rows = sqlx::query(query).fetch_all(self.pool()).await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let gpu_name: Option<String> = row.get("gpu_name");
+            let gpu_category =
+                gpu_name.and_then(|name| GpuCategory::from_str(&name).ok().map(|c| c.to_string()));
+
+            results.push(NodeGpuInfo {
+                miner_id: row.get("miner_id"),
+                node_id: row.get("node_id"),
+                hotkey_ss58: row.get("hotkey_ss58"),
+                gpu_category,
+                gpu_count: row.get::<i64, _>("gpu_count") as u32,
+            });
+        }
+
+        Ok(results)
+    }
+
+    /// Batch update collateral preferences for nodes.
+    /// Takes `(node_id, preference)` pairs and updates in a transaction.
+    pub async fn batch_update_collateral_preferences(
+        &self,
+        updates: &[(String, CollateralPreference)],
+    ) -> Result<()> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool().begin().await?;
+
+        for (node_id, preference) in updates {
+            sqlx::query("UPDATE miner_nodes SET collateral_preference = ? WHERE node_id = ?")
+                .bind(preference.as_str())
+                .bind(node_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
     }
 
     // =========================================================================
