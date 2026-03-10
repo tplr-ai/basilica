@@ -10,6 +10,8 @@ NodeOwnershipEdgeCasesTest
 │   ├── it clears nodeToMiner after full slash
 │   ├── it removes node from active tracking after full slash
 │   └── it allows a new miner to claim the same node after full slash
+├── when trustee partially slashes with no pending reclaims
+│   └── it preserves ownership and active tracking on partial slash
 ├── when trustee denies reclaim with non-zero remaining balance
 │   ├── it preserves nodeToMiner after deny with balance
 │   ├── it reverts when another miner tries to deposit after deny

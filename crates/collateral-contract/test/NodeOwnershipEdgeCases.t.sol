@@ -207,6 +207,34 @@ contract NodeOwnershipEdgeCasesTest is Test {
     }
 
     // ---------------------------------------------------------------------------
+    // Test: when trustee partially slashes — preserves ownership and active tracking
+    //
+    // it preserves ownership and active tracking on partial slash
+    // ---------------------------------------------------------------------------
+
+    function test_WhenTrusteePartiallySlashesPreservesOwnershipAndActiveTracking() external {
+        // Alice deposits 5 ether
+        vm.prank(ALICE);
+        collateral.deposit{value: 5 ether}(HOTKEY_1, EXECUTOR_ID_1, ALPHA_HOTKEY, 0);
+
+        // Trustee slashes 50% of the deposit (2.5 ether)
+        vm.prank(TRUSTEE);
+        collateral.slashCollateral(HOTKEY_1, EXECUTOR_ID_1, 2.5 ether, 0, TEST_URL, TEST_SHA256);
+
+        // it preserves ownership after partial slash
+        assertEq(collateral.nodeToMiner(HOTKEY_1, EXECUTOR_ID_1), ALICE);
+
+        // it keeps node in active tracking
+        assertEq(collateral.getActiveNodeCount(), 1);
+
+        // it keeps node in collaterals list
+        assertEq(_allCollaterals().length, 1);
+
+        // it leaves correct remaining balance
+        assertEq(collateral.taoCollaterals(HOTKEY_1, EXECUTOR_ID_1), 2.5 ether);
+    }
+
+    // ---------------------------------------------------------------------------
     // Test: when trustee denies reclaim with non-zero remaining balance
     //
     // it preserves nodeToMiner after deny with balance
