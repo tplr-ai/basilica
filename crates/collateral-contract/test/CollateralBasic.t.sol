@@ -1088,11 +1088,11 @@ contract CollateralBasicTest is Test {
         vm.prank(BOB, BOB);
         collateral.deposit{value: 3 ether}(HOTKEY_2, EXECUTOR_ID_2, ALPHA_HOTKEY, 0);
 
-        bytes32 HOTKEY_3 = bytes32(uint256(102));
-        bytes16 EXECUTOR_ID_3 = bytes16(uint128(3));
-        _seedNodeOwner(HOTKEY_3, EXECUTOR_ID_3, CHARLIE);
+        bytes32 hotkey3 = bytes32(uint256(102));
+        bytes16 executorId3 = bytes16(uint128(3));
+        _seedNodeOwner(hotkey3, executorId3, CHARLIE);
         vm.prank(CHARLIE);
-        collateral.deposit{value: 2 ether}(HOTKEY_3, EXECUTOR_ID_3, ALPHA_HOTKEY, 0);
+        collateral.deposit{value: 2 ether}(hotkey3, executorId3, ALPHA_HOTKEY, 0);
 
         assertEq(collateral.getActiveNodeCount(), 3);
 
@@ -1107,7 +1107,7 @@ contract CollateralBasicTest is Test {
 
         // After swap-and-pop: A should be at index 0, C should be at index 1
         assertEq(results[0].minerHotkey, HOTKEY_1);
-        assertEq(results[1].minerHotkey, HOTKEY_3);
+        assertEq(results[1].minerHotkey, hotkey3);
     }
 
     function testDuplicateDepositDoesNotDuplicateTracking() public {

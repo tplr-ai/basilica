@@ -14,6 +14,9 @@ remappings = [
 # Local testnet (your custom EVM)
 local = "http://localhost:9944"
 
+[lint]
+exclude_lints = ["asm-keccak256"]
+
 [profile.local]
 evm_version = "london"
 optimizer = true

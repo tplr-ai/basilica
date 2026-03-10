@@ -2,21 +2,14 @@
 set -euo pipefail
 
 NETUID="${NETUID:-39}"
-TRUSTEE_ADDRESS="${TRUSTEE_ADDRESS:-0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac}"
+TRUSTEE_ADDRESS="${TRUSTEE_ADDRESS:?must be set to the trustee EVM address}"
 MIN_COLLATERAL="${MIN_COLLATERAL:-100000000000000000}"
 MIN_ALPHA_COLLATERAL="${MIN_ALPHA_COLLATERAL:-5000000000}"
 DECISION_TIMEOUT="${DECISION_TIMEOUT:-1}"
-ADMIN_ADDRESS="${ADMIN_ADDRESS:-0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac}"
-VALIDATOR_HOTKEY="${VALIDATOR_HOTKEY:-0x900dd1d8d4d94772b09fc1c82a74ea4af1471ba5594371ccc10632a1611b1945}"
-PRIVATE_KEY="${PRIVATE_KEY:-0x}"
-# export RPC_URL=https://lite.chain.opentensor.ai:443
-# export RPC_URL=https://test.finney.opentensor.ai
-RPC_URL="${RPC_URL:-http://localhost:9944}"
-
-if [ "$PRIVATE_KEY" = "0x" ]; then
-  echo "set PRIVATE_KEY to a real key before deploying" >&2
-  exit 1
-fi
+ADMIN_ADDRESS="${ADMIN_ADDRESS:?must be set to the admin EVM address}"
+VALIDATOR_HOTKEY="${VALIDATOR_HOTKEY:?must be set to the validator hotkey (0x-prefixed 64 hex chars)}"
+PRIVATE_KEY="${PRIVATE_KEY:?must be set to the deployer private key}"
+RPC_URL="${RPC_URL:?must be set to the target RPC URL}"
 
 echo "Deploying CollateralUpgradeable implementation..."
 impl_output="$(FOUNDRY_PROFILE=local forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
