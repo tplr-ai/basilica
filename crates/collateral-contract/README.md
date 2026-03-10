@@ -227,7 +227,7 @@ collateral-cli --contract-address 0x5FbDB2315678afecb367f032d93F642f64180aa3 tx 
   --alpha-amount 7000000000
 
 # Using environment variable for private key
-export PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12
+export PRIVATE_KEY=0x<your-private-key>
 collateral-cli tx deposit \
   --hotkey 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --node-id 12c61943-7ce0-470f-a3aa-14df501f15e2 \
