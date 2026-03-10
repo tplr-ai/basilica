@@ -45,7 +45,7 @@ Deployment is handled by [`deploy.sh`](./deploy.sh), which deploys the implement
 | `MIN_COLLATERAL` | `100000000000000000` | Minimum TAO collateral increase (wei) |
 | `MIN_ALPHA_COLLATERAL` | `5000000000` | Minimum alpha collateral increase (RAO) |
 | `DECISION_TIMEOUT` | `86400` | Reclaim decision window (seconds; default = 1 day) |
-| `TAO_DEPOSITS_ENABLED` | `true` | Whether TAO deposits are accepted |
+| `TAO_DEPOSITS_ENABLED` | `false` | Whether TAO deposits are accepted |
 | `ALPHA_DEPOSITS_ENABLED` | `true` | Whether alpha deposits are accepted |
 
 **Example — testnet:**
