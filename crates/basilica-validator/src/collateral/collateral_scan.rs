@@ -66,12 +66,15 @@ impl Collateral {
                     break;
                 }
                 _ = interval.tick() => {
-                    if let Err(e) = self.sync_collateral_state().await {
-                        error!("Collateral sync failed: {}", e);
-                    }
-
-                    if let Err(e) = self.compute_and_store_preferences().await {
-                        error!("Collateral preference computation failed: {}", e);
+                    match self.sync_collateral_state().await {
+                        Ok(()) => {
+                            if let Err(e) = self.compute_and_store_preferences().await {
+                                error!("Collateral preference computation failed: {}", e);
+                            }
+                        }
+                        Err(e) => {
+                            error!("Collateral sync failed, skipping preference computation: {}", e);
+                        }
                     }
                 }
             }
