@@ -153,7 +153,7 @@ You need replace the variable with the correct value like contract address.
     collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query netuid
   ```
 
-  - Run deposit command to initiate an **alpha** collateral deposit. The current CLI tx surface is alpha-primary (no TAO `--amount` flag). See [`flow.sh`](/crates/collateral-contract/flow.sh).
+  - Run deposit command to initiate an **alpha** collateral deposit. The current CLI tx surface is alpha-primary (no TAO `--amount` flag).
 
   ```shell
   #!/usr/bin/env bash
@@ -202,12 +202,12 @@ You need replace the variable with the correct value like contract address.
   ```
 
 - **Reclaim Collateral**
-- Initiate the reclaim process by running `collateral-cli tx reclaim-collateral`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+- Initiate the reclaim process by running `collateral-cli tx reclaim-collateral`.
 - Wait for the validator's response or for the configured inactivity timeout to pass.
 - Deny/finalize cutoff semantics are explicit:
   - `denyReclaimRequest` is valid only while `now < denyTimeout`.
   - `finalizeReclaim` is valid when `now >= denyTimeout`.
-- If the timeout has reached or passed, run `collateral-cli tx finalize-reclaim`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+- If the timeout has reached or passed, run `collateral-cli tx finalize-reclaim`.
 - Verify on-chain that your balance has been updated accordingly.
 
 ### As a validator.
