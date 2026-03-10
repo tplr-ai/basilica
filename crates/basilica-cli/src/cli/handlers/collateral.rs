@@ -40,9 +40,9 @@ pub async fn handle_collateral(action: &CollateralAction, key_file: &Path) -> Re
             let params = resolve_params(key_file, hotkey.as_deref())?;
             handle_deposit(&params, node_ip.as_deref(), amount.as_deref(), *yes).await
         }
-        CollateralAction::Status { hotkey, node_id } => {
-            let params = resolve_params(key_file, hotkey.as_deref())?;
-            handle_status(&params, node_id.as_deref()).await
+        CollateralAction::Status => {
+            let params = resolve_params(key_file, None)?;
+            handle_status(&params).await
         }
         CollateralAction::ReclaimStart => {
             let params = resolve_params(key_file, None)?;
@@ -108,11 +108,6 @@ fn read_private_key(path: &Path) -> Result<String, CliError> {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn parse_node_id(input: &str) -> Result<[u8; 16], CliError> {
-    let id = uuid::Uuid::parse_str(input).map_err(|e| eyre!("Invalid node UUID: {}", e))?;
-    Ok(*id.as_bytes())
-}
-
 fn resolve_node_id_from_ip(ip: &str) -> Result<[u8; 16], CliError> {
     let node_id = basilica_common::node_identity::NodeId::new(ip)
         .map_err(|e| eyre!("Failed to derive node ID from IP '{}': {}", ip, e))?;
@@ -143,14 +138,6 @@ fn rao_to_alpha(rao: U256) -> Decimal {
 fn wei_to_tao(wei: U256) -> f64 {
     let wei_u128: u128 = wei.try_into().unwrap_or(u128::MAX);
     wei_u128 as f64 / 1e18
-}
-
-fn require_hotkey(params: &CollateralParams) -> Result<[u8; 32], CliError> {
-    let hk = params
-        .hotkey
-        .as_deref()
-        .ok_or_else(|| eyre!("--hotkey is required"))?;
-    parse_ss58_address(hk)
 }
 
 fn evm_address_from_private_key(private_key: &str) -> Result<Address, CliError> {
@@ -383,52 +370,33 @@ struct CollateralRow {
     alpha_collateral: String,
 }
 
-async fn handle_status(params: &CollateralParams, node_id: Option<&str>) -> Result<(), CliError> {
+async fn handle_status(params: &CollateralParams) -> Result<(), CliError> {
     let spinner = create_spinner("Querying collateral status...");
 
-    if let Some(node_id_str) = node_id {
-        // Specific node query
-        let hotkey = require_hotkey(params)?;
-        let node_id_bytes = parse_node_id(node_id_str)?;
+    let all = collateral_contract::get_all_collaterals(&params.network_config)
+        .await
+        .map_err(|e| eyre!("Failed to query all collaterals: {}", e))?;
 
-        let (_tao, alpha) =
-            collateral_contract::collaterals(hotkey, node_id_bytes, &params.network_config)
-                .await
-                .map_err(|e| eyre!("Failed to query collateral: {}", e))?;
+    complete_spinner_and_clear(spinner);
 
-        complete_spinner_and_clear(spinner);
+    if all.is_empty() {
+        println!("No collateral found.");
+    } else {
+        let rows: Vec<CollateralRow> = all
+            .iter()
+            .map(|n| {
+                let node_uuid = uuid::Uuid::from_bytes(n.node_id);
+                CollateralRow {
+                    hotkey: hotkey_to_ss58(&n.miner_hotkey),
+                    node_id: node_uuid.to_string(),
+                    miner: format!("{}", n.miner),
+                    alpha_collateral: format!("{:.2} alpha", rao_to_alpha(n.alpha_collateral)),
+                }
+            })
+            .collect();
 
         println!("{}", style("Collateral Status").bold());
-        println!("  Miner Hotkey:  {}", hotkey_to_ss58(&hotkey));
-        println!("  Node ID:    {}", node_id_str);
-        println!("  Alpha:      {:.2} alpha", rao_to_alpha(alpha));
-    } else {
-        // All nodes - optionally filter by hotkey
-        let all = collateral_contract::get_all_collaterals(&params.network_config)
-            .await
-            .map_err(|e| eyre!("Failed to query all collaterals: {}", e))?;
-
-        complete_spinner_and_clear(spinner);
-
-        if all.is_empty() {
-            println!("No collateral found.");
-        } else {
-            let rows: Vec<CollateralRow> = all
-                .iter()
-                .map(|n| {
-                    let node_uuid = uuid::Uuid::from_bytes(n.node_id);
-                    CollateralRow {
-                        hotkey: hotkey_to_ss58(&n.miner_hotkey),
-                        node_id: node_uuid.to_string(),
-                        miner: format!("{}", n.miner),
-                        alpha_collateral: format!("{:.2} alpha", rao_to_alpha(n.alpha_collateral)),
-                    }
-                })
-                .collect();
-
-            println!("{}", style("Collateral Status").bold());
-            println!("{}", Table::new(rows).with(Style::modern()));
-        }
+        println!("{}", Table::new(rows).with(Style::modern()));
     }
 
     // Pending reclaims section

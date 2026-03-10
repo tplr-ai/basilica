@@ -370,15 +370,7 @@ pub enum CollateralAction {
     },
 
     /// Show collateral amounts per node
-    Status {
-        /// Miner's Bittensor hotkey (SS58 format, required with --node-id)
-        #[arg(long)]
-        hotkey: Option<String>,
-
-        /// Specific node UUID to query (requires --hotkey)
-        #[arg(long)]
-        node_id: Option<String>,
-    },
+    Status,
 
     /// Initiate collateral reclaim (selects from your on-chain collaterals)
     #[command(name = "reclaim-start")]
