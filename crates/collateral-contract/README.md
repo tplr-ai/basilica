@@ -23,53 +23,99 @@ forge install OpenZeppelin/openzeppelin-contracts-upgradeable
 forge test
 ```
 
-### deploy to testnet
+### Deploying the Contract
+
+Deployment is handled by [`deploy.sh`](./deploy.sh), which deploys the implementation contract and an ERC1967 proxy in one step.
+
+**Required environment variables:**
+
+| Variable | Description |
+|---|---|
+| `PRIVATE_KEY` | Deployer's private key (only needs gas, no on-chain privilege after deploy) |
+| `RPC_URL` | Target network RPC endpoint |
+| `TRUSTEE_ADDRESS` | EVM address that can slash collateral and deny reclaims |
+| `ADMIN_ADDRESS` | EVM address that can upgrade the contract and change config |
+| `VALIDATOR_HOTKEY` | Substrate validator hotkey (0x-prefixed, 64 hex chars) |
+
+**Optional variables (have sensible defaults):**
+
+| Variable | Default | Description |
+|---|---|---|
+| `NETUID` | `39` | Subnet ID |
+| `MIN_COLLATERAL` | `100000000000000000` | Minimum TAO collateral increase (wei) |
+| `MIN_ALPHA_COLLATERAL` | `5000000000` | Minimum alpha collateral increase (RAO) |
+| `DECISION_TIMEOUT` | `1` | Reclaim decision window (seconds) |
+| `TAO_DEPOSITS_ENABLED` | `true` | Whether TAO deposits are accepted |
+| `ALPHA_DEPOSITS_ENABLED` | `true` | Whether alpha deposits are accepted |
+
+**Example — testnet:**
 
 ```bash
-export NETUID=39
-export TRUSTEE_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
-export MIN_COLLATERAL=1000000000000000000
-export MIN_ALPHA_COLLATERAL=5000000000
+export PRIVATE_KEY="0x<deployer-key>"
+export RPC_URL="https://test.chain.opentensor.ai"
+export TRUSTEE_ADDRESS="0x<trustee-address>"
+export ADMIN_ADDRESS="0x<admin-address>"
+export VALIDATOR_HOTKEY="0x<validator-hotkey>"
 export DECISION_TIMEOUT=3600
-export ADMIN_ADDRESS=0xABCaD56aa87f3718C8892B48cB443c017Cd632BB
-export VALIDATOR_HOTKEY=0x0000000000000000000000000000000000000000000000000000000000000002
-export TAO_DEPOSITS_ENABLED=true
-export ALPHA_DEPOSITS_ENABLED=true
-export PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000
 
-impl_out="$(forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
-  --rpc-url https://test.chain.opentensor.ai \
-  --private-key "$PRIVATE_KEY" \
-  --broadcast)"
-IMPLEMENTATION_ADDRESS="$(echo "$impl_out" | awk '/Deployed to:/ {print $3}')"
-
-INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint256,uint64,address,bytes32,bool,bool)" \
-  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$MIN_ALPHA_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY" \
-  "$TAO_DEPOSITS_ENABLED" "$ALPHA_DEPOSITS_ENABLED")"
-
-proxy_out="$(forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
-  --rpc-url https://test.chain.opentensor.ai \
-  --private-key "$PRIVATE_KEY" \
-  --broadcast \
-  --constructor-args "$IMPLEMENTATION_ADDRESS" "$INIT_DATA")"
-PROXY_ADDRESS="$(echo "$proxy_out" | awk '/Deployed to:/ {print $3}')"
-
-# Output like
-# CollateralUpgradeable
-
-✅ [Success] Hash: 0xb727d00872419766cd274f5c15b764bb010e74728720925cc5d5c85405dcea31
-Contract Address: 0x567E4c231AB946CdEf1C48eFA154BB8790Ae58Ba
-Block: 5232407
-Paid: 0.005569686466097676 ETH (276627 gas \* 20.134283588 gwei)
-
-# ERC1967Proxy
-
-✅ [Success] Hash: 0xcd91c195019ec4373be318554e4dbfbb95a59a8a823016253c3b4e673310ffa6
-Contract Address: 0x22ffee3f67E476870C1A79059C3c51AeD096dF92
-Block: 5232407
-Paid: 0.068712128660782484 ETH (3412693 gas \* 20.134283588 gwei)
-
+bash ./deploy.sh
 ```
+
+**Example — mainnet:**
+
+```bash
+export PRIVATE_KEY="0x<deployer-key>"
+export RPC_URL="https://lite.chain.opentensor.ai"
+export TRUSTEE_ADDRESS="0x<trustee-address>"
+export ADMIN_ADDRESS="0x<admin-address>"
+export VALIDATOR_HOTKEY="0x<validator-hotkey>"
+export DECISION_TIMEOUT=3600
+
+bash ./deploy.sh
+```
+
+**Localnet** deployment is automated by `scripts/collateral/setup-localnet-env.sh`, which sets the deployer as both trustee and admin.
+
+### Upgrading the Implementation
+
+After the initial deployment, the implementation can be upgraded via [`upgrade.sh`](./upgrade.sh). Only the admin (`UPGRADER_ROLE` holder) can perform upgrades.
+
+**Required environment variables:**
+
+| Variable | Description |
+|---|---|
+| `PROXY_ADDRESS` | The existing proxy contract address |
+| `PRIVATE_KEY` | Admin's private key (must have `UPGRADER_ROLE`) |
+| `RPC_URL` | Target network RPC endpoint |
+
+**Optional:**
+
+| Variable | Description |
+|---|---|
+| `MIGRATE_CALLDATA` | Calldata for a migration function on the new implementation (default: `0x` = no migration) |
+
+**Example:**
+
+```bash
+export PROXY_ADDRESS="0x<proxy-address>"
+export PRIVATE_KEY="0x<admin-key>"
+export RPC_URL="https://test.chain.opentensor.ai"
+
+bash ./upgrade.sh
+```
+
+The script performs pre-flight checks (RPC reachability, proxy existence, UPGRADER_ROLE verification, version comparison), deploys the new implementation, prompts for confirmation, then verifies the upgrade succeeded.
+
+**Upgrade safety rules:**
+
+1. **Never reorder or remove existing storage variables** — the proxy's storage layout must stay compatible. New variables go after existing ones (before the `_gap`).
+2. **Shrink `_gap` when adding new storage** — if you add N new storage slots, reduce `_gap` from `[49]` to `[49-N]` to keep total slot count stable.
+3. **Never change the type of an existing variable** — e.g. changing `uint256` to `address` corrupts storage.
+4. **Never change inheritance order** — parent contracts occupy storage slots too; reordering them shifts everything.
+5. **Bump `getVersion()`** — the upgrade script checks that the new version is greater than the current one.
+6. **No constructors with state** — the existing `constructor() { _disableInitializers(); }` is correct. Never add state-setting logic to constructors since it won't affect the proxy.
+7. **Use a migration function for new state** — if the new version needs to initialize new variables, add a `migrateVN()` function and pass its calldata via `MIGRATE_CALLDATA`. Guard it with `reinitializer(N)` to ensure it runs exactly once.
+8. **Constants and immutables are safe to change** — they're stored in bytecode, not storage slots.
 
 ### CLI Development
 
@@ -367,9 +413,6 @@ forge test -vvv
 # Run tests with gas reporting
 forge test --gas-report
 
-# Test contract deployment flow used in this repo
-# (requires env vars: NETUID, TRUSTEE_ADDRESS, MIN_COLLATERAL, MIN_ALPHA_COLLATERAL,
-#  DECISION_TIMEOUT, ADMIN_ADDRESS, VALIDATOR_HOTKEY, TAO_DEPOSITS_ENABLED,
-#  ALPHA_DEPOSITS_ENABLED, PRIVATE_KEY, RPC_URL)
+# Test contract deployment flow (see "Deploying the Contract" section for required env vars)
 bash ./deploy.sh
 ```
