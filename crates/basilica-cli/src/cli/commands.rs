@@ -37,6 +37,29 @@ impl From<ComputeCategoryArg> for basilica_common::types::ComputeCategory {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum RentalStateArg {
+    Provisioning,
+    Active,
+    Restarting,
+    Stopping,
+    Stopped,
+    Failed,
+}
+
+impl From<RentalStateArg> for RentalState {
+    fn from(value: RentalStateArg) -> Self {
+        match value {
+            RentalStateArg::Provisioning => RentalState::Provisioning,
+            RentalStateArg::Active => RentalState::Active,
+            RentalStateArg::Restarting => RentalState::Restarting,
+            RentalStateArg::Stopping => RentalState::Stopping,
+            RentalStateArg::Stopped => RentalState::Stopped,
+            RentalStateArg::Failed => RentalState::Failed,
+        }
+    }
+}
+
 /// Main CLI commands
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
@@ -482,7 +505,7 @@ pub struct UpOptions {
 pub struct PsFilters {
     /// Filter by status (defaults to 'active' if not specified)
     #[arg(long, value_enum)]
-    pub status: Option<RentalState>,
+    pub status: Option<RentalStateArg>,
 
     /// Filter by GPU type
     #[arg(long)]

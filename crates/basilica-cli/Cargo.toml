@@ -71,7 +71,6 @@ urlencoding = { workspace = true }
 
 # Internal crate dependencies
 basilica-common = { path = "../basilica-common" }
-basilica-sdk = { path = "../basilica-sdk" }
-basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
+basilica-sdk = { path = "../basilica-sdk", features = ["cli"] }
 
 [dev-dependencies]

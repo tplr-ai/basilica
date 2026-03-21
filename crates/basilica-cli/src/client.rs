@@ -15,14 +15,10 @@ use basilica_sdk::{BasilicaClient, ClientBuilder};
 use color_eyre::eyre::{eyre, Context};
 use tracing::{debug, warn};
 
-/// Creates an authenticated BasilicaClient with JWT
+/// Creates an authenticated Basilica client for CLI commands.
 ///
-/// This function:
-/// 1. Attempts to use JWT tokens from TokenStore
-/// 2. Refreshes expired tokens if possible
-///
-/// # Arguments
-/// * `config` - CLI configuration
+/// The client reads stored JWT tokens and refreshes them preemptively when
+/// possible so downstream handlers receive a ready-to-use authenticated client.
 pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaClient> {
     let api_url = config.api.base_url.clone();
 
@@ -42,11 +38,6 @@ pub async fn create_authenticated_client(config: &CliConfig) -> Result<BasilicaC
     builder
         .build()
         .map_err(|e| eyre!("Failed to build client: {}", e).into())
-}
-
-/// Alias for create_authenticated_client for backward compatibility
-pub async fn create_client(config: &CliConfig) -> Result<BasilicaClient> {
-    create_authenticated_client(config).await
 }
 
 /// Gets valid JWT tokens with pre-emptive refresh

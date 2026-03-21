@@ -201,10 +201,10 @@ impl Args {
             // Token management
             Commands::Tokens { action } => {
                 use crate::cli::commands::TokenAction;
-                use crate::client::create_client;
+                use crate::client::create_authenticated_client;
 
                 // Create client with file-based auth (JWT required for token management)
-                let client = create_client(config).await?;
+                let client = create_authenticated_client(config).await?;
 
                 match action {
                     TokenAction::Create { name } => {
@@ -222,10 +222,10 @@ impl Args {
             // SSH key management
             Commands::SshKeys { action } => {
                 use crate::cli::commands::SshKeyAction;
-                use crate::client::create_client;
+                use crate::client::create_authenticated_client;
 
                 // Create client with file-based auth (JWT required for SSH key management)
-                let client = create_client(config).await?;
+                let client = create_authenticated_client(config).await?;
 
                 match action {
                     SshKeyAction::Add { name, file } => {
@@ -279,10 +279,10 @@ impl Args {
             // Volume management
             Commands::Volumes { action } => {
                 use crate::cli::commands::VolumeAction;
-                use crate::client::create_client;
+                use crate::client::create_authenticated_client;
 
                 // Create client with file-based auth (JWT required for volume management)
-                let client = create_client(config).await?;
+                let client = create_authenticated_client(config).await?;
 
                 match action {
                     VolumeAction::Create {

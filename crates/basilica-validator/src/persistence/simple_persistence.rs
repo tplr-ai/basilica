@@ -231,7 +231,7 @@ impl SimplePersistence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::types::{CpuSpec, GpuSpec, NodeRegistration, UpdateMinerRequest};
+    use crate::persistence::types::{MinerNodeInput, MinerUpdateInput};
 
     #[tokio::test]
     async fn test_prevent_duplicate_ssh_endpoint_registration() {
@@ -239,21 +239,11 @@ mod tests {
             .await
             .expect("Failed to create persistence");
 
-        let nodes1 = vec![NodeRegistration {
+        let nodes1 = vec![MinerNodeInput {
             node_id: "exec1".to_string(),
             ssh_endpoint: "root@192.168.1.1:8080".to_string(),
             node_ip: "192.168.1.1".to_string(),
             gpu_count: 2,
-            gpu_specs: vec![GpuSpec {
-                name: "RTX 4090".to_string(),
-                memory_gb: 24,
-                compute_capability: "8.9".to_string(),
-            }],
-            cpu_specs: CpuSpec {
-                cores: 16,
-                model: "Intel i9".to_string(),
-                memory_gb: 32,
-            },
         }];
 
         let result = persistence
@@ -261,21 +251,11 @@ mod tests {
             .await;
         assert!(result.is_ok());
 
-        let nodes2 = vec![NodeRegistration {
+        let nodes2 = vec![MinerNodeInput {
             node_id: "exec2".to_string(),
             ssh_endpoint: "root@192.168.1.1:8080".to_string(),
             node_ip: "192.168.1.1".to_string(),
             gpu_count: 1,
-            gpu_specs: vec![GpuSpec {
-                name: "RTX 3090".to_string(),
-                memory_gb: 24,
-                compute_capability: "8.6".to_string(),
-            }],
-            cpu_specs: CpuSpec {
-                cores: 8,
-                model: "Intel i7".to_string(),
-                memory_gb: 16,
-            },
         }];
 
         let result = persistence
@@ -294,17 +274,11 @@ mod tests {
             .await
             .expect("Failed to create persistence");
 
-        let nodes1 = vec![NodeRegistration {
+        let nodes1 = vec![MinerNodeInput {
             node_id: "exec1".to_string(),
             ssh_endpoint: "root@192.168.1.1:8080".to_string(),
             node_ip: "192.168.1.1".to_string(),
             gpu_count: 2,
-            gpu_specs: vec![],
-            cpu_specs: CpuSpec {
-                cores: 16,
-                model: "Intel i9".to_string(),
-                memory_gb: 32,
-            },
         }];
 
         persistence
@@ -312,17 +286,11 @@ mod tests {
             .await
             .expect("Failed to register miner1");
 
-        let nodes2 = vec![NodeRegistration {
+        let nodes2 = vec![MinerNodeInput {
             node_id: "exec2".to_string(),
             ssh_endpoint: "root@192.168.1.2:8080".to_string(),
             node_ip: "192.168.1.2".to_string(),
             gpu_count: 1,
-            gpu_specs: vec![],
-            cpu_specs: CpuSpec {
-                cores: 8,
-                model: "Intel i7".to_string(),
-                memory_gb: 16,
-            },
         }];
 
         persistence
@@ -330,21 +298,14 @@ mod tests {
             .await
             .expect("Failed to register miner2");
 
-        let update_request = UpdateMinerRequest {
+        let update_request = MinerUpdateInput {
             endpoint: None,
-            nodes: Some(vec![NodeRegistration {
+            nodes: Some(vec![MinerNodeInput {
                 node_id: "exec2_updated".to_string(),
                 ssh_endpoint: "root@192.168.1.1:8080".to_string(),
                 node_ip: "192.168.1.1".to_string(),
                 gpu_count: 1,
-                gpu_specs: vec![],
-                cpu_specs: CpuSpec {
-                    cores: 8,
-                    model: "Intel i7".to_string(),
-                    memory_gb: 16,
-                },
             }]),
-            signature: "test_signature".to_string(),
         };
 
         let result = persistence.update_miner("miner2", &update_request).await;
@@ -361,17 +322,11 @@ mod tests {
             .await
             .expect("Failed to create persistence");
 
-        let nodes = vec![NodeRegistration {
+        let nodes = vec![MinerNodeInput {
             node_id: "exec1".to_string(),
             ssh_endpoint: "root@192.168.1.1:8080".to_string(),
             node_ip: "192.168.1.1".to_string(),
             gpu_count: 2,
-            gpu_specs: vec![],
-            cpu_specs: CpuSpec {
-                cores: 16,
-                model: "Intel i9".to_string(),
-                memory_gb: 32,
-            },
         }];
 
         persistence
@@ -379,21 +334,14 @@ mod tests {
             .await
             .expect("Failed to register miner");
 
-        let update_request = UpdateMinerRequest {
+        let update_request = MinerUpdateInput {
             endpoint: Some("http://miner1-updated.com".to_string()),
-            nodes: Some(vec![NodeRegistration {
+            nodes: Some(vec![MinerNodeInput {
                 node_id: "exec1_updated".to_string(),
                 ssh_endpoint: "root@192.168.1.1:8080".to_string(),
                 node_ip: "192.168.1.1".to_string(),
                 gpu_count: 3,
-                gpu_specs: vec![],
-                cpu_specs: CpuSpec {
-                    cores: 16,
-                    model: "Intel i9".to_string(),
-                    memory_gb: 64,
-                },
             }]),
-            signature: "test_signature".to_string(),
         };
 
         let result = persistence.update_miner("miner1", &update_request).await;
@@ -404,17 +352,11 @@ mod tests {
     async fn test_gpu_uuid_duplicate_prevention() {
         let persistence = SimplePersistence::for_testing().await.unwrap();
 
-        let node1 = NodeRegistration {
+        let node1 = MinerNodeInput {
             node_id: "exec1".to_string(),
             ssh_endpoint: "root@192.168.1.100:50051".to_string(),
             node_ip: "192.168.1.100".to_string(),
             gpu_count: 1,
-            gpu_specs: vec![],
-            cpu_specs: CpuSpec {
-                cores: 8,
-                model: "Intel i7".to_string(),
-                memory_gb: 32,
-            },
         };
 
         persistence
@@ -435,17 +377,11 @@ mod tests {
             .await
             .unwrap();
 
-        let node2 = NodeRegistration {
+        let node2 = MinerNodeInput {
             node_id: "exec2".to_string(),
             ssh_endpoint: "root@192.168.1.101:50051".to_string(),
             node_ip: "192.168.1.101".to_string(),
             gpu_count: 1,
-            gpu_specs: vec![],
-            cpu_specs: CpuSpec {
-                cores: 8,
-                model: "Intel i7".to_string(),
-                memory_gb: 32,
-            },
         };
 
         persistence
@@ -474,17 +410,11 @@ mod tests {
             .await
             .expect("Failed to create persistence");
 
-        let node = NodeRegistration {
+        let node = MinerNodeInput {
             node_id: "exec1".to_string(),
             ssh_endpoint: "root@192.168.1.100:50051".to_string(),
             node_ip: "192.168.1.100".to_string(),
             gpu_count: 2,
-            gpu_specs: vec![],
-            cpu_specs: CpuSpec {
-                cores: 8,
-                model: "Intel i7".to_string(),
-                memory_gb: 32,
-            },
         };
 
         persistence

@@ -21,7 +21,6 @@
 pub mod auth_constants;
 pub mod compute;
 pub mod config;
-pub mod convert;
 pub mod crypto;
 pub mod distributed;
 pub mod error;
@@ -38,6 +37,7 @@ pub mod storage;
 pub mod types;
 pub mod utils;
 pub mod validation;
+pub mod validator_api;
 
 // Re-export commonly used types at the crate root for convenience
 pub use auth_constants::*;

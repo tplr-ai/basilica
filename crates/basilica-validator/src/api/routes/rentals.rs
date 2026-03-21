@@ -12,207 +12,80 @@ use axum::{
 use basilica_common::types::GpuCategory;
 use basilica_common::utils::validate_docker_image;
 use futures::stream::Stream;
-use serde::Deserialize;
 use ssh_key::PublicKey;
 use tracing::{error, info};
 
+use crate::api::{types::RentalListItem, ApiState};
 use crate::{
-    api::types::{ListRentalsResponse, RentalStatusResponse},
+    api::types::{
+        ApiContainerInfo, ApiPortMapping, ApiRentalResponse, ApiRentalState, ListRentalsQuery,
+        ListRentalsResponse, LogStreamQuery, RentalStatusResponse, StartRentalRequest,
+    },
     persistence::validator_persistence::ValidatorPersistence,
     rental::{RentalInfo, RentalRequest, RentalState},
 };
-use crate::{
-    api::{types::RentalListItem, ApiState},
-    rental::RentalResponse,
-};
 
-/// Start rental request
-#[derive(Debug, Deserialize, serde::Serialize)]
-pub struct StartRentalRequest {
-    // GPU selection (required)
-    /// GPU category: "H100", "A100", "B200", etc.
-    pub gpu_category: String,
-    /// Number of GPUs required
-    pub gpu_count: u32,
-
-    // Optional filters
-    /// Minimum GPU memory in GB (e.g., 80 for 80GB)
-    #[serde(default)]
-    pub min_memory_gb: Option<u32>,
-    /// Maximum acceptable cents/GPU-hour
-    pub max_hourly_rate_cents: u32,
-
-    // Container config
-    pub container_image: String,
-    pub ssh_public_key: String,
-    #[serde(default)]
-    pub environment: std::collections::HashMap<String, String>,
-    #[serde(default)]
-    pub ports: Vec<PortMappingRequest>,
-    #[serde(default)]
-    pub resources: ResourceRequirementsRequest,
-    #[serde(default = "default_command")]
-    pub command: Vec<String>,
-    #[serde(default)]
-    pub volumes: Vec<VolumeMountRequest>,
-}
-
-fn default_command() -> Vec<String> {
-    vec!["/bin/bash".to_string()]
-}
-
-impl Default for StartRentalRequest {
-    fn default() -> Self {
-        Self {
-            gpu_category: String::new(),
-            gpu_count: 1,
-            min_memory_gb: None,
-            max_hourly_rate_cents: 0,
-            container_image: "nvidia/cuda:12.2.0-base-ubuntu22.04".to_string(),
-            ssh_public_key: String::new(),
-            environment: std::collections::HashMap::new(),
-            ports: Vec::new(),
-            resources: ResourceRequirementsRequest::default(),
-            command: default_command(),
-            volumes: Vec::new(),
-        }
+fn to_api_rental_state(state: RentalState) -> ApiRentalState {
+    match state {
+        RentalState::Provisioning => ApiRentalState::Provisioning,
+        RentalState::Active => ApiRentalState::Active,
+        RentalState::Restarting => ApiRentalState::Restarting,
+        RentalState::Stopping => ApiRentalState::Stopping,
+        RentalState::Stopped => ApiRentalState::Stopped,
+        RentalState::Failed => ApiRentalState::Failed,
     }
 }
 
-/// Port mapping request
-#[derive(Debug, Clone, Deserialize, serde::Serialize)]
-pub struct PortMappingRequest {
-    pub container_port: u32,
-    pub host_port: u32,
-    #[serde(default = "default_protocol")]
-    pub protocol: String,
-}
-
-fn default_protocol() -> String {
-    "tcp".to_string()
-}
-
-impl Default for PortMappingRequest {
-    fn default() -> Self {
-        Self {
-            container_port: 0,
-            host_port: 0,
-            protocol: "tcp".to_string(),
-        }
+fn to_domain_rental_state(state: ApiRentalState) -> RentalState {
+    match state {
+        ApiRentalState::Provisioning => RentalState::Provisioning,
+        ApiRentalState::Active => RentalState::Active,
+        ApiRentalState::Restarting => RentalState::Restarting,
+        ApiRentalState::Stopping => RentalState::Stopping,
+        ApiRentalState::Stopped => RentalState::Stopped,
+        ApiRentalState::Failed => RentalState::Failed,
     }
 }
 
-impl From<basilica_common::utils::PortMapping> for PortMappingRequest {
-    fn from(mapping: basilica_common::utils::PortMapping) -> Self {
-        Self {
-            container_port: mapping.container_port,
-            host_port: mapping.host_port,
-            protocol: mapping.protocol,
-        }
+fn to_api_container_info(container_info: crate::rental::ContainerInfo) -> ApiContainerInfo {
+    ApiContainerInfo {
+        container_id: container_info.container_id,
+        container_name: container_info.container_name,
+        mapped_ports: container_info
+            .mapped_ports
+            .into_iter()
+            .map(|mapping| ApiPortMapping {
+                container_port: mapping.container_port,
+                host_port: mapping.host_port,
+                protocol: mapping.protocol,
+            })
+            .collect(),
+        status: container_info.status,
+        labels: container_info.labels,
     }
 }
 
-impl From<PortMappingRequest> for crate::rental::PortMapping {
-    fn from(request: PortMappingRequest) -> Self {
-        Self {
-            container_port: request.container_port,
-            host_port: request.host_port,
-            protocol: request.protocol,
-        }
+fn to_api_rental_response(response: crate::rental::RentalResponse) -> ApiRentalResponse {
+    ApiRentalResponse {
+        rental_id: response.rental_id,
+        ssh_credentials: response.ssh_credentials,
+        container_info: to_api_container_info(response.container_info),
     }
-}
-
-/// Resource requirements request
-#[derive(Debug, Deserialize, serde::Serialize)]
-pub struct ResourceRequirementsRequest {
-    pub cpu_cores: f64,
-    pub memory_mb: i64,
-    pub storage_mb: i64,
-    pub gpu_count: u32,
-    #[serde(default)]
-    pub gpu_types: Vec<String>,
-}
-
-impl Default for ResourceRequirementsRequest {
-    fn default() -> Self {
-        Self {
-            cpu_cores: 0.0,
-            memory_mb: 0,
-            storage_mb: 0,
-            gpu_count: 0,
-            gpu_types: Vec::new(),
-        }
-    }
-}
-
-impl From<ResourceRequirementsRequest> for crate::rental::ResourceRequirements {
-    fn from(request: ResourceRequirementsRequest) -> Self {
-        Self {
-            cpu_cores: request.cpu_cores,
-            memory_mb: request.memory_mb,
-            storage_mb: request.storage_mb,
-            gpu_count: request.gpu_count,
-            gpu_types: request.gpu_types,
-        }
-    }
-}
-
-/// Volume mount request
-#[derive(Debug, Deserialize, serde::Serialize)]
-pub struct VolumeMountRequest {
-    pub host_path: String,
-    pub container_path: String,
-    #[serde(default)]
-    pub read_only: bool,
-}
-
-impl From<VolumeMountRequest> for crate::rental::VolumeMount {
-    fn from(request: VolumeMountRequest) -> Self {
-        Self {
-            host_path: request.host_path,
-            container_path: request.container_path,
-            read_only: request.read_only,
-        }
-    }
-}
-
-/// Rental status query parameters
-#[derive(Debug, Deserialize)]
-pub struct RentalStatusQuery {
-    #[allow(dead_code)]
-    pub include_resource_usage: Option<bool>,
-}
-
-/// Log streaming query parameters
-#[derive(Debug, Deserialize)]
-pub struct LogStreamQuery {
-    pub follow: Option<bool>,
-    pub tail: Option<u32>,
-}
-
-/// List rentals query parameters
-#[derive(Debug, Deserialize)]
-pub struct ListRentalsQuery {
-    pub state: Option<RentalState>,
-    /// Type of listing: "rentals" (default) or "available" for available capacity
-    pub list_type: Option<String>,
-    /// Filters for available capacity queries
-    pub min_gpu_memory: Option<u32>,
-    pub gpu_type: Option<String>,
-    pub min_gpu_count: Option<u32>,
-    pub max_cost_per_hour: Option<f64>,
 }
 
 /// Start a new rental
 pub async fn start_rental(
     State(state): State<ApiState>,
     Json(request): Json<StartRentalRequest>,
-) -> Result<Json<RentalResponse>, StatusCode> {
+) -> Result<Json<ApiRentalResponse>, StatusCode> {
+    let requested_gpu_category = request.gpu_category.clone();
+    let requested_gpu_count = request.gpu_count;
+
     // Parse and validate gpu_category using GpuCategory enum
     let gpu_category: GpuCategory = request.gpu_category.parse().unwrap(); // Infallible
     if matches!(&gpu_category, GpuCategory::Other(_)) {
         error!(
-            gpu_category = %request.gpu_category,
+            gpu_category = %requested_gpu_category,
             "[RENTAL_FLOW] GPU type '{}' is not supported", request.gpu_category
         );
         return Err(StatusCode::BAD_REQUEST);
@@ -235,8 +108,8 @@ pub async fn start_rental(
     let ssh_public_key = request.ssh_public_key.trim();
     if PublicKey::from_openssh(ssh_public_key).is_err() {
         error!(
-            gpu_category = %request.gpu_category,
-            gpu_count = request.gpu_count,
+            gpu_category = %requested_gpu_category,
+            gpu_count = requested_gpu_count,
             "[RENTAL_FLOW] Invalid SSH public key provided"
         );
         return Err(StatusCode::BAD_REQUEST);
@@ -244,8 +117,8 @@ pub async fn start_rental(
 
     if let Err(e) = validate_docker_image(&request.container_image) {
         error!(
-            gpu_category = %request.gpu_category,
-            gpu_count = request.gpu_count,
+            gpu_category = %requested_gpu_category,
+            gpu_count = requested_gpu_count,
             "[RENTAL_FLOW] Invalid container image provided: {}",
             e
         );
@@ -262,7 +135,11 @@ pub async fn start_rental(
         .ports
         .into_iter()
         .filter(|p| p.container_port != 22) // Remove any SSH port mappings
-        .map(Into::into)
+        .map(|port| crate::rental::PortMapping {
+            container_port: port.container_port,
+            host_port: port.host_port,
+            protocol: port.protocol,
+        })
         .collect();
 
     // Always add SSH port mapping
@@ -283,14 +160,24 @@ pub async fn start_rental(
             image: request.container_image,
             environment: request.environment,
             ports: port_mappings,
-            resources: request.resources.into(),
+            resources: crate::rental::ResourceRequirements {
+                cpu_cores: request.resources.cpu_cores,
+                memory_mb: request.resources.memory_mb,
+                storage_mb: request.resources.storage_mb,
+                gpu_count: request.resources.gpu_count,
+                gpu_types: request.resources.gpu_types,
+            },
             entrypoint: Vec::new(), // API currently doesn't support custom entrypoint
             command: request.command,
             volumes: request
                 .volumes
                 .into_iter()
                 .filter(|v| !v.host_path.contains("..") && !v.container_path.contains(".."))
-                .map(Into::into)
+                .map(|volume| crate::rental::VolumeMount {
+                    host_path: volume.host_path,
+                    container_path: volume.container_path,
+                    read_only: volume.read_only,
+                })
                 .collect(),
             labels: std::collections::HashMap::new(),
             capabilities: Vec::new(),
@@ -311,8 +198,8 @@ pub async fn start_rental(
         .map_err(|e| {
             let error_msg = e.to_string();
             error!(
-                gpu_category = %request.gpu_category,
-                gpu_count = request.gpu_count,
+                gpu_category = %requested_gpu_category,
+                gpu_count = requested_gpu_count,
                 "[RENTAL_FLOW] Failed to start rental: {}",
                 error_msg
             );
@@ -324,7 +211,7 @@ pub async fn start_rental(
             }
         })?;
 
-    Ok(Json(rental_response))
+    Ok(Json(to_api_rental_response(rental_response)))
 }
 
 /// Get rental status
@@ -527,6 +414,7 @@ pub async fn list_rentals(
 
     // Filter by state if specified
     let filtered_rentals: Vec<RentalInfo> = if let Some(state_filter) = query.state {
+        let state_filter = to_domain_rental_state(state_filter);
         rentals
             .into_iter()
             .filter(|r| r.state == state_filter)
@@ -542,7 +430,7 @@ pub async fn list_rentals(
             rental_id: r.rental_id.clone(),
             node_id: r.node_id.clone(),
             container_id: r.container_id.clone(),
-            state: r.state.clone(),
+            state: to_api_rental_state(r.state.clone()),
             created_at: r.created_at.to_rfc3339(),
             miner_id: r.miner_id.clone(),
             container_image: r.container_spec.image.clone(),

@@ -1,6 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use crate::node_types::{CpuSpec, GpuSpec};
+
 /// Node statistics derived from verification logs
 #[derive(Debug, Clone)]
 pub struct NodeStats {
@@ -63,8 +65,8 @@ pub struct NodeHealthData {
 #[derive(Debug, Clone)]
 pub struct NodeData {
     pub node_id: String,
-    pub gpu_specs: Vec<crate::api::types::GpuSpec>,
-    pub cpu_specs: crate::api::types::CpuSpec,
+    pub gpu_specs: Vec<GpuSpec>,
+    pub cpu_specs: CpuSpec,
     pub location: Option<String>,
 }
 
@@ -73,8 +75,8 @@ pub struct NodeData {
 pub struct AvailableNodeData {
     pub node_id: String,
     pub miner_id: String,
-    pub gpu_specs: Vec<crate::api::types::GpuSpec>,
-    pub cpu_specs: crate::api::types::CpuSpec,
+    pub gpu_specs: Vec<GpuSpec>,
+    pub cpu_specs: CpuSpec,
     pub location: Option<String>,
     pub status: Option<String>,
     pub download_mbps: Option<f64>,
@@ -91,6 +93,22 @@ pub struct NodeMetricData {
     pub miner_uid: u16,
     pub gpu_name: Option<String>,
     pub has_active_rental: bool,
+}
+
+/// Lower-level input used by persistence test helpers when inserting miner nodes.
+#[derive(Debug, Clone)]
+pub struct MinerNodeInput {
+    pub node_id: String,
+    pub ssh_endpoint: String,
+    pub node_ip: String,
+    pub gpu_count: u32,
+}
+
+/// Lower-level update input used by persistence test helpers.
+#[derive(Debug, Clone, Default)]
+pub struct MinerUpdateInput {
+    pub endpoint: Option<String>,
+    pub nodes: Option<Vec<MinerNodeInput>>,
 }
 
 /// Filter criteria for querying rentals

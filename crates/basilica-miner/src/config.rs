@@ -15,8 +15,7 @@ use basilica_common::config::{
     loader, BittensorConfig, ConfigValidation, DatabaseConfig, MetricsConfig, DEFAULT_BID_GRPC_PORT,
 };
 use basilica_common::error::ConfigurationError;
-
-use crate::node_manager::NodeConfig;
+use basilica_common::types::GpuCategory;
 
 /// Main miner configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,6 +112,61 @@ pub struct NodeSshConfig {
 
     /// Default username for node SSH
     pub default_node_username: String,
+}
+
+/// Configuration for a single managed node.
+#[derive(Clone, Debug, Serialize)]
+pub struct NodeConfig {
+    /// SSH host IP literal (IPv4 or IPv6)
+    pub host: String,
+    /// SSH port (typically 22)
+    pub port: u16,
+    /// SSH username for validator access
+    pub username: String,
+    /// GPU category for this node (e.g., "H100", "A100", "RTX4090")
+    pub gpu_category: String,
+    /// Number of GPUs on this node
+    pub gpu_count: u32,
+    /// Additional SSH options
+    pub additional_opts: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct NodeConfigRaw {
+    host: String,
+    port: u16,
+    username: String,
+    #[serde(default = "default_gpu_category")]
+    gpu_category: String,
+    #[serde(default = "default_gpu_count")]
+    gpu_count: u32,
+    additional_opts: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for NodeConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = NodeConfigRaw::deserialize(deserializer)?;
+        let gpu_cat: GpuCategory = raw.gpu_category.parse().unwrap(); // Infallible
+
+        if matches!(&gpu_cat, GpuCategory::Other(_)) {
+            return Err(serde::de::Error::custom(format!(
+                "GPU type '{}' is not supported",
+                raw.gpu_category
+            )));
+        }
+
+        Ok(Self {
+            host: raw.host,
+            port: raw.port,
+            username: raw.username,
+            gpu_category: gpu_cat.to_string(),
+            gpu_count: raw.gpu_count,
+            additional_opts: raw.additional_opts,
+        })
+    }
 }
 
 /// Validator assignment configuration
@@ -236,6 +290,14 @@ fn default_strategy() -> String {
 
 fn default_bid_grpc_port() -> u16 {
     DEFAULT_BID_GRPC_PORT
+}
+
+fn default_gpu_category() -> String {
+    "UNKNOWN".to_string()
+}
+
+fn default_gpu_count() -> u32 {
+    1
 }
 
 impl Default for NodeSshConfig {

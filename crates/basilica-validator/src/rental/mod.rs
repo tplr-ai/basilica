@@ -23,6 +23,7 @@ use crate::ban_system::BanManager;
 use crate::billing::BillingClient;
 use crate::collateral::{CollateralManager, CollateralPreference};
 use crate::metrics::ValidatorPrometheusMetrics;
+use crate::node_types::NodeDetails;
 use crate::persistence::entities::MisbehaviourType;
 use crate::persistence::miner_nodes::NodeBidCandidate;
 use crate::persistence::{SimplePersistence, ValidatorPersistence};
@@ -76,7 +77,7 @@ pub(crate) fn extract_miner_uid(miner_id: &str) -> Option<u16> {
 }
 
 /// Get normalized GPU type from node details
-pub(crate) fn get_gpu_type(node_details: &crate::api::types::NodeDetails) -> String {
+pub(crate) fn get_gpu_type(node_details: &NodeDetails) -> String {
     use basilica_common::types::GpuCategory;
     use std::str::FromStr;
 
@@ -649,7 +650,7 @@ impl RentalManager {
         &self,
         selection: &RentalSelection,
         rental_id: &str,
-    ) -> Result<crate::api::types::NodeDetails> {
+    ) -> Result<NodeDetails> {
         let node_details = self
             .persistence
             .get_node_details(&selection.node_id, &selection.miner_id)
@@ -819,7 +820,7 @@ impl RentalManager {
         rental_id: &str,
         selection: &RentalSelection,
         ssh_credentials: &str,
-        node_details: &crate::api::types::NodeDetails,
+        node_details: &NodeDetails,
         container_info: &ContainerInfo,
     ) -> Result<RentalInfo> {
         let container_id = container_info.container_id.clone();

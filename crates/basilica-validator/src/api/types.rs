@@ -2,152 +2,24 @@
 //!
 //! All request/response types, enums, and shared data structures for the validator API
 
-use crate::rental::RentalState;
-use basilica_common::LocationProfile;
+pub use crate::node_types::{CpuSpec, GpuSpec, NetworkSpeedInfo, NodeDetails};
+#[allow(unused_imports)]
+pub use basilica_common::validator_api::{
+    AvailabilityInfo, AvailableNode, ContainerInfo as ApiContainerInfo, GpuRequirements,
+    ListAvailableNodesQuery, ListAvailableNodesResponse, ListRentalsQuery, ListRentalsResponse,
+    LogQuery, PortMapping as ApiPortMapping, PortMappingRequest, RentCapacityRequest,
+    RentCapacityResponse, RentalListItem, RentalResponse as ApiRentalResponse,
+    RentalRestartResponse as ApiRentalRestartResponse, RentalState as ApiRentalState, RentalStatus,
+    RentalStatusQuery, RentalStatusResponse, ResourceRequirementsRequest, SshAccess,
+    StartRentalRequest, TerminateRentalRequest, VolumeMountRequest,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
-/// Request to rent GPU capacity
-#[derive(Debug, Deserialize, Serialize)]
-pub struct RentCapacityRequest {
-    pub gpu_requirements: GpuRequirements,
-    pub ssh_public_key: String,
-    pub docker_image: String,
-    pub env_vars: Option<HashMap<String, String>>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct GpuRequirements {
-    pub min_memory_gb: u32,
-    pub gpu_type: Option<String>,
-    pub gpu_count: u32,
-}
-
-impl Default for GpuRequirements {
-    fn default() -> Self {
-        Self {
-            min_memory_gb: 0,
-            gpu_type: Some("b200".to_string()),
-            gpu_count: 0,
-        }
-    }
-}
-
-/// Response for capacity rental request
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RentCapacityResponse {
-    pub rental_id: String,
-    pub node: NodeDetails,
-    pub ssh_access: SshAccess,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkSpeedInfo {
-    pub download_mbps: Option<f64>,
-    pub upload_mbps: Option<f64>,
-    pub test_timestamp: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NodeDetails {
-    pub id: String,
-    pub gpu_specs: Vec<GpuSpec>,
-    pub cpu_specs: CpuSpec,
-    pub location: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub network_speed: Option<NetworkSpeedInfo>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hourly_rate_cents: Option<i32>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct GpuSpec {
-    pub name: String,
-    pub memory_gb: u32,
-    pub compute_capability: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CpuSpec {
-    pub cores: u32,
-    pub model: String,
-    pub memory_gb: u32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SshAccess {
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-}
-
-/// Request to terminate a rental
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct TerminateRentalRequest {
-    pub reason: Option<String>,
-}
-
-/// Rental status information
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RentalStatusResponse {
-    pub rental_id: String,
-    pub status: RentalStatus,
-    pub node: NodeDetails,
-    /// The Bittensor UID of the miner that owns this node
-    pub miner_uid: u16,
-    /// The Bittensor hotkey of the miner that owns this node
-    pub miner_hotkey: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RentalStatus {
-    Pending,
-    Active,
-    Terminated,
-    Failed,
-}
-
-/// Available nodes listing
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ListAvailableNodesResponse {
-    pub available_nodes: Vec<AvailableNode>,
-    pub total_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AvailableNode {
-    pub node: NodeDetails,
-    pub availability: AvailabilityInfo,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AvailabilityInfo {
-    pub available_until: Option<chrono::DateTime<chrono::Utc>>,
-}
-
-/// Query parameters for listing available nodes
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ListAvailableNodesQuery {
-    /// Filter for available nodes only (default: true for /nodes endpoint)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub available: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_gpu_memory: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gpu_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_gpu_count: Option<u32>,
-    /// Filter by location (city/region/country)
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    pub location: Option<LocationProfile>,
-}
-
 /// Log streaming query parameters
-#[derive(Debug, Deserialize, Serialize)]
-pub struct LogQuery {
+#[derive(Debug, Deserialize)]
+pub struct LogStreamQuery {
     pub follow: Option<bool>,
     pub tail: Option<u32>,
 }
@@ -258,6 +130,30 @@ pub struct TriggerVerificationResponse {
     pub estimated_completion: chrono::DateTime<chrono::Utc>,
 }
 
+/// Verification log item returned by the API.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerificationLogResponse {
+    pub id: String,
+    pub node_id: String,
+    pub validator_hotkey: String,
+    pub verification_type: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub score: f64,
+    pub success: bool,
+    pub details: Value,
+    pub duration_ms: i64,
+    pub error_message: Option<String>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Verification log listing response.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VerificationLogsResponse {
+    pub logs: Vec<VerificationLogResponse>,
+    pub total_count: usize,
+}
+
 /// Emission metrics response
 #[derive(Debug, Serialize)]
 pub struct EmissionMetricsResponse {
@@ -293,37 +189,6 @@ pub struct CategoryWeightSummary {
     pub total_weight: u64,
     pub miner_count: u32,
     pub average_score: f64,
-}
-
-/// Rental list item for API response
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RentalListItem {
-    pub rental_id: String,
-    pub node_id: String,
-    pub container_id: String,
-    pub state: RentalState,
-    pub created_at: String,
-    pub miner_id: String,
-    pub container_image: String,
-    /// GPU specifications for this rental's node
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gpu_specs: Option<Vec<GpuSpec>>,
-    /// CPU specifications for this rental's node
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cpu_specs: Option<CpuSpec>,
-    /// Location of the node
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub location: Option<String>,
-    /// Network speed information for this rental's node
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub network_speed: Option<NetworkSpeedInfo>,
-}
-
-/// Response for listing rentals
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ListRentalsResponse {
-    pub rentals: Vec<RentalListItem>,
-    pub total_count: usize,
 }
 
 /// API error type

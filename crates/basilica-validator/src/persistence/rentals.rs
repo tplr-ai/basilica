@@ -3,6 +3,7 @@ use sqlx::{QueryBuilder, Row};
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::node_types::{unknown_node_details, NodeDetails};
 use crate::persistence::types::RentalFilter;
 use crate::persistence::ValidatorPersistence;
 use crate::rental::{RentalInfo, RentalState};
@@ -181,7 +182,7 @@ impl SimplePersistence {
     fn parse_rental_row(
         &self,
         row: sqlx::sqlite::SqliteRow,
-        node_details: crate::api::types::NodeDetails,
+        node_details: NodeDetails,
     ) -> Result<RentalInfo, anyhow::Error> {
         let state_str: String = row.get("state");
         let created_at_str: String = row.get("created_at");
@@ -271,18 +272,7 @@ impl SimplePersistence {
 
             let node_details = match self.get_node_details(&node_id, &miner_id).await {
                 Ok(Some(details)) => details,
-                _ => crate::api::types::NodeDetails {
-                    id: node_id.clone(),
-                    gpu_specs: vec![],
-                    cpu_specs: crate::api::types::CpuSpec {
-                        cores: 0,
-                        model: "Unknown".to_string(),
-                        memory_gb: 0,
-                    },
-                    location: None,
-                    network_speed: None,
-                    hourly_rate_cents: None,
-                },
+                _ => unknown_node_details(node_id.clone()),
             };
 
             rentals.push(self.parse_rental_row(row, node_details)?);

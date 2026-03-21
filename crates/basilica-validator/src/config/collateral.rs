@@ -43,10 +43,12 @@ pub struct CollateralConfig {
     #[serde(default = "default_slash_circuit_breaker_cooldown_secs")]
     pub slash_circuit_breaker_cooldown_secs: u64,
     #[serde(default)]
+    #[serde(skip_serializing)]
     pub trustee_private_key_file: Option<PathBuf>,
     #[serde(default = "default_trustee_key_source")]
     pub trustee_key_source: TrusteeKeySource,
     #[serde(default)]
+    #[serde(skip_serializing)]
     pub aws_secret_name: Option<String>,
     #[serde(default)]
     pub aws_region: Option<String>,
@@ -59,6 +61,7 @@ pub struct CollateralConfig {
     #[serde(default)]
     pub evidence_r2_access_key_id: Option<String>,
     #[serde(default)]
+    #[serde(skip_serializing)]
     pub evidence_r2_secret_access_key: Option<String>,
     #[serde(default)]
     pub evidence_r2_bucket: Option<String>,

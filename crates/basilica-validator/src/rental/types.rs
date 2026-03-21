@@ -1,5 +1,6 @@
 //! Types for rental operations
 
+use crate::node_types::NodeDetails;
 use chrono::{DateTime, Utc};
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -129,7 +130,7 @@ pub struct RentalInfo {
     pub updated_at: DateTime<Utc>,
     pub container_spec: ContainerSpec,
     pub miner_id: String,
-    pub node_details: crate::api::types::NodeDetails,
+    pub node_details: NodeDetails,
     pub metadata: HashMap<String, String>,
 }
 

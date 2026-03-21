@@ -6,8 +6,8 @@ struct IpInfo {
     ip: String,
 }
 
-/// Get the public IP address of this machine
-pub async fn get_public_ip() -> String {
+/// Get the public IP address of this machine, or a placeholder when lookup fails.
+pub async fn get_public_ip_or_unknown() -> String {
     match get_public_ip_result().await {
         Ok(ip) => ip,
         Err(_) => "<unknown-ip>".to_string(),
@@ -21,8 +21,8 @@ pub async fn get_public_ip_result() -> Result<String> {
     Ok(ip_info.ip)
 }
 
-/// Get public IP with a custom timeout
-pub async fn get_public_ip_with_timeout(timeout_secs: u64) -> String {
+/// Get the public IP address with a custom timeout, or a placeholder when lookup fails.
+pub async fn get_public_ip_with_timeout_or_unknown(timeout_secs: u64) -> String {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(timeout_secs))
         .build();

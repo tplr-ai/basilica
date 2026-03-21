@@ -7,8 +7,6 @@ use anyhow::Result;
 use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, StandardSshClient,
 };
-use basilica_common::types::GpuCategory;
-use serde::{Deserialize, Serialize};
 use ssh_key::PublicKey;
 use std::collections::HashMap;
 use std::net::IpAddr;
@@ -20,6 +18,8 @@ use tracing::{debug, info, warn};
 
 use crate::config::{expand_tilde_in_path, NodeSshConfig};
 
+pub use crate::config::NodeConfig;
+
 /// Shell command template for securely rewriting authorized_keys
 /// Creates a secure temp file, filters out validator keys, and atomically replaces authorized_keys
 const SSH_REWRITE_AUTHORIZED_KEYS_BASE: &str = r#"umask 077; mkdir -p ~/.ssh && chmod 700 ~/.ssh && tmp="$(mktemp ~/.ssh/authorized_keys.XXXXXX)" && (grep -v 'validator-' ~/.ssh/authorized_keys 2>/dev/null || true) > "$tmp""#;
@@ -27,71 +27,6 @@ const SSH_REWRITE_AUTHORIZED_KEYS_BASE: &str = r#"umask 077; mkdir -p ~/.ssh && 
 /// Shell command suffix to atomically move temp file to authorized_keys
 const SSH_MOVE_TO_AUTHORIZED_KEYS: &str =
     r#"mv -f "$tmp" ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"#;
-
-/// Configuration for a single node
-#[derive(Clone, Debug, Serialize)]
-pub struct NodeConfig {
-    /// SSH host IP literal (IPv4 or IPv6)
-    pub host: String,
-    /// SSH port (typically 22)
-    pub port: u16,
-    /// SSH username for validator access
-    pub username: String,
-    /// GPU category for this node (e.g., "H100", "A100", "RTX4090")
-    pub gpu_category: String,
-    /// Number of GPUs on this node
-    pub gpu_count: u32,
-    /// Additional SSH options
-    pub additional_opts: Option<String>,
-}
-
-/// Intermediate struct for deserializing NodeConfig
-#[derive(Deserialize)]
-struct NodeConfigRaw {
-    host: String,
-    port: u16,
-    username: String,
-    #[serde(default = "default_gpu_category")]
-    gpu_category: String,
-    #[serde(default = "default_gpu_count")]
-    gpu_count: u32,
-    additional_opts: Option<String>,
-}
-
-impl<'de> Deserialize<'de> for NodeConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let raw = NodeConfigRaw::deserialize(deserializer)?;
-
-        // Validate gpu_category is a known GPU type
-        let gpu_cat: GpuCategory = raw.gpu_category.parse().unwrap(); // Infallible
-        if matches!(&gpu_cat, GpuCategory::Other(_)) {
-            return Err(serde::de::Error::custom(format!(
-                "GPU type '{}' is not supported",
-                raw.gpu_category
-            )));
-        }
-
-        Ok(NodeConfig {
-            host: raw.host,
-            port: raw.port,
-            username: raw.username,
-            gpu_category: gpu_cat.to_string(),
-            gpu_count: raw.gpu_count,
-            additional_opts: raw.additional_opts,
-        })
-    }
-}
-
-fn default_gpu_category() -> String {
-    "UNKNOWN".to_string()
-}
-
-fn default_gpu_count() -> u32 {
-    1
-}
 
 impl NodeConfig {
     /// Convert to SSH connection details for remote command execution

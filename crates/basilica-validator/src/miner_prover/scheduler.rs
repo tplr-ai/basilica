@@ -78,7 +78,7 @@ impl VerificationScheduler {
         // Initialize worker queue if enabled
         if config.enable_worker_queue {
             info!("Worker queue is enabled in config - initializing worker queue for decoupled execution");
-            verification.init_worker_queue().await.map_err(|e| {
+            verification.start_worker_queue().await.map_err(|e| {
                 error!("Failed to initialize worker queue: {}", e);
                 e
             })?;

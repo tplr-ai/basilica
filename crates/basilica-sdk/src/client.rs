@@ -47,11 +47,12 @@ use crate::{
         CreateDeploymentRequest, CreateDepositAccountResponse, DeleteDeploymentResponse,
         DeleteShareTokenResponse, DeploymentEventsResponse, DeploymentListResponse,
         DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse,
-        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery, ListDepositsQuery,
-        ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
-        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalStatusWithSshResponse,
-        RentalUsageResponse, ScaleDeploymentRequest, ShareTokenStatusResponse, SshKeyResponse,
-        UsageHistoryResponse, WaitOptions, WaitResult,
+        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery,
+        ListAvailableNodesResponse, ListDepositsQuery, ListDepositsResponse, ListRentalsQuery,
+        PublicDeploymentMetadataResponse, RegenerateShareTokenResponse, RegisterSshKeyRequest,
+        RentalResponse, RentalRestartResponse, RentalStatusWithSshResponse, RentalUsageResponse,
+        ScaleDeploymentRequest, ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse,
+        WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
 };
@@ -62,8 +63,6 @@ pub const DEFAULT_API_URL: &str = "https://api.basilica.ai";
 /// Default timeout in seconds for API requests
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
 use basilica_common::ApiKeyName;
-use basilica_validator::api::types::ListAvailableNodesResponse;
-use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
@@ -128,10 +127,7 @@ impl BasilicaClient {
     }
 
     /// Restart a rental's container
-    pub async fn restart_rental(
-        &self,
-        rental_id: &str,
-    ) -> Result<basilica_validator::rental::RentalRestartResponse> {
+    pub async fn restart_rental(&self, rental_id: &str) -> Result<RentalRestartResponse> {
         let path = format!("/rentals/{rental_id}/restart");
         self.post(&path, &serde_json::json!({})).await
     }
@@ -237,11 +233,21 @@ impl BasilicaClient {
         self.post("/api-keys", &request).await
     }
 
-    /// Get current API key info (requires JWT authentication)
-    /// Returns the first (and only) key if it exists
+    /// Get the authenticated user's only API key, if one exists.
+    ///
+    /// Returns `Ok(None)` when the account has no API keys and returns an error if the
+    /// API reports more than one key for the authenticated user.
     pub async fn get_api_key(&self) -> Result<Option<ApiKeyInfo>> {
         let keys: Vec<ApiKeyInfo> = self.get("/api-keys").await?;
-        Ok(keys.into_iter().next())
+        match keys.len() {
+            0 => Ok(None),
+            1 => Ok(keys.into_iter().next()),
+            count => Err(ApiError::Conflict {
+                message: format!(
+                    "Expected at most one API key for the authenticated user, found {count}"
+                ),
+            }),
+        }
     }
 
     /// List all API keys for the authenticated user (requires JWT authentication)
@@ -596,78 +602,13 @@ impl BasilicaClient {
         self.post(&path, &serde_json::json!({})).await
     }
 
-    // ===== SSH Key Management =====
-
-    /// Get the authenticated user's registered SSH key
-    ///
-    /// Returns None if no SSH key is registered yet.
-    pub async fn get_user_ssh_key(&self) -> Result<Option<crate::types::SshKeyResponse>> {
-        match self
-            .get::<Option<crate::types::SshKeyResponse>>("/ssh-keys")
-            .await
-        {
-            Ok(Some(key)) => Ok(Some(key)),
-            Ok(None) => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
     // ===== Deployment Management Methods =====
 
-    /// Create a new deployment
+    /// Create a deployment from the provided request payload.
     ///
-    /// Deploys a container to the K3s cluster with the specified configuration.
-    /// Deployments are idempotent by `instance_name` - calling this multiple times
-    /// with the same instance_name will return the existing deployment if it's active.
-    ///
-    /// # Arguments
-    ///
-    /// * `request` - The deployment configuration
-    ///
-    /// # Returns
-    ///
-    /// Returns the created or existing deployment information including the public URL
-    ///
-    /// # Errors
-    ///
-    /// * `ApiError::InvalidRequest` - Invalid instance name, image, port, or resources
-    /// * `ApiError::Authorization` - Insufficient permissions
-    /// * `ApiError::ServiceUnavailable` - K8s cluster unavailable
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// use basilica_sdk::{ClientBuilder, CreateDeploymentRequest};
-    ///
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = ClientBuilder::default()
-    ///     .with_api_key("your-api-key")
-    ///     .build()?;
-    ///
-    /// let request = CreateDeploymentRequest {
-    ///     instance_name: "my-nginx".to_string(),
-    ///     image: "nginx:latest".to_string(),
-    ///     replicas: 2,
-    ///     port: 80,
-    ///     command: None,
-    ///     args: None,
-    ///     env: None,
-    ///     resources: None,
-    ///     ttl_seconds: None,
-    ///     public: true,
-    ///     storage: None,
-    ///     health_check: None,
-    ///     enable_billing: true,
-    ///     queue_name: None,
-    ///     suspended: false,
-    ///     priority: None,
-    /// };
-    ///
-    /// let deployment = client.create_deployment(request).await?;
-    /// println!("Deployment URL: {}", deployment.url);
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Deployments are idempotent by `instance_name`: if an active deployment with the
+    /// same name already exists, the API returns that deployment instead of creating a
+    /// duplicate.
     pub async fn create_deployment(
         &self,
         request: CreateDeploymentRequest,
@@ -675,73 +616,13 @@ impl BasilicaClient {
         self.post("/deployments", &request).await
     }
 
-    /// Get deployment status by instance name
-    ///
-    /// Retrieves the current status of a deployment including replica counts,
-    /// pod information, and the public URL.
-    ///
-    /// # Arguments
-    ///
-    /// * `instance_name` - The unique instance name of the deployment
-    ///
-    /// # Returns
-    ///
-    /// Returns the deployment status with current replica counts and pod details
-    ///
-    /// # Errors
-    ///
-    /// * `ApiError::NotFound` - Deployment doesn't exist or doesn't belong to user
-    /// * `ApiError::Authorization` - Insufficient permissions
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use basilica_sdk::ClientBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
-    /// let deployment = client.get_deployment("my-nginx").await?;
-    /// println!("State: {}, Ready: {}/{}",
-    ///     deployment.state,
-    ///     deployment.replicas.ready,
-    ///     deployment.replicas.desired
-    /// );
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Fetch the current deployment state for an instance name.
     pub async fn get_deployment(&self, instance_name: &str) -> Result<DeploymentResponse> {
         let path = format!("/deployments/{}", instance_name);
         self.get(&path).await
     }
 
-    /// Delete a deployment
-    ///
-    /// Deletes the deployment and all associated K8s resources (pods, services, etc.).
-    /// This also removes the routing configuration from Envoy.
-    ///
-    /// # Arguments
-    ///
-    /// * `instance_name` - The unique instance name of the deployment to delete
-    ///
-    /// # Returns
-    ///
-    /// Returns confirmation of deletion initiation
-    ///
-    /// # Errors
-    ///
-    /// * `ApiError::NotFound` - Deployment doesn't exist or doesn't belong to user
-    /// * `ApiError::Authorization` - Insufficient permissions
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use basilica_sdk::ClientBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
-    /// let result = client.delete_deployment("my-nginx").await?;
-    /// println!("Deletion initiated: {}", result.message);
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// Delete a deployment and its associated cluster resources.
     pub async fn delete_deployment(&self, instance_name: &str) -> Result<DeleteDeploymentResponse> {
         let path = format!("/deployments/{}", instance_name);
         self.delete(&path).await
@@ -769,32 +650,7 @@ impl BasilicaClient {
         self.post(&path, &serde_json::json!({})).await
     }
 
-    /// List all deployments for the authenticated user
-    ///
-    /// Returns a summary of all active deployments including their state and URLs.
-    ///
-    /// # Returns
-    ///
-    /// Returns a list of deployment summaries with total count
-    ///
-    /// # Errors
-    ///
-    /// * `ApiError::Authorization` - Insufficient permissions
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use basilica_sdk::ClientBuilder;
-    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
-    /// let deployments = client.list_deployments().await?;
-    /// println!("Total deployments: {}", deployments.total);
-    /// for deployment in deployments.deployments {
-    ///     println!("{}: {} ({})", deployment.instance_name, deployment.state, deployment.url);
-    /// }
-    /// # Ok(())
-    /// # }
-    /// ```
+    /// List deployments that belong to the authenticated user.
     pub async fn list_deployments(&self) -> Result<DeploymentListResponse> {
         self.get("/deployments").await
     }

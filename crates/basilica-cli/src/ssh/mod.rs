@@ -10,7 +10,7 @@ use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
     StandardSshClient,
 };
-use basilica_sdk::types::{RentalStatusResponse, SshAccess};
+use basilica_sdk::types::SshAccess;
 use color_eyre::eyre::eyre;
 use color_eyre::Section;
 use std::path::Path;
@@ -117,18 +117,6 @@ impl SshClient {
 
         println!("{}", output);
         Ok(())
-    }
-
-    /// Execute a command with rental status (for backward compatibility)
-    pub async fn execute_command_with_rental(
-        &self,
-        _rental: &RentalStatusResponse,
-        _command: &str,
-    ) -> Result<()> {
-        Err(eyre!(
-            "SSH access details must be provided separately - use execute_command with SshAccess"
-        )
-        .into())
     }
 
     /// Test SSH connectivity without starting an interactive session.

@@ -9,13 +9,12 @@ use tracing::info;
 
 #[cfg(feature = "client")]
 use crate::api::client::ValidatorClient;
-use crate::api::routes::rentals::{
-    PortMappingRequest, ResourceRequirementsRequest, StartRentalRequest,
+use crate::api::types::{
+    ApiRentalState, ListAvailableNodesQuery, LogQuery, PortMappingRequest,
+    ResourceRequirementsRequest, StartRentalRequest, TerminateRentalRequest,
 };
-use crate::api::types::{ListAvailableNodesQuery, LogQuery, TerminateRentalRequest};
 use crate::cli::commands::RentalAction;
 use crate::config::ValidatorConfig;
-use crate::rental::types::RentalState;
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 
 /// Create a ValidatorClient from configuration
@@ -41,7 +40,12 @@ fn create_api_client(config: &ValidatorConfig, api_url: Option<String>) -> Resul
     });
 
     // Create client with 30 second timeout
-    ValidatorClient::new(base_url, Duration::from_secs(30)).context("Failed to create API client")
+    ValidatorClient::new_with_api_key(
+        base_url,
+        Duration::from_secs(30),
+        config.api.api_key.clone(),
+    )
+    .context("Failed to create API client")
 }
 
 /// Handle rental commands via the Validator API
@@ -368,8 +372,8 @@ async fn handle_ps_rentals(client: ValidatorClient, state_filter: String) -> Res
 
     // Parse state filter
     let filter = match state_filter.as_str() {
-        "active" => Some(RentalState::Active),
-        "stopped" => Some(RentalState::Stopped),
+        "active" => Some(ApiRentalState::Active),
+        "stopped" => Some(ApiRentalState::Stopped),
         _ => None, // "all" or any other value shows all rentals
     };
 

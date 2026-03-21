@@ -1,4 +1,3 @@
-use anyhow::Result;
 use serde_json::{json, Value};
 
 use basilica_common::rental::RentalSpec;
@@ -79,32 +78,6 @@ pub fn rental_spec_to_gpurental_cr(name: &str, namespace: &str, spec: &RentalSpe
     cr
 }
 
-#[async_trait::async_trait]
-pub trait K8sWriter: Send + Sync {
-    async fn create_cr(&self, cr: Value) -> Result<()>;
-}
-
-/// Adapter that writes a RentalSpec as a GpuRental CR via a provided K8s writer.
-pub struct RentalAdapter<W: K8sWriter> {
-    writer: W,
-}
-
-impl<W: K8sWriter> RentalAdapter<W> {
-    pub fn new(writer: W) -> Self {
-        Self { writer }
-    }
-
-    pub async fn create_gpu_rental(
-        &self,
-        name: &str,
-        namespace: &str,
-        spec: &RentalSpec,
-    ) -> Result<()> {
-        let cr = rental_spec_to_gpurental_cr(name, namespace, spec);
-        self.writer.create_cr(cr).await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,17 +86,6 @@ mod tests {
         AccessType, IngressRule, RentalContainer, RentalDuration, RentalNetwork, RentalSpec,
         VolumeMount,
     };
-    use std::sync::{Arc, Mutex};
-
-    struct MockWriter(Arc<Mutex<Vec<Value>>>);
-
-    #[async_trait::async_trait]
-    impl K8sWriter for MockWriter {
-        async fn create_cr(&self, cr: Value) -> Result<()> {
-            self.0.lock().unwrap().push(cr);
-            Ok(())
-        }
-    }
 
     fn sample_rental() -> RentalSpec {
         RentalSpec {
@@ -173,16 +135,11 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn adapter_writes_expected_cr_fields() {
+    #[test]
+    fn conversion_writes_expected_cr_fields() {
         let spec = sample_rental();
-        let sink = Arc::new(Mutex::new(Vec::new()));
-        let adapter = RentalAdapter::new(MockWriter(sink.clone()));
-        adapter.create_gpu_rental("r1", "ns1", &spec).await.unwrap();
+        let cr = rental_spec_to_gpurental_cr("r1", "ns1", &spec);
 
-        let out = sink.lock().unwrap();
-        assert_eq!(out.len(), 1);
-        let cr = &out[0];
         assert_eq!(cr["apiVersion"], "basilica.ai/v1");
         assert_eq!(cr["kind"], "GpuRental");
         assert_eq!(cr["metadata"]["name"], "r1");

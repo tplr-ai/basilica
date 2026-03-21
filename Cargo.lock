@@ -1933,7 +1933,6 @@ dependencies = [
  "base64 0.21.7",
  "basilica-common",
  "basilica-sdk",
- "basilica-validator",
  "chrono",
  "clap",
  "clap-verbosity-flag",
@@ -2069,8 +2068,8 @@ version = "0.25.0"
 dependencies = [
  "base64 0.21.7",
  "basilica-common",
- "basilica-validator",
  "chrono",
+ "clap",
  "etcetera",
  "oauth2",
  "reqwest 0.11.27",
@@ -2088,7 +2087,6 @@ name = "basilica-sdk-python"
 version = "0.25.2"
 dependencies = [
  "basilica-sdk",
- "basilica-validator",
  "pyo3",
  "pyo3-stub-gen",
  "pyo3-stub-gen-derive",
@@ -2149,6 +2147,7 @@ dependencies = [
  "toml",
  "tonic",
  "tonic-health",
+ "tower 0.4.13",
  "tower-http 0.5.2",
  "tracing",
  "url",

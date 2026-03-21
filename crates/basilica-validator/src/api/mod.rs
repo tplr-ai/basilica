@@ -3,6 +3,8 @@
 //! Clean, modular HTTP/REST API server for external services to interact with the Validator.
 //! Follows SOLID principles with separation of concerns.
 
+mod auth;
+
 #[cfg(feature = "client")]
 pub mod client;
 
@@ -13,6 +15,7 @@ use crate::config::ApiConfig;
 use crate::rental;
 use anyhow::Result;
 use axum::{
+    middleware,
     routing::{delete, get, post},
     Router,
 };
@@ -118,7 +121,19 @@ impl ApiHandler {
     /// Create the Axum router with all endpoints
     /// Follows Open/Closed Principle - easy to extend with new routes
     fn create_router(&self) -> Router {
-        Router::new()
+        let public_routes: Router<ApiState> =
+            Router::new().route("/health", get(routes::health_check));
+        let protected_routes = self.create_protected_router();
+
+        public_routes
+            .merge(protected_routes)
+            .layer(TraceLayer::new_for_http())
+            .layer(CorsLayer::permissive())
+            .with_state(self.state.clone())
+    }
+
+    fn create_protected_router(&self) -> Router<ApiState> {
+        let router: Router<ApiState> = Router::new()
             .route("/rentals", get(routes::list_rentals))
             .route("/rentals", post(routes::start_rental))
             .route("/rentals/:id", get(routes::get_rental_status))
@@ -131,7 +146,6 @@ impl ApiHandler {
             .route("/miners/:miner_id", get(routes::get_miner))
             .route("/miners/:miner_id/health", get(routes::get_miner_health))
             .route("/miners/:miner_id/nodes", get(routes::list_miner_nodes))
-            .route("/health", get(routes::health_check))
             // new
             .route("/gpu-profiles", get(routes::list_gpu_profiles))
             .route(
@@ -149,9 +163,17 @@ impl ApiHandler {
             )
             .route("/config", get(routes::get_config))
             .route("/config/verification", get(routes::get_verification_config))
-            .route("/config/emission", get(routes::get_emission_config))
-            .layer(TraceLayer::new_for_http())
-            .layer(CorsLayer::permissive())
-            .with_state(self.state.clone())
+            .route("/config/emission", get(routes::get_emission_config));
+
+        match self.state.config.api_key.as_deref() {
+            Some(api_key) => router.route_layer(middleware::from_fn_with_state(
+                Arc::<str>::from(api_key),
+                auth::require_api_key,
+            )),
+            None if self.state.config.allow_unauthenticated_routes => router,
+            None => router.route_layer(middleware::from_fn(
+                auth::reject_unconfigured_protected_routes,
+            )),
+        }
     }
 }

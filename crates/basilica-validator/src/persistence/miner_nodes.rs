@@ -3,6 +3,7 @@
 //! This module contains all SQL operations related to miner-node relationships.
 
 use crate::miner_prover::types::MinerInfo;
+use crate::node_types::{CpuSpec, GpuSpec, NetworkSpeedInfo, NodeDetails};
 use crate::persistence::types::{AvailableNodeData, NodeData};
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
@@ -703,14 +704,14 @@ impl SimplePersistence {
         for row in rows {
             let gpu_names: Option<String> = row.get("gpu_names");
 
-            let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
+            let mut gpu_specs: Vec<GpuSpec> = vec![];
 
             if let Some(names) = gpu_names {
                 if !names.is_empty() {
                     for gpu_name in names.split(',') {
                         let memory_gb = extract_gpu_memory_gb(gpu_name);
 
-                        gpu_specs.push(crate::api::types::GpuSpec {
+                        gpu_specs.push(GpuSpec {
                             name: gpu_name.to_string(),
                             memory_gb,
                             compute_capability: "8.0".to_string(),
@@ -741,7 +742,7 @@ impl SimplePersistence {
             let cpu_cores: Option<i32> = row.get("cpu_cores");
             let ram_gb: Option<i32> = row.get("ram_gb");
 
-            let cpu_specs = crate::api::types::CpuSpec {
+            let cpu_specs = CpuSpec {
                 cores: cpu_cores.unwrap_or(0) as u32,
                 model: cpu_model.unwrap_or_else(|| "Unknown".to_string()),
                 memory_gb: ram_gb.unwrap_or(0) as u32,
@@ -1018,14 +1019,14 @@ impl SimplePersistence {
         for row in rows {
             let gpu_names: Option<String> = row.get("gpu_names");
 
-            let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
+            let mut gpu_specs: Vec<GpuSpec> = vec![];
 
             if let Some(names) = gpu_names {
                 if !names.is_empty() {
                     for gpu_name in names.split(',') {
                         let memory_gb = extract_gpu_memory_gb(gpu_name);
 
-                        gpu_specs.push(crate::api::types::GpuSpec {
+                        gpu_specs.push(GpuSpec {
                             name: gpu_name.to_string(),
                             memory_gb,
                             compute_capability: "8.0".to_string(),
@@ -1038,7 +1039,7 @@ impl SimplePersistence {
             let cpu_cores: Option<i32> = row.get("cpu_cores");
             let ram_gb: Option<i32> = row.get("ram_gb");
 
-            let cpu_specs = crate::api::types::CpuSpec {
+            let cpu_specs = CpuSpec {
                 cores: cpu_cores.unwrap_or(0) as u32,
                 model: cpu_model.unwrap_or_else(|| "Unknown".to_string()),
                 memory_gb: ram_gb.unwrap_or(0) as u32,
@@ -1101,7 +1102,7 @@ impl SimplePersistence {
         &self,
         node_id: &str,
         miner_id: &str,
-    ) -> Result<Option<crate::api::types::NodeDetails>, anyhow::Error> {
+    ) -> Result<Option<NodeDetails>, anyhow::Error> {
         let row = sqlx::query(
             "SELECT
                 me.node_id,
@@ -1139,14 +1140,14 @@ impl SimplePersistence {
 
             let gpu_names: Option<String> = row.get("gpu_names");
 
-            let mut gpu_specs: Vec<crate::api::types::GpuSpec> = vec![];
+            let mut gpu_specs: Vec<GpuSpec> = vec![];
 
             if let Some(names) = gpu_names {
                 if !names.is_empty() {
                     for gpu_name in names.split(',') {
                         let memory_gb = extract_gpu_memory_gb(gpu_name);
 
-                        gpu_specs.push(crate::api::types::GpuSpec {
+                        gpu_specs.push(GpuSpec {
                             name: gpu_name.to_string(),
                             memory_gb,
                             compute_capability: "8.0".to_string(),
@@ -1167,7 +1168,7 @@ impl SimplePersistence {
             let upload_mbps: Option<f64> = row.get("upload_mbps");
             let test_timestamp: Option<String> = row.get("test_timestamp");
 
-            let cpu_specs: crate::api::types::CpuSpec = crate::api::types::CpuSpec {
+            let cpu_specs: CpuSpec = CpuSpec {
                 cores: hw_cpu_cores.unwrap_or(0) as u32,
                 model: hw_cpu_model.unwrap_or_else(|| "Unknown".to_string()),
                 memory_gb: hw_ram_gb.unwrap_or(0) as u32,
@@ -1186,7 +1187,7 @@ impl SimplePersistence {
                 };
 
             let network_speed = if download_mbps.is_some() || upload_mbps.is_some() {
-                Some(crate::api::types::NetworkSpeedInfo {
+                Some(NetworkSpeedInfo {
                     download_mbps,
                     upload_mbps,
                     test_timestamp: test_timestamp.and_then(|ts| {
@@ -1201,7 +1202,7 @@ impl SimplePersistence {
 
             let hourly_rate_cents: Option<i64> = row.get("hourly_rate_cents");
 
-            Ok(Some(crate::api::types::NodeDetails {
+            Ok(Some(NodeDetails {
                 id: node_id,
                 gpu_specs,
                 cpu_specs,

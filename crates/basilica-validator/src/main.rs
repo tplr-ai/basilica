@@ -23,6 +23,7 @@ mod k8s_profile_publisher;
 mod metrics;
 mod miner_prover;
 mod node_profile;
+mod node_types;
 mod os_process;
 mod persistence;
 mod rental;

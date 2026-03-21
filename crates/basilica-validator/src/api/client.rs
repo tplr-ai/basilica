@@ -4,12 +4,14 @@
 //! to interact with the Validator's REST API endpoints.
 
 use crate::api::types::*;
-use crate::rental::types::RentalState;
 use anyhow::{Context, Result};
 use eventsource_stream::Eventsource;
 use futures::StreamExt;
 use futures_util::Stream;
-use reqwest::Client;
+use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Client,
+};
 use std::{pin::Pin, time::Duration};
 
 /// HTTP client for the Validator API
@@ -22,8 +24,18 @@ pub struct ValidatorClient {
 impl ValidatorClient {
     /// Create a new ValidatorClient instance
     pub fn new(base_url: impl Into<String>, timeout: Duration) -> Result<Self> {
+        Self::new_with_api_key(base_url, timeout, None)
+    }
+
+    /// Create a new ValidatorClient instance with an optional API key.
+    pub fn new_with_api_key(
+        base_url: impl Into<String>,
+        timeout: Duration,
+        api_key: Option<String>,
+    ) -> Result<Self> {
         let http_client = Client::builder()
             .timeout(timeout)
+            .default_headers(default_headers(api_key.as_deref())?)
             .build()
             .context("Failed to build HTTP client")?;
 
@@ -42,7 +54,10 @@ impl ValidatorClient {
     }
 
     /// List rentals with optional state filter
-    pub async fn list_rentals(&self, filter: Option<RentalState>) -> Result<ListRentalsResponse> {
+    pub async fn list_rentals(
+        &self,
+        filter: Option<ApiRentalState>,
+    ) -> Result<ListRentalsResponse> {
         let url = format!("{}/rentals", self.base_url);
 
         let mut req = self.http_client.get(&url);
@@ -69,10 +84,7 @@ impl ValidatorClient {
     }
 
     /// Start a new rental
-    pub async fn start_rental(
-        &self,
-        request: crate::api::routes::rentals::StartRentalRequest,
-    ) -> Result<crate::rental::RentalResponse> {
+    pub async fn start_rental(&self, request: StartRentalRequest) -> Result<ApiRentalResponse> {
         let url = format!("{}/rentals", self.base_url);
 
         let response = self
@@ -143,10 +155,7 @@ impl ValidatorClient {
     }
 
     /// Restart a rental's container
-    pub async fn restart_rental(
-        &self,
-        rental_id: &str,
-    ) -> Result<crate::rental::RentalRestartResponse> {
+    pub async fn restart_rental(&self, rental_id: &str) -> Result<ApiRentalRestartResponse> {
         let url = format!("{}/rentals/{}/restart", self.base_url, rental_id);
 
         let response = self
@@ -254,6 +263,19 @@ impl ValidatorClient {
     }
 }
 
+fn default_headers(api_key: Option<&str>) -> Result<HeaderMap> {
+    let mut headers = HeaderMap::new();
+
+    if let Some(api_key) = api_key {
+        headers.insert(
+            HeaderName::from_static("x-api-key"),
+            HeaderValue::from_str(api_key).context("Invalid validator API key header value")?,
+        );
+    }
+
+    Ok(headers)
+}
+
 /// Event type for log streaming
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Event {
@@ -265,6 +287,10 @@ pub struct Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{
+        matchers::{header, method, path},
+        Mock, MockServer, ResponseTemplate,
+    };
 
     #[test]
     fn test_client_creation() {
@@ -277,5 +303,30 @@ mod tests {
         let http_client = Client::new();
         let client = ValidatorClient::with_client("http://localhost:8080", http_client);
         assert_eq!(client.base_url, "http://localhost:8080");
+    }
+
+    #[tokio::test]
+    async fn test_client_with_api_key_sends_header() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/nodes"))
+            .and(header("x-api-key", "secret-key"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"available_nodes": [], "total_count": 0})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = ValidatorClient::new_with_api_key(
+            mock_server.uri(),
+            Duration::from_secs(30),
+            Some("secret-key".to_string()),
+        )
+        .unwrap();
+
+        let response = client.list_available_nodes(None).await.unwrap();
+        assert_eq!(response.total_count, 0);
     }
 }

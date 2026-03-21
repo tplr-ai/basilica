@@ -32,21 +32,6 @@ impl Args {
             Command::Status => service::handle_status(self.config).await,
             Command::GenConfig { output } => service::handle_gen_config(output).await,
 
-            // Validation commands removed with HardwareValidator
-            Command::Connect { .. } => {
-                Err(anyhow::anyhow!("Hardware validation commands have been removed. Use the verification engine API instead."))
-            }
-
-            Command::Verify { .. } => {
-                Err(anyhow::anyhow!("Hardware validation commands have been removed. Use the verification engine API instead."))
-            }
-
-            // Legacy verification command (deprecated)
-            #[allow(deprecated)]
-            Command::VerifyLegacy { .. } => {
-                Err(anyhow::anyhow!("Legacy validation commands have been removed. Use the verification engine API instead."))
-            }
-
             Command::Rental { action, api_url } => {
                 // Load configuration
                 let config = crate::config::ValidatorConfig::load_from_file(&self.config)?;

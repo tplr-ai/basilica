@@ -7,7 +7,7 @@ use basilica_common::{types::GpuCategory, LocationProfile};
 use basilica_sdk::{
     types::{
         ApiKeyInfo, ApiRentalListItem, GpuSpec, HistoricalRentalItem, ListDepositsResponse,
-        RentalUsageResponse, UsageHistoryResponse, VolumeResponse,
+        PortMapping, RentalUsageResponse, UsageHistoryResponse, VolumeResponse,
     },
     AvailableNode,
 };
@@ -144,7 +144,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
 
 /// Helper function to format port mappings
 fn format_port_mappings(
-    port_mappings: &Option<Vec<basilica_validator::rental::PortMapping>>,
+    port_mappings: &Option<Vec<PortMapping>>,
     max_count: Option<usize>,
 ) -> String {
     match port_mappings {

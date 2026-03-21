@@ -19,6 +19,7 @@ pub mod k8s_profile_publisher;
 pub mod metrics;
 pub mod miner_prover;
 pub mod node_profile;
+pub mod node_types;
 pub mod os_process;
 pub mod persistence;
 pub mod rental;

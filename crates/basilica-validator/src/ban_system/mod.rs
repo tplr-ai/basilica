@@ -33,11 +33,7 @@ impl BanManager {
         }
     }
 
-    /// Log a misbehaviour for an executor
-    ///
-    /// This function:
-    /// 1. Records the misbehaviour
-    /// 2. Checks if a ban should be triggered
+    /// Log a misbehaviour for an executor and evaluate follow-up ban actions.
     pub async fn log_misbehaviour(
         &self,
         miner_uid: u16,
@@ -45,17 +41,14 @@ impl BanManager {
         type_of_misbehaviour: MisbehaviourType,
         details: &str,
     ) -> Result<()> {
-        // Convert miner_uid to miner_id format
         let miner_id = format!("miner_{}", miner_uid);
 
-        // Get node endpoint
         let endpoint = self
             .persistence
             .get_executor_endpoint(&miner_id, node_id)
             .await?
             .unwrap_or_else(|| "unknown".to_string());
 
-        // Create misbehaviour log
         let log = MisbehaviourLog::new(
             miner_uid,
             node_id.to_string(),
@@ -64,7 +57,6 @@ impl BanManager {
             details.to_string(),
         );
 
-        // Insert the log into database
         self.persistence.insert_misbehaviour_log(&log).await?;
 
         info!(
@@ -74,7 +66,6 @@ impl BanManager {
             "Misbehaviour logged for node"
         );
 
-        // Check if ban should be triggered
         let should_ban = self
             .check_ban_trigger(miner_uid, node_id)
             .await

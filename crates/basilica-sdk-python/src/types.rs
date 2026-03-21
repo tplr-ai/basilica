@@ -14,8 +14,8 @@ use basilica_sdk::types::{
     ListAvailableNodesQuery as SdkListAvailableNodesQuery, ListRentalsQuery as SdkListRentalsQuery,
     ListSecureCloudRentalsResponse as SdkListSecureCloudRentalsResponse,
     NodeDetails as SdkNodeDetails, PortMappingRequest as SdkPortMappingRequest,
-    ProbeConfig as SdkProbeConfig, RentalState, RentalStatus as SdkRentalStatus,
-    RentalStatusWithSshResponse as SdkRentalStatusWithSshResponse,
+    ProbeConfig as SdkProbeConfig, RentalResponse as SdkRentalResponse, RentalState,
+    RentalStatus as SdkRentalStatus, RentalStatusWithSshResponse as SdkRentalStatusWithSshResponse,
     ResourceRequirementsRequest as SdkResourceRequirementsRequest,
     SecureCloudRentalListItem as SdkSecureCloudRentalListItem,
     SecureCloudRentalResponse as SdkSecureCloudRentalResponse, SshAccess as SdkSshAccess,
@@ -24,7 +24,6 @@ use basilica_sdk::types::{
     StopSecureCloudRentalResponse as SdkStopSecureCloudRentalResponse,
     VolumeMountRequest as SdkVolumeMountRequest,
 };
-use basilica_validator::rental::RentalResponse as SdkRentalResponse;
 use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
 use pyo3_stub_gen_derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};

@@ -5,9 +5,8 @@ use crate::error::CliError;
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use basilica_common::types::ComputeCategory;
 use basilica_common::types::{GpuCategory, GpuOffering};
-use basilica_sdk::types::{ListAvailableNodesQuery, ListRentalsQuery, RentalState};
+use basilica_sdk::types::{AvailableNode, ListAvailableNodesQuery, ListRentalsQuery, RentalState};
 use basilica_sdk::{ApiError, BasilicaClient};
-use basilica_validator::api::types::AvailableNode;
 use color_eyre::eyre::{eyre, Result};
 use color_eyre::Help;
 use console::{style, Term};
@@ -1218,7 +1217,7 @@ async fn secure_rental_ssh_info(
         Some(key) => Some(key.clone()),
         None if rental.is_vip => {
             // VIP rentals: fetch user's registered SSH key
-            match api_client.get_user_ssh_key().await {
+            match api_client.get_ssh_key().await {
                 Ok(Some(user_key)) => Some(user_key.public_key),
                 Ok(None) => None,
                 Err(e) => {

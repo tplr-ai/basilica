@@ -89,6 +89,7 @@ ssh-key = { workspace = true }
 tempfile = { workspace = true }
 wiremock = { workspace = true }
 once_cell = { workspace = true }
+tower = { workspace = true, features = ["util"] }
 
 [features]
 default = ["client"]

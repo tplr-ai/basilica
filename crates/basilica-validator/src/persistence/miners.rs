@@ -2,10 +2,10 @@
 //!
 //! This module contains all SQL operations related to miners table management.
 
-#[cfg(test)]
-use crate::api::types::{NodeRegistration, UpdateMinerRequest};
 use crate::miner_prover::types::MinerInfo;
 use crate::persistence::types::{MinerData, MinerHealthData, NodeHealthData, NodeMetricData};
+#[cfg(test)]
+use crate::persistence::types::{MinerNodeInput, MinerUpdateInput};
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -548,7 +548,7 @@ impl SimplePersistence {
         miner_id: &str,
         hotkey: &str,
         endpoint: &str,
-        nodes: &[NodeRegistration],
+        nodes: &[MinerNodeInput],
     ) -> Result<(), anyhow::Error> {
         let now = Utc::now().to_rfc3339();
 
@@ -647,7 +647,7 @@ impl SimplePersistence {
     pub async fn update_miner(
         &self,
         miner_id: &str,
-        request: &UpdateMinerRequest,
+        request: &MinerUpdateInput,
     ) -> Result<(), anyhow::Error> {
         let now = Utc::now().to_rfc3339();
 

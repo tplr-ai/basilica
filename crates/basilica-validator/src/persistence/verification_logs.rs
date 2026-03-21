@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::Row;
+use sqlx::{QueryBuilder, Row, Sqlite};
 use tracing::info;
 use uuid::Uuid;
 
@@ -54,34 +54,29 @@ impl SimplePersistence {
         limit: u32,
         offset: u32,
     ) -> Result<Vec<VerificationLog>, anyhow::Error> {
-        let mut query = String::from(
+        let mut query = QueryBuilder::<Sqlite>::new(
             "SELECT id, node_id, validator_hotkey, verification_type, timestamp,
              score, success, details, duration_ms, error_message, created_at, updated_at
              FROM verification_logs WHERE 1=1",
         );
 
-        let mut conditions = Vec::new();
-
-        if let Some(exec_id) = node_id {
-            conditions.push(format!("node_id = '{exec_id}'"));
+        if let Some(node_id) = node_id {
+            query.push(" AND node_id = ").push_bind(node_id);
         }
 
         if let Some(success) = success_only {
-            conditions.push(format!("success = {}", if success { 1 } else { 0 }));
+            query
+                .push(" AND success = ")
+                .push_bind(if success { 1 } else { 0 });
         }
 
-        if !conditions.is_empty() {
-            query.push_str(" AND ");
-            query.push_str(&conditions.join(" AND "));
-        }
+        query
+            .push(" ORDER BY timestamp DESC LIMIT ")
+            .push_bind(limit as i64)
+            .push(" OFFSET ")
+            .push_bind(offset as i64);
 
-        query.push_str(" ORDER BY timestamp DESC LIMIT ? OFFSET ?");
-
-        let rows = sqlx::query(&query)
-            .bind(limit as i64)
-            .bind(offset as i64)
-            .fetch_all(self.pool())
-            .await?;
+        let rows = query.build().fetch_all(self.pool()).await?;
 
         let mut logs = Vec::new();
         for row in rows {

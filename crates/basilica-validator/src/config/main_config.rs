@@ -697,8 +697,12 @@ pub struct StorageConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiConfig {
-    /// API key for external authentication
+    /// Optional API key used to protect validator API routes when set.
+    #[serde(skip_serializing)]
     pub api_key: Option<String>,
+    /// Explicit opt-in for exposing non-health routes without credentials.
+    #[serde(default)]
+    pub allow_unauthenticated_routes: bool,
     /// Maximum request body size in bytes
     pub max_body_size: usize,
     /// Bind address for the API server
@@ -862,6 +866,7 @@ impl Default for ValidatorConfig {
             },
             api: ApiConfig {
                 api_key: None,
+                allow_unauthenticated_routes: false,
                 max_body_size: 1024 * 1024, // 1MB
                 bind_address: "0.0.0.0:8080".to_string(),
             },
@@ -1077,9 +1082,14 @@ impl ConfigValidation for ValidatorConfig {
     fn warnings(&self) -> Vec<String> {
         let mut warnings = Vec::new();
 
-        if self.api.api_key.is_none() {
-            warnings
-                .push("No API key configured - external API access will be disabled".to_string());
+        if self.api.api_key.is_none() && self.api.allow_unauthenticated_routes {
+            warnings.push(
+                "Validator API routes except /health are unauthenticated because api.allow_unauthenticated_routes=true".to_string(),
+            );
+        } else if self.api.api_key.is_none() {
+            warnings.push(
+                "No API key configured - protected validator API routes stay disabled until api.api_key is set or api.allow_unauthenticated_routes=true is set explicitly".to_string(),
+            );
         }
 
         if self.verification.min_score_threshold < 0.1 {

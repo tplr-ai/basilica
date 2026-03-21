@@ -609,7 +609,7 @@ pub async fn ensure_ssh_key_registered(
     api_client: &basilica_sdk::BasilicaClient,
 ) -> Result<String, CliError> {
     // Check if user already has SSH key registered
-    if let Some(key) = api_client.get_user_ssh_key().await? {
+    if let Some(key) = api_client.get_ssh_key().await? {
         return Ok(key.id);
     }
 
@@ -1224,7 +1224,10 @@ pub async fn handle_ps(
 
                 // Build query from filters - default to "active" if no status specified
                 let query = Some(ListRentalsQuery {
-                    status: filters.status.or(Some(RentalState::Active)),
+                    status: filters
+                        .status
+                        .map(RentalState::from)
+                        .or(Some(RentalState::Active)),
                     gpu_type: filters.gpu_type.clone(),
                     min_gpu_count: filters.min_gpu_count,
                 });
@@ -1567,7 +1570,10 @@ pub async fn handle_ps(
             } else {
                 // Active rentals mode
                 let query = Some(ListRentalsQuery {
-                    status: filters.status.clone().or(Some(RentalState::Active)),
+                    status: filters
+                        .status
+                        .map(RentalState::from)
+                        .or(Some(RentalState::Active)),
                     gpu_type: filters.gpu_type.clone(),
                     min_gpu_count: filters.min_gpu_count,
                 });

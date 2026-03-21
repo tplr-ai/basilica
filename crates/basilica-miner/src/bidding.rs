@@ -87,17 +87,12 @@ impl BidManager {
             .collect()
     }
 
-    /// Run the bid manager lifecycle:
-    /// 1. Validate all nodes have prices
-    /// 2. Register with validator
-    /// 3. Deploy SSH keys if provided
-    /// 4. Run health check loop
+    /// Run the bid manager lifecycle until shutdown is requested.
     pub async fn run(
         &self,
         grpc_endpoint: String,
         mut shutdown_rx: watch::Receiver<bool>,
     ) -> Result<()> {
-        // 0. Validate all nodes have prices configured
         let nodes = self.node_manager.list_nodes().await?;
 
         if nodes.is_empty() {
@@ -140,14 +135,12 @@ impl BidManager {
             nodes.len()
         );
 
-        // 3. Deploy validator SSH key if provided
         if state.validator_ssh_public_key.is_some() {
             if let Err(e) = self.registration_client.deploy_validator_ssh_key().await {
                 error!("Failed to deploy validator SSH key: {}", e);
             }
         }
 
-        // 4. Run health check loop
         let health_interval = Duration::from_secs(state.health_check_interval_secs as u64);
         let mut health_ticker = interval(health_interval);
 
@@ -191,12 +184,10 @@ impl BidManager {
     fn get_bid_price(&self, category: &str) -> Option<u32> {
         let static_prices = self.static_prices();
 
-        // First check static_prices_cents
         if let Some(&price_cents) = static_prices.get(category) {
             return Some(price_cents);
         }
 
-        // Try case-insensitive match
         let category_upper = category.to_uppercase();
         for (key, &price_cents) in static_prices {
             if key.to_uppercase() == category_upper {

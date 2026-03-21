@@ -1133,8 +1133,8 @@ impl VerificationEngine {
         self.worker_queue.is_some()
     }
 
-    /// Initialize and start worker queue
-    pub async fn init_worker_queue(&mut self) -> Result<()> {
+    /// Start the worker queue used for decoupled execution.
+    pub async fn start_worker_queue(&mut self) -> Result<()> {
         let config = WorkerQueueConfig::default();
         let queue = Arc::new(ValidationWorkerQueue::new(config, Arc::new(self.clone())));
 

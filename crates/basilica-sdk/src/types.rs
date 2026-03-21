@@ -2,24 +2,17 @@
 
 use serde::{Deserialize, Serialize};
 
-// Re-export types from basilica-validator that are used by the client
-pub use basilica_validator::api::types::{
+pub use crate::shared_types::{
     AvailabilityInfo, AvailableNode, CpuSpec, GpuRequirements, GpuSpec, ListAvailableNodesQuery,
-    ListAvailableNodesResponse, LogQuery, NetworkSpeedInfo, NodeDetails, RentCapacityRequest,
-    RentCapacityResponse, RentalListItem, RentalStatus,
-    RentalStatusResponse as ValidatorRentalStatusResponse, SshAccess, TerminateRentalRequest,
+    ListAvailableNodesResponse, LogQuery, NetworkSpeedInfo, NodeDetails, PortMapping,
+    PortMappingRequest, RentCapacityRequest, RentCapacityResponse, RentalListItem, RentalResponse,
+    RentalRestartResponse, RentalState, RentalStatus, RentalStatusQuery, RentalStatusResponse,
+    ResourceRequirementsRequest, SshAccess, StartRentalRequest, TerminateRentalRequest,
+    ValidatorListRentalsQuery, VolumeMountRequest,
 };
 
 // Re-export LocationProfile for SDK consumers
 pub use basilica_common::LocationProfile;
-
-// Re-export rental-specific types from validator
-pub use basilica_validator::api::routes::rentals::{
-    PortMappingRequest, ResourceRequirementsRequest, StartRentalRequest, VolumeMountRequest,
-};
-
-// Re-export RentalState from validator for SDK consumers
-pub use basilica_validator::rental::types::RentalState;
 
 // SDK-specific types
 
@@ -58,9 +51,6 @@ pub struct ListRentalsQuery {
     pub min_gpu_count: Option<u32>,
 }
 
-/// Rental status response (alias for compatibility)
-pub type RentalStatusResponse = ValidatorRentalStatusResponse;
-
 /// API rental list item with GPU information
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiRentalListItem {
@@ -86,7 +76,7 @@ pub struct ApiRentalListItem {
     pub network_speed: Option<NetworkSpeedInfo>,
     /// Port mappings for this rental
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub port_mappings: Option<Vec<basilica_validator::rental::PortMapping>>,
+    pub port_mappings: Option<Vec<PortMapping>>,
     /// Hourly cost rate for this rental (includes markup)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hourly_cost: Option<f64>,
@@ -133,13 +123,6 @@ pub struct HistoricalRentalsResponse {
     pub total_cost: String,
 }
 
-/// Rental status query parameters
-#[derive(Debug, Deserialize, Serialize)]
-pub struct RentalStatusQuery {
-    #[allow(dead_code)]
-    pub include_resource_usage: Option<bool>,
-}
-
 /// Log streaming query parameters
 #[derive(Debug, Deserialize, Serialize)]
 pub struct LogStreamQuery {
@@ -149,48 +132,8 @@ pub struct LogStreamQuery {
     pub since_seconds: Option<u32>,
 }
 
-/// Start rental request with GPU-based node selection
-#[derive(Debug, Serialize, Deserialize)]
-pub struct StartRentalApiRequest {
-    /// GPU category: "H100", "A100", "B200", etc. (required)
-    pub gpu_category: String,
-
-    /// Number of GPUs required (required)
-    pub gpu_count: u32,
-
-    /// Minimum GPU memory in GB (e.g., 80 for 80GB)
-    #[serde(default)]
-    pub min_memory_gb: Option<u32>,
-
-    /// Maximum acceptable cents/GPU-hour
-    pub max_hourly_rate_cents: u32,
-
-    /// Container image to run
-    pub container_image: String,
-
-    /// SSH public key
-    pub ssh_public_key: String,
-
-    /// Environment variables
-    #[serde(default)]
-    pub environment: std::collections::HashMap<String, String>,
-
-    /// Port mappings
-    #[serde(default)]
-    pub ports: Vec<PortMappingRequest>,
-
-    /// Resource requirements
-    #[serde(default)]
-    pub resources: ResourceRequirementsRequest,
-
-    /// Command to run
-    #[serde(default)]
-    pub command: Vec<String>,
-
-    /// Volume mounts
-    #[serde(default)]
-    pub volumes: Vec<VolumeMountRequest>,
-}
+/// Start rental request with GPU-based node selection.
+pub type StartRentalApiRequest = StartRentalRequest;
 
 /// Extended rental status response that includes SSH credentials from the database
 #[derive(Debug, Serialize, Deserialize)]
@@ -210,7 +153,7 @@ pub struct RentalStatusWithSshResponse {
 
     /// Port mappings (from database)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub port_mappings: Option<Vec<basilica_validator::rental::PortMapping>>,
+    pub port_mappings: Option<Vec<PortMapping>>,
 
     /// SSH public key used at rental creation (for local key matching)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -226,9 +169,9 @@ pub struct RentalStatusWithSshResponse {
 impl RentalStatusWithSshResponse {
     /// Create from validator response, database SSH credentials, port mappings, and public key
     pub fn from_validator_response(
-        response: ValidatorRentalStatusResponse,
+        response: RentalStatusResponse,
         ssh_credentials: Option<String>,
-        port_mappings: Option<Vec<basilica_validator::rental::PortMapping>>,
+        port_mappings: Option<Vec<PortMapping>>,
         ssh_public_key: Option<String>,
     ) -> Self {
         Self {
