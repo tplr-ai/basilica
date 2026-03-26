@@ -121,9 +121,21 @@ pub enum Command {
 pub enum RentalAction {
     /// Start a new container rental
     Start {
-        /// Node ID
+        /// GPU category (e.g., "H100", "A100", "B200")
         #[arg(long)]
-        node: String,
+        gpu_category: String,
+
+        /// Number of GPUs required
+        #[arg(long, default_value = "1")]
+        gpu_count: u32,
+
+        /// Minimum GPU memory in GB (optional)
+        #[arg(long)]
+        min_memory_gb: Option<u32>,
+
+        /// Maximum hourly rate per GPU in cents
+        #[arg(long)]
+        max_hourly_rate_cents: u32,
 
         /// Docker image to deploy (e.g., ubuntu:22.04, nginx:alpine)
         #[arg(long)]
@@ -152,10 +164,6 @@ pub enum RentalAction {
         /// Memory in MB
         #[arg(long)]
         memory_mb: Option<i64>,
-
-        /// GPU count
-        #[arg(long)]
-        gpu_count: Option<u32>,
 
         /// Storage size in MB (default: 102400 MB / 100 GB)
         #[arg(long)]

@@ -41,11 +41,7 @@ pub struct MinerData {
     pub hotkey: String,
     pub endpoint: String,
     pub node_count: u32,
-    pub verification_score: f64,
-    pub uptime_percentage: f64,
-    pub last_seen: DateTime<Utc>,
-    pub registered_at: DateTime<Utc>,
-    pub node_info: Value,
+    pub updated_at: DateTime<Utc>,
 }
 
 /// Miner health data
@@ -60,7 +56,7 @@ pub struct MinerHealthData {
 pub struct NodeHealthData {
     pub node_id: String,
     pub status: String,
-    pub last_seen: DateTime<Utc>,
+    pub last_health_check: DateTime<Utc>,
 }
 
 /// Node details for miner listings
@@ -80,8 +76,6 @@ pub struct AvailableNodeData {
     pub gpu_specs: Vec<crate::api::types::GpuSpec>,
     pub cpu_specs: crate::api::types::CpuSpec,
     pub location: Option<String>,
-    pub verification_score: f64,
-    pub uptime_percentage: f64,
     pub status: Option<String>,
     pub download_mbps: Option<f64>,
     pub upload_mbps: Option<f64>,

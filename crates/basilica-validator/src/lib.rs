@@ -6,12 +6,14 @@
 pub mod agent_installer;
 pub mod api;
 pub mod ban_system;
+pub mod basilica_api;
 pub mod billing;
 pub mod bittensor_core;
 pub mod cli;
 pub mod collateral;
 pub mod config;
 pub mod gpu;
+pub mod grpc;
 pub mod journal;
 pub mod k8s_profile_publisher;
 pub mod metrics;

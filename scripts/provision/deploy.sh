@@ -171,26 +171,6 @@ EOF
     fi
 }
 
-# Deploy executor
-deploy_executor() {
-    local env="${1:-production}"
-    load_environment "$env" || return 1
-    
-    log_header "Deploying Executor to $EXECUTOR_HOST"
-    
-    # Create directories
-    create_directories "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" || return 1
-    
-    # Deploy binaries
-    deploy_binary "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" || return 1
-    deploy_binary "gpu-attestor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" || return 1
-    
-    # Deploy configuration
-    deploy_config "executor.toml" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" || return 1
-    
-    log_success "Executor deployment complete"
-}
-
 # Deploy miner
 deploy_miner() {
     local env="${1:-production}"
@@ -232,13 +212,12 @@ deploy_validator() {
 # Deploy all services
 deploy_all() {
     local env="${1:-production}"
-    
+
     log_header "Deploying all services to $env environment"
-    
-    deploy_executor "$env" || return 1
+
     deploy_miner "$env" || return 1
     deploy_validator "$env" || return 1
-    
+
     log_success "All services deployed successfully"
 }
 
@@ -264,19 +243,7 @@ build_binaries() {
         log_error "Failed to build miner"
         return 1
     }
-    
-    log_info "Building executor..."
-    "$SCRIPT_DIR/../executor/build.sh" --release || {
-        log_error "Failed to build executor"
-        return 1
-    }
-    
-    log_info "Building gpu-attestor..."
-    "$SCRIPT_DIR/../gpu-attestor/build.sh" --release || {
-        log_error "Failed to build gpu-attestor"
-        return 1
-    }
-    
+
     log_success "All binaries built successfully"
 }
 
@@ -289,9 +256,6 @@ main() {
         binaries)
             local env="${1:-production}"
             deploy_all "$env"
-            ;;
-        executor)
-            deploy_executor "$@"
             ;;
         miner)
             deploy_miner "$@"
@@ -315,16 +279,15 @@ Usage: deploy.sh <command> [environment]
 
 Commands:
     binaries    Deploy all binaries to servers
-    executor    Deploy executor only
     miner       Deploy miner only
     validator   Deploy validator only
     build       Build all binaries locally
     all         Build and deploy everything
-    
+
 Environment:
     production  Production servers (default)
     staging     Staging servers
-    
+
 Examples:
     deploy.sh build                    # Build binaries
     deploy.sh binaries production      # Deploy to production

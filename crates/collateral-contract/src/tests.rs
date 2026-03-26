@@ -107,7 +107,8 @@ async fn test_collateral_deploy() {
     // Test deposit
     let hotkey = [1u8; 32];
     let node_id = 1u128;
-    let amount = U256::from(2_000_000_000_000_000_000u128); // 2 TAO
+    let alpha_hotkey = [2u8; 32];
+    let alpha_amount = U256::from(2_000_000_000_000_000_000u128); // 2 Alpha
 
     // Call through proxy address
     let proxied = CollateralUpgradeable::new(*proxy.address(), provider.clone());
@@ -116,8 +117,10 @@ async fn test_collateral_deploy() {
         .deposit(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
+            FixedBytes::from_slice(&alpha_hotkey),
+            alpha_amount,
         )
-        .value(amount);
+        .value(U256::ZERO);
     let tx = tx.send().await.unwrap();
     let receipt = tx.get_receipt().await.unwrap();
     println!("Deposit receipt: {:?}", receipt);
@@ -153,7 +156,17 @@ async fn test_collateral_deploy() {
         .call()
         .await
         .unwrap();
-    assert_eq!(collaterals_result, amount);
+    assert_eq!(collaterals_result, U256::ZERO);
+
+    let alpha_collaterals_result = proxied
+        .alphaCollaterals(
+            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&node_id.to_be_bytes()),
+        )
+        .call()
+        .await
+        .unwrap();
+    assert_eq!(alpha_collaterals_result, alpha_amount);
 }
 
 #[tokio::test]

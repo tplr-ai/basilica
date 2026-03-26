@@ -11,18 +11,17 @@ async fn test_node_registration() {
         host: "192.168.1.100".to_string(),
         port: 22,
         username: "basilica".to_string(),
-        hourly_rate_per_gpu: 2.5,
+        gpu_category: "H100".to_string(),
+        gpu_count: 8,
         additional_opts: None,
     };
 
-    let node_id = "test-node-1".to_string();
-
     // Register node
-    let result = manager.register_node(node_id.clone(), config.clone()).await;
+    let result = manager.register_node(config.clone()).await;
     assert!(result.is_ok());
 
-    // Get node
-    let node = manager.get_node(&node_id).await.unwrap();
+    // Get node by host
+    let node = manager.get_node("192.168.1.100").await.unwrap();
     assert!(node.is_some());
 
     let node = node.unwrap();
@@ -35,86 +34,116 @@ async fn test_list_nodes() {
 
     // Register multiple nodes
     manager
-        .register_node(
-            "node-1".to_string(),
-            NodeConfig {
-                host: "192.168.1.100".to_string(),
-                port: 22,
-                username: "basilica".to_string(),
-                hourly_rate_per_gpu: 2.5,
-                additional_opts: None,
-            },
-        )
+        .register_node(NodeConfig {
+            host: "192.168.1.100".to_string(),
+            port: 22,
+            username: "basilica".to_string(),
+            gpu_category: "H100".to_string(),
+            gpu_count: 8,
+            additional_opts: None,
+        })
         .await
         .unwrap();
 
     manager
-        .register_node(
-            "node-2".to_string(),
-            NodeConfig {
-                host: "192.168.1.101".to_string(),
-                port: 22,
-                username: "basilica".to_string(),
-                hourly_rate_per_gpu: 2.5,
-                additional_opts: None,
-            },
-        )
+        .register_node(NodeConfig {
+            host: "192.168.1.101".to_string(),
+            port: 22,
+            username: "basilica".to_string(),
+            gpu_category: "A100".to_string(),
+            gpu_count: 4,
+            additional_opts: None,
+        })
         .await
         .unwrap();
 
     manager
-        .register_node(
-            "node-3".to_string(),
-            NodeConfig {
-                host: "192.168.1.102".to_string(),
-                port: 22,
-                username: "basilica".to_string(),
-                hourly_rate_per_gpu: 2.5,
-                additional_opts: None,
-            },
-        )
+        .register_node(NodeConfig {
+            host: "192.168.1.102".to_string(),
+            port: 22,
+            username: "basilica".to_string(),
+            gpu_category: "RTX4090".to_string(),
+            gpu_count: 2,
+            additional_opts: None,
+        })
         .await
         .unwrap();
 
     // List nodes - all configured nodes are returned
     let nodes = manager.list_nodes().await.unwrap();
     assert_eq!(nodes.len(), 3);
-    assert!(nodes.iter().any(|n| n.node_id == "node-1"));
-    assert!(nodes.iter().any(|n| n.node_id == "node-2"));
-    assert!(nodes.iter().any(|n| n.node_id == "node-3"));
+    assert!(nodes.iter().any(|n| n.config.host == "192.168.1.100"));
+    assert!(nodes.iter().any(|n| n.config.host == "192.168.1.101"));
+    assert!(nodes.iter().any(|n| n.config.host == "192.168.1.102"));
 }
 
 #[tokio::test]
 async fn test_unregister_node() {
     let manager = NodeManager::new(NodeSshConfig::default());
 
-    let node_id = "test-node".to_string();
+    let host = "192.168.1.100";
 
     // Register a node
     manager
-        .register_node(
-            node_id.clone(),
-            NodeConfig {
-                host: "192.168.1.100".to_string(),
-                port: 22,
-                username: "basilica".to_string(),
-                hourly_rate_per_gpu: 2.5,
-                additional_opts: None,
-            },
-        )
+        .register_node(NodeConfig {
+            host: host.to_string(),
+            port: 22,
+            username: "basilica".to_string(),
+            gpu_category: "H100".to_string(),
+            gpu_count: 8,
+            additional_opts: None,
+        })
         .await
         .unwrap();
 
     // Verify it exists
-    let node = manager.get_node(&node_id).await.unwrap();
+    let node = manager.get_node(host).await.unwrap();
     assert!(node.is_some());
 
     // Unregister it
-    manager.unregister_node(&node_id).await.unwrap();
+    manager.unregister_node(host).await.unwrap();
 
     // Verify it's gone
-    let node = manager.get_node(&node_id).await.unwrap();
+    let node = manager.get_node(host).await.unwrap();
     assert!(node.is_none());
+}
+
+#[tokio::test]
+async fn test_register_node_rejects_duplicate_ip() {
+    let manager = NodeManager::new(NodeSshConfig::default());
+
+    let original = NodeConfig {
+        host: "192.168.1.100".to_string(),
+        port: 22,
+        username: "basilica".to_string(),
+        gpu_category: "H100".to_string(),
+        gpu_count: 8,
+        additional_opts: None,
+    };
+
+    manager.register_node(original.clone()).await.unwrap();
+
+    let duplicate = NodeConfig {
+        host: "192.168.1.100".to_string(),
+        port: 2222,
+        username: "another-user".to_string(),
+        gpu_category: "A100".to_string(),
+        gpu_count: 4,
+        additional_opts: Some("-o StrictHostKeyChecking=no".to_string()),
+    };
+
+    let result = manager.register_node(duplicate).await;
+    assert!(result.is_err());
+    let error_message = result.unwrap_err().to_string();
+    assert!(error_message.contains("already registered"));
+
+    let existing = manager.get_node("192.168.1.100").await.unwrap();
+    assert!(existing.is_some());
+    let existing = existing.unwrap();
+    assert_eq!(existing.port, 22);
+    assert_eq!(existing.username, "basilica");
+    assert_eq!(existing.gpu_category, "H100");
+    assert_eq!(existing.gpu_count, 8);
 }
 
 #[tokio::test]

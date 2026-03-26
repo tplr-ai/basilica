@@ -30,16 +30,13 @@ mod tests {
 
             // Seed miners table first (required for foreign key constraint)
             sqlx::query(
-                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, updated_at)
+                 VALUES (?, ?, ?, ?)",
             )
             .bind(&miner_id)
             .bind(format!("hotkey_{}", profile.miner_uid.as_u16()))
             .bind("127.0.0.1:8080")
             .bind(now.to_rfc3339())
-            .bind(now.to_rfc3339())
-            .bind(now.to_rfc3339())
-            .bind("{}")
             .execute(persistence.pool())
             .await?;
 
@@ -64,18 +61,20 @@ mod tests {
                 }
             }
 
-            // Seed miner_nodes table
+            // Seed miner_nodes table (unique IP per miner to satisfy UNIQUE index)
+            let uid = profile.miner_uid.as_u16();
+            let node_ip = format!("10.0.{}.{}", uid / 256, uid % 256);
             sqlx::query(
-                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
+                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, status, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&node_id)
             .bind(&miner_id)
             .bind(&node_id)
-            .bind("127.0.0.1:8080")
+            .bind(format!("root@{}:8080", node_ip))
+            .bind(&node_ip)
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
             .bind("verified") // Set status to 'verified' for tests
-            .bind(now.to_rfc3339())
             .bind(now.to_rfc3339())
             .execute(persistence.pool())
             .await?;

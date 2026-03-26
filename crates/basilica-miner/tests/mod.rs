@@ -57,12 +57,15 @@ mod tests {
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
+        let alpha_hotkey: [u8; 32] = [2u8; 32];
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
+                FixedBytes::from_slice(&alpha_hotkey),
+                amount,
             )
-            .value(amount);
+            .value(U256::ZERO);
         let deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         let mut deposit_found = false;
@@ -75,7 +78,7 @@ mod tests {
         assert!(deposit_found);
 
         let collaterals = contract
-            .collaterals(
+            .alphaCollaterals(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
             )
@@ -98,12 +101,16 @@ mod tests {
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
+        let alpha_hotkey: [u8; 32] = [2u8; 32];
+        let alpha_coldkey: [u8; 32] = [3u8; 32];
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
+                FixedBytes::from_slice(&alpha_hotkey),
+                amount,
             )
-            .value(amount);
+            .value(U256::ZERO);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
@@ -112,6 +119,7 @@ mod tests {
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
+            FixedBytes::from_slice(&alpha_coldkey),
             url.to_owned(),
             FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
@@ -152,12 +160,16 @@ mod tests {
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
+        let alpha_hotkey: [u8; 32] = [2u8; 32];
+        let alpha_coldkey: [u8; 32] = [3u8; 32];
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
+                FixedBytes::from_slice(&alpha_hotkey),
+                amount,
             )
-            .value(amount);
+            .value(U256::ZERO);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
@@ -166,6 +178,7 @@ mod tests {
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
+            FixedBytes::from_slice(&alpha_coldkey),
             url.to_owned(),
             FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
@@ -208,12 +221,15 @@ mod tests {
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
+        let alpha_hotkey: [u8; 32] = [2u8; 32];
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
                 FixedBytes::from_slice(&node_id.to_be_bytes()),
+                FixedBytes::from_slice(&alpha_hotkey),
+                amount,
             )
-            .value(amount);
+            .value(U256::ZERO);
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
@@ -222,6 +238,8 @@ mod tests {
         let slash_tx = contract.slashCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
+            U256::ZERO,
+            amount,
             url.to_owned(),
             FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );

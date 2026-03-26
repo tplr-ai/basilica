@@ -1,6 +1,6 @@
 [package]
 name = "basilica-cli"
-version = "0.9.0"
+version = "0.25.0"
 edition = "2021"
 authors = ["Basilica Team"]
 description = "Unified CLI for Basilica GPU rental and network management"
@@ -27,7 +27,7 @@ rust_decimal = { workspace = true }
 semver = { workspace = true }
 
 # HTTP client for API communication
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["blocking"] }
 futures = { workspace = true }
 futures-util = { workspace = true }
 eventsource-stream = { workspace = true }
@@ -63,10 +63,13 @@ self_update = { workspace = true }
 # SSH key parsing
 ssh-key = { workspace = true }
 
+# Pattern matching
+regex = { workspace = true }
+
+# URL encoding
+urlencoding = { workspace = true }
 
 # Internal crate dependencies
-basilica-aggregator = { path = "../basilica-aggregator" }
-basilica-api = { path = "../basilica-api" }
 basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }

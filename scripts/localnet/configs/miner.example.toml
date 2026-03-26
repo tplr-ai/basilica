@@ -1,0 +1,84 @@
+# Basilica Miner Configuration - Local Development
+# Pre-configured for local Subtensor network
+
+# =============================================================================
+# Bittensor Network Configuration
+# =============================================================================
+[bittensor]
+wallet_name = "miner_1"
+hotkey_name = "default"
+network = "local"
+netuid = 1
+chain_endpoint = "ws://subtensor:9944"
+weight_interval_secs = 300
+axon_port = 50051
+max_weight_uids = 256
+
+# =============================================================================
+# Database Configuration
+# =============================================================================
+[database]
+url = "sqlite:///var/lib/basilica/miner/data/miner.db"
+
+# =============================================================================
+# Metrics Configuration
+# =============================================================================
+[metrics]
+enabled = true
+
+[metrics.prometheus]
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"
+
+# =============================================================================
+# Node Management (GPU Nodes)
+# =============================================================================
+[node_management]
+# For local testing, nodes list is empty
+# Add test nodes here if needed
+nodes = []
+health_check_interval = 60
+health_check_timeout = 10
+max_retry_attempts = 3
+auto_recovery = true
+
+# =============================================================================
+# Security Configuration
+# =============================================================================
+[security]
+# For local testing, signature verification can be disabled
+verify_signatures = false
+
+# =============================================================================
+# SSH Session Configuration
+# =============================================================================
+[ssh_session]
+miner_node_key_path = "/var/lib/basilica/miner/.ssh/miner_node_key"
+default_node_username = "node"
+
+# =============================================================================
+# Advertised Addresses
+# =============================================================================
+[advertised_addresses]
+grpc_endpoint = "http://172.28.0.30:50051"
+axon_endpoint = "http://172.28.0.30:50051"
+metrics_endpoint = "http://172.28.0.30:9090"
+
+# =============================================================================
+# Validator Assignment Strategy
+# =============================================================================
+[validator_assignment]
+strategy = "highest_stake"
+
+# =============================================================================
+# Bidding Configuration (GPU Pricing)
+# =============================================================================
+# BidManager runs automatically and waits for validator discovery.
+# All GPU categories in your nodes MUST have prices defined here.
+[bidding]
+# Static prices by GPU category (in dollars per GPU-hour)
+# Example: A100 = 1.20 means $1.20/hour per GPU
+[bidding.strategy.static.static_prices]
+H100 = 2.50
+A100 = 1.20

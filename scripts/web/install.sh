@@ -25,14 +25,9 @@ done
 TEMP_DIR=$(mktemp -d)
 TEMP_BINARY="$TEMP_DIR/$BINARY_NAME"
 
-# Determine install directory based on permissions
-if [ "$EUID" -eq 0 ] || [ -w "/usr/local/bin" ]; then
-    INSTALL_DIR="/usr/local/bin"
-    SYSTEM_INSTALL=true
-else
-    INSTALL_DIR="$HOME/.local/bin"
-    SYSTEM_INSTALL=false
-fi
+# Determine install directory
+BASILICA_DIR="${BASILICA_DIR:-$HOME/.basilica}"
+INSTALL_DIR="$BASILICA_DIR/bin"
 
 # Colors for output
 RED='\033[0;31m'
@@ -87,36 +82,39 @@ setup_install_dir() {
     mkdir -p "$INSTALL_DIR"
 }
 
-# Detect user's shell type
-detect_shell_type() {
-    # Prefer the currently running shell over SHELL environment variable
-    local shell_path
-    local shell_name
-
-    # Try to detect the current running shell first
-    shell_path="$(ps -p $$ -o comm= 2>/dev/null || echo "")"
-
-    # If ps command fails or returns empty, fall back to SHELL env var
-    if [ -z "$shell_path" ]; then
-        shell_path="${SHELL:-/bin/bash}"
-    fi
-
-    # Extract just the shell name
-    shell_name="$(basename "$shell_path")"
-
-    case "$shell_name" in
-        bash) echo "bash" ;;
-        zsh) echo "zsh" ;;
-        fish) echo "fish" ;;
-        sh) echo "bash" ;;  # Treat sh as bash for completion purposes
-        *) echo "bash" ;;   # Default to bash if unknown
-    esac
+# Remove binaries left by the old install layout (pre-~/.basilica era).
+# Old locations: ~/.local/bin or /usr/local/bin.
+# Does NOT modify shell profiles — the new env file appended by setup_shells()
+# naturally overrides the old PATH/completion lines.
+migrate_from_old_install() {
+    for old_dir in "$HOME/.local/bin" "/usr/local/bin"; do
+        if [ -f "$old_dir/basilica" ]; then
+            print_step "Removing old binary from $old_dir..."
+            rm -f "$old_dir/basilica" 2>/dev/null || true
+            rm -f "$old_dir/bs" 2>/dev/null || true
+            print_info "Cleaned up old install location"
+        fi
+    done
 }
 
-# Detect user's shell profile file
-detect_shell_profile() {
-    local shell_type
-    shell_type="$(detect_shell_type)"
+# Detect all installed shells on the system
+detect_installed_shells() {
+    local shells=""
+    if command -v bash >/dev/null 2>&1; then
+        shells="bash"
+    fi
+    if command -v zsh >/dev/null 2>&1; then
+        shells="${shells:+$shells }zsh"
+    fi
+    if command -v fish >/dev/null 2>&1; then
+        shells="${shells:+$shells }fish"
+    fi
+    echo "$shells"
+}
+
+# Get profile file for a given shell type
+get_profile_for_shell() {
+    local shell_type="$1"
 
     case "$shell_type" in
         zsh)
@@ -137,30 +135,78 @@ detect_shell_profile() {
     esac
 }
 
-# Add directory to PATH in shell profile
-add_to_path() {
-    local dir="$1"
-    local profile_file
-    profile_file=$(detect_shell_profile)
+# Create env files in BASILICA_DIR for shell setup
+# These are self-contained files that handle PATH and completions,
+# following the pattern used by cargo (~/.cargo/env) and deno (~/.deno/env).
+create_env_files() {
+    # Create ~/.basilica/env (sh-compatible, sourced by bash & zsh)
+    cat > "$BASILICA_DIR/env" << 'ENVEOF'
+#!/bin/sh
+# basilica shell setup (sourced by bash and zsh)
 
-    # Check if PATH export already exists
-    if [ -f "$profile_file" ] && grep -q "export PATH.*$dir" "$profile_file" 2>/dev/null; then
-        return 0
-    fi
+# Add to PATH if not already present (cargo-style dedup)
+case ":${PATH}:" in
+    *:"$HOME/.basilica/bin":*)
+        ;;
+    *)
+        export PATH="$HOME/.basilica/bin:$PATH"
+        ;;
+esac
 
-    # Check if directory is already in current PATH
-    if echo "$PATH" | grep -q "$dir"; then
-        return 0
-    fi
+# basilica completions
+if [ -n "$BASH_VERSION" ]; then
+    eval "$(COMPLETE=bash basilica)" 2>/dev/null
+    eval "$(complete -p basilica 2>/dev/null | sed 's/ basilica$/ bs/')" 2>/dev/null
+elif [ -n "$ZSH_VERSION" ]; then
+    eval "$(COMPLETE=zsh basilica)" 2>/dev/null
+    compdef bs=basilica 2>/dev/null
+fi
+ENVEOF
 
-    # Add PATH export to profile
-    if echo "export PATH=\"$dir:\$PATH\"" >> "$profile_file" 2>/dev/null; then
-        print_info "Added $dir to PATH"
+    # Create ~/.basilica/env.fish
+    cat > "$BASILICA_DIR/env.fish" << 'FISHEOF'
+# basilica shell setup (sourced by fish)
+
+# Add to PATH if not already present
+if not contains "$HOME/.basilica/bin" $PATH
+    set -x PATH "$HOME/.basilica/bin" $PATH
+end
+
+# basilica completions
+COMPLETE=fish basilica | source 2>/dev/null
+complete -c bs -w basilica 2>/dev/null
+FISHEOF
+
+    print_info "Created shell env files in $BASILICA_DIR"
+}
+
+# Add a source line to a shell's profile file
+add_source_to_profile() {
+    local shell_type="$1"
+    local profile_file="$2"
+    local source_line
+
+    # shellcheck disable=SC2016 # $HOME must stay literal in profile files
+    if [ "$shell_type" = "fish" ]; then
+        source_line='source "$HOME/.basilica/env.fish"'
     else
-        print_warning "Could not add to PATH automatically"
-        print_info "Please add this to your shell profile: export PATH=\"$dir:\$PATH\""
+        source_line='. "$HOME/.basilica/env"'
     fi
-    return 0
+
+    # Ensure profile directory exists (important for fish where ~/.config/fish/ may not exist)
+    mkdir -p "$(dirname "$profile_file")" 2>/dev/null || true
+
+    # Check if source line is already present
+    if [ -f "$profile_file" ] && grep -qF ".basilica/env" "$profile_file" 2>/dev/null; then
+        return 0
+    fi
+
+    if echo "$source_line" >> "$profile_file" 2>/dev/null; then
+        print_info "Added basilica env to $profile_file"
+    else
+        print_warning "Could not update $profile_file automatically"
+        print_info "Please add this to your $profile_file: $source_line"
+    fi
 }
 
 # Detect architecture
@@ -317,7 +363,7 @@ download_binary() {
 
     # Extract version number for display
     local version
-    version=$(echo "$latest_tag" | sed 's/basilica-cli-v//')
+    version="${latest_tag#basilica-cli-v}"
     print_info "Found latest version: v$version"
 
     # Detect platform
@@ -417,16 +463,26 @@ verify_binary() {
 
 # Check if binary already exists and prompt user
 check_existing_installation() {
-    if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
+    # Find existing binary: check new location first, then old locations
+    local existing_binary=""
+    for candidate in "$INSTALL_DIR/$BINARY_NAME" "$HOME/.local/bin/$BINARY_NAME" "/usr/local/bin/$BINARY_NAME"; do
+        if [ -f "$candidate" ]; then
+            existing_binary="$candidate"
+            break
+        fi
+    done
+
+    if [ -n "$existing_binary" ]; then
         echo
-        print_warning "Basilica CLI is already installed at $INSTALL_DIR/$BINARY_NAME"
+        print_warning "Basilica CLI is already installed at $existing_binary"
 
         # Try to get current version
         local current_version
         local current_version_clean
-        if current_version=$("$INSTALL_DIR/$BINARY_NAME" --version 2>/dev/null | head -n1); then
+        if current_version=$("$existing_binary" --version 2>/dev/null | head -n1); then
             # Extract just the version number (e.g., "basilica 0.1.0" -> "0.1.0")
-            current_version_clean=$(echo "$current_version" | sed 's/^[^0-9]*\([0-9.]*\).*/\1/')
+            current_version_clean="${current_version#"${current_version%%[0-9]*}"}"
+            current_version_clean="${current_version_clean%%[!0-9.]*}"
         else
             current_version_clean="unknown"
         fi
@@ -441,7 +497,7 @@ check_existing_installation() {
 
         if [ -n "$latest_tag" ]; then
             # Extract version from tag (e.g., "basilica-cli-v0.2.0" -> "0.2.0")
-            latest_version_clean=$(echo "$latest_tag" | sed 's/basilica-cli-v//')
+            latest_version_clean="${latest_tag#basilica-cli-v}"
         else
             latest_version_clean="unable to fetch"
         fi
@@ -536,103 +592,36 @@ install_binary() {
     fi
 }
 
-# Setup shell completions
-setup_shell_completions() {
-    # Separate declarations from assignments to avoid SC2155
-    local shell_type
-    local profile_file
-    local profile_dir
-    shell_type="$(detect_shell_type)"
-    profile_file="$(detect_shell_profile)"
-    local completion_marker="# Basilica CLI completions"
+# Setup shells: create env files and add source lines to profiles
+setup_shells() {
+    create_env_files
 
-    print_step "Setting up shell completions for $shell_type..."
+    local installed_shells
+    installed_shells="$(detect_installed_shells)"
 
-    # Check if completions are already configured
-    if [ -f "$profile_file" ] && grep -q "$completion_marker" "$profile_file" 2>/dev/null; then
-        print_info "Shell completions already configured"
-        return 0
-    fi
+    print_step "Configuring shells: $installed_shells"
 
-    # Ensure profile file and its directory exist
-    profile_dir="$(dirname "$profile_file")"
-    if [ ! -d "$profile_dir" ]; then
-        mkdir -p "$profile_dir" 2>/dev/null || true
-    fi
-
-    # Touch the profile file to ensure it exists
-    if [ ! -f "$profile_file" ]; then
-        touch "$profile_file" 2>/dev/null || true
-    fi
-
-    # Add completion based on shell type
-    local completion_cmd=""
-    case "$shell_type" in
-        bash)
-            completion_cmd='eval "$(COMPLETE=bash basilica)"'
-            ;;
-        zsh)
-            completion_cmd='eval "$(COMPLETE=zsh basilica)"'
-            ;;
-        fish)
-            completion_cmd='COMPLETE=fish basilica | source'
-            ;;
-        *)
-            print_warning "Unknown shell type: $shell_type"
-            print_info "Please add shell completions manually for your shell"
-            return 1
-            ;;
-    esac
-
-    # Add completion to profile using direct conditional (fixes SC2320)
-    if {
-        echo ""
-        echo "$completion_marker"
-        echo "$completion_cmd"
-    } >> "$profile_file" 2>/dev/null; then
-        print_info "Added shell completions to $profile_file"
-        return 0
-    else
-        print_warning "Could not add completions automatically"
-        print_info "Please add this to your $profile_file:"
-        echo "  $completion_cmd"
-        return 1
-    fi
-}
-
-# Setup PATH if needed
-setup_path() {
-    if [ "$SYSTEM_INSTALL" = false ] && ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
-        if add_to_path "$HOME/.local/bin"; then
-            print_info "PATH updated in $(detect_shell_profile)"
-        else
-            print_warning "Manually add ~/.local/bin to your PATH:"
-            echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-        fi
-        echo
-    fi
+    for shell in $installed_shells; do
+        local profile
+        profile="$(get_profile_for_shell "$shell")"
+        add_source_to_profile "$shell" "$profile"
+    done
 }
 
 # Show completion message
 show_completion() {
-    local profile_file="$(detect_shell_profile)"
+    local installed_shells
+    installed_shells="$(detect_installed_shells)"
 
     echo
     print_info "Basilica CLI installed successfully!"
     print_info "You can use 'basilica' or the shorter 'bs' alias"
     echo
 
-    # Inform about shell completions
-    print_info "Shell completions have been configured for tab support"
+    print_info "PATH and completions configured for: $installed_shells"
     print_info "Please restart your terminal or run:"
-    echo -e "  ${CYAN}source $profile_file${NC}"
-    echo
-
-    # Show manual completion setup instructions
-    print_info "For other shells, add the appropriate completion command to your shell config:"
-    echo "  Bash:  eval \"\$(COMPLETE=bash basilica)\""
-    echo "  Zsh:   eval \"\$(COMPLETE=zsh basilica)\""
-    echo "  Fish:  COMPLETE=fish basilica | source"
+    echo -e "  ${CYAN}source \"\$HOME/.basilica/env\"${NC}      (bash/zsh)"
+    echo -e "  ${CYAN}source \"\$HOME/.basilica/env.fish\"${NC}  (fish)"
     echo
 
     echo "Get started:"
@@ -653,14 +642,14 @@ main() {
     echo
 
     setup_install_dir
+    migrate_from_old_install
     check_existing_installation
     check_dependencies
     cleanup_old_backups
     download_binary
     verify_binary
     install_binary
-    setup_path
-    setup_shell_completions
+    setup_shells
     show_completion
 }
 

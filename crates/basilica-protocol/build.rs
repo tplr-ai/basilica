@@ -54,6 +54,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ResourceLimits",
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
+        // Add serde support for ComputeType enum
+        .type_attribute(
+            "ComputeType",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
         .compile(
             &[
                 "proto/common.proto",
@@ -63,6 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/billing.proto",
                 "proto/payments.proto",
                 "proto/rental.proto",
+                "proto/miner_payouts.proto",
             ],
             &["proto"],
         )?;

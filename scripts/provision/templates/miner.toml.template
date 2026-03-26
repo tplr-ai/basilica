@@ -9,7 +9,6 @@ netuid = ${BITTENSOR_NETUID}
 chain_endpoint = "${BITTENSOR_CHAIN_ENDPOINT}"
 external_ip = "${MINER_EXTERNAL_IP}"
 uid = 0
-coldkey_name = "default"
 axon_port = ${MINER_AXON_PORT}
 max_weight_uids = 256
 
@@ -37,9 +36,6 @@ host = "0.0.0.0"
 port = ${MINER_METRICS_PORT}
 path = "/metrics"
 retention_period = { secs = 604800 }
-
-[validator_comms]
-request_timeout = { secs = 30 }
 
 [executor_management]
 health_check_interval = { secs = 60 }

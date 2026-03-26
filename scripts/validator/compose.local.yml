@@ -33,6 +33,7 @@ services:
     ports:
       - "8080:8080"     # Server/API port
       - "9090:9090"     # Metrics port
+      - "50052:50052"   # Bidding gRPC
 
     networks:
       - basilica_network_local

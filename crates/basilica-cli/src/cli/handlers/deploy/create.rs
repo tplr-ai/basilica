@@ -1,13 +1,15 @@
 //! Deployment creation with phase tracking
 
 use crate::cli::commands::DeployCommand;
+use crate::cli::commands::{SpreadModeArg, TopologySpreadOptions};
 use crate::error::{CliError, DeployError};
 use crate::output::{print_info, print_success};
 use crate::progress::{complete_spinner_and_clear, create_spinner};
 use crate::source::{Framework, SourcePackager, SourceType};
 use basilica_sdk::types::{
     CreateDeploymentRequest, DeploymentResponse, GpuRequirementsSpec, HealthCheckConfig,
-    PersistentStorageSpec, ProbeConfig, ResourceRequirements, StorageBackend, StorageSpec,
+    PersistentStorageSpec, ProbeConfig, ResourceRequirements, SpreadMode, StorageBackend,
+    StorageSpec, TopologySpreadConfig, WebSocketConfig,
 };
 use basilica_sdk::BasilicaClient;
 use std::time::{Duration, Instant};
@@ -69,7 +71,16 @@ pub async fn handle_create(
     // 8. Build health check config (uses primary_port for probe port default)
     let health_check = build_health_check(&cmd.health, &packager, primary_port);
 
-    // 9. Create request
+    // 9. Build topology spread config (if specified)
+    let topology_spread = build_topology_spread(&cmd.topology_spread);
+
+    // 10. Build websocket config (if enabled)
+    let websocket = build_websocket_config(&cmd.websocket)?;
+
+    // 11. Build public flag using is_public() helper
+    let is_public = cmd.networking.is_public();
+
+    // 12. Create request
     let request = CreateDeploymentRequest {
         instance_name: name.clone(),
         image,
@@ -80,19 +91,22 @@ pub async fn handle_create(
         env: Some(env),
         resources: Some(resources),
         ttl_seconds: cmd.lifecycle.ttl,
-        public: cmd.networking.public,
+        public: is_public,
         storage,
         health_check,
         enable_billing: true,
         queue_name: None,
         suspended: false,
         priority: None,
+        topology_spread,
+        websocket,
+        public_metadata: cmd.networking.public_metadata,
     };
 
-    // 10. Show progress spinner
-    let spinner = create_spinner(&format!("Creating deployment '{}'...", name));
+    // 13. Show progress spinner
+    let spinner = create_spinner(&format!("Creating summons '{}'...", name));
 
-    // 11. Create deployment with retry
+    // 14. Create deployment with retry
     let response = create_with_retry(client, request.clone()).await?;
 
     complete_spinner_and_clear(spinner);
@@ -100,7 +114,7 @@ pub async fn handle_create(
     // Use the instance_name returned by API (may differ from user-provided name)
     let actual_name = response.instance_name.clone();
 
-    // 12. Wait for ready if not detached
+    // 15. Wait for ready if not detached
     if !cmd.lifecycle.detach {
         let result = wait_for_ready_with_phases(
             client,
@@ -116,6 +130,20 @@ pub async fn handle_create(
                     crate::output::json_output(&deployment)?;
                 } else {
                     super::helpers::print_deployment_success(&deployment);
+                    // Display share token for private deployments
+                    if !is_public {
+                        match (&deployment.share_token, &deployment.share_url) {
+                            (Some(token), Some(share_url)) => {
+                                super::helpers::print_share_token_info(token, share_url);
+                            }
+                            _ => {
+                                // Token generation may have failed silently
+                                crate::output::print_warning(
+                                    "Share token was not generated. Use 'deploy share-token regenerate' to create one."
+                                );
+                            }
+                        }
+                    }
                 }
             }
             WaitResult::Failed(reason) => {
@@ -139,10 +167,10 @@ pub async fn handle_create(
         crate::output::json_output(&response)?;
     } else {
         print_success(&format!(
-            "Deployment '{}' created (detached mode)",
+            "Summons '{}' created (detached mode)",
             actual_name
         ));
-        println!("  Check status: basilica deploy status {}", actual_name);
+        println!("  Check status: basilica summon status {}", actual_name);
     }
 
     Ok(())
@@ -225,7 +253,7 @@ async fn wait_for_ready_with_phases(
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs as u64);
     let mut last_phase: Option<String> = None;
-    let mut spinner = create_spinner("Waiting for deployment...");
+    let mut spinner = create_spinner("Waiting for summons...");
 
     loop {
         if start.elapsed() > timeout {
@@ -276,11 +304,11 @@ async fn wait_for_ready_with_phases(
             return Ok(WaitResult::Failed(reason));
         }
 
-        // Handle Terminating phase - deployment is being deleted while we wait
+        // Handle Terminating phase - summons is being deleted while we wait
         if status.state == "Terminating" || status.phase.as_deref() == Some("terminating") {
             complete_spinner_and_clear(spinner);
             return Ok(WaitResult::Failed(
-                "Deployment is being terminated - it may have been deleted externally".to_string(),
+                "Summons is being terminated - it may have been deleted externally".to_string(),
             ));
         }
 
@@ -298,32 +326,32 @@ async fn wait_for_ready_with_phases(
 /// Format human-readable phase message
 fn format_phase_message(phase: &str, status: &DeploymentResponse) -> String {
     match phase {
-        "pending" => "Deployment created, waiting for scheduler...".to_string(),
-        "scheduling" => "Finding suitable node for deployment...".to_string(),
+        "pending" => "Summons created, waiting for scheduler...".to_string(),
+        "scheduling" => "Finding suitable node for summons...".to_string(),
         "pulling" => "Pulling container image...".to_string(),
         "initializing" => "Running init containers...".to_string(),
         "storage_sync" => "Syncing storage volume...".to_string(),
         "starting" => "Starting application container...".to_string(),
         "health_check" => "Running health checks...".to_string(),
         "ready" => format!(
-            "Deployment ready! {}/{} replicas running",
+            "Summons ready! {}/{} replicas running",
             status.replicas.ready, status.replicas.desired
         ),
         "degraded" => format!(
-            "Deployment degraded: {}/{} replicas ready",
+            "Summons degraded: {}/{} replicas ready",
             status.replicas.ready, status.replicas.desired
         ),
-        "failed" => "Deployment failed".to_string(),
-        "terminating" => "Deployment is being terminated...".to_string(),
+        "failed" => "Summons failed".to_string(),
+        "terminating" => "Summons is being terminated...".to_string(),
         _ => format!("Phase: {}", phase),
     }
 }
 
-/// Fetch and print deployment events for debugging failures
+/// Fetch and print summons events for debugging failures
 async fn fetch_and_print_events(client: &BasilicaClient, name: &str) {
     match client.get_deployment_events(name, Some(10)).await {
         Ok(response) if !response.events.is_empty() => {
-            eprintln!("\nRecent events for deployment '{}':", name);
+            eprintln!("\nRecent events for summons '{}':", name);
             for event in response.events.iter() {
                 let event_type = match event.event_type.as_str() {
                     "Warning" => "\x1b[33mWarning\x1b[0m",
@@ -354,6 +382,16 @@ fn build_resources(cmd: &DeployCommand) -> ResourceRequirements {
         model: cmd.gpu.gpu_model.clone(),
         min_cuda_version: cmd.gpu.cuda_version.clone(),
         min_gpu_memory_gb: cmd.gpu.gpu_memory_gb,
+        interconnect: cmd.gpu.interconnect.clone(),
+        geo: cmd.gpu.region.clone(),
+        spot: if cmd.gpu.spot {
+            Some(true)
+        } else if cmd.gpu.exclude_spot {
+            Some(false)
+        } else {
+            None
+        },
+        infiniband: None,
     });
 
     // Use explicit requests or default to limits
@@ -395,6 +433,51 @@ fn build_storage_spec(storage: &crate::cli::commands::StorageOptions) -> Storage
             mount_path: storage.storage_path.clone(),
         }),
     }
+}
+
+/// Build topology spread config from CLI options
+fn build_topology_spread(options: &TopologySpreadOptions) -> Option<TopologySpreadConfig> {
+    // Determine effective mode
+    let mode = if options.unique_nodes {
+        SpreadMode::UniqueNodes
+    } else {
+        match options.spread_mode {
+            Some(SpreadModeArg::Preferred) => SpreadMode::Preferred,
+            Some(SpreadModeArg::Required) => SpreadMode::Required,
+            Some(SpreadModeArg::UniqueNodes) => SpreadMode::UniqueNodes,
+            None => return None, // No topology spread specified, use API default
+        }
+    };
+
+    Some(TopologySpreadConfig {
+        mode,
+        max_skew: options.max_skew,
+        topology_key: options.topology_key.clone(),
+    })
+}
+
+/// Build websocket config from CLI options
+fn build_websocket_config(
+    options: &crate::cli::commands::WebSocketOptions,
+) -> Result<Option<WebSocketConfig>, CliError> {
+    if !options.websocket {
+        return Ok(None);
+    }
+
+    let timeout = options.ws_idle_timeout;
+    if !(60..=3600).contains(&timeout) {
+        return Err(CliError::Deploy(DeployError::Validation {
+            message: format!(
+                "--ws-idle-timeout must be between 60 and 3600 seconds, got {}",
+                timeout
+            ),
+        }));
+    }
+
+    Ok(Some(WebSocketConfig {
+        enabled: true,
+        idle_timeout_seconds: timeout,
+    }))
 }
 
 /// Build health check configuration with startup probe support

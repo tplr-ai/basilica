@@ -260,6 +260,49 @@ impl SimplePersistence {
         }
     }
 
+    pub async fn get_last_full_validation_timestamp(
+        &self,
+        node_id: &str,
+        miner_id: &str,
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>, anyhow::Error> {
+        let composite_node_id = if miner_id.starts_with("miner_") {
+            format!("{}__{}", miner_id.replacen("miner_", "miner", 1), node_id)
+        } else {
+            format!("miner{}__{}", miner_id, node_id)
+        };
+
+        let query = r#"
+            SELECT timestamp
+            FROM verification_logs
+            WHERE (node_id = ? OR node_id GLOB ('*__' || ?) OR node_id = ? )
+              AND success = 1
+              AND verification_type = 'ssh_automation'
+              AND (
+                json_extract(details, '$.binary_validation_successful') = 1
+                OR json_extract(details, '$.binary_validation_successful') = 'true'
+              )
+            ORDER BY timestamp DESC
+            LIMIT 1
+        "#;
+
+        let row = sqlx::query(query)
+            .bind(node_id)
+            .bind(node_id)
+            .bind(&composite_node_id)
+            .fetch_optional(self.pool())
+            .await?;
+
+        if let Some(row) = row {
+            let timestamp_str: String = row.get("timestamp");
+            let timestamp = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
+                .map_err(|e| anyhow::anyhow!("Invalid timestamp format: {}", e))?
+                .with_timezone(&chrono::Utc);
+            Ok(Some(timestamp))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn get_miner_verification_count(
         &self,
         miner_id: &str,

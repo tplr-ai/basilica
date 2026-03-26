@@ -1,6 +1,6 @@
 #!/bin/bash
 # Basilica Service Configuration Generator
-# Generates production-ready configurations for validator, miner, and executor
+# Generates production-ready configurations for validator and miner
 
 set -e
 
@@ -23,7 +23,7 @@ COMMANDS:
 
 OPTIONS:
     -e, --env ENV       Environment (production, staging, development)
-    -s, --service SVC   Specific service (validator, miner, executor)
+    -s, --service SVC   Specific service (validator, miner)
     -o, --output DIR    Output directory for configurations
     -n, --dry-run       Show generated configs without writing
     -h, --help          Show this help message
@@ -217,7 +217,6 @@ netuid = ${BITTENSOR_NETUID:-39}
 chain_endpoint = "${BITTENSOR_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
 weight_interval_secs = 300
 uid = 0  # Auto-discovered from chain
-coldkey_name = "${MINER_COLDKEY_NAME:-default}"
 axon_port = ${MINER_AXON_PORT:-8091}
 external_ip = "${MINER_EXTERNAL_IP:-${MINER_HOST}}"
 max_weight_uids = 256
@@ -233,8 +232,6 @@ host = "0.0.0.0"
 port = ${MINER_GRPC_PORT:-8092}
 max_connections = 1000
 tls_enabled = ${MINER_TLS_ENABLED:-false}
-
-[validator_comms]
 
 [executor_management]
 # Static executor configuration
@@ -273,91 +270,6 @@ EOF
         cat "$config_file"
     else
         log_success "Generated miner config: $config_file"
-    fi
-}
-
-# Generate executor configuration
-generate_executor_config() {
-    log_info "Generating executor configuration"
-    
-    local config_file="$OUTPUT_DIR/executor.toml"
-    mkdir -p "$OUTPUT_DIR"
-    
-    cat > "$config_file" << EOF
-# Basilica Executor Configuration
-# Generated on $(date) for environment: $ENVIRONMENT
-
-[server]
-host = "0.0.0.0"
-port = ${EXECUTOR_GRPC_PORT:-50051}
-
-[logging]
-level = "${LOG_LEVEL:-info}"
-format = "${LOG_FORMAT:-json}"
-
-[metrics]
-enabled = true
-port = 9090
-
-[system]
-update_interval = 10
-enable_gpu_monitoring = true
-enable_network_monitoring = true
-max_cpu_usage = 90.0
-max_memory_usage = 90.0
-max_gpu_memory_usage = 90.0
-min_disk_space_gb = 10
-
-[docker]
-socket_path = "/var/run/docker.sock"
-network_name = "basilica"
-enable_gpu_support = true
-pull_timeout = 300
-stop_timeout = 30
-
-[validator]
-enabled = ${EXECUTOR_VALIDATOR_ACCESS:-true}
-ssh_port = 22
-max_sessions = ${EXECUTOR_MAX_SESSIONS:-10}
-session_timeout = ${EXECUTOR_SESSION_TIMEOUT:-3600}
-
-# Managing miner hotkey for authentication
-managing_miner_hotkey = "${MINER_HOTKEY:-5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY}"
-
-# Security settings
-[security]
-allowed_validator_ips = [
-    "${VALIDATOR_HOST}",
-]
-allowed_miner_ips = [
-    "${MINER_HOST}",
-]
-ssh_key_path = "/etc/basilica/keys/executor_ssh"
-require_authentication = true
-session_encryption = true
-
-# Resource limits
-[resources]
-max_containers = ${EXECUTOR_MAX_CONTAINERS:-10}
-max_memory_per_container = "${EXECUTOR_MAX_MEMORY:-8g}"
-max_cpu_per_container = ${EXECUTOR_MAX_CPU:-4.0}
-gpu_allocation_strategy = "exclusive"
-
-# Network discovery
-[discovery]
-miner_endpoints = [
-    "${MINER_HOST}:${MINER_GRPC_PORT:-8092}",
-]
-validator_endpoints = [
-    "${VALIDATOR_HOST}:${VALIDATOR_API_PORT:-8080}",
-]
-EOF
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[DRY-RUN] Would write executor config to: $config_file"
-        cat "$config_file"
-    else
-        log_success "Generated executor config: $config_file"
     fi
 }
 
@@ -456,50 +368,6 @@ LimitNPROC=4096
 WantedBy=multi-user.target
 EOF
 
-    # Executor service
-    cat > "$services_dir/basilica-executor.service" << 'EOF'
-[Unit]
-Description=Basilica Executor Service
-Documentation=https://github.com/spacejar/basilica
-After=network-online.target docker.service
-Wants=network-online.target
-RequiresMountsFor=/var/lib/basilica
-
-[Service]
-Type=simple
-User=basilica
-Group=basilica
-SupplementaryGroups=docker
-WorkingDirectory=/var/lib/basilica/executor
-Environment=RUST_LOG=info
-Environment=RUST_BACKTRACE=1
-ExecStart=/usr/local/bin/executor --server --config /etc/basilica/executor.toml
-ExecReload=/bin/kill -HUP $MAINPID
-Restart=always
-RestartSec=10
-TimeoutStartSec=60
-TimeoutStopSec=30
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=basilica-executor
-
-# Security settings
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/lib/basilica /var/log/basilica /var/run/docker.sock
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
-RestrictRealtime=yes
-LimitNOFILE=65536
-LimitNPROC=4096
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
     log_success "Generated systemd services in: $services_dir"
 }
 
@@ -507,7 +375,7 @@ EOF
 cmd_generate() {
     log_header "Generating Service Configurations"
     load_env_config
-    
+
     if [[ -n "$SERVICE" ]]; then
         case "$SERVICE" in
             validator)
@@ -515,9 +383,6 @@ cmd_generate() {
                 ;;
             miner)
                 generate_miner_config
-                ;;
-            executor)
-                generate_executor_config
                 ;;
             *)
                 log_error "Unknown service: $SERVICE"
@@ -527,10 +392,9 @@ cmd_generate() {
     else
         generate_validator_config
         generate_miner_config
-        generate_executor_config
         generate_systemd_services
     fi
-    
+
     log_success "Configuration generation completed"
 }
 
@@ -557,14 +421,7 @@ cmd_deploy() {
         "$MINER_USER@$MINER_HOST:/tmp/miner.toml"
     ssh -p "$MINER_PORT" "$MINER_USER@$MINER_HOST" \
         "sudo mv /tmp/miner.toml /etc/basilica/miner.toml && sudo chown root:basilica /etc/basilica/miner.toml && sudo chmod 640 /etc/basilica/miner.toml"
-    
-    # Deploy executor config
-    log_info "Deploying executor configuration"
-    scp -P "$EXECUTOR_PORT" "$OUTPUT_DIR/executor.toml" \
-        "$EXECUTOR_USER@$EXECUTOR_HOST:/tmp/executor.toml"
-    ssh -p "$EXECUTOR_PORT" "$EXECUTOR_USER@$EXECUTOR_HOST" \
-        "sudo mv /tmp/executor.toml /etc/basilica/executor.toml && sudo chown root:basilica /etc/basilica/executor.toml && sudo chmod 640 /etc/basilica/executor.toml"
-    
+
     # Deploy systemd services
     if [[ -d "$OUTPUT_DIR/systemd" ]]; then
         log_info "Deploying systemd service files"
@@ -584,11 +441,6 @@ cmd_deploy() {
                     target_port="$MINER_PORT"
                     target_user="$MINER_USER"
                     ;;
-                basilica-executor.service)
-                    target_host="$EXECUTOR_HOST"
-                    target_port="$EXECUTOR_PORT"
-                    target_user="$EXECUTOR_USER"
-                    ;;
             esac
             
             scp -P "$target_port" "$service_file" "$target_user@$target_host:/tmp/"
@@ -604,11 +456,11 @@ cmd_deploy() {
 cmd_validate() {
     log_header "Validating Configurations"
     load_env_config
-    
+
     local errors=0
-    
+
     # Validate config files exist
-    for config in validator.toml miner.toml executor.toml; do
+    for config in validator.toml miner.toml; do
         if [[ ! -f "$OUTPUT_DIR/$config" ]]; then
             log_error "Missing configuration file: $config"
             ((errors++))
@@ -616,9 +468,9 @@ cmd_validate() {
             log_success "Found configuration: $config"
         fi
     done
-    
+
     # Validate environment variables are set
-    local required_vars=("VALIDATOR_HOST" "MINER_HOST" "EXECUTOR_HOST")
+    local required_vars=("VALIDATOR_HOST" "MINER_HOST")
     for var in "${required_vars[@]}"; do
         if [[ -z "${!var}" ]]; then
             log_error "Missing required environment variable: $var"
@@ -627,7 +479,7 @@ cmd_validate() {
             log_success "Environment variable set: $var"
         fi
     done
-    
+
     if [[ $errors -eq 0 ]]; then
         log_success "All configuration validations passed"
     else
@@ -652,7 +504,7 @@ cmd_keys() {
     fi
     
     # Generate SSH keys for each service
-    for service in validator miner executor; do
+    for service in validator miner; do
         local ssh_key="$keys_dir/${service}_ssh"
         if [[ ! -f "$ssh_key" ]]; then
             log_info "Generating SSH key for $service"

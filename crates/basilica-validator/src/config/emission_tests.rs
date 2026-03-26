@@ -263,13 +263,15 @@ H100 = 30.0
         // Test has_gpu_model
         assert!(config.has_gpu_model("A100"));
         assert!(config.has_gpu_model("H100"));
+        assert!(config.has_gpu_model("H200"));
         assert!(config.has_gpu_model("B200"));
         assert!(!config.has_gpu_model("RTX4090"));
 
         // Test get_gpu_allocation
         assert_eq!(config.get_gpu_allocation_weight("A100"), Some(8.0));
         assert_eq!(config.get_gpu_allocation_weight("H100"), Some(12.0));
-        assert_eq!(config.get_gpu_allocation_weight("B200"), Some(80.0));
+        assert_eq!(config.get_gpu_allocation_weight("H200"), Some(20.0));
+        assert_eq!(config.get_gpu_allocation_weight("B200"), Some(60.0));
         assert_eq!(config.get_gpu_allocation_weight("RTX4090"), None);
 
         // Test set_gpu_allocation with valid values
@@ -342,7 +344,7 @@ H100 = 30.0
         assert_eq!(config.burn_percentage, 10.0);
         assert_eq!(config.burn_uid, 999);
         assert_eq!(config.weight_set_interval_blocks, 360);
-        assert_eq!(config.gpu_allocations.len(), 3);
+        assert_eq!(config.gpu_allocations.len(), 4);
 
         let total: f64 = config.gpu_allocations.values().map(|a| a.weight).sum();
         assert!((total - 100.0).abs() < 0.01);

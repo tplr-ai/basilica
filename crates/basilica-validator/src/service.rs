@@ -1,10 +1,17 @@
 use crate::api::ApiHandler;
+use crate::basilica_api::{BasilicaApiClient, ValidatorSigner};
 use crate::bittensor_core::{ChainRegistration, WeightSetter};
 use crate::collateral::collateral_scan::Collateral;
+use crate::collateral::evaluator::CollateralEvaluator;
+use crate::collateral::evidence::EvidenceStore;
+use crate::collateral::grace_tracker::GracePeriodTracker;
+use crate::collateral::manager::CollateralManager;
+use crate::collateral::SlashExecutor;
 use crate::config::ValidatorConfig;
 use crate::gpu::GpuScoringEngine;
-use crate::metrics::ValidatorMetrics;
-use crate::miner_prover::MinerProver;
+use crate::grpc::start_registration_server;
+use crate::metrics::{ValidatorMetrics, ValidatorPrometheusMetrics};
+use crate::miner_prover::{MinerProver, MinerProverParams};
 use crate::persistence::cleanup_task::CleanupTask;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
 use crate::persistence::SimplePersistence;
@@ -15,14 +22,36 @@ use bittensor::Service as BittensorService;
 use reqwest::Client;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration as StdDuration, SystemTime};
 use sysinfo::{Pid, System};
 use tokio::signal;
-use tracing::{debug, error, info};
+use tokio::task::JoinHandle;
+use tracing::{debug, error, info, warn};
 
 /// Main validator service that manages all validator components and their lifecycle
 pub struct ValidatorService {
     config: ValidatorConfig,
+}
+
+struct RuntimeHandles {
+    scoring_task: JoinHandle<()>,
+    weight_setter_task: JoinHandle<()>,
+    miner_prover_task: JoinHandle<()>,
+    api_handler_task: JoinHandle<()>,
+    registration_server_task: JoinHandle<()>,
+    cleanup_task: Option<JoinHandle<()>>,
+    collateral_scan_task: JoinHandle<()>,
+}
+
+struct TaskInputs {
+    weight_setter: Arc<WeightSetter>,
+    miner_prover: MinerProver,
+    api_handler: ApiHandler,
+    persistence: Arc<SimplePersistence>,
+    collateral_manager: Option<Arc<CollateralManager>>,
+    gpu_profile_repo: Arc<GpuProfileRepository>,
+    validator_ssh_public_key: String,
+    api_client: Arc<BasilicaApiClient>,
 }
 
 impl ValidatorService {
@@ -33,172 +62,338 @@ impl ValidatorService {
 
     /// Start the validator with all its components
     pub async fn start(&self) -> Result<()> {
+        let storage = self.init_storage().await?;
+        let persistence_arc = self.init_persistence().await?;
+        let gpu_profile_repo = Arc::new(GpuProfileRepository::new(persistence_arc.pool().clone()));
+        let validator_metrics = self.init_metrics(persistence_arc.clone()).await?;
+        let bittensor_service = self.init_bittensor_service().await?;
+
+        let signer: Arc<dyn ValidatorSigner> = bittensor_service.clone();
+        let api_client = Arc::new(BasilicaApiClient::new(
+            self.config.api_endpoint.clone(),
+            signer,
+            self.config.billing.timeout_secs,
+            StdDuration::from_secs(self.config.bidding.price_cache_ttl_secs),
+            self.config.pricing.cache_ttl(),
+        )?);
+
+        let chain_registration = self
+            .init_chain_registration(bittensor_service.clone())
+            .await?;
+        self.log_chain_registration(&chain_registration).await;
+
+        let weight_setter = self.build_weight_setter(
+            bittensor_service.clone(),
+            storage.clone(),
+            persistence_arc.clone(),
+            gpu_profile_repo.clone(),
+            api_client.clone(),
+            validator_metrics.as_ref(),
+        )?;
+        let validator_hotkey = self.build_validator_hotkey(&bittensor_service)?;
+
+        let mut api_handler = self.build_api_handler(
+            persistence_arc.clone(),
+            gpu_profile_repo.clone(),
+            storage.clone(),
+            validator_hotkey.clone(),
+        );
+
+        let collateral_metrics = validator_metrics.as_ref().map(|m| m.prometheus());
+        let (collateral_manager, slash_executor) = self
+            .init_collateral_components(
+                persistence_arc.clone(),
+                collateral_metrics.clone(),
+                bittensor_service.clone(),
+                api_client.clone(),
+            )
+            .await?;
+
+        let miner_prover = self.init_miner_prover(
+            bittensor_service.clone(),
+            persistence_arc.clone(),
+            validator_metrics.as_ref(),
+        )?;
+
+        let rental_manager = self
+            .init_rental_manager(
+                persistence_arc.clone(),
+                validator_metrics.as_ref(),
+                collateral_manager.clone(),
+                slash_executor.clone(),
+                &validator_hotkey,
+            )
+            .await?;
+
+        // Extract SSH public key from rental manager (required for miner registration)
+        let validator_ssh_public_key = rental_manager
+            .as_ref()
+            .map(|rm| rm.get_validator_ssh_public_key())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Rental manager required for SSH key - metrics must be enabled")
+            })?;
+
+        info!("Validator SSH public key loaded for miner registration");
+
+        if let Some(rental_manager) = rental_manager {
+            api_handler = api_handler.with_rental_manager(Arc::new(rental_manager));
+        }
+
+        info!("All components initialized successfully");
+
+        let handles = self
+            .spawn_tasks(TaskInputs {
+                weight_setter,
+                miner_prover,
+                api_handler,
+                persistence: persistence_arc.clone(),
+                collateral_manager: collateral_manager.clone(),
+                gpu_profile_repo: gpu_profile_repo.clone(),
+                validator_ssh_public_key,
+                api_client,
+            })
+            .await;
+
+        info!("Validator started successfully - all services running");
+        signal::ctrl_c().await?;
+        info!("Shutdown signal received, stopping validator...");
+
+        self.shutdown(handles);
+
+        info!("Validator shutdown complete");
+        Ok(())
+    }
+
+    async fn init_storage(&self) -> Result<MemoryStorage> {
         let storage_path =
             PathBuf::from(&self.config.storage.data_dir).join("validator_storage.json");
-        let storage = MemoryStorage::with_file(storage_path).await?;
+        MemoryStorage::with_file(storage_path).await
+    }
 
-        // Extract database path from URL (remove sqlite: prefix if present)
+    fn resolve_db_path(&self) -> Result<String> {
         let db_url = &self.config.database.url;
         let db_path = if let Some(stripped) = db_url.strip_prefix("sqlite:") {
             stripped
         } else {
             db_url
         };
-
         debug!("Database URL: {}", db_url);
         debug!("Database path: {}", db_path);
-
-        // Ensure the database directory exists
         if let Some(parent) = std::path::Path::new(db_path).parent() {
             debug!("Creating directory: {:?}", parent);
             std::fs::create_dir_all(parent)?;
         }
+        Ok(db_path.to_string())
+    }
 
+    async fn init_persistence(&self) -> Result<Arc<SimplePersistence>> {
+        let db_path = self.resolve_db_path()?;
         let persistence =
-            SimplePersistence::new(db_path, self.config.bittensor.common.hotkey_name.clone())
+            SimplePersistence::new(&db_path, self.config.bittensor.common.hotkey_name.clone())
                 .await?;
-
         persistence.run_migrations().await?;
+        Ok(Arc::new(persistence))
+    }
 
-        let persistence_arc = Arc::new(persistence);
+    async fn init_metrics(
+        &self,
+        persistence: Arc<SimplePersistence>,
+    ) -> Result<Option<ValidatorMetrics>> {
+        if !self.config.metrics.enabled {
+            return Ok(None);
+        }
+        let metrics = ValidatorMetrics::new(self.config.metrics.clone(), persistence)?;
+        metrics.start_server().await?;
+        info!("Validator metrics server started with GPU metrics collection");
+        Ok(Some(metrics))
+    }
 
-        // Create GPU profile repository (needed for weight setter and cleanup task)
-        let gpu_profile_repo = Arc::new(GpuProfileRepository::new(persistence_arc.pool().clone()));
+    async fn init_bittensor_service(&self) -> Result<Arc<BittensorService>> {
+        Ok(Arc::new(
+            BittensorService::new(self.config.bittensor.common.clone()).await?,
+        ))
+    }
 
-        // Initialize metrics system if enabled
-        let validator_metrics = if self.config.metrics.enabled {
-            let metrics =
-                ValidatorMetrics::new(self.config.metrics.clone(), persistence_arc.clone())?;
-            metrics.start_server().await?;
-            info!("Validator metrics server started with GPU metrics collection");
-            Some(metrics)
-        } else {
-            None
-        };
-
-        let bittensor_service: Arc<BittensorService> =
-            Arc::new(BittensorService::new(self.config.bittensor.common.clone()).await?);
-
-        // Initialize chain registration and perform startup registration
-        let chain_registration =
-            ChainRegistration::new(&self.config, bittensor_service.clone()).await?;
-
-        // Perform one-time startup registration
+    async fn init_chain_registration(
+        &self,
+        bittensor_service: Arc<BittensorService>,
+    ) -> Result<ChainRegistration> {
+        let chain_registration = ChainRegistration::new(&self.config, bittensor_service).await?;
         chain_registration.register_startup().await?;
-        info!("Validator registered on chain with axon endpoint");
+        Ok(chain_registration)
+    }
 
-        // Log the discovered UID
+    async fn log_chain_registration(&self, chain_registration: &ChainRegistration) {
+        info!("Validator registered on chain with axon endpoint");
         if let Some(uid) = chain_registration.get_discovered_uid().await {
             info!("Validator registered with discovered UID: {uid}");
         } else {
             info!("No UID discovered - validator may not be registered on chain");
         }
+    }
 
-        let miner_prover = MinerProver::new(
-            self.config.verification.clone(),
-            self.config.automatic_verification.clone(),
-            self.config.ssh_session.clone(),
-            bittensor_service.clone(),
-            persistence_arc.clone(),
-            validator_metrics.as_ref().map(|m| Arc::new(m.clone())),
-            self.config.bittensor.common.netuid,
-        )?;
-
-        // Initialize weight setter with block-based timing from emission config
-        let blocks_per_weight_set = self.config.emission.weight_set_interval_blocks;
-
-        // Create GPU scoring engine using the existing gpu_profile_repo
-        let gpu_scoring_engine = if let Some(ref metrics) = validator_metrics {
+    fn build_weight_setter(
+        &self,
+        bittensor_service: Arc<BittensorService>,
+        storage: MemoryStorage,
+        persistence: Arc<SimplePersistence>,
+        gpu_profile_repo: Arc<GpuProfileRepository>,
+        api_client: Arc<BasilicaApiClient>,
+        validator_metrics: Option<&ValidatorMetrics>,
+    ) -> Result<Arc<WeightSetter>> {
+        let gpu_scoring_engine = if let Some(metrics) = validator_metrics {
             Arc::new(GpuScoringEngine::with_metrics(
                 gpu_profile_repo.clone(),
-                persistence_arc.clone(),
+                persistence.clone(),
                 Arc::new(metrics.clone()),
                 self.config.emission.clone(),
             ))
         } else {
             Arc::new(GpuScoringEngine::new(
                 gpu_profile_repo.clone(),
-                persistence_arc.clone(),
+                persistence.clone(),
                 self.config.emission.clone(),
             ))
         };
 
         let weight_setter = WeightSetter::new(
             self.config.bittensor.common.clone(),
-            bittensor_service.clone(),
-            storage.clone(),
-            persistence_arc.clone(),
-            self.config.verification.min_score_threshold,
-            blocks_per_weight_set,
+            bittensor_service,
+            storage,
+            persistence,
+            self.config.emission.weight_set_interval_blocks,
             gpu_scoring_engine,
             self.config.emission.clone(),
-            gpu_profile_repo.clone(),
-            validator_metrics.as_ref().map(|m| Arc::new(m.clone())),
+            api_client,
+            gpu_profile_repo,
+            validator_metrics.map(|m| Arc::new(m.clone())),
+            self.config.collateral.as_ref().map(|c| c.grace_period()),
         )?;
-        let weight_setter = Arc::new(weight_setter);
+        Ok(Arc::new(weight_setter))
+    }
 
-        // Create validator hotkey for API handler
-        // Get the account ID from bittensor service and convert to SS58 string
+    fn build_validator_hotkey(
+        &self,
+        bittensor_service: &BittensorService,
+    ) -> Result<basilica_common::identity::Hotkey> {
         let account_id = bittensor_service.get_account_id();
         let ss58_address = format!("{account_id}");
-        let validator_hotkey = basilica_common::identity::Hotkey::new(ss58_address)
-            .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))?;
+        basilica_common::identity::Hotkey::new(ss58_address)
+            .map_err(|e| anyhow::anyhow!("Failed to create hotkey: {}", e))
+    }
 
-        let mut api_handler = ApiHandler::new(
+    fn build_api_handler(
+        &self,
+        persistence: Arc<SimplePersistence>,
+        gpu_profile_repo: Arc<GpuProfileRepository>,
+        storage: MemoryStorage,
+        validator_hotkey: basilica_common::identity::Hotkey,
+    ) -> ApiHandler {
+        ApiHandler::new(
             self.config.api.clone(),
-            persistence_arc.clone(),
-            gpu_profile_repo.clone(),
-            storage.clone(),
+            persistence,
+            gpu_profile_repo,
+            storage,
             self.config.clone(),
-            validator_hotkey.clone(),
-        );
+            validator_hotkey,
+        )
+    }
 
-        let rental_manager = if let Some(ref metrics) = validator_metrics {
-            let manager = crate::rental::RentalManager::create(
-                &self.config,
-                persistence_arc.clone(),
-                metrics.prometheus(),
-            )
-            .await?;
-
-            manager.start();
-
-            manager
-                .initialize_rental_metrics()
-                .await
-                .context("Failed to initialize rental metrics")?;
-
-            manager
-                .initialize_node_metrics()
-                .await
-                .context("Failed to initialize node metrics")?;
-
-            Some(manager)
-        } else {
-            tracing::warn!("Rental manager disabled: metrics must be enabled for rentals");
-            None
+    async fn init_collateral_components(
+        &self,
+        persistence: Arc<SimplePersistence>,
+        collateral_metrics: Option<Arc<ValidatorPrometheusMetrics>>,
+        signer: Arc<BittensorService>,
+        api_client: Arc<BasilicaApiClient>,
+    ) -> Result<(Option<Arc<CollateralManager>>, Option<Arc<SlashExecutor>>)> {
+        let Some(collateral_config) = self.config.collateral.clone() else {
+            return Ok((None, None));
         };
-
-        if let Ok(miner_client) = miner_prover
-            .get_verification_engine()
-            .create_authenticated_client()
-        {
-            api_handler = api_handler.with_miner_client(Arc::new(miner_client));
+        if collateral_config.shadow_mode {
+            warn!("Collateral shadow_mode is enabled; on-chain slashing is disabled");
         }
+        let grace_tracker = Arc::new(GracePeriodTracker::new(
+            persistence.clone(),
+            collateral_config.grace_period(),
+        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(
+            collateral_config.clone(),
+            grace_tracker.clone(),
+        ));
+        let collateral_manager = Arc::new(CollateralManager::new(
+            persistence.clone(),
+            api_client,
+            evaluator,
+            grace_tracker.clone(),
+            self.config.bittensor.common.netuid,
+            collateral_metrics.clone(),
+        ));
+        let evidence_store = EvidenceStore::from_config(&collateral_config).await?;
+        let slash_executor = Arc::new(SlashExecutor::new(
+            collateral_config,
+            evidence_store,
+            grace_tracker,
+            collateral_metrics,
+            Some(signer),
+        ));
+        Ok((Some(collateral_manager), Some(slash_executor)))
+    }
 
-        if let Some(rental_manager) = rental_manager {
-            api_handler = api_handler.with_rental_manager(Arc::new(rental_manager));
-        }
+    fn init_miner_prover(
+        &self,
+        bittensor_service: Arc<BittensorService>,
+        persistence: Arc<SimplePersistence>,
+        validator_metrics: Option<&ValidatorMetrics>,
+    ) -> Result<MinerProver> {
+        MinerProver::new(MinerProverParams {
+            config: self.config.verification.clone(),
+            automatic_config: self.config.automatic_verification.clone(),
+            ssh_session_config: self.config.ssh_session.clone(),
+            bittensor_service,
+            persistence,
+            metrics: validator_metrics.map(|m| Arc::new(m.clone())),
+            netuid: self.config.bittensor.common.netuid,
+        })
+    }
 
-        // Store metrics for cleanup (if needed)
-        let _validator_metrics = validator_metrics;
+    async fn init_rental_manager(
+        &self,
+        persistence: Arc<SimplePersistence>,
+        validator_metrics: Option<&ValidatorMetrics>,
+        collateral_manager: Option<Arc<CollateralManager>>,
+        slash_executor: Option<Arc<SlashExecutor>>,
+        validator_hotkey: &basilica_common::identity::Hotkey,
+    ) -> Result<Option<crate::rental::RentalManager>> {
+        let Some(metrics) = validator_metrics else {
+            tracing::warn!("Rental manager disabled: metrics must be enabled for rentals");
+            return Ok(None);
+        };
+        let manager = crate::rental::RentalManager::create(
+            &self.config,
+            persistence,
+            metrics.prometheus(),
+            collateral_manager,
+            slash_executor,
+            Some(validator_hotkey.as_str().to_string()),
+        )
+        .await?;
 
-        info!("All components initialized successfully");
+        manager.start();
+        manager
+            .initialize_rental_metrics()
+            .await
+            .context("Failed to initialize rental metrics")?;
+        manager
+            .initialize_node_metrics()
+            .await
+            .context("Failed to initialize node metrics")?;
+        Ok(Some(manager))
+    }
 
-        // Start scoring update task
-        let weight_setter_clone = weight_setter.clone();
-        let scoring_task_handle = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(300)); // Update scores every 5 minutes
+    async fn spawn_tasks(&self, inputs: TaskInputs) -> RuntimeHandles {
+        let weight_setter_clone = inputs.weight_setter.clone();
+        let scoring_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(StdDuration::from_secs(300));
             loop {
                 interval.tick().await;
                 if let Err(e) = weight_setter_clone.update_all_miner_scores().await {
@@ -207,32 +402,49 @@ impl ValidatorService {
             }
         });
 
-        let weight_setter_clone = weight_setter.clone();
-        let weight_setter_handle = tokio::spawn(async move {
-            if let Err(e) = weight_setter_clone.start().await {
+        let weight_setter_task = tokio::spawn(async move {
+            if let Err(e) = inputs.weight_setter.start().await {
                 error!("Weight setter task failed: {}", e);
             }
         });
 
-        let miner_prover_handle = tokio::spawn(async move {
-            if let Err(e) = miner_prover.start().await {
+        let miner_prover_task = tokio::spawn(async move {
+            if let Err(e) = inputs.miner_prover.start().await {
                 error!("Miner prover task failed: {}", e);
             }
         });
 
-        let api_handler_handle = tokio::spawn(async move {
-            if let Err(e) = api_handler.start().await {
+        let api_handler_task = tokio::spawn(async move {
+            if let Err(e) = inputs.api_handler.start().await {
                 error!("API handler task failed: {}", e);
             }
         });
 
-        // Start cleanup task if enabled
-        let cleanup_task_handle = if self.config.cleanup.enabled {
-            let cleanup_config = self.config.cleanup.clone();
-            let gpu_repo = gpu_profile_repo.clone();
+        let registration_grpc_config = self.config.bid_grpc.clone();
+        let registration_persistence = inputs.persistence.clone();
+        let registration_bidding_config = self.config.bidding.clone();
+        let registration_collateral_manager = inputs.collateral_manager.clone();
+        let validator_ssh_public_key = inputs.validator_ssh_public_key.clone();
+        let registration_api_client = inputs.api_client.clone();
+        let registration_server_task = tokio::spawn(async move {
+            if let Err(e) = start_registration_server(
+                registration_grpc_config,
+                registration_persistence,
+                registration_bidding_config,
+                registration_collateral_manager,
+                validator_ssh_public_key,
+                Some(registration_api_client),
+            )
+            .await
+            {
+                error!("Registration gRPC server failed: {}", e);
+            }
+        });
 
+        let cleanup_task = if self.config.cleanup.enabled {
+            let cleanup_config = self.config.cleanup.clone();
             Some(tokio::spawn(async move {
-                let cleanup_task = CleanupTask::new(cleanup_config, gpu_repo);
+                let cleanup_task = CleanupTask::new(cleanup_config, inputs.gpu_profile_repo);
                 if let Err(e) = cleanup_task.start().await {
                     error!("Database cleanup task failed: {}", e);
                 }
@@ -242,34 +454,41 @@ impl ValidatorService {
             None
         };
 
-        let mut collateral_scan =
-            Collateral::new(self.config.verification.clone(), persistence_arc.clone());
+        let collateral_scan_task = if let Some(collateral_config) = self.config.collateral.clone() {
+            let verification_config = self.config.verification.clone();
+            let persistence = inputs.persistence.clone();
+            tokio::spawn(async move {
+                let mut collateral_scan =
+                    Collateral::new(verification_config, collateral_config, persistence);
+                if let Err(e) = collateral_scan.start().await {
+                    error!("Collateral scan task failed: {}", e);
+                }
+            })
+        } else {
+            tokio::spawn(async { info!("Collateral scan disabled (no collateral config)") })
+        };
 
-        let collateral_scan_handle = tokio::spawn(async move {
-            if let Err(e) = collateral_scan.start().await {
-                error!("Collateral scan task failed: {}", e);
-            }
-        });
+        RuntimeHandles {
+            scoring_task,
+            weight_setter_task,
+            miner_prover_task,
+            api_handler_task,
+            registration_server_task,
+            cleanup_task,
+            collateral_scan_task,
+        }
+    }
 
-        info!("Validator started successfully - all services running");
-
-        signal::ctrl_c().await?;
-        info!("Shutdown signal received, stopping validator...");
-
-        scoring_task_handle.abort();
-        weight_setter_handle.abort();
-        miner_prover_handle.abort();
-        if let Some(handle) = cleanup_task_handle {
+    fn shutdown(&self, handles: RuntimeHandles) {
+        handles.scoring_task.abort();
+        handles.weight_setter_task.abort();
+        handles.miner_prover_task.abort();
+        if let Some(handle) = handles.cleanup_task {
             handle.abort();
         }
-        api_handler_handle.abort();
-
-        collateral_scan_handle.abort();
-
-        // SQLite connections will be closed automatically when dropped
-        info!("Validator shutdown complete");
-
-        Ok(())
+        handles.api_handler_task.abort();
+        handles.registration_server_task.abort();
+        handles.collateral_scan_task.abort();
     }
 
     /// Stop all running validator processes
@@ -308,11 +527,11 @@ impl ValidatorService {
         );
         let response = client
             .get(&api_url)
-            .timeout(Duration::from_secs(10))
+            .timeout(StdDuration::from_secs(10))
             .send()
             .await?;
 
-        let elapsed = start_time.elapsed().unwrap_or(Duration::from_secs(0));
+        let elapsed = start_time.elapsed().unwrap_or(StdDuration::from_secs(0));
 
         if response.status().is_success() {
             Ok(elapsed.as_millis() as u64)
@@ -482,8 +701,6 @@ impl ProcessUtils {
 
     /// Stop all validator processes with graceful shutdown and force kill if needed
     async fn stop_all_processes() -> Result<()> {
-        use std::time::{Duration, SystemTime};
-
         let _start_time = SystemTime::now();
 
         let processes = Self::find_validator_processes()?;
@@ -498,15 +715,18 @@ impl ProcessUtils {
         }
 
         // Wait for clean shutdown with timeout
-        let shutdown_timeout = Duration::from_secs(30);
+        let shutdown_timeout = StdDuration::from_secs(30);
         let shutdown_start = SystemTime::now();
 
         let mut remaining_processes = processes.clone();
 
         while !remaining_processes.is_empty()
-            && shutdown_start.elapsed().unwrap_or(Duration::from_secs(0)) < shutdown_timeout
+            && shutdown_start
+                .elapsed()
+                .unwrap_or(StdDuration::from_secs(0))
+                < shutdown_timeout
         {
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            tokio::time::sleep(StdDuration::from_millis(1000)).await;
 
             remaining_processes.retain(|&pid| matches!(Self::is_process_running(pid), Ok(true)));
         }
@@ -515,7 +735,7 @@ impl ProcessUtils {
         if !remaining_processes.is_empty() {
             for &pid in &remaining_processes {
                 let _ = Self::send_signal_to_process(pid, Signal::Kill);
-                tokio::time::sleep(Duration::from_millis(500)).await;
+                tokio::time::sleep(StdDuration::from_millis(500)).await;
             }
         }
 

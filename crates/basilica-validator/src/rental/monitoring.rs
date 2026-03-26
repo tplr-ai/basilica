@@ -5,6 +5,7 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
@@ -32,6 +33,8 @@ pub struct DatabaseHealthMonitor {
     ban_manager: Arc<BanManager>,
     /// Health check configuration
     config: HealthCheckConfig,
+    /// Consecutive failure counts per rental_id
+    failure_counts: Arc<tokio::sync::Mutex<HashMap<String, u32>>>,
     /// Cancellation token for the monitoring loop
     cancellation_token: CancellationToken,
 }
@@ -43,6 +46,8 @@ pub struct HealthCheckConfig {
     pub check_interval: Duration,
     /// Timeout for health check commands
     pub check_timeout: Duration,
+    /// Number of consecutive failures before killing the rental
+    pub max_consecutive_failures: u32,
 }
 
 impl Default for HealthCheckConfig {
@@ -50,6 +55,7 @@ impl Default for HealthCheckConfig {
         Self {
             check_interval: Duration::from_secs(30),
             check_timeout: Duration::from_secs(10),
+            max_consecutive_failures: 3,
         }
     }
 }
@@ -68,6 +74,7 @@ impl DatabaseHealthMonitor {
             metrics,
             ban_manager,
             config: HealthCheckConfig::default(),
+            failure_counts: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -86,6 +93,7 @@ impl DatabaseHealthMonitor {
             metrics,
             ban_manager,
             config,
+            failure_counts: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             cancellation_token: CancellationToken::new(),
         }
     }
@@ -134,9 +142,11 @@ impl DatabaseHealthMonitor {
 
         debug!("Checking health for {} rentals", rentals.len());
 
+        let active_ids: HashSet<&str> = rentals.iter().map(|r| r.rental_id.as_str()).collect();
+
         // TODO: this can be done in parallel
-        for rental in rentals {
-            if let Err(e) = self.check_rental_health(&rental).await {
+        for rental in &rentals {
+            if let Err(e) = self.check_rental_health(rental).await {
                 error!(
                     "Failed to check health for rental {}: {}",
                     rental.rental_id, e
@@ -145,7 +155,32 @@ impl DatabaseHealthMonitor {
             }
         }
 
+        // Clean up failure counters for rentals that are no longer active
+        let mut counts = self.failure_counts.lock().await;
+        counts.retain(|id, _| active_ids.contains(id.as_str()));
+
         Ok(())
+    }
+
+    /// Classify health check outcome
+    fn classify_health_outcome(
+        health_result: std::result::Result<Result<bool>, tokio::time::error::Elapsed>,
+    ) -> HealthOutcome {
+        match health_result {
+            Err(_) => HealthOutcome::Failed {
+                reason: "Health check timeout".to_string(),
+                misbehaviour: MisbehaviourKind::Interrupted,
+            },
+            Ok(Err(e)) => HealthOutcome::Failed {
+                reason: e.to_string(),
+                misbehaviour: MisbehaviourKind::Interrupted,
+            },
+            Ok(Ok(true)) => HealthOutcome::Healthy,
+            Ok(Ok(false)) => HealthOutcome::Failed {
+                reason: "Container unhealthy".to_string(),
+                misbehaviour: MisbehaviourKind::Halted,
+            },
+        }
     }
 
     /// Check health of a single rental
@@ -173,95 +208,87 @@ impl DatabaseHealthMonitor {
         )
         .await;
 
-        // Determine new state based on current state and health result
-        let new_state = match (rental.state.clone(), health_result) {
-            // Timeout or error during health check
-            (_, Err(_)) => {
-                warn!(
-                    "Health check timeout for rental {} in state {:?}",
-                    rental.rental_id, rental.state
+        let outcome = Self::classify_health_outcome(health_result);
+
+        // On healthy check, reset failure counter and return early
+        let (reason, misbehaviour) = match outcome {
+            HealthOutcome::Healthy => {
+                debug!("Rental {} is healthy", rental.rental_id);
+                let mut counts = self.failure_counts.lock().await;
+                counts.remove(&rental.rental_id);
+                return Ok(());
+            }
+            HealthOutcome::Failed {
+                reason,
+                misbehaviour,
+            } => (reason, misbehaviour),
+        };
+
+        // Increment consecutive failure counter
+        let max = self.config.max_consecutive_failures;
+        let count = {
+            let mut counts = self.failure_counts.lock().await;
+            let entry = counts.entry(rental.rental_id.clone()).or_insert(0);
+            *entry += 1;
+            *entry
+        };
+
+        // Below threshold — warn and return without state change
+        if count < max {
+            warn!(
+                "Health check failure {}/{} for rental {} (state: {:?}): {}",
+                count, max, rental.rental_id, rental.state, reason
+            );
+            return Ok(());
+        }
+
+        // Threshold reached — proceed with state transition
+        error!(
+            "Health check failure {}/{} for rental {} in state {:?}: {} — terminating rental",
+            count, max, rental.rental_id, rental.state, reason
+        );
+
+        // Clean up counter
+        {
+            let mut counts = self.failure_counts.lock().await;
+            counts.remove(&rental.rental_id);
+        }
+
+        // Log misbehaviour
+        if matches!(
+            rental.state,
+            RentalState::Active | RentalState::Provisioning
+        ) {
+            if let Some(miner_uid) = super::extract_miner_uid(&rental.miner_id) {
+                let details = BanManager::create_health_check_failure_details(
+                    &rental.container_id,
+                    &format!("{:?}", rental.state),
+                    &reason,
                 );
-                Some(RentalState::Failed)
-            }
-            // Health check returned an error
-            (current_state, Ok(Err(e))) => {
-                error!(
-                    "Health check error for rental {} in state {:?}: {}",
-                    rental.rental_id, current_state, e
-                );
-
-                // Log misbehaviour for health check failure
-                if matches!(
-                    current_state,
-                    RentalState::Active | RentalState::Provisioning
-                ) {
-                    if let Some(miner_uid) = super::extract_miner_uid(&rental.miner_id) {
-                        let details = BanManager::create_health_check_failure_details(
-                            &rental.container_id,
-                            &format!("{:?}", current_state),
-                            &e.to_string(),
-                        );
-
-                        if let Err(log_err) = self.ban_manager.log_misbehaviour(
-                            miner_uid,
-                            &rental.node_id,
-                            crate::persistence::entities::misbehaviour::MisbehaviourType::HaltedRental,
-                            &details,
-                        ).await {
-                            warn!("Failed to log health check misbehaviour: {}", log_err);
-                        }
+                let misbehaviour_type = match misbehaviour {
+                    MisbehaviourKind::Interrupted => {
+                        crate::persistence::entities::misbehaviour::MisbehaviourType::InterruptedRental
                     }
-                }
-
-                match current_state {
-                    RentalState::Provisioning => Some(RentalState::Failed),
-                    RentalState::Active => Some(RentalState::Stopped),
-                    RentalState::Stopping => Some(RentalState::Stopped),
-                    _ => None,
+                    MisbehaviourKind::Halted => {
+                        crate::persistence::entities::misbehaviour::MisbehaviourType::HaltedRental
+                    }
+                };
+                if let Err(log_err) = self
+                    .ban_manager
+                    .log_misbehaviour(miner_uid, &rental.node_id, misbehaviour_type, &details)
+                    .await
+                {
+                    warn!("Failed to log health check misbehaviour: {}", log_err);
                 }
             }
-            // Health check succeeded
-            (current_state, Ok(Ok(healthy))) => {
-                if healthy {
-                    debug!("Rental {} is healthy", rental.rental_id);
-                    None // No state change needed
-                } else {
-                    warn!(
-                        "Rental {} is unhealthy in state {:?}",
-                        rental.rental_id, current_state
-                    );
+        }
 
-                    // Log misbehaviour for unhealthy container
-                    if matches!(
-                        current_state,
-                        RentalState::Active | RentalState::Provisioning
-                    ) {
-                        if let Some(miner_uid) = super::extract_miner_uid(&rental.miner_id) {
-                            let details = BanManager::create_health_check_failure_details(
-                                &rental.container_id,
-                                &format!("{:?}", current_state),
-                                "Container unhealthy",
-                            );
-
-                            if let Err(log_err) = self.ban_manager.log_misbehaviour(
-                                miner_uid,
-                                &rental.node_id,
-                                crate::persistence::entities::misbehaviour::MisbehaviourType::HaltedRental,
-                                &details,
-                            ).await {
-                                warn!("Failed to log unhealthy container misbehaviour: {}", log_err);
-                            }
-                        }
-                    }
-
-                    match current_state {
-                        RentalState::Provisioning => Some(RentalState::Failed),
-                        RentalState::Active => Some(RentalState::Stopped),
-                        RentalState::Stopping => Some(RentalState::Stopped),
-                        _ => None,
-                    }
-                }
-            }
+        // Determine new state
+        let new_state = match rental.state {
+            RentalState::Provisioning => Some(RentalState::Failed),
+            RentalState::Active => Some(RentalState::Stopped),
+            RentalState::Stopping => Some(RentalState::Stopped),
+            _ => None,
         };
 
         // Update rental state if needed
@@ -278,6 +305,22 @@ impl DatabaseHealthMonitor {
                 .save_rental(&updated_rental)
                 .await
                 .context("Failed to update rental state")?;
+
+            // INVARIANT: Release node claim so it becomes available again.
+            if matches!(new_state, RentalState::Stopped | RentalState::Failed) {
+                if let Err(e) = self
+                    .persistence
+                    .release_node(&rental.node_id, &rental.miner_id, &rental.rental_id)
+                    .await
+                {
+                    warn!(
+                        rental_id = %rental.rental_id,
+                        node_id = %rental.node_id,
+                        error = %e,
+                        "Failed to release node claim after rental termination"
+                    );
+                }
+            }
 
             // Update metrics when state changes to terminal states
             if matches!(new_state, RentalState::Stopped | RentalState::Failed) {
@@ -323,6 +366,21 @@ impl DatabaseHealthMonitor {
         // Container is running and no specific health check configured
         Ok(true)
     }
+}
+
+/// Classification of a health check outcome
+enum HealthOutcome {
+    Healthy,
+    Failed {
+        reason: String,
+        misbehaviour: MisbehaviourKind,
+    },
+}
+
+/// Which misbehaviour type to log on failure
+enum MisbehaviourKind {
+    Interrupted,
+    Halted,
 }
 
 /// Log streamer for containers

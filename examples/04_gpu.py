@@ -34,7 +34,7 @@ HTTPServer(('', 8000), Handler).serve_forever()
     image="pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime",
     port=8000,
     gpu_count=1,
-    gpu_models=["NVIDIA-RTX-A4000"],
+    min_gpu_memory_gb=16,
     memory="8Gi",
     ttl_seconds=600,
     timeout=300,

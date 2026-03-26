@@ -31,8 +31,19 @@ message DepositRecord {
 }
 message ListDepositsResponse { repeated DepositRecord items = 1; }
 
+message GetTokenPricesRequest { uint32 netuid = 1; }
+message GetTokenPricesResponse {
+  string tao_price_usd = 1;
+  string alpha_price_usd = 2;
+  string alpha_price_tao = 3;
+  string tao_reserve = 4;
+  string alpha_reserve = 5;
+  string fetched_at = 6;
+}
+
 service PaymentsService {
   rpc CreateDepositAccount(CreateDepositAccountRequest) returns (CreateDepositAccountResponse);
   rpc GetDepositAccount(GetDepositAccountRequest) returns (GetDepositAccountResponse);
   rpc ListDeposits(ListDepositsRequest) returns (ListDepositsResponse);
+  rpc GetTokenPrices(GetTokenPricesRequest) returns (GetTokenPricesResponse);
 }

@@ -1,7 +1,0 @@
----
-- name: restart basilica telemetry
-  shell: |
-    docker compose -f {{ basilica_telemetry_dir }}/docker-compose.prod.yml down
-    docker compose -f {{ basilica_telemetry_dir }}/docker-compose.prod.yml up -d
-  args:
-    chdir: "{{ basilica_telemetry_dir }}"

@@ -1,0 +1,130 @@
+# Basilica Miner Configuration Example
+# Copy this file to miner.toml and customize for your environment
+
+# =============================================================================
+# Validator Bidding gRPC Port
+# =============================================================================
+# Port for the validator's bidding gRPC service (default: 50052)
+# Only change if the validator uses a non-standard port
+# bid_grpc_port = 50052
+
+# =============================================================================
+# Bittensor Network Configuration
+# =============================================================================
+[bittensor]
+# Your Bittensor wallet name (directory in ~/.bittensor/wallets/)
+wallet_name = "YOUR_WALLET_NAME"
+
+# Your hotkey name (file in ~/.bittensor/wallets/{wallet_name}/hotkeys/)
+hotkey_name = "YOUR_HOTKEY_NAME"
+
+# Network: "finney" for mainnet, "test" for testnet
+network = "finney"
+
+# Subnet ID: 39 for mainnet, 387 for testnet
+netuid = 39
+
+# Chain endpoint (auto-detected if not specified)
+# Finney: wss://entrypoint-finney.opentensor.ai:443
+# Testnet: wss://test.finney.opentensor.ai:443
+chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
+
+# Weight setting interval in seconds
+weight_interval_secs = 300
+
+# Your server's public IP address (optional - auto-detected if not specified)
+# external_ip = "YOUR_PUBLIC_IP_HERE"
+
+# Axon port for Bittensor network
+axon_port = 50051
+
+# Maximum UIDs for weight setting
+max_weight_uids = 256
+
+# =============================================================================
+# Database Configuration
+# =============================================================================
+[database]
+url = "sqlite:///opt/basilica/data/miner.db"
+
+# =============================================================================
+# Metrics Configuration
+# =============================================================================
+[metrics]
+enabled = true
+
+[metrics.prometheus]
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"
+
+# =============================================================================
+# Node Management (GPU Nodes)
+# =============================================================================
+[node_management]
+# List your GPU nodes with SSH access details
+# Pricing is configured separately in [bidding.strategy.static.static_prices]
+nodes = [
+    { host = "192.168.1.100", port = 22, username = "basilica", gpu_category = "H100", gpu_count = 8 },
+    # Add more nodes as needed:
+    # { host = "192.168.1.101", port = 22, username = "basilica", gpu_category = "A100", gpu_count = 4 },
+]
+health_check_interval = 60
+health_check_timeout = 10
+max_retry_attempts = 3
+auto_recovery = true
+
+# =============================================================================
+# Security Configuration
+# =============================================================================
+[security]
+# Verify Bittensor signatures (always true for production)
+verify_signatures = true
+
+# Optional: Ethereum private key for collateral contract
+# private_key_file = "/path/to/private_key.pem"
+
+# =============================================================================
+# SSH Session Configuration
+# =============================================================================
+[ssh_session]
+# Path to miner's SSH private key for accessing nodes
+# Generate with: ssh-keygen -t ed25519 -f ~/.ssh/miner_node_key -N ""
+miner_node_key_path = "~/.ssh/miner_node_key"
+
+# Default SSH username for nodes
+default_node_username = "node"
+
+# =============================================================================
+# Advertised Addresses (Optional - for NAT/Proxy scenarios)
+# =============================================================================
+[advertised_addresses]
+# Override auto-detected addresses when behind NAT or proxy
+# grpc_endpoint = "http://YOUR_PUBLIC_IP:50051"
+# axon_endpoint = "http://YOUR_PUBLIC_IP:50051"
+# metrics_endpoint = "http://YOUR_PUBLIC_IP:9090"
+
+# =============================================================================
+# Validator Assignment Strategy
+# =============================================================================
+[validator_assignment]
+# Strategy: "highest_stake" (recommended) or "fixed_assignment"
+# - highest_stake: Automatically assigns all nodes to the validator with highest stake
+# - fixed_assignment: Assigns nodes to a specific validator (requires validator_hotkey),
+#                     mainly useful for debugging or testing with a known validator
+strategy = "highest_stake"
+
+# Only required for "fixed_assignment" strategy:
+# validator_hotkey = "5G3qVaXzKMPDm5AJ3dpzbpUC27kpccBvDwzSWXrq8M6qMmbC"
+
+# =============================================================================
+# Bidding Configuration (GPU Pricing)
+# =============================================================================
+# BidManager runs automatically and waits for validator discovery.
+# All GPU categories in your nodes MUST have prices defined here.
+[bidding]
+# Static prices by GPU category (in dollars per GPU-hour)
+# Example: H100 = 2.50 means $2.50/hour per GPU
+[bidding.strategy.static.static_prices]
+H100 = 2.50
+A100 = 1.20

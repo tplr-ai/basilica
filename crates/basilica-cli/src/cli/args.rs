@@ -211,7 +211,7 @@ impl Args {
                         handlers::tokens::handle_create_token(&client, name.clone()).await?;
                     }
                     TokenAction::List => {
-                        handlers::tokens::handle_list_tokens(&client).await?;
+                        handlers::tokens::handle_list_tokens(&client, self.json).await?;
                     }
                     TokenAction::Revoke { name, yes } => {
                         handlers::tokens::handle_revoke_token(&client, name.clone(), *yes).await?;
@@ -233,7 +233,7 @@ impl Args {
                             .await?;
                     }
                     SshKeyAction::List => {
-                        handlers::ssh_keys::handle_list_ssh_keys(&client).await?;
+                        handlers::ssh_keys::handle_list_ssh_keys(&client, self.json).await?;
                     }
                     SshKeyAction::Delete { yes } => {
                         handlers::ssh_keys::handle_delete_ssh_key(&client, *yes).await?;
@@ -242,7 +242,7 @@ impl Args {
             }
 
             // Fund management
-            Commands::Fund { action, json } => {
+            Commands::Fund { action } => {
                 use crate::cli::commands::FundAction;
                 use crate::client::create_authenticated_client;
 
@@ -252,28 +252,88 @@ impl Args {
                 match action {
                     None => {
                         // Default action: show deposit address
-                        handlers::fund::handle_show_deposit_address(&client, *json).await?;
+                        handlers::fund::handle_show_deposit_address(&client, self.json).await?;
                     }
                     Some(FundAction::List { limit, offset }) => {
-                        handlers::fund::handle_list_deposits(&client, *limit, *offset, *json)
+                        handlers::fund::handle_list_deposits(&client, *limit, *offset, self.json)
                             .await?;
                     }
                 }
             }
 
             // Balance check
-            Commands::Balance { json } => {
+            Commands::Balance => {
                 use crate::client::create_authenticated_client;
 
                 // Create authenticated client
                 let client = create_authenticated_client(config).await?;
 
-                handlers::balance::handle_check_balance(&client, *json).await?;
+                handlers::balance::handle_check_balance(&client, self.json).await?;
             }
 
             // Deploy command
             Commands::Deploy(cmd) => {
                 handlers::deploy::handle_deploy(*cmd.clone(), config).await?;
+            }
+
+            // Volume management
+            Commands::Volumes { action } => {
+                use crate::cli::commands::VolumeAction;
+                use crate::client::create_client;
+
+                // Create client with file-based auth (JWT required for volume management)
+                let client = create_client(config).await?;
+
+                match action {
+                    VolumeAction::Create {
+                        name,
+                        size,
+                        provider,
+                        region,
+                        description,
+                    } => {
+                        handlers::volumes::handle_create_volume(
+                            &client,
+                            name.clone(),
+                            *size,
+                            provider.clone(),
+                            region.clone(),
+                            description.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    VolumeAction::List => {
+                        handlers::volumes::handle_list_volumes(&client, self.json).await?;
+                    }
+                    VolumeAction::Delete { volume, yes } => {
+                        handlers::volumes::handle_delete_volume(
+                            &client,
+                            volume.clone(),
+                            *yes,
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    VolumeAction::Attach { volume, rental } => {
+                        handlers::volumes::handle_attach_volume(
+                            &client,
+                            volume.clone(),
+                            rental.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    VolumeAction::Detach { volume, yes } => {
+                        handlers::volumes::handle_detach_volume(
+                            &client,
+                            volume.clone(),
+                            *yes,
+                            self.json,
+                        )
+                        .await?;
+                    }
+                }
             }
 
             // Upgrade command is handled in main.rs before entering async runtime

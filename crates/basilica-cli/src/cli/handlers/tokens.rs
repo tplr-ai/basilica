@@ -1,7 +1,7 @@
 //! Token management handlers for the Basilica CLI
 
 use crate::error::CliError;
-use crate::output::{print_success, table_output};
+use crate::output::{json_output, print_success, table_output};
 use basilica_common::{ApiKeyName, ApiKeyNameError};
 use basilica_sdk::BasilicaClient;
 use console::style;
@@ -94,8 +94,13 @@ pub async fn handle_create_token(
 }
 
 /// Handle listing all tokens
-pub async fn handle_list_tokens(client: &BasilicaClient) -> Result<(), CliError> {
+pub async fn handle_list_tokens(client: &BasilicaClient, json: bool) -> Result<(), CliError> {
     let keys = client.list_api_keys().await.map_err(CliError::Api)?;
+
+    if json {
+        json_output(&keys)?;
+        return Ok(());
+    }
 
     if keys.is_empty() {
         println!("No API keys exist.");

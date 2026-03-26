@@ -1,6 +1,9 @@
 //! Input validation for deploy command
 
-use crate::cli::commands::{DeployCommand, GpuOptions, ResourceOptions, StorageOptions};
+use crate::cli::commands::{
+    DeployCommand, GpuOptions, ResourceOptions, SpreadModeArg, StorageOptions,
+    TopologySpreadOptions,
+};
 use crate::error::DeployError;
 
 /// Minimum resource requirements for GPU workloads (default fallback)
@@ -15,6 +18,16 @@ const MAX_TTL_SECONDS: u32 = 604800; // 7 days
 const MIN_PORT: u16 = 1;
 const MAX_PORT: u16 = 65535;
 
+/// Allowed topology keys for security
+const ALLOWED_TOPOLOGY_KEYS: &[&str] = &[
+    "kubernetes.io/hostname",
+    "topology.kubernetes.io/zone",
+    "topology.kubernetes.io/region",
+];
+
+/// Maximum replicas for UniqueNodes mode (aligned with general replica limit)
+const MAX_UNIQUE_NODES_REPLICAS: u32 = 10;
+
 /// Validate all deployment options
 pub fn validate_deployment_request(cmd: &DeployCommand) -> Result<(), DeployError> {
     validate_name(&cmd.naming.name)?;
@@ -26,6 +39,7 @@ pub fn validate_deployment_request(cmd: &DeployCommand) -> Result<(), DeployErro
     validate_ttl(cmd.lifecycle.ttl)?;
     validate_env_vars(&cmd.networking.env)?;
     validate_storage(&cmd.storage)?;
+    validate_topology_spread(&cmd.topology_spread, cmd.naming.replicas)?;
     Ok(())
 }
 
@@ -521,6 +535,77 @@ fn validate_storage_path(path: &str) -> Result<(), DeployError> {
     Ok(())
 }
 
+/// Default topology key for hostname-based spreading
+const DEFAULT_TOPOLOGY_KEY: &str = "kubernetes.io/hostname";
+
+/// Validate topology spread configuration
+pub fn validate_topology_spread(
+    options: &TopologySpreadOptions,
+    replicas: u32,
+) -> Result<(), DeployError> {
+    // Determine if unique_nodes mode is active
+    let is_unique_nodes =
+        options.unique_nodes || matches!(options.spread_mode, Some(SpreadModeArg::UniqueNodes));
+
+    // Validate max_skew range (only relevant for Preferred/Required modes)
+    if options.max_skew < 1 || options.max_skew > 10 {
+        return Err(DeployError::Validation {
+            message: format!(
+                "max_skew must be between 1 and 10, got {}",
+                options.max_skew
+            ),
+        });
+    }
+
+    // Warn if max_skew is explicitly set with UniqueNodes (it's ignored)
+    if is_unique_nodes && options.max_skew != 1 {
+        return Err(DeployError::Validation {
+            message: format!(
+                "max_skew ({}) is ignored in unique_nodes mode. \
+                 UniqueNodes uses pod anti-affinity, not topology spread constraints. \
+                 Remove --max-skew or use a different spread mode.",
+                options.max_skew
+            ),
+        });
+    }
+
+    // Validate topology_key is in allowlist
+    if !ALLOWED_TOPOLOGY_KEYS.contains(&options.topology_key.as_str()) {
+        return Err(DeployError::Validation {
+            message: format!(
+                "Invalid topology_key '{}'. Allowed: {}",
+                options.topology_key,
+                ALLOWED_TOPOLOGY_KEYS.join(", ")
+            ),
+        });
+    }
+
+    // UniqueNodes mode must use kubernetes.io/hostname (enforces one-pod-per-node semantics)
+    if is_unique_nodes && options.topology_key != DEFAULT_TOPOLOGY_KEY {
+        return Err(DeployError::Validation {
+            message: format!(
+                "unique_nodes mode requires topology_key '{}' (got '{}'). \
+                 UniqueNodes guarantees one pod per node; use --spread-mode required \
+                 with --topology-key {} for zone/region spreading.",
+                DEFAULT_TOPOLOGY_KEY, options.topology_key, options.topology_key
+            ),
+        });
+    }
+
+    // Validate unique_nodes mode replica limit
+    if is_unique_nodes && replicas > MAX_UNIQUE_NODES_REPLICAS {
+        return Err(DeployError::Validation {
+            message: format!(
+                "unique_nodes mode limited to {} replicas (requested {}). \
+                 This mode requires one node per replica.",
+                MAX_UNIQUE_NODES_REPLICAS, replicas
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -663,5 +748,131 @@ mod tests {
         assert!((parse_cpu_to_cores("1000m") - 1.0).abs() < 0.001);
         assert!((parse_cpu_to_cores("500m") - 0.5).abs() < 0.001);
         assert!((parse_cpu_to_cores("2") - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_validate_topology_spread_default() {
+        let options = TopologySpreadOptions::default();
+        assert!(validate_topology_spread(&options, 3).is_ok());
+    }
+
+    #[test]
+    fn test_validate_topology_spread_max_skew_too_low() {
+        let options = TopologySpreadOptions {
+            max_skew: 0,
+            ..Default::default()
+        };
+        let result = validate_topology_spread(&options, 3);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("max_skew"));
+    }
+
+    #[test]
+    fn test_validate_topology_spread_max_skew_too_high() {
+        let options = TopologySpreadOptions {
+            max_skew: 11,
+            ..Default::default()
+        };
+        let result = validate_topology_spread(&options, 3);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("max_skew"));
+    }
+
+    #[test]
+    fn test_validate_topology_spread_invalid_key() {
+        let options = TopologySpreadOptions {
+            topology_key: "custom.key/invalid".to_string(),
+            ..Default::default()
+        };
+        let result = validate_topology_spread(&options, 3);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("topology_key"));
+    }
+
+    #[test]
+    fn test_validate_topology_spread_valid_zone_key() {
+        let options = TopologySpreadOptions {
+            topology_key: "topology.kubernetes.io/zone".to_string(),
+            ..Default::default()
+        };
+        assert!(validate_topology_spread(&options, 3).is_ok());
+    }
+
+    #[test]
+    fn test_validate_topology_spread_unique_nodes_replica_limit() {
+        let options = TopologySpreadOptions {
+            unique_nodes: true,
+            ..Default::default()
+        };
+        // 10 replicas should be OK (aligned with general replica limit)
+        assert!(validate_topology_spread(&options, 10).is_ok());
+        // 11 replicas should fail
+        let result = validate_topology_spread(&options, 11);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unique_nodes"));
+    }
+
+    #[test]
+    fn test_validate_topology_spread_unique_nodes_via_mode() {
+        let options = TopologySpreadOptions {
+            spread_mode: Some(SpreadModeArg::UniqueNodes),
+            ..Default::default()
+        };
+        // 11 replicas should fail for UniqueNodes mode
+        let result = validate_topology_spread(&options, 11);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("unique_nodes"));
+    }
+
+    #[test]
+    fn test_validate_topology_spread_unique_nodes_requires_hostname_key() {
+        // UniqueNodes with zone key should fail
+        let options = TopologySpreadOptions {
+            unique_nodes: true,
+            topology_key: "topology.kubernetes.io/zone".to_string(),
+            ..Default::default()
+        };
+        let result = validate_topology_spread(&options, 3);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("unique_nodes mode requires topology_key"));
+        assert!(err_msg.contains("kubernetes.io/hostname"));
+    }
+
+    #[test]
+    fn test_validate_topology_spread_unique_nodes_rejects_custom_max_skew() {
+        // UniqueNodes with max_skew != 1 should fail
+        let options = TopologySpreadOptions {
+            unique_nodes: true,
+            max_skew: 2,
+            ..Default::default()
+        };
+        let result = validate_topology_spread(&options, 3);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("max_skew"));
+        assert!(err_msg.contains("ignored in unique_nodes mode"));
+    }
+
+    #[test]
+    fn test_validate_topology_spread_required_mode_allows_zone_key() {
+        // Required mode with zone key should be OK
+        let options = TopologySpreadOptions {
+            spread_mode: Some(SpreadModeArg::Required),
+            topology_key: "topology.kubernetes.io/zone".to_string(),
+            ..Default::default()
+        };
+        assert!(validate_topology_spread(&options, 3).is_ok());
+    }
+
+    #[test]
+    fn test_validate_topology_spread_required_mode_allows_custom_max_skew() {
+        // Required mode with custom max_skew should be OK
+        let options = TopologySpreadOptions {
+            spread_mode: Some(SpreadModeArg::Required),
+            max_skew: 3,
+            ..Default::default()
+        };
+        assert!(validate_topology_spread(&options, 5).is_ok());
     }
 }

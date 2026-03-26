@@ -7,9 +7,11 @@ use anyhow::Result;
 use basilica_common::ssh::{
     SshConnectionConfig, SshConnectionDetails, SshConnectionManager, StandardSshClient,
 };
+use basilica_common::types::GpuCategory;
 use serde::{Deserialize, Serialize};
 use ssh_key::PublicKey;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,18 +29,68 @@ const SSH_MOVE_TO_AUTHORIZED_KEYS: &str =
     r#"mv -f "$tmp" ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"#;
 
 /// Configuration for a single node
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct NodeConfig {
-    /// SSH hostname or IP address
+    /// SSH host IP literal (IPv4 or IPv6)
     pub host: String,
     /// SSH port (typically 22)
     pub port: u16,
     /// SSH username for validator access
     pub username: String,
-    /// Hourly rental rate in dollars per GPU (e.g., 2.50 for $2.50/hour/GPU)
-    pub hourly_rate_per_gpu: f64,
+    /// GPU category for this node (e.g., "H100", "A100", "RTX4090")
+    pub gpu_category: String,
+    /// Number of GPUs on this node
+    pub gpu_count: u32,
     /// Additional SSH options
     pub additional_opts: Option<String>,
+}
+
+/// Intermediate struct for deserializing NodeConfig
+#[derive(Deserialize)]
+struct NodeConfigRaw {
+    host: String,
+    port: u16,
+    username: String,
+    #[serde(default = "default_gpu_category")]
+    gpu_category: String,
+    #[serde(default = "default_gpu_count")]
+    gpu_count: u32,
+    additional_opts: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for NodeConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let raw = NodeConfigRaw::deserialize(deserializer)?;
+
+        // Validate gpu_category is a known GPU type
+        let gpu_cat: GpuCategory = raw.gpu_category.parse().unwrap(); // Infallible
+        if matches!(&gpu_cat, GpuCategory::Other(_)) {
+            return Err(serde::de::Error::custom(format!(
+                "GPU type '{}' is not supported",
+                raw.gpu_category
+            )));
+        }
+
+        Ok(NodeConfig {
+            host: raw.host,
+            port: raw.port,
+            username: raw.username,
+            gpu_category: gpu_cat.to_string(),
+            gpu_count: raw.gpu_count,
+            additional_opts: raw.additional_opts,
+        })
+    }
+}
+
+fn default_gpu_category() -> String {
+    "UNKNOWN".to_string()
+}
+
+fn default_gpu_count() -> u32 {
+    1
 }
 
 impl NodeConfig {
@@ -56,7 +108,7 @@ impl NodeConfig {
 
 /// Manages nodes available for rental
 pub struct NodeManager {
-    /// Map of node_id to node configuration
+    /// Map of host to node configuration
     nodes: Arc<RwLock<HashMap<String, NodeConfig>>>,
     /// Currently assigned validator hotkey (single-assignment model)
     current_assigned_validator: Arc<RwLock<Option<String>>>,
@@ -66,10 +118,9 @@ pub struct NodeManager {
     ssh_config: NodeSshConfig,
 }
 
-/// Node configuration with generated ID
+/// Node with its configuration (identified by host)
 #[derive(Clone, Debug)]
 pub struct RegisteredNode {
-    pub node_id: String,
     pub config: NodeConfig,
 }
 
@@ -109,44 +160,64 @@ impl NodeManager {
         }
     }
 
-    /// Register a node for availability with an auto-generated node_id
-    pub async fn register_node(&self, node_id: String, config: NodeConfig) -> Result<()> {
+    /// Register a node for availability (keyed by host IP)
+    pub async fn register_node(&self, config: NodeConfig) -> Result<()> {
+        let new_node_ip = config.host.parse::<IpAddr>().map_err(|_| {
+            anyhow::anyhow!(
+                "Invalid node host '{}': must be a valid IPv4 or IPv6 literal",
+                config.host
+            )
+        })?;
+
         let mut nodes = self.nodes.write().await;
-        info!(
-            "Registering node {} at {}:{}",
-            node_id, config.host, config.port
-        );
-        nodes.insert(node_id, config);
+
+        for existing_host in nodes.keys() {
+            let existing_ip = existing_host.parse::<IpAddr>().map_err(|_| {
+                anyhow::anyhow!(
+                    "Invalid existing node host '{}': expected IPv4/IPv6 literal",
+                    existing_host
+                )
+            })?;
+            if existing_ip == new_node_ip {
+                anyhow::bail!(
+                    "Node with IP {} is already registered (existing host: '{}')",
+                    new_node_ip,
+                    existing_host
+                );
+            }
+        }
+
+        info!("Registering node at {}:{}", config.host, config.port);
+        nodes.insert(config.host.clone(), config);
         Ok(())
     }
 
-    /// Remove a node from availability
-    pub async fn unregister_node(&self, node_id: &str) -> Result<()> {
+    /// Remove a node from availability by host
+    pub async fn unregister_node(&self, host: &str) -> Result<()> {
         let mut nodes = self.nodes.write().await;
-        if nodes.remove(node_id).is_some() {
-            info!("Unregistered node {}", node_id);
+        if nodes.remove(host).is_some() {
+            info!("Unregistered node {}", host);
         } else {
-            warn!("Attempted to unregister unknown node {}", node_id);
+            warn!("Attempted to unregister unknown node {}", host);
         }
         Ok(())
     }
 
-    /// Get all available nodes with their IDs
+    /// Get all available nodes
     pub async fn list_nodes(&self) -> Result<Vec<RegisteredNode>> {
         let nodes = self.nodes.read().await;
         Ok(nodes
-            .iter()
-            .map(|(node_id, config)| RegisteredNode {
-                node_id: node_id.clone(),
+            .values()
+            .map(|config| RegisteredNode {
                 config: config.clone(),
             })
             .collect())
     }
 
-    /// Get a specific node by ID
-    pub async fn get_node(&self, node_id: &str) -> Result<Option<NodeConfig>> {
+    /// Get a specific node by host
+    pub async fn get_node(&self, host: &str) -> Result<Option<NodeConfig>> {
         let nodes = self.nodes.read().await;
-        Ok(nodes.get(node_id).cloned())
+        Ok(nodes.get(host).cloned())
     }
 
     /// Normalize SSH public key by extracting algorithm + key and adding our identifier
@@ -221,7 +292,7 @@ impl NodeManager {
         for registered_node in &nodes {
             info!(
                 "Setting exclusive SSH access for validator {} on node {}",
-                validator_hotkey, registered_node.node_id
+                validator_hotkey, registered_node.config.host
             );
 
             // Build SSH connection details
@@ -232,7 +303,7 @@ impl NodeManager {
             // Set exclusive validator key (removes all other validators, adds current one)
             self.set_exclusive_validator_key_on_node(
                 &connection_details,
-                &registered_node.node_id,
+                &registered_node.config.host,
                 validator_hotkey,
                 &normalized_key,
             )
@@ -274,7 +345,7 @@ impl NodeManager {
         for registered_node in &nodes {
             info!(
                 "Removing all validator keys from node {} (revoking validator {})",
-                registered_node.node_id, validator_hotkey
+                registered_node.config.host, validator_hotkey
             );
 
             // Build SSH connection details
@@ -284,12 +355,15 @@ impl NodeManager {
 
             // Remove all validator keys from the node
             if let Err(e) = self
-                .remove_all_validator_keys_on_node(&connection_details, &registered_node.node_id)
+                .remove_all_validator_keys_on_node(
+                    &connection_details,
+                    &registered_node.config.host,
+                )
                 .await
             {
                 warn!(
                     "Failed to remove validator keys from node {}: {}",
-                    registered_node.node_id, e
+                    registered_node.config.host, e
                 );
             }
         }
@@ -324,9 +398,9 @@ impl NodeManager {
     async fn remove_all_validator_keys_on_node(
         &self,
         connection_details: &SshConnectionDetails,
-        node_id: &str,
+        host: &str,
     ) -> Result<()> {
-        debug!("Removing all validator keys from node {}", node_id);
+        debug!("Removing all validator keys from node {}", host);
 
         let ssh_command = format!(
             "{} && {}",
@@ -337,17 +411,10 @@ impl NodeManager {
             .execute_command(connection_details, &ssh_command, true)
             .await
             .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to remove validator keys from node {}: {}",
-                    node_id,
-                    e
-                )
+                anyhow::anyhow!("Failed to remove validator keys from node {}: {}", host, e)
             })?;
 
-        debug!(
-            "Successfully removed all validator keys from node {}",
-            node_id
-        );
+        debug!("Successfully removed all validator keys from node {}", host);
         Ok(())
     }
 
@@ -355,7 +422,7 @@ impl NodeManager {
     async fn set_exclusive_validator_key_on_node(
         &self,
         connection_details: &SshConnectionDetails,
-        node_id: &str,
+        host: &str,
         validator_hotkey: &str,
         normalized_key: &str,
     ) -> Result<()> {
@@ -373,14 +440,14 @@ impl NodeManager {
             .map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to set exclusive validator key on node {}: {}",
-                    node_id,
+                    host,
                     e
                 )
             })?;
 
         info!(
             "Successfully set exclusive access for validator {} on node {}",
-            validator_hotkey, node_id
+            validator_hotkey, host
         );
         Ok(())
     }
@@ -398,21 +465,18 @@ mod tests {
             host: "192.168.1.100".to_string(),
             port: 22,
             username: "basilica".to_string(),
-            hourly_rate_per_gpu: 2.5,
+            gpu_category: "H100".to_string(),
+            gpu_count: 8,
             additional_opts: None,
         };
 
-        let node_id = "test-node-1".to_string();
-        manager
-            .register_node(node_id.clone(), config.clone())
-            .await
-            .unwrap();
+        manager.register_node(config.clone()).await.unwrap();
 
         let nodes = manager.list_nodes().await.unwrap();
         assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0].node_id, "test-node-1");
+        assert_eq!(nodes[0].config.host, "192.168.1.100");
 
-        let node = manager.get_node("test-node-1").await.unwrap();
+        let node = manager.get_node("192.168.1.100").await.unwrap();
         assert!(node.is_some());
         assert_eq!(node.unwrap().host, "192.168.1.100");
     }

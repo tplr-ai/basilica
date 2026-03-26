@@ -45,11 +45,13 @@ use crate::{
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CreateApiKeyRequest,
         CreateDeploymentRequest, CreateDepositAccountResponse, DeleteDeploymentResponse,
-        DeploymentEventsResponse, DeploymentListResponse, DeploymentResponse,
-        DepositAccountResponse, HealthCheckResponse, HistoricalRentalsResponse,
-        ListAvailableNodesQuery, ListDepositsQuery, ListDepositsResponse, ListRentalsQuery,
-        RegisterSshKeyRequest, RentalStatusWithSshResponse, RentalUsageResponse,
-        ScaleDeploymentRequest, SshKeyResponse, UsageHistoryResponse, WaitOptions, WaitResult,
+        DeleteShareTokenResponse, DeploymentEventsResponse, DeploymentListResponse,
+        DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse,
+        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery, ListDepositsQuery,
+        ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
+        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalStatusWithSshResponse,
+        RentalUsageResponse, ScaleDeploymentRequest, ShareTokenStatusResponse, SshKeyResponse,
+        UsageHistoryResponse, WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
 };
@@ -415,11 +417,33 @@ impl BasilicaClient {
     // ===== Secure Cloud (GPU Aggregator) =====
 
     /// List secure cloud GPU offerings from datacenter providers
-    /// Returns GPUs available from providers like DataCrunch, Hyperstack, Lambda Labs, etc.
+    /// Returns GPUs available from providers like Verda, Hyperstack, Lambda Labs, etc.
     pub async fn list_secure_cloud_gpus(&self) -> Result<Vec<crate::types::GpuOffering>> {
-        let response: crate::types::ListSecureCloudGpusResponse = self
-            .get("/secure-cloud/gpu-prices?available_only=true")
-            .await?;
+        self.list_secure_cloud_gpus_filtered(&Default::default())
+            .await
+    }
+
+    /// List secure cloud GPU offerings with flavour filters
+    ///
+    /// Accepts a `GpuPriceQuery` to filter by interconnect, geo, spot preferences.
+    pub async fn list_secure_cloud_gpus_filtered(
+        &self,
+        query: &crate::types::GpuPriceQuery,
+    ) -> Result<Vec<crate::types::GpuOffering>> {
+        let mut url = String::from("/secure-cloud/gpu-prices?available_only=true");
+        if let Some(ref interconnect) = query.interconnect {
+            url.push_str(&format!("&interconnect={}", interconnect));
+        }
+        if let Some(ref region) = query.region {
+            url.push_str(&format!("&region={}", region));
+        }
+        if let Some(true) = query.spot_only {
+            url.push_str("&spot_only=true");
+        }
+        if let Some(true) = query.exclude_spot {
+            url.push_str("&exclude_spot=true");
+        }
+        let response: crate::types::ListSecureCloudGpusResponse = self.get(&url).await?;
         Ok(response.nodes)
     }
 
@@ -435,7 +459,7 @@ impl BasilicaClient {
 
     /// Start a secure cloud rental
     ///
-    /// Deploys a GPU instance via datacenter provider (DataCrunch, Hyperstack, etc.)
+    /// Deploys a GPU instance via datacenter provider (Verda, Hyperstack, etc.)
     /// and registers it with the billing service for incremental charging.
     pub async fn start_secure_cloud_rental(
         &self,
@@ -452,6 +476,123 @@ impl BasilicaClient {
         rental_id: &str,
     ) -> Result<crate::types::StopSecureCloudRentalResponse> {
         let path = format!("/secure-cloud/rentals/{}/stop", rental_id);
+        self.post(&path, &serde_json::json!({})).await
+    }
+
+    // ===== Volume Management =====
+
+    /// List all volumes for the authenticated user
+    ///
+    /// Returns all volumes including their status, size, and cost information.
+    pub async fn list_volumes(&self) -> Result<crate::types::ListVolumesResponse> {
+        self.get("/secure-cloud/volumes").await
+    }
+
+    /// Create a new volume
+    ///
+    /// Creates a block storage volume that can be attached to secure cloud rentals.
+    /// Volume names are unique per user (case-insensitive).
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - Volume creation parameters including name, size, provider, and region
+    pub async fn create_volume(
+        &self,
+        request: crate::types::CreateVolumeRequest,
+    ) -> Result<crate::types::VolumeResponse> {
+        self.post("/secure-cloud/volumes", &request).await
+    }
+
+    /// Delete a volume
+    ///
+    /// Permanently deletes a volume. The volume must be detached before deletion.
+    ///
+    /// # Arguments
+    ///
+    /// * `volume_id` - The volume ID to delete
+    pub async fn delete_volume(&self, volume_id: &str) -> Result<()> {
+        let path = format!("/secure-cloud/volumes/{}", volume_id);
+        let response = self.delete_empty(&path).await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            self.handle_error_response(response).await
+        }
+    }
+
+    /// Attach a volume to a rental
+    ///
+    /// Attaches a volume to a running secure cloud rental.
+    /// The volume and rental must be in the same provider and region.
+    ///
+    /// # Arguments
+    ///
+    /// * `volume_id` - The volume ID to attach
+    /// * `request` - Attachment parameters including the rental ID
+    pub async fn attach_volume(
+        &self,
+        volume_id: &str,
+        request: crate::types::AttachVolumeRequest,
+    ) -> Result<crate::types::VolumeOperationResponse> {
+        let path = format!("/secure-cloud/volumes/{}/attach", volume_id);
+        self.post(&path, &request).await
+    }
+
+    /// Detach a volume from its current rental
+    ///
+    /// Detaches a volume from its currently attached rental.
+    ///
+    /// # Arguments
+    ///
+    /// * `volume_id` - The volume ID to detach
+    pub async fn detach_volume(
+        &self,
+        volume_id: &str,
+    ) -> Result<crate::types::VolumeOperationResponse> {
+        let path = format!("/secure-cloud/volumes/{}/detach", volume_id);
+        self.post(&path, &serde_json::json!({})).await
+    }
+
+    // ===== CPU-Only Secure Cloud =====
+
+    /// List CPU-only offerings from secure cloud providers
+    ///
+    /// Returns CPU-only instances (no GPU) from providers like Hyperstack.
+    /// These have flat hourly rates rather than per-GPU pricing.
+    pub async fn list_cpu_offerings(&self) -> Result<Vec<crate::types::CpuOffering>> {
+        let response: crate::types::ListCpuOfferingsResponse = self
+            .get("/secure-cloud/cpu-prices?available_only=true")
+            .await?;
+        Ok(response.nodes)
+    }
+
+    /// List CPU-only rentals for the authenticated user
+    ///
+    /// Returns all CPU-only secure cloud rentals including their status,
+    /// IP addresses, and cost information.
+    pub async fn list_cpu_rentals(&self) -> Result<crate::types::ListSecureCloudRentalsResponse> {
+        self.get("/secure-cloud/cpu-rentals").await
+    }
+
+    /// Start a CPU-only rental
+    ///
+    /// Deploys a CPU-only instance via datacenter provider and registers
+    /// it with the billing service for incremental charging.
+    pub async fn start_cpu_rental(
+        &self,
+        request: crate::types::StartSecureCloudRentalRequest,
+    ) -> Result<crate::types::SecureCloudRentalResponse> {
+        self.post("/secure-cloud/cpu-rentals/start", &request).await
+    }
+
+    /// Stop a CPU-only rental
+    ///
+    /// Terminates the CPU instance, finalizes billing, and returns the total cost.
+    pub async fn stop_cpu_rental(
+        &self,
+        rental_id: &str,
+    ) -> Result<crate::types::StopSecureCloudRentalResponse> {
+        let path = format!("/secure-cloud/cpu-rentals/{}/stop", rental_id);
         self.post(&path, &serde_json::json!({})).await
     }
 
@@ -496,10 +637,10 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// use basilica_sdk::{BasilicaClient, CreateDeploymentRequest};
+    /// use basilica_sdk::{ClientBuilder, CreateDeploymentRequest};
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let client = BasilicaClient::builder()
+    /// let client = ClientBuilder::default()
     ///     .with_api_key("your-api-key")
     ///     .build()?;
     ///
@@ -555,9 +696,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let deployment = client.get_deployment("my-nginx").await?;
     /// println!("State: {}, Ready: {}/{}",
     ///     deployment.state,
@@ -593,9 +734,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let result = client.delete_deployment("my-nginx").await?;
     /// println!("Deletion initiated: {}", result.message);
     /// # Ok(())
@@ -604,6 +745,28 @@ impl BasilicaClient {
     pub async fn delete_deployment(&self, instance_name: &str) -> Result<DeleteDeploymentResponse> {
         let path = format!("/deployments/{}", instance_name);
         self.delete(&path).await
+    }
+
+    /// Restart a deployment (rolling restart)
+    ///
+    /// Triggers a Kubernetes rolling restart by patching the pod template annotation.
+    /// No request body is required.
+    ///
+    /// # Arguments
+    ///
+    /// * `instance_name` - The deployment instance name to restart
+    ///
+    /// # Returns
+    ///
+    /// Returns the updated deployment state after restart is initiated
+    ///
+    /// # Errors
+    ///
+    /// * `ApiError::NotFound` - Deployment doesn't exist
+    /// * `ApiError::Authorization` - Insufficient permissions
+    pub async fn restart_deployment(&self, instance_name: &str) -> Result<DeploymentResponse> {
+        let path = format!("/deployments/{}/restart", instance_name);
+        self.post(&path, &serde_json::json!({})).await
     }
 
     /// List all deployments for the authenticated user
@@ -621,9 +784,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let deployments = client.list_deployments().await?;
     /// println!("Total deployments: {}", deployments.total);
     /// for deployment in deployments.deployments {
@@ -653,9 +816,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().build().await?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let logs = client.get_deployment_logs("my-app", false, Some(100)).await?;
     /// let body = logs.text().await?;
     /// println!("Logs: {}", body);
@@ -738,9 +901,9 @@ impl BasilicaClient {
     /// # Example
     ///
     /// ```no_run
-    /// # use basilica_sdk::BasilicaClient;
+    /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let client = BasilicaClient::builder().with_api_key("key").build()?;
+    /// # let client = ClientBuilder::default().with_api_key("key").build()?;
     /// let result = client.scale_deployment("my-app", 3).await?;
     /// println!("Scaled to {} replicas", result.replicas.desired);
     /// # Ok(())
@@ -957,6 +1120,144 @@ impl BasilicaClient {
         }
     }
 
+    // ============================================================================
+    // Share Token Management
+    // ============================================================================
+
+    /// Regenerate share token for a private deployment.
+    ///
+    /// Creates a new token and invalidates any previous token. The raw token
+    /// is only returned once and cannot be retrieved later.
+    ///
+    /// # Arguments
+    /// * `instance_name` - The deployment instance name
+    ///
+    /// # Errors
+    /// * `ApiError::BadRequest` - Deployment is public (public deployments don't need tokens)
+    /// * `ApiError::NotFound` - Deployment not found or not owned by user
+    /// * `ApiError::Authentication` - Invalid or missing authentication
+    pub async fn regenerate_share_token(
+        &self,
+        instance_name: &str,
+    ) -> Result<RegenerateShareTokenResponse> {
+        let path = format!(
+            "/deployments/{}/share-token",
+            urlencoding::encode(instance_name)
+        );
+        self.post_empty(&path).await
+    }
+
+    /// Check if a share token exists for a deployment.
+    ///
+    /// # Arguments
+    /// * `instance_name` - The deployment instance name
+    ///
+    /// # Errors
+    /// * `ApiError::BadRequest` - Deployment is public
+    /// * `ApiError::NotFound` - Deployment not found or not owned by user
+    /// * `ApiError::Authentication` - Invalid or missing authentication
+    pub async fn get_share_token_status(
+        &self,
+        instance_name: &str,
+    ) -> Result<ShareTokenStatusResponse> {
+        let path = format!(
+            "/deployments/{}/share-token",
+            urlencoding::encode(instance_name)
+        );
+        self.get(&path).await
+    }
+
+    /// Revoke (delete) the share token for a deployment.
+    ///
+    /// After revocation, the deployment will not be accessible via the share URL
+    /// until a new token is generated with `regenerate_share_token`.
+    ///
+    /// # Arguments
+    /// * `instance_name` - The deployment instance name
+    ///
+    /// # Errors
+    /// * `ApiError::BadRequest` - Deployment is public
+    /// * `ApiError::NotFound` - Deployment not found or not owned by user
+    /// * `ApiError::Authentication` - Invalid or missing authentication
+    pub async fn delete_share_token(
+        &self,
+        instance_name: &str,
+    ) -> Result<DeleteShareTokenResponse> {
+        let path = format!(
+            "/deployments/{}/share-token",
+            urlencoding::encode(instance_name)
+        );
+        self.delete(&path).await
+    }
+
+    // ============================================================================
+    // Public Deployment Metadata
+    // ============================================================================
+
+    /// Enroll or unenroll a deployment in public metadata exposure.
+    ///
+    /// When enrolled, non-sensitive deployment metadata becomes publicly queryable
+    /// via the unauthenticated `/public/deployments/:name/metadata` endpoint.
+    ///
+    /// # Arguments
+    /// * `instance_name` - The deployment instance name
+    /// * `enabled` - Whether to enable or disable metadata enrollment
+    ///
+    /// # Errors
+    /// * `ApiError::NotFound` - Deployment not found or not owned by user
+    /// * `ApiError::Conflict` - Another deployment with same instance name already enrolled
+    pub async fn enroll_metadata(
+        &self,
+        instance_name: &str,
+        enabled: bool,
+    ) -> Result<EnrollMetadataResponse> {
+        let path = format!(
+            "/deployments/{}/enroll-metadata",
+            urlencoding::encode(instance_name)
+        );
+        let body = EnrollMetadataRequest { enabled };
+        self.post(&path, &body).await
+    }
+
+    /// Check the current metadata enrollment status of a deployment.
+    ///
+    /// # Arguments
+    /// * `instance_name` - The deployment instance name
+    ///
+    /// # Errors
+    /// * `ApiError::NotFound` - Deployment not found or not owned by user
+    pub async fn get_enrollment_status(
+        &self,
+        instance_name: &str,
+    ) -> Result<EnrollMetadataResponse> {
+        let path = format!(
+            "/deployments/{}/enroll-metadata",
+            urlencoding::encode(instance_name)
+        );
+        self.get(&path).await
+    }
+
+    /// Fetch public metadata for a deployment (no authentication required).
+    ///
+    /// Returns non-sensitive metadata for deployments that have opted-in
+    /// via `enroll_metadata`.
+    ///
+    /// # Arguments
+    /// * `instance_name` - The deployment instance name
+    ///
+    /// # Errors
+    /// * `ApiError::NotFound` - Deployment not found or metadata not enrolled
+    pub async fn get_public_deployment_metadata(
+        &self,
+        instance_name: &str,
+    ) -> Result<PublicDeploymentMetadataResponse> {
+        let path = format!(
+            "/public/deployments/{}/metadata",
+            urlencoding::encode(instance_name)
+        );
+        self.get_public(&path).await
+    }
+
     // ===== Private Helper Methods =====
 
     /// Apply authentication to request
@@ -982,10 +1283,28 @@ impl BasilicaClient {
         self.handle_response(response).await
     }
 
+    /// Unauthenticated GET request for public endpoints
+    async fn get_public<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let url = format!("{}{}", self.base_url, path);
+        let request = self.http_client.get(&url);
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
+        self.handle_response(response).await
+    }
+
     /// Generic POST request
     async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
         let url = format!("{}{}", self.base_url, path);
         let request = self.http_client.post(&url).json(body);
+        let request = self.apply_auth(request).await?;
+
+        let response = request.send().await.map_err(ApiError::HttpClient)?;
+        self.handle_response(response).await
+    }
+
+    /// Generic POST request without body
+    async fn post_empty<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let url = format!("{}{}", self.base_url, path);
+        let request = self.http_client.post(&url);
         let request = self.apply_auth(request).await?;
 
         let response = request.send().await.map_err(ApiError::HttpClient)?;
@@ -1522,6 +1841,9 @@ mod tests {
             queue_name: None,
             suspended: false,
             priority: None,
+            topology_spread: None,
+            websocket: None,
+            public_metadata: false,
         };
 
         let response = client.create_deployment(request).await.unwrap();
@@ -1559,7 +1881,8 @@ mod tests {
                 },
                 "public": true,
                 "enableBilling": true,
-                "suspended": false
+                "suspended": false,
+                "publicMetadata": false
             })))
             .respond_with(ResponseTemplate::new(201).set_body_json(json!({
                 "instanceName": "my-app",
@@ -1605,6 +1928,9 @@ mod tests {
             queue_name: None,
             suspended: false,
             priority: None,
+            topology_spread: None,
+            websocket: None,
+            public_metadata: false,
         };
 
         let response = client.create_deployment(request).await.unwrap();
@@ -1653,6 +1979,9 @@ mod tests {
             queue_name: None,
             suspended: false,
             priority: None,
+            topology_spread: None,
+            websocket: None,
+            public_metadata: false,
         };
 
         let response = client.create_deployment(request).await.unwrap();
@@ -1871,6 +2200,9 @@ mod tests {
             queue_name: None,
             suspended: false,
             priority: None,
+            topology_spread: None,
+            websocket: None,
+            public_metadata: false,
         };
 
         let result = client.create_deployment(request).await;
@@ -1884,5 +2216,193 @@ mod tests {
             }
             e => panic!("Expected InvalidRequest or BadRequest error, got: {:?}", e),
         }
+    }
+
+    #[tokio::test]
+    async fn test_enroll_metadata_enable() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deployments/my-app/enroll-metadata"))
+            .and(header("Authorization", "Bearer test-token"))
+            .and(body_json(json!({"enabled": true})))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"publicMetadata": true})))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.enroll_metadata("my-app", true).await.unwrap();
+        assert!(response.public_metadata);
+    }
+
+    #[tokio::test]
+    async fn test_enroll_metadata_disable() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deployments/my-app/enroll-metadata"))
+            .and(header("Authorization", "Bearer test-token"))
+            .and(body_json(json!({"enabled": false})))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({"publicMetadata": false})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.enroll_metadata("my-app", false).await.unwrap();
+        assert!(!response.public_metadata);
+    }
+
+    #[tokio::test]
+    async fn test_get_enrollment_status() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/deployments/my-app/enroll-metadata"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"publicMetadata": true})))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.get_enrollment_status("my-app").await.unwrap();
+        assert!(response.public_metadata);
+    }
+
+    #[tokio::test]
+    async fn test_get_public_deployment_metadata() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/public/deployments/my-app/metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "instanceName": "my-app",
+                "image": "nginx",
+                "imageTag": "latest",
+                "id": "dep-123",
+                "uptimeSeconds": 3600,
+                "replicas": {"desired": 2, "ready": 2},
+                "state": "Active"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client
+            .get_public_deployment_metadata("my-app")
+            .await
+            .unwrap();
+        assert_eq!(response.instance_name, "my-app");
+        assert_eq!(response.image, "nginx");
+        assert_eq!(response.image_tag, "latest");
+        assert_eq!(response.id, "dep-123");
+        assert_eq!(response.uptime_seconds, 3600);
+        assert_eq!(response.replicas.desired, 2);
+        assert_eq!(response.replicas.ready, 2);
+        assert_eq!(response.state, "Active");
+    }
+
+    #[tokio::test]
+    async fn test_enroll_metadata_conflict() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deployments/my-app/enroll-metadata"))
+            .respond_with(ResponseTemplate::new(409).set_body_json(json!({
+                "error": {
+                    "code": "BASILICA_API_CONFLICT",
+                    "message": "Another deployment with instance name 'my-app' is already enrolled",
+                    "timestamp": "2024-01-01T00:00:00Z",
+                    "retryable": false
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let result = client.enroll_metadata("my-app", true).await;
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ApiError::Conflict { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_create_deployment_with_public_metadata() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/deployments"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "instanceName": "my-app",
+                "userId": "user123",
+                "namespace": "u-user123",
+                "state": "Pending",
+                "url": "http://example.com/deployments/my-app/",
+                "replicas": {"desired": 1, "ready": 0},
+                "createdAt": "2025-01-01T00:00:00Z",
+                "publicMetadata": true
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let request = CreateDeploymentRequest {
+            instance_name: "my-app".to_string(),
+            image: "nginx:latest".to_string(),
+            replicas: 1,
+            port: 80,
+            command: None,
+            args: None,
+            env: None,
+            resources: None,
+            ttl_seconds: None,
+            public: true,
+            storage: None,
+            health_check: None,
+            enable_billing: true,
+            queue_name: None,
+            suspended: false,
+            priority: None,
+            topology_spread: None,
+            websocket: None,
+            public_metadata: true,
+        };
+
+        let json_body = serde_json::to_string(&request).unwrap();
+        assert!(json_body.contains("\"publicMetadata\":true"));
+
+        let response = client.create_deployment(request).await.unwrap();
+        assert!(response.public_metadata);
     }
 }

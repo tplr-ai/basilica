@@ -1,9 +1,0 @@
----
-# R2 Storage Configuration
-# Maps vault variables to expected role variables
-
-basilica_r2_backend: "{{ vault_basilica_r2_backend | default('r2') }}"
-basilica_r2_bucket: "{{ vault_basilica_r2_bucket }}"
-basilica_r2_endpoint: "{{ vault_basilica_r2_endpoint }}"
-basilica_r2_access_key_id: "{{ vault_basilica_r2_access_key_id }}"
-basilica_r2_secret_access_key: "{{ vault_basilica_r2_secret_access_key }}"

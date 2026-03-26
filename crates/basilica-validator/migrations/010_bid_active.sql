@@ -1,0 +1,1 @@
+ALTER TABLE miner_nodes ADD COLUMN bid_active INTEGER NOT NULL DEFAULT 1;

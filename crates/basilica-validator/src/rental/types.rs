@@ -9,8 +9,18 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RentalRequest {
     pub validator_hotkey: String,
-    pub miner_id: String,
-    pub node_id: String,
+
+    // GPU selection criteria
+    /// GPU category: "H100", "A100", "B200", etc.
+    pub gpu_category: String,
+    /// Number of GPUs required
+    pub gpu_count: u32,
+    /// Minimum GPU memory in GB (e.g., 80 for 80GB)
+    pub min_memory_gb: Option<u32>,
+    /// Maximum acceptable cents/GPU-hour
+    pub max_hourly_rate_cents: u32,
+
+    // Container config
     pub container_spec: ContainerSpec,
     pub ssh_public_key: String,
     pub metadata: HashMap<String, String>,
@@ -145,7 +155,7 @@ pub struct ContainerStatus {
 }
 
 /// Resource usage statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResourceUsage {
     pub cpu_percent: f64,
     pub memory_mb: i64,
@@ -157,7 +167,7 @@ pub struct ResourceUsage {
 }
 
 /// GPU usage statistics
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GpuUsage {
     pub gpu_index: u32,
     pub utilization_percent: f64,

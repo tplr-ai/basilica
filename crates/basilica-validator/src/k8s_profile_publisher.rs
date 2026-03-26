@@ -47,6 +47,7 @@ impl K8sNodeProfilePublisher {
         kube_node_name: Option<&str>,
         last_validated: Option<&str>,
         health: Option<&str>,
+        failure_reasons: Option<&[String]>,
     ) -> anyhow::Result<DynamicObject> {
         let val = serde_json::json!({
             "apiVersion": "basilica.ai/v1",
@@ -65,6 +66,7 @@ impl K8sNodeProfilePublisher {
                 "kubeNodeName": kube_node_name,
                 "lastValidated": last_validated,
                 "health": health,
+                "failureReasons": failure_reasons,
             }
         });
         let obj: DynamicObject = serde_json::from_value(val)?;
@@ -183,6 +185,7 @@ mod tests {
             Some("kube-node-1"),
             Some("2024-10-04T00:00:00Z"),
             Some("Valid"),
+            None,
         )
         .unwrap();
         assert_eq!(cr.metadata.name.as_deref(), Some("node-123"));

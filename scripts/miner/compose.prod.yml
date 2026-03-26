@@ -39,7 +39,7 @@ services:
       start_period: 30s
 
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower:1.14.0
     container_name: basilica-watchtower
     restart: unless-stopped
     volumes:

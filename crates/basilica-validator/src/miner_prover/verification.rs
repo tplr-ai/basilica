@@ -3,27 +3,30 @@
 //! Handles the actual verification of miners and their nodes.
 //! Implements Single Responsibility Principle by focusing only on verification logic.
 
-use super::miner_client::{MinerClient, MinerClientConfig};
 use super::types::MinerInfo;
 use super::types::{NodeInfoDetailed, NodeVerificationResult, ValidationType};
 use super::validation_states::{StateResult, ValidationState};
 use super::validation_strategy::{ValidationNode, ValidationStrategy, ValidationStrategySelector};
 use super::validation_worker::{ValidationWorkerQueue, WorkerQueueConfig};
 use crate::agent_installer::{build_install_commands, build_uninstall_commands, K3sAgentConfig};
+use crate::ban_system::BanManager;
 use crate::config::VerificationConfig;
 use crate::gpu::MinerGpuProfile;
 use crate::k8s_profile_publisher::NodeProfilePublisher;
 use crate::metrics::ValidatorMetrics;
 use crate::node_profile::{labels_from_validation, to_node_profile_spec, NodeProfileInput};
 use crate::persistence::{
-    entities::VerificationLog, gpu_profile_repository::GpuProfileRepository, SimplePersistence,
+    entities::{MisbehaviourType, VerificationLog},
+    gpu_profile_repository::GpuProfileRepository,
+    SimplePersistence,
 };
 use crate::ssh::{ValidatorSshClient, ValidatorSshKeyManager};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use basilica_common::identity::{Hotkey, MinerUid, NodeId};
 use basilica_common::types::GpuCategory;
 use chrono::Utc;
 use futures::future::join_all;
+use serde_json;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -31,10 +34,26 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
+fn normalize_gpu_category(input: &str) -> String {
+    match GpuCategory::from_str(input) {
+        Ok(category) => category.to_string(),
+        Err(infallible) => match infallible {},
+    }
+}
+
+struct GpuDeclarationMismatchContext {
+    miner_uid: u16,
+    node_id: String,
+    mismatch_reason: String,
+    declared_gpu_category: Option<String>,
+    declared_gpu_count: Option<u32>,
+    detected_gpu_category: Option<String>,
+    detected_gpu_count: u32,
+}
+
 #[derive(Clone)]
 pub struct VerificationEngine {
     config: VerificationConfig,
-    miner_client_config: MinerClientConfig,
     validator_hotkey: Hotkey,
     /// Database persistence for storing verification results
     persistence: Arc<SimplePersistence>,
@@ -59,38 +78,6 @@ pub struct VerificationEngine {
 }
 
 impl VerificationEngine {
-    /// Check if an endpoint is invalid
-    fn is_invalid_endpoint(&self, endpoint: &str) -> bool {
-        // Check for common invalid patterns
-        if endpoint.contains("0:0:0:0:0:0:0:0")
-            || endpoint.contains("0.0.0.0")
-            || endpoint.is_empty()
-            || !endpoint.starts_with("http")
-        {
-            debug!("Invalid endpoint detected: {}", endpoint);
-            return true;
-        }
-
-        // Validate URL parsing
-        if let Ok(url) = url::Url::parse(endpoint) {
-            if let Some(host) = url.host_str() {
-                // Check for zero or loopback addresses that indicate invalid configuration
-                if host == "0.0.0.0" || host == "::" || host == "localhost" || host == "127.0.0.1" {
-                    debug!("Invalid host in endpoint: {}", endpoint);
-                    return true;
-                }
-            } else {
-                debug!("No host found in endpoint: {}", endpoint);
-                return true;
-            }
-        } else {
-            debug!("Failed to parse endpoint as URL: {}", endpoint);
-            return true;
-        }
-
-        false
-    }
-
     /// Extract miner UID from `miner_###` identifiers
     fn miner_uid_from_miner_id(miner_id: &str) -> Option<u16> {
         miner_id
@@ -113,24 +100,19 @@ impl VerificationEngine {
         let workflow_start = std::time::Instant::now();
         let mut verification_steps = Vec::new();
 
-        // Step 1: Get nodes from discovery + database fallback
-        let discovered_nodes = self
-            .discover_miner_nodes(task.miner_uid, &task.miner_endpoint, &task.miner_hotkey)
-            .await
-            .unwrap_or_else(|e| {
-                warn!(
-                    "Failed to discover nodes for miner {} via gRPC: {}. Using database fallback.",
-                    task.miner_uid, e
-                );
-                Vec::new()
-            });
-
+        // Step 1: Get nodes from database (populated by miner's RegisterBid call)
         let known_node_data = self
             .persistence
             .get_known_nodes_for_miner(task.miner_uid)
             .await?;
-        let known_nodes = self.convert_db_data_to_node_info(known_node_data, task.miner_uid)?;
-        let node_list = self.combine_node_lists(discovered_nodes, known_nodes);
+        let node_list = self.convert_db_data_to_node_info(known_node_data, task.miner_uid)?;
+
+        info!(
+            miner_uid = task.miner_uid,
+            node_count = node_list.len(),
+            "[EVAL_FLOW] Found {} registered nodes for miner",
+            node_list.len()
+        );
 
         verification_steps.push(VerificationStep {
             step_name: "node_discovery".to_string(),
@@ -236,6 +218,8 @@ impl VerificationEngine {
         let validation_results = join_all(validation_futures).await;
 
         // Process all validation results
+        let mut success_count = 0usize;
+        let mut failure_count = 0usize;
         for (node_info, result) in validation_results {
             match result {
                 Ok(result) => {
@@ -248,6 +232,7 @@ impl VerificationEngine {
                         "[EVAL_FLOW] SSH verification completed"
                     );
                     node_results.push(result);
+                    success_count += 1;
                     verification_steps.push(VerificationStep {
                         step_name: format!("ssh_verification_{}", node_info.id),
                         status: StepStatus::Completed,
@@ -279,6 +264,7 @@ impl VerificationEngine {
                         intended_strategy = ?task.intended_validation_strategy,
                         "[EVAL_FLOW] verification failed"
                     );
+                    failure_count += 1;
                     verification_steps.push(VerificationStep {
                         step_name: format!("ssh_verification_{}", node_info.id),
                         status: StepStatus::Failed,
@@ -288,6 +274,15 @@ impl VerificationEngine {
                 }
             }
         }
+        info!(
+            miner_uid = task.miner_uid,
+            intended_strategy = ?task.intended_validation_strategy,
+            total_nodes = total_nodes,
+            completed = success_count,
+            failed = failure_count,
+            skipped = nodes_skipped_for_strategy,
+            "[EVAL_FLOW] Node validation results collected"
+        );
 
         // Step 3: Calculate overall verification score
         let overall_score = if node_results.is_empty() {
@@ -448,155 +443,6 @@ impl VerificationEngine {
         })
     }
 
-    /// Discover nodes from miner via gRPC
-    async fn discover_miner_nodes(
-        &self,
-        miner_uid: u16,
-        miner_endpoint: &str,
-        miner_hotkey: &str,
-    ) -> Result<Vec<NodeInfoDetailed>> {
-        info!(
-            miner_uid = miner_uid,
-            "[EVAL_FLOW] Starting node discovery from miner at: {}", miner_endpoint
-        );
-        debug!(
-            miner_uid = miner_uid,
-            "[EVAL_FLOW] Using config: timeout={:?}, grpc_port_offset={:?}, use_dynamic_discovery={}",
-            self.config.discovery_timeout,
-            self.config.grpc_port_offset,
-            self.use_dynamic_discovery
-        );
-
-        // Validate endpoint before attempting connection
-        if self.is_invalid_endpoint(miner_endpoint) {
-            error!(
-                miner_uid = miner_uid,
-                "[EVAL_FLOW] Invalid miner endpoint detected: {}", miner_endpoint
-            );
-            return Err(anyhow::anyhow!(
-                "Invalid miner endpoint: {}. Skipping discovery.",
-                miner_endpoint
-            ));
-        }
-        info!(
-            miner_uid = miner_uid,
-            "[EVAL_FLOW] Endpoint validation passed for: {}", miner_endpoint
-        );
-
-        // Create authenticated miner client
-        info!(
-            miner_uid = miner_uid,
-            "[EVAL_FLOW] Creating authenticated miner client with validator hotkey: {}",
-            self.validator_hotkey
-                .to_string()
-                .chars()
-                .take(8)
-                .collect::<String>()
-                + "..."
-        );
-        let client = self.create_authenticated_client()?;
-
-        // Connect and authenticate to miner
-        info!(
-            miner_uid = miner_uid,
-            "[EVAL_FLOW] Attempting gRPC connection to miner at: {}", miner_endpoint
-        );
-        let connection_start = std::time::Instant::now();
-        let mut connection = match client
-            .connect_and_authenticate(miner_uid, miner_endpoint, miner_hotkey)
-            .await
-        {
-            Ok(conn) => {
-                info!(
-                    miner_uid = miner_uid,
-                    "[EVAL_FLOW] Successfully connected and authenticated to miner in {:?}",
-                    connection_start.elapsed()
-                );
-                conn
-            }
-            Err(e) => {
-                error!(
-                    miner_uid = miner_uid,
-                    "[EVAL_FLOW] Failed to connect to miner at {} after {:?}: {}",
-                    miner_endpoint,
-                    connection_start.elapsed(),
-                    e
-                );
-                return Err(e).context("Failed to connect to miner for node discovery");
-            }
-        };
-
-        info!(miner_uid = miner_uid, "[EVAL_FLOW] Requesting nodes");
-        let request_start = std::time::Instant::now();
-        let node_details = match connection.request_nodes().await {
-            Ok(details) => {
-                info!(
-                    miner_uid = miner_uid,
-                    "[EVAL_FLOW] Successfully received node details in {:?}, count={}",
-                    request_start.elapsed(),
-                    details.len()
-                );
-                for (i, detail) in details.iter().enumerate() {
-                    info!(
-                        miner_uid = miner_uid,
-                        node_id = %detail.node_id,
-                        "[EVAL_FLOW] Node {}: id={}, endpoint={}:{}",
-                        i,
-                        detail.node_id,
-                        detail.host,
-                        detail.port
-                    );
-                }
-                details
-            }
-            Err(e) => {
-                error!(
-                    miner_uid = miner_uid,
-                    "[EVAL_FLOW] Failed to request nodes from miner after {:?}: {}",
-                    request_start.elapsed(),
-                    e
-                );
-                return Ok(vec![]);
-            }
-        };
-
-        let node_count = node_details.len();
-        let nodes: Vec<NodeInfoDetailed> = node_details
-            .into_iter()
-            .map(|details| -> Result<NodeInfoDetailed> {
-                debug!(
-                    miner_uid = miner_uid,
-                    node_id = %details.node_id,
-                    "[EVAL_FLOW] Discovered node details from miner: miner_uid={}, node_id={}",
-                    miner_uid, details.node_id
-                );
-
-                Ok(NodeInfoDetailed {
-                    id: NodeId::from_str(&details.node_id).map_err(|e| {
-                        anyhow::anyhow!("Invalid node ID '{}': {}", details.node_id, e)
-                    })?,
-                    miner_uid: MinerUid::new(miner_uid),
-                    status: "available".to_string(),
-                    capabilities: vec!["gpu".to_string()],
-                    node_ssh_endpoint: format!(
-                        "{}@{}:{}",
-                        details.username, details.host, details.port
-                    ),
-                    hourly_rate_cents: details.hourly_rate_cents,
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        info!(
-            miner_uid = miner_uid,
-            "[EVAL_FLOW] Node discovery completed: {} nodes mapped from {} details",
-            nodes.len(),
-            node_count
-        );
-
-        Ok(nodes)
-    }
-
     /// Store node verification result with actual miner information
     pub async fn store_node_verification_result_with_miner_info(
         &self,
@@ -632,6 +478,7 @@ impl VerificationEngine {
                 "node_id": node_result.node_id.to_string(),
                 "ssh_connection_successful": node_result.ssh_connection_successful,
                 "binary_validation_successful": node_result.binary_validation_successful,
+                "failure_reasons": node_result.failure_reasons,
                 "verification_method": "ssh_automation",
                 "node_result": node_result.node_result,
                 "gpu_count": node_result.gpu_count,
@@ -647,7 +494,11 @@ impl VerificationEngine {
             } else if node_result.validation_type == ValidationType::Full
                 && !node_result.binary_validation_successful
             {
-                Some("Binary validation failed".to_string())
+                Some(if node_result.failure_reasons.is_empty() {
+                    "Binary validation failed".to_string()
+                } else {
+                    node_result.failure_reasons.join("; ")
+                })
             } else {
                 None
             },
@@ -738,13 +589,12 @@ impl VerificationEngine {
         // Update node status
         if let Err(e) = sqlx::query(
             "UPDATE miner_nodes
-             SET status = ?, last_health_check = ?, updated_at = ?
-             WHERE node_id = ?",
+             SET status = ?, last_node_check = datetime('now')
+             WHERE node_id = ? AND miner_id = ?",
         )
         .bind(&status)
-        .bind(&now)
-        .bind(&now)
         .bind(&verification_log.node_id)
+        .bind(&miner_id)
         .execute(&mut *tx)
         .await
         {
@@ -804,6 +654,7 @@ impl VerificationEngine {
                         miner_uid,
                         &node_result.node_id.to_string(),
                         &node_result.node_ssh_endpoint,
+                        &node_result.node_ip,
                         miner_info,
                         node_result.hourly_rate_cents,
                     )
@@ -897,6 +748,7 @@ impl VerificationEngine {
                                 miner_uid,
                                 &node_result.node_id.to_string(),
                                 nr,
+                                &node_result.failure_reasons,
                             )
                             .await
                         {
@@ -954,9 +806,10 @@ impl VerificationEngine {
         miner_uid: u16,
         node_id: &str,
         nr: &super::types::NodeResult,
+        failure_reasons: &[String],
     ) -> Result<()> {
         let (namespace, cr, maybe_labels) = self
-            .prepare_node_profile_cr_and_labels(miner_uid, node_id, nr)
+            .prepare_node_profile_cr_and_labels(miner_uid, node_id, nr, failure_reasons)
             .await?;
 
         if let Some(publisher) = &self.node_profile_publisher {
@@ -1055,6 +908,7 @@ impl VerificationEngine {
         miner_uid: u16,
         node_id: &str,
         nr: &super::types::NodeResult,
+        failure_reasons: &[String],
     ) -> Result<(
         String,
         kube::core::DynamicObject,
@@ -1106,6 +960,7 @@ impl VerificationEngine {
             kube_node_name,
             last_validated.as_deref(),
             Some("Valid"),
+            Some(failure_reasons),
         )?;
 
         // Base labels from validation
@@ -1149,32 +1004,6 @@ impl VerificationEngine {
         self.persistence.sync_miners_from_metagraph(miners).await
     }
 
-    /// Create authenticated miner client
-    pub fn create_authenticated_client(&self) -> Result<MinerClient> {
-        let mut client = if let Some(ref bittensor_service) = self.bittensor_service {
-            let signer = Arc::new(super::miner_client::BittensorServiceSigner::new(
-                bittensor_service.clone(),
-            ));
-            MinerClient::with_signer(
-                self.miner_client_config.clone(),
-                self.validator_hotkey.clone(),
-                signer,
-            )
-        } else {
-            MinerClient::new(
-                self.miner_client_config.clone(),
-                self.validator_hotkey.clone(),
-            )
-        };
-
-        // Add SSH public key if available
-        if let Some(public_key) = self.get_ssh_public_key() {
-            client = client.with_ssh_public_key(public_key);
-        }
-
-        Ok(client)
-    }
-
     /// Get whether dynamic discovery is enabled
     pub fn use_dynamic_discovery(&self) -> bool {
         self.use_dynamic_discovery
@@ -1199,7 +1028,6 @@ impl VerificationEngine {
     #[allow(clippy::too_many_arguments)]
     pub fn with_ssh_automation(
         config: VerificationConfig,
-        miner_client_config: MinerClientConfig,
         validator_hotkey: Hotkey,
         ssh_client: Arc<ValidatorSshClient>,
         persistence: Arc<SimplePersistence>,
@@ -1218,7 +1046,6 @@ impl VerificationEngine {
 
         Ok(Self {
             config: config.clone(),
-            miner_client_config,
             validator_hotkey,
             persistence: persistence.clone(),
             use_dynamic_discovery,
@@ -1243,10 +1070,13 @@ impl VerificationEngine {
 
     /// Initialize validation server mode
     pub async fn initialize_validation_server(&mut self) -> Result<()> {
+        let Some(ref binary_config) = self.config.binary_validation else {
+            info!("Binary validation not configured - skipping validation server initialization");
+            return Ok(());
+        };
         info!("Initializing validation server mode for VerificationEngine");
         let mut node = self.validation_node.write().await;
-        node.initialize_server_mode(&self.config.binary_validation)
-            .await?;
+        node.initialize_server_mode(binary_config).await?;
         info!("Validation server mode initialized successfully");
         Ok(())
     }
@@ -1383,6 +1213,13 @@ impl VerificationEngine {
                 super::validation_strategy::ValidationStrategy::Full
             }
         };
+        debug!(
+            miner_uid = miner_uid,
+            node_id = %node_info.id,
+            determined_strategy = ?strategy,
+            intended_strategy = ?intended_strategy,
+            "[EVAL_FLOW] Validation strategy resolved"
+        );
 
         // Strategy filtering: skip if strategy doesn't match pipeline
         let strategy_matches = matches!(
@@ -1419,7 +1256,7 @@ impl VerificationEngine {
         };
 
         // Step 3: Execute validation based on strategy
-        let result = match strategy {
+        let mut result = match strategy {
             ValidationStrategy::Lightweight {
                 previous_score,
                 node_result,
@@ -1443,33 +1280,208 @@ impl VerificationEngine {
                     .await
             }
             ValidationStrategy::Full => {
-                let binary_config = &self.config.binary_validation;
                 self.validation_node
                     .read()
                     .await
                     .execute_full_validation(
                         node_info,
                         &ssh_details,
-                        binary_config,
+                        self.config.binary_validation.as_ref(),
                         &self.validator_hotkey,
                         miner_uid,
                     )
                     .await
             }
+        }?;
+
+        if result.validation_type == ValidationType::Full {
+            self.enforce_declared_gpu_claims_for_full_validation(miner_uid, &mut result)
+                .await?;
+        }
+
+        Ok(result)
+    }
+
+    async fn enforce_declared_gpu_claims_for_full_validation(
+        &self,
+        miner_uid: u16,
+        node_result: &mut NodeVerificationResult,
+    ) -> Result<()> {
+        if node_result.validation_type != ValidationType::Full {
+            return Ok(());
+        }
+
+        let Some(validation_result) = node_result.node_result.as_ref() else {
+            return Ok(());
         };
 
-        result
+        let node_id = node_result.node_id.to_string();
+        let miner_id = format!("miner_{miner_uid}");
+
+        let detected_gpu_count = validation_result.gpu_infos.len() as u32;
+        let detected_gpu_category = validation_result
+            .gpu_infos
+            .first()
+            .map(|gpu| normalize_gpu_category(&gpu.gpu_name));
+
+        let declared_metadata = self
+            .persistence
+            .get_node_bid_metadata(&miner_id, &node_id)
+            .await?;
+
+        let mut declared_gpu_count: Option<u32> = None;
+        let mut declared_gpu_category: Option<String> = None;
+
+        let mismatch_reason = if let Some(metadata) = declared_metadata {
+            declared_gpu_count = Some(metadata.gpu_count);
+
+            let declared_category_trimmed = metadata.gpu_category.trim();
+            if declared_category_trimmed.is_empty() {
+                Some("declared gpu_category is empty".to_string())
+            } else {
+                let normalized_declared_category =
+                    normalize_gpu_category(declared_category_trimmed);
+                declared_gpu_category = Some(normalized_declared_category.clone());
+
+                if normalized_declared_category == "OTHER" {
+                    Some(format!(
+                        "declared gpu_category '{}' is invalid or unsupported",
+                        declared_category_trimmed
+                    ))
+                } else if metadata.gpu_count == 0 {
+                    Some("declared gpu_count must be greater than 0".to_string())
+                } else if detected_gpu_count != metadata.gpu_count {
+                    Some(format!(
+                        "detected gpu_count {} does not match declared {}",
+                        detected_gpu_count, metadata.gpu_count
+                    ))
+                } else {
+                    match detected_gpu_category.as_deref() {
+                        Some(detected_category)
+                            if detected_category == normalized_declared_category =>
+                        {
+                            None
+                        }
+                        Some(detected_category) => Some(format!(
+                            "detected gpu_category '{}' does not match declared '{}'",
+                            detected_category, normalized_declared_category
+                        )),
+                        None => Some(
+                            "detected gpu_category is missing from validation result".to_string(),
+                        ),
+                    }
+                }
+            }
+        } else {
+            Some("node missing declared bid metadata in miner_nodes".to_string())
+        };
+
+        if let Some(reason) = mismatch_reason {
+            self.mark_gpu_declaration_mismatch(
+                node_result,
+                GpuDeclarationMismatchContext {
+                    miner_uid,
+                    node_id,
+                    mismatch_reason: reason,
+                    declared_gpu_category,
+                    declared_gpu_count,
+                    detected_gpu_category,
+                    detected_gpu_count,
+                },
+            )
+            .await;
+        }
+
+        Ok(())
+    }
+
+    async fn mark_gpu_declaration_mismatch(
+        &self,
+        node_result: &mut NodeVerificationResult,
+        context: GpuDeclarationMismatchContext,
+    ) {
+        let GpuDeclarationMismatchContext {
+            miner_uid,
+            node_id,
+            mismatch_reason,
+            declared_gpu_category,
+            declared_gpu_count,
+            detected_gpu_category,
+            detected_gpu_count,
+        } = context;
+
+        node_result.binary_validation_successful = false;
+        node_result.verification_score = 0.0;
+        node_result.validation_details.binary_score = 0.0;
+        node_result.validation_details.combined_score = 0.0;
+        let mismatch_reason_tag = MisbehaviourType::GpuDeclarationMismatch.as_str();
+        if !node_result
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == mismatch_reason_tag)
+        {
+            node_result
+                .failure_reasons
+                .push(mismatch_reason_tag.to_string());
+        }
+        node_result.error = Some(format!("GPU declaration mismatch: {}", mismatch_reason));
+
+        let details = serde_json::json!({
+            "reason": mismatch_reason,
+            "node_id": node_id,
+            "miner_uid": miner_uid,
+            "declared_gpu_category": declared_gpu_category,
+            "declared_gpu_count": declared_gpu_count,
+            "detected_gpu_count": detected_gpu_count,
+            "detected_gpu_category": detected_gpu_category,
+        })
+        .to_string();
+
+        let ban_manager = BanManager::new(
+            self.persistence.clone(),
+            self.metrics.as_ref().map(|metrics| metrics.prometheus()),
+            None,
+            None,
+        );
+
+        if let Err(log_error) = ban_manager
+            .log_misbehaviour(
+                miner_uid,
+                &node_id,
+                MisbehaviourType::GpuDeclarationMismatch,
+                &details,
+            )
+            .await
+        {
+            warn!(
+                miner_uid = miner_uid,
+                node_id = &node_id,
+                error = %log_error,
+                "Failed to log GPU declaration mismatch misbehaviour"
+            );
+        }
+
+        warn!(
+            security = true,
+            miner_uid = miner_uid,
+            node_id = &node_id,
+            mismatch_reason = &mismatch_reason,
+            declared_gpu_count = declared_gpu_count.unwrap_or(0),
+            detected_gpu_count = detected_gpu_count,
+            detected_gpu_category = detected_gpu_category.as_deref().unwrap_or("unknown"),
+            "Full validation failed due to GPU declaration mismatch"
+        );
     }
 
     /// Convert database node data to NodeInfoDetailed
     fn convert_db_data_to_node_info(
         &self,
-        db_data: Vec<(String, String, i32, String, u32)>,
+        db_data: Vec<(String, String, String, i32, String, u32)>,
         miner_uid: u16,
     ) -> Result<Vec<NodeInfoDetailed>> {
         let mut nodes = Vec::new();
 
-        for (node_id, ssh_endpoint, gpu_count, status, hourly_rate_cents) in db_data {
+        for (node_id, ssh_endpoint, node_ip, gpu_count, status, hourly_rate_cents) in db_data {
             let node_id_parsed = NodeId::from_str(&node_id)
                 .map_err(|e| anyhow::anyhow!("Invalid node ID '{}': {}", node_id, e))?;
 
@@ -1483,35 +1495,12 @@ impl VerificationEngine {
                     vec![]
                 },
                 node_ssh_endpoint: ssh_endpoint,
+                node_ip,
                 hourly_rate_cents,
             });
         }
 
         Ok(nodes)
-    }
-
-    /// Combine discovered and known node lists
-    fn combine_node_lists(
-        &self,
-        discovered: Vec<NodeInfoDetailed>,
-        known: Vec<NodeInfoDetailed>,
-    ) -> Vec<NodeInfoDetailed> {
-        let mut combined = Vec::new();
-        let mut seen_ids = std::collections::HashSet::new();
-
-        for node in discovered {
-            if seen_ids.insert(node.id.to_string()) {
-                combined.push(node);
-            }
-        }
-
-        for node in known {
-            if seen_ids.insert(node.id.to_string()) {
-                combined.push(node);
-            }
-        }
-
-        combined
     }
 
     pub fn get_ssh_public_key(&self) -> Option<String> {
@@ -1543,8 +1532,13 @@ fn infer_provider_from_org(org: Option<&str>) -> &'static str {
 mod node_profile_wiring_tests {
     use super::*;
     use crate::config::{AutomaticVerificationConfig, SshSessionConfig};
+    use crate::miner_prover::types::{
+        BinaryCpuInfo, BinaryMemoryInfo, BinaryNetworkInfo, GpuInfo, NetworkInterface,
+        SmUtilizationStats, ValidationDetails,
+    };
     use crate::miner_prover::verification_engine_builder::VerificationEngineBuilder;
     use crate::persistence::SimplePersistence;
+    use std::str::FromStr;
 
     fn sample_node_result() -> crate::miner_prover::types::NodeResult {
         use crate::miner_prover::types::*;
@@ -1585,6 +1579,8 @@ mod node_profile_wiring_tests {
                     ip_addresses: vec!["10.0.0.2".into()],
                 }],
             },
+            cpu_pow: None,
+            storage_pow: None,
             matrix_c: CompressedMatrix {
                 rows: 0,
                 cols: 0,
@@ -1603,6 +1599,181 @@ mod node_profile_wiring_tests {
             memory_bandwidth_gbps: 0.0,
             anti_debug_passed: true,
             timing_fingerprint: 0,
+        }
+    }
+
+    async fn create_test_engine() -> Result<(VerificationEngine, Arc<SimplePersistence>)> {
+        let persistence = Arc::new(SimplePersistence::for_testing().await?);
+        let config = VerificationConfig::test_default();
+        let builder = VerificationEngineBuilder::new(
+            config,
+            AutomaticVerificationConfig::test_default(),
+            SshSessionConfig::test_default(),
+            Hotkey::new("5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy".to_string())
+                .expect("valid hotkey"),
+            persistence.clone(),
+            None,
+        );
+        let engine = builder.build_for_testing().await?;
+        Ok((engine, persistence))
+    }
+
+    async fn register_declared_node(
+        persistence: &SimplePersistence,
+        miner_uid: u16,
+        host: &str,
+        gpu_category: &str,
+        gpu_count: u32,
+    ) -> Result<String> {
+        let miner_info = MinerInfo {
+            uid: MinerUid::new(miner_uid),
+            hotkey: Hotkey::new("5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy".to_string())
+                .expect("valid hotkey"),
+            endpoint: "http://127.0.0.1:9090".to_string(),
+            is_validator: false,
+            stake_tao: 100.0,
+            last_verified: None,
+            verification_score: 0.0,
+        };
+        persistence
+            .ensure_miner_exists_with_info(&miner_info)
+            .await?;
+
+        let miner_id = format!("miner_{miner_uid}");
+        persistence
+            .upsert_registered_node(&miner_id, host, 22, "root", gpu_category, gpu_count, 1200)
+            .await?;
+
+        Ok(NodeId::new(host)?.uuid.to_string())
+    }
+
+    async fn insert_legacy_node_without_gpu_category(
+        persistence: &SimplePersistence,
+        miner_uid: u16,
+        host: &str,
+        gpu_count: u32,
+    ) -> Result<String> {
+        let miner_info = MinerInfo {
+            uid: MinerUid::new(miner_uid),
+            hotkey: Hotkey::new("5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy".to_string())
+                .expect("valid hotkey"),
+            endpoint: "http://127.0.0.1:9090".to_string(),
+            is_validator: false,
+            stake_tao: 100.0,
+            last_verified: None,
+            verification_score: 0.0,
+        };
+        persistence
+            .ensure_miner_exists_with_info(&miner_info)
+            .await?;
+
+        let node_id = NodeId::new(host)?.uuid.to_string();
+        let miner_id = format!("miner_{miner_uid}");
+        let relationship_id = format!("{miner_id}_{node_id}");
+        let ssh_endpoint = format!("root@{host}:22");
+
+        sqlx::query(
+            "INSERT INTO miner_nodes (
+                id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, hourly_rate_cents,
+                status, bid_active, last_node_check, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, 'online', 1, datetime('now'), datetime('now'))",
+        )
+        .bind(&relationship_id)
+        .bind(&miner_id)
+        .bind(&node_id)
+        .bind(&ssh_endpoint)
+        .bind(host)
+        .bind(gpu_count as i64)
+        .bind(1200i64)
+        .execute(persistence.pool())
+        .await?;
+
+        Ok(node_id)
+    }
+
+    fn build_node_result_with_gpu_names(
+        gpu_names: &[&str],
+    ) -> crate::miner_prover::types::NodeResult {
+        let mut node_result = sample_node_result();
+        node_result.gpu_infos = gpu_names
+            .iter()
+            .enumerate()
+            .map(|(index, gpu_name)| GpuInfo {
+                index: index as u32,
+                gpu_name: (*gpu_name).to_string(),
+                gpu_uuid: format!("GPU-TEST-{index}"),
+                gpu_memory_gb: 80.0,
+                computation_time_ns: 0,
+                memory_bandwidth_gbps: 0.0,
+                sm_utilization: SmUtilizationStats {
+                    min_utilization: 0.0,
+                    max_utilization: 0.0,
+                    avg_utilization: 0.0,
+                    per_sm_stats: vec![],
+                },
+                active_sms: 0,
+                total_sms: 0,
+                anti_debug_passed: true,
+            })
+            .collect();
+
+        if let Some(first_gpu) = node_result.gpu_infos.first() {
+            node_result.gpu_name = first_gpu.gpu_name.clone();
+            node_result.gpu_uuid = first_gpu.gpu_uuid.clone();
+        } else {
+            node_result.gpu_name = String::new();
+            node_result.gpu_uuid = String::new();
+        }
+
+        node_result.cpu_info = BinaryCpuInfo {
+            model: "AMD EPYC".to_string(),
+            cores: 64,
+            threads: 128,
+            frequency_mhz: 0,
+        };
+        node_result.memory_info = BinaryMemoryInfo {
+            total_gb: 256.0,
+            available_gb: 128.0,
+        };
+        node_result.network_info = BinaryNetworkInfo {
+            interfaces: vec![NetworkInterface {
+                name: "eth0".to_string(),
+                mac_address: "aa:bb".to_string(),
+                ip_addresses: vec!["10.0.0.2".to_string()],
+            }],
+        };
+
+        node_result
+    }
+
+    fn build_full_verification_result(
+        node_id: &str,
+        gpu_names: &[&str],
+        validation_type: ValidationType,
+    ) -> NodeVerificationResult {
+        NodeVerificationResult {
+            node_id: NodeId::from_str(node_id).expect("valid node id"),
+            node_ssh_endpoint: "root@127.0.0.1:22".to_string(),
+            node_ip: "127.0.0.1".to_string(),
+            verification_score: 1.0,
+            ssh_connection_successful: true,
+            binary_validation_successful: true,
+            node_result: Some(build_node_result_with_gpu_names(gpu_names)),
+            failure_reasons: vec![],
+            error: None,
+            execution_time: Duration::from_secs(1),
+            validation_details: ValidationDetails {
+                ssh_test_duration: Duration::from_millis(10),
+                binary_upload_duration: Duration::from_millis(10),
+                binary_execution_duration: Duration::from_millis(10),
+                total_validation_duration: Duration::from_millis(30),
+                ssh_score: 1.0,
+                binary_score: 1.0,
+                combined_score: 1.0,
+            },
+            gpu_count: gpu_names.len() as u64,
+            validation_type,
+            hourly_rate_cents: 1200,
         }
     }
 
@@ -1647,7 +1818,7 @@ mod node_profile_wiring_tests {
 
         let nr = sample_node_result();
         let (ns, cr, maybe_labels) = engine
-            .prepare_node_profile_cr_and_labels(100, "node-abc", &nr)
+            .prepare_node_profile_cr_and_labels(100, "node-abc", &nr, &[])
             .await?;
 
         // Assert namespace
@@ -1694,12 +1865,258 @@ mod node_profile_wiring_tests {
             )
             .await?;
         let (_ns2, _cr2, maybe_labels2) = engine
-            .prepare_node_profile_cr_and_labels(100, "node-abc", &nr)
+            .prepare_node_profile_cr_and_labels(100, "node-abc", &nr, &[])
             .await?;
         let (_node2, labels2) = maybe_labels2.expect("labels present");
         assert_eq!(labels2.get("basilica.ai/docker-active").unwrap(), "true");
         assert_eq!(labels2.get("basilica.ai/docker-version").unwrap(), "24.0.7");
         assert_eq!(labels2.get("basilica.ai/dind").unwrap(), "true");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn full_validation_gpu_claim_check_passes_for_exact_match() -> Result<()> {
+        let (engine, persistence) = create_test_engine().await?;
+        let miner_uid = 201u16;
+        let node_id =
+            register_declared_node(&persistence, miner_uid, "10.0.20.1", "A100", 2).await?;
+        let mut verification_result = build_full_verification_result(
+            &node_id,
+            &["NVIDIA A100", "NVIDIA A100"],
+            ValidationType::Full,
+        );
+
+        engine
+            .enforce_declared_gpu_claims_for_full_validation(miner_uid, &mut verification_result)
+            .await?;
+
+        assert!(verification_result.binary_validation_successful);
+        assert_eq!(verification_result.verification_score, 1.0);
+        assert!(!verification_result
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == MisbehaviourType::GpuDeclarationMismatch.as_str()));
+
+        let logs = persistence
+            .get_misbehaviour_logs(miner_uid, &node_id, chrono::Duration::days(7))
+            .await?;
+        assert!(logs.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn full_validation_gpu_claim_check_fails_on_count_mismatch() -> Result<()> {
+        let (engine, persistence) = create_test_engine().await?;
+        let miner_uid = 202u16;
+        let node_id =
+            register_declared_node(&persistence, miner_uid, "10.0.20.2", "A100", 4).await?;
+        let mut verification_result = build_full_verification_result(
+            &node_id,
+            &["NVIDIA A100", "NVIDIA A100"],
+            ValidationType::Full,
+        );
+
+        engine
+            .enforce_declared_gpu_claims_for_full_validation(miner_uid, &mut verification_result)
+            .await?;
+
+        assert!(!verification_result.binary_validation_successful);
+        assert_eq!(verification_result.verification_score, 0.0);
+        assert_eq!(verification_result.validation_details.binary_score, 0.0);
+        assert_eq!(verification_result.validation_details.combined_score, 0.0);
+        assert!(verification_result
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == MisbehaviourType::GpuDeclarationMismatch.as_str()));
+        assert!(verification_result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("GPU declaration mismatch"));
+
+        let logs = persistence
+            .get_misbehaviour_logs(miner_uid, &node_id, chrono::Duration::days(7))
+            .await?;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            logs[0].type_of_misbehaviour,
+            MisbehaviourType::GpuDeclarationMismatch
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn full_validation_gpu_claim_check_fails_on_category_mismatch() -> Result<()> {
+        let (engine, persistence) = create_test_engine().await?;
+        let miner_uid = 203u16;
+        let node_id =
+            register_declared_node(&persistence, miner_uid, "10.0.20.3", "A100", 1).await?;
+        let mut verification_result =
+            build_full_verification_result(&node_id, &["NVIDIA H100"], ValidationType::Full);
+
+        engine
+            .enforce_declared_gpu_claims_for_full_validation(miner_uid, &mut verification_result)
+            .await?;
+
+        assert!(!verification_result.binary_validation_successful);
+        assert!(verification_result
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == MisbehaviourType::GpuDeclarationMismatch.as_str()));
+
+        let logs = persistence
+            .get_misbehaviour_logs(miner_uid, &node_id, chrono::Duration::days(7))
+            .await?;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            logs[0].type_of_misbehaviour,
+            MisbehaviourType::GpuDeclarationMismatch
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn full_validation_gpu_claim_check_uses_first_detected_gpu_for_category() -> Result<()> {
+        let (engine, persistence) = create_test_engine().await?;
+        let miner_uid = 204u16;
+        let node_id =
+            register_declared_node(&persistence, miner_uid, "10.0.20.4", "A100", 2).await?;
+        let mut verification_result = build_full_verification_result(
+            &node_id,
+            &["NVIDIA H100", "NVIDIA A100"],
+            ValidationType::Full,
+        );
+
+        engine
+            .enforce_declared_gpu_claims_for_full_validation(miner_uid, &mut verification_result)
+            .await?;
+
+        assert!(!verification_result.binary_validation_successful);
+        assert!(verification_result
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == MisbehaviourType::GpuDeclarationMismatch.as_str()));
+
+        let logs = persistence
+            .get_misbehaviour_logs(miner_uid, &node_id, chrono::Duration::days(7))
+            .await?;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            logs[0].type_of_misbehaviour,
+            MisbehaviourType::GpuDeclarationMismatch
+        );
+        assert!(logs[0].details.contains("detected gpu_category"));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn full_validation_gpu_claim_check_fails_when_declared_metadata_missing() -> Result<()> {
+        let (engine, persistence) = create_test_engine().await?;
+        let miner_uid = 205u16;
+        let node_id =
+            insert_legacy_node_without_gpu_category(&persistence, miner_uid, "10.0.20.5", 1)
+                .await?;
+        let mut verification_result =
+            build_full_verification_result(&node_id, &["NVIDIA A100"], ValidationType::Full);
+
+        engine
+            .enforce_declared_gpu_claims_for_full_validation(miner_uid, &mut verification_result)
+            .await?;
+
+        assert!(!verification_result.binary_validation_successful);
+        assert!(verification_result
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == MisbehaviourType::GpuDeclarationMismatch.as_str()));
+
+        let logs = persistence
+            .get_misbehaviour_logs(miner_uid, &node_id, chrono::Duration::days(7))
+            .await?;
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            logs[0].type_of_misbehaviour,
+            MisbehaviourType::GpuDeclarationMismatch
+        );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn lightweight_validation_does_not_trigger_gpu_claim_enforcement() -> Result<()> {
+        let (engine, persistence) = create_test_engine().await?;
+        let miner_uid = 206u16;
+        let node_id =
+            register_declared_node(&persistence, miner_uid, "10.0.20.6", "A100", 4).await?;
+        let mut verification_result =
+            build_full_verification_result(&node_id, &["NVIDIA H100"], ValidationType::Lightweight);
+
+        engine
+            .enforce_declared_gpu_claims_for_full_validation(miner_uid, &mut verification_result)
+            .await?;
+
+        assert!(verification_result.binary_validation_successful);
+        assert_eq!(verification_result.verification_score, 1.0);
+        assert!(!verification_result
+            .failure_reasons
+            .iter()
+            .any(|reason| reason == MisbehaviourType::GpuDeclarationMismatch.as_str()));
+
+        let logs = persistence
+            .get_misbehaviour_logs(miner_uid, &node_id, chrono::Duration::days(7))
+            .await?;
+        assert!(logs.is_empty());
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn store_node_verification_result_sets_last_node_check_in_sqlite_format() -> Result<()> {
+        let (engine, persistence) = create_test_engine().await?;
+        let miner_uid = 207u16;
+        let node_id =
+            register_declared_node(&persistence, miner_uid, "10.0.20.7", "A100", 1).await?;
+
+        let verification_result =
+            build_full_verification_result(&node_id, &["NVIDIA A100"], ValidationType::Full);
+        let miner_info = MinerInfo {
+            uid: MinerUid::new(miner_uid),
+            hotkey: Hotkey::new("5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy".to_string())
+                .expect("valid hotkey"),
+            endpoint: "http://127.0.0.1:9090".to_string(),
+            is_validator: false,
+            stake_tao: 100.0,
+            last_verified: None,
+            verification_score: 0.0,
+        };
+
+        engine
+            .store_node_verification_result_with_miner_info(
+                miner_uid,
+                &verification_result,
+                &miner_info,
+            )
+            .await?;
+
+        let miner_id = format!("miner_{miner_uid}");
+        let last_node_check: Option<String> = sqlx::query_scalar(
+            "SELECT last_node_check
+             FROM miner_nodes
+             WHERE miner_id = ? AND node_id = ?",
+        )
+        .bind(&miner_id)
+        .bind(&node_id)
+        .fetch_one(persistence.pool())
+        .await?;
+
+        let timestamp = last_node_check.expect("last_node_check should be set");
+        assert!(!timestamp.contains('T'));
+        chrono::NaiveDateTime::parse_from_str(&timestamp, "%Y-%m-%d %H:%M:%S")
+            .expect("timestamp should use SQLite datetime format");
 
         Ok(())
     }

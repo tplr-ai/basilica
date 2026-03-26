@@ -21,9 +21,12 @@ use std::time::Duration;
 use tokio::runtime::Runtime;
 
 use crate::types::{
-    AvailableNode, CreateDeploymentRequest, DeleteDeploymentResponse, DeploymentListResponse,
-    DeploymentResponse, HealthCheckResponse, ListAvailableNodesQuery, ListRentalsQuery,
-    RentalResponse, RentalStatusWithSshResponse, StartRentalApiRequest,
+    AvailableNode, CpuOffering, CpuRentalResponse, CreateDeploymentRequest,
+    DeleteDeploymentResponse, DeleteShareTokenResponse, DeploymentListResponse, DeploymentResponse,
+    EnrollMetadataResponse, HealthCheckResponse, ListAvailableNodesQuery, ListCpuRentalsResponse,
+    ListRentalsQuery, PublicDeploymentMetadataResponse, RegenerateShareTokenResponse,
+    RentalResponse, RentalStatusWithSshResponse, ShareTokenStatusResponse, SshKeyResponse,
+    StartCpuRentalRequest, StartRentalApiRequest, StopCpuRentalResponse,
 };
 
 /// Python wrapper for BasilicaClient
@@ -48,30 +51,31 @@ impl BasilicaClient {
     /// Args:
     ///     base_url: The base URL of the Basilica API
     ///     api_key: Optional authentication token from 'basilica tokens create'
+    ///
+    /// Authentication priority:
+    ///   1. Explicit `api_key` parameter
+    ///   2. `BASILICA_API_TOKEN` environment variable
+    ///   3. File-based auth (reads CLI tokens from `basilica login`)
     #[new]
     #[pyo3(signature = (base_url, api_key=None))]
     fn new(base_url: String, api_key: Option<String>) -> PyResult<Self> {
         let runtime = Runtime::new()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create runtime: {}", e)))?;
 
-        // Check for API key - either provided directly or from BASILICA_API_TOKEN env var
         let api_key = api_key.or_else(|| std::env::var("BASILICA_API_TOKEN").ok());
 
-        let api_key = api_key.ok_or_else(|| {
-            PyRuntimeError::new_err(
-                "No API key provided. Please provide an API key directly or set BASILICA_API_TOKEN environment variable. \
-                Create a key using: basilica tokens create"
-            )
-        })?;
+        let mut builder = ClientBuilder::default()
+            .base_url(base_url)
+            .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
-        let client = runtime
-            .block_on(async {
-                ClientBuilder::default()
-                    .base_url(base_url)
-                    .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-                    .with_api_key(&api_key)
-                    .build()
-            })
+        if let Some(key) = api_key {
+            builder = builder.with_api_key(&key);
+        } else {
+            builder = builder.with_file_auth();
+        }
+
+        let client = builder
+            .build()
             .map_err(|e| PyRuntimeError::new_err(format!("Failed to create client: {}", e)))?;
 
         Ok(Self {
@@ -79,10 +83,6 @@ impl BasilicaClient {
             runtime,
         })
     }
-
-    // Python SDK uses API key authentication
-    // Users should create API keys via CLI: `basilica tokens create`
-    // Then use the Python SDK with the key directly or via BASILICA_API_TOKEN environment variable
 
     /// Check the health of the API
     fn health_check(&self, py: Python) -> PyResult<HealthCheckResponse> {
@@ -135,7 +135,8 @@ impl BasilicaClient {
         let client = Arc::clone(&self.inner);
 
         // Convert Python request to SDK request
-        let request = request.into();
+        let request = basilica_sdk::types::StartRentalApiRequest::try_from(request)
+            .map_err(PyValueError::new_err)?;
 
         let response = py
             .detach(|| {
@@ -263,6 +264,27 @@ impl BasilicaClient {
         Ok(response.into())
     }
 
+    /// Restart a deployment (rolling restart)
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    fn restart_deployment(
+        &self,
+        py: Python,
+        instance_name: String,
+    ) -> PyResult<DeploymentResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.restart_deployment(&instance_name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
     /// List all deployments for the authenticated user
     fn list_deployments(&self, py: Python) -> PyResult<DeploymentListResponse> {
         let client = Arc::clone(&self.inner);
@@ -310,6 +332,139 @@ impl BasilicaClient {
         Ok(text)
     }
 
+    // ===== Share Token Management =====
+
+    /// Regenerate a share token for a private deployment
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    fn regenerate_share_token(
+        &self,
+        py: Python,
+        instance_name: String,
+    ) -> PyResult<RegenerateShareTokenResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.regenerate_share_token(&instance_name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Get share token status for a private deployment
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    fn get_share_token_status(
+        &self,
+        py: Python,
+        instance_name: String,
+    ) -> PyResult<ShareTokenStatusResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_share_token_status(&instance_name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Delete/revoke the share token for a private deployment
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    fn delete_share_token(
+        &self,
+        py: Python,
+        instance_name: String,
+    ) -> PyResult<DeleteShareTokenResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.delete_share_token(&instance_name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    // ===== Public Deployment Metadata =====
+
+    /// Enroll or unenroll a deployment in public metadata exposure
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    ///     enabled: Whether to enable or disable metadata enrollment
+    fn enroll_metadata(
+        &self,
+        py: Python,
+        instance_name: String,
+        enabled: bool,
+    ) -> PyResult<EnrollMetadataResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.enroll_metadata(&instance_name, enabled).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Check the current metadata enrollment status of a deployment
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    fn get_enrollment_status(
+        &self,
+        py: Python,
+        instance_name: String,
+    ) -> PyResult<EnrollMetadataResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_enrollment_status(&instance_name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Fetch public metadata for a deployment (no authentication required)
+    ///
+    /// Args:
+    ///     instance_name: The deployment instance name
+    fn get_public_deployment_metadata(
+        &self,
+        py: Python,
+        instance_name: String,
+    ) -> PyResult<PublicDeploymentMetadataResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client.get_public_deployment_metadata(&instance_name).await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
     /// Get account balance
     fn get_balance(&self, py: Python) -> PyResult<Py<pyo3::PyAny>> {
         let client = Arc::clone(&self.inner);
@@ -343,6 +498,210 @@ impl BasilicaClient {
 
         to_pyobject(py, &response)
     }
+
+    // ===== SSH Key Management =====
+
+    /// Register an SSH key for the authenticated user
+    ///
+    /// Args:
+    ///     name: A friendly name for the SSH key
+    ///     public_key: The SSH public key content
+    fn register_ssh_key(
+        &self,
+        py: Python,
+        name: String,
+        public_key: String,
+    ) -> PyResult<SshKeyResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.register_ssh_key(&name, &public_key).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Get the authenticated user's registered SSH key
+    fn get_ssh_key(&self, py: Python) -> PyResult<Option<SshKeyResponse>> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_ssh_key().await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.map(Into::into))
+    }
+
+    /// Delete the authenticated user's SSH key
+    fn delete_ssh_key(&self, _py: Python) -> PyResult<()> {
+        let client = Arc::clone(&self.inner);
+
+        self.runtime
+            .block_on(async move { client.delete_ssh_key().await })
+            .map_err(|e| self.map_error_to_python(e))
+    }
+
+    // ===== CPU Rental Methods =====
+
+    /// List available CPU offerings from secure cloud providers
+    fn list_cpu_offerings(&self, py: Python) -> PyResult<Vec<CpuOffering>> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.list_cpu_offerings().await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into_iter().map(Into::into).collect())
+    }
+
+    /// List CPU rentals for the authenticated user
+    fn list_cpu_rentals(&self, py: Python) -> PyResult<ListCpuRentalsResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.list_cpu_rentals().await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Start a CPU rental
+    ///
+    /// Args:
+    ///     request: CPU rental request parameters
+    fn start_cpu_rental(
+        &self,
+        py: Python,
+        request: StartCpuRentalRequest,
+    ) -> PyResult<CpuRentalResponse> {
+        let client = Arc::clone(&self.inner);
+        let request = request.into();
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.start_cpu_rental(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Stop a CPU rental
+    ///
+    /// Args:
+    ///     rental_id: The rental ID to stop
+    fn stop_cpu_rental(&self, py: Python, rental_id: String) -> PyResult<StopCpuRentalResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.stop_cpu_rental(&rental_id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    // ===== GPU Rental Methods =====
+
+    /// List available GPU offerings from secure cloud providers
+    ///
+    /// Args:
+    ///     query: Optional GpuPriceQuery to filter by interconnect, geo, spot
+    #[pyo3(signature = (query=None))]
+    fn list_secure_cloud_gpus(
+        &self,
+        py: Python,
+        query: Option<types::GpuPriceQuery>,
+    ) -> PyResult<Vec<types::GpuOffering>> {
+        let client = Arc::clone(&self.inner);
+        let sdk_query: basilica_sdk::types::GpuPriceQuery =
+            query.map(Into::into).unwrap_or_default();
+
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client.list_secure_cloud_gpus_filtered(&sdk_query).await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into_iter().map(Into::into).collect())
+    }
+
+    /// Start a secure cloud GPU rental
+    ///
+    /// Args:
+    ///     request: GPU rental request parameters
+    fn start_secure_cloud_rental(
+        &self,
+        py: Python,
+        request: types::StartSecureCloudRentalRequest,
+    ) -> PyResult<types::SecureCloudRentalResponse> {
+        let client = Arc::clone(&self.inner);
+        let request = request.into();
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.start_secure_cloud_rental(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// Stop a secure cloud GPU rental
+    ///
+    /// Args:
+    ///     rental_id: The rental ID to stop
+    fn stop_secure_cloud_rental(
+        &self,
+        py: Python,
+        rental_id: String,
+    ) -> PyResult<types::StopSecureCloudRentalResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.stop_secure_cloud_rental(&rental_id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
+
+    /// List secure cloud GPU rentals for the authenticated user
+    fn list_secure_cloud_rentals(
+        &self,
+        py: Python,
+    ) -> PyResult<types::ListSecureCloudRentalsResponse> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.list_secure_cloud_rentals().await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(response.into())
+    }
 }
 
 impl BasilicaClient {
@@ -365,20 +724,6 @@ impl BasilicaClient {
             _ => PyRuntimeError::new_err(error.to_string()),
         }
     }
-}
-
-/// Helper function to create node selection by ID
-#[cfg_attr(feature = "stub-gen", gen_stub_pyfunction)]
-#[pyfunction]
-fn node_by_id(node_id: String) -> types::NodeSelection {
-    types::NodeSelection::NodeId { node_id }
-}
-
-/// Helper function to create node selection by GPU requirements (exact count)
-#[cfg_attr(feature = "stub-gen", gen_stub_pyfunction)]
-#[pyfunction]
-fn node_by_gpu(gpu_requirements: types::GpuRequirements) -> types::NodeSelection {
-    types::NodeSelection::ExactGpuConfiguration { gpu_requirements }
 }
 
 /// Python module for Basilica SDK
@@ -418,7 +763,6 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Request types
     m.add_class::<types::StartRentalApiRequest>()?;
-    m.add_class::<types::NodeSelection>()?;
     m.add_class::<types::GpuRequirements>()?;
     m.add_class::<types::PortMappingRequest>()?;
     m.add_class::<types::ResourceRequirementsRequest>()?;
@@ -432,18 +776,48 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::ResourceRequirements>()?;
     m.add_class::<types::ReplicaStatus>()?;
     m.add_class::<types::PodInfo>()?;
+    m.add_class::<types::SpreadMode>()?;
+    m.add_class::<types::TopologySpreadConfig>()?;
     m.add_class::<types::StorageBackend>()?;
     m.add_class::<types::PersistentStorageSpec>()?;
     m.add_class::<types::StorageSpec>()?;
+    m.add_class::<types::ProbeConfig>()?;
+    m.add_class::<types::HealthCheckConfig>()?;
+    m.add_class::<types::WebSocketConfig>()?;
     m.add_class::<types::CreateDeploymentRequest>()?;
     m.add_class::<types::DeploymentResponse>()?;
     m.add_class::<types::DeploymentSummary>()?;
     m.add_class::<types::DeploymentListResponse>()?;
     m.add_class::<types::DeleteDeploymentResponse>()?;
 
-    // Helper functions
-    m.add_function(wrap_pyfunction!(node_by_id, m)?)?;
-    m.add_function(wrap_pyfunction!(node_by_gpu, m)?)?;
+    // Share Token types
+    m.add_class::<types::RegenerateShareTokenResponse>()?;
+    m.add_class::<types::ShareTokenStatusResponse>()?;
+    m.add_class::<types::DeleteShareTokenResponse>()?;
+
+    // Public Metadata types
+    m.add_class::<types::EnrollMetadataResponse>()?;
+    m.add_class::<types::PublicDeploymentMetadataResponse>()?;
+
+    // SSH Key types
+    m.add_class::<types::SshKeyResponse>()?;
+
+    // CPU Rental types
+    m.add_class::<types::CpuOffering>()?;
+    m.add_class::<types::StartCpuRentalRequest>()?;
+    m.add_class::<types::CpuRentalResponse>()?;
+    m.add_class::<types::StopCpuRentalResponse>()?;
+    m.add_class::<types::CpuRentalListItem>()?;
+    m.add_class::<types::ListCpuRentalsResponse>()?;
+
+    // GPU Rental types (secure cloud)
+    m.add_class::<types::GpuPriceQuery>()?;
+    m.add_class::<types::GpuOffering>()?;
+    m.add_class::<types::StartSecureCloudRentalRequest>()?;
+    m.add_class::<types::SecureCloudRentalResponse>()?;
+    m.add_class::<types::StopSecureCloudRentalResponse>()?;
+    m.add_class::<types::SecureCloudRentalListItem>()?;
+    m.add_class::<types::ListSecureCloudRentalsResponse>()?;
 
     Ok(())
 }

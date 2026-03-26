@@ -23,7 +23,7 @@ if rental.ssh_credentials:
     ssh_command = format_ssh_command(rental.ssh_credentials)
     print(f"\nConnect with: {ssh_command}")
 else:
-    print("No SSH access (no_ssh=True or not provisioned)")
+    print("No SSH access (not yet provisioned)")
 
 # When done, stop the rental
 # client.stop_rental(rental.rental_id)

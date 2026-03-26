@@ -126,8 +126,6 @@ pub struct AvailableNode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AvailabilityInfo {
     pub available_until: Option<chrono::DateTime<chrono::Utc>>,
-    pub verification_score: f64,
-    pub uptime_percentage: f64,
 }
 
 /// Query parameters for listing available nodes
@@ -168,6 +166,7 @@ pub struct RegisterMinerRequest {
 pub struct NodeRegistration {
     pub node_id: String,
     pub ssh_endpoint: String,
+    pub node_ip: String,
     pub gpu_count: u32,
     pub gpu_specs: Vec<GpuSpec>,
     pub cpu_specs: CpuSpec,
@@ -189,11 +188,7 @@ pub struct MinerDetails {
     pub endpoint: String,
     pub status: MinerStatus,
     pub node_count: u32,
-    pub total_gpu_count: u32,
-    pub verification_score: f64,
-    pub uptime_percentage: f64,
-    pub last_seen: chrono::DateTime<chrono::Utc>,
-    pub registered_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Miner status enumeration
@@ -203,7 +198,6 @@ pub enum MinerStatus {
     Inactive,
     Offline,
     Verifying,
-    Suspended,
 }
 
 /// List miners response
@@ -220,7 +214,6 @@ pub struct ListMinersResponse {
 pub struct ListMinersQuery {
     pub status: Option<String>,
     pub min_gpu_count: Option<u32>,
-    pub min_score: Option<f64>,
     pub page: Option<u32>,
     pub page_size: Option<u32>,
 }
@@ -247,7 +240,7 @@ pub struct MinerHealthResponse {
 pub struct NodeHealthStatus {
     pub node_id: String,
     pub status: String,
-    pub last_seen: chrono::DateTime<chrono::Utc>,
+    pub last_health_check: chrono::DateTime<chrono::Utc>,
 }
 
 /// Verification trigger request

@@ -17,6 +17,7 @@ This directory contains comprehensive documentation for the Basilica decentraliz
 ### Operations
 
 - **[Monitoring Guide](monitoring.md)** - Set up metrics and monitoring with Prometheus/Grafana
+- **[Scoring and Weights](scoring-and-weights.md)** - Understand how nodes are scored and weights are calculated
 
 ## Documentation Overview
 
@@ -47,14 +48,15 @@ Complete validator deployment and operation:
 - Verification process and scoring algorithms
 - SSH-based remote verification setup
 - Performance monitoring and maintenance
+- Billing telemetry configuration
 
 ### Miner Guide
 
 Comprehensive miner setup and GPU node orchestration:
 
-- GPU node SSH endpoint configuration and management
+- GPU node (executor) configuration and management
 - Validator SSH key deployment and access control
-- GPU verification through Proof-of-Work challenges
+- GPU verification through direct SSH access
 - Security best practices and troubleshooting
 
 ### Monitoring Guide
@@ -77,20 +79,21 @@ Observability and monitoring setup:
 
 ### Miner
 
-- Linux system with stable internet connection
+- Linux system with stable internet connection (8+ CPU cores, 16GB+ RAM recommended)
 - Bittensor wallet with TAO tokens
 - One or more GPU nodes with SSH access
 - SSH key management for validator access control
 
-### GPU Node (formerly Executor)
+### GPU Node (Executor)
 
-**Note**: The executor binary is deprecated. GPU nodes now require:
+GPU nodes are the compute resources managed by miners:
 
-- NVIDIA GPU with CUDA support (8.7 CUDA GPU Compute Capability)
+- NVIDIA GPU with CUDA support (A100, H100, or B200 recommended)
 - CUDA Toolkit 12.8 (for GPU verification kernels)
 - Docker with GPU runtime support (nvidia-container-toolkit)
 - SSH server configured for validator access
-- Linux server with sufficient resources
+- Linux server with sufficient resources (1TB+ disk recommended)
+- All ports accessible for validator SSH connections
 
 ## Key Features
 
@@ -100,6 +103,7 @@ Observability and monitoring setup:
 - **Production Ready**: Monitoring, auto-updates, and health checks included
 - **GPU Proof-of-Work**: Cryptographic verification of GPU capabilities
 - **Hardware Attestation**: P256 ECDSA signatures for hardware verification
+- **Billing Telemetry**: Usage-based charging with streaming telemetry
 
 ## Deployment Options
 
@@ -117,7 +121,23 @@ Observability and monitoring setup:
    - Source compilation and customization
    - Debug configurations and local testing
 
+## Configuration Files
+
+All configuration examples are in the `config/` directory:
+
+- `validator.toml.example` - Validator configuration template
+- `miner.toml.example` - Miner configuration template
+- `api.toml.example` - API gateway configuration template
+- `billing.toml.example` - Billing service configuration template
+- `cli.toml.example` - CLI tool configuration template
+- `gpu-attestor.toml.example` - GPU attestor configuration template
+
+See `config/README.md` for detailed configuration instructions.
+
 ## Additional Resources
 
 - **Configuration Examples**: Production-ready config templates in `config/`
 - **Deployment Scripts**: Automated deployment tools in `scripts/`
+- **GitHub Repository**: https://github.com/one-covenant/basilica
+- **Discord**: https://discord.gg/Cy7c9vPsNK
+- **Website**: https://www.basilica.ai/

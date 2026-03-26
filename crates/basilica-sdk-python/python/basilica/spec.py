@@ -4,10 +4,11 @@ Deployment specification dataclass.
 Immutable configuration for deployments extracted from decorator parameters.
 """
 from dataclasses import dataclass
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .volume import Volume
+    from basilica._basilica import HealthCheckConfig
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,10 @@ class DeploymentSpec:
     gpu_models: Optional[List[str]] = None
     min_cuda_version: Optional[str] = None
     min_gpu_memory_gb: Optional[int] = None
+    interconnect: Optional[str] = None
+    geo: Optional[str] = None
+    spot: Optional[bool] = None
+    infiniband: Optional[bool] = None
     volumes: Optional[Dict[str, "Volume"]] = None
     env: Optional[Dict[str, str]] = None
     pip_packages: Optional[List[str]] = None
@@ -31,3 +36,4 @@ class DeploymentSpec:
     ttl_seconds: Optional[int] = None
     public: bool = True
     timeout: int = 300
+    health_check: Optional["HealthCheckConfig"] = None

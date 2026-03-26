@@ -29,7 +29,6 @@ SERVICES:
     all         All services (default)
     validator   Validator service only
     miner       Miner service only
-    executor    Executor service only
 
 OPTIONS:
     -e, --env ENV       Environment (production, staging, development)
@@ -41,7 +40,7 @@ EXAMPLES:
     services.sh deploy production        # Deploy all services to production
     services.sh start all                # Start all services
     services.sh status validator         # Check validator status
-    services.sh logs executor --follow   # Follow executor logs
+    services.sh logs miner --follow      # Follow miner logs
     services.sh restart miner            # Restart miner service
     services.sh stop all                 # Stop all services
 
@@ -129,7 +128,7 @@ build_binaries() {
         cd "$BASILICA_ROOT/build/production"
         
         # Copy binaries
-        for binary in validator miner executor gpu-attestor; do
+        for binary in validator miner; do
             if [[ -f "$BASILICA_ROOT/target/release/$binary" ]]; then
                 cp "$BASILICA_ROOT/target/release/$binary" .
                 log_success "Copied $binary binary"
@@ -189,22 +188,15 @@ cmd_deploy() {
     # Deploy validator
     log_info "Deploying validator service"
     deploy_binary "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" "validator"
-    deploy_binary "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" "gpu-attestor"
-    
+
     # Deploy miner
     log_info "Deploying miner service"
     deploy_binary "$MINER_HOST" "$MINER_PORT" "$MINER_USER" "miner"
-    
-    # Deploy executor
-    log_info "Deploying executor service"
-    deploy_binary "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" "executor"
-    deploy_binary "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" "gpu-attestor"
-    
+
     # Setup basilica user and directories on all servers
     for server_info in \
         "$VALIDATOR_HOST:$VALIDATOR_PORT:$VALIDATOR_USER" \
-        "$MINER_HOST:$MINER_PORT:$MINER_USER" \
-        "$EXECUTOR_HOST:$EXECUTOR_PORT:$EXECUTOR_USER"
+        "$MINER_HOST:$MINER_PORT:$MINER_USER"
     do
         IFS=':' read -r host port user <<< "$server_info"
         
@@ -229,9 +221,7 @@ cmd_start() {
     
     case "$service" in
         all)
-            # Start in dependency order: executor → miner → validator
-            start_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-            sleep 10
+            # Start in dependency order: miner → validator
             start_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
             sleep 15
             start_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
@@ -242,15 +232,12 @@ cmd_start() {
         miner)
             start_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
             ;;
-        executor)
-            start_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-            ;;
         *)
             log_error "Unknown service: $service"
             exit 1
             ;;
     esac
-    
+
     log_success "Service start completed"
 }
 
@@ -287,10 +274,9 @@ cmd_stop() {
     
     case "$service" in
         all)
-            # Stop in reverse dependency order: validator → miner → executor
+            # Stop in reverse dependency order: validator → miner
             stop_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
             stop_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
-            stop_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
             ;;
         validator)
             stop_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
@@ -298,15 +284,12 @@ cmd_stop() {
         miner)
             stop_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
             ;;
-        executor)
-            stop_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-            ;;
         *)
             log_error "Unknown service: $service"
             exit 1
             ;;
     esac
-    
+
     log_success "Service stop completed"
 }
 
@@ -337,24 +320,20 @@ cmd_restart() {
 # Command: Check service status
 cmd_status() {
     local service="${1:-all}"
-    
+
     log_header "Basilica Service Status"
     load_env_config
-    
+
     case "$service" in
         all)
             check_service_status "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
             check_service_status "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
-            check_service_status "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
             ;;
         validator)
             check_service_status "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
             ;;
         miner)
             check_service_status "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
-            ;;
-        executor)
-            check_service_status "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
             ;;
         *)
             log_error "Unknown service: $service"
@@ -396,13 +375,6 @@ check_service_status() {
                 log_warning "Validator API is not responding"
             fi
             ;;
-        executor)
-            if ssh -p "$port" "$user@$host" "timeout 5 bash -c '</dev/tcp/localhost/50051'" >/dev/null 2>&1; then
-                log_success "Executor gRPC is accepting connections"
-            else
-                log_warning "Executor gRPC is not accepting connections"
-            fi
-            ;;
         miner)
             if ssh -p "$port" "$user@$host" "timeout 5 bash -c '</dev/tcp/localhost/8092'" >/dev/null 2>&1; then
                 log_success "Miner gRPC is accepting connections"
@@ -416,22 +388,19 @@ check_service_status() {
 # Command: View service logs
 cmd_logs() {
     local service="${1:-all}"
-    
+
     load_env_config
-    
+
     case "$service" in
         all)
             log_info "Use 'services.sh logs <service>' to view specific service logs"
-            log_info "Available services: validator, miner, executor"
+            log_info "Available services: validator, miner"
             ;;
         validator)
             view_service_logs "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
             ;;
         miner)
             view_service_logs "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
-            ;;
-        executor)
-            view_service_logs "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
             ;;
         *)
             log_error "Unknown service: $service"
@@ -459,17 +428,16 @@ view_service_logs() {
 # Command: Enable services for auto-start
 cmd_enable() {
     local service="${1:-all}"
-    
+
     log_header "Enabling Basilica Services"
     load_env_config
-    
+
     case "$service" in
         all)
             enable_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
             enable_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
-            enable_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
             ;;
-        validator|miner|executor)
+        validator|miner)
             local host port user
             eval "host=\$${service^^}_HOST"
             eval "port=\$${service^^}_PORT"
@@ -498,17 +466,16 @@ enable_service() {
 # Command: Disable services from auto-start
 cmd_disable() {
     local service="${1:-all}"
-    
+
     log_header "Disabling Basilica Services"
     load_env_config
-    
+
     case "$service" in
         all)
             disable_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
             disable_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
-            disable_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
             ;;
-        validator|miner|executor)
+        validator|miner)
             local host port user
             eval "host=\$${service^^}_HOST"
             eval "port=\$${service^^}_PORT"

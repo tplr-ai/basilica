@@ -7,7 +7,7 @@ use super::types::MinerInfo;
 use crate::metrics::ValidatorMetrics;
 use anyhow::Result;
 use basilica_common::identity::{Hotkey, MinerUid};
-use bittensor::{AccountId, AxonInfo, Service as BittensorService};
+use bittensor::{AxonInfo, Service as BittensorService};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
@@ -68,9 +68,11 @@ impl MinerDiscovery {
 
     fn extract_miners_from_metagraph(
         &self,
-        metagraph: &bittensor::Metagraph<AccountId>,
+        metagraph: &bittensor::Metagraph,
     ) -> Result<Vec<MinerInfo>> {
         let mut miners = Vec::new();
+        let mut no_axon_uids: Vec<u16> = Vec::new();
+        let mut invalid_axon_uids: Vec<u16> = Vec::new();
 
         for (uid, hotkey_account) in metagraph.hotkeys.iter().enumerate() {
             let uid = uid as u16;
@@ -92,9 +94,14 @@ impl MinerDiscovery {
                 .unwrap_or(0);
             let stake_tao = bittensor::rao_to_tao(total_stake);
 
+            if metagraph.axons.get(uid as usize).is_none() {
+                no_axon_uids.push(uid);
+                continue;
+            }
+
             let endpoint = self.extract_endpoint(metagraph, uid as usize)?;
             if endpoint.is_none() {
-                warn!("Miner {} has no axon info, skipping", uid);
+                invalid_axon_uids.push(uid);
                 continue;
             }
 
@@ -111,12 +118,19 @@ impl MinerDiscovery {
             miners.push(miner);
         }
 
+        if !no_axon_uids.is_empty() {
+            info!(count = no_axon_uids.len(), uids = ?no_axon_uids, "Miners with no axon info, skipping");
+        }
+        if !invalid_axon_uids.is_empty() {
+            info!(count = invalid_axon_uids.len(), uids = ?invalid_axon_uids, "Miners with invalid axon (unreachable), skipping");
+        }
+
         Ok(miners)
     }
 
     fn extract_endpoint(
         &self,
-        metagraph: &bittensor::Metagraph<AccountId>,
+        metagraph: &bittensor::Metagraph,
         uid: usize,
     ) -> Result<Option<String>> {
         Ok(metagraph.axons.get(uid).and_then(|axon| {

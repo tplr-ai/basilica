@@ -25,35 +25,6 @@ struct UserInfo {
     updated_at: Option<String>,
 }
 
-/// Mask sensitive information in user ID (OAuth sub field)
-fn mask_user_id(id: &str) -> String {
-    // For OAuth providers like google-oauth2|123456789, mask the numeric ID
-    if let Some(pipe_idx) = id.find('|') {
-        let provider = &id[..=pipe_idx];
-        let user_id = &id[pipe_idx + 1..];
-
-        // Mask the user ID part, showing only first and last 2 chars if long enough
-        let masked_id = if user_id.len() > 6 {
-            format!("{}...{}", &user_id[..2], &user_id[user_id.len() - 2..])
-        } else if user_id.len() > 2 {
-            format!("{}...", &user_id[..1])
-        } else {
-            "***".to_string()
-        };
-
-        format!("{}{}", provider, masked_id)
-    } else {
-        // For other ID formats, mask middle portion
-        if id.len() > 8 {
-            format!("{}...{}", &id[..3], &id[id.len() - 3..])
-        } else if id.len() > 4 {
-            format!("{}...", &id[..2])
-        } else {
-            "***".to_string()
-        }
-    }
-}
-
 /// Mask email address to show only domain
 fn mask_email(email: &str) -> String {
     if let Some(at_idx) = email.find('@') {
@@ -301,8 +272,8 @@ pub async fn handle_test_auth(config: &CliConfig) -> Result<(), CliError> {
         println!("User Information:");
         println!("─────────────────");
 
-        // Mask the user ID (OAuth subject)
-        println!("  ID: {}", mask_user_id(&user_info.sub));
+        // Display full user ID (OAuth subject) for easy copy-paste
+        println!("  ID: {}", user_info.sub);
 
         // Display masked email if present
         if let Some(email) = &user_info.email {

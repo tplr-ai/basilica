@@ -101,10 +101,6 @@ async fn show_config(config: &MinerConfig, show_sensitive: bool) -> Result<()> {
     // Show derived/computed values
     println!("\n=== Derived Configuration ===");
     println!("Database Type: SQLite");
-    println!(
-        "Validator Comms Address: {}:{}",
-        config.validator_comms.host, config.validator_comms.port
-    );
     println!("Metrics Enabled: {}", config.metrics.enabled);
     println!("Node Count: {}", config.node_management.nodes.len());
 
@@ -149,9 +145,6 @@ async fn perform_comprehensive_validation(config: &MinerConfig) -> Result<Valida
 
     // Database configuration validation
     validate_database_config(&config.database, &mut errors, &mut warnings);
-
-    // Validator communications configuration validation
-    validate_validator_comms_config(&config.validator_comms, &mut errors, &mut warnings);
 
     // Bittensor configuration validation
     validate_bittensor_config(
@@ -201,21 +194,6 @@ fn validate_database_config(
 
     if config.max_connections > 50 {
         warnings.push("High max_connections value may impact performance".to_string());
-    }
-}
-
-/// Validate server configuration
-fn validate_validator_comms_config(
-    config: &crate::config::ValidatorCommsConfig,
-    errors: &mut Vec<String>,
-    warnings: &mut Vec<String>,
-) {
-    if config.port < 1024 && config.host != "127.0.0.1" && config.host != "localhost" {
-        errors.push("Using privileged port (<1024) requires elevated permissions".to_string());
-    }
-
-    if config.host == "0.0.0.0" {
-        warnings.push("Binding to 0.0.0.0 exposes service to all network interfaces".to_string());
     }
 }
 

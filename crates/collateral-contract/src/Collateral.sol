@@ -306,4 +306,53 @@ contract Collateral {
             urlContentMd5Checksum
         );
     }
+
+    /// @notice Allows the trustee to partially slash a miner's collateral
+    /// @dev Can only be called by the trustee (address set in constructor)
+    /// @dev Burns a specified amount of collateral for the node
+    /// @param hotkey The netuid key for the subnet
+    /// @param nodeId The ID of the node to slash
+    /// @param amount Amount of collateral to slash
+    /// @param url URL containing the reason for slashing
+    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @dev Emits Slashed event with the node's ID, miner's address and the amount slashed
+    /// @dev Reverts with AmountZero if amount is zero
+    /// @dev Reverts with InsufficientAmount if amount exceeds collateral
+    /// @dev Reverts with TransferFailed if the TAO transfer fails
+    function slashCollateralAmount(
+        bytes32 hotkey,
+        bytes16 nodeId,
+        uint256 amount,
+        string calldata url,
+        bytes16 urlContentMd5Checksum
+    ) external onlyTrustee {
+        uint256 collateral = collaterals[hotkey][nodeId];
+
+        if (amount == 0) {
+            revert AmountZero();
+        }
+        if (collateral < amount) {
+            revert InsufficientAmount();
+        }
+
+        collaterals[hotkey][nodeId] = collateral - amount;
+        address miner = nodeToMiner[hotkey][nodeId];
+
+        // burn the collateral
+        (bool success, ) = payable(address(0)).call{value: amount}("");
+        if (!success) {
+            revert TransferFailed();
+        }
+        if (collaterals[hotkey][nodeId] == 0) {
+            nodeToMiner[hotkey][nodeId] = address(0);
+        }
+        emit Slashed(
+            hotkey,
+            nodeId,
+            miner,
+            amount,
+            url,
+            urlContentMd5Checksum
+        );
+    }
 }

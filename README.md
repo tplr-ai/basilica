@@ -14,7 +14,7 @@
   <a href="docs/architecture.md">Architecture</a> •
   <a href="https://basilica-grafana.tplr.ai/" target="_blank">Dashboard</a> •
   <a href="https://basilica.ai/" target="_blank">Website</a> •
-  <a href="https://discord.gg/4s7A5nQqAn" target="_blank">Discord</a>
+  <a href="https://discord.gg/Cy7c9vPsNK" target="_blank">Discord</a>
 </p>
 
 ```bash

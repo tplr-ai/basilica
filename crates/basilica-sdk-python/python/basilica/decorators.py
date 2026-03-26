@@ -6,10 +6,13 @@ Provides @deployment decorator for declarative function deployments.
 import functools
 import inspect
 import textwrap
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Union
 
 from .spec import DeploymentSpec
 from .volume import Volume
+
+if TYPE_CHECKING:
+    from basilica._basilica import HealthCheckConfig
 
 
 class DeployedFunction:
@@ -69,6 +72,10 @@ class DeployedFunction:
             gpu_models=gpu_models,
             min_cuda_version=self._spec.min_cuda_version,
             min_gpu_memory_gb=self._spec.min_gpu_memory_gb,
+            interconnect=self._spec.interconnect,
+            geo=self._spec.geo,
+            spot=self._spec.spot,
+            infiniband=self._spec.infiniband,
             storage=storage,
             env=self._spec.env,
             pip_packages=self._spec.pip_packages,
@@ -76,6 +83,7 @@ class DeployedFunction:
             ttl_seconds=self._spec.ttl_seconds,
             public=self._spec.public,
             timeout=self._spec.timeout,
+            health_check=self._spec.health_check,
         )
         return self._deployment
 
@@ -137,6 +145,10 @@ def deployment(
     gpu_models: Optional[List[str]] = None,
     min_cuda_version: Optional[str] = None,
     min_gpu_memory_gb: Optional[int] = None,
+    interconnect: Optional[str] = None,
+    geo: Optional[str] = None,
+    spot: Optional[bool] = None,
+    infiniband: Optional[bool] = None,
     volumes: Optional[Dict[str, Volume]] = None,
     env: Optional[Dict[str, str]] = None,
     pip_packages: Optional[List[str]] = None,
@@ -144,6 +156,7 @@ def deployment(
     ttl_seconds: Optional[int] = None,
     public: bool = True,
     timeout: int = 300,
+    health_check: Optional["HealthCheckConfig"] = None,
 ) -> Callable[[Callable], DeployedFunction]:
     """
     Decorator to mark a function for deployment to Basilica.
@@ -162,6 +175,10 @@ def deployment(
         gpu_models: Acceptable GPU models list. Example: ["A100", "H100"]
         min_cuda_version: Minimum CUDA version
         min_gpu_memory_gb: Minimum GPU VRAM in GB
+        interconnect: GPU interconnect type. "SXM" or "PCIe"
+        geo: Geographic region preference. "US", "EU", "CA", "APAC"
+        spot: Spot instance preference. True=prefer spot, False=exclude spot
+        infiniband: Require InfiniBand networking
         volumes: Volume mounts. Example: {"/data": Volume.from_name("cache")}
         env: Environment variables
         pip_packages: Additional pip packages to install
@@ -169,6 +186,9 @@ def deployment(
         ttl_seconds: Auto-delete after N seconds
         public: Create public URL. Default: True
         timeout: Seconds to wait for deployment. Default: 300
+        health_check: Custom health check configuration (HealthCheckConfig).
+                     Use HealthCheckConfig(liveness=..., readiness=..., startup=...)
+                     with ProbeConfig for each probe.
 
     Returns:
         DeployedFunction wrapper
@@ -195,6 +215,10 @@ def deployment(
             gpu_models=gpu_models,
             min_cuda_version=min_cuda_version,
             min_gpu_memory_gb=min_gpu_memory_gb,
+            interconnect=interconnect,
+            geo=geo,
+            spot=spot,
+            infiniband=infiniband,
             volumes=volumes,
             env=env,
             pip_packages=pip_packages,
@@ -202,6 +226,7 @@ def deployment(
             ttl_seconds=ttl_seconds,
             public=public,
             timeout=timeout,
+            health_check=health_check,
         )
         return DeployedFunction(func, spec)
 

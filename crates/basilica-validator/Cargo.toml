@@ -18,6 +18,7 @@ path = "src/main.rs"
 alloy-primitives = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+tokio-stream = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -27,6 +28,7 @@ metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 sqlx = { workspace = true }
 tonic = { workspace = true }
+tonic-health = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -46,11 +48,13 @@ num_cpus = { workspace = true }
 lru = { workspace = true }
 eventsource-stream = { workspace = true }
 regex = { workspace = true }
+rust_decimal = { workspace = true }
+bigdecimal = { workspace = true }
 
 # Internal dependencies
 basilica-common = { path = "../basilica-common" }
 basilica-protocol = { path = "../basilica-protocol" }
-bittensor = { path = "../bittensor" }
+bittensor = { workspace = true }
 collateral-contract = { path = "../collateral-contract" }
 
 # Validator-specific dependencies
@@ -61,6 +65,9 @@ collateral-contract = { path = "../collateral-contract" }
 reqwest = { workspace = true }
 kube = { version = "0.88", features = ["rustls-tls"] }
 k8s-openapi = { version = "0.21", features = ["v1_29"] }
+aws-config = { workspace = true }
+aws-sdk-s3 = { workspace = true }
+aws-sdk-secretsmanager = { workspace = true }
 
 # Temporary file handling
 tempfile = { workspace = true }
@@ -68,6 +75,7 @@ tempfile = { workspace = true }
 # Challenge implementation dependencies
 rand = { workspace = true }
 hex = { workspace = true }
+sha2 = { workspace = true }
 fastrand = { workspace = true }
 
 # System information and process management
@@ -79,6 +87,8 @@ ssh-key = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+wiremock = { workspace = true }
+once_cell = { workspace = true }
 
 [features]
 default = ["client"]

@@ -4,7 +4,6 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    # types: [opened, synchronize, edited, labeled, reopened]
   workflow_dispatch:
     inputs:
       build_images:
@@ -36,10 +35,6 @@ jobs:
     outputs:
       validator: ${{ steps.changes.outputs.validator }}
       miner: ${{ steps.changes.outputs.miner }}
-      basilica-api: ${{ steps.changes.outputs.basilica-api }}
-      basilica-operator: ${{ steps.changes.outputs.basilica-operator }}
-      billing: ${{ steps.changes.outputs.billing }}
-      payments: ${{ steps.changes.outputs.payments }}
       basilica-cli: ${{ steps.changes.outputs.basilica-cli }}
       basilica-sdk-python: ${{ steps.changes.outputs.basilica-sdk-python }}
       workspace: ${{ steps.changes.outputs.workspace }}
@@ -60,42 +55,14 @@ jobs:
               - 'crates/basilica-miner/**'
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
-              - 'crates/bittensor/**'
               - 'scripts/miner/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            basilica-api:
-              - 'crates/basilica-api/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/api/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            basilica-operator:
-              - 'crates/basilica-operator/**'
-              - 'scripts/operator/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             basilica-cli:
               - 'crates/basilica-cli/**'
-              - 'crates/basilica-api/**'
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/cli/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            billing:
-              - 'crates/basilica-billing/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/billing/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            payments:
-              - 'crates/basilica-payments/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/payments/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             basilica-sdk-python:
@@ -138,10 +105,10 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Quick check builds
         run: |
-          cargo check -p basilica-common -p basilica-protocol -p bittensor
+          cargo check -p basilica-common -p basilica-protocol
       - name: Run clippy on core packages
         run: |
-          cargo clippy -p basilica-common -p basilica-protocol -p bittensor --all-targets -- -D warnings
+          cargo clippy -p basilica-common -p basilica-protocol --all-targets -- -D warnings
 
   # Lint complex packages
   lint-complex:
@@ -172,19 +139,10 @@ jobs:
           tool: nextest
       - name: Run clippy on complex packages
         run: |
-          # Run clippy without vulkan feature to avoid shaderc-sys CMake requirement
-          # Run clippy on miner
           cargo clippy -p basilica-miner --all-targets --all-features -- -D warnings
-          # Run clippy on validator
           cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
-          # Run clippy on basilica-api
-          cargo clippy -p basilica-api --all-targets --all-features -- -D warnings
-          # Run clippy on billing
-          cargo clippy -p basilica-billing --all-targets --all-features -- -D warnings
-          # Run clippy on payments
-          cargo clippy -p basilica-payments --all-targets --all-features -- -D warnings
-          # Run clippy on basilica-cli
           cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
+          cargo clippy -p basilica-sdk --all-targets --all-features -- -D warnings
 
   # Build and test validator
   build-validator:
@@ -227,7 +185,6 @@ jobs:
       - name: Build and test validator
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          # Build once for both tests and CLI check
           cargo build -p basilica-validator
           cargo nextest run -p basilica-validator --all-features --no-fail-fast
           ./target/debug/basilica-validator --help
@@ -289,7 +246,6 @@ jobs:
       - name: Build and test miner
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          # Build once for both tests and CLI check
           cargo build -p basilica-miner
           cargo nextest run -p basilica-miner --lib --no-fail-fast
           ./target/debug/basilica-miner --help
@@ -305,124 +261,6 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: basilica/miner:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
-
-  # Build and test basilica-api
-  build-api:
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    needs: changes
-    if: needs.changes.outputs.basilica-api == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "shared-cache"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "25.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: pkg-config libssl-dev xxd mold clang python3-dev
-          version: 1.0
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
-      - name: Generate test key
-        run: |
-          chmod +x scripts/gen-key.sh
-          ./scripts/gen-key.sh
-      - name: Build and test basilica-api
-        run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          # Build once for both tests and CLI check
-          cargo build -p basilica-api
-          cargo nextest run -p basilica-api --all-features --no-fail-fast
-          ./target/debug/basilica-api --help
-      - name: Clean up space before Docker build
-        run: |
-          docker system prune -af
-          df -h
-      - name: Test Docker build script
-        run: |
-          chmod +x scripts/api/build.sh
-          BITTENSOR_NETWORK=finney ./scripts/api/build.sh --no-extract
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: basilica/basilica-api:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
-
-  # Build and test basilica-operator
-  build-operator:
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    needs: changes
-    if: needs.changes.outputs.basilica-operator == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
-      # - uses: Swatinem/rust-cache@v2
-      #   with:
-      #     shared-key: "shared-cache"
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "25.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: pkg-config libssl-dev xxd mold clang protobuf-compiler
-          version: 1.0
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
-      - name: Check basilica-operator builds
-        run: |
-          cargo check -p basilica-operator
-      - name: Test basilica-operator crate (unit tests only)
-        run: |
-          cargo nextest run -p basilica-operator --lib
-      - name: Clean up space before Docker build
-        run: |
-          docker system prune -af
-          df -h
-      - name: Test Docker build script
-        run: |
-          chmod +x scripts/operator/build.sh
-          ./scripts/operator/build.sh --image-tag ci-test
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: basilica/basilica-operator:ci-test
           format: 'table'
           severity: 'CRITICAL,HIGH'
           exit-code: '0'
@@ -462,228 +300,9 @@ jobs:
           tool: nextest
       - name: Build and test basilica-cli
         run: |
-          # Build once for both tests and CLI check
           cargo build -p basilica-cli
           cargo nextest run -p basilica-cli --all-features --no-fail-fast
           ./target/debug/basilica --help
-
-  # Build and test billing
-  build-billing:
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    needs: changes
-    if: needs.changes.outputs.billing == 'true' || needs.changes.outputs.workspace == 'true'
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: billing
-          POSTGRES_PASSWORD: billing_dev_password
-          POSTGRES_DB: basilica_billing
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    strategy:
-      matrix:
-        rust-version: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "shared-cache"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "25.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client
-          version: 1.0
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
-      - name: Wait for Postgres (billing)
-        run: |
-          : "${BILLING_DB_PASSWORD:=billing_dev_password}"
-          postgres_ready=false
-          for i in {1..30}; do
-            if PGPASSWORD="$BILLING_DB_PASSWORD" pg_isready -h localhost -p 5432 -U billing >/dev/null 2>&1; then
-              echo "Postgres is ready"
-              postgres_ready=true
-              break
-            fi
-            echo "Waiting for Postgres ($i/30)..."
-            sleep 2
-          done
-
-          if [ "$postgres_ready" = false ]; then
-            echo "ERROR: Postgres failed to become ready after 60 seconds"
-            exit 1
-          fi
-
-          PGPASSWORD="$BILLING_DB_PASSWORD" psql -h localhost -p 5432 -U billing -d postgres -c "SELECT 1;"
-      - name: Run billing migrations
-        run: |
-          export DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
-          export BILLING_DATABASE_URL="$DATABASE_URL"
-          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
-          # Run migrations directly using psql
-          for migration in crates/basilica-billing/migrations/*.sql; do
-            echo "Running migration: $migration"
-            PGPASSWORD=billing_dev_password psql -h localhost -p 5432 -U billing -d basilica_billing -f "$migration" || true
-          done
-      - name: Build and test billing
-        run: |
-          export BILLING_DATABASE_URL="postgres://billing:billing_dev_password@localhost:5432/basilica_billing"
-          export BILLING_AWS__SECRETS_MANAGER_ENABLED=false
-          # Build once for all tests and CLI checks
-          cargo build -p basilica-billing
-          cargo nextest run -p basilica-billing --lib --no-fail-fast
-          # Run BDD integration tests from billing crate directory
-          cd crates/basilica-billing && cargo test --test bdd_integration_tests -- --test-threads=1
-          cd ../..
-          # Test CLI functionality
-          ./target/debug/basilica-billing --help
-          ./target/debug/basilica-billing --gen-config
-      - name: Clean up space before Docker build
-        run: |
-          docker system prune -af
-          df -h
-      - name: Test Docker build script
-        run: |
-          chmod +x scripts/billing/build.sh
-          ./scripts/billing/build.sh --no-extract
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: basilica/billing:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
-
-  # Build and test payments
-  build-payments:
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    needs: changes
-    if: needs.changes.outputs.payments == 'true' || needs.changes.outputs.workspace == 'true'
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: payments
-          POSTGRES_PASSWORD: payments_dev_password
-          POSTGRES_DB: basilica_payments
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-    strategy:
-      matrix:
-        rust-version: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "shared-cache"
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: "25.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: pkg-config libssl-dev xxd mold clang python3-dev postgresql-client
-          version: 1.0
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
-      - name: Wait for Postgres (payments)
-        run: |
-          : "${PAYMENTS_DB_PASSWORD:=payments_dev_password}"
-          postgres_ready=false
-          for i in {1..30}; do
-            if PGPASSWORD="$PAYMENTS_DB_PASSWORD" pg_isready -h localhost -p 5432 -U payments >/dev/null 2>&1; then
-              echo "Postgres is ready"
-              postgres_ready=true
-              break
-            fi
-            echo "Waiting for Postgres ($i/30)..."
-            sleep 2
-          done
-
-          if [ "$postgres_ready" = false ]; then
-            echo "ERROR: Postgres failed to become ready after 60 seconds"
-            exit 1
-          fi
-
-          PGPASSWORD="$PAYMENTS_DB_PASSWORD" psql -h localhost -p 5432 -U payments -d postgres -c "SELECT 1;"
-      - name: Run payments migrations
-        run: |
-          export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
-          export PAYMENTS_DATABASE_URL="$DATABASE_URL"
-          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
-          # Run migrations directly using psql
-          for migration in crates/basilica-payments/migrations/*.sql; do
-            echo "Running migration: $migration"
-            PGPASSWORD=payments_dev_password psql -h localhost -p 5432 -U payments -d basilica_payments -f "$migration" || true
-          done
-      - name: Build and test payments
-        run: |
-          export DATABASE_URL="postgres://payments:payments_dev_password@localhost:5432/basilica_payments"
-          export PAYMENTS_DATABASE_URL="$DATABASE_URL"
-          export PAYMENTS_AWS__SECRETS_MANAGER_ENABLED=false
-          export SUBXT_WS="ws://localhost:9944"
-          # Build once for all tests and CLI checks
-          cargo build -p basilica-payments
-          cargo nextest run -p basilica-payments --lib --no-fail-fast
-          # Run BDD integration tests from payments crate directory
-          cd crates/basilica-payments && cargo test --test bdd_integration_tests -- --test-threads=1 || true
-          cd ../..
-          # Test CLI functionality
-          ./target/debug/basilica-payments --help
-          ./target/debug/basilica-payments --gen-config
-      - name: Clean up space before Docker build
-        run: |
-          docker system prune -af
-          df -h
-      - name: Test Docker build script
-        run: |
-          chmod +x scripts/payments/build.sh
-          ./scripts/payments/build.sh --no-extract
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: basilica/payments:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
 
   # Build and test Python SDK
   test-python-sdk:
@@ -762,10 +381,6 @@ jobs:
       - lint-complex
       - build-validator
       - build-miner
-      - build-api
-      - build-operator
-      - build-billing
-      - build-payments
       - build-cli
       - test-python-sdk
     if: always()
@@ -776,10 +391,6 @@ jobs:
                 "${{ needs.lint-complex.result }}" == "success" && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
-                ("${{ needs.build-api.result }}" == "success" || "${{ needs.build-api.result }}" == "skipped") && \
-                ("${{ needs.build-operator.result }}" == "success" || "${{ needs.build-operator.result }}" == "skipped") && \
-                ("${{ needs.build-billing.result }}" == "success" || "${{ needs.build-billing.result }}" == "skipped") && \
-                ("${{ needs.build-payments.result }}" == "success" || "${{ needs.build-payments.result }}" == "skipped") && \
                 ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") && \
                 ("${{ needs.test-python-sdk.result }}" == "success" || "${{ needs.test-python-sdk.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
@@ -788,7 +399,7 @@ jobs:
             echo "Some CI checks failed!"
             exit 1
           fi
-  
+
   # Manual: Build and push all images (workflow_dispatch only)
   build-images:
     if: |
@@ -813,7 +424,6 @@ jobs:
         shell: bash
         run: |
           TAG="${{ github.event.inputs.image_tag }}"
-          # Sanitize accidental "TAG=..." input
           if [[ "$TAG" == TAG=* ]]; then TAG="${TAG#TAG=}"; fi
           if [[ -z "$TAG" ]]; then TAG="k3_test"; fi
           echo "TAG=$TAG" >> $GITHUB_ENV
@@ -824,27 +434,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build operator image
-        run: |
-          ./scripts/operator/build.sh \
-            --image-name ghcr.io/one-covenant/basilica-operator \
-            --image-tag "$TAG"
-      - name: Scan operator image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ghcr.io/one-covenant/basilica-operator:${{ env.TAG }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
-
-      - name: Push operator image
-        run: |
-          ./scripts/operator/push.sh \
-            --source-image ghcr.io/one-covenant/basilica-operator \
-            --target-image ghcr.io/one-covenant/basilica-operator \
-            --tag "$TAG"
 
       - name: Build validator image
         env:
@@ -892,74 +481,6 @@ jobs:
           ./scripts/miner/push.sh \
             --source-image ghcr.io/one-covenant/basilica/miner \
             --target-image ghcr.io/one-covenant/basilica/miner \
-            --tag "$TAG"
-
-      - name: Build API image
-        env:
-          BITTENSOR_NETWORK: finney
-        run: |
-          ./scripts/api/build.sh \
-            --image-name ghcr.io/one-covenant/basilica-api \
-            --image-tag "$TAG" \
-            --no-extract
-      - name: Scan API image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ghcr.io/one-covenant/basilica-api:${{ env.TAG }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
-
-      - name: Push API image
-        run: |
-          ./scripts/api/push.sh \
-            --source-image ghcr.io/one-covenant/basilica-api \
-            --target-image ghcr.io/one-covenant/basilica-api \
-            --tag "$TAG"
-
-      - name: Build billing image
-        run: |
-          ./scripts/billing/build.sh \
-            --image-name ghcr.io/one-covenant/basilica/billing \
-            --image-tag "$TAG" \
-            --no-extract
-      - name: Scan billing image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ghcr.io/one-covenant/basilica/billing:${{ env.TAG }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
-
-      - name: Push billing image
-        run: |
-          ./scripts/billing/push.sh \
-            --source-image ghcr.io/one-covenant/basilica/billing \
-            --target-image ghcr.io/one-covenant/basilica/billing \
-            --tag "$TAG"
-
-      - name: Build payments image
-        run: |
-          ./scripts/payments/build.sh \
-            --image-name ghcr.io/one-covenant/basilica/payments \
-            --image-tag "$TAG" \
-            --no-extract
-      - name: Scan payments image
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: ghcr.io/one-covenant/basilica/payments:${{ env.TAG }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
-
-      - name: Push payments image
-        run: |
-          ./scripts/payments/push.sh \
-            --source-image ghcr.io/one-covenant/basilica/payments \
-            --target-image ghcr.io/one-covenant/basilica/payments \
             --tag "$TAG"
 
       - name: Build CLI image (single-arch)

@@ -8,10 +8,18 @@ use crate::handlers::gpu_rental::GpuTarget;
 /// CLI wrapper for ComputeCategory to implement ValueEnum
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum ComputeCategoryArg {
-    #[value(name = "secure-cloud", alias = "secure", alias = "secure_cloud")]
-    SecureCloud,
+    /// The Citadel - Datacenter providers
     #[value(
-        name = "community-cloud",
+        name = "citadel",
+        alias = "secure-cloud",
+        alias = "secure",
+        alias = "secure_cloud"
+    )]
+    SecureCloud,
+    /// The Bourse - Miner-provided GPUs
+    #[value(
+        name = "bourse",
+        alias = "community-cloud",
         alias = "community",
         alias = "community_cloud"
     )]
@@ -38,7 +46,7 @@ pub enum Commands {
         /// Filter by GPU category (e.g., 'h100', 'h200', 'b200') (optional)
         gpu_type: Option<GpuCategory>,
 
-        /// Compute source: 'secure-cloud' or 'community-cloud'
+        /// Compute source: 'citadel' (The Citadel) or 'bourse' (The Bourse)
         #[arg(long, value_name = "TYPE")]
         compute: Option<ComputeCategoryArg>,
 
@@ -52,7 +60,7 @@ pub enum Commands {
         /// GPU category to filter by (e.g., 'h100', 'a100', 'b200') (optional)
         target: Option<GpuTarget>,
 
-        /// Compute source: 'secure-cloud' or 'community-cloud'
+        /// Compute source: 'citadel' (The Citadel) or 'bourse' (The Bourse)
         #[arg(long, value_name = "TYPE")]
         compute: Option<ComputeCategoryArg>,
 
@@ -62,7 +70,7 @@ pub enum Commands {
 
     /// List active rentals and their status
     Ps {
-        /// Compute source: 'secure-cloud' or 'community-cloud'
+        /// Compute source: 'citadel' (The Citadel) or 'bourse' (The Bourse)
         #[arg(long, value_name = "TYPE")]
         compute: Option<ComputeCategoryArg>,
 
@@ -91,7 +99,7 @@ pub enum Commands {
         /// Rental UUID to terminate (optional)
         target: Option<String>,
 
-        /// Compute source: 'secure-cloud' or 'community-cloud'
+        /// Compute source: 'citadel' (The Citadel) or 'bourse' (The Bourse)
         #[arg(long, value_name = "TYPE")]
         compute: Option<ComputeCategoryArg>,
 
@@ -171,18 +179,10 @@ pub enum Commands {
     Fund {
         #[command(subcommand)]
         action: Option<FundAction>,
-
-        /// Output as JSON
-        #[arg(long, global = true)]
-        json: bool,
     },
 
     /// Check your account balance
-    Balance {
-        /// Output as JSON
-        #[arg(long, global = true)]
-        json: bool,
-    },
+    Balance,
 
     /// Upgrade the Basilica CLI to a newer version
     Upgrade {
@@ -196,8 +196,14 @@ pub enum Commands {
     },
 
     /// Deploy applications to Basilica
-    #[command(name = "deploy", visible_alias = "d")]
+    #[command(name = "deploy", visible_alias = "summon", alias = "d")]
     Deploy(Box<DeployCommand>),
+
+    /// Volume management commands
+    Volumes {
+        #[command(subcommand)]
+        action: VolumeAction,
+    },
 }
 
 /// Fund management actions
@@ -263,6 +269,68 @@ pub enum SshKeyAction {
     },
 }
 
+/// Volume management actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum VolumeAction {
+    /// Create a new volume
+    Create {
+        /// Volume name (unique per user, will prompt if not provided)
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// Volume size in GB (1-10240, will prompt if not provided)
+        #[arg(short, long)]
+        size: Option<u32>,
+
+        /// Cloud provider (e.g., hyperstack, will prompt if not provided)
+        #[arg(short, long)]
+        provider: Option<String>,
+
+        /// Region (e.g., US-1, CANADA-1, NORWAY-1, will prompt if not provided)
+        #[arg(short, long)]
+        region: Option<String>,
+
+        /// Optional description
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+
+    /// List all volumes
+    #[command(alias = "ls")]
+    List,
+
+    /// Delete a volume (must be detached first)
+    #[command(alias = "rm")]
+    Delete {
+        /// Volume ID or name (will prompt if not provided)
+        volume: Option<String>,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
+    /// Attach a volume to a rental
+    Attach {
+        /// Volume ID or name (will prompt if not provided)
+        volume: Option<String>,
+
+        /// Rental ID to attach to (will prompt if not provided)
+        #[arg(long)]
+        rental: Option<String>,
+    },
+
+    /// Detach a volume from its current rental
+    Detach {
+        /// Volume ID or name (will prompt if not provided)
+        volume: Option<String>,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
 impl Commands {
     /// Check if this command requires authentication
     pub fn requires_auth(&self) -> bool {
@@ -280,9 +348,12 @@ impl Commands {
             | Commands::Cp { .. }
             | Commands::Tokens { .. }
             | Commands::SshKeys { .. }
+            | Commands::Volumes { .. }
             | Commands::Fund { .. }
-            | Commands::Balance { .. }
-            | Commands::Deploy(_) => true,
+            | Commands::Balance => true,
+
+            // Deploy commands: most require auth, except Metadata (public endpoint)
+            Commands::Deploy(cmd) => !matches!(cmd.action, Some(DeployAction::Metadata { .. })),
 
             // Authentication commands don't require auth
             Commands::Login { .. } | Commands::Logout | Commands::Upgrade { .. } => false,
@@ -316,6 +387,22 @@ pub struct ListFilters {
     /// Filter by country code (e.g., US, UK, DE)
     #[arg(long)]
     pub country: Option<String>,
+
+    /// Filter by interconnect type (e.g., SXM, PCIe)
+    #[arg(long)]
+    pub interconnect: Option<String>,
+
+    /// Filter by region (geo codes: US, CA, EU, APAC or region substrings)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// Show only spot offerings
+    #[arg(long, conflicts_with = "exclude_spot")]
+    pub spot: bool,
+
+    /// Exclude spot offerings
+    #[arg(long, conflicts_with = "spot")]
+    pub exclude_spot: bool,
 }
 
 /// Options for provisioning instances
@@ -325,11 +412,15 @@ pub struct UpOptions {
     #[arg(long)]
     pub gpu_count: Option<u32>,
 
-    /// Docker image to run (community cloud only)
+    /// Maximum USD per GPU-hour for community cloud rentals
+    #[arg(long)]
+    pub max_hourly_rate: Option<f64>,
+
+    /// Docker image to run (Bourse only)
     #[arg(long)]
     pub image: Option<String>,
 
-    /// Environment variables (KEY=VALUE) (community cloud only)
+    /// Environment variables (KEY=VALUE) (Bourse only)
     #[arg(long)]
     pub env: Vec<String>,
 
@@ -341,23 +432,23 @@ pub struct UpOptions {
     #[arg(long, value_hint = ValueHint::FilePath)]
     pub ssh_key: Option<PathBuf>,
 
-    /// Port mappings (host:container) (community cloud only)
+    /// Port mappings (host:container) (Bourse only)
     #[arg(long)]
     pub ports: Vec<String>,
 
-    /// CPU cores (community cloud only)
+    /// CPU cores (Bourse only)
     #[arg(long)]
     pub cpu_cores: Option<f64>,
 
-    /// Memory in MB (community cloud only)
+    /// Memory in MB (Bourse only)
     #[arg(long)]
     pub memory_mb: Option<i64>,
 
-    /// Storage in MB (community cloud only)
+    /// Storage in MB (Bourse only)
     #[arg(long)]
     pub storage_mb: Option<i64>,
 
-    /// Command to run (community cloud only)
+    /// Command to run (Bourse only)
     #[arg(long)]
     pub command: Vec<String>,
 
@@ -365,13 +456,25 @@ pub struct UpOptions {
     #[arg(long)]
     pub country: Option<String>,
 
-    /// Disable SSH access (faster startup)
-    #[arg(long)]
-    pub no_ssh: bool,
-
     /// Create rental in detached mode (don't auto-connect via SSH)
     #[arg(short = 'd', long)]
     pub detach: bool,
+
+    /// Filter by interconnect type (e.g., SXM, PCIe)
+    #[arg(long)]
+    pub interconnect: Option<String>,
+
+    /// Filter by region (geo codes: US, CA, EU, APAC or region substrings)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// Prefer spot offerings
+    #[arg(long, conflicts_with = "exclude_spot")]
+    pub spot: bool,
+
+    /// Exclude spot offerings
+    #[arg(long, conflicts_with = "spot")]
+    pub exclude_spot: bool,
 }
 
 /// Filters for listing active rentals
@@ -443,6 +546,12 @@ pub struct DeployCommand {
 
     #[command(flatten)]
     pub storage: StorageOptions,
+
+    #[command(flatten)]
+    pub topology_spread: TopologySpreadOptions,
+
+    #[command(flatten)]
+    pub websocket: WebSocketOptions,
 
     #[command(flatten)]
     pub health: HealthCheckOptions,
@@ -543,6 +652,22 @@ pub struct GpuOptions {
     /// Required node affinity labels (hard constraint, format: key=value)
     #[arg(long, value_name = "KEY=VALUE")]
     pub require_node: Vec<String>,
+
+    /// GPU interconnect type (e.g., SXM, PCIe)
+    #[arg(long)]
+    pub interconnect: Option<String>,
+
+    /// Region preference (geo codes: US, CA, EU, APAC)
+    #[arg(long)]
+    pub region: Option<String>,
+
+    /// Prefer spot instances (preferredDuringScheduling)
+    #[arg(long, conflicts_with = "exclude_spot")]
+    pub spot: bool,
+
+    /// Exclude spot instances (NotIn scheduling)
+    #[arg(long, conflicts_with = "spot")]
+    pub exclude_spot: bool,
 }
 
 /// Storage configuration options
@@ -572,6 +697,78 @@ impl Default for StorageOptions {
             storage_path: "/data".to_string(),
             storage_cache_mb: 2048,
             storage_sync_ms: 1000,
+        }
+    }
+}
+
+/// CLI argument for spread mode
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+pub enum SpreadModeArg {
+    /// Best-effort spreading (ScheduleAnyway)
+    #[default]
+    Preferred,
+    /// Strict spreading (DoNotSchedule)
+    Required,
+    /// One pod per node (pod anti-affinity)
+    #[value(name = "unique-nodes", alias = "unique_nodes")]
+    UniqueNodes,
+}
+
+/// Topology spread configuration options
+#[derive(clap::Args, Debug, Clone)]
+pub struct TopologySpreadOptions {
+    /// Pod spreading mode: preferred, required, or unique-nodes
+    /// - preferred: Best-effort spreading (default)
+    /// - required: Strict spreading, pods fail to schedule if constraints unsatisfied
+    /// - unique-nodes: One pod per node guaranteed (for unique IP requirements)
+    #[arg(long, value_name = "MODE")]
+    pub spread_mode: Option<SpreadModeArg>,
+
+    /// Shorthand for --spread-mode unique-nodes (one pod per node)
+    #[arg(long, conflicts_with = "spread_mode")]
+    pub unique_nodes: bool,
+
+    /// Maximum skew for pod spreading (1-10, default: 1)
+    /// Only applies to preferred and required modes
+    #[arg(long, default_value = "1")]
+    pub max_skew: i32,
+
+    /// Topology key for spreading
+    /// - kubernetes.io/hostname (default, node-level)
+    /// - topology.kubernetes.io/zone (zone-level)
+    /// - topology.kubernetes.io/region (region-level)
+    #[arg(long, default_value = "kubernetes.io/hostname")]
+    pub topology_key: String,
+}
+
+impl Default for TopologySpreadOptions {
+    fn default() -> Self {
+        Self {
+            spread_mode: None,
+            unique_nodes: false,
+            max_skew: 1,
+            topology_key: "kubernetes.io/hostname".to_string(),
+        }
+    }
+}
+
+/// WebSocket configuration options
+#[derive(clap::Args, Debug, Clone)]
+pub struct WebSocketOptions {
+    /// Enable WebSocket support for long-lived connections
+    #[arg(long)]
+    pub websocket: bool,
+
+    /// WebSocket idle timeout in seconds (60-3600, default: 1800)
+    #[arg(long, default_value = "1800")]
+    pub ws_idle_timeout: u32,
+}
+
+impl Default for WebSocketOptions {
+    fn default() -> Self {
+        Self {
+            websocket: false,
+            ws_idle_timeout: 1800,
         }
     }
 }
@@ -627,9 +824,10 @@ pub struct NetworkingOptions {
     #[arg(short, long, value_name = "PORT[:NAME]", default_value = "8000")]
     pub port: Vec<String>,
 
-    /// Create public URL (default: true)
-    #[arg(long, default_value = "true")]
-    pub public: bool,
+    /// Make deployment private (requires share token for access).
+    /// By default, deployments are public.
+    #[arg(long)]
+    pub private: bool,
 
     /// Environment variables (KEY=VALUE)
     #[arg(short, long, value_name = "KEY=VALUE")]
@@ -638,15 +836,28 @@ pub struct NetworkingOptions {
     /// Additional pip packages to install
     #[arg(long, num_args = 1..)]
     pub pip: Vec<String>,
+
+    /// Enroll deployment in public metadata for validator verification
+    #[arg(long)]
+    pub public_metadata: bool,
+}
+
+impl NetworkingOptions {
+    /// Resolve whether deployment should be public.
+    /// Default is public unless --private is specified.
+    pub fn is_public(&self) -> bool {
+        !self.private
+    }
 }
 
 impl Default for NetworkingOptions {
     fn default() -> Self {
         Self {
             port: vec!["8000".to_string()],
-            public: true,
+            private: false,
             env: vec![],
             pip: vec![],
+            public_metadata: false,
         }
     }
 }
@@ -697,15 +908,18 @@ pub enum DeployAction {
     /// Get deployment status
     #[command(name = "status", visible_alias = "get")]
     Status {
-        /// Deployment name
-        name: String,
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
+        /// Show share token status for private deployments
+        #[arg(long)]
+        show_token: bool,
     },
 
     /// Stream deployment logs
     #[command(name = "logs")]
     Logs {
-        /// Deployment name
-        name: String,
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
         /// Follow log output
         #[arg(short, long)]
         follow: bool,
@@ -717,8 +931,8 @@ pub enum DeployAction {
     /// Delete a deployment
     #[command(name = "delete", visible_alias = "rm")]
     Delete {
-        /// Deployment name
-        name: String,
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
         /// Skip confirmation
         #[arg(short, long)]
         yes: bool,
@@ -727,10 +941,290 @@ pub enum DeployAction {
     /// Scale deployment replicas
     #[command(name = "scale")]
     Scale {
-        /// Deployment name
-        name: String,
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
         /// Number of replicas
         #[arg(long)]
         replicas: u32,
     },
+
+    /// Restart a deployment (rolling restart)
+    #[command(name = "restart")]
+    Restart {
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
+    },
+
+    /// Manage share tokens for private deployments
+    #[command(name = "share-token")]
+    ShareToken {
+        #[command(subcommand)]
+        action: ShareTokenAction,
+    },
+
+    /// Manage public metadata enrollment for validator verification
+    #[command(name = "enroll-metadata")]
+    EnrollMetadata {
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
+        /// Enable public metadata enrollment
+        #[arg(long)]
+        enable: bool,
+        /// Disable public metadata enrollment
+        #[arg(long, conflicts_with = "enable")]
+        disable: bool,
+    },
+
+    /// View public metadata for a deployment (no authentication required)
+    #[command(name = "metadata")]
+    Metadata {
+        /// Instance name to look up
+        name: String,
+    },
+
+    /// Deploy vLLM inference server
+    #[command(name = "vllm")]
+    Vllm {
+        /// HuggingFace model ID (default: Qwen/Qwen3-0.6B)
+        model: Option<String>,
+
+        #[command(flatten)]
+        common: TemplateCommonOptions,
+
+        #[command(flatten)]
+        vllm: VllmOptions,
+    },
+
+    /// Deploy SGLang inference server
+    #[command(name = "sglang")]
+    Sglang {
+        /// HuggingFace model ID (default: Qwen/Qwen2.5-0.5B-Instruct)
+        model: Option<String>,
+
+        #[command(flatten)]
+        common: TemplateCommonOptions,
+
+        #[command(flatten)]
+        sglang: SglangOptions,
+    },
+
+    /// Deploy OpenClaw gateway
+    #[command(name = "openclaw")]
+    Openclaw {
+        #[command(flatten)]
+        common: TemplateCommonOptions,
+
+        #[command(flatten)]
+        openclaw: OpenclawOptions,
+    },
+
+    /// Deploy Tau agent
+    #[command(name = "tau")]
+    Tau {
+        #[command(flatten)]
+        common: TemplateCommonOptions,
+
+        #[command(flatten)]
+        tau: TauOptions,
+    },
+}
+
+/// Share token management actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum ShareTokenAction {
+    /// Regenerate share token (creates new token, invalidates previous)
+    #[command(name = "regenerate", visible_alias = "create")]
+    Regenerate {
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
+    },
+
+    /// Check if share token exists for a deployment
+    #[command(name = "status")]
+    Status {
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
+    },
+
+    /// Revoke share token (deployment becomes inaccessible via share URL)
+    #[command(name = "revoke", visible_alias = "delete")]
+    Revoke {
+        /// Deployment name (interactive selection if omitted)
+        name: Option<String>,
+
+        /// Skip confirmation prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+}
+
+/// Common options for deployment templates (vLLM, SGLang, etc.)
+#[derive(clap::Args, Debug, Clone, Default)]
+pub struct TemplateCommonOptions {
+    /// Deployment name (auto-generated if not specified)
+    #[arg(short, long)]
+    pub name: Option<String>,
+
+    /// Number of GPUs (auto-detected if not specified)
+    #[arg(long)]
+    pub gpu: Option<u32>,
+
+    /// GPU model requirements (e.g., "A100", "H100")
+    #[arg(long)]
+    pub gpu_model: Vec<String>,
+
+    /// Memory allocation (default: 16Gi)
+    #[arg(long, default_value = "16Gi")]
+    pub memory: String,
+
+    /// Disable persistent storage cache
+    #[arg(long)]
+    pub no_storage: bool,
+
+    /// Time-to-live in seconds
+    #[arg(long)]
+    pub ttl: Option<u32>,
+
+    /// Deployment timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub timeout: u32,
+
+    /// Environment variables (KEY=VALUE)
+    #[arg(short, long, value_name = "KEY=VALUE")]
+    pub env: Vec<String>,
+
+    /// Don't wait for deployment to be ready
+    #[arg(long)]
+    pub detach: bool,
+
+    /// Output as JSON
+    #[arg(long)]
+    pub json: bool,
+}
+
+/// vLLM-specific deployment options
+#[derive(clap::Args, Debug, Clone, Default)]
+pub struct VllmOptions {
+    /// Tensor parallel size (number of GPUs for parallelism)
+    #[arg(long)]
+    pub tensor_parallel_size: Option<u32>,
+
+    /// Maximum model length (sequence length)
+    #[arg(long)]
+    pub max_model_len: Option<u32>,
+
+    /// Model dtype (auto, float16, bfloat16, float32)
+    #[arg(long)]
+    pub dtype: Option<String>,
+
+    /// Quantization method (awq, gptq, squeezellm, fp8)
+    #[arg(long)]
+    pub quantization: Option<String>,
+
+    /// OpenAI API model name
+    #[arg(long)]
+    pub served_model_name: Option<String>,
+
+    /// API key for authentication
+    #[arg(long)]
+    pub api_key: Option<String>,
+
+    /// GPU memory utilization (0.0-1.0)
+    #[arg(long)]
+    pub gpu_memory_utilization: Option<f32>,
+
+    /// Disable CUDA graphs (use eager mode)
+    #[arg(long)]
+    pub enforce_eager: bool,
+
+    /// Trust remote code from HuggingFace
+    #[arg(long)]
+    pub trust_remote_code: bool,
+}
+
+/// SGLang-specific deployment options
+#[derive(clap::Args, Debug, Clone, Default)]
+pub struct SglangOptions {
+    /// Tensor parallel size (number of GPUs for parallelism)
+    #[arg(long)]
+    pub tensor_parallel_size: Option<u32>,
+
+    /// Maximum context length
+    #[arg(long)]
+    pub context_length: Option<u32>,
+
+    /// Quantization method
+    #[arg(long)]
+    pub quantization: Option<String>,
+
+    /// Static memory fraction (0.0-1.0)
+    #[arg(long)]
+    pub mem_fraction_static: Option<f32>,
+
+    /// Trust remote code from HuggingFace
+    #[arg(long)]
+    pub trust_remote_code: bool,
+}
+
+/// OpenClaw-specific deployment options
+#[derive(clap::Args, Debug, Clone)]
+pub struct OpenclawOptions {
+    /// Provider preset (openai, anthropic)
+    #[arg(long, value_name = "PROVIDER", default_value = "openai")]
+    pub provider: OpenclawProvider,
+
+    /// Backend URL for OpenClaw (OpenAI-compatible API base URL)
+    #[arg(long, value_name = "URL")]
+    pub backend_url: Option<String>,
+
+    /// Model ID to use (e.g., Qwen/Qwen2.5-7B-Instruct)
+    #[arg(long, value_name = "MODEL_ID")]
+    pub model_id: Option<String>,
+
+    /// Provider ID (default: openai)
+    #[arg(long, value_name = "PROVIDER_ID")]
+    pub provider_id: Option<String>,
+
+    /// Provider API type (default: openai-completions)
+    #[arg(long, value_name = "API")]
+    pub provider_api: Option<String>,
+
+    /// Context window size (default: 32768)
+    #[arg(long, value_name = "TOKENS")]
+    pub context_window: Option<u32>,
+
+    /// Max tokens (default: 8192)
+    #[arg(long, value_name = "TOKENS")]
+    pub max_tokens: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum OpenclawProvider {
+    Openai,
+    Anthropic,
+}
+/// Tau-specific deployment options
+#[derive(clap::Args, Debug, Clone)]
+pub struct TauOptions {
+    /// Telegram bot token (from `@BotFather`)
+    #[arg(
+        long,
+        value_name = "TOKEN",
+        env = "TAU_BOT_TOKEN",
+        hide_env_values = true
+    )]
+    pub bot_token: Option<String>,
+
+    /// Chutes API token for Tau's LLM + voice backend
+    #[arg(
+        long,
+        value_name = "TOKEN",
+        env = "CHUTES_API_TOKEN",
+        hide_env_values = true
+    )]
+    pub chutes_api_token: Option<String>,
+
+    /// Chat model override for Tau (maps to TAU_CHAT_MODEL)
+    #[arg(long, value_name = "MODEL", env = "TAU_CHAT_MODEL")]
+    pub chat_model: Option<String>,
 }

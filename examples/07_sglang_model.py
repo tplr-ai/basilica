@@ -22,9 +22,9 @@ compile_cache = basilica.Volume.from_name("sglang-cache", create_if_missing=True
 @basilica.deployment(
     name="sglang-qwen",
     image="lmsysorg/sglang:latest",
-    gpu="NVIDIA-RTX-A4000",
     port=30000,
     gpu_count=1,
+    min_gpu_memory_gb=16,
     memory="16Gi",
     ttl_seconds=3600,
     timeout=900,

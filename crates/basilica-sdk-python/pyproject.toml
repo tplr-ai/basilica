@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "basilica-sdk"
-version = "0.9.0"
+version = "0.25.2"
 description = "Python SDK for deploying containerized applications on the Basilica GPU cloud"
 readme = "README.md"
 license = { text = "MIT OR Apache-2.0" }
@@ -54,6 +54,6 @@ Issues = "https://github.com/one-covenant/basilica/issues"
 Changelog = "https://github.com/one-covenant/basilica/blob/main/crates/basilica-sdk-python/CHANGELOG.md"
 
 [tool.maturin]
-features = ["pyo3/extension-module"]
+features = ["pyo3/extension-module", "pyo3/abi3-py310"]
 python-source = "python"
 module-name = "basilica._basilica"

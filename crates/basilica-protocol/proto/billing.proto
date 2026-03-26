@@ -21,9 +21,8 @@ service BillingService {
     rpc IngestTelemetry(stream TelemetryData) returns (IngestResponse);
     rpc GetUsageReport(UsageReportRequest) returns (UsageReportResponse);
 
-    // Miner revenue reconciliation
-    rpc RefreshMinerRevenueSummary(RefreshMinerRevenueSummaryRequest) returns (RefreshMinerRevenueSummaryResponse);
-    rpc GetMinerRevenueSummary(GetMinerRevenueSummaryRequest) returns (GetMinerRevenueSummaryResponse);
+    // Miner delivery aggregation
+    rpc GetMinerDelivery(GetMinerDeliveryRequest) returns (GetMinerDeliveryResponse);
 
     // Rental status lookup (for credit exhaustion monitoring)
     rpc GetRentalStatus(GetRentalStatusRequest) returns (GetRentalStatusResponse);
@@ -70,6 +69,8 @@ message TrackRentalRequest {
     oneof cloud_type {
         CommunityCloudData community = 20;
         SecureCloudData secure = 21;
+        OrchestratorCloudData orchestrator = 22;
+        StorageCloudData storage = 23;
     }
 }
 
@@ -81,15 +82,55 @@ message CommunityCloudData {
     uint32 gpu_count = 4;          // Number of GPUs in this rental
     uint32 miner_uid = 5;          // Bittensor miner UID for payment reconciliation
     string miner_hotkey = 6;       // Bittensor miner hotkey for payment reconciliation
+    double markup_percent = 7;
 }
 
 // Secure cloud rental data (direct provider API)
+// Uses additive pricing: total_cost = hours × (gpu_cost + cpu_cost + ram_cost + storage_cost)
 message SecureCloudData {
     string provider_instance_id = 1; // Provider's instance ID
     string provider = 2;              // Provider name (e.g., "datacrunch", "hyperstack")
     string offering_id = 3;           // Original offering ID from aggregator
-    double base_price_per_gpu = 4;    // Final price per GPU per hour (already includes markup)
-    uint32 gpu_count = 5;             // Number of GPUs in this rental
+    double base_price_per_gpu = 4;    // Price per GPU per hour (0 for CPU-only rentals)
+    uint32 gpu_count = 5;             // Number of GPUs in this rental (0 for CPU-only rentals)
+    double base_price_per_cpu = 6;    // Price per vCPU per hour (0 for GPU rentals)
+    uint32 cpu_count = 7;             // Number of vCPUs in this rental
+    double base_price_per_ram = 8;    // Price per GB RAM per hour (0 for GPU rentals)
+    uint32 ram_gb = 9;                // Amount of RAM in GB
+    double base_price_per_storage = 10; // Price per GB storage per hour (0 for GPU rentals)
+    uint32 storage_gb = 11;             // Amount of storage in GB
+    double markup_percent = 12;
+}
+
+// Orchestrator cloud rental data (K3s UserDeployment billing)
+// Uses additive pricing: total_cost = hours × (gpu_cost + cpu_cost + ram_cost + storage_cost)
+message OrchestratorCloudData {
+    string namespace = 1;             // User namespace (e.g., "u-github-12345")
+    string instance_name = 2;         // UserDeployment instance name
+    string user_id = 3;               // User identifier
+    uint32 replicas = 4;              // Number of replicas
+    bool storage_enabled = 5;         // FUSE storage enabled
+    bool public = 6;                  // Publicly accessible
+    double base_price_per_gpu = 7;    // Price per GPU per hour (0 for CPU-only)
+    uint32 gpu_count = 8;             // Number of GPUs (0 for CPU-only)
+    double base_price_per_cpu = 9;    // Price per vCPU per hour
+    uint32 cpu_count = 10;            // Number of vCPUs
+    double base_price_per_ram = 11;   // Price per GB RAM per hour
+    uint32 ram_gb = 12;               // Amount of RAM in GB
+    double base_price_per_storage = 13; // Price per GB storage per hour
+    uint32 storage_gb = 14;             // Amount of storage in GB
+}
+
+// Storage cloud rental data (block storage volumes)
+// Uses additive pricing: total_cost = hours × (storage_cost)
+message StorageCloudData {
+    string provider = 1;                // Provider name (e.g., "hyperstack")
+    string provider_volume_id = 2;      // Provider's volume ID
+    string volume_type = 3;             // Volume type (e.g., "Cloud-SSD")
+    string region = 4;                  // Region where volume exists
+    uint32 size_gb = 5;                 // Volume size in GB
+    double base_price_per_storage = 6;  // Price per GB per hour (already includes markup)
+    string attached_rental_id = 7;      // Optional: rental ID when attached
 }
 
 message ResourceSpec {
@@ -109,6 +150,7 @@ message GpuSpec {
 message TrackRentalResponse {
     bool success = 1;
     string tracking_id = 2;
+    string current_status = 3;
 }
 
 message UpdateRentalStatusRequest {
@@ -172,6 +214,8 @@ message ActiveRental {
     oneof cloud_type {
         CommunityCloudData community = 20;
         SecureCloudData secure = 21;
+        OrchestratorCloudData orchestrator = 22;
+        StorageCloudData storage = 23;
     }
 }
 
@@ -271,70 +315,25 @@ message ErrorDetail {
     map<string, string> metadata = 3;
 }
 
-// Miner Revenue Reconciliation Messages
+// Miner Delivery Messages
 
-message RefreshMinerRevenueSummaryRequest {
-    google.protobuf.Timestamp period_start = 1; // Start of period (inclusive)
-    google.protobuf.Timestamp period_end = 2; // End of period (exclusive)
-    uint32 computation_version = 3; // Version of computation logic (default: 1)
+message GetMinerDeliveryRequest {
+    int64 since_epoch_seconds = 1;
+    int64 until_epoch_seconds = 2;
+    repeated string miner_hotkeys = 3;
 }
 
-message RefreshMinerRevenueSummaryResponse {
-    bool success = 1;
-    uint32 summaries_created = 2; // Number of summary rows created
-    google.protobuf.Timestamp computed_at = 3;
-    string error_message = 4;
+message MinerDelivery {
+    string miner_hotkey = 1;
+    uint32 miner_uid = 2;
+    double total_hours = 3;
+    double revenue_usd = 4;
+    string gpu_category = 5;
+    reserved 6;
+    reserved 7, 8, 9, 10;
+    string node_id = 11;
 }
 
-message GetMinerRevenueSummaryRequest {
-    // Filter criteria (all optional)
-    repeated string node_ids = 1; // Filter by specific node IDs
-    repeated string validator_ids = 2; // Filter by specific validator IDs
-    google.protobuf.Timestamp period_start = 3; // Filter by period start
-    google.protobuf.Timestamp period_end = 4; // Filter by period end
-    google.protobuf.Timestamp computed_at = 5; // Get snapshot from specific computation time
-    bool latest_only = 6; // Only return most recent computation for each (node, validator, period)
-
-    // Pagination
-    uint32 limit = 7;
-    uint32 offset = 8;
-
-    // Filter by miner UIDs
-    repeated uint32 miner_uids = 9; // Filter by specific Bittensor miner UIDs
-
-    // Filter by miner hotkeys
-    repeated string miner_hotkeys = 10; // Filter by specific Bittensor miner hotkeys
-}
-
-message GetMinerRevenueSummaryResponse {
-    repeated MinerRevenueSummary summaries = 1;
-    uint64 total_count = 2;
-}
-
-message MinerRevenueSummary {
-    string id = 1; // UUID
-    string node_id = 2;
-    string validator_id = 3; // Nullable
-    uint32 miner_uid = 16; // Bittensor miner UID (part of grouping key with miner_hotkey)
-    string miner_hotkey = 17; // Bittensor miner hotkey (part of grouping key with miner_uid)
-
-    // Time period
-    google.protobuf.Timestamp period_start = 4;
-    google.protobuf.Timestamp period_end = 5;
-
-    // Aggregated metrics
-    uint32 total_rentals = 6;
-    uint32 completed_rentals = 7;
-    uint32 failed_rentals = 8;
-    string total_revenue = 9; // Decimal string (TAO)
-    string total_hours = 10; // Decimal string
-
-    // Computed metrics
-    string avg_hourly_rate = 11; // Decimal string (nullable)
-    string avg_rental_duration_hours = 12; // Decimal string (nullable)
-
-    // Audit fields
-    google.protobuf.Timestamp computed_at = 13;
-    uint32 computation_version = 14;
-    google.protobuf.Timestamp created_at = 15;
+message GetMinerDeliveryResponse {
+    repeated MinerDelivery deliveries = 1;
 }

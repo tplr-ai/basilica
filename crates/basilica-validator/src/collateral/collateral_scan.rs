@@ -1,3 +1,4 @@
+use crate::config::collateral::CollateralConfig;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
 use collateral_contract::{config::CollateralNetworkConfig, CollateralEvent};
@@ -6,16 +7,19 @@ use tracing::{error, info};
 
 pub struct Collateral {
     config: crate::config::VerificationConfig,
+    collateral_config: CollateralConfig,
     persistence: Arc<SimplePersistence>,
 }
 
 impl Collateral {
     pub fn new(
         config: crate::config::VerificationConfig,
+        collateral_config: CollateralConfig,
         persistence: Arc<SimplePersistence>,
     ) -> Self {
         Self {
             config,
+            collateral_config,
             persistence,
         }
     }
@@ -39,9 +43,18 @@ impl Collateral {
     pub async fn scan_handle_collateral_events(&self) -> Result<()> {
         let last_block = self.persistence.get_last_scanned_block_number().await?;
         let from_block = last_block + 1;
+        let network = match self.collateral_config.network.as_str() {
+            "mainnet" => collateral_contract::config::Network::Mainnet,
+            "testnet" => collateral_contract::config::Network::Testnet,
+            "local" => collateral_contract::config::Network::Local,
+            _ => collateral_contract::config::Network::Mainnet,
+        };
+        let network_config = CollateralNetworkConfig::from_network(
+            &network,
+            Some(self.collateral_config.contract_address.clone()),
+        )?;
         let (to_block, events_map) =
-            collateral_contract::scan_events(from_block, &CollateralNetworkConfig::default())
-                .await?;
+            collateral_contract::scan_events(from_block, &network_config).await?;
 
         let mut sorted_events_map = events_map.iter().collect::<Vec<_>>();
 

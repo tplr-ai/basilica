@@ -33,7 +33,7 @@ impl Misbehaviour {
         metrics: Option<Arc<ValidatorPrometheusMetrics>>,
     ) -> Self {
         Self {
-            ban_manager: Arc::new(BanManager::new(persistence.clone(), metrics)),
+            ban_manager: Arc::new(BanManager::new(persistence.clone(), metrics, None, None)),
             persistence,
         }
     }
@@ -150,10 +150,12 @@ impl Misbehaviour {
                     miner_uid = miner_uid,
                     executor_id = executor_id,
                     error = %e,
-                    "[MISBEHAVIOUR] Ban status check failed, returning unbanned profile"
+                    "[MISBEHAVIOUR] Ban status check failed, returning fail-closed profile"
                 );
                 Some(MisbehaviourProfile {
-                    is_banned: false,
+                    // Fail closed: treat unknown as banned to avoid spoofing.
+                    // TODO: Consider a softer penalty path if availability issues become frequent.
+                    is_banned: true,
                     ban_expiry: None,
                     check_timestamp: Utc::now(),
                     miner_uid,

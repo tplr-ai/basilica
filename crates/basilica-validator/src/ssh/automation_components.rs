@@ -474,7 +474,7 @@ mod tests {
             fallback_to_static: true,
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: Some(1000),
-            binary_validation: crate::config::BinaryValidationConfig::default(),
+            binary_validation: None,
             docker_validation: crate::config::DockerValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
             node_validation_interval: Duration::from_secs(12 * 3600),

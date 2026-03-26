@@ -51,6 +51,12 @@ pub enum DeployError {
     #[error("GPU resource validation failed: {message}")]
     GpuResourceMismatch { message: String },
 
+    #[error("No private deployments found")]
+    NoPrivateDeployments,
+
+    #[error("Share token operation failed: {message}")]
+    ShareTokenError { message: String },
+
     #[error("Source error: {0}")]
     Source(#[from] SourceError),
 
@@ -78,6 +84,10 @@ pub enum CliError {
     /// Deployment errors
     #[error(transparent)]
     Deploy(#[from] DeployError),
+
+    /// Invalid volume provider
+    #[error("Invalid provider: {0}")]
+    InvalidProvider(String),
 
     /// Everything else (using color-eyre's Report for rich errors)
     #[error(transparent)]

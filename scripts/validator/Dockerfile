@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM rust:1.88-slim-bookworm AS builder
 
 # Install system dependencies
@@ -15,12 +16,14 @@ RUN rustup component add rustfmt
 
 WORKDIR /workspace
 
-# Copy workspace files for dependency resolution
+# Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 
-# Pre-build dependencies to cache them
-RUN cargo fetch
+# Fetch dependencies with cache mount
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,id=basilica-cargo-git \
+    cargo fetch
 
 # Build arguments
 ARG BUILD_MODE=release
@@ -42,7 +45,11 @@ ENV CARGO_HTTP_TIMEOUT=120
 
 # Build the validator directly (workspace should resolve dependencies)
 # Set explicit endpoint if network is specified but endpoint is not
-RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
+# Use cache mounts for cargo registry and target to speed up rebuilds
+RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-registry \
+    --mount=type=cache,target=/usr/local/cargo/git,id=basilica-cargo-git \
+    --mount=type=cache,target=/tmp/target,id=basilica-cargo-target \
+    if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
         case "$BITTENSOR_NETWORK" in \
             test) export METADATA_CHAIN_ENDPOINT="wss://test.finney.opentensor.ai:443" ;; \
             local) export METADATA_CHAIN_ENDPOINT="ws://subtensor:9944" ;; \
@@ -62,11 +69,8 @@ RUN if [ -n "$BITTENSOR_NETWORK" ] && [ -z "$METADATA_CHAIN_ENDPOINT" ]; then \
             cargo build -p basilica-validator --bin basilica-validator; \
         fi; \
     fi && \
-    # List what was built for debugging
-    ls -la /tmp/target/release/ || true && \
-    # Clean up intermediate build artifacts to save space - updated cleanup logic
-    rm -rf /tmp/target/debug/deps /tmp/target/debug/incremental /tmp/target/release/deps /tmp/target/release/incremental 2>/dev/null || true && \
-    find /tmp/target -name "*.rlib" -delete 2>/dev/null || true
+    # Copy binary out of cache mount to a regular layer
+    cp /tmp/target/${BUILD_MODE}/basilica-validator /workspace/basilica-validator
 
 # Runtime image
 FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
@@ -83,8 +87,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the built binary
-ARG BUILD_MODE=release
-COPY --from=builder /tmp/target/${BUILD_MODE}/basilica-validator /usr/local/bin/basilica-validator
+COPY --from=builder /workspace/basilica-validator /usr/local/bin/basilica-validator
 
 # Create basilica bin directory
 RUN mkdir -p /opt/basilica/bin
@@ -102,7 +105,7 @@ RUN chmod +x /usr/local/bin/basilica-validator && \
 RUN mkdir -p /var/lib/basilica/basilica-validator && \
     chmod 755 /var/lib/basilica/basilica-validator
 
-EXPOSE 8080 9090
+EXPOSE 8080 9090 50052
 
 # Default command
 ENTRYPOINT ["/usr/local/bin/basilica-validator"]

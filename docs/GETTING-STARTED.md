@@ -698,7 +698,7 @@ python3 ../../../examples/deploy_container.py
 ### Join the Community
 
 - GitHub: <https://github.com/your-org/basilica>
-- Discord: <https://discord.gg/basilica>
+- Discord: <https://discord.gg/Cy7c9vPsNK>
 - Documentation: <https://docs.basilica.ai>
 
 ---

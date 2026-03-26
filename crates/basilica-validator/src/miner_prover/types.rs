@@ -82,10 +82,12 @@ impl std::fmt::Display for ValidationType {
 pub struct NodeVerificationResult {
     pub node_id: NodeId, // Using NodeId alias which maps to NodeId
     pub node_ssh_endpoint: String,
+    pub node_ip: String,
     pub verification_score: f64,
     pub ssh_connection_successful: bool,
     pub binary_validation_successful: bool,
     pub node_result: Option<NodeResult>,
+    pub failure_reasons: Vec<String>,
     pub error: Option<String>,
     pub execution_time: Duration,
     pub validation_details: ValidationDetails,
@@ -115,6 +117,8 @@ pub struct NodeResult {
     pub cpu_info: BinaryCpuInfo,
     pub memory_info: BinaryMemoryInfo,
     pub network_info: BinaryNetworkInfo,
+    pub cpu_pow: Option<CpuPowResult>,
+    pub storage_pow: Option<StoragePowResult>,
     pub matrix_c: CompressedMatrix,
     pub computation_time_ns: u64,
     pub checksum: [u8; 32],
@@ -197,6 +201,25 @@ pub struct SmStat {
     pub max_warps: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CpuPowResult {
+    pub valid: bool,
+    pub cpu_model: String,
+    pub iterations: u64,
+    pub chunk_size: u64,
+    pub duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoragePowResult {
+    pub valid: bool,
+    pub file_id: String,
+    pub file_size_bytes: u64,
+    pub block_size: u32,
+    pub samples: usize,
+    pub duration_ms: u64,
+}
+
 /// Detailed node information for verification processes
 #[derive(Debug, Clone)]
 pub struct NodeInfoDetailed {
@@ -205,6 +228,7 @@ pub struct NodeInfoDetailed {
     pub status: String,
     pub capabilities: Vec<String>,
     pub node_ssh_endpoint: String,
+    pub node_ip: String,
     pub hourly_rate_cents: u32,
 }
 
@@ -214,6 +238,7 @@ pub struct ValidatorBinaryOutput {
     pub success: bool,
     pub node_result: Option<NodeResult>,
     pub error_message: Option<String>,
+    pub failure_reasons: Vec<String>,
     pub execution_time_ms: u64,
     pub validation_score: f64,
     pub gpu_count: u64,

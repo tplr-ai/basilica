@@ -73,6 +73,28 @@ pub struct ListDepositsResponse {
     #[prost(message, repeated, tag = "1")]
     pub items: ::prost::alloc::vec::Vec<DepositRecord>,
 }
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetTokenPricesRequest {
+    #[prost(uint32, tag = "1")]
+    pub netuid: u32,
+}
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetTokenPricesResponse {
+    #[prost(string, tag = "1")]
+    pub tao_price_usd: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub alpha_price_usd: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub alpha_price_tao: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub tao_reserve: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub alpha_reserve: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub fetched_at: ::prost::alloc::string::String,
+}
 /// Generated client implementations.
 pub mod payments_service_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
@@ -248,6 +270,36 @@ pub mod payments_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_token_prices(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetTokenPricesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetTokenPricesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/basilica.payments.v1.PaymentsService/GetTokenPrices",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "basilica.payments.v1.PaymentsService",
+                        "GetTokenPrices",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -276,6 +328,13 @@ pub mod payments_service_server {
             request: tonic::Request<super::ListDepositsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListDepositsResponse>,
+            tonic::Status,
+        >;
+        async fn get_token_prices(
+            &self,
+            request: tonic::Request<super::GetTokenPricesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetTokenPricesResponse>,
             tonic::Status,
         >;
     }
@@ -486,6 +545,53 @@ pub mod payments_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ListDepositsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/basilica.payments.v1.PaymentsService/GetTokenPrices" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetTokenPricesSvc<T: PaymentsService>(pub Arc<T>);
+                    impl<
+                        T: PaymentsService,
+                    > tonic::server::UnaryService<super::GetTokenPricesRequest>
+                    for GetTokenPricesSvc<T> {
+                        type Response = super::GetTokenPricesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetTokenPricesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as PaymentsService>::get_token_prices(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetTokenPricesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

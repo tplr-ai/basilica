@@ -109,7 +109,8 @@ Below is a typical sequence for integrating and using this collateral contract w
   - Confirm on-chain that your collateral has been successfully locked for that GPU node
 
 - **Slashing Misbehaving Miners**
-  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` with the `miner`, `slashAmount`, `executorUuid`, and justification details to reduce the miner’s collateral.
+  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` for a full slash or `slashCollateralAmount()` for a partial slash, providing the `hotkey`, `executorUuid`, `amount` (partial only), and justification details to reduce the miner’s collateral.
+  Partial slashing requires the upgraded contract that includes `slashCollateralAmount` plus regenerated ABI/CLI bindings.
 
 - **Reclaiming Collateral**
   - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract) associated with the collateral.

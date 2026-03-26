@@ -1,62 +1,110 @@
-// Miner Discovery Protocol - Validator to Miner communication
+// Miner Registration Protocol - Miner to Validator communication
 syntax = "proto3";
 
 package basilca.miner.v1;
 
 import "common.proto";
 
-// MinerDiscovery service for validator-miner interaction
-service MinerDiscovery {
-  // Authenticate validator with the miner
-  rpc AuthenticateValidator(ValidatorAuthRequest) returns (MinerAuthResponse);
+// MinerRegistration service for miner→validator registration flow
+service MinerRegistration {
+  // One-time registration of nodes with SSH details + pricing (called on miner startup)
+  rpc RegisterBid(RegisterBidRequest) returns (RegisterBidResponse);
 
-  // Discover available nodes from miner
-  rpc DiscoverNodes(DiscoverNodesRequest) returns (ListNodeConnectionDetailsResponse);
+  // Update bid price for an existing registered node
+  rpc UpdateBid(UpdateBidRequest) returns (UpdateBidResponse);
+
+  // Explicitly remove node(s) from availability
+  rpc RemoveBid(RemoveBidRequest) returns (RemoveBidResponse);
+
+  // Lightweight periodic heartbeat to keep registrations active
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
-message ValidatorAuthRequest {
-  string validator_hotkey = 1;
-  string signature = 2;
-  string nonce = 3;
-  basilca.common.v1.Timestamp timestamp = 4;
-  string target_miner_hotkey = 5;
+message CollateralStatus {
+  double current_alpha = 1;           // Raw Alpha amount deposited
+  double current_usd_value = 2;       // USD value at current price
+  double minimum_usd_required = 3;    // Minimum for this GPU category
+  string status = 4;                  // "sufficient", "warning", "undercollateralized", "excluded"
+  string grace_period_remaining = 5;  // "23h 45m" or empty
+  string action_required = 6;         // "Deposit 25 Alpha (~$50) to maintain eligibility"
+  double alpha_usd_price = 7;         // Current Alpha/USD price used
+  bool price_stale = 8;               // True if price > 1hr old
 }
 
-message MinerAuthResponse {
-  bool authenticated = 1;
-  string session_token = 2;
-  basilca.common.v1.Timestamp expires_at = 3;
-  basilca.common.v1.ErrorInfo error = 4;
+// ============================================================================
+// MinerRegistration service messages (miner→validator flow)
+// ============================================================================
 
-  // Miner identity verification fields
-  string miner_hotkey = 5;       // Miner's hotkey for verification
-  string miner_signature = 6;     // Signature proving miner's identity
-  string response_nonce = 7;      // Nonce included in signature to prevent replay
+// Node registration details including SSH access info
+message NodeRegistration {
+  reserved 1;                       // Previously node_id (now computed server-side from host)
+  string host = 2;                  // SSH host (IP or hostname)
+  uint32 port = 3;                  // SSH port (typically 22)
+  string username = 4;              // SSH username
+  string gpu_category = 5;          // GPU type: "H100", "A100", "B200", etc.
+  uint32 gpu_count = 6;             // Number of GPUs on this node
+  uint32 hourly_rate_cents = 7;     // Price in cents per GPU per hour
+  bytes attestation = 8;            // Optional hardware attestation
 }
 
-// Node discovery request - validators request available nodes from miners
-message DiscoverNodesRequest {
-  string validator_hotkey = 1;
-  string signature = 2;
-  string nonce = 3;
-  string validator_public_key = 4;  // Required: SSH public key
-  basilca.common.v1.Timestamp timestamp = 5;
-  string target_miner_hotkey = 6;
+// RegisterBid: One-time registration when miner comes online
+message RegisterBidRequest {
+  string miner_hotkey = 1;          // Miner's hotkey for identification
+  repeated NodeRegistration nodes = 2;  // Nodes to register with SSH details
+  int64 timestamp = 3;              // Unix timestamp (seconds or millis)
+  bytes signature = 4;              // Signature over miner_hotkey|timestamp
 }
 
-// Node connection details for direct SSH access
-message NodeConnectionDetails {
-  string node_id = 1;
-  string host = 2;
-  string port = 3;
-  string username = 4;
-  string additional_opts = 5;
-  basilca.common.v1.GpuSpec gpu_spec = 6;
-  string status = 7;
-  uint32 hourly_rate_cents = 8;  // Price in cents per GPU per hour (e.g., 250 = $2.50/hour)
+message RegisterBidResponse {
+  bool accepted = 1;                       // Whether registration was accepted
+  string registration_id = 2;              // Unique registration ID for tracking
+  string validator_ssh_public_key = 3;     // Validator's SSH public key to deploy
+  uint32 health_check_interval_secs = 4;   // How often to send health checks
+  string error_message = 5;                // Error details if not accepted
+  CollateralStatus collateral_status = 6;  // Collateral status (worst across nodes)
 }
 
-// Response containing list of available nodes
-message ListNodeConnectionDetailsResponse {
-  repeated NodeConnectionDetails nodes = 1; // list of nodes
+// UpdateBid: Update price for existing registered node
+message UpdateBidRequest {
+  string miner_hotkey = 1;          // Miner's hotkey for identification
+  reserved 2;                       // Previously node_id (now computed server-side from host)
+  uint32 hourly_rate_cents = 3;     // New price in cents per GPU per hour
+  int64 timestamp = 4;              // Unix timestamp
+  bytes signature = 5;              // Signature over miner_hotkey|host|hourly_rate_cents|timestamp
+  string host = 6;                  // SSH host (IP or hostname) identifying the node
+}
+
+message UpdateBidResponse {
+  bool accepted = 1;
+  string error_message = 2;
+}
+
+// RemoveBid: Explicitly remove node(s) from availability
+message RemoveBidRequest {
+  string miner_hotkey = 1;          // Miner's hotkey for identification
+  reserved 2;                       // Previously node_ids (now using hosts)
+  int64 timestamp = 3;              // Unix timestamp
+  bytes signature = 4;              // Signature over miner_hotkey|hosts|timestamp
+  repeated string hosts = 5;        // Hosts to remove (empty = remove all)
+}
+
+message RemoveBidResponse {
+  bool accepted = 1;
+  uint32 nodes_removed = 2;         // Number of nodes removed
+  string error_message = 3;
+}
+
+// HealthCheck: Lightweight periodic heartbeat
+message HealthCheckRequest {
+  string miner_hotkey = 1;          // Miner's hotkey for identification
+  reserved 2;                       // Previously node_ids (now using hosts)
+  int64 timestamp = 3;              // Unix timestamp
+  bytes signature = 4;              // Signature over miner_hotkey|hosts|timestamp
+  repeated string hosts = 5;        // Optional: specific hosts to check (empty = all)
+}
+
+message HealthCheckResponse {
+  bool accepted = 1;
+  uint32 nodes_active = 2;          // Number of nodes marked active
+  string error_message = 3;
 }

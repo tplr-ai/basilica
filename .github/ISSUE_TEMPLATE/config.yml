@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Discord Community
-    url: https://discord.gg/tsErZGXX
+    url: https://discord.gg/Cy7c9vPsNK
     about: Ask questions and discuss with the community
   - name: Documentation
     url: https://github.com/one-covenant/basilica/tree/main/docs
     about: Check our documentation for common questions
   - name: Security Issues
-    url: https://discord.gg/tsErZGXX
+    url: https://discord.gg/Cy7c9vPsNK
     about: Please report security vulnerabilities via Discord

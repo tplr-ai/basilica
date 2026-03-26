@@ -1,0 +1,125 @@
+# Composable Local Development Environment for Basilica
+# Use profiles to start specific service groups:
+#   docker compose --profile network up -d      # Subtensor only
+#   docker compose --profile validator up -d    # + Validator
+#   docker compose --profile miner up -d        # + Miner
+#   docker compose up -d                        # Everything
+
+services:
+  # =============================================================================
+  # Network Layer - Local Subtensor
+  # =============================================================================
+  subtensor:
+    image: ghcr.io/opentensor/subtensor-localnet:devnet-ready
+    container_name: basilica-subtensor
+    profiles: ["network", "validator", "miner", "all"]
+    ports:
+      - "9944:9944"
+      - "30334:30334"
+    volumes:
+      - subtensor-data:/tmp/alice
+    command:
+      - --base-path=/tmp/alice
+      - --chain=local
+      - --alice
+      - --port=30334
+      - --rpc-port=9944
+      - --validator
+      - --rpc-external
+      - --rpc-cors=all
+      - --rpc-methods=unsafe
+      - --allow-private-ipv4
+      - --unsafe-force-node-key-generation
+    networks:
+      basilica-localnet:
+        ipv4_address: 172.28.0.10
+
+  # =============================================================================
+  # Validator Service
+  # =============================================================================
+  validator:
+    image: basilica-localnet-validator
+    pull_policy: never
+    platform: linux/amd64  # Required for validator-binary (x86-64 ELF)
+    build:
+      context: ../..
+      dockerfile: scripts/validator/Dockerfile
+      args:
+        BITTENSOR_NETWORK: "local"
+        METADATA_CHAIN_ENDPOINT: "ws://subtensor:9944"
+    container_name: basilica-validator
+    profiles: ["validator", "miner"]
+    restart: unless-stopped
+    depends_on:
+      subtensor:
+        condition: service_started
+    environment:
+      - RUST_LOG=info,basilica_validator=debug
+      - RUST_BACKTRACE=1
+    volumes:
+      - ./configs/validator.toml:/app/validator.toml:ro
+      - validator-data:/opt/basilica/data
+      - validator-ssh:/opt/basilica/data/ssh_keys
+      - ./wallets:/root/.bittensor/wallets:ro
+    ports:
+      - "8080:8080"   # API
+      - "9090:9090"   # Metrics
+      - "50052:50052" # Bidding gRPC
+    networks:
+      basilica-localnet:
+        ipv4_address: 172.28.0.20
+    command: ["start", "--config", "/app/validator.toml"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
+  # =============================================================================
+  # Miner Service
+  # =============================================================================
+  miner:
+    image: basilica-localnet-miner
+    pull_policy: never
+    build:
+      context: ../..
+      dockerfile: scripts/miner/Dockerfile
+      args:
+        BITTENSOR_NETWORK: "local"
+        METADATA_CHAIN_ENDPOINT: "ws://subtensor:9944"
+    container_name: basilica-miner
+    profiles: ["miner"]
+    restart: unless-stopped
+    depends_on:
+      subtensor:
+        condition: service_started
+      validator:
+        condition: service_healthy
+    environment:
+      - RUST_LOG=info,basilica_miner=debug
+      - RUST_BACKTRACE=1
+      - HOME=/var/lib/basilica/miner
+    volumes:
+      - ./configs/miner.toml:/app/miner.toml:ro
+      - miner-data:/var/lib/basilica/miner/data
+      - ./ssh-keys:/var/lib/basilica/miner/.ssh:ro
+      - ./wallets:/var/lib/basilica/miner/.bittensor/wallets:ro
+    ports:
+      - "8092:50051"  # gRPC server (validator communications)
+      - "8091:8091"   # Bittensor axon port
+      - "9091:9090"   # Metrics
+    networks:
+      basilica-localnet:
+        ipv4_address: 172.28.0.30
+    command: ["--config", "/app/miner.toml"]
+
+networks:
+  basilica-localnet:
+    external: true
+
+volumes:
+  subtensor-data:
+  validator-data:
+  validator-ssh:
+  miner-data:

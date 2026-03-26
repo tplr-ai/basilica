@@ -44,8 +44,6 @@ def main():
         print(f"    Model: {cpu.model}")
 
         # Availability info (typed access)
-        print(f"  Verification score: {availability.verification_score:.2f}")
-        print(f"  Uptime: {availability.uptime_percentage:.1f}%")
         if availability.available_until:
             print(f"  Available until: {availability.available_until}")
 

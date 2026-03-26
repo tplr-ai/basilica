@@ -5,6 +5,7 @@
 
 use color_eyre::eyre::{eyre, Result};
 use semver::Version;
+use serde::Deserialize;
 use std::io::IsTerminal;
 
 /// Minimum supported version for auto-updates (first release with new CI binary format)
@@ -42,9 +43,11 @@ pub struct ReleaseInfo {
 ///
 /// # Examples
 /// ```
-/// extract_version_from_tag("basilica-cli-v0.5.5") // Some(Version(0.5.5))
-/// extract_version_from_tag("basilica-cli-0.5.5")  // Some(Version(0.5.5))
-/// extract_version_from_tag("invalid")              // None
+/// use basilica_cli::github_releases::extract_version_from_tag;
+///
+/// assert!(extract_version_from_tag("basilica-cli-v0.5.5").is_some());
+/// assert!(extract_version_from_tag("basilica-cli-0.5.5").is_some());
+/// assert!(extract_version_from_tag("invalid").is_none());
 /// ```
 pub fn extract_version_from_tag(tag: &str) -> Option<Version> {
     let version_str = tag
@@ -61,8 +64,10 @@ pub fn extract_version_from_tag(tag: &str) -> Option<Version> {
 ///
 /// # Examples
 /// ```
-/// format_cli_tag("0.5.5")   // "basilica-cli-v0.5.5"
-/// format_cli_tag("v0.5.5")  // "basilica-cli-v0.5.5"
+/// use basilica_cli::github_releases::format_cli_tag;
+///
+/// assert_eq!(format_cli_tag("0.5.5"), "basilica-cli-v0.5.5");
+/// assert_eq!(format_cli_tag("v0.5.5"), "basilica-cli-v0.5.5");
 /// ```
 pub fn format_cli_tag(version: &str) -> String {
     let clean_version = version.trim_start_matches('v');
@@ -100,16 +105,42 @@ pub fn should_check_for_updates() -> bool {
     true
 }
 
+/// A GitHub release as returned by the GitHub API.
+///
+/// We fetch releases directly instead of using `self_update::backends::github::ReleaseList`
+/// because `self_update`'s `Release` struct drops the `prerelease` and `draft` fields during
+/// JSON parsing, making it impossible to filter out GitHub pre-releases that have a clean
+/// semver tag (e.g., `0.18.2` marked as pre-release while CI builds assets).
+#[derive(Debug, Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    prerelease: bool,
+    draft: bool,
+}
+
 /// Fetch all releases from GitHub
-pub fn fetch_cli_releases() -> Result<Vec<self_update::update::Release>> {
+fn fetch_cli_releases() -> Result<Vec<GitHubRelease>> {
     let config = GitHubConfig::basilica();
-    self_update::backends::github::ReleaseList::configure()
-        .repo_owner(config.owner)
-        .repo_name(config.repo)
-        .build()
-        .map_err(|e| eyre!("Failed to configure release list: {}", e))?
-        .fetch()
-        .map_err(|e| eyre!("Failed to fetch releases from GitHub: {}", e))
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/releases?per_page=100",
+        config.owner, config.repo
+    );
+
+    let client = reqwest::blocking::Client::new();
+    let response = client
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "basilica-cli")
+        .send()
+        .map_err(|e| eyre!("Failed to fetch releases from GitHub: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(eyre!("GitHub API returned status {}", response.status()));
+    }
+
+    response
+        .json::<Vec<GitHubRelease>>()
+        .map_err(|e| eyre!("Failed to parse GitHub releases: {}", e))
 }
 
 /// Find the latest compatible CLI release
@@ -136,15 +167,20 @@ pub fn find_latest_cli_release(
     let latest = releases
         .iter()
         .filter_map(|r| {
+            // Skip GitHub pre-releases and drafts (e.g., CI still building assets)
+            if r.prerelease || r.draft {
+                return None;
+            }
+
             // Must match CLI release tag pattern
-            if !r.version.starts_with("basilica-cli-v") {
+            if !r.tag_name.starts_with("basilica-cli-v") {
                 return None;
             }
 
             // Extract and parse version
-            let version = extract_version_from_tag(&r.version)?;
+            let version = extract_version_from_tag(&r.tag_name)?;
 
-            // Skip prerelease versions (rc, beta, alpha, etc.)
+            // Skip semver prerelease versions (rc, beta, alpha, etc.)
             if !version.pre.is_empty() {
                 return None;
             }
@@ -163,7 +199,7 @@ pub fn find_latest_cli_release(
 
             Some(ReleaseInfo {
                 version,
-                tag: r.version.clone(),
+                tag: r.tag_name.clone(),
             })
         })
         .max_by(|a, b| a.version.cmp(&b.version));

@@ -13,12 +13,16 @@ contract CollateralUpgradeableTest is Test {
     ERC1967Proxy public proxy;
 
     // Test parameters
-    uint16 constant NETUID = 42;
+    uint16 constant NETUID = 39;
     address constant trustee = address(0x123);
     uint256 constant MIN_DEPOSIT = 1 ether;
     uint64 constant DECISION_TIMEOUT = 3600; // 1 hour
     address constant admin = address(0x456);
     address constant alice = address(0x789);
+    bytes32 constant zeroColdkey = bytes32(uint256(0));
+    bytes32 constant alphaHotkey = bytes32(uint256(1));
+    bytes32 constant alphaColdkey = bytes32(uint256(2));
+    uint256 constant alphaAmount = 1 ether;
 
     function setUp() public {
         // Deploy implementation
@@ -31,7 +35,8 @@ contract CollateralUpgradeableTest is Test {
             trustee,
             MIN_DEPOSIT,
             DECISION_TIMEOUT,
-            admin
+            admin,
+            alphaHotkey
         );
 
         // Deploy proxy
@@ -64,7 +69,8 @@ contract CollateralUpgradeableTest is Test {
             trustee,
             MIN_DEPOSIT,
             DECISION_TIMEOUT,
-            admin
+            admin,
+            alphaHotkey
         );
     }
 
@@ -76,11 +82,10 @@ contract CollateralUpgradeableTest is Test {
 
         // Test event emission
         vm.expectEmit(true, true, true, true, address(collateral));
-        emit Deposit(hotkey, nodeId, alice, 5 ether);
+        emit Deposit(hotkey, nodeId, alice, 5 ether, alphaHotkey, 0);
 
         vm.prank(alice);
-        collateral.deposit{value: 5 ether}(hotkey, nodeId);
-
+        collateral.deposit{value: 5 ether}(hotkey, nodeId, alphaHotkey, 0);
         // Verify state
         assertEq(collateral.collaterals(hotkey, nodeId), 5 ether);
         assertEq(collateral.nodeToMiner(hotkey, nodeId), alice);
@@ -141,7 +146,9 @@ contract CollateralUpgradeableTest is Test {
         bytes32 indexed hotkey,
         bytes16 indexed nodeId,
         address indexed miner,
-        uint256 amount
+        uint256 amount,
+        bytes32 alphaHotkey,
+        uint256 alphaAmount
     );
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
@@ -158,7 +165,9 @@ contract CollateralUpgradeableTest is Test {
         bytes32 indexed hotkey,
         bytes16 indexed nodeId,
         address miner,
-        uint256 amount
+        uint256 amount,
+        bytes32 alphaColdkey,
+        uint256 alphaAmount
     );
     event Denied(
         uint256 indexed reclaimRequestId,
@@ -169,7 +178,8 @@ contract CollateralUpgradeableTest is Test {
         bytes32 indexed hotkey,
         bytes16 indexed nodeId,
         address indexed miner,
-        uint256 amount,
+        uint256 slashAmount,
+        uint256 slashAlphaAmount,
         string url,
         bytes16 urlContentMd5Checksum
     );
@@ -183,5 +193,17 @@ contract CollateralUpgradeableTest is Test {
     event TrusteeUpdated(
         address indexed oldTrustee,
         address indexed newTrustee
+    );
+
+    event DecisionTimeoutUpdated(uint64 oldTimeout, uint64 newTimeout);
+
+    event MinCollateralIncreaseUpdated(
+        uint256 oldMinIncrease,
+        uint256 newMinIncrease
+    );
+
+    event AlphaColdkeyUpdated(
+        bytes32 indexed oldAlphaColdkey,
+        bytes32 indexed newAlphaColdkey
     );
 }

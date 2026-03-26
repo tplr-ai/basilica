@@ -33,4 +33,4 @@ basilica-common = { path = "../basilica-common" }
 [dev-dependencies]
 subxt = { workspace = true }
 subxt-signer = { workspace = true }
-bittensor = { path = "../bittensor" }
+bittensor = { workspace = true }

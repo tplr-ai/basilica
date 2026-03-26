@@ -10,6 +10,19 @@ use console::style;
 use self_update::cargo_crate_version;
 use semver::Version;
 
+/// Short alias name for the CLI binary
+const CLI_ALIAS: &str = "bs";
+
+/// Resolve the actual binary path by following symlinks.
+///
+/// `std::env::current_exe()` on macOS does NOT resolve symlinks — when invoked
+/// as `bs` (a symlink to `basilica`), it returns `.../bin/bs`. This helper
+/// canonicalizes the path so we always operate on the real `basilica` binary.
+fn resolve_binary_path() -> Option<std::path::PathBuf> {
+    let current_exe = std::env::current_exe().ok()?;
+    Some(std::fs::canonicalize(&current_exe).unwrap_or(current_exe))
+}
+
 /// Handle the upgrade command
 /// Note: This function uses blocking operations from self_update crate
 pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliError> {
@@ -62,17 +75,26 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
 
     // Configure and execute the update
     let config = GitHubConfig::basilica();
+    let resolved_exe = resolve_binary_path()
+        .ok_or_else(|| CliError::Internal(eyre!("Failed to determine executable path")))?;
     let mut update_builder = self_update::backends::github::Update::configure();
 
     update_builder
         .repo_owner(config.owner)
         .repo_name(config.repo)
         .bin_name("basilica")
+        .bin_install_path(resolved_exe.parent().unwrap())
         .current_version(current_version)
         .show_download_progress(true)
         .show_output(false)
         .no_confirm(true)
         .target_version_tag(&target_tag);
+
+    // Change CWD to the binary's directory so that self_replace's
+    // read_link() → relative path resolves correctly
+    if let Some(bin_dir) = resolved_exe.parent() {
+        std::env::set_current_dir(bin_dir).expect("failed to set CWD to binary's parent directory");
+    }
 
     // Build and execute the update
     let status = update_builder
@@ -136,25 +158,30 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
 fn ensure_alias_symlink() {
     use std::os::unix::fs::symlink;
 
-    let Ok(current_exe) = std::env::current_exe() else {
+    let Some(resolved) = resolve_binary_path() else {
         return;
     };
-    let Some(parent) = current_exe.parent() else {
+    let Some(parent) = resolved.parent() else {
         return;
     };
-    let Some(binary_name) = current_exe.file_name() else {
+    let Some(binary_name) = resolved.file_name() else {
         return;
     };
 
-    let alias_path = parent.join("bs");
+    // If the resolved binary name is already the alias, skip to avoid a self-referencing symlink
+    if binary_name == CLI_ALIAS {
+        return;
+    }
+
+    let alias_path = parent.join(CLI_ALIAS);
 
     // Remove existing symlink/file if present (ignore errors)
     let _ = std::fs::remove_file(&alias_path);
 
     // Create new symlink (relative, so it survives directory moves)
     match symlink(binary_name, &alias_path) {
-        Ok(_) => println!("Created 'bs' alias"),
-        Err(e) => eprintln!("Failed to create 'bs' alias: {}", e),
+        Ok(_) => println!("Created '{}' alias", CLI_ALIAS),
+        Err(e) => eprintln!("Failed to create '{}' alias: {}", CLI_ALIAS, e),
     }
 }
 

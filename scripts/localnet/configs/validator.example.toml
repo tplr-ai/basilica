@@ -1,0 +1,123 @@
+# Basilica Validator Configuration - Local Development
+# Pre-configured for local Subtensor network
+
+[database]
+url = "sqlite:///opt/basilica/data/validator.db"
+max_connections = 10
+run_migrations = true
+
+[server]
+host = "0.0.0.0"
+port = 8080
+advertised_host = "validator"
+advertised_port = 8080
+advertised_tls = false
+max_connections = 1000
+request_timeout = { secs = 30 }
+
+[bittensor]
+wallet_name = "validator"
+hotkey_name = "default"
+network = "local"
+netuid = 1
+chain_endpoint = "ws://subtensor:9944"
+weight_interval_secs = 300
+axon_port = 8080
+external_ip = "172.28.0.20"
+
+[verification]
+max_concurrent_verifications = 50
+max_concurrent_full_validations = 1
+min_score_threshold = 0.1
+verification_interval = { secs = 600 }
+challenge_timeout = { secs = 120 }
+retry_attempts = 3
+retry_delay = { secs = 5 }
+use_dynamic_discovery = true
+discovery_timeout = { secs = 30 }
+fallback_to_static = true
+cache_miner_info_ttl = { secs = 300 }
+enable_worker_queue = false
+
+# Binary validation disabled for localnet (requires NVIDIA GPU hardware)
+# [verification.binary_validation]
+# validator_binary_path = "/opt/basilica/bin/validator-binary/validator-binary"
+# executor_binary_path = "/opt/basilica/bin/executor-binary/executor-binary"
+# execution_timeout_secs = 1200
+# output_format = "json"
+
+# Storage validation - reduced for localnet (0.1TB instead of default 1TB)
+[verification.storage_validation]
+min_required_storage_bytes = 109951162777
+
+[ssh_validation]
+enabled = true
+timeout = { secs = 60 }
+max_file_size = "10MB"
+allowed_commands = ["gpu-attestor", "nvidia-smi"]
+temp_dir = "/tmp/basilica-validation"
+
+[scoring]
+gpu_weight = 0.4
+cpu_weight = 0.2
+memory_weight = 0.2
+network_weight = 0.1
+reliability_weight = 0.1
+
+[metrics]
+enabled = true
+retention_period = { secs = 604800 }
+
+[metrics.prometheus]
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"
+
+[logging]
+level = "debug"
+format = "json"
+output = "/opt/basilica/data/validator.log"
+max_file_size = 104857600
+max_files = 10
+
+[api]
+enabled = true
+swagger_enabled = true
+cors_enabled = true
+cors_origins = ["*"]
+rate_limit = 100
+
+[storage]
+data_dir = "/opt/basilica/data"
+
+[ssh_session]
+ssh_key_directory = "/opt/basilica/data/ssh_keys"
+key_algorithm = "ed25519"
+default_session_duration = 300
+max_session_duration = 3600
+rental_session_duration = 3600
+key_cleanup_interval = { secs = 60, nanos = 0 }
+enable_automated_sessions = true
+max_concurrent_sessions = 5
+session_rate_limit = 200
+enable_audit_logging = true
+audit_log_path = "/opt/basilica/data/ssh_audit.log"
+ssh_connection_timeout = { secs = 30, nanos = 0 }
+ssh_command_timeout = { secs = 60, nanos = 0 }
+ssh_retry_attempts = 3
+ssh_retry_delay = { secs = 2, nanos = 0 }
+
+[emission]
+burn_percentage = 0.0
+burn_uid = 0
+weight_set_interval_blocks = 360
+min_miners_per_category = 1
+weight_version_key = 0
+
+[emission.gpu_allocations]
+A100 = { weight = 100.0, min_gpu_count = 1, min_gpu_vram = 1 }
+
+api_endpoint = "http://basilica-api:8000"
+
+[bid_grpc]
+listen_address = "0.0.0.0:50052"

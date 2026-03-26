@@ -6,24 +6,27 @@ use std::str::FromStr;
 /// Type of misbehaviour that can trigger a ban
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MisbehaviourType {
-    /// Failed rental request
-    BadRental,
-    /// Rejected rental request
-    RejectedRental,
+    /// Deployment failed (covers bid-won-deployment-failed and bad-rental)
+    DeploymentFailed,
     /// Rental halted unexpectedly
     HaltedRental,
+    /// Rental interrupted (machine yanked / interruptible)
+    InterruptedRental,
     /// Provided malicious or incorrect results
     MaliciousResult,
+    /// Full validation GPU facts don't match miner-declared bid metadata
+    GpuDeclarationMismatch,
 }
 
 impl MisbehaviourType {
     /// Convert to database string representation
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::BadRental => "bad_rental",
-            Self::RejectedRental => "rejected_rental",
+            Self::DeploymentFailed => "deployment_failed",
             Self::HaltedRental => "halted_rental",
+            Self::InterruptedRental => "interrupted_rental",
             Self::MaliciousResult => "malicious_result",
+            Self::GpuDeclarationMismatch => "gpu_declaration_mismatch",
         }
     }
 }
@@ -33,10 +36,14 @@ impl FromStr for MisbehaviourType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "bad_rental" => Ok(Self::BadRental),
-            "rejected_rental" => Ok(Self::RejectedRental),
+            "deployment_failed"
+            | "bad_rental"
+            | "bid_won_deployment_failed"
+            | "rejected_rental" => Ok(Self::DeploymentFailed),
             "halted_rental" => Ok(Self::HaltedRental),
+            "interrupted_rental" => Ok(Self::InterruptedRental),
             "malicious_result" => Ok(Self::MaliciousResult),
+            "gpu_declaration_mismatch" => Ok(Self::GpuDeclarationMismatch),
             _ => Err(format!("Unknown misbehaviour type: {}", s)),
         }
     }
@@ -48,15 +55,32 @@ impl fmt::Display for MisbehaviourType {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_misbehaviour_types_roundtrip() {
+        let types = vec![
+            MisbehaviourType::DeploymentFailed,
+            MisbehaviourType::InterruptedRental,
+            MisbehaviourType::GpuDeclarationMismatch,
+        ];
+        for t in types {
+            let as_str = t.as_str();
+            let parsed = MisbehaviourType::from_str(as_str).unwrap();
+            assert_eq!(t, parsed);
+        }
+    }
+}
+
 /// Log entry for executor misbehaviour
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MisbehaviourLog {
     /// Miner UID
     pub miner_uid: u16,
-    /// Executor ID
-    pub executor_id: String,
-    /// GPU UUID that misbehaved
-    pub gpu_uuid: String,
+    /// Node ID that misbehaved
+    pub node_id: String,
     /// When the misbehaviour was recorded
     pub recorded_at: DateTime<Utc>,
     /// Executor endpoint
@@ -75,8 +99,7 @@ impl MisbehaviourLog {
     /// Create a new misbehaviour log entry
     pub fn new(
         miner_uid: u16,
-        executor_id: String,
-        gpu_uuid: String,
+        node_id: String,
         endpoint_executor: String,
         type_of_misbehaviour: MisbehaviourType,
         details: String,
@@ -84,8 +107,7 @@ impl MisbehaviourLog {
         let now = Utc::now();
         Self {
             miner_uid,
-            executor_id,
-            gpu_uuid,
+            node_id,
             recorded_at: now,
             endpoint_executor,
             type_of_misbehaviour,

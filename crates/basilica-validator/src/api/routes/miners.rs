@@ -7,7 +7,6 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use serde_json::Value;
 use tracing::{error, info};
 
 /// List all registered miners with filtering and pagination
@@ -38,16 +37,8 @@ pub async fn list_miners(
                     }
                 }
 
-                let total_gpu_count = calculate_total_gpu_count(&miner_data.node_info);
-
                 if let Some(min_gpu_count) = query.min_gpu_count {
-                    if total_gpu_count < min_gpu_count {
-                        continue;
-                    }
-                }
-
-                if let Some(min_score) = query.min_score {
-                    if miner_data.verification_score < min_score {
+                    if miner_data.node_count < min_gpu_count {
                         continue;
                     }
                 }
@@ -58,11 +49,7 @@ pub async fn list_miners(
                     endpoint: miner_data.endpoint,
                     status,
                     node_count: miner_data.node_count,
-                    total_gpu_count,
-                    verification_score: miner_data.verification_score,
-                    uptime_percentage: miner_data.uptime_percentage,
-                    last_seen: miner_data.last_seen,
-                    registered_at: miner_data.registered_at,
+                    updated_at: miner_data.updated_at,
                 });
             }
 
@@ -94,7 +81,6 @@ pub async fn get_miner(
     match state.persistence.get_miner_by_id(&miner_id).await {
         Ok(Some(miner_data)) => {
             let status = determine_miner_status(&miner_data);
-            let total_gpu_count = calculate_total_gpu_count(&miner_data.node_info);
 
             Ok(Json(MinerDetails {
                 miner_id: miner_data.miner_id,
@@ -102,11 +88,7 @@ pub async fn get_miner(
                 endpoint: miner_data.endpoint,
                 status,
                 node_count: miner_data.node_count,
-                total_gpu_count,
-                verification_score: miner_data.verification_score,
-                uptime_percentage: miner_data.uptime_percentage,
-                last_seen: miner_data.last_seen,
-                registered_at: miner_data.registered_at,
+                updated_at: miner_data.updated_at,
             }))
         }
         Ok(None) => Err(ApiError::NotFound("Miner not found".to_string())),
@@ -139,7 +121,7 @@ pub async fn get_miner_health(
                 .map(|eh| NodeHealthStatus {
                     node_id: eh.node_id,
                     status: eh.status,
-                    last_seen: eh.last_seen,
+                    last_health_check: eh.last_health_check,
                 })
                 .collect();
 
@@ -199,14 +181,10 @@ pub async fn list_miner_nodes(
 
 fn determine_miner_status(miner_data: &crate::persistence::MinerData) -> MinerStatus {
     let now = Utc::now();
-    let time_since_last_seen = now.signed_duration_since(miner_data.last_seen);
+    let time_since_update = now.signed_duration_since(miner_data.updated_at);
 
-    if time_since_last_seen.num_minutes() > 10 {
+    if time_since_update.num_minutes() > 10 {
         MinerStatus::Offline
-    } else if miner_data.verification_score < 0.5 {
-        MinerStatus::Suspended
-    } else if miner_data.uptime_percentage < 80.0 {
-        MinerStatus::Inactive
     } else {
         MinerStatus::Active
     }
@@ -243,18 +221,6 @@ fn status_matches_filter(status: &MinerStatus, filter: &str) -> bool {
         "inactive" => matches!(status, MinerStatus::Inactive),
         "offline" => matches!(status, MinerStatus::Offline),
         "verifying" => matches!(status, MinerStatus::Verifying),
-        "suspended" => matches!(status, MinerStatus::Suspended),
         _ => true,
-    }
-}
-
-fn calculate_total_gpu_count(node_info: &Value) -> u32 {
-    if let Some(nodes) = node_info.as_array() {
-        nodes
-            .iter()
-            .filter_map(|node| node.get("gpu_count").and_then(|gc| gc.as_u64()))
-            .sum::<u64>() as u32
-    } else {
-        0
     }
 }

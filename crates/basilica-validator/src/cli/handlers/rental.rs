@@ -3,6 +3,7 @@
 //! Handles CLI commands for container rental operations via the Validator API
 
 use anyhow::{Context, Result};
+use basilica_common::types::GpuCategory;
 use std::time::Duration;
 use tracing::info;
 
@@ -57,7 +58,10 @@ pub async fn handle_rental_command(
 
     match action {
         RentalAction::Start {
-            node,
+            gpu_category,
+            gpu_count,
+            min_memory_gb,
+            max_hourly_rate_cents,
             image,
             ports,
             env,
@@ -65,12 +69,14 @@ pub async fn handle_rental_command(
             command,
             cpu_cores,
             memory_mb,
-            gpu_count,
             storage_mb,
         } => {
             handle_start_rental(
                 client,
-                node,
+                gpu_category,
+                gpu_count,
+                min_memory_gb,
+                max_hourly_rate_cents,
                 image,
                 ports,
                 env,
@@ -78,7 +84,6 @@ pub async fn handle_rental_command(
                 command,
                 cpu_cores,
                 memory_mb,
-                gpu_count,
                 storage_mb,
             )
             .await
@@ -101,7 +106,10 @@ pub async fn handle_rental_command(
 #[allow(clippy::too_many_arguments)]
 async fn handle_start_rental(
     client: ValidatorClient,
-    node: String,
+    gpu_category: String,
+    gpu_count: u32,
+    min_memory_gb: Option<u32>,
+    max_hourly_rate_cents: u32,
     image: String,
     ports: Vec<String>,
     env: Vec<String>,
@@ -109,10 +117,18 @@ async fn handle_start_rental(
     command: Vec<String>,
     cpu_cores: Option<f64>,
     memory_mb: Option<i64>,
-    gpu_count: Option<u32>,
     storage_mb: Option<i64>,
 ) -> Result<()> {
-    info!("Starting rental on node {}", node);
+    // Validate gpu_category is a known GPU type
+    let gpu_cat: GpuCategory = gpu_category.parse().unwrap(); // Infallible
+    if matches!(&gpu_cat, GpuCategory::Other(_)) {
+        anyhow::bail!("GPU type '{}' is not supported", gpu_category);
+    }
+
+    info!(
+        "Starting rental for {} x {} GPU(s)",
+        gpu_count, gpu_category
+    );
 
     // Parse port mappings and environment variables
     let port_mappings: Vec<PortMappingRequest> = parse_port_mappings(&ports)?
@@ -123,7 +139,10 @@ async fn handle_start_rental(
 
     // Build API request
     let request = StartRentalRequest {
-        node_id: node,
+        gpu_category,
+        gpu_count,
+        min_memory_gb,
+        max_hourly_rate_cents,
         container_image: image,
         ssh_public_key,
         environment,
@@ -132,12 +151,11 @@ async fn handle_start_rental(
             cpu_cores: cpu_cores.unwrap_or(0.0),
             memory_mb: memory_mb.unwrap_or(0),
             storage_mb: storage_mb.unwrap_or(0),
-            gpu_count: gpu_count.unwrap_or(0),
+            gpu_count,
             gpu_types: Vec::new(),
         },
         command,
         volumes: Vec::new(),
-        no_ssh: false,
     };
 
     // Call API to start rental
@@ -291,8 +309,8 @@ async fn handle_ls_nodes(
     info!("");
 
     // Format output similar to basilica-cli
-    info!("GPU                                   | Node ID                              | CPU        | RAM    | Score | Uptime");
-    info!("--------------------------------------+--------------------------------------+------------+--------+-------+--------");
+    info!("GPU                                   | Node ID                              | CPU        | RAM");
+    info!("--------------------------------------+--------------------------------------+------------+--------");
 
     for node in response.available_nodes {
         // Format GPU info
@@ -325,7 +343,7 @@ async fn handle_ls_nodes(
         let node_id = node.node.id;
 
         info!(
-            "{:<36} | {:<36} | {:<10} | {:<6} | {:<5.2} | {:<5.1}%",
+            "{:<36} | {:<36} | {:<10} | {:<6}",
             // Truncate GPU info if too long
             if gpu_info.len() > 36 {
                 format!("{}...", &gpu_info[..33])
@@ -335,8 +353,6 @@ async fn handle_ls_nodes(
             node_id,
             format!("{} cores", node.node.cpu_specs.cores),
             format!("{}GB", node.node.cpu_specs.memory_gb),
-            node.availability.verification_score,
-            node.availability.uptime_percentage,
         );
     }
 

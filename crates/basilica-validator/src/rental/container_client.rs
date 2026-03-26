@@ -243,7 +243,7 @@ impl ContainerClient {
 
         // Resource limits
         let mut resource_strings = Vec::new();
-        if spec.resources.cpu_cores > 0.0 {
+        if spec.resources.cpu_cores.is_finite() && spec.resources.cpu_cores > 0.0 {
             resource_strings.push("--cpus".to_string());
             resource_strings.push(spec.resources.cpu_cores.to_string());
         }

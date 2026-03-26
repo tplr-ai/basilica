@@ -1,8 +1,0 @@
----
-# Handlers for wireguard_watchdog role
-
-- name: Restart wireguard watchdog
-  ansible.builtin.systemd:
-    name: wireguard-watchdog
-    state: restarted
-    daemon_reload: yes

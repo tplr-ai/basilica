@@ -1,5 +1,7 @@
 //! Common types used across Basilica components
 
+use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fmt;
@@ -105,16 +107,70 @@ impl AsRef<str> for ApiKeyName {
 /// This enum represents the GPU models that are officially supported and scored
 /// by the Basilica validator network. Any GPU that doesn't match one of these
 /// categories is classified as "Other" for general compute purposes.
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Hash, Eq)]
+///
+/// Serializes as a plain string (e.g., `"A100"`, `"RTX6000"`).
+/// Deserializes from both plain strings and legacy tagged format (`{"Other":"RTX6000"}`).
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum GpuCategory {
     /// NVIDIA A100 - High-end training & inference
     A100,
     /// NVIDIA H100 - Flagship AI training & inference
     H100,
+    /// NVIDIA H200 - High-memory AI training & inference
+    H200,
     /// NVIDIA B200 - Next-gen AI acceleration
     B200,
+    /// NVIDIA B300 - Ultra-class AI acceleration
+    B300,
     /// Other GPU models - General GPU compute
     Other(String),
+}
+
+impl Serialize for GpuCategory {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for GpuCategory {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de;
+
+        struct GpuCategoryVisitor;
+
+        impl<'de> de::Visitor<'de> for GpuCategoryVisitor {
+            type Value = GpuCategory;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a GPU type string or legacy tagged object")
+            }
+
+            fn visit_str<E: de::Error>(self, value: &str) -> Result<GpuCategory, E> {
+                Ok(GpuCategory::from_str(value).unwrap())
+            }
+
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<GpuCategory, A::Error> {
+                // Handle legacy format: {"Other": "RTX6000"}
+                if let Some(key) = map.next_key::<String>()? {
+                    let value: String = map.next_value()?;
+                    if key == "Other" {
+                        return Ok(GpuCategory::from_str(&value).unwrap());
+                    }
+                    // Unknown key - treat the key itself as a GPU type
+                    return Ok(GpuCategory::from_str(&key).unwrap());
+                }
+                Err(de::Error::custom("empty map for GpuCategory"))
+            }
+        }
+
+        deserializer.deserialize_any(GpuCategoryVisitor)
+    }
 }
 
 impl GpuCategory {
@@ -129,10 +185,16 @@ impl GpuCategory {
     /// use basilica_common::types::GpuCategory;
     ///
     /// let supported = GpuCategory::supported_models();
-    /// assert_eq!(supported, vec!["A100", "H100", "B200"]);
+    /// assert_eq!(supported, vec!["A100", "H100", "H200", "B200", "B300"]);
     /// ```
     pub fn supported_models() -> Vec<String> {
-        vec!["A100".to_string(), "H100".to_string(), "B200".to_string()]
+        vec![
+            "A100".to_string(),
+            "H100".to_string(),
+            "H200".to_string(),
+            "B200".to_string(),
+            "B300".to_string(),
+        ]
     }
 
     /// Get the use case description for this GPU category
@@ -140,18 +202,22 @@ impl GpuCategory {
         match self {
             GpuCategory::A100 => "High-end training & inference",
             GpuCategory::H100 => "Flagship AI training & inference",
+            GpuCategory::H200 => "High-memory AI training & inference",
             GpuCategory::B200 => "Next-gen AI acceleration",
+            GpuCategory::B300 => "Ultra-class AI acceleration",
             GpuCategory::Other(_) => "General GPU compute",
         }
     }
 
-    /// Get the display string for this GPU category (e.g., "A100", "H100", "OTHER")
+    /// Get the display string for this GPU category (e.g., "A100", "H100", "RTX6000")
     pub fn as_str(&self) -> String {
         match self {
             GpuCategory::A100 => "A100".to_string(),
             GpuCategory::H100 => "H100".to_string(),
+            GpuCategory::H200 => "H200".to_string(),
             GpuCategory::B200 => "B200".to_string(),
-            GpuCategory::Other(_) => "OTHER".to_string(),
+            GpuCategory::B300 => "B300".to_string(),
+            GpuCategory::Other(name) => name.to_uppercase(),
         }
     }
 }
@@ -181,6 +247,10 @@ impl FromStr for GpuCategory {
             Ok(GpuCategory::A100)
         } else if cleaned.contains("H100") {
             Ok(GpuCategory::H100)
+        } else if cleaned.contains("H200") {
+            Ok(GpuCategory::H200)
+        } else if cleaned.contains("B300") {
+            Ok(GpuCategory::B300)
         } else if cleaned.contains("B200") {
             Ok(GpuCategory::B200)
         } else {
@@ -189,17 +259,123 @@ impl FromStr for GpuCategory {
     }
 }
 
+#[cfg(test)]
+mod gpu_category_serde_tests {
+    use super::*;
+
+    #[test]
+    fn serialize_known_variants() {
+        assert_eq!(
+            serde_json::to_string(&GpuCategory::A100).unwrap(),
+            "\"A100\""
+        );
+        assert_eq!(
+            serde_json::to_string(&GpuCategory::H100).unwrap(),
+            "\"H100\""
+        );
+        assert_eq!(
+            serde_json::to_string(&GpuCategory::B200).unwrap(),
+            "\"B200\""
+        );
+        assert_eq!(
+            serde_json::to_string(&GpuCategory::B300).unwrap(),
+            "\"B300\""
+        );
+    }
+
+    #[test]
+    fn serialize_other_variant() {
+        let rtx = GpuCategory::Other("RTX6000".to_string());
+        assert_eq!(serde_json::to_string(&rtx).unwrap(), "\"RTX6000\"");
+    }
+
+    #[test]
+    fn deserialize_known_variants_from_string() {
+        assert_eq!(
+            serde_json::from_str::<GpuCategory>("\"A100\"").unwrap(),
+            GpuCategory::A100
+        );
+        assert_eq!(
+            serde_json::from_str::<GpuCategory>("\"H100\"").unwrap(),
+            GpuCategory::H100
+        );
+        assert_eq!(
+            serde_json::from_str::<GpuCategory>("\"B200\"").unwrap(),
+            GpuCategory::B200
+        );
+        assert_eq!(
+            serde_json::from_str::<GpuCategory>("\"B300\"").unwrap(),
+            GpuCategory::B300
+        );
+    }
+
+    #[test]
+    fn deserialize_other_from_string() {
+        let rtx: GpuCategory = serde_json::from_str("\"RTX6000\"").unwrap();
+        assert_eq!(rtx, GpuCategory::Other("RTX6000".to_string()));
+    }
+
+    #[test]
+    fn deserialize_legacy_tagged_format() {
+        // Backward compat: old serde externally-tagged format
+        let rtx: GpuCategory = serde_json::from_str("{\"Other\":\"RTX6000\"}").unwrap();
+        assert_eq!(rtx, GpuCategory::Other("RTX6000".to_string()));
+    }
+
+    #[test]
+    fn deserialize_legacy_tagged_known_gpu() {
+        // If legacy format wraps a known GPU name, parse it
+        let h100: GpuCategory = serde_json::from_str("{\"Other\":\"H100\"}").unwrap();
+        assert_eq!(h100, GpuCategory::H100);
+    }
+
+    #[test]
+    fn roundtrip_in_struct() {
+        #[derive(Debug, Serialize, Deserialize, PartialEq)]
+        struct Offering {
+            gpu_type: GpuCategory,
+            count: u32,
+        }
+
+        let original = Offering {
+            gpu_type: GpuCategory::Other("L40S".to_string()),
+            count: 4,
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        assert!(json.contains("\"gpu_type\":\"L40S\""));
+
+        let deserialized: Offering = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[test]
+    fn roundtrip_legacy_format_in_struct() {
+        // Simulates what old API server sends
+        let json = r#"{"gpu_type":{"Other":"RTX6000"},"count":2}"#;
+
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Offering {
+            gpu_type: GpuCategory,
+            count: u32,
+        }
+
+        let parsed: Offering = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.gpu_type, GpuCategory::Other("RTX6000".to_string()));
+        assert_eq!(parsed.count, 2);
+    }
+}
+
 /// Compute category for marketplace differentiation
 ///
-/// Distinguishes between datacenter providers (secure cloud) and miner-provided GPUs (community cloud).
+/// Distinguishes between datacenter providers (The Citadel) and miner-provided GPUs (The Bourse).
 /// Used for routing compute requests to appropriate infrastructure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ComputeCategory {
-    /// Datacenter providers (aggregator service)
-    /// Examples: DataCrunch, Hyperstack, Lambda Labs, HydraHost
+    /// The Citadel - Datacenter providers (aggregator service)
+    /// Examples: Verda, Hyperstack, Lambda Labs, HydraHost
     SecureCloud,
-    /// Miner-provided GPUs (validator-mediated)
+    /// The Bourse - Miner-provided GPUs (validator-mediated)
     /// Bittensor subnet miners providing compute resources
     CommunityCloud,
 }
@@ -216,8 +392,8 @@ impl ComputeCategory {
     /// Get a human-readable description
     pub fn description(&self) -> &'static str {
         match self {
-            ComputeCategory::SecureCloud => "Datacenter providers",
-            ComputeCategory::CommunityCloud => "Miner-provided GPUs",
+            ComputeCategory::SecureCloud => "The Citadel - Datacenter providers",
+            ComputeCategory::CommunityCloud => "The Bourse - Miner-provided GPUs",
         }
     }
 }
@@ -574,11 +750,229 @@ mod tests {
 
         assert_eq!(
             ComputeCategory::SecureCloud.description(),
-            "Datacenter providers"
+            "The Citadel - Datacenter providers"
         );
         assert_eq!(
             ComputeCategory::CommunityCloud.description(),
-            "Miner-provided GPUs"
+            "The Bourse - Miner-provided GPUs"
         );
+    }
+}
+
+/// Cloud provider identifier for GPU offerings
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CloudProvider {
+    Hyperstack,
+    Lambda,
+    HydraHost,
+    /// Verda cloud provider (replacement for DataCrunch)
+    Verda,
+    /// Mass Compute - VM-based GPU rental provider (polling-based, no webhooks)
+    MassCompute,
+    /// The Priory - VIP managed machines (not a real cloud provider, but uses Deployment model)
+    Vip,
+}
+
+impl CloudProvider {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CloudProvider::Hyperstack => "hyperstack",
+            CloudProvider::Lambda => "lambda",
+            CloudProvider::HydraHost => "hydrahost",
+            CloudProvider::Verda => "verda",
+            CloudProvider::MassCompute => "masscompute",
+            CloudProvider::Vip => "vip",
+        }
+    }
+}
+
+impl fmt::Display for CloudProvider {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for CloudProvider {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "datacrunch" => Ok(CloudProvider::Verda), // DataCrunch replaced by Verda
+            "hyperstack" => Ok(CloudProvider::Hyperstack),
+            "lambda" => Ok(CloudProvider::Lambda),
+            "hydrahost" => Ok(CloudProvider::HydraHost),
+            "verda" => Ok(CloudProvider::Verda),
+            "masscompute" | "mass_compute" | "mass-compute" => Ok(CloudProvider::MassCompute),
+            "vip" => Ok(CloudProvider::Vip),
+            _ => Err(format!("Unknown provider: {}", s)),
+        }
+    }
+}
+
+/// Unified GPU offering structure for marketplace
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuOffering {
+    pub id: String,
+    pub provider: CloudProvider,
+    pub gpu_type: GpuCategory,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_memory_gb_per_gpu: Option<u32>,
+    pub gpu_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interconnect: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_type: Option<String>,
+    pub system_memory_gb: u32,
+    pub vcpu_count: u32,
+    pub region: String,
+    #[serde(with = "rust_decimal::serde::str")]
+    pub hourly_rate_per_gpu: Decimal,
+    pub availability: bool,
+    #[serde(default)]
+    pub is_spot: bool,
+    pub fetched_at: DateTime<Utc>,
+    #[serde(skip)]
+    pub raw_metadata: serde_json::Value,
+}
+
+#[cfg(test)]
+mod cloud_provider_tests {
+    use super::*;
+
+    #[test]
+    fn test_cloud_provider_as_str() {
+        assert_eq!(CloudProvider::Hyperstack.as_str(), "hyperstack");
+        assert_eq!(CloudProvider::Lambda.as_str(), "lambda");
+        assert_eq!(CloudProvider::HydraHost.as_str(), "hydrahost");
+        assert_eq!(CloudProvider::Verda.as_str(), "verda");
+        assert_eq!(CloudProvider::MassCompute.as_str(), "masscompute");
+        assert_eq!(CloudProvider::Vip.as_str(), "vip");
+    }
+
+    #[test]
+    fn test_cloud_provider_display() {
+        assert_eq!(CloudProvider::MassCompute.to_string(), "masscompute");
+        assert_eq!(CloudProvider::Hyperstack.to_string(), "hyperstack");
+    }
+
+    #[test]
+    fn test_cloud_provider_from_str() {
+        assert_eq!(
+            "masscompute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "mass_compute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "mass-compute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "MassCompute".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+        assert_eq!(
+            "MASSCOMPUTE".parse::<CloudProvider>().unwrap(),
+            CloudProvider::MassCompute
+        );
+    }
+
+    #[test]
+    fn test_cloud_provider_from_str_existing() {
+        assert_eq!(
+            "hyperstack".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Hyperstack
+        );
+        assert_eq!(
+            "lambda".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Lambda
+        );
+        assert_eq!(
+            "hydrahost".parse::<CloudProvider>().unwrap(),
+            CloudProvider::HydraHost
+        );
+        assert_eq!(
+            "verda".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Verda
+        );
+        assert_eq!(
+            "datacrunch".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Verda
+        );
+        assert_eq!("vip".parse::<CloudProvider>().unwrap(), CloudProvider::Vip);
+    }
+
+    #[test]
+    fn test_cloud_provider_from_str_invalid() {
+        assert!("unknown".parse::<CloudProvider>().is_err());
+        assert!("".parse::<CloudProvider>().is_err());
+    }
+
+    #[test]
+    fn test_cloud_provider_serde_roundtrip() {
+        let provider = CloudProvider::MassCompute;
+        let json = serde_json::to_string(&provider).unwrap();
+        assert_eq!(json, "\"masscompute\"");
+
+        let deserialized: CloudProvider = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, CloudProvider::MassCompute);
+    }
+
+    #[test]
+    fn test_cloud_provider_serde_all_variants() {
+        let variants = vec![
+            (CloudProvider::Hyperstack, "\"hyperstack\""),
+            (CloudProvider::Lambda, "\"lambda\""),
+            (CloudProvider::HydraHost, "\"hydrahost\""),
+            (CloudProvider::Verda, "\"verda\""),
+            (CloudProvider::MassCompute, "\"masscompute\""),
+            (CloudProvider::Vip, "\"vip\""),
+        ];
+
+        for (variant, expected_json) in variants {
+            let json = serde_json::to_string(&variant).unwrap();
+            assert_eq!(
+                json, expected_json,
+                "Serialization failed for {:?}",
+                variant
+            );
+
+            let deserialized: CloudProvider = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                deserialized, variant,
+                "Deserialization failed for {}",
+                expected_json
+            );
+        }
+    }
+
+    #[test]
+    fn test_gpu_offering_with_masscompute_provider() {
+        let json = r#"{
+            "id": "masscompute-8x-h100-us-east",
+            "provider": "masscompute",
+            "gpu_type": "H100",
+            "gpu_memory_gb_per_gpu": 80,
+            "gpu_count": 8,
+            "interconnect": "NVLink",
+            "system_memory_gb": 1800,
+            "vcpu_count": 208,
+            "region": "US-EAST",
+            "hourly_rate_per_gpu": "2.49",
+            "availability": true,
+            "is_spot": false,
+            "fetched_at": "2025-01-01T00:00:00Z"
+        }"#;
+
+        let offering: GpuOffering = serde_json::from_str(json).unwrap();
+        assert_eq!(offering.provider, CloudProvider::MassCompute);
+        assert_eq!(offering.gpu_type, GpuCategory::H100);
+        assert_eq!(offering.gpu_count, 8);
+        assert_eq!(offering.region, "US-EAST");
     }
 }

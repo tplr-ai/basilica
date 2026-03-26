@@ -1,0 +1,24 @@
+# Basilica
+
+Agent-facing Basilica cloud ops bundle for coding agents.
+
+Install the local skills bundle:
+
+```bash
+curl -fsSL https://basilica.ai/agents/install.sh | bash
+```
+
+Primary resources:
+
+- Full bundle: `https://basilica.ai/llms-full.txt`
+- Cloud ops playbook: `https://basilica.ai/agents/cloud-ops.md`
+- Repo agent guide: `https://basilica.ai/agents/AGENTS.md`
+- Installer: `https://basilica.ai/agents/install.sh`
+
+Skill files:
+
+- `https://basilica.ai/agents/basilica-cloud-operator/SKILL.md`
+- `https://basilica.ai/agents/basilica-account-ops/SKILL.md`
+- `https://basilica.ai/agents/basilica-rentals-ops/SKILL.md`
+- `https://basilica.ai/agents/basilica-serverless-ops/SKILL.md`
+- `https://basilica.ai/agents/basilica-sdk-ops/SKILL.md`

@@ -1,7 +1,0 @@
----
-- name: restart k3s
-  ansible.builtin.systemd:
-    name: k3s
-    state: restarted
-    daemon_reload: true
-  listen: restart k3s

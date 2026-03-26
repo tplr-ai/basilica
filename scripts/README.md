@@ -1,6 +1,8 @@
 # Basilica Scripts
 
-This directory contains build and deployment scripts for each Basilica component.
+This directory contains build and deployment scripts for Basilica public components.
+
+> **Note**: Backend services (api, billing, payments, operator, storage, autoscaler) have been moved to the private `basilica-backend` repository.
 
 ## Structure
 
@@ -9,9 +11,33 @@ Each component has its own directory with:
 - `build.sh` - Build the component
 - `deploy.sh` - Deploy to remote servers
 - `Dockerfile` - Container definition
-- `compose.dev.yml` - Local development setup
-- `compose.prod.yml` - Production deployment
+- `compose.local.yml` - Local development setup
 - `README.md` - Component-specific documentation
+
+## Components
+
+### Core Services (This Repo)
+
+- **validator/** - Bittensor validator neuron for verification and scoring
+- **miner/** - Bittensor miner neuron for GPU node orchestration
+- **cli/** - Command-line interface for users
+
+### Development Tools
+
+- **subtensor-local/** - Local Bittensor devnet (Alice/Bob)
+- **localnet/** - Full local network setup
+- **test/** - Test utilities
+
+### Backend Services (Moved to `basilica-backend`)
+
+The following have been moved to the private repo:
+- api/ - External HTTP API service
+- billing/ - Billing and payment processing
+- payments/ - Payment gateway integration
+- operator/ - Kubernetes operator
+- storage-daemon/ - Storage service
+- autoscaler/ - Auto-scaling service
+- cloud/ - Terraform infrastructure
 
 ## Metadata Management
 
@@ -35,35 +61,34 @@ Each component has its own directory with:
 - After Bittensor network upgrades
 - When switching between networks
 
-## Components
-
-### Core Services
-
-- **validator/** - Bittensor validator neuron for verification and scoring
-- **miner/** - Bittensor miner neuron for GPU node orchestration
-- **api/** - External HTTP API service
-
-### Supporting Services
-
-- **billing/** - Billing and payment processing
-- **payments/** - Payment gateway integration
-
-### Infrastructure & Tools
-
-- **cloud/** - Terraform infrastructure as code (AWS deployments)
-- **localtest/** - Local testing environment
-- **provision/** - Provisioning and configuration management
-
 ## Usage
 
 ### Building
 
 ```bash
-# For production builds, regenerate metadata first
-./scripts/generate-metadata.sh --network finney
+# Build all public images
+./scripts/build-images.sh
 
-cd scripts/{component}
-./build.sh
+# Or use just
+just docker-build-miner
+just docker-build-validator
+just docker-build-cli
+```
+
+### Local Development
+
+```bash
+# Start local Subtensor network
+just local-subtensor-up
+
+# Start local validator
+just local-validator-up
+
+# Start local miner
+just local-miner-up
+
+# Or start everything
+just local-dev-up
 ```
 
 ### Deploying
@@ -73,29 +98,15 @@ cd scripts/{component}
 ./deploy.sh user@host [port]
 ```
 
-### Running Locally
-
-```bash
-cd scripts/{component}
-docker compose -f compose.dev.yml up -d
-```
-
-### Running in Production
-
-```bash
-cd scripts/{component}
-docker compose -f compose.prod.yml up -d
-```
-
 ## Main CLI
 
 Use `just` commands from the project root:
 
-- `just test-run` - Run tests
-- `just test-verify` - Verify test implementation
-- `just test-stats` - Show test statistics
 - `just build` - Build all components
-- `just check` - Check code quality (format, clippy, test compilation)
-- `just deploy-{component}` - Deploy individual components
+- `just test` - Run tests
+- `just fix` - Fix linting issues
+- `just local-dev-up` - Start full local dev environment
+- `just local-subtensor-up` - Start local Subtensor only
+- `just docker-build-all` - Build all Docker images
 
-For local development and production deployment, use the individual component docker-compose files.
+For backend services, see the `basilica-backend` repository.

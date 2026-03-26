@@ -1,6 +1,0 @@
----
-- name: Basilica Application Deployment - Main Stack
-  import_playbook: 02-deploy/basilica.yml
-
-- name: Envoy Gateway and Gateway API Deployment
-  import_playbook: 06-adhoc/gateway.yml

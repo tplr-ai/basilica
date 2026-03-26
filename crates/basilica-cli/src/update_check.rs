@@ -44,25 +44,34 @@ pub fn check_cache_and_show_notification() {
     if let Some(latest_version) = &cache.latest_version {
         let current_version = cargo_crate_version!();
 
-        // Only show if the latest version is different from current
-        if latest_version != current_version {
-            // Show the notification
-            eprintln!(
-                "{} {} → {}",
-                style("A new version of Basilica is available:").yellow(),
-                style(current_version).cyan(),
-                style(latest_version).green().bold()
-            );
-            eprintln!(
-                "{} {}",
-                style("Run").dim(),
-                style("basilica upgrade").cyan().bold()
-            );
-            eprintln!(); // Empty line for spacing
+        // Only show if the latest version is strictly newer than current
+        if let (Ok(latest), Ok(current)) = (
+            semver::Version::parse(latest_version),
+            semver::Version::parse(current_version),
+        ) {
+            if latest > current {
+                // Show the notification
+                eprintln!(
+                    "{} {} → {}",
+                    style("A new version of Basilica is available:").yellow(),
+                    style(current_version).cyan(),
+                    style(latest_version).green().bold()
+                );
+                eprintln!(
+                    "{} {}",
+                    style("Run").dim(),
+                    style("basilica upgrade").cyan().bold()
+                );
+                eprintln!(); // Empty line for spacing
 
-            // Update last_prompt time
-            cache.last_prompt = Some(Utc::now());
-            let _ = save_cache(&cache_path, &cache);
+                // Update last_prompt time
+                cache.last_prompt = Some(Utc::now());
+                let _ = save_cache(&cache_path, &cache);
+            } else {
+                // Cached version is stale (user upgraded past it), update cache
+                cache.latest_version = Some(current_version.to_string());
+                let _ = save_cache(&cache_path, &cache);
+            }
         }
     }
 }
@@ -107,16 +116,22 @@ pub fn check_and_notify_update() {
 fn perform_update_check(cache_path: PathBuf) {
     let current_version = cargo_crate_version!();
 
+    // Preserve last_prompt from existing cache
+    let existing_last_prompt = load_cache(&cache_path)
+        .ok()
+        .flatten()
+        .and_then(|c| c.last_prompt);
+
     let cache = match fetch_latest_version_string(current_version) {
         Ok(latest_version) => UpdateCheckCache {
             last_check: Utc::now(),
             latest_version: Some(latest_version),
-            last_prompt: None,
+            last_prompt: existing_last_prompt,
         },
         Err(_) => UpdateCheckCache {
             last_check: Utc::now(),
-            latest_version: None,
-            last_prompt: None,
+            latest_version: Some(current_version.to_string()),
+            last_prompt: existing_last_prompt,
         },
     };
 

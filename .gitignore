@@ -20,7 +20,6 @@ ehthumbs.db
 Thumbs.db
 
 # Service wallets (auto-generated for containers)
-scripts/api/service-wallet/
 scripts/*/service-wallet/
 
 # Logs
@@ -62,7 +61,6 @@ attestation.sig
 # Test environment files
 scripts/localtest/data/
 scripts/localtest/keys/
-scripts/basilica-api/test-wallets/
 servers.conf
 *.rlib
 
@@ -110,10 +108,8 @@ temp/
 *.s.md
 
 *.s.md
-
-scripts/localnet/ssh-keys
-scripts/localnet/wallets
-scripts/localnet/keys
+scripts/localnet/configs/validator.toml
+scripts/localnet/configs/miner.toml
 terraform.tfstate
 *.tfstate
 CLAUDE.md
@@ -135,3 +131,4 @@ crates/basilica-sdk-python/.venv/
 # build/
 build/
 .venv
+dev/

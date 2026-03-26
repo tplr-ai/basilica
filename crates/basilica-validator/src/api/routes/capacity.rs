@@ -63,8 +63,6 @@ pub async fn list_available_nodes(
                     node: node_details,
                     availability: AvailabilityInfo {
                         available_until: None, // Could be calculated based on rental patterns
-                        verification_score: node.verification_score,
-                        uptime_percentage: node.uptime_percentage,
                     },
                 });
             }

@@ -42,6 +42,21 @@ mod tests {
             "H100"
         );
 
+        // Test H200 variants
+        assert_eq!(
+            GpuCategory::from_str("NVIDIA H200").unwrap().to_string(),
+            "H200"
+        );
+        assert_eq!(
+            GpuCategory::from_str("H200 SXM").unwrap().to_string(),
+            "H200"
+        );
+        assert_eq!(GpuCategory::from_str("h200").unwrap().to_string(), "H200");
+        assert_eq!(
+            GpuCategory::from_str("HGX H200").unwrap().to_string(),
+            "H200"
+        );
+
         // Test B200 variants
         assert_eq!(
             GpuCategory::from_str("HGX B200").unwrap().to_string(),
@@ -65,56 +80,56 @@ mod tests {
         );
         assert_eq!(GpuCategory::from_str("b200").unwrap().to_string(), "B200");
 
-        // Test other GPU variants (should all return OTHER)
+        // Test other GPU variants (should return actual model name uppercased)
         assert_eq!(
             GpuCategory::from_str("GeForce RTX 4090")
                 .unwrap()
                 .to_string(),
-            "OTHER"
+            "GEFORCE RTX 4090"
         );
         assert_eq!(
             GpuCategory::from_str("RTX 4090").unwrap().to_string(),
-            "OTHER"
+            "RTX 4090"
         );
         assert_eq!(
             GpuCategory::from_str("NVIDIA GeForce RTX 4090")
                 .unwrap()
                 .to_string(),
-            "OTHER"
+            "NVIDIA GEFORCE RTX 4090"
         );
         assert_eq!(
             GpuCategory::from_str("rtx4090").unwrap().to_string(),
-            "OTHER"
+            "RTX4090"
         );
         assert_eq!(
             GpuCategory::from_str("RTX 3090 Ti").unwrap().to_string(),
-            "OTHER"
+            "RTX 3090 TI"
         );
         assert_eq!(
             GpuCategory::from_str("GeForce RTX 3090")
                 .unwrap()
                 .to_string(),
-            "OTHER"
+            "GEFORCE RTX 3090"
         );
         assert_eq!(
             GpuCategory::from_str("RTX 3080").unwrap().to_string(),
-            "OTHER"
+            "RTX 3080"
         );
         assert_eq!(
             GpuCategory::from_str("RTX 4080").unwrap().to_string(),
-            "OTHER"
+            "RTX 4080"
         );
 
         // Test unknown models
         assert_eq!(
             GpuCategory::from_str("Unknown GPU").unwrap().to_string(),
-            "OTHER"
+            "UNKNOWN GPU"
         );
-        assert_eq!(GpuCategory::from_str("").unwrap().to_string(), "OTHER");
-        assert_eq!(GpuCategory::from_str("V100").unwrap().to_string(), "OTHER");
+        assert_eq!(GpuCategory::from_str("").unwrap().to_string(), "");
+        assert_eq!(GpuCategory::from_str("V100").unwrap().to_string(), "V100");
         assert_eq!(
             GpuCategory::from_str("GTX 1080").unwrap().to_string(),
-            "OTHER"
+            "GTX 1080"
         );
 
         // Test edge cases
@@ -135,6 +150,7 @@ mod tests {
         // Test all known categories
         assert_eq!(GpuCategorizer::model_to_category("A100"), GpuCategory::A100);
         assert_eq!(GpuCategorizer::model_to_category("H100"), GpuCategory::H100);
+        assert_eq!(GpuCategorizer::model_to_category("H200"), GpuCategory::H200);
         assert_eq!(GpuCategorizer::model_to_category("B200"), GpuCategory::B200);
         // These should return Other now
         match GpuCategorizer::model_to_category("RTX4090") {
@@ -145,6 +161,7 @@ mod tests {
         // Test case sensitivity
         assert_eq!(GpuCategorizer::model_to_category("a100"), GpuCategory::A100);
         assert_eq!(GpuCategorizer::model_to_category("h100"), GpuCategory::H100);
+        assert_eq!(GpuCategorizer::model_to_category("h200"), GpuCategory::H200);
         assert_eq!(GpuCategorizer::model_to_category("b200"), GpuCategory::B200);
 
         // Test unknown models
@@ -350,7 +367,7 @@ mod tests {
         // Should be sorted by count descending
         assert_eq!(models_by_count.len(), 2);
         assert_eq!(models_by_count[0], ("A100".to_string(), 5)); // A100(1) + A100(4) = 5
-        assert_eq!(models_by_count[1], ("OTHER".to_string(), 2)); // RTX4090(2) = OTHER(2)
+        assert_eq!(models_by_count[1], ("RTX4090".to_string(), 2)); // RTX4090(2)
     }
 
     #[test]
@@ -398,7 +415,7 @@ mod tests {
             true,
         )];
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(gpu_counts.get("OTHER"), Some(&1));
+        assert_eq!(gpu_counts.get(""), Some(&1));
 
         // Test whitespace-only strings
         let validations = vec![NodeValidationResult::new_for_testing(
@@ -409,7 +426,7 @@ mod tests {
             true,
         )];
         let gpu_counts = GpuCategorizer::calculate_gpu_distribution(&validations);
-        assert_eq!(gpu_counts.get("OTHER"), Some(&1));
+        assert_eq!(gpu_counts.get("   "), Some(&1));
     }
 
     #[test]
@@ -417,13 +434,16 @@ mod tests {
         // Test enum variants
         let a100 = GpuCategory::A100;
         let h100 = GpuCategory::H100;
+        let h200 = GpuCategory::H200;
         let b200 = GpuCategory::B200;
         let other = GpuCategory::Other("CustomGPU".to_string());
 
         assert_eq!(a100, GpuCategory::A100);
         assert_ne!(h100, a100);
+        assert_eq!(h200, GpuCategory::H200);
+        assert_ne!(h200, h100);
         assert_eq!(b200, GpuCategory::B200);
-        assert_ne!(b200, h100);
+        assert_ne!(b200, h200);
 
         match other {
             GpuCategory::Other(name) => assert_eq!(name, "CustomGPU"),
@@ -469,7 +489,7 @@ mod tests {
             GpuCategory::from_str("NVIDIA NVIDIA GeForce RTX 4090")
                 .unwrap()
                 .to_string(),
-            "OTHER"
+            "NVIDIA NVIDIA GEFORCE RTX 4090"
         );
 
         // Test mixed case with numbers
@@ -483,7 +503,7 @@ mod tests {
         // Test Tesla prefix variations
         assert_eq!(
             GpuCategory::from_str("Tesla V100").unwrap().to_string(),
-            "OTHER"
+            "TESLA V100"
         );
 
         // Test partial matches
@@ -497,7 +517,7 @@ mod tests {
             GpuCategory::from_str("RTX   4090   Ti")
                 .unwrap()
                 .to_string(),
-            "OTHER"
+            "RTX   4090   TI"
         );
     }
 

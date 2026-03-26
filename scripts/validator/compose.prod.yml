@@ -24,6 +24,7 @@ services:
     ports:
       - "8080:8080"     # Server/API port
       - "9090:9090"     # Metrics port
+      - "50052:50052"   # Bidding gRPC
 
     dns:
       - 1.1.1.1
@@ -50,7 +51,7 @@ services:
               capabilities: [gpu]
 
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower:1.14.0
     container_name: basilica-watchtower
     restart: unless-stopped
     volumes:

@@ -166,8 +166,8 @@ check_port_availability() {
 # Check binaries exist
 check_binaries() {
     log_info "Checking if binaries exist locally"
-    
-    local binaries=("executor" "miner" "validator" "gpu-attestor")
+
+    local binaries=("miner" "validator")
     local missing=()
     
     for binary in "${binaries[@]}"; do
@@ -189,8 +189,8 @@ check_binaries() {
 # Check configurations exist
 check_configurations() {
     log_info "Checking if configurations exist"
-    
-    local configs=("executor.toml" "miner.toml" "validator.toml")
+
+    local configs=("miner.toml" "validator.toml")
     local missing=()
     
     for config in "${configs[@]}"; do
@@ -209,24 +209,25 @@ check_configurations() {
     fi
 }
 
-# Check GPU on executor
+# Check GPU availability on a host
 check_gpu_availability() {
     local host="$1"
     local port="$2"
     local user="$3"
-    
-    log_info "Checking GPU availability on executor"
-    
+    local service_name="${4:-host}"
+
+    log_info "Checking GPU availability on $service_name"
+
     local gpu_info
     gpu_info=$(ssh -p "$port" "$user@$host" "nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo 'NO_GPU'" 2>/dev/null) || {
-        log_warn "Could not check GPU on executor"
+        log_warn "Could not check GPU on $service_name"
         WARNINGS+=("Could not verify GPU availability")
         return 0
     }
-    
+
     if [[ "$gpu_info" == "NO_GPU" ]]; then
-        log_warn "No GPU detected on executor"
-        WARNINGS+=("No GPU detected on executor - attestation may fail")
+        log_warn "No GPU detected on $service_name"
+        WARNINGS+=("No GPU detected on $service_name - attestation may fail")
         return 0
     else
         log_success "GPU detected: $gpu_info"
@@ -253,31 +254,20 @@ run_all_checks() {
     check_configurations
     
     # Check SSH connectivity
-    check_ssh_connectivity "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" "executor"
     check_ssh_connectivity "$MINER_HOST" "$MINER_PORT" "$MINER_USER" "miner"
     check_ssh_connectivity "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" "validator"
-    
+
     # Check software
-    check_server_software "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" "executor"
     check_server_software "$MINER_HOST" "$MINER_PORT" "$MINER_USER" "miner"
     check_server_software "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" "validator"
-    
+
     # Check disk space
-    check_disk_space "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" "executor" 20
     check_disk_space "$MINER_HOST" "$MINER_PORT" "$MINER_USER" "miner" 10
     check_disk_space "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" "validator" 10
-    
+
     # Check port availability
-    check_port_availability "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" "executor" "${EXECUTOR_GRPC_PORT:-50051}"
     check_port_availability "$MINER_HOST" "$MINER_PORT" "$MINER_USER" "miner" "${MINER_HTTP_PORT:-8092}"
     check_port_availability "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" "validator" "${VALIDATOR_HTTP_PORT:-8080}"
-    
-    # Check GPU
-    check_gpu_availability "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-    
-    # Check network connectivity
-    check_network_connectivity "$MINER_HOST" "$MINER_PORT" "$MINER_USER" "$EXECUTOR_HOST" "${EXECUTOR_GRPC_PORT:-50051}" "miner" "executor"
-    check_network_connectivity "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" "$EXECUTOR_HOST" 22 "validator" "executor"
     
     # Summary
     echo
@@ -332,13 +322,11 @@ Checks:
     - Required software installed
     - Sufficient disk space
     - Port availability
-    - GPU availability on executor
-    - Network connectivity between services
-    
+
 Environment:
     production (default)
     staging
-    
+
 Example:
     preflight-check.sh production
 EOF

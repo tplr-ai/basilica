@@ -161,11 +161,24 @@ impl DeploymentManager {
     ) -> Result<()> {
         info!("Stopping container {}", container_id);
 
+        // Helper to check if error indicates container is already gone
+        let is_container_gone = |e: &anyhow::Error| {
+            let msg = e.to_string().to_lowercase();
+            msg.contains("no such container") || msg.contains("not found")
+        };
+
         // First try graceful stop
         if !force {
             match client.stop_container(container_id, false).await {
                 Ok(_) => {
                     info!("Container {} stopped gracefully", container_id);
+                    return Ok(());
+                }
+                Err(e) if is_container_gone(&e) => {
+                    info!(
+                        "Container {} already removed during graceful stop",
+                        container_id
+                    );
                     return Ok(());
                 }
                 Err(e) => {
@@ -180,7 +193,7 @@ impl DeploymentManager {
         // Force stop if needed
         match client.stop_container(container_id, true).await {
             Ok(_) => {}
-            Err(e) if e.to_string().contains("No such container") => {
+            Err(e) if is_container_gone(&e) => {
                 info!(
                     "Container {} already removed by --rm flag during stop",
                     container_id
@@ -192,7 +205,7 @@ impl DeploymentManager {
         // Remove the container
         match client.remove_container(container_id).await {
             Ok(_) => {}
-            Err(e) if e.to_string().contains("No such container") => {
+            Err(e) if is_container_gone(&e) => {
                 info!("Container {} already removed by --rm flag", container_id);
             }
             Err(e) => return Err(e).context("Failed to remove container"),
@@ -262,7 +275,9 @@ impl DeploymentManager {
     fn validate_resources(&self, spec: &ContainerSpec) -> Result<()> {
         let limits = &self.config.default_resource_limits;
 
-        if limits.max_cpu_cores > 0.0
+        if limits.max_cpu_cores.is_finite()
+            && limits.max_cpu_cores > 0.0
+            && spec.resources.cpu_cores.is_finite()
             && spec.resources.cpu_cores > 0.0
             && spec.resources.cpu_cores > limits.max_cpu_cores
         {

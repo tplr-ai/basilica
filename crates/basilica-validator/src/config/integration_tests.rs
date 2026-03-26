@@ -41,15 +41,15 @@ mod tests {
             .gpu_allocations
             .insert("H100".to_string(), GpuAllocation::new(50.0));
         // Disable binary validation since we don't have the binaries in test
-        config.verification.binary_validation.enabled = false;
+        config.verification.binary_validation = None;
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_validator_config_serialization_with_emission() {
         let mut config = ValidatorConfig::default();
-        // Disable binary validation since we don't have the binaries in test
-        config.verification.binary_validation.enabled = false;
+        // Disable binary validation since we don't have the binaries in test (None = disabled)
+        config.verification.binary_validation = None;
 
         // Add valid GPU allocations for testing
         config.emission.burn_percentage = 10.0;
@@ -88,5 +88,32 @@ mod tests {
 
         // Verify deserialized config is valid
         assert!(deserialized.validate().is_ok());
+    }
+
+    #[test]
+    fn test_billing_api_endpoint_requires_gateway() {
+        let mut config = ValidatorConfig::default();
+        config.verification.binary_validation = None;
+        config.emission.burn_percentage = 10.0;
+        config
+            .emission
+            .gpu_allocations
+            .insert("A100".to_string(), GpuAllocation::new(50.0));
+        config
+            .emission
+            .gpu_allocations
+            .insert("H100".to_string(), GpuAllocation::new(50.0));
+
+        config.billing.enabled = true;
+        config.api_endpoint = config.billing.billing_endpoint.clone();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_default_endpoints_use_api_gateway() {
+        let config = ValidatorConfig::default();
+        assert_ne!(config.api_endpoint, config.billing.billing_endpoint);
+        assert!(config.api_endpoint.contains("basilica"));
     }
 }

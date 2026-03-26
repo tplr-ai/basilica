@@ -34,7 +34,6 @@
 //! let request = Request::new(DiscoverNodesRequest {
 //!     validator_hotkey: "validator-key".to_string(),
 //!     signature: "signature".to_string(),
-//!     nonce: "nonce".to_string(),
 //!     validator_public_key: "ssh-rsa ...".to_string(),
 //!     timestamp: Some(current_timestamp()),
 //!     target_miner_hotkey: "miner-key".to_string(),

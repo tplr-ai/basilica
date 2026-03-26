@@ -15,6 +15,8 @@ use std::str::FromStr;
 
 pub struct GpuScoringEngine {
     gpu_profile_repo: Arc<GpuProfileRepository>,
+    /// Persistence layer for uptime tracking (used by gRPC uptime endpoint)
+    #[allow(dead_code)]
     persistence: Arc<SimplePersistence>,
     metrics: Option<Arc<ValidatorMetrics>>,
     emission_config: EmissionConfig,
@@ -206,6 +208,10 @@ impl GpuScoringEngine {
 
     /// Calculate uptime-based multiplication factor for a specific node
     /// Uses 14-day linear ramp-up based on actual uptime from verification logs
+    ///
+    /// Note: No longer used for weight calculation (miners get full weight immediately).
+    /// Kept for future gRPC endpoint that exposes uptime data to the payout service.
+    #[allow(dead_code)]
     async fn calculate_uptime_multiplication_factor(
         &self,
         miner_uid: MinerUid,
@@ -260,7 +266,7 @@ impl GpuScoringEngine {
         &self,
         epoch_timestamp: Option<DateTime<Utc>>,
         cutoff_hours: u32,
-        metagraph: &bittensor::Metagraph<bittensor::AccountId>,
+        metagraph: &bittensor::Metagraph,
     ) -> Result<HashMap<String, Vec<(MinerUid, f64)>>> {
         let all_profiles = self.gpu_profile_repo.get_all_gpu_profiles().await?;
         let cutoff_time = Utc::now() - chrono::Duration::hours(cutoff_hours as i64);
@@ -384,14 +390,11 @@ impl GpuScoringEngine {
                 })
                 .collect();
 
+            // Count GPUs per category (no uptime multiplier - miners get full weight immediately)
             let mut rewardable_gpu_counts: HashMap<String, f64> = HashMap::new();
-            for (node_id, category, count) in rewardable_gpus {
+            for (_node_id, category, count) in rewardable_gpus {
                 let normalized_model = category.to_string();
-                let uptime_factor = self
-                    .calculate_uptime_multiplication_factor(profile.miner_uid, &node_id)
-                    .await;
-                let weighted_count = count as f64 * uptime_factor;
-                *rewardable_gpu_counts.entry(normalized_model).or_insert(0.0) += weighted_count;
+                *rewardable_gpu_counts.entry(normalized_model).or_insert(0.0) += count as f64;
             }
 
             // Skip miners with no rewardable GPUs
@@ -560,20 +563,17 @@ mod tests {
         persistence: &SimplePersistence,
         miner_id: &str,
         hotkey: &str,
-        registered_at: DateTime<Utc>,
+        _registered_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
         let now = Utc::now();
         sqlx::query(
-            "INSERT INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO miners (id, hotkey, endpoint, updated_at)
+             VALUES (?, ?, ?, ?)",
         )
         .bind(miner_id)
         .bind(hotkey)
         .bind("127.0.0.1:8080")
         .bind(now.to_rfc3339())
-        .bind(registered_at.to_rfc3339())
-        .bind(now.to_rfc3339())
-        .bind("{}")
         .execute(persistence.pool())
         .await?;
         Ok(())
@@ -587,19 +587,21 @@ mod tests {
         gpu_count: i64,
         created_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let now = Utc::now();
+        // Derive a unique IP from miner_id to satisfy the UNIQUE index on node_ip
+        let uid: u16 = miner_id.trim_start_matches("miner_").parse().unwrap_or(0);
+        let node_ip = format!("10.0.{}.{}", uid / 256, uid % 256);
         sqlx::query(
-            "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
+            "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, status, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(format!("{}:{}", miner_id, node_id))
         .bind(miner_id)
         .bind(node_id)
-        .bind("127.0.0.1:8080")
+        .bind(format!("root@{}:8080", node_ip))
+        .bind(&node_ip)
         .bind(gpu_count)
         .bind("online")
         .bind(created_at.to_rfc3339())
-        .bind(now.to_rfc3339())
         .execute(persistence.pool())
         .await?;
         Ok(())
@@ -689,16 +691,13 @@ mod tests {
 
             // Seed miners table first (required for foreign key constraint)
             sqlx::query(
-                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, updated_at)
+                 VALUES (?, ?, ?, ?)",
             )
             .bind(&miner_id)
             .bind(format!("hotkey_{}", profile.miner_uid.as_u16()))
             .bind("127.0.0.1:8080")
             .bind(now.to_rfc3339())
-            .bind(now.to_rfc3339())
-            .bind(now.to_rfc3339())
-            .bind("{}")
             .execute(persistence.pool())
             .await?;
 
@@ -723,18 +722,20 @@ mod tests {
                 }
             }
 
-            // Seed miner_nodes table
+            // Seed miner_nodes table (unique IP per miner to satisfy UNIQUE index)
+            let uid = profile.miner_uid.as_u16();
+            let node_ip = format!("10.0.{}.{}", uid / 256, uid % 256);
             sqlx::query(
-                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
+                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, status, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&node_id)
             .bind(&miner_id)
             .bind(&node_id)
-            .bind("127.0.0.1:8080")
+            .bind(format!("root@{}:8080", node_ip))
+            .bind(&node_ip)
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
             .bind("online")
-            .bind(now.to_rfc3339())
             .bind(now.to_rfc3339())
             .execute(persistence.pool())
             .await?;

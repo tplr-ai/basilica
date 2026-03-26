@@ -9,6 +9,7 @@ use axum::{
     response::{sse::Event, IntoResponse, Sse},
     Json,
 };
+use basilica_common::types::GpuCategory;
 use basilica_common::utils::validate_docker_image;
 use futures::stream::Stream;
 use serde::Deserialize;
@@ -28,7 +29,20 @@ use crate::{
 /// Start rental request
 #[derive(Debug, Deserialize, serde::Serialize)]
 pub struct StartRentalRequest {
-    pub node_id: String,
+    // GPU selection (required)
+    /// GPU category: "H100", "A100", "B200", etc.
+    pub gpu_category: String,
+    /// Number of GPUs required
+    pub gpu_count: u32,
+
+    // Optional filters
+    /// Minimum GPU memory in GB (e.g., 80 for 80GB)
+    #[serde(default)]
+    pub min_memory_gb: Option<u32>,
+    /// Maximum acceptable cents/GPU-hour
+    pub max_hourly_rate_cents: u32,
+
+    // Container config
     pub container_image: String,
     pub ssh_public_key: String,
     #[serde(default)]
@@ -41,8 +55,6 @@ pub struct StartRentalRequest {
     pub command: Vec<String>,
     #[serde(default)]
     pub volumes: Vec<VolumeMountRequest>,
-    #[serde(default)]
-    pub no_ssh: bool,
 }
 
 fn default_command() -> Vec<String> {
@@ -52,7 +64,10 @@ fn default_command() -> Vec<String> {
 impl Default for StartRentalRequest {
     fn default() -> Self {
         Self {
-            node_id: String::new(),
+            gpu_category: String::new(),
+            gpu_count: 1,
+            min_memory_gb: None,
+            max_hourly_rate_cents: 0,
             container_image: "nvidia/cuda:12.2.0-base-ubuntu22.04".to_string(),
             ssh_public_key: String::new(),
             environment: std::collections::HashMap::new(),
@@ -60,7 +75,6 @@ impl Default for StartRentalRequest {
             resources: ResourceRequirementsRequest::default(),
             command: default_command(),
             volumes: Vec::new(),
-            no_ssh: false,
         }
     }
 }
@@ -194,37 +208,35 @@ pub async fn start_rental(
     State(state): State<ApiState>,
     Json(request): Json<StartRentalRequest>,
 ) -> Result<Json<RentalResponse>, StatusCode> {
-    let node_id = request.node_id.clone();
-    let miner_id = state
-        .persistence
-        .get_miner_id_by_node(&node_id)
-        .await
-        .map_err(|e| {
-            error!(
-                "[RENTAL_FLOW] Failed to get miner ID for node {}: {}",
-                node_id, e
-            );
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    let miner_uid = miner_id
-        .strip_prefix("miner_")
-        .and_then(|uid_str| uid_str.parse::<u16>().ok())
-        .ok_or_else(|| {
-            error!("[RENTAL_FLOW] Invalid miner ID format: {}", miner_id);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+    // Parse and validate gpu_category using GpuCategory enum
+    let gpu_category: GpuCategory = request.gpu_category.parse().unwrap(); // Infallible
+    if matches!(&gpu_category, GpuCategory::Other(_)) {
+        error!(
+            gpu_category = %request.gpu_category,
+            "[RENTAL_FLOW] GPU type '{}' is not supported", request.gpu_category
+        );
+        return Err(StatusCode::BAD_REQUEST);
+    }
 
     info!(
-        miner_uid = miner_uid,
-        node_id = %node_id,
-        "[RENTAL_FLOW] Starting rental for node {} on miner {}", node_id, miner_id
+        gpu_category = %gpu_category,
+        gpu_count = request.gpu_count,
+        "[RENTAL_FLOW] Starting rental for {} x {}",
+        request.gpu_count,
+        gpu_category
     );
+
+    // Validate gpu_count is at least 1
+    if request.gpu_count == 0 {
+        error!("[RENTAL_FLOW] gpu_count must be at least 1");
+        return Err(StatusCode::BAD_REQUEST);
+    }
 
     let ssh_public_key = request.ssh_public_key.trim();
     if PublicKey::from_openssh(ssh_public_key).is_err() {
         error!(
-            miner_uid = miner_uid,
-            node_id = %node_id,
+            gpu_category = %request.gpu_category,
+            gpu_count = request.gpu_count,
             "[RENTAL_FLOW] Invalid SSH public key provided"
         );
         return Err(StatusCode::BAD_REQUEST);
@@ -232,8 +244,8 @@ pub async fn start_rental(
 
     if let Err(e) = validate_docker_image(&request.container_image) {
         error!(
-            miner_uid = miner_uid,
-            node_id = %node_id,
+            gpu_category = %request.gpu_category,
+            gpu_count = request.gpu_count,
             "[RENTAL_FLOW] Invalid container image provided: {}",
             e
         );
@@ -241,11 +253,7 @@ pub async fn start_rental(
     }
 
     let rental_manager = state.rental_manager.as_ref().ok_or_else(|| {
-        error!(
-            miner_uid = miner_uid,
-            node_id = %node_id,
-            "[RENTAL_FLOW] Rental manager not initialized"
-        );
+        error!("[RENTAL_FLOW] Rental manager not initialized");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
@@ -257,20 +265,20 @@ pub async fn start_rental(
         .map(Into::into)
         .collect();
 
-    // Only add SSH port mapping if no_ssh is false (SSH is enabled by default)
-    if !request.no_ssh {
-        port_mappings.push(crate::rental::PortMapping {
-            container_port: 22,
-            host_port: 0, // Docker will automatically allocate an available port
-            protocol: "tcp".to_string(),
-        });
-    }
+    // Always add SSH port mapping
+    port_mappings.push(crate::rental::PortMapping {
+        container_port: 22,
+        host_port: 0, // Docker will automatically allocate an available port
+        protocol: "tcp".to_string(),
+    });
 
     // Convert request to internal rental request
     let rental_request = RentalRequest {
         validator_hotkey: state.validator_hotkey.to_string(),
-        miner_id: miner_id.clone(),
-        node_id: node_id.clone(),
+        gpu_category: gpu_category.to_string(),
+        gpu_count: request.gpu_count,
+        min_memory_gb: request.min_memory_gb,
+        max_hourly_rate_cents: request.max_hourly_rate_cents,
         container_spec: crate::rental::ContainerSpec {
             image: request.container_image,
             environment: request.environment,
@@ -301,13 +309,19 @@ pub async fn start_rental(
         .start_rental(rental_request)
         .await
         .map_err(|e| {
+            let error_msg = e.to_string();
             error!(
-                miner_uid = miner_uid,
-                node_id = %node_id,
+                gpu_category = %request.gpu_category,
+                gpu_count = request.gpu_count,
                 "[RENTAL_FLOW] Failed to start rental: {}",
-                e
+                error_msg
             );
-            StatusCode::INTERNAL_SERVER_ERROR
+            // Return 503 if no matching capacity available
+            if error_msg.contains("No available nodes matching criteria") {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         })?;
 
     Ok(Json(rental_response))
@@ -350,8 +364,30 @@ pub async fn get_rental_status(
     // Convert RentalStatus to RentalStatusResponse
     use crate::api::types::{RentalStatus as ApiRentalStatus, RentalStatusResponse};
 
-    // Use node details from rental info directly
-    let node = rental_info.node_details.clone();
+    let mut node = rental_info.node_details.clone();
+    if node.hourly_rate_cents.is_none() {
+        node.hourly_rate_cents = state
+            .persistence
+            .get_node_hourly_rate(&rental_info.node_id)
+            .await
+            .map_err(|e| {
+                tracing::error!(
+                    "Failed to get node hourly rate for node {}: {}",
+                    rental_info.node_id,
+                    e
+                );
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?
+            .map(|cents| cents as i32);
+    }
+    if node.hourly_rate_cents.is_none() {
+        tracing::error!(
+            "Node hourly_rate_cents missing for rental {} on node {}",
+            rental_id,
+            rental_info.node_id
+        );
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
     // Extract miner_uid from miner_id (format: "miner_{uid}")
     let miner_uid = rental_info

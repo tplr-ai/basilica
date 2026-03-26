@@ -265,7 +265,7 @@ impl SimplePersistence {
         };
 
         sqlx::query(
-            "UPDATE miner_nodes SET gpu_count = ?, status = ?, updated_at = datetime('now')
+            "UPDATE miner_nodes SET gpu_count = ?, status = ?
              WHERE miner_id = ? AND node_id = ?",
         )
         .bind(gpu_count as i32)
@@ -324,6 +324,42 @@ impl SimplePersistence {
         }
 
         Ok(())
+    }
+
+    /// Check whether a node has any entries in gpu_uuid_assignments
+    pub async fn node_has_gpu_assignments(&self, miner_id: &str, node_id: &str) -> Result<bool> {
+        let row = sqlx::query(
+            "SELECT 1 FROM gpu_uuid_assignments WHERE miner_id = ? AND node_id = ? LIMIT 1",
+        )
+        .bind(miner_id)
+        .bind(node_id)
+        .fetch_optional(self.pool())
+        .await?;
+
+        Ok(row.is_some())
+    }
+
+    pub async fn get_node_gpu_uuids(&self, miner_id: &str, node_id: &str) -> Result<Vec<String>> {
+        let query = r#"
+            SELECT gpu_uuid
+            FROM gpu_uuid_assignments
+            WHERE miner_id = ? AND node_id = ?
+        "#;
+
+        let rows = sqlx::query(query)
+            .bind(miner_id)
+            .bind(node_id)
+            .fetch_all(self.pool())
+            .await?;
+
+        let mut uuids = Vec::new();
+        for row in rows {
+            let gpu_uuid: String = row.get("gpu_uuid");
+            if !gpu_uuid.is_empty() && gpu_uuid != "Unknown UUID" {
+                uuids.push(gpu_uuid);
+            }
+        }
+        Ok(uuids)
     }
 
     /// Update last_verified timestamp for existing GPU assignments

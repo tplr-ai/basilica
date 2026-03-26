@@ -1,0 +1,103 @@
+// Miner Payouts Protocol - For payout service to validator communication
+syntax = "proto3";
+
+package basilica.payouts.v1;
+
+import "common.proto";
+
+// Use basilca (note: matching existing typo for consistency)
+
+// MinerPayoutService for payout service to query validator
+service MinerPayoutService {
+  // Get uptime data for all miners
+  rpc GetMinerUptimes(GetMinerUptimesRequest) returns (GetMinerUptimesResponse);
+  
+  // Notify validator of epoch completion (for triggering payouts)
+  rpc OnEpochComplete(EpochCompleteRequest) returns (EpochCompleteResponse);
+  
+  // Get uptime for a specific miner
+  rpc GetMinerUptime(GetMinerUptimeRequest) returns (MinerUptimeInfo);
+}
+
+// Request for all miner uptimes
+message GetMinerUptimesRequest {
+  // Optional: filter by miner UIDs
+  repeated uint32 miner_uids = 1;
+  
+  // Optional: only return miners with uptime above threshold (minutes)
+  int64 min_uptime_minutes = 2;
+}
+
+// Response with all miner uptimes
+message GetMinerUptimesResponse {
+  repeated MinerUptimeInfo uptimes = 1;
+  basilca.common.v1.Timestamp timestamp = 2;
+  basilca.common.v1.ErrorInfo error = 3;
+}
+
+// Request for a specific miner's uptime
+message GetMinerUptimeRequest {
+  string miner_hotkey = 1;
+  string node_id = 2;
+}
+
+// Miner uptime information
+message MinerUptimeInfo {
+  // Miner's SS58 hotkey address
+  string hotkey = 1;
+  
+  // Node identifier
+  string node_id = 2;
+  
+  // Miner UID on the subnet
+  uint32 miner_uid = 3;
+  
+  // Continuous uptime in minutes
+  int64 continuous_uptime_minutes = 4;
+  
+  // Whether the last validation passed
+  bool validation_passed = 5;
+  
+  // Total uptime since registration (minutes)
+  int64 total_uptime_minutes = 6;
+  
+  // Registration timestamp
+  basilca.common.v1.Timestamp registered_at = 7;
+  
+  // Last validation timestamp  
+  basilca.common.v1.Timestamp last_validated_at = 8;
+  
+  // Validation success rate (0.0 - 1.0)
+  double validation_success_rate = 9;
+}
+
+// Epoch completion request (called by validator)
+message EpochCompleteRequest {
+  // Epoch number
+  int64 epoch = 1;
+  
+  // Block number at epoch start
+  uint64 block_number = 2;
+  
+  // All miner uptimes for this epoch
+  repeated MinerUptimeInfo miner_uptimes = 3;
+  
+  // Timestamp of epoch completion
+  basilca.common.v1.Timestamp completed_at = 4;
+}
+
+// Epoch completion response
+message EpochCompleteResponse {
+  // Whether the payout processing was successful
+  bool success = 1;
+  
+  // Number of miners processed
+  uint32 miners_processed = 2;
+  
+  // Total Alpha paid out
+  string total_alpha_paid = 3;
+  
+  // Error information if any
+  basilca.common.v1.ErrorInfo error = 4;
+}
+

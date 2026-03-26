@@ -60,7 +60,7 @@ impl CleanupTask {
         }
 
         info!(
-            "Starting database cleanup task - will run every {} hours, stale node cleanup every {} minutes",
+            "Starting database cleanup task - will run every {} hours, stale node cleanup every {} minutes (validator node checks)",
             self.config.run_interval_hours, self.config.stale_node_cleanup_cadence_minutes
         );
 
@@ -140,11 +140,11 @@ impl CleanupTask {
                 security = true,
                 cleaned_nodes = cleaned_count,
                 cleanup_reason = "stale_node_cleanup_task",
-                "Cleaned up {} stale nodes and their GPU assignments",
+                "Cleaned up {} stale nodes (validator node check >30m) and their GPU assignments",
                 cleaned_count
             );
         } else {
-            info!("No stale nodes found for cleanup");
+            info!("No stale nodes found for cleanup (>30m validator node check)");
         }
 
         Ok(())

@@ -23,6 +23,7 @@ use crate::ssh::ValidatorSshClient;
 use anyhow::Result;
 use basilica_common::identity::Hotkey;
 use basilica_common::ssh::SshConnectionDetails;
+use sha2::{Digest, Sha256};
 use sqlx::Row;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -61,6 +62,7 @@ pub struct ValidationNode {
     storage_collector: StorageCollector,
     misbehaviour_collector: Misbehaviour,
     metrics: Option<Arc<ValidatorMetrics>>,
+    persistence: Arc<SimplePersistence>,
 }
 
 impl ValidationStrategySelector {
@@ -102,7 +104,53 @@ impl ValidationStrategySelector {
             });
 
         // If there's an active rental, skip binary validation check and go straight to lightweight
-        if !has_active_rental {
+        if has_active_rental {
+            // TODO: Consider deferring lightweight checks if a recent validation already succeeded.
+        } else {
+            let last_terminated_at = self
+                .persistence
+                .get_last_rental_terminated_at(node_id, &miner_id)
+                .await
+                .unwrap_or_else(|e| {
+                    warn!(
+                        node_id = node_id,
+                        miner_uid = miner_uid,
+                        error = %e,
+                        "[EVAL_FLOW] Failed to read last rental termination time"
+                    );
+                    None
+                });
+
+            let last_full_validation_at = self
+                .persistence
+                .get_last_full_validation_timestamp(node_id, &miner_id)
+                .await
+                .unwrap_or_else(|e| {
+                    warn!(
+                        node_id = node_id,
+                        miner_uid = miner_uid,
+                        error = %e,
+                        "[EVAL_FLOW] Failed to read last full validation time"
+                    );
+                    None
+                });
+
+            if let Some(terminated_at) = last_terminated_at {
+                let should_force_full = last_full_validation_at
+                    .map(|ts| ts < terminated_at)
+                    .unwrap_or(true);
+                if should_force_full {
+                    info!(
+                        security = true,
+                        node_id = node_id,
+                        miner_uid = miner_uid,
+                        termination_time = %terminated_at,
+                        "[EVAL_FLOW] Forcing full validation after rental termination"
+                    );
+                    return Ok(ValidationStrategy::Full);
+                }
+            }
+
             let needs_binary_validation = self
                 .is_binary_validation_needed(node_id, &miner_id, miner_uid)
                 .await
@@ -226,6 +274,21 @@ impl ValidationStrategySelector {
                 node_id = node_id,
                 miner_id = miner_id,
                 "[EVAL_FLOW] Binary validation needed - node not found in database"
+            );
+            return Ok(true);
+        }
+
+        // If node has no GPU assignments, it needs full validation
+        if !self
+            .persistence
+            .node_has_gpu_assignments(miner_id, node_id)
+            .await
+            .unwrap_or(false)
+        {
+            info!(
+                node_id = node_id,
+                miner_id = miner_id,
+                "[EVAL_FLOW] Binary validation needed - node has no GPU UUID assignments"
             );
             return Ok(true);
         }
@@ -368,6 +431,7 @@ impl ValidationNode {
             storage_collector,
             misbehaviour_collector,
             metrics,
+            persistence,
         }
     }
 
@@ -426,6 +490,7 @@ impl ValidationNode {
             );
         }
 
+        let mut nvidia_smi_output: Option<String> = None;
         let connectivity_successful = match self
             .ssh_client
             .execute_command(
@@ -436,6 +501,7 @@ impl ValidationNode {
             .await
         {
             Ok(output) => {
+                nvidia_smi_output = Some(output.clone());
                 // Move to Connected state
                 if let Some(ref metrics) = self.metrics {
                     metrics.prometheus().set_node_validation_state(
@@ -510,6 +576,56 @@ impl ValidationNode {
             }
         };
 
+        let nonce_challenge_ok = if connectivity_successful {
+            let nonce = rand::random::<u64>();
+            let mut hasher = Sha256::new();
+            hasher.update(nonce.to_string().as_bytes());
+            let expected = hex::encode(hasher.finalize());
+            let nonce_cmd = format!("printf '{}' | sha256sum", nonce);
+            match self
+                .ssh_client
+                .execute_command(ssh_details, &nonce_cmd, true)
+                .await
+            {
+                Ok(output) => output
+                    .split_whitespace()
+                    .next()
+                    .map(|v| v == expected)
+                    .unwrap_or(false),
+                Err(_) => false,
+            }
+        } else {
+            false
+        };
+
+        let gpu_uuid_matches = if connectivity_successful {
+            let miner_id = format!("miner_{miner_uid}");
+            let known_uuids = self
+                .persistence
+                .get_node_gpu_uuids(&miner_id, &node_id)
+                .await
+                .unwrap_or_default();
+            if known_uuids.is_empty() {
+                // TODO: Decide whether to fail closed when no GPU UUIDs are on record.
+                true
+            } else {
+                // nvidia-smi returns UUIDs with dashes (e.g., GPU-84ccface-663f-f5fd-8e8e-109d0f78bd2f)
+                // but the CUDA API stores them without dashes (e.g., GPU-84ccface663ff5fd8e8e109d0f78bd2f)
+                // Normalize by removing dashes for comparison
+                let detected_uuids: Vec<String> = nvidia_smi_output
+                    .as_deref()
+                    .unwrap_or("")
+                    .lines()
+                    .map(|l| l.trim())
+                    .filter(|l| l.starts_with("GPU-"))
+                    .map(|l| l.replace('-', "").replacen("GPU", "GPU-", 1))
+                    .collect();
+                detected_uuids.iter().any(|u| known_uuids.contains(u))
+            }
+        } else {
+            false
+        };
+
         // Check if node is banned
         let misbehaviour_check_passed = match self
             .misbehaviour_collector
@@ -543,7 +659,11 @@ impl ValidationNode {
             }
         };
 
-        let nat_validation_successful = if !connectivity_successful || !misbehaviour_check_passed {
+        let nat_validation_successful = if !connectivity_successful
+            || !misbehaviour_check_passed
+            || !nonce_challenge_ok
+            || !gpu_uuid_matches
+        {
             false
         } else {
             // Move to NatValidating state
@@ -594,25 +714,38 @@ impl ValidationNode {
             }
         };
 
-        let validation_successful =
-            connectivity_successful && misbehaviour_check_passed && nat_validation_successful;
+        let validation_successful = connectivity_successful
+            && misbehaviour_check_passed
+            && nonce_challenge_ok
+            && gpu_uuid_matches
+            && nat_validation_successful;
         if !validation_successful {
             error!(
                 miner_uid = miner_uid,
                 node_id = node_id,
                 connectivity_successful = connectivity_successful,
                 nat_validation_successful = nat_validation_successful,
+                nonce_challenge_ok = nonce_challenge_ok,
+                gpu_uuid_matches = gpu_uuid_matches,
                 "[EVAL_FLOW] Critical validation failed during lightweight validation"
             );
         }
 
         let total_duration = total_start.elapsed();
 
-        let verification_score = if validation_successful {
-            previous_score
-        } else {
-            0.0
-        };
+        let verification_score = if validation_successful { 1.0 } else { 0.0 };
+        let mut failure_reasons = Vec::new();
+        if !validation_successful {
+            if !connectivity_successful {
+                failure_reasons.push("connectivity_failed".to_string());
+            } else if !nonce_challenge_ok {
+                failure_reasons.push("nonce_challenge_failed".to_string());
+            } else if !gpu_uuid_matches {
+                failure_reasons.push("gpu_uuid_mismatch".to_string());
+            } else {
+                failure_reasons.push("nat_validation_failed".to_string());
+            }
+        }
 
         let details = ValidationDetails {
             ssh_test_duration: total_duration,
@@ -666,10 +799,12 @@ impl ValidationNode {
         Ok(NodeVerificationResult {
             node_id: node_info.id.clone(),
             node_ssh_endpoint: node_info.node_ssh_endpoint.clone(),
+            node_ip: node_info.node_ip.clone(),
             verification_score,
             ssh_connection_successful: validation_successful,
             binary_validation_successful: false,
             node_result,
+            failure_reasons,
             error: if validation_successful {
                 None
             } else if !connectivity_successful {
@@ -690,13 +825,15 @@ impl ValidationNode {
         &self,
         node_info: &NodeInfoDetailed,
         ssh_details: &SshConnectionDetails,
-        binary_config: &crate::config::BinaryValidationConfig,
+        binary_config: Option<&crate::config::BinaryValidationConfig>,
         _validator_hotkey: &Hotkey,
         miner_uid: u16,
     ) -> Result<NodeVerificationResult> {
         info!(
             miner_uid = miner_uid,
             node_id = %node_info.id,
+            binary_validation_enabled = binary_config.is_some(),
+            binary_timeout_secs = binary_config.map(|c| c.execution_timeout_secs).unwrap_or(0),
             "[EVAL_FLOW] Executing full validation"
         );
 
@@ -711,6 +848,7 @@ impl ValidationNode {
             binary_score: 0.0,
             combined_score: 0.0,
         };
+        let mut failure_reasons: Vec<String> = Vec::new();
 
         // Track state: Connecting
         if let Some(ref metrics) = self.metrics {
@@ -781,7 +919,7 @@ impl ValidationNode {
             };
 
         validation_details.ssh_test_duration = ssh_test_start.elapsed();
-        validation_details.ssh_score = if ssh_connection_successful { 0.8 } else { 0.0 };
+        validation_details.ssh_score = if ssh_connection_successful { 1.0 } else { 0.0 };
 
         // Phase 1.5: Node Profiling Collection
         let mut quality_validations_successful = false;
@@ -851,6 +989,16 @@ impl ValidationNode {
             quality_validations_successful =
                 docker_result.is_some() && nat_successful && not_banned;
 
+            if docker_result.is_none() {
+                failure_reasons.push("docker_validation_failed".to_string());
+            }
+            if nat_result.is_none() || !nat_successful {
+                failure_reasons.push("nat_validation_failed".to_string());
+            }
+            if storage_result.is_none() {
+                failure_reasons.push("storage_validation_failed".to_string());
+            }
+
             // Track state transitions based on validation results
             if docker_result.is_none() {
                 // Failed at DockerValidating stage
@@ -917,11 +1065,18 @@ impl ValidationNode {
         let mut node_result = None;
         let mut binary_score = 0.0;
         let mut gpu_count = 0u64;
+        if !ssh_connection_successful {
+            failure_reasons.push("ssh_connection_failed".to_string());
+        }
         let pre_validations_successful =
             ssh_connection_successful && quality_validations_successful;
 
-        if pre_validations_successful && binary_config.enabled {
-            // Move to BinaryValidating state
+        // Binary validation is enabled if config is present (Some = enabled)
+        let binary_validation_enabled = binary_config.is_some();
+
+        if pre_validations_successful && binary_validation_enabled {
+            let binary_cfg = binary_config.unwrap(); // Safe because we checked is_some()
+                                                     // Move to BinaryValidating state
             if let Some(ref metrics) = self.metrics {
                 metrics.prometheus().set_node_validation_state(
                     &node_id,
@@ -938,17 +1093,27 @@ impl ValidationNode {
                     &node_info.id.to_string(),
                     miner_uid,
                     ssh_details,
-                    binary_config,
+                    binary_cfg,
                 )
                 .await
             {
                 Ok(binary_result) => {
                     binary_validation_successful = binary_result.success;
                     node_result = binary_result.node_result;
-                    binary_score = binary_result.validation_score;
+                    binary_score = if binary_result.success { 1.0 } else { 0.0 };
                     gpu_count = binary_result.gpu_count;
+                    failure_reasons = binary_result.failure_reasons.clone();
                     validation_details.binary_execution_duration =
                         Duration::from_millis(binary_result.execution_time_ms);
+                    info!(
+                        miner_uid = miner_uid,
+                        node_id = %node_info.id,
+                        binary_success = binary_result.success,
+                        failure_reasons_count = failure_reasons.len(),
+                        execution_ms = binary_result.execution_time_ms,
+                        gpu_count = binary_result.gpu_count,
+                        "[EVAL_FLOW] Binary validation completed"
+                    );
 
                     if let Some(ref metrics) = self.metrics {
                         metrics
@@ -961,6 +1126,19 @@ impl ValidationNode {
                                 binary_validation_successful,
                             )
                             .await;
+                    }
+
+                    // Set failed state if binary validation reported failure
+                    if !binary_validation_successful {
+                        if let Some(ref metrics) = self.metrics {
+                            metrics.prometheus().set_node_validation_state(
+                                &node_id,
+                                miner_uid,
+                                ValidationType::Full,
+                                ValidationState::BinaryValidating,
+                                StateResult::Failed,
+                            );
+                        }
                     }
                 }
                 Err(e) => {
@@ -981,6 +1159,7 @@ impl ValidationNode {
                         error = %e,
                         "[EVAL_FLOW] Binary validation failed"
                     );
+                    failure_reasons.push("binary_execution_failed".to_string());
 
                     if let Some(ref metrics) = self.metrics {
                         metrics
@@ -996,14 +1175,13 @@ impl ValidationNode {
                     }
                 }
             }
-        } else if !binary_config.enabled && quality_validations_successful {
+        } else if !binary_validation_enabled && quality_validations_successful {
+            // Binary validation is disabled - use SSH score only (0.8 max)
             binary_validation_successful = true;
-            binary_score = 0.8;
+            binary_score = 1.0;
         }
 
         let combined_score = self.calculate_combined_verification_score(
-            validation_details.ssh_score,
-            binary_score,
             pre_validations_successful,
             binary_validation_successful,
             binary_config,
@@ -1030,15 +1208,27 @@ impl ValidationNode {
         }
         // Note: If failed, we keep the state where it failed (don't move to Completed)
 
+        let error_message = if pre_validations_successful && binary_validation_successful {
+            None
+        } else if !failure_reasons.is_empty() {
+            Some(failure_reasons.join("; "))
+        } else if !pre_validations_successful {
+            Some("pre_validations_failed".to_string())
+        } else {
+            Some("binary_validation_failed".to_string())
+        };
+
         Ok(NodeVerificationResult {
             node_id: node_info.id.clone(),
             node_ssh_endpoint: node_info.node_ssh_endpoint.clone(),
+            node_ip: node_info.node_ip.clone(),
             verification_score: combined_score,
             ssh_connection_successful,
             binary_validation_successful: pre_validations_successful
                 && binary_validation_successful,
             node_result,
-            error: None,
+            failure_reasons,
+            error: error_message,
             execution_time: total_start.elapsed(),
             validation_details,
             gpu_count,
@@ -1136,54 +1326,114 @@ impl ValidationNode {
     /// Calculate combined verification score from SSH and binary validation
     pub fn calculate_combined_verification_score(
         &self,
-        ssh_score: f64,
-        binary_score: f64,
         pre_validations_successful: bool,
         binary_successful: bool,
-        binary_config: &crate::config::BinaryValidationConfig,
+        binary_config: Option<&crate::config::BinaryValidationConfig>,
     ) -> f64 {
-        info!(
-            "[EVAL_FLOW] Starting combined score calculation - pre-val: {:.3} (success: {}), Binary: {:.3} (success: {})",
-            ssh_score, pre_validations_successful, binary_score, binary_successful
-        );
-
-        // If SSH fails, total score is 0
         if !pre_validations_successful {
-            error!("[EVAL_FLOW] pre validations failed, returning combined score: 0.0");
             return 0.0;
         }
-
-        // If binary validation is disabled, use SSH score only
-        if !binary_config.enabled {
-            info!(
-                "[EVAL_FLOW] Binary validation disabled, using SSH score only: {:.3}",
-                ssh_score
-            );
-            return ssh_score;
+        // Binary validation disabled if None
+        if binary_config.is_none() {
+            return 1.0;
         }
-
-        // If binary validation is enabled but failed, penalize but don't zero
         if !binary_successful {
-            let penalized_score = ssh_score * 0.5;
-            warn!(
-                "[EVAL_FLOW] Binary validation failed, applying 50% penalty to SSH score: {:.3} -> {:.3}",
-                ssh_score, penalized_score
-            );
-            return penalized_score;
+            return 0.0;
         }
+        1.0
+    }
+}
 
-        // Calculate weighted combination
-        let ssh_weight = 1.0 - binary_config.score_weight;
-        let binary_weight = binary_config.score_weight;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
 
-        let combined_score = (ssh_score * ssh_weight) + (binary_score * binary_weight);
+    #[tokio::test]
+    async fn forces_full_after_rental_termination() -> Result<()> {
+        let persistence = Arc::new(SimplePersistence::for_testing().await?);
+        let config = VerificationConfig::test_default();
+        let selector = ValidationStrategySelector::new(config, persistence.clone());
 
-        info!(
-            "[EVAL_FLOW] Combined score calculation: ({:.3} × {:.3}) + ({:.3} × {:.3}) = {:.3}",
-            ssh_score, ssh_weight, binary_score, binary_weight, combined_score
-        );
+        let miner_uid = 101u16;
+        let miner_id = format!("miner_{}", miner_uid);
+        let node_id = "node-test-1";
 
-        // Ensure score is within bounds
-        combined_score.clamp(0.0, 1.0)
+        sqlx::query(
+            "INSERT INTO miners (id, hotkey, endpoint, updated_at)
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(&miner_id)
+        .bind("hotkey")
+        .bind("http://127.0.0.1:8091")
+        .bind(Utc::now().to_rfc3339())
+        .execute(persistence.pool())
+        .await?;
+
+        // Seed miner_nodes so status check doesn't force full validation by itself.
+        sqlx::query(
+            "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, hourly_rate_cents, status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+        )
+        .bind(format!("{miner_id}_{node_id}"))
+        .bind(&miner_id)
+        .bind(node_id)
+        .bind("root@127.0.0.1:22")
+        .bind("127.0.0.1")
+        .bind(1)
+        .bind(100)
+        .bind("online")
+        .execute(persistence.pool())
+        .await?;
+
+        let last_validation = Utc::now() - chrono::Duration::hours(1);
+        let details = serde_json::json!({
+            "binary_validation_successful": true
+        });
+        sqlx::query(
+            "INSERT INTO verification_logs (id, node_id, validator_hotkey, verification_type, timestamp, score, success, details, duration_ms, error_message, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(uuid::Uuid::new_v4().to_string())
+        .bind(node_id)
+        .bind("validator_hotkey")
+        .bind("ssh_automation")
+        .bind(last_validation.to_rfc3339())
+        .bind(1.0)
+        .bind(1)
+        .bind(details.to_string())
+        .bind(1000)
+        .bind(Option::<String>::None)
+        .bind(last_validation.to_rfc3339())
+        .bind(last_validation.to_rfc3339())
+        .execute(persistence.pool())
+        .await?;
+
+        let terminated_at = Utc::now() - chrono::Duration::minutes(30);
+        sqlx::query(
+            "INSERT INTO rentals (id, validator_hotkey, node_id, miner_id, container_id, ssh_session_id, ssh_credentials, state, created_at, container_spec, metadata, terminated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind("rental-test-1")
+        .bind("validator_hotkey")
+        .bind(node_id)
+        .bind(&miner_id)
+        .bind("container")
+        .bind("session")
+        .bind("root@127.0.0.1:22")
+        .bind("stopped")
+        .bind(Utc::now().to_rfc3339())
+        .bind("{}")
+        .bind("{}")
+        .bind(terminated_at.to_rfc3339())
+        .execute(persistence.pool())
+        .await?;
+
+        let strategy = selector
+            .determine_validation_strategy(node_id, miner_uid)
+            .await?;
+
+        assert!(matches!(strategy, ValidationStrategy::Full));
+        Ok(())
     }
 }

@@ -6,6 +6,7 @@ It handles reading source files and generating the appropriate container command
 
 The SourcePackager abstracts the complexity of:
 - Reading source from files or inline strings
+- Extracting source from Python functions via inspect
 - Detecting the source type (file path vs inline code)
 - Generating proper container commands with heredocs
 - Escaping special characters
@@ -15,11 +16,17 @@ Example:
     >>> packager = SourcePackager("path/to/app.py")
     >>> command = packager.build_command()
     >>> # Returns: ["bash", "-c", "python - <<'PYCODE'\\n...code...\\nPYCODE\\n"]
+
+    >>> # Or from a function:
+    >>> def my_app():
+    ...     print("Hello!")
+    >>> packager = SourcePackager.from_function(my_app)
 """
 
+import inspect
 import os
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Callable, List, Optional, Union
 
 from .exceptions import SourceError
 
@@ -325,3 +332,58 @@ class SourcePackager:
         source_type = "file" if self.is_file else "inline"
         source_preview = self.source[:50] + "..." if len(self.source) > 50 else self.source
         return f"SourcePackager({source_type}: {source_preview!r})"
+
+    @staticmethod
+    def from_function(func: Callable, call: bool = True) -> "SourcePackager":
+        """
+        Create a SourcePackager from a Python function.
+
+        Uses inspect.getsource() to extract the function's source code.
+        Optionally appends a call to the function at the end.
+
+        Args:
+            func: A Python function to extract source from
+            call: If True, append a call to the function (default: True)
+
+        Returns:
+            A SourcePackager instance with the function's source
+
+        Raises:
+            SourceError: If the function's source cannot be retrieved
+
+        Example:
+            >>> def my_server():
+            ...     from http.server import HTTPServer, BaseHTTPRequestHandler
+            ...     HTTPServer(('', 8000), BaseHTTPRequestHandler).serve_forever()
+            >>> packager = SourcePackager.from_function(my_server)
+            >>> # Source includes the function definition + call
+
+        Note:
+            inspect.getsource() requires the function to be defined in a file,
+            not in an interactive session or exec/eval context.
+        """
+        if not callable(func):
+            raise SourceError(f"Expected a callable, got {type(func).__name__}")
+
+        try:
+            source = inspect.getsource(func)
+        except (OSError, TypeError) as e:
+            raise SourceError(
+                f"Cannot get source for {func.__name__}: {e}. "
+                "Ensure the function is defined in a file, not interactively."
+            )
+
+        # Dedent the source in case it was defined inside another scope
+        import textwrap
+        source = textwrap.dedent(source)
+
+        # Append function call if requested
+        if call:
+            source += f"\n\n{func.__name__}()"
+
+        packager = object.__new__(SourcePackager)
+        packager.source = f"<function {func.__name__}>"
+        packager.code = source
+        packager.is_file = False
+
+        return packager

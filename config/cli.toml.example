@@ -1,24 +1,26 @@
 # Basilica CLI Configuration
-# 
+#
 # This file configures the Basilica CLI for interacting with the network
-# Copy this file to ~/.basilica/config.toml and adjust values as needed
+# Copy this file to ~/.config/basilica/config.toml and adjust values as needed
 
 # API Configuration
 [api]
 # Base URL for the Basilica API
-base_url = "http://localhost:8000"
-request_timeout = 120
+# Production: https://api.basilica.ai
+# Development: http://localhost:8000
+base_url = "https://api.basilica.ai"
+request_timeout = 900  # 15 minutes
 
 # SSH Configuration
 [ssh]
-# SSH connection timeout in seconds (default: 30)
+# SSH connection timeout in seconds
 connection_timeout = 30
 
 # Docker Image Configuration
 [image]
 # Default Docker image to use when provisioning instances
 # Can be overridden with --image flag
-name = "nvidia/cuda:12.2.0-runtime-ubuntu22.04"
+name = "nvidia/cuda:12.8.0-runtime-ubuntu22.04"
 
 # Wallet Configuration
 [wallet]

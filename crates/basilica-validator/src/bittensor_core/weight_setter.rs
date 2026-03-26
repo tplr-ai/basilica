@@ -3,6 +3,7 @@
 //! Manages Bittensor weight setting operations for the Validator.
 //! Sets weights every N blocks based on miner scores from node validations.
 
+use crate::basilica_api::BasilicaApiClient;
 use crate::bittensor_core::weight_allocation::WeightAllocationEngine;
 use crate::config::emission::EmissionConfig;
 use crate::gpu::categorization;
@@ -10,15 +11,19 @@ use crate::gpu::GpuScoringEngine;
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::entities::VerificationLog;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
-use crate::persistence::SimplePersistence;
+use crate::persistence::{
+    MinerDeliveryRepository, SimplePersistence, WeightSetEpoch, WeightSetEpochRepository,
+};
 use anyhow::Result;
 use basilica_common::config::BittensorConfig;
-use basilica_common::identity::{MinerUid, NodeId};
+use basilica_common::identity::{Hotkey, MinerUid, NodeId};
+use basilica_common::types::GpuCategory;
 use basilica_common::{KeyValueStorage, MemoryStorage};
-use bittensor::{AccountId, Metagraph, NormalizedWeight, Service as BittensorService};
+use basilica_protocol::billing::MinerDelivery;
+use bittensor::{Metagraph, NormalizedWeight, Service as BittensorService};
 use chrono::{DateTime, Utc};
 use sqlx::Row;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;
@@ -35,10 +40,8 @@ const GPU_CATEGORY_CUTOFF_HOURS: u32 = 3;
 pub struct NodeValidationResult {
     pub node_id: NodeId,
     pub is_valid: bool,
-    pub _hardware_score: f64,
     pub gpu_count: usize,
     pub gpu_memory_gb: f64,
-    pub _network_bandwidth_mbps: f64,
     pub attestation_valid: bool,
     pub validation_timestamp: chrono::DateTime<chrono::Utc>,
     pub gpu_model: String,
@@ -51,14 +54,17 @@ pub struct WeightSetter {
     bittensor_service: Arc<BittensorService>,
     storage: MemoryStorage,
     persistence: Arc<SimplePersistence>,
-    min_score_threshold: f64,
     blocks_per_weight_set: u64,
     last_weight_set_block: Arc<tokio::sync::Mutex<u64>>,
     gpu_scoring_engine: Arc<GpuScoringEngine>,
     weight_allocation_engine: Arc<WeightAllocationEngine>,
     emission_config: EmissionConfig,
+    delivery_repository: Arc<MinerDeliveryRepository>,
+    epoch_repository: Arc<WeightSetEpochRepository>,
+    api_client: Arc<BasilicaApiClient>,
     gpu_profile_repo: Arc<GpuProfileRepository>,
     metrics: Option<Arc<ValidatorMetrics>>,
+    collateral_grace_period: Option<chrono::Duration>,
 }
 
 impl WeightSetter {
@@ -69,32 +75,36 @@ impl WeightSetter {
         bittensor_service: Arc<BittensorService>,
         storage: MemoryStorage,
         persistence: Arc<SimplePersistence>,
-        min_score_threshold: f64,
         blocks_per_weight_set: u64,
         gpu_scoring_engine: Arc<GpuScoringEngine>,
         emission_config: EmissionConfig,
+        api_client: Arc<BasilicaApiClient>,
         gpu_profile_repo: Arc<GpuProfileRepository>,
         metrics: Option<Arc<ValidatorMetrics>>,
+        collateral_grace_period: Option<chrono::Duration>,
     ) -> Result<Self> {
         // Create weight allocation engine
-        let weight_allocation_engine = Arc::new(WeightAllocationEngine::new(
-            emission_config.clone(),
-            min_score_threshold,
-        ));
+        let weight_allocation_engine =
+            Arc::new(WeightAllocationEngine::new(emission_config.clone()));
+        let delivery_repository = Arc::new(MinerDeliveryRepository::new(persistence.clone()));
+        let epoch_repository = Arc::new(WeightSetEpochRepository::new(persistence.clone()));
 
         Ok(Self {
             config,
             bittensor_service,
             storage,
             persistence,
-            min_score_threshold,
             blocks_per_weight_set,
             last_weight_set_block: Arc::new(tokio::sync::Mutex::new(0)),
             gpu_scoring_engine,
             weight_allocation_engine,
             emission_config,
+            delivery_repository,
+            epoch_repository,
+            api_client,
             gpu_profile_repo,
             metrics,
+            collateral_grace_period,
         })
     }
 
@@ -104,8 +114,8 @@ impl WeightSetter {
         let mut interval = interval(Duration::from_secs(12));
 
         info!(
-            "Starting weight setter - will set weights every {} blocks, min_score_threshold: {:.2}",
-            self.blocks_per_weight_set, self.min_score_threshold
+            "Starting weight setter - will set weights every {} blocks",
+            self.blocks_per_weight_set,
         );
 
         // Initialize last weight set block from storage or chain
@@ -199,7 +209,7 @@ impl WeightSetter {
                     return Ok(());
                 }
                 Err(e) => {
-                    error!("Weight setting attempt {} failed: {}", attempt, e);
+                    error!("Weight setting attempt {} failed: {:?}", attempt, e);
                     if attempt < MAX_RETRIES {
                         warn!(
                             "Retrying weight setting in {} seconds...",
@@ -224,29 +234,194 @@ impl WeightSetter {
             self.config.netuid
         );
 
-        // 1. Get current metagraph
+        let metagraph = self.fetch_metagraph_with_logging().await?;
+        let attempt_start = Utc::now();
+        let epoch = self.get_or_create_epoch_window(attempt_start).await?;
+        self.epoch_repository.increment_attempts(epoch.id).await?;
+
+        self.sync_deliveries_for_epoch(&epoch).await?;
+        let deliveries = self
+            .delivery_repository
+            .get_deliveries_for_window(epoch.period_start, epoch.period_end, None)
+            .await?;
+        let hotkey_to_uid = self.build_hotkey_to_uid_map(&metagraph);
+        let excluded_nodes = self.fetch_excluded_nodes().await?;
+        let miners_by_category =
+            self.group_deliveries_by_category(deliveries, &hotkey_to_uid, &excluded_nodes);
+
+        self.log_tao_price().await;
+
+        let weight_distribution = self
+            .weight_allocation_engine
+            .calculate_weight_distribution(miners_by_category)?;
+        self.log_weight_distribution(&weight_distribution);
+
+        let normalized_weights = self.build_normalized_weights(&weight_distribution)?;
+        let version_key = self.get_version_key().await?;
+        self.ensure_unique_uids(&normalized_weights)?;
+
+        self.submit_weights_to_chain_with_retry(normalized_weights, version_key)
+            .await?;
+        self.store_weight_results(&weight_distribution).await?;
+        self.epoch_repository.mark_success(epoch.id).await?;
+
+        Ok(())
+    }
+
+    async fn fetch_metagraph_with_logging(&self) -> Result<Metagraph> {
         let metagraph = self.get_metagraph().await?;
         debug!(
             "Retrieved metagraph with {} neurons",
             metagraph.hotkeys.len()
         );
+        Ok(metagraph)
+    }
 
-        // 2. Get last weight set timestamp for epoch filtering
-        let last_weight_timestamp = self.get_last_weight_set_timestamp().await?;
-        info!(
-            "Fetching miners by GPU category from scoring engine, cutoff at {GPU_CATEGORY_CUTOFF_HOURS} hours, epoch: {:?}",
-            last_weight_timestamp
-        );
+    async fn get_or_create_epoch_window(
+        &self,
+        attempt_start: DateTime<Utc>,
+    ) -> Result<WeightSetEpoch> {
+        if let Some(epoch) = self
+            .epoch_repository
+            .get_pending_epoch(self.config.netuid)
+            .await?
+        {
+            info!(
+                period_start = %epoch.period_start,
+                period_end = %epoch.period_end,
+                attempts = epoch.attempts,
+                "Reusing pending weight-set epoch window"
+            );
+            return Ok(epoch);
+        }
 
-        // 3. Get miners by GPU category from the scoring engine with axon validation and epoch filtering
-        let miners_by_category = self
-            .gpu_scoring_engine
-            .get_miners_by_gpu_category_since_epoch(
-                last_weight_timestamp,
-                GPU_CATEGORY_CUTOFF_HOURS,
-                &metagraph,
-            )
+        let last_success_end = self
+            .epoch_repository
+            .get_last_success_end(self.config.netuid)
             .await?;
+        let mut period_start = match last_success_end {
+            Some(last_end) => last_end + chrono::Duration::seconds(1),
+            None => attempt_start,
+        };
+
+        let period_end = attempt_start;
+        if period_start > period_end {
+            warn!(
+                period_start = %period_start,
+                period_end = %period_end,
+                "Computed period_start after period_end; clamping to period_end"
+            );
+            period_start = period_end;
+        }
+
+        let epoch = self
+            .epoch_repository
+            .create_epoch(self.config.netuid, period_start, period_end)
+            .await?;
+        info!(
+            period_start = %epoch.period_start,
+            period_end = %epoch.period_end,
+            "Created new weight-set epoch window"
+        );
+        Ok(epoch)
+    }
+
+    async fn sync_deliveries_for_epoch(&self, epoch: &WeightSetEpoch) -> Result<()> {
+        let deliveries = self
+            .api_client
+            .get_miner_delivery(epoch.period_start, epoch.period_end)
+            .await?;
+
+        self.delivery_repository
+            .store_deliveries(epoch.period_start, epoch.period_end, &deliveries)
+            .await?;
+
+        Ok(())
+    }
+
+    fn build_hotkey_to_uid_map(&self, metagraph: &Metagraph) -> HashMap<String, u16> {
+        metagraph
+            .hotkeys
+            .iter()
+            .enumerate()
+            .filter_map(|(uid, account)| {
+                u16::try_from(uid)
+                    .ok()
+                    .map(|u| (Hotkey::from_account_id(account).to_string(), u))
+            })
+            .collect()
+    }
+
+    fn group_deliveries_by_category(
+        &self,
+        deliveries: Vec<MinerDelivery>,
+        hotkey_to_uid: &HashMap<String, u16>,
+        excluded_nodes: &HashSet<(String, String)>,
+    ) -> HashMap<String, Vec<(MinerUid, f64)>> {
+        let mut miners_by_category: HashMap<String, Vec<(MinerUid, f64)>> = HashMap::new();
+        for delivery in deliveries {
+            if excluded_nodes.contains(&(delivery.miner_hotkey.clone(), delivery.node_id.clone())) {
+                debug!(
+                    miner_hotkey = %delivery.miner_hotkey,
+                    node_id = %delivery.node_id,
+                    "Skipping delivery for collateral-excluded node"
+                );
+                continue;
+            }
+            let current_uid = match hotkey_to_uid.get(&delivery.miner_hotkey) {
+                Some(&uid) => uid,
+                None => {
+                    warn!(
+                        miner_hotkey = %delivery.miner_hotkey,
+                        stored_uid = delivery.miner_uid,
+                        revenue_usd = delivery.revenue_usd,
+                        gpu_category = %delivery.gpu_category,
+                        "Miner deregistered - clearing pending revenue (hotkey not in metagraph)"
+                    );
+                    continue;
+                }
+            };
+
+            if current_uid != delivery.miner_uid as u16 {
+                warn!(
+                    miner_hotkey = %delivery.miner_hotkey,
+                    stored_uid = delivery.miner_uid,
+                    current_uid = current_uid,
+                    revenue_usd = delivery.revenue_usd,
+                    "Miner UID changed - using current UID from metagraph"
+                );
+            }
+
+            let gpu_cat: GpuCategory = if delivery.gpu_category.trim().is_empty() {
+                GpuCategory::Other("UNKNOWN".to_string())
+            } else {
+                delivery.gpu_category.parse().unwrap() // Infallible
+            };
+            if matches!(&gpu_cat, GpuCategory::Other(_)) {
+                warn!(
+                    raw_category = %delivery.gpu_category,
+                    miner_hotkey = %delivery.miner_hotkey,
+                    node_id = %delivery.node_id,
+                    "Delivery has unrecognized GPU category - will not receive weight allocation"
+                );
+            }
+            let category = gpu_cat.to_string();
+            let revenue_usd = delivery.revenue_usd;
+            if !revenue_usd.is_finite() || revenue_usd <= 0.0 {
+                debug!(
+                    miner_hotkey = %delivery.miner_hotkey,
+                    node_id = %delivery.node_id,
+                    gpu_category = %category,
+                    "Skipping delivery with zero payment - no weight contribution"
+                );
+                continue;
+            }
+
+            miners_by_category
+                .entry(category)
+                .or_default()
+                .push((MinerUid::new(current_uid), revenue_usd));
+        }
 
         if miners_by_category.is_empty() {
             warn!("No miners found in any GPU category - proceeding with burn allocation");
@@ -258,11 +433,35 @@ impl WeightSetter {
             miners_by_category.keys().collect::<Vec<_>>()
         );
 
-        // 4. Calculate weight distribution using the allocation engine
-        let weight_distribution = self
-            .weight_allocation_engine
-            .calculate_weight_distribution(miners_by_category)?;
+        miners_by_category
+    }
 
+    async fn fetch_excluded_nodes(&self) -> Result<HashSet<(String, String)>> {
+        let Some(grace_period) = self.collateral_grace_period else {
+            return Ok(HashSet::new());
+        };
+        self.persistence.get_excluded_nodes(grace_period).await
+    }
+
+    async fn log_tao_price(&self) {
+        match self.api_client.get_tao_price_usd(self.config.netuid).await {
+            Ok(tao_price) => {
+                info!(
+                    tao_price_usd = %tao_price,
+                    burn_percentage = self.emission_config.burn_percentage,
+                    "Fetched TAO price for weight context"
+                );
+            }
+            Err(err) => {
+                warn!("Failed to fetch TAO price: {}", err);
+            }
+        }
+    }
+
+    fn log_weight_distribution(
+        &self,
+        weight_distribution: &crate::bittensor_core::weight_allocation::WeightDistribution,
+    ) {
         if weight_distribution.miners_served == 0 {
             warn!("No miners served by weight allocation - proceeding with burn-only weights");
         }
@@ -273,7 +472,6 @@ impl WeightSetter {
             weight_distribution.category_allocations.len()
         );
 
-        // 5. Log category allocations for transparency
         for (category, allocation) in &weight_distribution.category_allocations {
             info!(
                 gpu_category = %category,
@@ -284,7 +482,6 @@ impl WeightSetter {
             );
         }
 
-        // 6. Log burn allocation if present
         if let Some(burn_alloc) = &weight_distribution.burn_allocation {
             info!(
                 miner_uid = burn_alloc.uid,
@@ -293,25 +490,16 @@ impl WeightSetter {
                 "[WEIGHT_FLOW] Burn allocation"
             );
         }
+    }
 
-        // 7. Convert to normalized weights for chain submission including burn allocation
-        let normalized_weights = self.build_normalized_weights(&weight_distribution)?;
-
-        // 8. Get version key and submit weights
-        let version_key = self.get_version_key().await?;
-
-        info!(
-            netuid = self.config.netuid,
-            weight_count = normalized_weights.len(),
-            version_key = version_key,
-            "Preparing to submit weights to chain"
-        );
-
-        // Additional validation - check for duplicates before submission
+    fn ensure_unique_uids(&self, normalized_weights: &[NormalizedWeight]) -> Result<()> {
         let mut uid_check = std::collections::HashSet::new();
-        for weight in &normalized_weights {
+        for weight in normalized_weights {
             if !uid_check.insert(weight.uid) {
-                error!("CRITICAL: Duplicate UID {} found in normalized weights before chain submission", weight.uid);
+                error!(
+                    "CRITICAL: Duplicate UID {} found in normalized weights before chain submission",
+                    weight.uid
+                );
                 error!("Full weights vector: {:?}", normalized_weights);
                 return Err(anyhow::anyhow!(
                     "Duplicate UID {} detected in final weights",
@@ -319,25 +507,22 @@ impl WeightSetter {
                 ));
             }
         }
+        Ok(())
+    }
 
-        // Submit weights to chain with enhanced error handling and retry logic
-        self.submit_weights_to_chain_with_retry(normalized_weights.clone(), version_key)
-            .await?;
-
-        // 9. Store emission metrics to database
+    async fn store_weight_results(
+        &self,
+        weight_distribution: &crate::bittensor_core::weight_allocation::WeightDistribution,
+    ) -> Result<()> {
         let current_block = self.get_current_block().await.unwrap_or(0);
         let emission_metrics_id = self
-            .store_emission_metrics(&weight_distribution, current_block)
+            .store_emission_metrics(weight_distribution, current_block)
             .await?;
 
-        // 10. Store weight allocation history for each miner
-        self.store_weight_allocations(&weight_distribution, emission_metrics_id, current_block)
+        self.store_weight_allocations(weight_distribution, emission_metrics_id, current_block)
             .await?;
-
-        // 11. Store submission metadata
-        self.store_weight_submission_metadata(&weight_distribution)
+        self.store_weight_submission_metadata(weight_distribution)
             .await?;
-
         Ok(())
     }
 
@@ -915,7 +1100,7 @@ impl WeightSetter {
     }
 
     /// Get current metagraph from Bittensor network with retry logic
-    async fn get_metagraph(&self) -> Result<Metagraph<AccountId>> {
+    async fn get_metagraph(&self) -> Result<Metagraph> {
         const MAX_RETRIES: u32 = 3;
         const BASE_DELAY: Duration = Duration::from_secs(2);
 
@@ -966,156 +1151,141 @@ impl WeightSetter {
         };
 
         // Extract data from the verification log structure
-        let (hardware_score, gpu_count, gpu_memory_gb, network_bandwidth_mbps, gpu_model) =
-            if let Some(specs) = hardware_specs {
-                // Extract GPU model from node_result.gpu_name
-                let mut gpu_model = specs["node_result"]["gpu_name"]
-                    .as_str()
-                    .map(|s| s.to_string());
+        let (gpu_count, gpu_memory_gb, gpu_model) = if let Some(specs) = hardware_specs {
+            // Extract GPU model from node_result.gpu_name
+            let mut gpu_model = specs["node_result"]["gpu_name"]
+                .as_str()
+                .map(|s| s.to_string());
 
-                if gpu_model.is_none() || gpu_model.as_ref() == Some(&"UNKNOWN".to_string()) {
-                    debug!(
-                        node_id = %node_id,
-                        "GPU name not found in node_result for node {}, checking gpu_uuid_assignments",
-                        node_id
-                    );
-
-                    match self
-                        .persistence
-                        .get_node_gpu_name_from_assignments(miner_id, &node_id.to_string())
-                        .await
-                    {
-                        Ok(Some(name)) => {
-                            debug!(
-                                node_id = %node_id,
-                                "Retrieved GPU model from assignments for node {}: {}",
-                                node_id, name
-                            );
-                            gpu_model = Some(name);
-                        }
-                        Ok(None) => {
-                            warn!(
-                                node_id = %node_id,
-                                "No GPU assignments found for node {}",
-                                node_id
-                            );
-                        }
-                        Err(e) => {
-                            warn!(
-                                "Failed to get GPU model from assignments for node {}: {}",
-                                node_id, e
-                            );
-                        }
-                    }
-                }
-
-                let gpu_model = gpu_model.unwrap_or_else(|| "UNKNOWN".to_string());
-
-                let gpu_count = match self
-                    .persistence
-                    .get_node_gpu_count_from_assignments(miner_id, &node_id.to_string())
-                    .await
-                {
-                    Ok(count) => count as usize,
-                    Err(e) => {
-                        warn!(
-                            "Failed to get GPU count from assignments for node {}: {}, using 0",
-                            node_id, e
-                        );
-                        0
-                    }
-                };
-
-                let gpu_memory_gb = match self
-                    .persistence
-                    .get_node_first_gpu_memory_gb(miner_id, &node_id.to_string())
-                    .await
-                {
-                    Ok(mem) => mem,
-                    Err(e) => {
-                        warn!(
-                            "Failed to get GPU memory from assignments for node {}: {}, using 0.0",
-                            node_id, e
-                        );
-                        0.0
-                    }
-                };
-
-                // Extract memory bandwidth from node_result.memory_bandwidth_gbps
-                let bandwidth = specs["node_result"]["memory_bandwidth_gbps"]
-                    .as_f64()
-                    .unwrap_or(0.0);
-
-                let score = self.calculate_hardware_score(&specs);
-
+            if gpu_model.is_none() || gpu_model.as_ref() == Some(&"UNKNOWN".to_string()) {
                 debug!(
-                    "Node {}: Extracted GPU info - model: {}, count: {}, memory: {}GB, validation_success: {}",
-                    node_id, gpu_model, gpu_count, gpu_memory_gb, log.success
-                );
-
-                (score, gpu_count, gpu_memory_gb, bandwidth, gpu_model)
-            } else {
-                debug!(
-                    "Node {}: No hardware specs in verification log, checking gpu_uuid_assignments",
+                    node_id = %node_id,
+                    "GPU name not found in node_result for node {}, checking gpu_uuid_assignments",
                     node_id
                 );
 
-                let gpu_model = match self
+                match self
                     .persistence
                     .get_node_gpu_name_from_assignments(miner_id, &node_id.to_string())
                     .await
                 {
                     Ok(Some(name)) => {
                         debug!(
-                            "Retrieved GPU model from assignments for node {} (no specs): {}",
+                            node_id = %node_id,
+                            "Retrieved GPU model from assignments for node {}: {}",
                             node_id, name
                         );
-                        name
+                        gpu_model = Some(name);
                     }
-                    _ => "UNKNOWN".to_string(),
-                };
+                    Ok(None) => {
+                        warn!(
+                            node_id = %node_id,
+                            "No GPU assignments found for node {}",
+                            node_id
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to get GPU model from assignments for node {}: {}",
+                            node_id, e
+                        );
+                    }
+                }
+            }
 
-                let gpu_count = match self
-                    .persistence
-                    .get_node_gpu_count_from_assignments(miner_id, &node_id.to_string())
-                    .await
-                {
-                    Ok(count) => count as usize,
-                    Err(_) => 0,
-                };
+            let gpu_model = gpu_model.unwrap_or_else(|| "UNKNOWN".to_string());
 
-                let gpu_memory_gb = (self
-                    .persistence
-                    .get_node_first_gpu_memory_gb(miner_id, &node_id.to_string())
-                    .await)
-                    .unwrap_or(0.0);
+            let gpu_count = match self
+                .persistence
+                .get_node_gpu_count_from_assignments(miner_id, &node_id.to_string())
+                .await
+            {
+                Ok(count) => count as usize,
+                Err(e) => {
+                    warn!(
+                        "Failed to get GPU count from assignments for node {}: {}, using 0",
+                        node_id, e
+                    );
+                    0
+                }
+            };
 
-                debug!(
+            let gpu_memory_gb = match self
+                .persistence
+                .get_node_first_gpu_memory_gb(miner_id, &node_id.to_string())
+                .await
+            {
+                Ok(mem) => mem,
+                Err(e) => {
+                    warn!(
+                        "Failed to get GPU memory from assignments for node {}: {}, using 0.0",
+                        node_id, e
+                    );
+                    0.0
+                }
+            };
+
+            debug!(
+                    "Node {}: Extracted GPU info - model: {}, count: {}, memory: {}GB, validation_success: {}",
+                    node_id, gpu_model, gpu_count, gpu_memory_gb, log.success
+                );
+
+            (gpu_count, gpu_memory_gb, gpu_model)
+        } else {
+            debug!(
+                "Node {}: No hardware specs in verification log, checking gpu_uuid_assignments",
+                node_id
+            );
+
+            let gpu_model = match self
+                .persistence
+                .get_node_gpu_name_from_assignments(miner_id, &node_id.to_string())
+                .await
+            {
+                Ok(Some(name)) => {
+                    debug!(
+                        "Retrieved GPU model from assignments for node {} (no specs): {}",
+                        node_id, name
+                    );
+                    name
+                }
+                _ => "UNKNOWN".to_string(),
+            };
+
+            let gpu_count = match self
+                .persistence
+                .get_node_gpu_count_from_assignments(miner_id, &node_id.to_string())
+                .await
+            {
+                Ok(count) => count as usize,
+                Err(_) => 0,
+            };
+
+            let gpu_memory_gb = (self
+                .persistence
+                .get_node_first_gpu_memory_gb(miner_id, &node_id.to_string())
+                .await)
+                .unwrap_or(0.0);
+
+            debug!(
                     "Node {}: From assignments only - model: {}, count: {}, memory: {}GB, validation_success: {}",
                     node_id, gpu_model, gpu_count, gpu_memory_gb, log.success
                 );
 
-                (0.0, gpu_count, gpu_memory_gb, 0.0, gpu_model)
-            };
+            (gpu_count, gpu_memory_gb, gpu_model)
+        };
 
         Ok(NodeValidationResult {
             node_id,
             is_valid: log.success,
-            _hardware_score: hardware_score,
             gpu_count,
             gpu_memory_gb,
-            _network_bandwidth_mbps: network_bandwidth_mbps,
             attestation_valid: (log.verification_type == "attestation"
                 || log.verification_type == "ssh_automation")
                 && log.success,
             validation_timestamp: log.timestamp,
             gpu_model,
         })
-    }
-
-    /// Calculate hardware score from specs
-    fn calculate_hardware_score(&self, _specs: &serde_json::Value) -> f64 {
-        1.0
     }
 
     /// Get recent validation results for a miner
@@ -1560,10 +1730,8 @@ mod tests {
             NodeValidationResult {
                 node_id: NodeId::new("").unwrap(),
                 is_valid: true,
-                _hardware_score: 0.8,
                 gpu_count: 2,
                 gpu_memory_gb: 48.0,
-                _network_bandwidth_mbps: 1000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
                 gpu_model: "NVIDIA A100".to_string(),
@@ -1571,10 +1739,8 @@ mod tests {
             NodeValidationResult {
                 node_id: NodeId::new("").unwrap(),
                 is_valid: true,
-                _hardware_score: 0.9,
                 gpu_count: 4,
                 gpu_memory_gb: 96.0,
-                _network_bandwidth_mbps: 10000.0,
                 attestation_valid: true,
                 validation_timestamp: chrono::Utc::now(),
                 gpu_model: "NVIDIA A100".to_string(),

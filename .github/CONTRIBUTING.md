@@ -140,7 +140,7 @@ Fix weight calculation in validator scoring
 
 ## Community
 
-- Join our [Discord](https://discord.gg/tsErZGXX) for discussions
+- Join our [Discord](https://discord.gg/Cy7c9vPsNK) for discussions
 - Be respectful and constructive
 - Help others when you can
 - Share your ideas and feedback

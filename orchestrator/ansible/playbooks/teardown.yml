@@ -1,6 +1,0 @@
----
-- name: Basilica Teardown - Remove Application Services
-  import_playbook: 05-teardown/basilica.yml
-
-- name: Basilica Teardown - Remove K3s Cluster
-  import_playbook: 05-teardown/k3s-cluster.yml

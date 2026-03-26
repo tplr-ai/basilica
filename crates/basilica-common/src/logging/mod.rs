@@ -43,16 +43,29 @@ pub fn init_logging<L: LogLevel>(
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_filter))
     };
 
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_target(true) // Show module path
+        // .with_file(true) // Show source file
+        // .with_line_number(true) // Show line number
+        .compact(); // Use compact format
+
+    let fmt_layer = match resolve_ansi_override() {
+        Some(ansi) => fmt_layer.with_ansi(ansi),
+        None => fmt_layer,
+    };
+
     tracing_subscriber::registry()
         .with(filter)
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(true) // Show module path
-                // .with_file(true) // Show source file
-                // .with_line_number(true) // Show line number
-                .compact(), // Use compact format
-        )
+        .with(fmt_layer)
         .init();
 
     Ok(())
+}
+
+fn resolve_ansi_override() -> Option<bool> {
+    if std::env::var_os("NO_COLOR").is_some() {
+        return Some(false);
+    }
+
+    None
 }

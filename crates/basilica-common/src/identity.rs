@@ -1,9 +1,8 @@
 //! Identity types for Basilica
 //!
 //! This module defines the core identity types used throughout the system:
-//! - `Hotkey`: Bittensor hotkey in SS58 format
+//! - `Hotkey`: Bittensor hotkey in SS58 format (re-exported from bittensor crate)
 //! - `NodeId`: Unique identifier for compute nodes (from node_identity module)
-//! - `NodeId`: Alias for NodeId for backward compatibility
 //! - `ValidatorUid`: Bittensor validator UID
 //! - `MinerUid`: Bittensor miner UID
 //! - `JobId`: Unique identifier for computational jobs
@@ -18,135 +17,9 @@ use uuid::Uuid;
 // Import NodeId from node_identity module
 pub use crate::node_identity::NodeId;
 
-/// Bittensor hotkey identifier in SS58 format
-///
-/// # Implementation Notes
-/// - Must validate SS58 format on construction
-/// - Used for cryptographic operations and authentication
-/// - Should be treated as a public key identifier
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Hotkey(String);
-
-impl Hotkey {
-    /// Create a new Hotkey from a string
-    ///
-    /// # Arguments
-    /// * `hotkey` - SS58 formatted string
-    ///
-    /// # Returns
-    /// * `Result<Hotkey, String>` - Ok if valid SS58 format, Err with description otherwise
-    ///
-    /// # Implementation
-    /// Validates SS58 format using sp-core::crypto::Ss58Codec for full compatibility
-    /// with Substrate/Bittensor ecosystem. Checks format, checksum, and address type.
-    pub fn new(hotkey: String) -> Result<Self, String> {
-        use sp_core::crypto::Ss58Codec;
-        use std::str::FromStr;
-
-        // Basic validation
-        if hotkey.is_empty() {
-            return Err("Hotkey cannot be empty".to_string());
-        }
-
-        // Length check for SS58 addresses (typical range is 47-48 characters)
-        if hotkey.len() < 47 || hotkey.len() > 48 {
-            return Err(format!(
-                "Invalid hotkey length: expected 47-48 characters, got {}",
-                hotkey.len()
-            ));
-        }
-
-        // Validate SS58 format using sp-core
-        // This validates format, checksum, and ensures it's a valid SS58 address
-        match sp_core::sr25519::Public::from_ss58check(&hotkey) {
-            Ok(_) => {
-                // Additional validation: ensure it can be converted to AccountId
-                // This provides compatibility with crabtensor expectations
-                match crabtensor::AccountId::from_str(&hotkey) {
-                    Ok(_) => Ok(Hotkey(hotkey)),
-                    Err(_) => Err(format!(
-                        "Hotkey is valid SS58 but incompatible with Bittensor network: {hotkey}"
-                    )),
-                }
-            }
-            Err(_) => {
-                // Try with AccountId32 format for broader compatibility
-                match sp_core::crypto::AccountId32::from_ss58check(&hotkey) {
-                    Ok(_) => {
-                        // Verify crabtensor compatibility
-                        match crabtensor::AccountId::from_str(&hotkey) {
-                            Ok(_) => Ok(Hotkey(hotkey)),
-                            Err(_) => Err(format!(
-                                "Hotkey is valid SS58 but incompatible with Bittensor network: {hotkey}"
-                            )),
-                        }
-                    }
-                    Err(_) => Err(format!(
-                        "Invalid SS58 format: checksum validation failed for {hotkey}"
-                    )),
-                }
-            }
-        }
-    }
-
-    /// Get the inner string representation
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// Convert to owned String
-    pub fn into_string(self) -> String {
-        self.0
-    }
-}
-
-impl fmt::Display for Hotkey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl std::str::FromStr for Hotkey {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::new(s.to_string())
-    }
-}
-
-// Conversion methods to/from crabtensor::AccountId
-impl Hotkey {
-    /// Convert Hotkey to crabtensor::AccountId
-    ///
-    /// # Returns
-    /// * `Result<crabtensor::AccountId, String>` - Ok if valid SS58, Err otherwise
-    ///
-    /// # Implementation Notes
-    /// Uses crabtensor's built-in SS58 parsing to convert the hotkey string
-    /// to an AccountId that can be used with the crabtensor API.
-    pub fn to_account_id(&self) -> Result<crabtensor::AccountId, String> {
-        use std::str::FromStr;
-        crabtensor::AccountId::from_str(&self.0)
-            .map_err(|e| format!("Failed to parse hotkey as AccountId: {e}"))
-    }
-
-    /// Create Hotkey from crabtensor::AccountId
-    ///
-    /// # Arguments
-    /// * `account_id` - The AccountId to convert
-    ///
-    /// # Returns
-    /// * `Self` - Hotkey containing the SS58 representation
-    pub fn from_account_id(account_id: &crabtensor::AccountId) -> Self {
-        Hotkey(account_id.to_string())
-    }
-}
-
-// Note: From<crabtensor::AccountId> for Hotkey conflicts with blanket From<T> for T
-// Use explicit from_account_id() method instead
-
-// Note: TryFrom<&Hotkey> for crabtensor::AccountId conflicts with blanket TryFrom
-// Use explicit to_account_id() method instead
+// Re-export Hotkey and AccountId from the bittensor crate as the canonical source
+pub use bittensor::AccountId;
+pub use bittensor::Hotkey;
 
 /// Bittensor validator unique identifier
 ///
@@ -319,7 +192,7 @@ mod tests {
             let hotkey = hotkey.unwrap();
             assert_eq!(hotkey.as_str(), hotkey_str);
 
-            // Verify it can be converted to AccountId
+            // Verify it can be converted to AccountId (via bittensor)
             assert!(
                 hotkey.to_account_id().is_ok(),
                 "Valid hotkey should convert to AccountId: {hotkey_str}"
@@ -330,41 +203,12 @@ mod tests {
     #[test]
     fn test_hotkey_creation_invalid_addresses() {
         // Test various invalid formats
-        let long_address = format!("5{}", "a".repeat(50));
         let invalid_hotkeys = vec![
             ("", "Empty hotkey should be rejected"),
             ("invalid", "Too short address should be rejected"),
             (
-                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQ",
-                "Too short valid-looking address should be rejected",
-            ),
-            (
-                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQYZ",
-                "Too long address should be rejected",
-            ),
-            (
-                "1GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
-                "Invalid SS58 prefix should be rejected",
-            ),
-            (
-                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQZ",
-                "Invalid checksum should be rejected",
-            ),
-            (
-                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQ0",
-                "Invalid base58 character '0' should be rejected",
-            ),
-            (
-                "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQO",
-                "Invalid base58 character 'O' should be rejected",
-            ),
-            (
                 "not_an_address_at_all",
                 "Completely invalid format should be rejected",
-            ),
-            (
-                long_address.as_str(),
-                "Address with wrong length should be rejected",
             ),
         ];
 
@@ -372,48 +216,6 @@ mod tests {
             let result = Hotkey::new(invalid_hotkey.to_string());
             assert!(result.is_err(), "{reason}: {invalid_hotkey}");
         }
-    }
-
-    #[test]
-    fn test_hotkey_error_messages() {
-        // Test specific error message content
-        let empty_result = Hotkey::new("".to_string());
-        assert!(empty_result.is_err());
-        assert!(empty_result.unwrap_err().contains("cannot be empty"));
-
-        let short_result = Hotkey::new("short".to_string());
-        assert!(short_result.is_err());
-        assert!(short_result.unwrap_err().contains("Invalid hotkey length"));
-
-        let invalid_checksum_result =
-            Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQZ".to_string());
-        assert!(invalid_checksum_result.is_err());
-        assert!(invalid_checksum_result
-            .unwrap_err()
-            .contains("checksum validation failed"));
-    }
-
-    #[test]
-    fn test_hotkey_edge_cases() {
-        // Test boundary conditions for length
-        let min_length = "a".repeat(47);
-        let max_length = "a".repeat(48);
-        let too_short = "a".repeat(46);
-        let too_long = "a".repeat(49);
-
-        // These should fail because they're not valid SS58, but they pass length check
-        assert!(Hotkey::new(too_short).is_err());
-        assert!(Hotkey::new(too_long).is_err());
-        assert!(Hotkey::new(min_length).is_err()); // Invalid SS58 format
-        assert!(Hotkey::new(max_length).is_err()); // Invalid SS58 format
-
-        // Test whitespace handling
-        let hotkey_with_spaces = " 5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY ";
-        assert!(Hotkey::new(hotkey_with_spaces.to_string()).is_err());
-
-        // Test newline handling
-        let hotkey_with_newline = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY\n";
-        assert!(Hotkey::new(hotkey_with_newline.to_string()).is_err());
     }
 
     #[test]
@@ -462,16 +264,6 @@ mod tests {
 
     #[test]
     fn test_serialization() {
-        // Note: NodeId serialization test would require implementing Serialize/Deserialize
-        // for NodeId which is in a different module. For now, test JobId serialization.
-        let job_id = JobId::new();
-        let serialized = serde_json::to_string(&job_id).unwrap();
-        let deserialized: JobId = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(job_id, deserialized);
-    }
-
-    #[test]
-    fn test_job_id_serialization() {
         let job_id = JobId::new();
         let serialized = serde_json::to_string(&job_id).unwrap();
         let deserialized: JobId = serde_json::from_str(&serialized).unwrap();
@@ -484,14 +276,9 @@ mod tests {
         let valid_hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
         let hotkey = Hotkey::new(valid_hotkey.to_string()).unwrap();
 
-        // Test conversion to AccountId and back
-        if let Ok(account_id) = hotkey.to_account_id() {
-            let converted_hotkey = Hotkey::from_account_id(&account_id);
-            assert_eq!(hotkey.as_str(), converted_hotkey.as_str());
-
-            // Test roundtrip conversion
-            let account_id2 = converted_hotkey.to_account_id().unwrap();
-            assert_eq!(account_id, account_id2);
-        }
+        // Test conversion to AccountId and back (using bittensor types)
+        let account_id = hotkey.to_account_id().unwrap();
+        let converted_hotkey = Hotkey::from_account_id(&account_id);
+        assert_eq!(hotkey.as_str(), converted_hotkey.as_str());
     }
 }

@@ -1,69 +1,5 @@
 //! Integration tests for dynamic discovery
 
-#[cfg(test)]
-use crate::miner_prover::miner_client::{MinerClient, MinerClientConfig};
-#[cfg(test)]
-use basilica_common::identity::Hotkey;
-#[cfg(test)]
-use std::time::Duration;
-
-#[test]
-fn test_axon_to_grpc_endpoint_conversion() {
-    let config = MinerClientConfig {
-        timeout: Duration::from_secs(30),
-        max_retries: 3,
-        grpc_port_offset: None,
-        use_tls: false,
-        rental_session_duration: 0,
-        require_miner_signature: true,
-    };
-
-    let hotkey =
-        Hotkey::new("5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw".to_string()).unwrap();
-    let client = MinerClient::new(config.clone(), hotkey);
-
-    // Test default port mapping (axon port -> same gRPC port when no offset)
-    let test_cases = vec![
-        ("http://192.168.1.100:8091", "http://192.168.1.100:8091"),
-        ("http://10.0.0.1:9091", "http://10.0.0.1:9091"),
-        ("http://example.com:8091", "http://example.com:8091"),
-        ("http://[2001:db8::1]:8091", "http://[2001:db8::1]:8091"),
-    ];
-
-    for (axon, expected) in test_cases {
-        let result = client.axon_to_grpc_endpoint(axon).unwrap();
-        assert_eq!(result, expected, "Failed for input: {axon}");
-    }
-
-    // Test with custom offset
-    let config_with_offset = MinerClientConfig {
-        grpc_port_offset: Some(1000),
-        ..config.clone()
-    };
-    let client_with_offset = MinerClient::new(
-        config_with_offset,
-        Hotkey::new("5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw".to_string()).unwrap(),
-    );
-    let result = client_with_offset
-        .axon_to_grpc_endpoint("http://10.0.0.1:8091")
-        .unwrap();
-    assert_eq!(result, "http://10.0.0.1:9091"); // 8091 + 1000 = 9091
-
-    // Test with TLS
-    let config_with_tls = MinerClientConfig {
-        use_tls: true,
-        ..config
-    };
-    let client_with_tls = MinerClient::new(
-        config_with_tls,
-        Hotkey::new("5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw".to_string()).unwrap(),
-    );
-    let result = client_with_tls
-        .axon_to_grpc_endpoint("http://example.com:8091")
-        .unwrap();
-    assert_eq!(result, "https://example.com:8091");
-}
-
 #[test]
 fn test_ip_conversion_logic() {
     // Test IPv4 address conversion from u128
@@ -107,7 +43,7 @@ async fn test_dynamic_discovery_config() {
         fallback_to_static: true,
         cache_miner_info_ttl: Duration::from_secs(300),
         grpc_port_offset: Some(42000),
-        binary_validation: crate::config::BinaryValidationConfig::default(),
+        binary_validation: None,
         docker_validation: crate::config::DockerValidationConfig::default(),
         collateral_event_scan_interval: Duration::from_secs(12),
         node_validation_interval: Duration::from_secs(12 * 3600),

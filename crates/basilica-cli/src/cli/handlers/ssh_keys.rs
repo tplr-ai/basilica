@@ -1,7 +1,7 @@
 //! SSH key management handlers for the Basilica CLI
 
 use crate::error::CliError;
-use crate::output::{compress_path, print_success};
+use crate::output::{compress_path, json_output, print_success};
 use crate::ssh::find_local_public_key_path;
 use basilica_sdk::BasilicaClient;
 use console::style;
@@ -397,11 +397,19 @@ pub async fn handle_add_ssh_key(
 }
 
 /// Handle listing SSH keys
-pub async fn handle_list_ssh_keys(client: &BasilicaClient) -> Result<(), CliError> {
-    match client.get_ssh_key().await.map_err(CliError::Api)? {
+pub async fn handle_list_ssh_keys(client: &BasilicaClient, json: bool) -> Result<(), CliError> {
+    let key = client.get_ssh_key().await.map_err(CliError::Api)?;
+
+    if json {
+        json_output(&key)?;
+        return Ok(());
+    }
+
+    match key {
         Some(key) => {
             println!("{}", style("Registered SSH Key:").bold());
             println!();
+            println!("  ID:         {}", style(&key.id).cyan());
             println!("  Name:       {}", style(&key.name).cyan());
             println!(
                 "  Created:    {}",

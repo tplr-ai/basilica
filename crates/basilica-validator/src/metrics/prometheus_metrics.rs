@@ -233,6 +233,28 @@ impl ValidatorPrometheusMetrics {
             "End-to-end latency from collection to successful send"
         );
 
+        // Collateral metrics
+        describe_gauge!(
+            "basilica_validator_collateral_alpha_usd_price",
+            "Current Alpha/USD price used for collateral evaluation"
+        );
+        describe_gauge!(
+            "basilica_validator_collateral_node_status",
+            "Node collateral status (-1=unknown,0=excluded,1=undercollateralized,2=warning,3=sufficient)"
+        );
+        describe_counter!(
+            "basilica_validator_collateral_slash_triggered_total",
+            "Total collateral slash triggers (shadow + real)"
+        );
+        describe_counter!(
+            "basilica_validator_collateral_slash_shadow_total",
+            "Total collateral slashes logged in shadow mode"
+        );
+        describe_counter!(
+            "basilica_validator_collateral_slash_executed_total",
+            "Total collateral slashes executed on-chain"
+        );
+
         Ok(Self {
             last_collection: Arc::new(RwLock::new(SystemTime::now())),
             persistence,
@@ -754,5 +776,50 @@ impl ValidatorPrometheusMetrics {
     pub fn record_billing_telemetry_latency(&self, latency: Duration) {
         histogram!("basilica_validator_billing_telemetry_latency_seconds")
             .record(latency.as_secs_f64());
+    }
+
+    pub fn record_collateral_price(&self, alpha_usd: f64) {
+        gauge!("basilica_validator_collateral_alpha_usd_price").set(alpha_usd);
+    }
+
+    pub fn record_collateral_node_status(
+        &self,
+        hotkey: &str,
+        node_id: &str,
+        gpu_category: &str,
+        status: &str,
+    ) {
+        // TODO: Consider reducing label cardinality if metrics backend can't handle per-node series.
+        let value = match status {
+            "sufficient" => 3.0,
+            "warning" => 2.0,
+            "undercollateralized" => 1.0,
+            "excluded" => 0.0,
+            "unknown" => -1.0,
+            _ => -2.0,
+        };
+        gauge!(
+            "basilica_validator_collateral_node_status",
+            "hotkey" => hotkey.to_string(),
+            "node_id" => node_id.to_string(),
+            "gpu_category" => gpu_category.to_string()
+        )
+        .set(value);
+    }
+
+    pub fn record_collateral_slash_triggered(&self, misbehaviour_type: &str) {
+        counter!(
+            "basilica_validator_collateral_slash_triggered_total",
+            "type" => misbehaviour_type.to_string()
+        )
+        .increment(1);
+    }
+
+    pub fn record_collateral_slash_shadow(&self) {
+        counter!("basilica_validator_collateral_slash_shadow_total").increment(1);
+    }
+
+    pub fn record_collateral_slash_executed(&self) {
+        counter!("basilica_validator_collateral_slash_executed_total").increment(1);
     }
 }

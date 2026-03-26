@@ -16,9 +16,9 @@ use crate::error::CryptoError;
 use crate::identity::Hotkey;
 use aes_gcm::aead::{Aead, OsRng};
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
+use bittensor::crypto::sr25519;
 use blake3::Hasher;
 use rand::RngCore;
-use sp_core::sr25519;
 use std::str::FromStr;
 
 /// Blake3 hash digest size in bytes
@@ -97,11 +97,10 @@ pub fn verify_bittensor_signature(
         })?;
 
     // Convert to AccountId32 type (same as AccountId in bittensor)
-    let account_id = sp_core::sr25519::Public::from_str(hotkey.as_str()).map_err(|_| {
-        CryptoError::InvalidSignature {
+    let account_id =
+        sr25519::Public::from_str(hotkey.as_str()).map_err(|_| CryptoError::InvalidSignature {
             details: format!("Invalid hotkey format: {}", hotkey.as_str()),
-        }
-    })?;
+        })?;
 
     // Convert signature bytes to the expected type
     if signature_bytes.len() != 64 {
@@ -121,7 +120,7 @@ pub fn verify_bittensor_signature(
     let signature = sr25519::Signature::from_raw(signature_array);
 
     // Verify the signature
-    use sp_core::crypto::Pair as _;
+    use bittensor::crypto::Pair as _;
     let is_valid = sr25519::Pair::verify(&signature, data, &account_id);
 
     if is_valid {

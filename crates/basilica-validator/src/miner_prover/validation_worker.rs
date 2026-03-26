@@ -373,10 +373,12 @@ impl ValidationWorkerQueue {
         let failed_result = super::types::NodeVerificationResult {
             node_id: item.node_info.id.clone(),
             node_ssh_endpoint: item.node_info.node_ssh_endpoint.clone(),
+            node_ip: item.node_info.node_ip.clone(),
             verification_score: 0.0,
             ssh_connection_successful: false,
             binary_validation_successful: false,
             node_result: None,
+            failure_reasons: vec![],
             error: Some(error_message.clone()),
             execution_time,
             validation_details: super::types::ValidationDetails {
@@ -1219,7 +1221,6 @@ impl ValidationWorkerQueue {
 mod tests {
     use super::*;
     use crate::config::VerificationConfig;
-    use crate::miner_prover::miner_client::MinerClientConfig;
     use crate::miner_prover::verification_engine_builder::VerificationEngineBuilder;
     use basilica_common::identity::Hotkey;
 
@@ -1230,6 +1231,7 @@ mod tests {
             status: "online".to_string(),
             capabilities: vec!["gpu".to_string()],
             node_ssh_endpoint: format!("http://node-{}.test:8080", id),
+            node_ip: format!("node-{}.test", id),
             hourly_rate_cents: 250, // Test default: $2.50/hour
         }
     }
@@ -1257,7 +1259,6 @@ mod tests {
         let verification_config = VerificationConfig::test_default();
         let automatic_config = AutomaticVerificationConfig::test_default();
         let ssh_config = SshSessionConfig::test_default();
-        let _miner_client_config = MinerClientConfig::default();
         let validator_hotkey =
             Hotkey::new("5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY".to_string()).unwrap();
         let persistence = Arc::new(SimplePersistence::for_testing().await.unwrap());

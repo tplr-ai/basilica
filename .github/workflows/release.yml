@@ -40,7 +40,7 @@ jobs:
     needs: create-release
     strategy:
       matrix:
-        service: [miner, validator, basilica-api]
+        service: [miner, validator]
         include:
           - target: x86_64-unknown-linux-gnu
             os: blacksmith-4vcpu-ubuntu-2404
@@ -64,7 +64,6 @@ jobs:
         with:
           key: release-${{ matrix.service }}-${{ matrix.target }}
 
-      # Install system dependencies
       - name: Install dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -81,40 +80,30 @@ jobs:
         run: |
           choco install protoc
 
-      # Copy veritas binaries for validator
       - name: Copy veritas binaries
         if: matrix.service == 'validator'
         run: |
           cp bin/validator-binary/validator-binary ./validator-binary
 
-      # Build release binary
       - name: Build ${{ matrix.service }}
-        run: cargo build --release --target ${{ matrix.target }} -p ${{ matrix.service }}
+        run: cargo build --release --target ${{ matrix.target }} -p basilica-${{ matrix.service }}
 
-      # Package binary
       - name: Package binary (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/${{ matrix.service }} dist/
+          cp target/${{ matrix.target }}/release/basilica-${{ matrix.service }} dist/
           cp README.md dist/
-          if [ -f "${{ matrix.service }}.toml.example" ]; then
-            cp ${{ matrix.service }}.toml.example dist/
-          fi
           tar -czf basilica-${{ matrix.service }}-${{ matrix.suffix }}.tar.gz -C dist .
 
       - name: Package binary (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           mkdir dist
-          copy target\${{ matrix.target }}\release\${{ matrix.service }}.exe dist\
+          copy target\${{ matrix.target }}\release\basilica-${{ matrix.service }}.exe dist\
           copy README.md dist\
-          if (Test-Path "${{ matrix.service }}.toml.example") {
-            copy ${{ matrix.service }}.toml.example dist\
-          }
           Compress-Archive -Path dist\* -DestinationPath basilica-${{ matrix.service }}-${{ matrix.suffix }}.zip
 
-      # Upload release assets
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v1
         with:
@@ -152,7 +141,6 @@ jobs:
         id: version
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      # Copy veritas binaries for validator
       - name: Copy veritas binaries
         if: matrix.service == 'validator'
         run: |

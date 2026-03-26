@@ -1,12 +1,13 @@
 //! Table formatting for CLI output
 
+use super::format_usd;
 use crate::error::Result;
-use basilica_aggregator::GpuOffering;
+use basilica_common::types::GpuOffering;
 use basilica_common::{types::GpuCategory, LocationProfile};
 use basilica_sdk::{
     types::{
         ApiKeyInfo, ApiRentalListItem, GpuSpec, HistoricalRentalItem, ListDepositsResponse,
-        RentalUsageResponse, UsageHistoryResponse,
+        RentalUsageResponse, UsageHistoryResponse, VolumeResponse,
     },
     AvailableNode,
 };
@@ -17,7 +18,7 @@ use std::{collections::HashMap, str::FromStr};
 use tabled::{builder::Builder, settings::Style, Table, Tabled};
 
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
-fn format_timestamp(timestamp: &str) -> String {
+pub fn format_timestamp(timestamp: &str) -> String {
     DateTime::parse_from_rfc3339(timestamp)
         .ok()
         .map(|dt| {
@@ -27,8 +28,23 @@ fn format_timestamp(timestamp: &str) -> String {
         .unwrap_or_else(|| timestamp.to_string())
 }
 
+fn format_duration(seconds: i64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else {
+        format!("{}m", minutes)
+    }
+}
+
 /// Display rental items in table format
 pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
+    if rentals.is_empty() {
+        println!("{}", style("No Bourse rentals found").yellow());
+        return Ok(());
+    }
+
     // Helper to get rate and cost for a rental from the API response fields
     let get_rental_pricing = |rental: &ApiRentalListItem| -> (String, String) {
         let rate = rental
@@ -38,9 +54,8 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
 
         let cost = rental
             .accumulated_cost
-            .as_ref()
-            .and_then(|c| c.parse::<f64>().ok())
-            .map(|c| format!("${:.2}", c))
+            .as_deref()
+            .map(format_usd)
             .unwrap_or_else(|| "-".to_string());
 
         (rate, cost)
@@ -330,6 +345,67 @@ pub fn display_available_nodes_detailed(
     Ok(())
 }
 
+/// Display community cloud GPU categories in aggregated format
+pub fn display_community_cloud_categories(
+    aggregations: &[crate::cli::handlers::gpu_rental_helpers::GpuCategoryAggregation],
+) -> Result<()> {
+    if aggregations.is_empty() {
+        println!("No available GPUs found matching the specified criteria.");
+        return Ok(());
+    }
+
+    #[derive(Tabled)]
+    struct CategoryRow {
+        #[tabled(rename = "GPU")]
+        gpu: String,
+        #[tabled(rename = "Available")]
+        available: String,
+        #[tabled(rename = "Price/hr")]
+        price: String,
+    }
+
+    let rows: Vec<CategoryRow> = aggregations
+        .iter()
+        .map(|agg| {
+            let gpu = if agg.gpu_count > 1 {
+                format!("{}x {}", agg.gpu_count, agg.gpu_category)
+            } else {
+                agg.gpu_category.clone()
+            };
+
+            let multiplier = agg.gpu_count as f64;
+            let price = match (agg.min_rate_cents, agg.max_rate_cents) {
+                (Some(min), Some(max)) if min == max => {
+                    format!("${:.2}", min as f64 / 100.0 * multiplier)
+                }
+                (Some(min), Some(max)) => {
+                    format!(
+                        "${:.2} - ${:.2}",
+                        min as f64 / 100.0 * multiplier,
+                        max as f64 / 100.0 * multiplier
+                    )
+                }
+                _ => "Market".to_string(),
+            };
+
+            CategoryRow {
+                gpu,
+                available: format!("{} nodes", agg.node_count),
+                price,
+            }
+        })
+        .collect();
+
+    let mut table = Table::new(rows);
+    table.with(Style::modern());
+    println!("{}", table);
+
+    let total_nodes: usize = aggregations.iter().map(|a| a.node_count).sum();
+    println!("\nTotal available nodes: {}", total_nodes);
+
+    Ok(())
+}
+
 /// Display secure cloud GPU offerings in detailed format (individual offerings)
 pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Result<()> {
     if offerings.is_empty() {
@@ -360,10 +436,17 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
     let rows: Vec<OfferingRow> = offerings
         .iter()
         .map(|offering| {
-            let gpu_info = if offering.gpu_count == 1 {
-                offering.gpu_type.to_string()
-            } else {
-                format!("{}x {}", offering.gpu_count, offering.gpu_type)
+            let gpu_info = {
+                let base = if offering.gpu_count == 1 {
+                    offering.gpu_type.to_string()
+                } else {
+                    format!("{}x {}", offering.gpu_count, offering.gpu_type)
+                };
+                if offering.is_spot {
+                    format!("{} (Spot)", base)
+                } else {
+                    base
+                }
             };
 
             // Calculate total hourly cost (per-GPU rate × gpu_count)
@@ -610,12 +693,7 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
                 .map(|rate| format!("${:.2}/hr", rate))
                 .unwrap_or_else(|| rental.hourly_rate.clone());
 
-            let current_cost = rental
-                .current_cost
-                .parse::<Decimal>()
-                .ok()
-                .map(|cost| format!("${:.2}", cost))
-                .unwrap_or_else(|| rental.current_cost.clone());
+            let current_cost = format_usd(&rental.current_cost);
 
             UsageHistoryRow {
                 rental_id: rental.rental_id.clone(),
@@ -651,7 +729,7 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
     println!(
         "{}: {}",
         style("Total Cost (All Rentals)").cyan(),
-        style(format!("${:.2}", total_cost)).green().bold()
+        style(format_usd(&total_cost.to_string())).green().bold()
     );
     println!();
     println!("{}", style("Quick Commands:").cyan().bold());
@@ -670,17 +748,6 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
         println!("{}", style("No rental history found").yellow());
         return Ok(());
     }
-
-    // Helper to format duration
-    let format_duration = |seconds: i64| -> String {
-        let hours = seconds / 3600;
-        let minutes = (seconds % 3600) / 60;
-        if hours > 0 {
-            format!("{}h {}m", hours, minutes)
-        } else {
-            format!("{}m", minutes)
-        }
-    };
 
     #[derive(Tabled)]
     struct HistoryRow {
@@ -703,12 +770,7 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
     let mut rows: Vec<HistoryRow> = rentals
         .iter()
         .map(|rental| {
-            let total_cost = rental
-                .total_cost
-                .parse::<Decimal>()
-                .ok()
-                .map(|c| format!("${:.2}", c))
-                .unwrap_or_else(|| rental.total_cost.clone());
+            let total_cost = format_usd(&rental.total_cost);
 
             HistoryRow {
                 rental_id: rental.rental_id.clone(),
@@ -739,12 +801,92 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
     Ok(())
 }
 
+/// Display historical CPU rental data from billing service
+pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
+    if rentals.is_empty() {
+        println!("{}", style("No CPU rental history found").yellow());
+        return Ok(());
+    }
+
+    #[derive(Tabled)]
+    struct CpuHistoryRow {
+        #[tabled(rename = "Provider")]
+        provider: String,
+        #[tabled(rename = "vCPU")]
+        vcpu: String,
+        #[tabled(rename = "RAM")]
+        ram: String,
+        #[tabled(rename = "Status")]
+        status: String,
+        #[tabled(rename = "Rate/hr")]
+        rate: String,
+        #[tabled(rename = "Total Cost")]
+        total_cost: String,
+        #[tabled(rename = "Started")]
+        started: String,
+        #[tabled(rename = "Stopped")]
+        stopped: String,
+        #[tabled(rename = "Duration")]
+        duration: String,
+    }
+
+    let mut rows: Vec<CpuHistoryRow> = rentals
+        .iter()
+        .map(|rental| {
+            let total_cost = format_usd(&rental.total_cost);
+
+            let rate = rental
+                .hourly_rate
+                .map(|r| format!("${:.2}/hr", r))
+                .unwrap_or_else(|| "-".to_string());
+
+            let vcpu = rental
+                .vcpu_count
+                .map(|cores| format!("{} cores", cores))
+                .unwrap_or_else(|| "-".to_string());
+
+            let ram = rental
+                .system_memory_gb
+                .map(|gb| format!("{}GB", gb))
+                .unwrap_or_else(|| "-".to_string());
+
+            CpuHistoryRow {
+                provider: rental.provider.clone().unwrap_or_else(|| "-".to_string()),
+                vcpu,
+                ram,
+                status: rental.status.clone(),
+                rate,
+                total_cost,
+                started: rental
+                    .started_at
+                    .with_timezone(&Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string(),
+                stopped: rental
+                    .stopped_at
+                    .with_timezone(&Local)
+                    .format("%Y-%m-%d %H:%M")
+                    .to_string(),
+                duration: format_duration(rental.duration_seconds),
+            }
+        })
+        .collect();
+
+    rows.sort_by(|a, b| b.started.cmp(&a.started));
+
+    let mut table = Table::new(&rows);
+    table.with(Style::modern());
+    println!("{table}");
+
+    Ok(())
+}
+
 /// Display secure cloud rentals in table format
 pub fn display_secure_cloud_rentals(
     rentals: &[&basilica_sdk::types::SecureCloudRentalListItem],
 ) -> Result<()> {
     if rentals.is_empty() {
-        println!("{}", style("No secure cloud rentals found").yellow());
+        println!("{}", style("No Citadel rentals found").yellow());
         return Ok(());
     }
 
@@ -777,10 +919,17 @@ pub fn display_secure_cloud_rentals(
     let rows: Vec<SecureCloudRentalRow> = rentals
         .iter()
         .map(|rental| {
-            let gpu_str = if rental.gpu_count > 1 {
-                format!("{}x {}", rental.gpu_count, rental.gpu_type.to_uppercase())
-            } else {
-                rental.gpu_type.to_uppercase()
+            let gpu_str = {
+                let base = if rental.gpu_count > 1 {
+                    format!("{}x {}", rental.gpu_count, rental.gpu_type.to_uppercase())
+                } else {
+                    rental.gpu_type.to_uppercase()
+                };
+                if rental.is_spot {
+                    format!("{} (Spot)", base)
+                } else {
+                    base
+                }
             };
 
             let ssh = if rental.ssh_command.is_some() {
@@ -804,9 +953,8 @@ pub fn display_secure_cloud_rentals(
             // Use accumulated cost from billing service - no fallback
             let total_cost = rental
                 .accumulated_cost
-                .as_ref()
-                .and_then(|c| c.parse::<f64>().ok())
-                .map(|cost| format!("${:.2}", cost))
+                .as_deref()
+                .map(format_usd)
                 .unwrap_or_else(|| "-".to_string());
 
             SecureCloudRentalRow {
@@ -824,6 +972,217 @@ pub fn display_secure_cloud_rentals(
                 hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
                 total_cost,
                 created: format_timestamp(&rental.created_at.to_rfc3339()),
+            }
+        })
+        .collect();
+
+    let mut table = Table::new(&rows);
+    table.with(Style::modern());
+    println!("{}", table);
+
+    Ok(())
+}
+
+/// Display CPU-only offerings in detailed table format
+pub fn display_cpu_offerings_detailed(
+    offerings: &[basilica_sdk::types::CpuOffering],
+) -> Result<()> {
+    if offerings.is_empty() {
+        println!("{}", style("No CPU instances available").yellow());
+        return Ok(());
+    }
+
+    #[derive(Tabled)]
+    struct CpuOfferingRow {
+        #[tabled(rename = "PROVIDER")]
+        provider: String,
+        #[tabled(rename = "vCPU")]
+        vcpu: String,
+        #[tabled(rename = "RAM")]
+        ram: String,
+        #[tabled(rename = "STORAGE")]
+        storage: String,
+        #[tabled(rename = "REGION")]
+        region: String,
+        #[tabled(rename = "PRICE/HR")]
+        price: String,
+    }
+
+    let rows: Vec<CpuOfferingRow> = offerings
+        .iter()
+        .map(|offering| CpuOfferingRow {
+            provider: offering.provider.clone(),
+            vcpu: format!("{} cores", offering.vcpu_count),
+            ram: format!("{}GB", offering.system_memory_gb),
+            storage: if offering.storage_gb > 0 {
+                format!("{}GB", offering.storage_gb)
+            } else {
+                "-".to_string()
+            },
+            region: offering.region.clone(),
+            price: format!(
+                "${:.2}/hr",
+                offering.hourly_rate.parse::<f64>().unwrap_or(0.0)
+            ),
+        })
+        .collect();
+
+    let mut table = Table::new(&rows);
+    table.with(Style::modern());
+    println!("{}", table);
+
+    println!("\nTotal Citadel (CPU) offerings: {}", offerings.len());
+
+    Ok(())
+}
+
+/// Display CPU-only rentals in table format (no GPU column)
+pub fn display_cpu_rentals(
+    rentals: &[&basilica_sdk::types::SecureCloudRentalListItem],
+) -> Result<()> {
+    if rentals.is_empty() {
+        println!("{}", style("No CPU-only rentals found").yellow());
+        return Ok(());
+    }
+
+    #[derive(Tabled)]
+    struct CpuRentalRow {
+        #[tabled(rename = "Provider")]
+        provider: String,
+        #[tabled(rename = "vCPU")]
+        vcpu: String,
+        #[tabled(rename = "RAM")]
+        ram: String,
+        #[tabled(rename = "State")]
+        status: String,
+        #[tabled(rename = "IP")]
+        ip: String,
+        #[tabled(rename = "SSH")]
+        ssh: String,
+        #[tabled(rename = "Region")]
+        region: String,
+        #[tabled(rename = "Rate/hr")]
+        hourly_cost: String,
+        #[tabled(rename = "Total Cost")]
+        total_cost: String,
+        #[tabled(rename = "Created")]
+        created: String,
+    }
+
+    let rows: Vec<CpuRentalRow> = rentals
+        .iter()
+        .map(|rental| {
+            let ssh = if rental.ssh_command.is_some() {
+                "✓"
+            } else {
+                "✗"
+            };
+
+            // Format vCPU
+            let vcpu = rental
+                .vcpu_count
+                .map(|cores| format!("{} cores", cores))
+                .unwrap_or_else(|| "-".to_string());
+
+            // Format RAM
+            let ram = rental
+                .system_memory_gb
+                .map(|gb| format!("{}GB", gb))
+                .unwrap_or_else(|| "-".to_string());
+
+            // Use accumulated cost from billing service
+            let total_cost = rental
+                .accumulated_cost
+                .as_deref()
+                .map(format_usd)
+                .unwrap_or_else(|| "-".to_string());
+
+            CpuRentalRow {
+                provider: rental.provider.clone(),
+                vcpu,
+                ram,
+                status: rental.status.clone(),
+                ip: rental.ip_address.clone().unwrap_or_else(|| "-".to_string()),
+                ssh: ssh.to_string(),
+                region: rental
+                    .location_code
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string()),
+                hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
+                total_cost,
+                created: format_timestamp(&rental.created_at.to_rfc3339()),
+            }
+        })
+        .collect();
+
+    let mut table = Table::new(&rows);
+    table.with(Style::modern());
+    println!("{}", table);
+
+    Ok(())
+}
+
+/// Display volumes in table format
+pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
+    if volumes.is_empty() {
+        println!("{}", style("No volumes found").yellow());
+        return Ok(());
+    }
+
+    #[derive(Tabled)]
+    struct VolumeRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Size")]
+        size: String,
+        #[tabled(rename = "Status")]
+        status: String,
+        #[tabled(rename = "Provider")]
+        provider: String,
+        #[tabled(rename = "Region")]
+        region: String,
+        #[tabled(rename = "Rental")]
+        rental: String,
+        #[tabled(rename = "Rate/hr")]
+        hourly_cost: String,
+        #[tabled(rename = "Total Cost")]
+        total_cost: String,
+        #[tabled(rename = "Created")]
+        created: String,
+    }
+
+    let rows: Vec<VolumeRow> = volumes
+        .iter()
+        .map(|volume| {
+            // Format status
+            let status = match volume.status {
+                basilica_sdk::types::VolumeStatus::Available => "Available".to_string(),
+                basilica_sdk::types::VolumeStatus::Attached => "Attached".to_string(),
+                basilica_sdk::types::VolumeStatus::Pending => "Pending".to_string(),
+                basilica_sdk::types::VolumeStatus::Deleting => "Deleting".to_string(),
+                basilica_sdk::types::VolumeStatus::Error => "Error".to_string(),
+            };
+
+            // Use accumulated cost from billing service
+            let total_cost = volume
+                .accumulated_cost
+                .as_deref()
+                .map(format_usd)
+                .unwrap_or_else(|| "-".to_string());
+
+            VolumeRow {
+                name: volume.name.clone(),
+                size: format!("{}GB", volume.size_gb),
+                status,
+                provider: volume.provider.clone(),
+                region: volume.region.clone(),
+                rental: volume.rental_id.clone().unwrap_or_else(|| "-".to_string()),
+                hourly_cost: volume
+                    .estimated_hourly_cost
+                    .map(|c| format!("${:.2}/hr", c))
+                    .unwrap_or_else(|| "-".to_string()),
+                total_cost,
+                created: format_timestamp(&volume.created_at.to_rfc3339()),
             }
         })
         .collect();

@@ -32,6 +32,11 @@ pub mod basilica {
             include!("basilica.payments.v1.rs");
         }
     }
+    pub mod payouts {
+        pub mod v1 {
+            include!("basilica.payouts.v1.rs");
+        }
+    }
     pub mod rental {
         pub mod v1 {
             include!("basilica.rental.v1.rs");

@@ -130,20 +130,19 @@ service_logs() {
 deploy_all_services() {
     local env="${1:-production}"
     local env_file="$SCRIPT_DIR/environments/${env}.conf"
-    
+
     if [[ ! -f "$env_file" ]]; then
         log_error "Environment file not found: $env_file"
         return 1
     fi
-    
+
     source "$env_file"
-    
+
     log_header "Deploying service files for $env environment"
-    
-    deploy_service_file "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" || return 1
+
     deploy_service_file "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER" || return 1
     deploy_service_file "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" || return 1
-    
+
     log_success "All service files deployed"
 }
 
@@ -151,18 +150,16 @@ deploy_all_services() {
 start_all_services() {
     local env="${1:-production}"
     local env_file="$SCRIPT_DIR/environments/${env}.conf"
-    
+
     source "$env_file"
-    
+
     log_header "Starting all services in $env environment"
-    
+
     # Start in dependency order
-    start_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" || return 1
-    sleep 5
     start_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER" || return 1
     sleep 5
     start_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER" || return 1
-    
+
     log_success "All services started"
 }
 
@@ -170,15 +167,14 @@ start_all_services() {
 stop_all_services() {
     local env="${1:-production}"
     local env_file="$SCRIPT_DIR/environments/${env}.conf"
-    
+
     source "$env_file"
-    
+
     log_header "Stopping all services in $env environment"
-    
+
     stop_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
     stop_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
-    stop_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-    
+
     log_success "All services stopped"
 }
 
@@ -186,14 +182,11 @@ stop_all_services() {
 status_all_services() {
     local env="${1:-production}"
     local env_file="$SCRIPT_DIR/environments/${env}.conf"
-    
+
     source "$env_file"
-    
+
     log_header "Service Status for $env environment"
-    
-    echo "=== Executor Service ==="
-    service_status "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-    echo
+
     echo "=== Miner Service ==="
     service_status "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
     echo
@@ -219,11 +212,8 @@ main() {
                 local service="$1"
                 local env="${2:-production}"
                 source "$SCRIPT_DIR/environments/${env}.conf"
-                
+
                 case "$service" in
-                    executor)
-                        start_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-                        ;;
                     miner)
                         start_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
                         ;;
@@ -246,11 +236,8 @@ main() {
                 local service="$1"
                 local env="${2:-production}"
                 source "$SCRIPT_DIR/environments/${env}.conf"
-                
+
                 case "$service" in
-                    executor)
-                        stop_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
-                        ;;
                     miner)
                         stop_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
                         ;;
@@ -270,8 +257,7 @@ main() {
         enable)
             local env="${1:-production}"
             source "$SCRIPT_DIR/environments/${env}.conf"
-            
-            enable_service "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER"
+
             enable_service "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER"
             enable_service "validator" "$VALIDATOR_HOST" "$VALIDATOR_PORT" "$VALIDATOR_USER"
             ;;
@@ -280,11 +266,8 @@ main() {
             local env="${2:-production}"
             local lines="${3:-50}"
             source "$SCRIPT_DIR/environments/${env}.conf"
-            
+
             case "$service" in
-                executor)
-                    service_logs "executor" "$EXECUTOR_HOST" "$EXECUTOR_PORT" "$EXECUTOR_USER" "$lines"
-                    ;;
                 miner)
                     service_logs "miner" "$MINER_HOST" "$MINER_PORT" "$MINER_USER" "$lines"
                     ;;
@@ -310,14 +293,14 @@ Commands:
     status              Get status of all services
     enable              Enable services for auto-start
     logs <service>      View service logs
-    
+
 Services:
-    executor, miner, validator
-    
+    miner, validator
+
 Examples:
     service-manager.sh deploy production
     service-manager.sh start all production
-    service-manager.sh logs executor production 100
+    service-manager.sh logs miner production 100
 EOF
             ;;
     esac

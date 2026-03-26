@@ -1,3 +1,0 @@
----
-- name: Basilica K3s Setup - Cluster Installation
-  import_playbook: 01-setup/k3s-cluster.yml

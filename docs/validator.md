@@ -114,8 +114,8 @@ The Basilica validator performs critical network functions that ensure GPU provi
 
 1. **Miner Discovery**: Query Bittensor metagraph to discover all miners on the subnet
 2. **Node Verification**: SSH directly to GPU nodes for cryptographic verification
-3. **Performance Scoring**: Calculate miner scores based on GPU capabilities and reliability
-4. **Weight Setting**: Distribute emissions based on GPU categories and performance
+3. **Delivery-Based Scoring**: Set miner weights based on rental revenue from the billing API
+4. **Weight Setting**: Distribute emissions proportionally to revenue within each GPU category
 5. **API Service**: Provide external access for rentals and network queries
 
 ---
@@ -228,10 +228,11 @@ The validator employs a **two-tier verification strategy** that optimizes for bo
 
 1. Checks current blockchain block every 12 seconds
 2. Every N blocks (default: 360), triggers weight setting
-3. Queries GPU scoring engine for miner scores by category
-4. Allocates weights based on emission configuration
-5. Applies burn percentage to burn_uid
-6. Submits weights to Bittensor chain
+3. Syncs delivery records from the billing API for the current epoch
+4. Groups deliveries by GPU category, using `revenue_usd` as the scoring metric
+5. Allocates weights proportionally to revenue within each category
+6. Burns allocation for empty categories (no active rentals) plus configured burn percentage
+7. Submits weights to Bittensor chain
 
 #### ApiHandler
 
@@ -246,6 +247,8 @@ The validator employs a **two-tier verification strategy** that optimizes for bo
 - Miner queries (health, nodes, profiles)
 - GPU profiles (list by category)
 - Verification results
+
+**Node discovery visibility contract**: `GET /nodes` only returns nodes that are bid-active, not rented, not offline, and have at least one row in `gpu_uuid_assignments`. Newly registered nodes are hidden until successful full validation stores GPU UUID assignments. Nodes are hidden again if full-validation failure cleanup removes those assignments.
 
 ---
 
@@ -568,12 +571,13 @@ fn determine_strategy(node: &Node, last_validation: Option<Timestamp>) -> Strate
    ssh -i ephemeral_key.pem -o ConnectTimeout=10 basilica@node echo "ok"
    ```
 
-2. **Update Timestamp**:
+2. **Update Node Verification Timestamp**:
 
    ```sql
-   UPDATE verification_logs
-   SET last_health_check = NOW()
-   WHERE node_id = ?;
+   UPDATE miner_nodes
+   SET status = 'online',
+       last_node_check = datetime('now')
+   WHERE node_id = ? AND miner_id = ?;
    ```
 
 3. **Score Reuse**:
@@ -616,110 +620,69 @@ let results = futures::stream::iter(tasks)
 - `max_concurrent_full_validations`: 1024 (binary validation requests)
 - `max_miners_per_round`: 20 (miners verified per cycle)
 
-### GPU Scoring and Categorization
+### Delivery-Based Scoring
 
-**Scoring Engine** (code: `scoring/gpu_scoring_engine.rs`):
+**Weight Setter** (code: `bittensor_core/weight_setter.rs`):
 
-1. **GPU Profile Aggregation**:
+Miners are scored based on rental revenue, not validation ratios or GPU counts. The weight setter fetches delivery records from the billing API and distributes weights proportionally to `revenue_usd` within each GPU category.
 
-   ```sql
-   SELECT miner_uid, gpu_counts_json, total_score
-   FROM miner_gpu_profiles
-   WHERE last_successful_validation > NOW() - INTERVAL '6 hours';
-   ```
+1. **Delivery Sync**: At each epoch, the weight setter calls the billing API to fetch delivery records for the period window.
 
-2. **GPU Count Extraction**:
+2. **Category Grouping**: Deliveries are grouped by GPU category. Only deliveries with positive `revenue_usd` and a recognized GPU category contribute.
 
-   ```json
-   {
-     "H100": 8,
-     "A100": 16,
-     "B200": 4
-   }
-   ```
-
-3. **Category Scoring**:
+3. **Revenue-Based Scoring**: Within each category, a miner's weight share equals their share of total revenue:
 
    ```rust
-   // For each GPU category (e.g., "H100")
-   let category_score = verification_score * gpu_count;
-
-   // Example: 0.95 validation score * 8 GPUs = 7.6 category score
-   ```
-
-4. **Normalization**:
-
-   ```rust
-   // Within each category, normalize scores to 0.0-1.0
-   let normalized_score = miner_score / category_total_score;
+   // For each miner in a category
+   let miner_share = miner_revenue / total_category_revenue;
+   let miner_weight = category_pool * miner_share;
    ```
 
 **Multi-GPU Miners**:
 
-- Miners with multiple GPU categories score in each category
+- Miners with multiple GPU categories earn weight in each category based on rental revenue
 - Each category has independent weight allocation
-- Example: Miner with 8x H100 + 16x A100 scores in both categories
+- Example: Miner with H100 and A100 rentals earns weight in both categories proportional to revenue
 
 ### Weight Allocation Algorithm
 
-**Emission Distribution** (code: `config/emission.rs`):
+**Emission Distribution** (code: `bittensor_core/weight_allocation.rs`):
 
 **Configuration**:
 
 ```toml
 [emission]
-burn_percentage = 5.0  # Burn 5% of emissions
-burn_uid = 204         # Send burn weight to UID 204
+burn_percentage = 95.0  # Burn 95% of emissions
+burn_uid = 204          # Send burn weight to UID 204
 
 [emission.gpu_allocations]
-H100 = { weight = 50.0, min_gpu_count = 4 }
-A100 = { weight = 30.0, min_gpu_count = 2 }
-B200 = { weight = 20.0, min_gpu_count = 1 }
+A100 = { weight = 45.0, min_gpu_count = 8, min_gpu_vram = 1 }
+H100 = { weight = 55.0, min_gpu_count = 8, min_gpu_vram = 1 }
 ```
 
-**Weight Calculation** (code: `bittensor_core/weight_setter.rs:48-200`):
+**Weight Calculation**:
 
-1. **Burn Weight**:
+1. **Burn Weight**: Configured percentage of total emissions goes to the burn UID.
 
-   ```rust
-   let burn_weight = (u16::MAX as f64 * burn_percentage / 100.0) as u16;
-   weights[burn_uid] = burn_weight;
-   ```
+2. **Category Allocation**: Remaining emissions are split by configured category weights.
 
-2. **Category Allocation**:
+3. **Empty Category Burn**: If a category has no active rentals, its allocation is added to burn.
 
-   ```rust
-   // Remaining emissions after burn
-   let remaining_emissions = u16::MAX - burn_weight;
+4. **Miner Weights**: Within each active category, weight is proportional to `revenue_usd`.
 
-   // Per category
-   let category_allocation = remaining_emissions * (category_weight / 100.0);
-   ```
-
-3. **Miner Weights within Category**:
-
-   ```rust
-   // Proportional to normalized score
-   let miner_weight = category_allocation * normalized_score;
-   ```
-
-4. **Example**:
+5. **Example**:
 
    ```
    Total emissions: 65535 (u16::MAX)
-   Burn (5%): 3277 → UID 204
-   Remaining: 62258
+   Burn (95%): 62258 → UID 204
+   Remaining: 3277
 
-   H100 allocation (50%): 31129
-     - Miner 1 (score 0.6): 18677
-     - Miner 2 (score 0.4): 12452
+   A100 allocation (45%): 1475
+     - Miner 1 ($500 revenue, 62.5%): 922
+     - Miner 2 ($300 revenue, 37.5%): 553
 
-   A100 allocation (30%): 18677
-     - Miner 3 (score 1.0): 18677
-
-   B200 allocation (20%): 12452
-     - Miner 1 (score 0.5): 6226
-     - Miner 4 (score 0.5): 6226
+   H100 allocation (55%): 1802
+     - Miner 3 ($1000 revenue, 100%): 1802
    ```
 
 **Weight Setting Frequency**:
@@ -1079,8 +1042,6 @@ execution_timeout_secs = 1200  # 20 minutes
 output_format = "json"
 # Enable binary validation
 enabled = true
-# Binary validation score weight
-score_weight = 0.8
 # Default node port for SSH tunnel cleanup
 node_port = 3000
 
@@ -1224,10 +1185,8 @@ weight_version_key = 0
 
 # GPU model allocations with weights and minimum requirements
 [emission.gpu_allocations]
-H100 = { weight = 40.0, min_gpu_count = 4, min_gpu_vram = 80 }
-A100 = { weight = 30.0, min_gpu_count = 2, min_gpu_vram = 40 }
-B200 = { weight = 20.0, min_gpu_count = 1, min_gpu_vram = 192 }
-H200 = { weight = 10.0, min_gpu_count = 1, min_gpu_vram = 141 }
+A100 = { weight = 45.0, min_gpu_count = 8, min_gpu_vram = 1 }
+H100 = { weight = 55.0, min_gpu_count = 8, min_gpu_vram = 1 }
 
 # === Database Cleanup Configuration ===
 [cleanup]
@@ -2060,12 +2019,13 @@ ssh -i /tmp/validator_ssh_keys/ephemeral_550e8400.pem \
     echo "ok"
 ```
 
-**5b.2: Timestamp Update**:
+**5b.2: Node Verification Timestamp Update**:
 
 ```sql
-UPDATE verification_logs
-SET last_health_check = NOW()
-WHERE node_id = '550e8400...';
+UPDATE miner_nodes
+SET status = 'online',
+    last_node_check = datetime('now')
+WHERE node_id = '550e8400...' AND miner_id = 'miner_5';
 ```
 
 **5b.3: Score Reuse**:
@@ -2184,164 +2144,99 @@ let results = futures::stream::iter(tasks)
 
 ## Weight Setting and Emissions
 
-How validators distribute TAO emissions based on GPU performance and categories.
+How validators distribute TAO emissions based on rental revenue across GPU categories.
 
 ### Emission Algorithm Overview
 
-**Goal**: Fairly distribute subnet emissions across miners based on:
-
-1. GPU category (H100, A100, B200, etc.)
-2. GPU quantity per category
-3. Verification score (performance and reliability)
+**Goal**: Fairly distribute subnet emissions across miners based on rental revenue within each GPU category. Miners only receive weight when their nodes are actively rented and generating revenue.
 
 **Configuration-Driven Allocation**:
 
 ```toml
 [emission]
-burn_percentage = 5.0
+burn_percentage = 95.0
 burn_uid = 204
 
 [emission.gpu_allocations]
-H100 = { weight = 50.0, min_gpu_count = 4 }
-A100 = { weight = 30.0, min_gpu_count = 2 }
-B200 = { weight = 20.0, min_gpu_count = 1 }
+A100 = { weight = 45.0, min_gpu_count = 8, min_gpu_vram = 1 }
+H100 = { weight = 55.0, min_gpu_count = 8, min_gpu_vram = 1 }
 ```
 
 ### Weight Calculation Process
 
-#### Step 1: GPU Profile Aggregation
+#### Step 1: Sync Delivery Records
 
-**Query Miner Profiles** (`scoring/gpu_scoring_engine.rs`):
+At each weight-setting epoch, the validator fetches delivery records from the billing API:
 
-```sql
-SELECT
-    miner_uid,
-    gpu_counts_json,
-    total_score,
-    verification_count
-FROM miner_gpu_profiles
-WHERE last_successful_validation > NOW() - INTERVAL '6 hours'
-  AND total_score >= 0.1;  -- min_score_threshold
+```rust
+let deliveries = api_client.get_miner_delivery(epoch.period_start, epoch.period_end).await?;
 ```
 
-**Example Results**:
-
-```
-miner_uid | gpu_counts_json      | total_score
-5         | {"H100": 8}          | 0.95
-12        | {"H100": 4, "A100": 16} | 0.92
-23        | {"A100": 8}          | 0.88
-45        | {"B200": 2}          | 0.85
-```
+Each delivery contains `miner_hotkey`, `node_id`, `gpu_category`, and `revenue_usd`.
 
 ---
 
-#### Step 2: Category Scoring
+#### Step 2: Group Deliveries by Category
 
-**For each GPU category**, calculate scores:
+Deliveries are grouped by GPU category. Only deliveries with `revenue_usd > 0` and recognized GPU categories contribute:
 
-**H100 Category**:
-
-```rust
-// Miner 5: 8x H100, score 0.95
-let miner_5_h100_score = 0.95 * 8 = 7.6
-
-// Miner 12: 4x H100, score 0.92
-let miner_12_h100_score = 0.92 * 4 = 3.68
-
-// Category total
-let h100_total_score = 7.6 + 3.68 = 11.28
 ```
-
-**A100 Category**:
-
-```rust
-// Miner 12: 16x A100, score 0.92
-let miner_12_a100_score = 0.92 * 16 = 14.72
-
-// Miner 23: 8x A100, score 0.88
-let miner_23_a100_score = 0.88 * 8 = 7.04
-
-// Category total
-let a100_total_score = 14.72 + 7.04 = 21.76
-```
-
-**B200 Category**:
-
-```rust
-// Miner 45: 2x B200, score 0.85
-let miner_45_b200_score = 0.85 * 2 = 1.7
-
-// Category total
-let b200_total_score = 1.7
+Miner 5:  H100 rentals → $800 revenue
+Miner 12: H100 rentals → $400 revenue, A100 rentals → $600 revenue
+Miner 23: A100 rentals → $300 revenue
 ```
 
 ---
 
 #### Step 3: Burn Weight Calculation
 
-**Burn Allocation** (`bittensor_core/weight_setter.rs:48-200`):
-
 ```rust
-// Total weight available
 let total_weight = u16::MAX;  // 65535
 
-// Burn weight (5% of total)
-let burn_weight = (total_weight as f64 * 0.05) as u16;  // 3277
+// Burn weight (95% of total)
+let burn_weight = (total_weight as f64 * 0.95) as u16;  // 62258
 
-// Assign to burn UID
 weights[burn_uid] = burn_weight;
 
-// Remaining for miners
-let remaining_weight = total_weight - burn_weight;  // 62258
+let remaining_weight = total_weight - burn_weight;  // 3277
 ```
 
 ---
 
 #### Step 4: Category Weight Allocation
 
-**Distribute remaining weight across GPU categories**:
-
 ```rust
-// H100 allocation (50% of remaining)
-let h100_allocation = (remaining_weight as f64 * 0.50) as u16;  // 31129
+// A100 allocation (45% of remaining)
+let a100_allocation = (remaining_weight as f64 * 0.45) as u16;  // 1475
 
-// A100 allocation (30% of remaining)
-let a100_allocation = (remaining_weight as f64 * 0.30) as u16;  // 18677
-
-// B200 allocation (20% of remaining)
-let b200_allocation = (remaining_weight as f64 * 0.20) as u16;  // 12452
+// H100 allocation (55% of remaining)
+let h100_allocation = (remaining_weight as f64 * 0.55) as u16;  // 1802
 ```
+
+If a category has no active rentals, its allocation is added to burn.
 
 ---
 
 #### Step 5: Miner Weights within Category
 
-**H100 Category Distribution**:
+**H100 Category** (total revenue: $1200):
 
 ```rust
-// Miner 5: 7.6 / 11.28 = 0.674
-let miner_5_h100_weight = (h100_allocation as f64 * 0.674) as u16;  // 20987
+// Miner 5: $800 / $1200 = 0.667
+let miner_5_h100_weight = (h100_allocation as f64 * 0.667) as u16;  // 1202
 
-// Miner 12: 3.68 / 11.28 = 0.326
-let miner_12_h100_weight = (h100_allocation as f64 * 0.326) as u16;  // 10148
+// Miner 12: $400 / $1200 = 0.333
+let miner_12_h100_weight = (h100_allocation as f64 * 0.333) as u16;  // 600
 ```
 
-**A100 Category Distribution**:
+**A100 Category** (total revenue: $900):
 
 ```rust
-// Miner 12: 14.72 / 21.76 = 0.677
-let miner_12_a100_weight = (a100_allocation as f64 * 0.677) as u16;  // 12644
+// Miner 12: $600 / $900 = 0.667
+let miner_12_a100_weight = (a100_allocation as f64 * 0.667) as u16;  // 984
 
-// Miner 23: 7.04 / 21.76 = 0.323
-let miner_23_a100_weight = (a100_allocation as f64 * 0.323) as u16;  // 6033
-```
-
-**B200 Category Distribution**:
-
-```rust
-// Miner 45: 1.7 / 1.7 = 1.0
-let miner_45_b200_weight = b200_allocation;  // 12452
+// Miner 23: $300 / $900 = 0.333
+let miner_23_a100_weight = (a100_allocation as f64 * 0.333) as u16;  // 491
 ```
 
 ---
@@ -2352,31 +2247,27 @@ let miner_45_b200_weight = b200_allocation;  // 12452
 
 ```rust
 // Miner 5 (H100 only)
-weights[5] = 20987
+weights[5] = 1202
 
 // Miner 12 (H100 + A100)
-weights[12] = miner_12_h100_weight + miner_12_a100_weight  // 10148 + 12644 = 22792
+weights[12] = miner_12_h100_weight + miner_12_a100_weight  // 600 + 984 = 1584
 
 // Miner 23 (A100 only)
-weights[23] = 6033
-
-// Miner 45 (B200 only)
-weights[45] = 12452
+weights[23] = 491
 
 // Burn UID
-weights[204] = 3277
+weights[204] = 62258
 ```
 
 **Final Weight Vector**:
 
 ```
-UID   | Weight | Percentage | GPUs
+UID   | Weight | Percentage | Revenue Source
 ------|--------|------------|------------------
-5     | 20987  | 32.0%      | 8x H100
-12    | 22792  | 34.8%      | 4x H100 + 16x A100
-23    | 6033   | 9.2%       | 8x A100
-45    | 12452  | 19.0%      | 2x B200
-204   | 3277   | 5.0%       | BURN
+5     | 1202   | 1.8%       | H100 rentals
+12    | 1584   | 2.4%       | H100 + A100 rentals
+23    | 491    | 0.7%       | A100 rentals
+204   | 62258  | 95.0%      | BURN
 ------|--------|------------|------------------
 Total | 65535  | 100.0%     |
 ```

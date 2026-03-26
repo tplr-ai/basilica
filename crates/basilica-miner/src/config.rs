@@ -5,12 +5,14 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationSeconds};
+use std::collections::BTreeMap;
 use std::fs;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use basilica_common::config::{
-    loader, BittensorConfig, ConfigValidation, DatabaseConfig, MetricsConfig,
+    loader, BittensorConfig, ConfigValidation, DatabaseConfig, MetricsConfig, DEFAULT_BID_GRPC_PORT,
 };
 use basilica_common::error::ConfigurationError;
 
@@ -28,9 +30,6 @@ pub struct MinerConfig {
     /// Metrics configuration
     pub metrics: MetricsConfig,
 
-    /// Validator communications configuration
-    pub validator_comms: ValidatorCommsConfig,
-
     /// Node management configuration
     pub node_management: NodeManagementConfig,
 
@@ -47,6 +46,14 @@ pub struct MinerConfig {
     /// Validator assignment configuration
     #[serde(default)]
     pub validator_assignment: ValidatorAssignmentConfig,
+
+    /// Automatic bidding configuration
+    #[serde(default)]
+    pub bidding: BiddingConfig,
+
+    /// Port for the validator's bidding gRPC service (default: 50052)
+    #[serde(default = "default_bid_grpc_port")]
+    pub bid_grpc_port: u16,
 }
 
 /// Miner-specific Bittensor configuration
@@ -56,9 +63,6 @@ pub struct MinerBittensorConfig {
     #[serde(flatten)]
     pub common: BittensorConfig,
 
-    /// Coldkey name for wallet operations
-    pub coldkey_name: String,
-
     /// Axon server port for Bittensor network
     pub axon_port: u16,
 
@@ -67,21 +71,6 @@ pub struct MinerBittensorConfig {
 
     /// Maximum number of UIDs to set weights for
     pub max_weight_uids: u16,
-}
-
-/// Validator communications configuration
-#[serde_as]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ValidatorCommsConfig {
-    /// Host to bind the gRPC server to
-    pub host: String,
-
-    /// Port to bind the gRPC server to
-    pub port: u16,
-
-    /// Request timeout for validator calls
-    #[serde_as(as = "DurationSeconds<u64>")]
-    pub request_timeout: Duration,
 }
 
 /// Node management configuration
@@ -159,6 +148,68 @@ pub struct MinerAdvertisedAddresses {
     pub metrics_endpoint: Option<String>,
 }
 
+/// Automatic bidding configuration
+///
+/// Note: Config files accept prices in dollars (e.g., 2.50 for $2.50/hour),
+/// which are converted to cents internally on load.
+///
+/// BidManager always runs and waits for validator discovery to provide the gRPC endpoint.
+/// All GPU categories in your nodes MUST have prices defined in the static strategy.
+///
+/// TODO: Add floor_prices when dynamic bidding strategies are implemented.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BiddingConfig {
+    /// Active bidding strategy (single enum variant)
+    #[serde(default)]
+    pub strategy: BiddingStrategy,
+}
+
+/// Bidding strategy configuration (one active variant)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BiddingStrategy {
+    /// Fixed prices by GPU category (in cents)
+    Static {
+        /// Static prices by GPU category in CENTS (converted from dollars in config)
+        /// Config accepts dollars (e.g., 2.50), stored as cents (250)
+        /// Every GPU category in your nodes MUST have a price here.
+        #[serde(
+            default,
+            rename = "static_prices",
+            deserialize_with = "deserialize_dollars_to_cents"
+        )]
+        static_prices_cents: std::collections::HashMap<String, u32>,
+    },
+}
+
+/// Convert dollars (f64) to cents (u32)
+fn dollars_to_cents(dollars: f64) -> u32 {
+    (dollars * 100.0).round() as u32
+}
+
+/// Deserialize a HashMap of dollar values (f64) to cents (u32)
+fn deserialize_dollars_to_cents<'de, D>(
+    deserializer: D,
+) -> Result<std::collections::HashMap<String, u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let dollars: std::collections::HashMap<String, f64> =
+        std::collections::HashMap::deserialize(deserializer)?;
+    Ok(dollars
+        .into_iter()
+        .map(|(k, v)| (k, dollars_to_cents(v)))
+        .collect())
+}
+
+impl Default for BiddingStrategy {
+    fn default() -> Self {
+        Self::Static {
+            static_prices_cents: std::collections::HashMap::new(),
+        }
+    }
+}
+
 impl Default for MinerConfig {
     fn default() -> Self {
         Self {
@@ -168,18 +219,23 @@ impl Default for MinerConfig {
                 ..Default::default()
             },
             metrics: MetricsConfig::default(),
-            validator_comms: ValidatorCommsConfig::default(),
             node_management: NodeManagementConfig::default(),
             security: SecurityConfig::default(),
             ssh_session: NodeSshConfig::default(),
             advertised_addresses: MinerAdvertisedAddresses::default(),
             validator_assignment: ValidatorAssignmentConfig::default(),
+            bidding: BiddingConfig::default(),
+            bid_grpc_port: DEFAULT_BID_GRPC_PORT,
         }
     }
 }
 
 fn default_strategy() -> String {
     "highest_stake".to_string()
+}
+
+fn default_bid_grpc_port() -> u16 {
+    DEFAULT_BID_GRPC_PORT
 }
 
 impl Default for NodeSshConfig {
@@ -216,20 +272,9 @@ impl Default for MinerBittensorConfig {
                 weight_interval_secs: 300, // 5 minutes
                 ..Default::default()
             },
-            coldkey_name: "default".to_string(),
             axon_port: 8091,
             external_ip: None,
             max_weight_uids: 256,
-        }
-    }
-}
-
-impl Default for ValidatorCommsConfig {
-    fn default() -> Self {
-        Self {
-            host: "0.0.0.0".to_string(),
-            port: 50051,
-            request_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -263,7 +308,14 @@ impl ConfigValidation for MinerConfig {
         self.database.validate()?;
 
         // Validate Bittensor configuration - delegate to common validation
-        self.bittensor.common.validate()?;
+        self.bittensor
+            .common
+            .validate()
+            .map_err(|e| ConfigurationError::InvalidValue {
+                key: "bittensor".to_string(),
+                value: "".to_string(),
+                reason: e,
+            })?;
 
         // Validate miner-specific fields
         if self.bittensor.common.netuid == 0 {
@@ -299,6 +351,7 @@ impl ConfigValidation for MinerConfig {
                 });
             }
         }
+        validate_unique_node_ips(&self.node_management.nodes)?;
 
         // Validate validator assignment configuration
         if self.validator_assignment.strategy == "fixed_assignment"
@@ -348,6 +401,50 @@ impl ConfigValidation for MinerConfig {
     }
 }
 
+fn validate_unique_node_ips(nodes: &[NodeConfig]) -> Result<(), ConfigurationError> {
+    let mut node_indices_by_ip: BTreeMap<IpAddr, Vec<usize>> = BTreeMap::new();
+
+    for (idx, node) in nodes.iter().enumerate() {
+        let parsed_ip =
+            node.host
+                .parse::<IpAddr>()
+                .map_err(|_| ConfigurationError::InvalidValue {
+                    key: format!("node_management.nodes[{}].host", idx),
+                    value: node.host.clone(),
+                    reason: "Node host must be a valid IPv4 or IPv6 literal".to_string(),
+                })?;
+        node_indices_by_ip.entry(parsed_ip).or_default().push(idx);
+    }
+
+    let duplicate_ip_entries: Vec<(IpAddr, Vec<usize>)> = node_indices_by_ip
+        .into_iter()
+        .filter(|(_, indices)| indices.len() > 1)
+        .collect();
+
+    if duplicate_ip_entries.is_empty() {
+        return Ok(());
+    }
+
+    let duplicate_reason = duplicate_ip_entries
+        .iter()
+        .map(|(ip, indices)| {
+            let index_list = indices
+                .iter()
+                .map(usize::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{ip} at indices [{index_list}]")
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    Err(ConfigurationError::InvalidValue {
+        key: "node_management.nodes".to_string(),
+        value: "contains duplicate node IPs".to_string(),
+        reason: format!("Duplicate node IPs are not allowed: {duplicate_reason}"),
+    })
+}
+
 impl MinerConfig {
     /// Load configuration using common loader
     pub fn load() -> Result<Self> {
@@ -360,17 +457,8 @@ impl MinerConfig {
     }
 
     /// Get the advertised gRPC endpoint for validators
-    pub fn get_advertised_grpc_endpoint(&self) -> String {
-        self.advertised_addresses
-            .grpc_endpoint
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| {
-                format!(
-                    "http://{}:{}",
-                    self.validator_comms.host, self.validator_comms.port
-                )
-            })
+    pub fn get_advertised_grpc_endpoint(&self) -> Option<String> {
+        self.advertised_addresses.grpc_endpoint.clone()
     }
 
     /// Get the advertised axon endpoint for Bittensor registration
@@ -380,30 +468,13 @@ impl MinerConfig {
         } else if let Some(external_ip) = &self.bittensor.external_ip {
             format!("http://{}:{}", external_ip, self.bittensor.axon_port)
         } else {
-            format!(
-                "http://{}:{}",
-                self.validator_comms.host, self.bittensor.axon_port
-            )
+            format!("http://0.0.0.0:{}", self.bittensor.axon_port)
         }
     }
 
     /// Get the advertised metrics endpoint
-    pub fn get_advertised_metrics_endpoint(&self) -> String {
-        self.advertised_addresses
-            .metrics_endpoint
-            .as_ref()
-            .cloned()
-            .unwrap_or_else(|| {
-                format!(
-                    "http://{}:{}",
-                    self.validator_comms.host,
-                    self.metrics
-                        .prometheus
-                        .as_ref()
-                        .map(|p| p.port)
-                        .unwrap_or(9090)
-                )
-            })
+    pub fn get_advertised_metrics_endpoint(&self) -> Option<String> {
+        self.advertised_addresses.metrics_endpoint.clone()
     }
 
     /// Validate all advertised address configurations
@@ -442,6 +513,76 @@ impl SecurityConfig {
                 }
             }
             None => Err(anyhow::anyhow!("private_key_file config is required")),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_node(host: &str) -> NodeConfig {
+        NodeConfig {
+            host: host.to_string(),
+            port: 22,
+            username: "basilica".to_string(),
+            gpu_category: "H100".to_string(),
+            gpu_count: 8,
+            additional_opts: None,
+        }
+    }
+
+    #[test]
+    fn validate_unique_node_ips_accepts_unique_ipv4() {
+        let nodes = vec![test_node("192.168.1.10"), test_node("192.168.1.11")];
+        assert!(validate_unique_node_ips(&nodes).is_ok());
+    }
+
+    #[test]
+    fn validate_unique_node_ips_accepts_unique_ipv6() {
+        let nodes = vec![test_node("2001:db8::1"), test_node("2001:db8::2")];
+        assert!(validate_unique_node_ips(&nodes).is_ok());
+    }
+
+    #[test]
+    fn validate_unique_node_ips_rejects_non_ip_host() {
+        let nodes = vec![test_node("gpu-node.local")];
+        let err = validate_unique_node_ips(&nodes).unwrap_err();
+
+        match err {
+            ConfigurationError::InvalidValue { key, reason, .. } => {
+                assert_eq!(key, "node_management.nodes[0].host");
+                assert!(reason.contains("IPv4 or IPv6 literal"));
+            }
+            _ => panic!("expected InvalidValue"),
+        }
+    }
+
+    #[test]
+    fn validate_unique_node_ips_rejects_duplicate_ipv4() {
+        let nodes = vec![test_node("192.168.1.10"), test_node("192.168.1.10")];
+        let err = validate_unique_node_ips(&nodes).unwrap_err();
+
+        match err {
+            ConfigurationError::InvalidValue { key, reason, .. } => {
+                assert_eq!(key, "node_management.nodes");
+                assert!(reason.contains("192.168.1.10 at indices [0, 1]"));
+            }
+            _ => panic!("expected InvalidValue"),
+        }
+    }
+
+    #[test]
+    fn validate_unique_node_ips_rejects_equivalent_ipv6_representations() {
+        let nodes = vec![test_node("2001:db8::1"), test_node("2001:0db8:0:0:0:0:0:1")];
+        let err = validate_unique_node_ips(&nodes).unwrap_err();
+
+        match err {
+            ConfigurationError::InvalidValue { key, reason, .. } => {
+                assert_eq!(key, "node_management.nodes");
+                assert!(reason.contains("at indices [0, 1]"));
+            }
+            _ => panic!("expected InvalidValue"),
         }
     }
 }

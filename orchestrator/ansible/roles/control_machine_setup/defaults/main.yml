@@ -1,9 +1,0 @@
----
-# Control machine setup defaults
-
-# Install Rust toolchain on control machine for CRD generation
-install_rust_on_control: true
-
-# Rust toolchain configuration
-rust_toolchain_profile: minimal
-rust_default_toolchain: stable

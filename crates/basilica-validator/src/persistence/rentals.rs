@@ -112,18 +112,36 @@ impl SimplePersistence {
         Ok(())
     }
 
-    /// Check if an node has an active rental
+    /// Check if a node has an active rental by reading the `active_rental_id`
+    /// column on `miner_nodes`. This is the single source of truth for node
+    /// availability — see the INVARIANT comment in `miner_nodes.rs`.
     pub async fn has_active_rental(
         &self,
         node_id: &str,
         miner_id: &str,
     ) -> Result<bool, anyhow::Error> {
+        let active_rental: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT active_rental_id FROM miner_nodes WHERE node_id = ? AND miner_id = ? LIMIT 1",
+        )
+        .bind(node_id)
+        .bind(miner_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(active_rental.flatten().is_some())
+    }
+
+    pub async fn get_last_rental_terminated_at(
+        &self,
+        node_id: &str,
+        miner_id: &str,
+    ) -> Result<Option<DateTime<Utc>>, anyhow::Error> {
         let query = r#"
-            SELECT COUNT(*) as count
+            SELECT MAX(terminated_at) as terminated_at
             FROM rentals
             WHERE node_id = ?
-                AND miner_id = ?
-                AND state = 'active'
+              AND miner_id = ?
+              AND terminated_at IS NOT NULL
         "#;
 
         let row = sqlx::query(query)
@@ -132,8 +150,13 @@ impl SimplePersistence {
             .fetch_one(&self.pool)
             .await?;
 
-        let count: i64 = row.get("count");
-        Ok(count > 0)
+        let terminated_at: Option<String> = row.get("terminated_at");
+        if let Some(ts) = terminated_at {
+            let parsed = DateTime::parse_from_rfc3339(&ts)?.with_timezone(&Utc);
+            Ok(Some(parsed))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Helper function to parse rental state from string

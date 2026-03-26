@@ -463,7 +463,7 @@ impl GpuProfileRepository {
         let stale_threshold = Utc::now() - chrono::Duration::minutes(30);
 
         info!(
-            "Cleaning up nodes not validated in the last 30 minutes. since: {}",
+            "Cleaning up nodes with stale validator node checks (>30 minutes). since: {}",
             stale_threshold
         );
 
@@ -473,7 +473,8 @@ impl GpuProfileRepository {
             SELECT id, node_id, miner_id
             FROM miner_nodes
             WHERE status IN ('online', 'verified')
-            AND (last_health_check IS NULL OR last_health_check < ?)
+            AND active_rental_id IS NULL
+            AND (last_node_check IS NULL OR datetime(last_node_check) < datetime(?))
         "#;
 
         let stale_nodes = sqlx::query(stale_nodes_query)
@@ -511,7 +512,7 @@ impl GpuProfileRepository {
 
             let mark_offline = r#"
                 UPDATE miner_nodes
-                SET status = 'offline', updated_at = datetime('now')
+                SET status = 'offline'
                 WHERE id = ?
             "#;
 
@@ -866,16 +867,13 @@ mod tests {
 
             // Seed miners table first (required for foreign key constraint)
             sqlx::query(
-                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO miners (id, hotkey, endpoint, updated_at)
+                 VALUES (?, ?, ?, ?)",
             )
             .bind(&miner_id)
             .bind(format!("hotkey_{}", profile.miner_uid.as_u16()))
             .bind("127.0.0.1:8080")
             .bind(now.to_rfc3339())
-            .bind(now.to_rfc3339())
-            .bind(now.to_rfc3339())
-            .bind("{}")
             .execute(persistence.pool())
             .await?;
 
@@ -900,18 +898,20 @@ mod tests {
                 }
             }
 
-            // Seed miner_nodes table
+            // Seed miner_nodes table (unique IP per miner to satisfy UNIQUE index)
+            let uid = profile.miner_uid.as_u16();
+            let node_ip = format!("10.0.{}.{}", uid / 256, uid % 256);
             sqlx::query(
-                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
+                "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, status, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             )
             .bind(&node_id)
             .bind(&miner_id)
             .bind(&node_id)
-            .bind("127.0.0.1:8080")
+            .bind(format!("root@{}:8080", node_ip))
+            .bind(&node_ip)
             .bind(profile.gpu_counts.values().sum::<u32>() as i64)
             .bind("online")
-            .bind(now.to_rfc3339())
             .bind(now.to_rfc3339())
             .execute(persistence.pool())
             .await?;
@@ -1119,32 +1119,29 @@ mod tests {
         // Manually insert inconsistent data - same node with different GPU models
         // This shouldn't happen in reality but we handle it defensively
         sqlx::query(
-            "INSERT INTO miners (id, hotkey, endpoint, last_seen, registered_at, updated_at, node_info)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO miners (id, hotkey, endpoint, updated_at)
+             VALUES (?, ?, ?, ?)",
         )
         .bind(&miner_id)
         .bind("hotkey_1")
         .bind("127.0.0.1:8080")
         .bind(Utc::now().to_rfc3339())
-        .bind(Utc::now().to_rfc3339())
-        .bind(Utc::now().to_rfc3339())
-        .bind("{}")
         .execute(&pool)
         .await
         .unwrap();
 
         // Insert node
         sqlx::query(
-            "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, gpu_count, status, created_at, updated_at)
+            "INSERT INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, status, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(format!("{}_{}", miner_id, node_id))
         .bind(&miner_id)
         .bind(node_id)
-        .bind("127.0.0.1:8080")
+        .bind("root@127.0.0.1:8080")
+        .bind("127.0.0.1")
         .bind(5i64) // Total GPUs
         .bind("online")
-        .bind(Utc::now().to_rfc3339())
         .bind(Utc::now().to_rfc3339())
         .execute(&pool)
         .await

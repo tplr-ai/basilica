@@ -9,72 +9,11 @@ use std::time::Duration;
 
 use crate::error::{BasilicaError, ConfigurationError};
 
-/// Bittensor network configuration shared across validator and miner
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BittensorConfig {
-    /// Wallet name for operations
-    pub wallet_name: String,
+/// Default port for the validator's bidding gRPC service.
+pub const DEFAULT_BID_GRPC_PORT: u16 = 50052;
 
-    /// Hotkey name for the neuron
-    pub hotkey_name: String,
-
-    /// Network to connect to ("finney", "test", or "local")
-    pub network: String,
-
-    /// Subnet netuid
-    pub netuid: u16,
-
-    /// Optional chain endpoint override
-    pub chain_endpoint: Option<String>,
-
-    /// Optional fallback chain endpoints for failover
-    #[serde(default)]
-    pub fallback_endpoints: Vec<String>,
-
-    /// Weight setting interval in seconds
-    pub weight_interval_secs: u64,
-
-    /// Read-only mode (default: false)
-    /// When true, wallet is only used for querying metagraph, not signing transactions
-    /// The wallet does not need to hold funds or be registered on-chain
-    #[serde(default)]
-    pub read_only: bool,
-
-    /// Connection pool size (default: 3)
-    #[serde(default)]
-    pub connection_pool_size: Option<usize>,
-
-    /// Health check interval (default: 60 seconds)
-    #[serde(default)]
-    pub health_check_interval: Option<Duration>,
-
-    /// Circuit breaker failure threshold (default: 5)
-    #[serde(default)]
-    pub circuit_breaker_threshold: Option<u32>,
-
-    /// Circuit breaker recovery timeout (default: 60 seconds)
-    #[serde(default)]
-    pub circuit_breaker_recovery: Option<Duration>,
-}
-
-impl Default for BittensorConfig {
-    fn default() -> Self {
-        Self {
-            wallet_name: "default".to_string(),
-            hotkey_name: "default".to_string(),
-            network: "finney".to_string(),
-            netuid: 1,
-            chain_endpoint: None,
-            fallback_endpoints: Vec::new(),
-            weight_interval_secs: 300, // 5 minutes
-            read_only: false,
-            connection_pool_size: Some(3),
-            health_check_interval: Some(Duration::from_secs(60)),
-            circuit_breaker_threshold: Some(5),
-            circuit_breaker_recovery: Some(Duration::from_secs(60)),
-        }
-    }
-}
+// Re-export BittensorConfig from the bittensor crate as the canonical source
+pub use bittensor::BittensorConfig;
 
 /// gRPC server configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -433,100 +372,6 @@ impl ConfigValidation for ServerConfig {
     }
 }
 
-impl BittensorConfig {
-    /// Get the chain endpoint, auto-detecting based on network if not explicitly configured
-    pub fn get_chain_endpoint(&self) -> String {
-        self.chain_endpoint
-            .clone()
-            .unwrap_or_else(|| match self.network.as_str() {
-                "local" => "ws://127.0.0.1:9944".to_string(),
-                "finney" => "wss://entrypoint-finney.opentensor.ai:443".to_string(),
-                "test" => "wss://test.finney.opentensor.ai:443".to_string(),
-                _ => panic!(
-                    "Unknown network: {}. Valid networks are: finney, test, local",
-                    self.network
-                ),
-            })
-    }
-
-    /// Get all chain endpoints including fallbacks
-    pub fn get_chain_endpoints(&self) -> Vec<String> {
-        let mut endpoints = vec![self.get_chain_endpoint()];
-
-        // Add configured fallback endpoints
-        endpoints.extend(self.fallback_endpoints.clone());
-
-        // Add network-specific default fallbacks if not already configured
-        if self.fallback_endpoints.is_empty() {
-            match self.network.as_str() {
-                "finney" => {
-                    // Add known Finney backup endpoints
-                    endpoints.push("wss://entrypoint-finney.opentensor.ai:443".to_string());
-                }
-                "test" => {
-                    // Add known test network backup endpoints
-                    endpoints.push("wss://test.finney.opentensor.ai:443".to_string());
-                }
-                _ => {}
-            }
-        }
-
-        // Deduplicate endpoints while preserving order
-        let mut seen = std::collections::HashSet::new();
-        endpoints.retain(|endpoint| seen.insert(endpoint.clone()));
-
-        endpoints
-    }
-}
-
-impl ConfigValidation for BittensorConfig {
-    type Error = ConfigurationError;
-
-    fn validate(&self) -> Result<(), Self::Error> {
-        if self.wallet_name.is_empty() {
-            return Err(ConfigurationError::InvalidValue {
-                key: "wallet_name".to_string(),
-                value: self.wallet_name.clone(),
-                reason: "Wallet name cannot be empty".to_string(),
-            });
-        }
-
-        if self.hotkey_name.is_empty() {
-            return Err(ConfigurationError::InvalidValue {
-                key: "hotkey_name".to_string(),
-                value: self.hotkey_name.clone(),
-                reason: "Hotkey name cannot be empty".to_string(),
-            });
-        }
-
-        if self.netuid == 0 {
-            return Err(ConfigurationError::InvalidValue {
-                key: "netuid".to_string(),
-                value: self.netuid.to_string(),
-                reason: "Netuid must be greater than 0".to_string(),
-            });
-        }
-
-        if self.weight_interval_secs == 0 {
-            return Err(ConfigurationError::InvalidValue {
-                key: "weight_interval_secs".to_string(),
-                value: self.weight_interval_secs.to_string(),
-                reason: "Weight interval must be greater than 0 seconds".to_string(),
-            });
-        }
-
-        // Validate network is a known type
-        match self.network.as_str() {
-            "finney" | "test" | "local" => Ok(()),
-            _ => Err(ConfigurationError::InvalidValue {
-                key: "network".to_string(),
-                value: self.network.clone(),
-                reason: "Unknown network. Valid networks are: finney, test, local".to_string(),
-            }),
-        }
-    }
-}
-
 impl ConfigValidation for GrpcServerConfig {
     type Error = ConfigurationError;
 
@@ -573,6 +418,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_bittensor_config_defaults() {
+        // Verify BittensorConfig is properly re-exported
+        let config = BittensorConfig::default();
+        assert_eq!(config.wallet_name, "default");
+        assert_eq!(config.network, "finney");
+    }
+
+    #[test]
     fn test_bittensor_config_endpoint_resolution() {
         // Test finney network
         let finney_config = BittensorConfig {
@@ -585,25 +438,6 @@ mod tests {
             "wss://entrypoint-finney.opentensor.ai:443"
         );
 
-        // Test test network
-        let test_config = BittensorConfig {
-            network: "test".to_string(),
-            chain_endpoint: None,
-            ..Default::default()
-        };
-        assert_eq!(
-            test_config.get_chain_endpoint(),
-            "wss://test.finney.opentensor.ai:443"
-        );
-
-        // Test local network
-        let local_config = BittensorConfig {
-            network: "local".to_string(),
-            chain_endpoint: None,
-            ..Default::default()
-        };
-        assert_eq!(local_config.get_chain_endpoint(), "ws://127.0.0.1:9944");
-
         // Test custom endpoint override
         let custom_config = BittensorConfig {
             network: "finney".to_string(),
@@ -614,35 +448,5 @@ mod tests {
             custom_config.get_chain_endpoint(),
             "wss://custom.endpoint.com:443"
         );
-    }
-
-    #[test]
-    #[should_panic(expected = "Unknown network: invalid")]
-    fn test_bittensor_config_invalid_network() {
-        let invalid_config = BittensorConfig {
-            network: "invalid".to_string(),
-            chain_endpoint: None,
-            ..Default::default()
-        };
-        invalid_config.get_chain_endpoint();
-    }
-
-    #[test]
-    fn test_bittensor_config_network_validation() {
-        // Valid networks should pass
-        for network in &["finney", "test", "local"] {
-            let config = BittensorConfig {
-                network: network.to_string(),
-                ..Default::default()
-            };
-            assert!(config.validate().is_ok());
-        }
-
-        // Invalid network should fail
-        let invalid_config = BittensorConfig {
-            network: "invalid".to_string(),
-            ..Default::default()
-        };
-        assert!(invalid_config.validate().is_err());
     }
 }

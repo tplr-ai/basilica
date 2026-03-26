@@ -57,9 +57,12 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
-        /// Amount to deposit in wei
+        /// Alpha hotkey as hex string (32 bytes)
         #[arg(long)]
-        amount: String,
+        alpha_hotkey: String,
+        /// Alpha amount to deposit in wei
+        #[arg(long)]
+        alpha_amount: String,
     },
     /// Reclaim collateral for an node
     ReclaimCollateral {
@@ -72,6 +75,9 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
+        /// Alpha coldkey as hex string (32 bytes)
+        #[arg(long)]
+        alpha_coldkey: String,
         /// URL for proof of reclaim
         #[arg(long)]
         url: String,
@@ -114,6 +120,9 @@ enum TxCommands {
         /// Node ID as string
         #[arg(long)]
         node_id: String,
+        /// Alpha amount to slash in wei
+        #[arg(long)]
+        slash_alpha_amount: String,
         /// URL for proof of slashing
         #[arg(long)]
         url: String,
@@ -121,16 +130,37 @@ enum TxCommands {
         #[arg(long)]
         url_content_md5_checksum: String,
     },
+    /// Set the contract coldkey
+    SetContractColdkey {
+        /// Private key for signing the transaction (hex string)
+        #[arg(long, env = "PRIVATE_KEY")]
+        private_key: String,
+        /// Alpha coldkey as hex string (32 bytes)
+        #[arg(long)]
+        alpha_coldkey: String,
+    },
+    /// Burn register for the contract hotkey
+    BurnRegister {
+        /// Private key for signing the transaction (hex string)
+        #[arg(long, env = "PRIVATE_KEY")]
+        private_key: String,
+    },
 }
 
 #[derive(Subcommand)]
 enum QueryCommands {
+    /// Get the contract version
+    Version,
     /// Get the network UID
     Netuid,
     /// Get the trustee address
     Trustee,
     /// Get the decision timeout
     DecisionTimeout,
+    /// Get the contract coldkey
+    ContractColdkey,
+    /// Get the contract hotkey
+    ContractHotkey,
     /// Get the minimum collateral increase
     MinCollateralIncrease,
     /// Get the miner address for an node
@@ -144,6 +174,15 @@ enum QueryCommands {
     },
     /// Get the collateral amount for an node
     Collaterals {
+        /// Hotkey as hex string (32 bytes)
+        #[arg(long)]
+        hotkey: String,
+        /// Node ID as string
+        #[arg(long)]
+        node_id: String,
+    },
+    /// Get the alpha collateral amount for an node
+    AlphaCollaterals {
         /// Hotkey as hex string (32 bytes)
         #[arg(long)]
         hotkey: String,
@@ -206,21 +245,24 @@ async fn handle_tx_command(
             private_key,
             hotkey,
             node_id,
-            amount,
+            alpha_hotkey,
+            alpha_amount,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
-            let amount_u256 = parse_u256(&amount)?;
             let node_uuid = Uuid::parse_str(&node_id)?;
+            let alpha_hotkey_bytes = parse_hotkey(&alpha_hotkey)?;
+            let alpha_amount_u256 = parse_u256(&alpha_amount)?;
 
             println!(
-                "Depositing {} wei for node {} with hotkey {}",
-                amount, node_id, hotkey
+                "Depositing {} alpha (wei) for node {} with hotkey {}",
+                alpha_amount, node_id, hotkey
             );
             collateral_contract::deposit(
                 &private_key,
                 hotkey_bytes,
                 node_uuid.into_bytes(),
-                amount_u256,
+                alpha_hotkey_bytes,
+                alpha_amount_u256,
                 network_config,
             )
             .await?;
@@ -230,12 +272,14 @@ async fn handle_tx_command(
             private_key,
             hotkey,
             node_id,
+            alpha_coldkey,
             url,
             url_content_md5_checksum,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
             let node_uuid = Uuid::parse_str(&node_id)?;
+            let alpha_coldkey_bytes = parse_hotkey(&alpha_coldkey)?;
 
             println!(
                 "Reclaiming collateral for node {} with hotkey {}",
@@ -245,6 +289,7 @@ async fn handle_tx_command(
                 &private_key,
                 hotkey_bytes,
                 node_uuid.into_bytes(),
+                alpha_coldkey_bytes,
                 &url,
                 checksum,
                 network_config,
@@ -286,27 +331,50 @@ async fn handle_tx_command(
             private_key,
             hotkey,
             node_id,
+            slash_alpha_amount,
             url,
             url_content_md5_checksum,
         } => {
             let hotkey_bytes = parse_hotkey(&hotkey)?;
             let checksum = parse_md5_checksum(&url_content_md5_checksum)?;
             let node_uuid = Uuid::parse_str(&node_id)?;
+            let alpha_amount = parse_u256(&slash_alpha_amount)?;
 
             println!(
-                "Slashing collateral for node {} with hotkey {}",
-                node_id, hotkey
+                "Slashing {} alpha (wei) for node {} with hotkey {}",
+                slash_alpha_amount, node_id, hotkey
             );
             collateral_contract::slash_collateral(
                 &private_key,
                 hotkey_bytes,
                 node_uuid.into_bytes(),
+                alpha_amount,
                 &url,
                 checksum,
                 network_config,
             )
             .await?;
             println!("Slash collateral transaction completed successfully!");
+        }
+        TxCommands::SetContractColdkey {
+            private_key,
+            alpha_coldkey,
+        } => {
+            let alpha_coldkey_bytes = parse_hotkey(&alpha_coldkey)?;
+
+            println!("Setting contract coldkey to {}", alpha_coldkey);
+            collateral_contract::set_contract_coldkey(
+                &private_key,
+                alpha_coldkey_bytes,
+                network_config,
+            )
+            .await?;
+            println!("Set contract coldkey completed successfully!");
+        }
+        TxCommands::BurnRegister { private_key } => {
+            println!("Burning register for contract hotkey");
+            collateral_contract::burn_register(&private_key, network_config).await?;
+            println!("Burn register completed successfully!");
         }
     }
     Ok(())
@@ -317,6 +385,10 @@ async fn handle_query_command(
     network_config: &CollateralNetworkConfig,
 ) -> Result<()> {
     match cmd {
+        QueryCommands::Version => {
+            let result = collateral_contract::get_version(network_config).await?;
+            println!("Contract version: {}", result);
+        }
         QueryCommands::Netuid => {
             let result = collateral_contract::netuid(network_config).await?;
             println!("Network UID: {}", result);
@@ -328,6 +400,14 @@ async fn handle_query_command(
         QueryCommands::DecisionTimeout => {
             let result = collateral_contract::decision_timeout(network_config).await?;
             println!("Decision timeout: {} seconds", result);
+        }
+        QueryCommands::ContractColdkey => {
+            let result = collateral_contract::contract_coldkey(network_config).await?;
+            println!("Contract coldkey: 0x{}", hex::encode(result));
+        }
+        QueryCommands::ContractHotkey => {
+            let result = collateral_contract::contract_hotkey(network_config).await?;
+            println!("Contract hotkey: 0x{}", hex::encode(result));
         }
         QueryCommands::MinCollateralIncrease => {
             let result = collateral_contract::min_collateral_increase(network_config).await?;
@@ -357,6 +437,21 @@ async fn handle_query_command(
             .await?;
             println!("Collateral for node {}: {} wei", node_id_clone, result);
         }
+        QueryCommands::AlphaCollaterals { hotkey, node_id } => {
+            let hotkey_bytes = parse_hotkey(&hotkey)?;
+            let node_id_clone = node_id.clone();
+            let node_uuid = Uuid::parse_str(&node_id)?;
+            let result = collateral_contract::alpha_collaterals(
+                hotkey_bytes,
+                node_uuid.into_bytes(),
+                network_config,
+            )
+            .await?;
+            println!(
+                "Alpha collateral for node {}: {} wei",
+                node_id_clone, result
+            );
+        }
         QueryCommands::Reclaims { reclaim_request_id } => {
             let request_id = parse_u256(&reclaim_request_id)?;
             let result = collateral_contract::reclaims(request_id, network_config).await?;
@@ -365,6 +460,8 @@ async fn handle_query_command(
             println!("  Node ID: {}", Uuid::from_bytes(result.node_id));
             println!("  Miner: {}", result.miner);
             println!("  Amount: {} wei", result.amount);
+            println!("  Alpha coldkey: {}", hex::encode(result.alpha_coldkey));
+            println!("  Alpha amount: {} wei", result.alpha_amount);
             println!("  Deny timeout: {}", result.deny_timeout);
         }
     }
@@ -446,7 +543,11 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     println!("    Hotkey: {}", hex::encode(deposit.hotkey.as_slice()));
                     println!("    Node ID: {}", hex::encode(deposit.nodeId.as_slice()));
                     println!("    Miner: {}", deposit.miner);
-                    println!("    Amount: {} wei", deposit.amount);
+                    println!(
+                        "    Alpha Hotkey: {}",
+                        hex::encode(deposit.alphaHotkey.as_slice())
+                    );
+                    println!("    Alpha Amount: {} wei", deposit.alphaAmount);
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
                     println!("    Type: Reclaimed");
@@ -454,14 +555,18 @@ fn print_events_pretty(events: &HashMap<u64, Vec<CollateralEvent>>) {
                     println!("    Hotkey: {}", hex::encode(reclaimed.hotkey.as_slice()));
                     println!("    Node ID: {}", hex::encode(reclaimed.nodeId.as_slice()));
                     println!("    Miner: {}", reclaimed.miner);
-                    println!("    Amount: {} wei", reclaimed.amount);
+                    println!(
+                        "    Alpha Coldkey: {}",
+                        hex::encode(reclaimed.alphaColdkey.as_slice())
+                    );
+                    println!("    Alpha Amount: {} wei", reclaimed.alphaAmount);
                 }
                 CollateralEvent::Slashed(slashed) => {
                     println!("    Type: Slashed");
                     println!("    Hotkey: {}", hex::encode(slashed.hotkey.as_slice()));
                     println!("    Node ID: {}", hex::encode(slashed.nodeId.as_slice()));
                     println!("    Miner: {}", slashed.miner);
-                    println!("    Amount: {} wei", slashed.amount);
+                    println!("    Alpha Amount: {} wei", slashed.slashAlphaAmount);
                     println!("    URL: {}", slashed.url);
                     println!(
                         "    URL Content MD5: {}",
@@ -487,7 +592,8 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "hotkey": hex::encode(deposit.hotkey.as_slice()),
                         "nodeId": hex::encode(deposit.nodeId.as_slice()),
                         "miner": deposit.miner.to_string(),
-                        "amount": deposit.amount.to_string()
+                        "alphaHotkey": hex::encode(deposit.alphaHotkey.as_slice()),
+                        "alphaAmount": deposit.alphaAmount.to_string()
                     })
                 }
                 CollateralEvent::Reclaimed(reclaimed) => {
@@ -497,7 +603,8 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "hotkey": hex::encode(reclaimed.hotkey.as_slice()),
                         "nodeId": hex::encode(reclaimed.nodeId.as_slice()),
                         "miner": reclaimed.miner.to_string(),
-                        "amount": reclaimed.amount.to_string()
+                        "alphaColdkey": hex::encode(reclaimed.alphaColdkey.as_slice()),
+                        "alphaAmount": reclaimed.alphaAmount.to_string()
                     })
                 }
                 CollateralEvent::Slashed(slashed) => {
@@ -506,7 +613,7 @@ fn print_events_json(events: &HashMap<u64, Vec<CollateralEvent>>) -> Result<()> 
                         "hotkey": hex::encode(slashed.hotkey.as_slice()),
                         "nodeId": hex::encode(slashed.nodeId.as_slice()),
                         "miner": slashed.miner.to_string(),
-                        "amount": slashed.amount.to_string(),
+                        "alphaAmount": slashed.slashAlphaAmount.to_string(),
                         "url": slashed.url,
                         "urlContentMd5Checksum": hex::encode(slashed.urlContentMd5Checksum.as_slice())
                     })

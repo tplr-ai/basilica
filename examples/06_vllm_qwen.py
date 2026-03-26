@@ -18,9 +18,9 @@ compile_cache = basilica.Volume.from_name("vllm-compile-cache", create_if_missin
 @basilica.deployment(
     name="vllm-qwen",
     image="vllm/vllm-openai:latest",
-    gpu="NVIDIA-RTX-A4000",
     port=8000,
     gpu_count=1,
+    min_gpu_memory_gb=16,
     memory="16Gi",
     ttl_seconds=1800,
     timeout=900,

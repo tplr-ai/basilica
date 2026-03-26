@@ -3,8 +3,8 @@
 //! Handles the execution and parsing of validator binary outputs for hardware attestation.
 
 use super::types::{
-    BinaryCpuInfo, BinaryMemoryInfo, BinaryNetworkInfo, CompressedMatrix, GpuInfo, NodeResult,
-    SmUtilizationStats, ValidatorBinaryOutput,
+    BinaryCpuInfo, BinaryMemoryInfo, BinaryNetworkInfo, CompressedMatrix, CpuPowResult, GpuInfo,
+    NodeResult, SmUtilizationStats, StoragePowResult, ValidatorBinaryOutput,
 };
 use anyhow::{Context, Result};
 use basilica_common::ssh::SshConnectionDetails;
@@ -269,6 +269,20 @@ impl ValidationServerManager {
             .arg(config.verify_concurrency.to_string())
             .arg("--queue-capacity")
             .arg(config.queue_capacity.to_string());
+
+        // Pass threshold overrides as environment variables if configured
+        if let Some(cpu_threshold) = config.max_cpu_ms_per_iteration {
+            command.env(
+                "VERITAS_MAX_CPU_MS_PER_ITERATION",
+                cpu_threshold.to_string(),
+            );
+        }
+        if let Some(storage_threshold) = config.max_storage_duration_ms {
+            command.env(
+                "VERITAS_MAX_STORAGE_DURATION_MS",
+                storage_threshold.to_string(),
+            );
+        }
 
         // Configure for process group isolation
         ProcessGroup::configure_command(&mut command);
@@ -970,6 +984,14 @@ impl BinaryValidator {
                 error_msg
             );
         }
+        if !parsed_output.failure_reasons.is_empty() {
+            error!(
+                miner_uid = miner_uid,
+                node_id = node_id,
+                "[EVAL_FLOW] Binary validation failure reasons: {:?}",
+                parsed_output.failure_reasons
+            );
+        }
 
         // Validate structure
         if parsed_output.success && parsed_output.node_result.is_none() {
@@ -1190,29 +1212,20 @@ impl BinaryValidator {
             success, execution_time_ms
         );
 
-        // Check if we have valid GPU results even if success is false
-        let has_valid_gpu_results = raw_json
-            .get("gpu_results")
+        let failure_reasons = raw_json
+            .get("failure_reasons")
             .and_then(|v| v.as_array())
-            .map(|arr| !arr.is_empty())
-            .unwrap_or(false);
-
-        // If we have GPU results but success is false, treat it as a partial success
-        // This is a workaround for the server bug where valid results are marked as failed
-        let effective_success = success || has_valid_gpu_results;
-
-        if has_valid_gpu_results && !success {
-            warn!(
-                "[EVAL_FLOW] Validation marked as failed but has valid GPU results - treating as partial success (server bug workaround)"
-            );
-        }
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                    .collect::<Vec<String>>()
+            })
+            .unwrap_or_default();
+        let has_failures = !failure_reasons.is_empty();
+        let effective_success = success && !has_failures;
 
         // Calculate validation score based on the results
-        let validation_score = if effective_success {
-            self.calculate_validation_score_from_raw_results(&raw_json)?
-        } else {
-            0.0
-        };
+        let validation_score = if effective_success { 1.0 } else { 0.0 };
 
         // Convert GPU results to node result if available
         let node_result = if effective_success {
@@ -1233,106 +1246,23 @@ impl BinaryValidator {
             .and_then(|v| v.as_u64())
             .unwrap_or(0);
 
-        info!("[EVAL_FLOW] Converted to ValidatorBinaryOutput - validation_score: {:.3}, has_node_result: {}, gpu_count: {}",
-              validation_score, node_result.is_some(), gpu_count);
+        info!(
+            "[EVAL_FLOW] Converted to ValidatorBinaryOutput - success: {}, failures: {}, has_node_result: {}, gpu_count: {}",
+            effective_success,
+            failure_reasons.len(),
+            node_result.is_some(),
+            gpu_count
+        );
 
         Ok(ValidatorBinaryOutput {
-            success: effective_success, // Use effective_success instead of raw success
+            success: effective_success,
             node_result,
             error_message,
+            failure_reasons,
             execution_time_ms,
             validation_score,
             gpu_count,
         })
-    }
-
-    /// Calculate validation score from raw GPU results
-    fn calculate_validation_score_from_raw_results(
-        &self,
-        raw_json: &serde_json::Value,
-    ) -> Result<f64> {
-        let gpu_results = raw_json
-            .get("gpu_results")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| anyhow::anyhow!("No gpu_results found in output"))?;
-
-        if gpu_results.is_empty() {
-            return Ok(0.0);
-        }
-
-        let mut total_score = 0.0;
-        let gpu_count = gpu_results.len();
-
-        for gpu_result in gpu_results {
-            let mut gpu_score: f64 = 0.0;
-
-            // Base score for successful execution
-            gpu_score += 0.3;
-
-            // Get metrics object from gpu_result
-            let metrics = gpu_result.get("metrics");
-
-            // Anti-debug check
-            if metrics
-                .and_then(|m| m.get("anti_debug_passed"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
-                gpu_score += 0.2;
-            }
-
-            // SM utilization scoring
-            if let Some(sm_util) = metrics.and_then(|m| m.get("sm_utilization")) {
-                let avg_utilization = sm_util.get("avg").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let sm_score = if avg_utilization > 0.8 {
-                    0.2
-                } else if avg_utilization > 0.6 {
-                    0.1
-                } else {
-                    0.0
-                };
-                gpu_score += sm_score;
-            }
-
-            // Memory bandwidth scoring
-            let bandwidth = metrics
-                .and_then(|m| m.get("memory_bandwidth_gbps"))
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
-            let bandwidth_score = if bandwidth > 15000.0 {
-                0.15
-            } else if bandwidth > 10000.0 {
-                0.1
-            } else if bandwidth > 5000.0 {
-                0.05
-            } else {
-                0.0
-            };
-            gpu_score += bandwidth_score;
-
-            // Computation timing score
-            let computation_time_ns = gpu_result
-                .get("computation_time_ns")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let computation_time_ms = computation_time_ns / 1_000_000;
-            let timing_score = if computation_time_ms > 10 && computation_time_ms < 5000 {
-                0.05
-            } else {
-                0.0
-            };
-            gpu_score += timing_score;
-
-            total_score += gpu_score.clamp(0.0, 1.0);
-        }
-
-        let average_score = total_score / gpu_count as f64;
-        info!(
-            "[EVAL_FLOW] Calculated validation score from {} GPUs: {:.3}",
-            gpu_count, average_score
-        );
-
-        Ok(average_score)
     }
 
     /// Convert GPU results to NodeResult format
@@ -1364,10 +1294,23 @@ impl BinaryValidator {
                 .unwrap_or("Unknown UUID")
                 .to_string();
 
-            let gpu_memory_gb = gpu_result
+            // FIXME: gpu_memory_gb should be reported properly by the validator binary itself
+            let mut gpu_memory_gb = gpu_result
                 .get("gpu_memory_gb")
                 .and_then(|v| v.as_f64())
                 .unwrap_or(0.0);
+
+            if gpu_memory_gb == 0.0 {
+                let parsed = crate::persistence::miner_nodes::extract_gpu_memory_gb(&gpu_name);
+                if parsed > 0 {
+                    warn!(
+                        gpu_name = %gpu_name,
+                        parsed_memory_gb = parsed,
+                        "Binary reported gpu_memory_gb=0.0, falling back to GPU name parse"
+                    );
+                    gpu_memory_gb = parsed as f64;
+                }
+            }
 
             let computation_time_ns = gpu_result
                 .get("computation_time_ns")
@@ -1476,6 +1419,34 @@ impl BinaryValidator {
             .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
             .unwrap_or(0);
 
+        let cpu_pow = raw_json.get("cpu_pow").map(|v| CpuPowResult {
+            valid: v.get("valid").and_then(|v| v.as_bool()).unwrap_or(false),
+            cpu_model: v
+                .get("cpu_model")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown")
+                .to_string(),
+            iterations: v.get("iterations").and_then(|v| v.as_u64()).unwrap_or(0),
+            chunk_size: v.get("chunk_size").and_then(|v| v.as_u64()).unwrap_or(0),
+            duration_ms: v.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0),
+        });
+
+        let storage_pow = raw_json.get("storage_pow").map(|v| StoragePowResult {
+            valid: v.get("valid").and_then(|v| v.as_bool()).unwrap_or(false),
+            file_id: v
+                .get("file_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            file_size_bytes: v
+                .get("file_size_bytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            block_size: v.get("block_size").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            samples: v.get("samples").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
+            duration_ms: v.get("duration_ms").and_then(|v| v.as_u64()).unwrap_or(0),
+        });
+
         let node_result = NodeResult {
             gpu_name,
             gpu_uuid,
@@ -1491,6 +1462,8 @@ impl BinaryValidator {
                 available_gb: 0.0,
             },
             network_info: BinaryNetworkInfo { interfaces: vec![] },
+            cpu_pow,
+            storage_pow,
             matrix_c: CompressedMatrix {
                 rows: 0,
                 cols: 0,
@@ -1513,127 +1486,6 @@ impl BinaryValidator {
         );
 
         Ok(Some(node_result))
-    }
-
-    /// Calculate binary validation score based on node result
-    pub fn calculate_binary_validation_score(
-        &self,
-        validation_result: &ValidatorBinaryOutput,
-    ) -> Result<f64> {
-        info!("[EVAL_FLOW] Starting binary validation score calculation");
-
-        if !validation_result.success {
-            error!("[EVAL_FLOW] Binary validation failed, returning score: 0.0");
-            return Ok(0.0);
-        }
-
-        let node_result = validation_result.node_result.as_ref().ok_or_else(|| {
-            error!("[EVAL_FLOW] No node result available for scoring");
-            anyhow::anyhow!("No node result available for scoring")
-        })?;
-
-        let mut score: f64 = 0.0;
-        let mut score_breakdown = Vec::new();
-
-        // Base score for successful execution
-        score += 0.3;
-        score_breakdown.push(("base_execution", 0.3));
-        info!(
-            "[EVAL_FLOW] Score component - Base execution: +0.3 (total: {:.3})",
-            score
-        );
-
-        // Anti-debug check score
-        if node_result.anti_debug_passed {
-            score += 0.2;
-            score_breakdown.push(("anti_debug", 0.2));
-            info!(
-                "[EVAL_FLOW] Score component - Anti-debug passed: +0.2 (total: {:.3})",
-                score
-            );
-        } else {
-            warn!(
-                "[EVAL_FLOW] Score component - Anti-debug failed: +0.0 (total: {:.3})",
-                score
-            );
-        }
-
-        // SM utilization score (higher utilization = better score)
-        let avg_utilization = node_result.sm_utilization.avg_utilization;
-        let sm_score = if avg_utilization > 0.8 {
-            0.2
-        } else if avg_utilization > 0.6 {
-            0.1
-        } else {
-            0.0
-        };
-        score += sm_score;
-        score_breakdown.push(("sm_utilization", sm_score));
-        info!(
-            "[EVAL_FLOW] Score component - SM utilization ({:.1}%): +{:.3} (total: {:.3})",
-            avg_utilization * 100.0,
-            sm_score,
-            score
-        );
-
-        // GPU resource score
-        let gpu_efficiency = node_result.active_sms as f64 / node_result.total_sms as f64;
-        let gpu_score = if gpu_efficiency > 0.9 {
-            0.15
-        } else if gpu_efficiency > 0.7 {
-            0.1
-        } else {
-            0.0
-        };
-        score += gpu_score;
-        score_breakdown.push(("gpu_efficiency", gpu_score));
-        info!(
-            "[EVAL_FLOW] Score component - GPU efficiency ({:.1}%, {}/{}): +{:.3} (total: {:.3})",
-            gpu_efficiency * 100.0,
-            node_result.active_sms,
-            node_result.total_sms,
-            gpu_score,
-            score
-        );
-
-        // Memory bandwidth score
-        let bandwidth_score = if node_result.memory_bandwidth_gbps > 500.0 {
-            0.1
-        } else if node_result.memory_bandwidth_gbps > 200.0 {
-            0.05
-        } else {
-            0.0
-        };
-        score += bandwidth_score;
-        score_breakdown.push(("memory_bandwidth", bandwidth_score));
-        info!(
-            "[EVAL_FLOW] Score component - Memory bandwidth ({:.1} GB/s): +{:.3} (total: {:.3})",
-            node_result.memory_bandwidth_gbps, bandwidth_score, score
-        );
-
-        // Computation time score (reasonable timing)
-        let computation_time_ms = node_result.computation_time_ns / 1_000_000;
-        let timing_score = if computation_time_ms > 10 && computation_time_ms < 5000 {
-            0.05
-        } else {
-            0.0
-        };
-        score += timing_score;
-        score_breakdown.push(("computation_timing", timing_score));
-        info!(
-            "[EVAL_FLOW] Score component - Computation timing ({}ms): +{:.3} (total: {:.3})",
-            computation_time_ms, timing_score, score
-        );
-
-        // Final score clamping and summary
-        let final_score = score.clamp(0.0, 1.0);
-        info!(
-            "[EVAL_FLOW] Binary validation score calculation complete: {:.3}/1.0",
-            final_score
-        );
-        info!("[EVAL_FLOW] Score breakdown: {:?}", score_breakdown);
-
-        Ok(final_score)
     }
 
     /// Execute binary validation using validator-binary
@@ -1670,13 +1522,14 @@ impl BinaryValidator {
         let validation_result =
             self.parse_validator_binary_output(node_id, miner_uid, &binary_output)?;
 
-        // Calculate validation score
-        let validation_score = self.calculate_binary_validation_score(&validation_result)?;
+        // Strict binary outcome: score is 1.0 if success, else 0.0
+        let validation_score = if validation_result.success { 1.0 } else { 0.0 };
 
         Ok(ValidatorBinaryOutput {
             success: validation_result.success,
             node_result: validation_result.node_result,
             error_message: validation_result.error_message,
+            failure_reasons: validation_result.failure_reasons,
             execution_time_ms: execution_duration.as_millis() as u64,
             validation_score,
             gpu_count: validation_result.gpu_count,

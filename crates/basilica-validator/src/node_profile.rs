@@ -208,6 +208,8 @@ mod tests {
                     ip_addresses: vec!["10.0.0.2".into()],
                 }],
             },
+            cpu_pow: None,
+            storage_pow: None,
             matrix_c: CompressedMatrix {
                 rows: 0,
                 cols: 0,

@@ -16,6 +16,7 @@ use axum::{
     routing::{delete, get, post},
     Router,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -33,9 +34,8 @@ pub struct ApiState {
     #[allow(dead_code)]
     rental_manager: Option<Arc<rental::RentalManager>>,
     #[allow(dead_code)]
-    miner_client: Option<Arc<crate::miner_prover::miner_client::MinerClient>>,
-    #[allow(dead_code)]
     validator_hotkey: basilica_common::identity::Hotkey,
+    pub evidence_storage_path: PathBuf,
 }
 
 impl ApiState {
@@ -47,6 +47,11 @@ impl ApiState {
         validator_config: crate::config::ValidatorConfig,
         validator_hotkey: basilica_common::identity::Hotkey,
     ) -> Self {
+        let evidence_storage_path = validator_config
+            .collateral
+            .as_ref()
+            .map(|c| c.evidence_storage_path.clone())
+            .unwrap_or_else(|| PathBuf::from("./evidence"));
         Self {
             config,
             persistence,
@@ -54,21 +59,13 @@ impl ApiState {
             storage,
             validator_config,
             rental_manager: None,
-            miner_client: None,
             validator_hotkey,
+            evidence_storage_path,
         }
     }
 
     pub fn with_rental_manager(mut self, rental_manager: Arc<rental::RentalManager>) -> Self {
         self.rental_manager = Some(rental_manager);
-        self
-    }
-
-    pub fn with_miner_client(
-        mut self,
-        miner_client: Arc<crate::miner_prover::miner_client::MinerClient>,
-    ) -> Self {
-        self.miner_client = Some(miner_client);
         self
     }
 }
@@ -106,15 +103,6 @@ impl ApiHandler {
         self
     }
 
-    /// Set miner client
-    pub fn with_miner_client(
-        mut self,
-        miner_client: Arc<crate::miner_prover::miner_client::MinerClient>,
-    ) -> Self {
-        self.state = self.state.with_miner_client(miner_client);
-        self
-    }
-
     /// Start the API server
     pub async fn start(&self) -> Result<()> {
         let app = self.create_router();
@@ -136,6 +124,7 @@ impl ApiHandler {
             .route("/rentals/:id", get(routes::get_rental_status))
             .route("/rentals/:id", delete(routes::stop_rental))
             .route("/rentals/:id/logs", get(routes::stream_rental_logs))
+            .route("/evidence/:file_name", get(routes::get_evidence))
             .route("/nodes", get(routes::list_available_nodes))
             // Existing miner routes
             .route("/miners", get(routes::list_miners))

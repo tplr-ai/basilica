@@ -1,8 +1,5 @@
 use crate::error::CryptoError;
-use sp_core::{
-    crypto::{Ss58AddressFormat, Ss58Codec},
-    sr25519, Pair,
-};
+use bittensor::crypto::{sr25519, Pair, Ss58AddressFormat, Ss58Codec};
 
 /// SR25519 wallet information
 #[derive(Debug, Clone)]
@@ -217,10 +214,14 @@ mod tests {
         assert_ne!(signature, signature2);
 
         // Verify signature works with the public key
-        use sp_core::Pair;
+        use bittensor::crypto::Pair as _;
         let sig_array: [u8; 64] = signature_bytes.try_into().unwrap();
-        let sig = sp_core::sr25519::Signature::from_raw(sig_array);
-        assert!(sp_core::sr25519::Pair::verify(&sig, data, &pair.public()));
+        let sig = bittensor::crypto::sr25519::Signature::from_raw(sig_array);
+        assert!(bittensor::crypto::sr25519::Pair::verify(
+            &sig,
+            data,
+            &pair.public()
+        ));
     }
 
     #[test]

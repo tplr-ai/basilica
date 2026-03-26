@@ -8,8 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use basilica_common::config::{
-    loader, BittensorConfig, ConfigValidation, DatabaseConfig, LoggingConfig, MetricsConfig,
-    ServerConfig,
+    loader, BittensorConfig, ConfigValidation, DatabaseConfig, MetricsConfig, ServerConfig,
 };
 use basilica_common::error::ConfigurationError;
 
@@ -42,9 +41,6 @@ pub struct ValidatorConfig {
     /// Server configuration for API
     pub server: ServerConfig,
 
-    /// Logging configuration
-    pub logging: LoggingConfig,
-
     /// Metrics configuration
     pub metrics: MetricsConfig,
 
@@ -64,6 +60,10 @@ pub struct ValidatorConfig {
     /// API-specific configuration
     pub api: ApiConfig,
 
+    /// gRPC server for bid submission
+    #[serde(default)]
+    pub bid_grpc: basilica_common::config::GrpcServerConfig,
+
     /// SSH session configuration
     pub ssh_session: SshSessionConfig,
 
@@ -71,13 +71,27 @@ pub struct ValidatorConfig {
     #[serde(default)]
     pub emission: super::emission::EmissionConfig,
 
+    /// Bidding configuration (bid registration, health checks, pricing)
+    #[serde(default)]
+    pub bidding: super::bidding::BiddingConfig,
+    /// Token pricing configuration (TAO/Alpha)
+    #[serde(default)]
+    pub pricing: super::pricing::PricingConfig,
+
     /// Database cleanup configuration
     #[serde(default)]
     pub cleanup: crate::persistence::cleanup_task::CleanupConfig,
 
+    /// Basilica API endpoint (used for pricing, delivery, and token data)
+    #[serde(default = "default_api_endpoint")]
+    pub api_endpoint: String,
+
     /// Billing telemetry streaming configuration
     #[serde(default)]
     pub billing: BillingConfig,
+    /// Collateral enforcement configuration (presence = enabled)
+    #[serde(default)]
+    pub collateral: Option<super::collateral::CollateralConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,9 +126,9 @@ pub struct VerificationConfig {
     /// gRPC port offset from axon port (if not using default 50061)
     #[serde(default)]
     pub grpc_port_offset: Option<u16>,
-    /// Binary validation configuration
+    /// Binary validation configuration (None = disabled)
     #[serde(default)]
-    pub binary_validation: BinaryValidationConfig,
+    pub binary_validation: Option<BinaryValidationConfig>,
     /// Docker validation configuration
     #[serde(default)]
     pub docker_validation: DockerValidationConfig,
@@ -222,7 +236,7 @@ impl VerificationConfig {
             fallback_to_static: true,
             cache_miner_info_ttl: Duration::from_secs(300),
             grpc_port_offset: None,
-            binary_validation: BinaryValidationConfig::default(),
+            binary_validation: None, // Disabled in test by default
             docker_validation: DockerValidationConfig::default(),
             collateral_event_scan_interval: Duration::from_secs(12),
             node_validation_interval: Duration::from_secs(3600),
@@ -235,6 +249,7 @@ impl VerificationConfig {
 }
 
 /// Configuration for binary validation using validator-binary and executor-binary
+/// Note: The presence of this config enables binary validation; absence disables it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinaryValidationConfig {
     /// Path to validator-binary executable
@@ -245,10 +260,6 @@ pub struct BinaryValidationConfig {
     pub execution_timeout_secs: u64,
     /// Output format for binary execution
     pub output_format: String,
-    /// Enable binary validation (fallback to SSH test only)
-    pub enabled: bool,
-    /// Binary validation weight in final score calculation
-    pub score_weight: f64,
     /// Default node port for SSH tunnel cleanup
     #[serde(default = "default_node_port")]
     pub node_port: u16,
@@ -293,6 +304,12 @@ pub struct ValidationServerConfig {
     /// Base delay for workflow retry backoff (milliseconds)
     #[serde(default = "default_workflow_retry_base_delay_ms")]
     pub workflow_retry_base_delay_ms: u64,
+    /// Optional override for CPU PoW threshold (ms per iteration)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_cpu_ms_per_iteration: Option<f64>,
+    /// Optional override for storage PoW duration threshold (ms)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_storage_duration_ms: Option<u64>,
 }
 
 impl Default for ValidationServerConfig {
@@ -309,6 +326,8 @@ impl Default for ValidationServerConfig {
             server_ready_check_interval_ms: default_server_ready_check_interval_ms(),
             max_workflow_retry_attempts: default_max_workflow_retry_attempts(),
             workflow_retry_base_delay_ms: default_workflow_retry_base_delay_ms(),
+            max_cpu_ms_per_iteration: None,
+            max_storage_duration_ms: None,
         }
     }
 }
@@ -415,8 +434,6 @@ impl Default for BinaryValidationConfig {
             executor_binary_path: PathBuf::from("./executor-binary"),
             execution_timeout_secs: 1200,
             output_format: "json".to_string(),
-            enabled: true,
-            score_weight: 0.8,
             node_port: default_node_port(),
             server_mode: ValidationServerConfig::default(),
         }
@@ -541,6 +558,10 @@ fn default_rental_session_duration() -> u64 {
     0
 }
 
+fn default_api_endpoint() -> String {
+    "https://api.basilica.ai".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BillingConfig {
     /// Enable billing telemetry streaming
@@ -550,6 +571,14 @@ pub struct BillingConfig {
     /// Billing service gRPC endpoint
     #[serde(default = "default_billing_endpoint")]
     pub billing_endpoint: String,
+
+    /// Sync interval for miner delivery cache (seconds)
+    #[serde(default = "default_billing_sync_interval_secs")]
+    pub sync_interval_secs: u64,
+
+    /// Lookback window for miner delivery reads (hours)
+    #[serde(default = "default_billing_lookback_hours")]
+    pub lookback_hours: u64,
 
     /// Request timeout in seconds
     #[serde(default = "default_billing_timeout_secs")]
@@ -596,6 +625,14 @@ fn default_billing_endpoint() -> String {
     "http://127.0.0.1:50051".to_string()
 }
 
+fn default_billing_sync_interval_secs() -> u64 {
+    300
+}
+
+fn default_billing_lookback_hours() -> u64 {
+    24
+}
+
 fn default_billing_timeout_secs() -> u64 {
     30
 }
@@ -637,6 +674,8 @@ impl Default for BillingConfig {
         Self {
             enabled: default_billing_enabled(),
             billing_endpoint: default_billing_endpoint(),
+            sync_interval_secs: default_billing_sync_interval_secs(),
+            lookback_hours: default_billing_lookback_hours(),
             timeout_secs: default_billing_timeout_secs(),
             use_tls: default_billing_use_tls(),
             batch_size: default_billing_batch_size(),
@@ -664,13 +703,6 @@ pub struct ApiConfig {
     pub max_body_size: usize,
     /// Bind address for the API server
     pub bind_address: String,
-    /// Default port for miner connections
-    #[serde(default = "default_miner_port")]
-    pub miner_port: u16,
-}
-
-fn default_miner_port() -> u16 {
-    8091
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -786,7 +818,6 @@ impl Default for ValidatorConfig {
                 port: 8080,
                 ..Default::default()
             },
-            logging: LoggingConfig::default(),
             metrics: MetricsConfig::default(),
             bittensor: ValidatorBittensorConfig {
                 common: BittensorConfig {
@@ -816,7 +847,7 @@ impl Default for ValidatorConfig {
                 fallback_to_static: default_fallback_to_static(),
                 cache_miner_info_ttl: default_cache_miner_info_ttl(),
                 grpc_port_offset: None,
-                binary_validation: BinaryValidationConfig::default(),
+                binary_validation: None, // Disabled by default
                 docker_validation: DockerValidationConfig::default(),
                 storage_validation: StorageValidationConfig::default(),
                 collateral_event_scan_interval: default_collateral_event_scan_interval(),
@@ -833,12 +864,22 @@ impl Default for ValidatorConfig {
                 api_key: None,
                 max_body_size: 1024 * 1024, // 1MB
                 bind_address: "0.0.0.0:8080".to_string(),
-                miner_port: default_miner_port(),
+            },
+            bid_grpc: basilica_common::config::GrpcServerConfig {
+                listen_address: format!(
+                    "0.0.0.0:{}",
+                    basilica_common::config::DEFAULT_BID_GRPC_PORT
+                ),
+                ..Default::default()
             },
             ssh_session: SshSessionConfig::default(),
             emission: super::emission::EmissionConfig::default(),
+            bidding: super::bidding::BiddingConfig::default(),
+            pricing: super::pricing::PricingConfig::default(),
             cleanup: crate::persistence::cleanup_task::CleanupConfig::default(),
+            api_endpoint: default_api_endpoint(),
             billing: BillingConfig::default(),
+            collateral: None,
         }
     }
 }
@@ -865,6 +906,21 @@ impl ConfigValidation for ValidatorConfig {
                 key: "bittensor.axon_port".to_string(),
                 value: self.bittensor.axon_port.to_string(),
                 reason: "Axon port must be greater than 0".to_string(),
+            });
+        }
+
+        if self.api_endpoint.trim().is_empty() {
+            return Err(ConfigurationError::InvalidValue {
+                key: "api_endpoint".to_string(),
+                value: self.api_endpoint.clone(),
+                reason: "API endpoint must be set for pricing".to_string(),
+            });
+        }
+        if self.api_endpoint == self.billing.billing_endpoint {
+            return Err(ConfigurationError::InvalidValue {
+                key: "api_endpoint".to_string(),
+                value: self.api_endpoint.clone(),
+                reason: "API endpoint must route through API Gateway, not billing gRPC".to_string(),
             });
         }
 
@@ -913,6 +969,33 @@ impl ConfigValidation for ValidatorConfig {
             });
         }
 
+        // Validate bidding configuration
+        if let Err(e) = self.bidding.validate() {
+            return Err(ConfigurationError::InvalidValue {
+                key: "bidding".to_string(),
+                value: "bidding_config".to_string(),
+                reason: e.to_string(),
+            });
+        }
+
+        // Validate pricing configuration
+        if let Err(e) = self.pricing.validate() {
+            return Err(ConfigurationError::InvalidValue {
+                key: "pricing".to_string(),
+                value: "pricing_config".to_string(),
+                reason: e.to_string(),
+            });
+        }
+
+        // Validate bid gRPC configuration
+        if let Err(e) = self.bid_grpc.validate() {
+            return Err(ConfigurationError::InvalidValue {
+                key: "bid_grpc".to_string(),
+                value: "bid_grpc".to_string(),
+                reason: e.to_string(),
+            });
+        }
+
         // Validate billing configuration
         if self.billing.enabled {
             if self.billing.billing_endpoint.is_empty() {
@@ -956,9 +1039,9 @@ impl ConfigValidation for ValidatorConfig {
             }
         }
 
-        // Validate binary validation configuration
-        if self.verification.binary_validation.enabled {
-            let validator_path = &self.verification.binary_validation.validator_binary_path;
+        // Validate binary validation configuration if present (presence = enabled)
+        if let Some(ref binary_config) = self.verification.binary_validation {
+            let validator_path = &binary_config.validator_binary_path;
             if !validator_path.exists() {
                 return Err(ConfigurationError::InvalidValue {
                     key: "verification.binary_validation.validator_binary_path".to_string(),
@@ -967,12 +1050,23 @@ impl ConfigValidation for ValidatorConfig {
                 });
             }
 
-            let executor_path = &self.verification.binary_validation.executor_binary_path;
+            let executor_path = &binary_config.executor_binary_path;
             if !executor_path.exists() {
                 return Err(ConfigurationError::InvalidValue {
                     key: "verification.binary_validation.executor_binary_path".to_string(),
                     value: executor_path.display().to_string(),
                     reason: "Executor binary path does not exist".to_string(),
+                });
+            }
+        }
+
+        // Validate collateral configuration if present
+        if let Some(ref collateral) = self.collateral {
+            if let Err(e) = collateral.validate() {
+                return Err(ConfigurationError::InvalidValue {
+                    key: "collateral".to_string(),
+                    value: "collateral_config".to_string(),
+                    reason: e.to_string(),
                 });
             }
         }

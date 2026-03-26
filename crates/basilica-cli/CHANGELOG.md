@@ -7,6 +7,169 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-03-05
+
+### Added
+- Mass Compute cloud provider support (CloudProvider::MassCompute)
+
+## [0.24.0] - 2026-02-26
+
+### Added
+- `deploy restart` subcommand for triggering rolling restarts
+
+## [0.23.0] - 2026-02-25
+
+### Added
+- GPU flavour preferences: --interconnect, --region, --spot, --exclude-spot flags on gpu list, gpu up, and deploy commands
+
+## [0.22.0] - 2026-02-23
+
+### Changed
+- Version bump for release alignment
+
+## [0.21.0] - 2026-02-17
+
+### Changed
+- Refactor the UX for Bourse compute
+
+## [0.20.2] - 2026-02-15
+
+### Fixed
+- CI formatting compliance for `GpuCategory` serde tests
+
+## [0.20.1] - 2026-02-15
+
+### Fixed
+- GPU types other than A100/H100/B200 no longer display as "OTHER" in listings
+
+## [0.20.0] - 2026-02-15
+
+### Added
+- `--websocket` flag for `deploy` command to enable WebSocket support for long-lived connections
+- `--ws-idle-timeout` flag for configuring WebSocket idle timeout (60-3600 seconds, default 1800)
+- WebSocket enabled by default for `basilica summon openclaw` template
+- Accept all GPU types through secure cloud pipeline (`basilica up rtx6000`)
+
+## [0.19.0] - 2026-02-12
+
+### Added
+- `basilica deploy enroll-metadata` subcommand for toggling public metadata enrollment
+- `basilica deploy metadata` subcommand for unauthenticated public metadata lookup
+- `--public-metadata` flag for `deploy` command to enable enrollment at creation time
+- "Verified" column in deployment list table showing enrollment status
+- Public metadata line in deployment detail view
+
+## [0.18.4] - 2026-02-11
+
+### Fixed
+- `bs upgrade` no longer fails when run from a working directory different from the binary's location
+- Deployment list table now uses `Style::modern()` borders, properly cased column headers, formatted timestamps, and full URLs to match `ls`/`ps` table styling
+
+## [0.18.3] - 2026-02-11
+
+### Fixed
+- Update notifications no longer trigger incorrectly during CI releases or when already on the latest version
+
+## [0.18.2] - 2026-02-11
+
+### Added
+- `basilica summon tau` deployment template
+
+## [0.18.1] - 2026-02-10
+
+### Changed
+- Community cloud rentals now use GPU-based bid matching instead of targeting specific node IDs.
+
+### Fixed
+- Credits formatting edge case where values could display with inconsistent decimal precision.
+
+## [0.18.0] - 2026-02-08
+
+### Fixed
+- Fixed `bs upgrade` breaking the `bs` shorthand
+
+## [0.17.0] - 2026-02-04
+
+### Changed
+- Replaced `DataCrunch` provider with `Verda` in CloudProvider enum
+
+## [0.16.0] - 2026-02-02
+
+### Added
+- `basilica summon openclaw` deployment template with provider presets, model autodetect, and improved readiness output.
+
+## [0.15.0]
+
+### Added
+- Share token management for private deployments (`share-token regenerate`, `share-token status`, `share-token revoke`)
+- `--private` flag for deploy command (deployments are public by default)
+- Access column (Public/Token) in deployments list table
+- `--show-token` flag for deploy status command
+- Spot instance indicator in GPU listings, rental selectors, and status views
+
+## [0.14.0]
+
+### Added
+- Topology spread options for deploy command (`--spread-mode`, `--max-skew`, `--topology-key`)
+
+## [0.13.0]
+
+### Changed
+- Renamed product offerings in user-facing text (API and SDK unchanged):
+  - "Secure Cloud" → "The Citadel"
+  - "Community Cloud" → "The Bourse"
+  - "VIP" → "The Priory"
+  - "Deployments" → "Summons"
+- Added `summon` as visible alias for `deploy` command
+- CLI `--compute` option now uses `citadel` and `bourse` as primary values (old names remain as aliases for backward compatibility)
+
+### Fixed
+- Display of logs in `deploy logs`
+
+## [0.12.0]
+
+### Added
+- Volume management commands for persistent storage across rentals
+  - `volumes create` - Create new volumes with configurable size and region
+  - `volumes list` - List all volumes with status and attachment info
+  - `volumes delete` - Delete volumes that are not attached
+  - `volumes attach` - Attach a volume to an active rental
+  - `volumes detach` - Detach a volume from a rental
+- Show IP address in interactive rental selection for use to be able to differentiate between rentals
+
+## [0.11.0]
+
+### Added
+- GPU interconnect type display in offering selection prompt (e.g., `8x H100 (SXM5)` instead of just `8x H100`)
+- CPU-only machine rental support across all commands (`ls`, `up`, `ps`, `status`, `ssh`)
+
+### Fixed
+- Price-max filter now correctly applies to total community node cost
+
+### Removed
+- SSH access is now always enabled; removed no-ssh flag for simplified rental flow
+
+## [0.10.1]
+
+### Added
+- Support for `vip` rentals
+
+## [0.10.0]
+
+### Added
+- `basilica deploy vllm` command for deploying vLLM inference servers
+  - Configurable tensor parallelism, dtype, and quantization options
+  - Automatic GPU requirement detection based on model names
+  - HuggingFace model cache storage configuration
+- `basilica deploy sglang` command for deploying SGLang inference servers
+  - Configurable context length and memory fraction settings
+  - Same model-based GPU detection as vLLM
+- SSH key ID is now displayed in `ssh-keys list` output for easier key management
+
+### Changed
+- Default GPU for model sizing recommendations updated from RTX A4000 (16GB) to A100 (40GB)
+- GPU recommendations now use canonical A100/H100 model names
+
 ## [0.9.0]
 
 ### Added
