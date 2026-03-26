@@ -18,7 +18,6 @@ mod collateral;
 mod config;
 mod gpu;
 mod grpc;
-mod journal;
 mod k8s_profile_publisher;
 mod metrics;
 mod miner_prover;
