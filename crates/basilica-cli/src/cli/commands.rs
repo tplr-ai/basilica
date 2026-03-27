@@ -106,6 +106,10 @@ pub enum Commands {
         /// Stop all active rentals
         #[arg(long, conflicts_with = "target")]
         all: bool,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
     },
 
     /// Restart instance container
