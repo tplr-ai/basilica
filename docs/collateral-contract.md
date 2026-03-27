@@ -4,7 +4,9 @@ This contract is derived from the upstream project at [Datura-ai/celium-collater
 
 > **Terminology Note**: This contract uses "executor" terminology to refer to **GPU nodes** (individual GPU machines). The Basilica executor binary has been deprecated and replaced with direct SSH access to GPU nodes. When you see "executor UUID" or "executor ID" in this document, it refers to the UUID/ID of a specific GPU node, not the deprecated executor software.
 
-> **Purpose**: Manage miner collateral in the Bittensor ecosystem and enable the subnet owner (contract admin)—or an explicitly authorized slasher—to penalize misbehavior. Slashing authority is currently centralized to the admin; future upgrades may delegate or decentralize this capability.
+> **Purpose**: Manage miner collateral in the Bittensor ecosystem and enable a trustee address to penalize misbehavior.
+> On-chain authority is currently **trustee-only** for `slashCollateral` and `denyReclaimRequest`.
+> The admin controls governance functions (e.g. trustee rotation and upgrades), but does not slash/deny unless also configured as trustee.
 
 > **Design**: One collateral contract per one subnet.
 
@@ -46,12 +48,15 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
   Validators may choose to favor miners with higher collateral when assigning tasks, incentivizing greater stakes for reliable performance.
 
-- **Admin Slashing**
-  The subnet owner (contract admin) or an explicitly authorized slasher can penalize a misbehaving miner by slashing some or all of the miner's collateral.
+- **Trustee Slashing**
+  The configured trustee address can penalize a misbehaving miner by slashing some or all of the miner's collateral.
 
 - **Automatic Release**
 
-  If the authorized slasher/admin does not respond to a miner's reclaim request within a configured deadline, the miner can reclaim their stake, preventing indefinite lock-ups.
+  Reclaim timeout uses explicit boundary semantics:
+  - Trustee denial is valid only while `now < denyTimeout`.
+  - Finalization is valid when `now >= denyTimeout`.
+  This prevents indefinite lock-ups and removes cutoff ambiguity.
 
 - **Trustless & Auditable**
 
@@ -59,11 +64,11 @@ This contract creates a **trust-minimized interaction** between miners and valid
 
 - **Off-Chain Justifications**
 
-  Functions `slashCollateral`, `reclaimCollateral`, and `denyReclaim` include URL fields (and content MD5 checksums) to reference off-chain
+  Functions `slashCollateral`, `reclaimCollateral`, and `denyReclaimRequest` include URL fields (and content SHA-256 checksums) to reference off-chain
   explanations or evidence for each action, ensuring decisions are transparent and auditable.
 
 - **Configurable Minimum Bond & Decision Deadline**
-  Defines a minimum stake requirement and a strict timeline for admin/slasher responses.
+  Defines a minimum stake requirement and a strict timeline for trustee responses.
 
 > **Important notice on addressing**
 >
@@ -105,16 +110,20 @@ Below is a typical sequence for integrating and using this collateral contract w
 
   - Each miner **creates an Ethereum (H160) wallet**, links it to their hotkey, and funds it with enough TAO for transaction fees.
   - Miners **retrieve** the owner's contract address from the chain or another trusted source.
-  - Upon confirmation, miners **deposit** collateral by calling the contract's `deposit(executorUuid)` function, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract interface) to associate the collateral with specific GPU nodes.
+  - Upon confirmation, miners **deposit** collateral by calling `deposit(hotkey, nodeId, alphaHotkey, alphaAmount)`, specifying the **GPU node UUID** (`nodeId`) to associate collateral with a specific GPU node.
+  - Current tx policy in Basilica tooling is **alpha-primary**: CLI/Rust tx paths send alpha inputs and do not expose TAO `msg.value` knobs.
+  - The contract still tracks both TAO and alpha, and validator event sync persists both assets.
   - Confirm on-chain that your collateral has been successfully locked for that GPU node
 
 - **Slashing Misbehaving Miners**
-  If a miner is found violating subnet rules (e.g., returning invalid responses), the subnet owner (admin) or an authorized slasher **calls** `slashCollateral()` for a full slash or `slashCollateralAmount()` for a partial slash, providing the `hotkey`, `executorUuid`, `amount` (partial only), and justification details to reduce the miner’s collateral.
-  Partial slashing requires the upgraded contract that includes `slashCollateralAmount` plus regenerated ABI/CLI bindings.
+  If a miner is found violating subnet rules (e.g., returning invalid responses), the trustee **calls** `slashCollateral(hotkey, nodeId, slashAmount, slashAlphaAmount, ...)` with justification details.
+  Current validator/CLI slash policy is alpha-primary (`slashAmount` fixed to 0 in tx tooling).
 
 - **Reclaiming Collateral**
   - When miners wish to withdraw their stake, they **initiate a reclaim** by calling `reclaimCollateral()`, specifying the **GPU node UUID** (labeled as "executor UUID" in the contract) associated with the collateral.
-  - If the validator does not deny the request before the deadline, miners (or anyone) can **finalize** it using `finalizeReclaim()`, thus unlocking and returning the collateral.
+  - Timeout boundary is explicit:
+    - Validator/trustee can deny only when `now < denyTimeout`.
+    - Miners (or anyone) can finalize when `now >= denyTimeout`.
 
 ## Usage Guides
 
@@ -144,7 +153,7 @@ You need replace the variable with the correct value like contract address.
     collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query netuid
   ```
 
-  - Run deposit command to initiate the deposit transaction with your specified amount of $TAO. running `collateral-cli tx deposit`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+  - Run deposit command to initiate an **alpha** collateral deposit. The current CLI tx surface is alpha-primary (no TAO `--amount` flag).
 
   ```shell
   #!/usr/bin/env bash
@@ -154,18 +163,21 @@ You need replace the variable with the correct value like contract address.
   export NETWORK=local
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
-  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export ALPHA_HOTKEY=0x
+  export ALPHA_AMOUNT=5000000000  # RAO (1e9 = 1 alpha)
   # WARNING: never commit or paste real keys in scripts
   export PRIVATE_KEY=0x
   # deposit
   collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" tx deposit \
   --private-key "$PRIVATE_KEY" \
   --hotkey "$HOTKEY" \
-  --amount 10 \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$NODE_ID" \
+  --alpha-hotkey "$ALPHA_HOTKEY" \
+  --alpha-amount "$ALPHA_AMOUNT"
   ```
 
-  - Confirm on-chain that your collateral has been successfully locked for that validator. running `collateral-cli query executor-to-miner` and `collateral-cli query collaterals`, reference in [`flow.sh`](/crates/collateral-contract/flow.sh)
+  - Confirm on-chain that your collateral has been successfully locked for that validator via `query node-to-miner` and `query collaterals`.
 
   ```shell
   #!/usr/bin/env bash
@@ -173,31 +185,34 @@ You need replace the variable with the correct value like contract address.
   export NETWORK=local
   export CONTRACT_ADDRESS=0x
   export HOTKEY=0x
-  export EXECUTOR_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
+  export NODE_ID=6339ba4f-60f9-45c2-9d95-2b755bb57ca6
 
 
-  # check the executor to miner, miner is not zero if deposit is successful
+  # check node ownership, miner is not zero if deposit is successful
 
-  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query executor-to-miner \
+  collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query node-to-miner \
   --hotkey "$HOTKEY" \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$NODE_ID"
 
-  # check the collaterals should be amount you deposit
+  # check TAO + alpha collateral should reflect your deposit
 
   collateral-cli --network "$NETWORK" --contract-address "$CONTRACT_ADDRESS" query collaterals \
   --hotkey "$HOTKEY" \
-  --executor-id "$EXECUTOR_ID"
+  --node-id "$NODE_ID"
   ```
 
 - **Reclaim Collateral**
-- Initiate the reclaim process by running `collateral-cli tx reclaim-collateral`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+- Initiate the reclaim process by running `collateral-cli tx reclaim-collateral`.
 - Wait for the validator's response or for the configured inactivity timeout to pass.
-- If the validator does not deny your request by the deadline, running `collateral-cli tx finalize-reclaim`. reference in [`flow.sh`](/crates/collateral-contract/flow.sh).
+- Deny/finalize cutoff semantics are explicit:
+  - `denyReclaimRequest` is valid only while `now < denyTimeout`.
+  - `finalizeReclaim` is valid when `now >= denyTimeout`.
+- If the timeout has reached or passed, run `collateral-cli tx finalize-reclaim`.
 - Verify on-chain that your balance has been updated accordingly.
 
 ### As a validator.
 
-The validators won't evaluate or list the miners' executors as available, if the miner hasn't backed their executors with a collateral stake. Thus, the miner will only receive weights, based on the available executors.
+Validators prioritize nodes with stronger collateral (`sufficient`/`warning`) and treat `undercollateralized`/`unknown` nodes as fallback candidates. In the current policy, collateral does not hard-exclude nodes from rental selection by itself.
 
 ### As a Owner, you can:
 
@@ -231,18 +246,36 @@ set -euo pipefail
 
 export NETUID=39
 export TRUSTEE_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
-export MIN_COLLATERAL=1
+export MIN_COLLATERAL=100000000000000000
+export MIN_ALPHA_COLLATERAL=5000000000
 export DECISION_TIMEOUT=1
 export ADMIN_ADDRESS=0xf24FF3a9CF04c71Dbc94D0b566f7A27B94566cac
+export VALIDATOR_HOTKEY=0x900dd1d8d4d94772b09fc1c82a74ea4af1471ba5594371ccc10632a1611b1945
+export TAO_DEPOSITS_ENABLED=true
+export ALPHA_DEPOSITS_ENABLED=true
 # WARNING: never commit or paste real keys in scripts
 export PRIVATE_KEY=0x
 # export RPC_URL=https://lite.chain.opentensor.ai:443
 # export RPC_URL=https://test.finney.opentensor.ai
 export RPC_URL=http://localhost:9944
-forge script script/DeployUpgradeable.s.sol \
- --rpc-url "$RPC_URL" \
- --private-key "$PRIVATE_KEY" \
- --broadcast
+impl_out="$(FOUNDRY_PROFILE=local forge create src/CollateralUpgradeable.sol:CollateralUpgradeable \
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --legacy \
+  --broadcast)"
+IMPLEMENTATION_ADDRESS="$(echo "$impl_out" | awk '/Deployed to:/ {print $3}')"
+
+INIT_DATA="$(cast calldata "initialize(uint16,address,uint256,uint256,uint64,address,bytes32,bool,bool)" \
+  "$NETUID" "$TRUSTEE_ADDRESS" "$MIN_COLLATERAL" "$MIN_ALPHA_COLLATERAL" "$DECISION_TIMEOUT" "$ADMIN_ADDRESS" "$VALIDATOR_HOTKEY" \
+  "$TAO_DEPOSITS_ENABLED" "$ALPHA_DEPOSITS_ENABLED")"
+
+proxy_out="$(FOUNDRY_PROFILE=local forge create lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy \
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --legacy \
+  --broadcast \
+  --constructor-args "$IMPLEMENTATION_ADDRESS" "$INIT_DATA")"
+PROXY_ADDRESS="$(echo "$proxy_out" | awk '/Deployed to:/ {print $3}')"
 ```
 
 - Record the deployed contract address and publish it.
@@ -255,7 +288,7 @@ Depositing collateral not only demonstrates a miner's commitment to the network 
 
 ### When will a miner's deposit be slashed?
 
-Subnet owner will slash when miner stops providing GPU node access or fails to meet service commitments, such as when a customer loses SSH access to the rental container. In the future, all validators will take the responsibility and privilege to slash.
+The configured trustee will slash when miner stops providing GPU node access or fails to meet service commitments, such as when a customer loses SSH access to the rental container.
 
 ### When will a miner's reclaim request be declined?
 

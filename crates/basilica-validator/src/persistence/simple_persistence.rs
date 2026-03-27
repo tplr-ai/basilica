@@ -88,7 +88,6 @@ impl SimplePersistence {
 
     async fn initialize_collateral_scan_status(&self) -> Result<(), anyhow::Error> {
         use chrono::Utc;
-        use collateral_contract::config::CONTRACT_DEPLOYED_BLOCK_NUMBER;
         use tracing::warn;
 
         let now = Utc::now().to_rfc3339();
@@ -98,7 +97,7 @@ impl SimplePersistence {
         "#;
 
         let result = sqlx::query(insert_query)
-            .bind(CONTRACT_DEPLOYED_BLOCK_NUMBER as i64)
+            .bind(0i64)
             .bind(now)
             .execute(&self.pool)
             .await;

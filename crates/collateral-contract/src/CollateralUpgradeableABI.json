@@ -14,45 +14,6 @@
   },
   {
     "type": "function",
-    "name": "CONTRACT_COLDKEY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "CONTRACT_HOTKEY",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "DECISION_TIMEOUT",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint64",
-        "internalType": "uint64"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "DEFAULT_ADMIN_ROLE",
     "inputs": [],
     "outputs": [
@@ -60,6 +21,19 @@
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "IADDRESS_MAPPING_ADDRESS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -92,39 +66,13 @@
   },
   {
     "type": "function",
-    "name": "MIN_COLLATERAL_INCREASE",
+    "name": "TRUSTEE_ROLE",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "NETUID",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint16",
-        "internalType": "uint16"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "TRUSTEE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -181,6 +129,19 @@
   },
   {
     "type": "function",
+    "name": "alphaDepositsEnabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "burnRegister",
     "inputs": [],
     "outputs": [],
@@ -188,24 +149,26 @@
   },
   {
     "type": "function",
-    "name": "collaterals",
-    "inputs": [
+    "name": "contractColdkey",
+    "inputs": [],
+    "outputs": [
       {
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "",
-        "type": "bytes16",
-        "internalType": "bytes16"
       }
     ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "decisionTimeout",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "uint64",
+        "internalType": "uint64"
       }
     ],
     "stateMutability": "view"
@@ -225,9 +188,9 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
-        "internalType": "bytes16"
+        "name": "urlContentSha256",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -238,7 +201,7 @@
     "name": "deposit",
     "inputs": [
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -273,6 +236,149 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getActiveNodeCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getActiveReclaimCount",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllCollaterals",
+    "inputs": [
+      {
+        "name": "offset",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "results",
+        "type": "tuple[]",
+        "internalType": "struct CollateralUpgradeable.NodeCollateral[]",
+        "components": [
+          {
+            "name": "minerHotkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "nodeId",
+            "type": "bytes16",
+            "internalType": "bytes16"
+          },
+          {
+            "name": "miner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "taoCollateral",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "alphaCollateral",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllReclaims",
+    "inputs": [
+      {
+        "name": "offset",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "limit",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "results",
+        "type": "tuple[]",
+        "internalType": "struct CollateralUpgradeable.ReclaimInfo[]",
+        "components": [
+          {
+            "name": "reclaimRequestId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "minerHotkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "nodeId",
+            "type": "bytes16",
+            "internalType": "bytes16"
+          },
+          {
+            "name": "miner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "amount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "alphaColdkey",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "alphaAmount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "denyTimeout",
+            "type": "uint64",
+            "internalType": "uint64"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -372,22 +478,27 @@
     "name": "initialize",
     "inputs": [
       {
-        "name": "netuid",
+        "name": "netuid_",
         "type": "uint16",
         "internalType": "uint16"
       },
       {
-        "name": "trustee",
+        "name": "trustee_",
         "type": "address",
         "internalType": "address"
       },
       {
-        "name": "minCollateralIncrease",
+        "name": "minCollateralIncrease_",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "decisionTimeout",
+        "name": "minAlphaCollateralIncrease_",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "decisionTimeout_",
         "type": "uint64",
         "internalType": "uint64"
       },
@@ -397,13 +508,62 @@
         "internalType": "address"
       },
       {
-        "name": "alphaHotkey",
+        "name": "validatorHotkey_",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "taoDepositsEnabled_",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "alphaDepositsEnabled_",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "minAlphaCollateralIncrease",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "minCollateralIncrease",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "netuid",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -431,6 +591,30 @@
   },
   {
     "type": "function",
+    "name": "ownerColdkeys",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes16",
+        "internalType": "bytes16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "proxiableUUID",
     "inputs": [],
     "outputs": [
@@ -447,27 +631,12 @@
     "name": "reclaimCollateral",
     "inputs": [
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "internalType": "bytes32"
       },
       {
         "name": "nodeId",
-        "type": "bytes16",
-        "internalType": "bytes16"
-      },
-      {
-        "name": "alphaColdkey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "url",
-        "type": "string",
-        "internalType": "string"
-      },
-      {
-        "name": "urlContentMd5Checksum",
         "type": "bytes16",
         "internalType": "bytes16"
       }
@@ -487,7 +656,7 @@
     ],
     "outputs": [
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -562,23 +731,10 @@
   },
   {
     "type": "function",
-    "name": "setContractColdkey",
-    "inputs": [
-      {
-        "name": "alphaColdkey",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
     "name": "slashCollateral",
     "inputs": [
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "internalType": "bytes32"
       },
@@ -603,9 +759,9 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
-        "internalType": "bytes16"
+        "name": "urlContentSha256",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "outputs": [],
@@ -632,6 +788,69 @@
   },
   {
     "type": "function",
+    "name": "taoCollaterals",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "",
+        "type": "bytes16",
+        "internalType": "bytes16"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "taoDepositsEnabled",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "trustee",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "updateAlphaDepositsEnabled",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "updateDecisionTimeout",
     "inputs": [
       {
@@ -645,12 +864,38 @@
   },
   {
     "type": "function",
+    "name": "updateMinAlphaCollateralIncrease",
+    "inputs": [
+      {
+        "name": "newMinIncrease",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "updateMinCollateralIncrease",
     "inputs": [
       {
         "name": "newMinIncrease",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updateTaoDepositsEnabled",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "outputs": [],
@@ -688,20 +933,27 @@
     "stateMutability": "payable"
   },
   {
+    "type": "function",
+    "name": "validatorHotkey",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
-    "name": "AlphaColdkeyUpdated",
+    "name": "AlphaDepositsEnabledUpdated",
     "inputs": [
       {
-        "name": "oldAlphaColdkey",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "newAlphaColdkey",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
+        "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -761,10 +1013,10 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
+        "name": "urlContentSha256",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "bytes16"
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false
@@ -774,7 +1026,7 @@
     "name": "Deposit",
     "inputs": [
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
@@ -827,6 +1079,25 @@
   },
   {
     "type": "event",
+    "name": "MinAlphaCollateralIncreaseUpdated",
+    "inputs": [
+      {
+        "name": "oldMinIncrease",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newMinIncrease",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "MinCollateralIncreaseUpdated",
     "inputs": [
       {
@@ -855,7 +1126,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
@@ -895,18 +1166,6 @@
         "type": "uint64",
         "indexed": false,
         "internalType": "uint64"
-      },
-      {
-        "name": "url",
-        "type": "string",
-        "indexed": false,
-        "internalType": "string"
-      },
-      {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
-        "indexed": false,
-        "internalType": "bytes16"
       }
     ],
     "anonymous": false
@@ -922,7 +1181,7 @@
         "internalType": "uint256"
       },
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
@@ -1040,7 +1299,7 @@
     "name": "Slashed",
     "inputs": [
       {
-        "name": "hotkey",
+        "name": "minerHotkey",
         "type": "bytes32",
         "indexed": true,
         "internalType": "bytes32"
@@ -1076,10 +1335,23 @@
         "internalType": "string"
       },
       {
-        "name": "urlContentMd5Checksum",
-        "type": "bytes16",
+        "name": "urlContentSha256",
+        "type": "bytes32",
         "indexed": false,
-        "internalType": "bytes16"
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TaoDepositsEnabledUpdated",
+    "inputs": [
+      {
+        "name": "enabled",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       }
     ],
     "anonymous": false
@@ -1150,12 +1422,62 @@
   },
   {
     "type": "error",
+    "name": "AddressMappingPrecompileCallFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AddressMappingPrecompileInvalidResponse",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AdminAddressZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "AlphaDepositsDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "AmountZero",
     "inputs": []
   },
   {
     "type": "error",
     "name": "BeforeDenyTimeout",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "BurnRegisterCallFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ContractColdkeyZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ContractStakeDidNotIncrease",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ContractStakeTooLowForWithdraw",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DecisionTimeoutZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "DepositAlphaCallFailed",
     "inputs": []
   },
   {
@@ -1186,11 +1508,6 @@
   },
   {
     "type": "error",
-    "name": "InsufficientCollateralForReclaim",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "InsufficientCollateralForSlash",
     "inputs": []
   },
@@ -1206,7 +1523,42 @@
   },
   {
     "type": "error",
+    "name": "InvalidDerivedContractColdkey",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidDerivedOwnerColdkey",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MinAlphaCollateralIncreaseZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MinCollateralIncreaseZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MinerMustBeEOA",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MoveStakeCallFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NewTrusteeAddressZero",
     "inputs": []
   },
   {
@@ -1221,11 +1573,6 @@
   },
   {
     "type": "error",
-    "name": "NotTrustee",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "PastDenyTimeout",
     "inputs": []
   },
@@ -1236,7 +1583,43 @@
   },
   {
     "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeCastOverflowedUintDowncast",
+    "inputs": [
+      {
+        "name": "bits",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "value",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "TaoDepositsDisabled",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "TransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TrusteeAddressZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TrusteeRoleDirectModificationForbidden",
     "inputs": []
   },
   {
@@ -1254,5 +1637,15 @@
         "internalType": "bytes32"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "ValidatorHotkeyZero",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "WithdrawAlphaCallFailed",
+    "inputs": []
   }
 ]

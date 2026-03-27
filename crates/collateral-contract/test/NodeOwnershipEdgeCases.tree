@@ -1,0 +1,46 @@
+NodeOwnershipEdgeCasesTest
+├── when previous miner has finalized reclaim
+│   ├── it clears nodeToMiner after finalize
+│   ├── it removes node from active tracking after finalize
+│   └── it allows a new miner to claim the same node
+├── when another miner tries to deposit during active reclaim
+│   ├── it preserves ownership for original miner
+│   └── it reverts with NodeNotOwned
+├── when trustee fully slashes with no pending reclaims
+│   ├── it clears nodeToMiner after full slash
+│   ├── it removes node from active tracking after full slash
+│   └── it allows a new miner to claim the same node after full slash
+├── when trustee partially slashes with no pending reclaims
+│   └── it preserves ownership and active tracking on partial slash
+├── when trustee denies reclaim with non-zero remaining balance
+│   ├── it preserves nodeToMiner after deny with balance
+│   ├── it reverts when another miner tries to deposit after deny
+│   └── it allows original miner to re-deposit and reclaim after deny
+├── when removing the last element via swap-and-pop
+│   ├── it decrements active node count
+│   ├── it preserves ordering of remaining elements without swap
+│   └── it allows re-claiming the vacated node slot
+├── when removing the first element via swap-and-pop
+│   ├── it decrements active node count
+│   ├── it moves last element into first position
+│   └── it preserves remaining nodes collateral data after swap
+├── when multiple consecutive removals occur via swap-and-pop
+│   ├── it maintains correct active set after first removal
+│   ├── it maintains correct active set after second removal
+│   └── it allows continued operations on remaining nodes
+├── when removing a reclaim from the middle of the active reclaim set
+│   ├── it moves last reclaim id into the vacated slot
+│   └── it preserves correct active reclaim set ordering
+├── when removing the first reclaim via swap-and-pop
+│   ├── it moves last reclaim id into first position
+│   └── it preserves remaining reclaims after swap
+├── when multiple consecutive reclaim removals occur
+│   ├── it maintains correct active set after first reclaim removal
+│   └── it maintains correct active set after second reclaim removal
+├── when miner re-deposits during an active reclaim
+│   ├── it does not include re-deposit amount in the original reclaim
+│   ├── it preserves ownership after original reclaim finalizes
+│   └── it allows subsequent reclaim of the extra deposit
+└── when a previously swapped reclaim is subsequently removed
+    ├── it uses the updated index to locate and remove the swapped reclaim
+    └── it produces a correct active set after removing the swapped reclaim

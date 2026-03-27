@@ -14,7 +14,7 @@ use config::{LOCAL_RPC_URL, LOCAL_WS_URL, TEST_CHAIN_ID, TEST_RPC_URL};
 
 // function to initialize the contract
 sol! {
-    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint64 decisionTimeout, address admin);
+    function initialize(uint16 netuid, address trustee, uint256 minCollateralIncrease, uint256 minAlphaCollateralIncrease, uint64 decisionTimeout, address admin, bytes32 alphaHotkey, bool taoDepositsEnabled, bool alphaDepositsEnabled);
 }
 
 #[allow(dead_code)]
@@ -80,8 +80,10 @@ async fn test_collateral_deploy() {
     let netuid = 1;
     let trustee = signer.address();
     let min_collateral_increase = U256::from(1_000_000_000_000_000_000u128); // 1 TAO
+    let min_alpha_collateral_increase = U256::from(2_000_000_000u128); // 2 alpha in RAO
     let decision_timeout = 3600u64; // 1 hour
     let admin = signer.address();
+    let alpha_hotkey = [2u8; 32];
 
     let contract = CollateralUpgradeable::deploy(provider.clone())
         .await
@@ -94,8 +96,12 @@ async fn test_collateral_deploy() {
             netuid,
             trustee,
             minCollateralIncrease: min_collateral_increase,
+            minAlphaCollateralIncrease: min_alpha_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
+            alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),
+            taoDepositsEnabled: true,
+            alphaDepositsEnabled: false,
         }
         .abi_encode(),
     );
@@ -105,42 +111,55 @@ async fn test_collateral_deploy() {
         .unwrap();
 
     // Test deposit
-    let hotkey = [1u8; 32];
+    let miner_hotkey = [1u8; 32];
     let node_id = 1u128;
     let alpha_hotkey = [2u8; 32];
-    let alpha_amount = U256::from(2_000_000_000_000_000_000u128); // 2 Alpha
 
     // Call through proxy address
     let proxied = CollateralUpgradeable::new(*proxy.address(), provider.clone());
 
+    // Deposit TAO only (alphaDepositsEnabled is false)
     let tx = proxied
         .deposit(
-            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
             FixedBytes::from_slice(&alpha_hotkey),
-            alpha_amount,
+            U256::ZERO,
         )
-        .value(U256::ZERO);
+        .value(min_collateral_increase);
     let tx = tx.send().await.unwrap();
     let receipt = tx.get_receipt().await.unwrap();
     println!("Deposit receipt: {:?}", receipt);
 
     // Test get methods
-    let netuid_result = proxied.NETUID().call().await.unwrap();
+    let netuid_result = proxied.netuid().call().await.unwrap();
     assert_eq!(netuid_result, netuid);
 
-    let trustee_result = proxied.TRUSTEE().call().await.unwrap();
+    let trustee_result = proxied.trustee().call().await.unwrap();
     assert_eq!(trustee_result, trustee);
 
-    let min_collateral_increase_result = proxied.MIN_COLLATERAL_INCREASE().call().await.unwrap();
+    let min_collateral_increase_result = proxied.minCollateralIncrease().call().await.unwrap();
     assert_eq!(min_collateral_increase_result, min_collateral_increase);
 
-    let decision_timeout_result = proxied.DECISION_TIMEOUT().call().await.unwrap();
+    let min_alpha_collateral_increase_result =
+        proxied.minAlphaCollateralIncrease().call().await.unwrap();
+    assert_eq!(
+        min_alpha_collateral_increase_result,
+        min_alpha_collateral_increase
+    );
+
+    let tao_deposits_enabled_result = proxied.taoDepositsEnabled().call().await.unwrap();
+    assert!(tao_deposits_enabled_result);
+
+    let alpha_deposits_enabled_result = proxied.alphaDepositsEnabled().call().await.unwrap();
+    assert!(!alpha_deposits_enabled_result);
+
+    let decision_timeout_result = proxied.decisionTimeout().call().await.unwrap();
     assert_eq!(decision_timeout_result, decision_timeout);
 
     let node_to_miner_result = proxied
         .nodeToMiner(
-            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
         )
         .call()
@@ -149,24 +168,24 @@ async fn test_collateral_deploy() {
     assert_eq!(node_to_miner_result, signer.address());
 
     let collaterals_result = proxied
-        .collaterals(
-            FixedBytes::from_slice(&hotkey),
+        .taoCollaterals(
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
         )
         .call()
         .await
         .unwrap();
-    assert_eq!(collaterals_result, U256::ZERO);
+    assert_eq!(collaterals_result, min_collateral_increase);
 
     let alpha_collaterals_result = proxied
         .alphaCollaterals(
-            FixedBytes::from_slice(&hotkey),
+            FixedBytes::from_slice(&miner_hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
         )
         .call()
         .await
         .unwrap();
-    assert_eq!(alpha_collaterals_result, alpha_amount);
+    assert_eq!(alpha_collaterals_result, U256::ZERO);
 }
 
 #[tokio::test]
@@ -208,16 +227,22 @@ async fn test_deploy_proxy_in_testnet() {
     let netuid = 1;
     let trustee = signer.address();
     let min_collateral_increase = U256::from(1);
+    let min_alpha_collateral_increase = U256::from(2_000_000_000u128); // 2 alpha in RAO
     let decision_timeout = 1; // 1 hour
     let admin = signer.address();
+    let alpha_hotkey = [2u8; 32];
 
     let data: Bytes = Bytes::from(
         initializeCall {
             netuid,
             trustee,
             minCollateralIncrease: min_collateral_increase,
+            minAlphaCollateralIncrease: min_alpha_collateral_increase,
             decisionTimeout: decision_timeout,
             admin,
+            alphaHotkey: FixedBytes::from_slice(&alpha_hotkey),
+            taoDepositsEnabled: false,
+            alphaDepositsEnabled: true,
         }
         .abi_encode(),
     );

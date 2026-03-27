@@ -1,11 +1,8 @@
 use anyhow::Result;
 use basilica_validator::basilica_api::ValidatorSigner;
 use basilica_validator::collateral::evidence::EvidenceStore;
-use basilica_validator::collateral::grace_tracker::GracePeriodTracker;
 use basilica_validator::collateral::SlashExecutor;
 use basilica_validator::config::collateral::CollateralConfig;
-use basilica_validator::persistence::SimplePersistence;
-use sqlx::SqlitePool;
 use std::sync::Arc;
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -38,13 +35,8 @@ async fn test_collateral_slash_flow_writes_signed_evidence() {
         config.evidence_base_url.clone(),
         config.evidence_storage_path.clone(),
     );
-    let pool = SqlitePool::connect(":memory:").await.unwrap();
-    let persistence = SimplePersistence::with_pool(pool);
-    persistence.run_migrations().await.unwrap();
-    let persistence = Arc::new(persistence);
-    let grace_tracker = Arc::new(GracePeriodTracker::new(persistence, config.grace_period()));
     let signer = Arc::new(TestSigner);
-    let executor = SlashExecutor::new(config, store, grace_tracker, None, Some(signer));
+    let executor = SlashExecutor::new(config, store, None, Some(signer));
 
     let node_id = Uuid::new_v4().to_string();
     executor

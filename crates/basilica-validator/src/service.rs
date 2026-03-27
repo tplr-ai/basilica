@@ -4,7 +4,6 @@ use crate::bittensor_core::{ChainRegistration, WeightSetter};
 use crate::collateral::collateral_scan::Collateral;
 use crate::collateral::evaluator::CollateralEvaluator;
 use crate::collateral::evidence::EvidenceStore;
-use crate::collateral::grace_tracker::GracePeriodTracker;
 use crate::collateral::manager::CollateralManager;
 use crate::collateral::SlashExecutor;
 use crate::config::ValidatorConfig;
@@ -40,7 +39,8 @@ struct RuntimeHandles {
     api_handler_task: JoinHandle<()>,
     registration_server_task: JoinHandle<()>,
     cleanup_task: Option<JoinHandle<()>>,
-    collateral_scan_task: JoinHandle<()>,
+    collateral_scanner: Option<Collateral>,
+    collateral_scanner_task: Option<JoinHandle<()>>,
 }
 
 struct TaskInputs {
@@ -49,6 +49,7 @@ struct TaskInputs {
     api_handler: ApiHandler,
     persistence: Arc<SimplePersistence>,
     collateral_manager: Option<Arc<CollateralManager>>,
+    collateral_evaluator: Option<Arc<CollateralEvaluator>>,
     gpu_profile_repo: Arc<GpuProfileRepository>,
     validator_ssh_public_key: String,
     api_client: Arc<BasilicaApiClient>,
@@ -100,7 +101,7 @@ impl ValidatorService {
         );
 
         let collateral_metrics = validator_metrics.as_ref().map(|m| m.prometheus());
-        let (collateral_manager, slash_executor) = self
+        let (collateral_manager, slash_executor, collateral_evaluator) = self
             .init_collateral_components(
                 persistence_arc.clone(),
                 collateral_metrics.clone(),
@@ -119,7 +120,6 @@ impl ValidatorService {
             .init_rental_manager(
                 persistence_arc.clone(),
                 validator_metrics.as_ref(),
-                collateral_manager.clone(),
                 slash_executor.clone(),
                 &validator_hotkey,
             )
@@ -148,6 +148,7 @@ impl ValidatorService {
                 api_handler,
                 persistence: persistence_arc.clone(),
                 collateral_manager: collateral_manager.clone(),
+                collateral_evaluator,
                 gpu_profile_repo: gpu_profile_repo.clone(),
                 validator_ssh_public_key,
                 api_client,
@@ -158,7 +159,7 @@ impl ValidatorService {
         signal::ctrl_c().await?;
         info!("Shutdown signal received, stopping validator...");
 
-        self.shutdown(handles);
+        self.shutdown(handles).await;
 
         info!("Validator shutdown complete");
         Ok(())
@@ -267,7 +268,6 @@ impl ValidatorService {
             api_client,
             gpu_profile_repo,
             validator_metrics.map(|m| Arc::new(m.clone())),
-            self.config.collateral.as_ref().map(|c| c.grace_period()),
         )?;
         Ok(Arc::new(weight_setter))
     }
@@ -305,26 +305,22 @@ impl ValidatorService {
         collateral_metrics: Option<Arc<ValidatorPrometheusMetrics>>,
         signer: Arc<BittensorService>,
         api_client: Arc<BasilicaApiClient>,
-    ) -> Result<(Option<Arc<CollateralManager>>, Option<Arc<SlashExecutor>>)> {
+    ) -> Result<(
+        Option<Arc<CollateralManager>>,
+        Option<Arc<SlashExecutor>>,
+        Option<Arc<CollateralEvaluator>>,
+    )> {
         let Some(collateral_config) = self.config.collateral.clone() else {
-            return Ok((None, None));
+            return Ok((None, None, None));
         };
         if collateral_config.shadow_mode {
             warn!("Collateral shadow_mode is enabled; on-chain slashing is disabled");
         }
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            persistence.clone(),
-            collateral_config.grace_period(),
-        ));
-        let evaluator = Arc::new(CollateralEvaluator::new(
-            collateral_config.clone(),
-            grace_tracker.clone(),
-        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(collateral_config.clone()));
         let collateral_manager = Arc::new(CollateralManager::new(
             persistence.clone(),
             api_client,
-            evaluator,
-            grace_tracker.clone(),
+            evaluator.clone(),
             self.config.bittensor.common.netuid,
             collateral_metrics.clone(),
         ));
@@ -332,11 +328,14 @@ impl ValidatorService {
         let slash_executor = Arc::new(SlashExecutor::new(
             collateral_config,
             evidence_store,
-            grace_tracker,
             collateral_metrics,
             Some(signer),
         ));
-        Ok((Some(collateral_manager), Some(slash_executor)))
+        Ok((
+            Some(collateral_manager),
+            Some(slash_executor),
+            Some(evaluator),
+        ))
     }
 
     fn init_miner_prover(
@@ -360,7 +359,6 @@ impl ValidatorService {
         &self,
         persistence: Arc<SimplePersistence>,
         validator_metrics: Option<&ValidatorMetrics>,
-        collateral_manager: Option<Arc<CollateralManager>>,
         slash_executor: Option<Arc<SlashExecutor>>,
         validator_hotkey: &basilica_common::identity::Hotkey,
     ) -> Result<Option<crate::rental::RentalManager>> {
@@ -372,7 +370,6 @@ impl ValidatorService {
             &self.config,
             persistence,
             metrics.prometheus(),
-            collateral_manager,
             slash_executor,
             Some(validator_hotkey.as_str().to_string()),
         )
@@ -454,19 +451,24 @@ impl ValidatorService {
             None
         };
 
-        let collateral_scan_task = if let Some(collateral_config) = self.config.collateral.clone() {
-            let verification_config = self.config.verification.clone();
-            let persistence = inputs.persistence.clone();
-            tokio::spawn(async move {
-                let mut collateral_scan =
-                    Collateral::new(verification_config, collateral_config, persistence);
-                if let Err(e) = collateral_scan.start().await {
-                    error!("Collateral scan task failed: {}", e);
-                }
-            })
-        } else {
-            tokio::spawn(async { info!("Collateral scan disabled (no collateral config)") })
-        };
+        let (collateral_scanner, collateral_scanner_task) =
+            if let (Some(collateral_config), Some(evaluator)) =
+                (self.config.collateral.clone(), inputs.collateral_evaluator)
+            {
+                let scanner = Collateral::new(
+                    self.config.verification.clone(),
+                    collateral_config,
+                    inputs.persistence.clone(),
+                    inputs.api_client.clone(),
+                    evaluator,
+                    self.config.bittensor.common.netuid,
+                );
+                let task = scanner.start();
+                (Some(scanner), Some(task))
+            } else {
+                info!("Collateral scan disabled (no collateral config)");
+                (None, None)
+            };
 
         RuntimeHandles {
             scoring_task,
@@ -475,11 +477,12 @@ impl ValidatorService {
             api_handler_task,
             registration_server_task,
             cleanup_task,
-            collateral_scan_task,
+            collateral_scanner,
+            collateral_scanner_task,
         }
     }
 
-    fn shutdown(&self, handles: RuntimeHandles) {
+    async fn shutdown(&self, handles: RuntimeHandles) {
         handles.scoring_task.abort();
         handles.weight_setter_task.abort();
         handles.miner_prover_task.abort();
@@ -488,7 +491,12 @@ impl ValidatorService {
         }
         handles.api_handler_task.abort();
         handles.registration_server_task.abort();
-        handles.collateral_scan_task.abort();
+        if let Some(scanner) = &handles.collateral_scanner {
+            scanner.stop();
+        }
+        if let Some(task) = handles.collateral_scanner_task {
+            let _ = task.await;
+        }
     }
 
     /// Stop all running validator processes

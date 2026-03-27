@@ -43,15 +43,15 @@ mod tests {
     // cargo test --package basilica-miner --test mod -- tests::test_deposit --exact --nocapture
     async fn test_deposit() -> anyhow::Result<()> {
         let contract = get_contract().await?;
-        println!("trustee: {:?}", contract.TRUSTEE().call().await.unwrap());
-        println!("netuid: {:?}", contract.NETUID().call().await.unwrap());
+        println!("trustee: {:?}", contract.trustee().call().await.unwrap());
+        println!("netuid: {:?}", contract.netuid().call().await.unwrap());
         println!(
             "decision_timeout: {:?}",
-            contract.DECISION_TIMEOUT().call().await.unwrap()
+            contract.decisionTimeout().call().await.unwrap()
         );
         println!(
             "min_collateral_increase: {:?}",
-            contract.MIN_COLLATERAL_INCREASE().call().await.unwrap()
+            contract.minCollateralIncrease().call().await.unwrap()
         );
 
         let node_id: u128 = rand::thread_rng().gen_range(0..10000000000);
@@ -102,7 +102,6 @@ mod tests {
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
         let alpha_hotkey: [u8; 32] = [2u8; 32];
-        let alpha_coldkey: [u8; 32] = [3u8; 32];
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
@@ -114,14 +113,9 @@ mod tests {
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
-        let url = "example.com";
-        let url_checksum = 123_u128;
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
-            FixedBytes::from_slice(&alpha_coldkey),
-            url.to_owned(),
-            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
         let reclaim_receipt = reclaim_tx.send().await?.get_receipt().await?;
 
@@ -161,7 +155,6 @@ mod tests {
         let hotkey: [u8; 32] = [1u8; 32];
         let amount = U256::from(10);
         let alpha_hotkey: [u8; 32] = [2u8; 32];
-        let alpha_coldkey: [u8; 32] = [3u8; 32];
         let deposit_tx = contract
             .deposit(
                 FixedBytes::from_slice(&hotkey),
@@ -173,14 +166,9 @@ mod tests {
         let _deposit_tx_receipt = deposit_tx.send().await?.get_receipt().await?;
 
         // Start reclaim process
-        let url = "example.com";
-        let url_checksum = 123_u128;
         let reclaim_tx = contract.reclaimCollateral(
             FixedBytes::from_slice(&hotkey),
             FixedBytes::from_slice(&node_id.to_be_bytes()),
-            FixedBytes::from_slice(&alpha_coldkey),
-            url.to_owned(),
-            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
         );
         let reclaim_receipt = reclaim_tx.send().await?.get_receipt().await?;
 
@@ -193,11 +181,10 @@ mod tests {
         });
 
         // Test denyReclaimRequest (trustee only)
-        let deny_tx = contract.denyReclaimRequest(
-            reclaim_id,
-            url.to_owned(),
-            FixedBytes::from_slice(&url_checksum.to_be_bytes()),
-        );
+        let url = "https://example.com/proof".to_string();
+        let url_checksum = [0u8; 32];
+        let deny_tx =
+            contract.denyReclaimRequest(reclaim_id, url, FixedBytes::from_slice(&url_checksum));
         let deny_receipt = deny_tx.send().await?.get_receipt().await?;
 
         // Check for Denied event

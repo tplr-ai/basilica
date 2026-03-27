@@ -1,6 +1,5 @@
 use crate::basilica_api::BasilicaApiClient;
 use crate::collateral::evaluator::{CollateralEvaluator, CollateralState, CollateralStatus};
-use crate::collateral::grace_tracker::GracePeriodTracker;
 use crate::metrics::ValidatorPrometheusMetrics;
 use crate::persistence::SimplePersistence;
 use anyhow::Result;
@@ -13,11 +12,31 @@ use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CollateralPreference {
     Preferred,
+    #[default]
     Fallback,
-    Excluded,
+}
+
+impl CollateralPreference {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Preferred => "preferred",
+            Self::Fallback => "fallback",
+        }
+    }
+}
+
+impl FromStr for CollateralPreference {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "preferred" => Ok(Self::Preferred),
+            "fallback" => Ok(Self::Fallback),
+            other => anyhow::bail!("unknown collateral preference: {other}"),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -25,7 +44,6 @@ pub struct CollateralManager {
     persistence: Arc<SimplePersistence>,
     api_client: Arc<BasilicaApiClient>,
     evaluator: Arc<CollateralEvaluator>,
-    grace_tracker: Arc<GracePeriodTracker>,
     netuid: u16,
     metrics: Option<Arc<ValidatorPrometheusMetrics>>,
 }
@@ -35,7 +53,6 @@ impl CollateralManager {
         persistence: Arc<SimplePersistence>,
         api_client: Arc<BasilicaApiClient>,
         evaluator: Arc<CollateralEvaluator>,
-        grace_tracker: Arc<GracePeriodTracker>,
         netuid: u16,
         metrics: Option<Arc<ValidatorPrometheusMetrics>>,
     ) -> Self {
@@ -43,7 +60,6 @@ impl CollateralManager {
             persistence,
             api_client,
             evaluator,
-            grace_tracker,
             netuid,
             metrics,
         }
@@ -74,71 +90,23 @@ impl CollateralManager {
         let collateral_alpha = self
             .get_collateral_alpha(hotkey, node_id)
             .await
-            .unwrap_or(Decimal::ZERO);
+            .unwrap_or_else(|e| {
+                warn!("Failed to get collateral alpha for {hotkey}/{node_id}: {e}");
+                Decimal::ZERO
+            });
 
-        let (state, status) = self
-            .evaluator
-            .evaluate(
-                hotkey,
-                node_id,
-                gpu_category,
-                gpu_count,
-                collateral_alpha,
-                alpha_price_usd,
-            )
-            .await?;
+        let (state, status) = self.evaluator.evaluate(
+            hotkey,
+            node_id,
+            gpu_category,
+            gpu_count,
+            collateral_alpha,
+            alpha_price_usd,
+        )?;
         if let Some(metrics) = &self.metrics {
             metrics.record_collateral_node_status(hotkey, node_id, gpu_category, &status.status);
         }
         Ok((state, status))
-    }
-
-    pub async fn get_preference(
-        &self,
-        hotkey: &str,
-        node_id: &str,
-        gpu_category: &str,
-        gpu_count: u32,
-    ) -> CollateralPreference {
-        match self
-            .get_collateral_status(hotkey, node_id, gpu_category, gpu_count)
-            .await
-        {
-            Ok((state, _)) => match state {
-                CollateralState::Sufficient { .. } | CollateralState::Warning { .. } => {
-                    CollateralPreference::Preferred
-                }
-                CollateralState::Undercollateralized { .. } | CollateralState::Unknown { .. } => {
-                    CollateralPreference::Fallback
-                }
-                CollateralState::Excluded { .. } => CollateralPreference::Excluded,
-            },
-            Err(_) => CollateralPreference::Fallback,
-        }
-    }
-
-    pub async fn refresh_price_cache(&self) {
-        // TTL-only pricing: no background refresh loop
-    }
-
-    pub async fn is_eligible_for_bids(
-        &self,
-        hotkey: &str,
-        node_id: &str,
-        gpu_category: &str,
-        gpu_count: u32,
-    ) -> bool {
-        match self
-            .get_collateral_status(hotkey, node_id, gpu_category, gpu_count)
-            .await
-        {
-            Ok((state, _)) => !matches!(state, CollateralState::Excluded { .. }),
-            Err(_) => true,
-        }
-    }
-
-    pub async fn force_exclude(&self, hotkey: &str, node_id: &str) -> Result<()> {
-        self.grace_tracker.force_exclude(hotkey, node_id).await
     }
 
     pub async fn get_collateral_alpha(&self, hotkey: &str, node_id: &str) -> Result<Decimal> {
@@ -162,7 +130,7 @@ impl CollateralManager {
             .get_alpha_collateral_amount(&hotkey_hex, &node_hex)
             .await?;
         let amount = amount.unwrap_or_default();
-        Ok(u256_to_alpha(amount))
+        u256_to_alpha(amount)
     }
 }
 
@@ -173,27 +141,23 @@ pub fn hotkey_ss58_to_hex(hotkey: &str) -> Result<String> {
         .to_account_id()
         .map_err(|e| anyhow::anyhow!("hotkey conversion failed: {e}"))?;
     let account_bytes: &[u8] = account_id.as_ref();
-    Ok(encode(account_bytes))
+    Ok(format!("0x{}", encode(account_bytes)))
 }
 
 pub fn node_id_to_hex(node_id: &str) -> Result<String> {
     let uuid = Uuid::parse_str(node_id)?;
-    Ok(encode(uuid.as_bytes()))
+    Ok(format!("0x{}", encode(uuid.as_bytes())))
 }
 
-fn u256_to_alpha(amount: alloy_primitives::U256) -> Decimal {
+pub fn u256_to_alpha(amount: alloy_primitives::U256) -> Result<Decimal> {
     let amount_str = amount.to_string();
-    match Decimal::from_str(&amount_str) {
-        Ok(value) => value * Decimal::from_i128_with_scale(1, 18),
-        Err(_) => {
-            warn!(
-                "Collateral amount {} exceeds Decimal precision; capping at Decimal::MAX",
-                amount_str
-            );
-            // TODO: Switch to BigDecimal or fixed-point U256 conversion to avoid loss.
-            Decimal::MAX * Decimal::from_i128_with_scale(1, 18)
-        }
-    }
+    let value = Decimal::from_str(&amount_str).map_err(|e| {
+        anyhow::anyhow!(
+            "Collateral amount {} exceeds Decimal precision: {e}",
+            amount_str
+        )
+    })?;
+    Ok(value * Decimal::from_i128_with_scale(1, 9))
 }
 
 #[cfg(test)]
@@ -205,7 +169,6 @@ mod tests {
     };
     use crate::config::collateral::CollateralConfig;
     use crate::persistence::SimplePersistence;
-    use chrono::Duration;
     use rust_decimal::Decimal;
     use std::collections::HashMap;
 
@@ -234,6 +197,26 @@ mod tests {
         }
     }
 
+    struct FixedPriceFetcher;
+
+    #[async_trait::async_trait]
+    impl TokenPriceFetcher for FixedPriceFetcher {
+        async fn fetch(
+            &self,
+            _client: &BasilicaApiClient,
+            _netuid: u16,
+        ) -> Result<TokenPriceSnapshot> {
+            Ok(TokenPriceSnapshot {
+                tao_price_usd: Decimal::ONE,
+                alpha_price_usd: Decimal::ONE,
+                alpha_price_tao: Decimal::ONE,
+                tao_reserve: Decimal::ONE,
+                alpha_reserve: Decimal::ONE,
+                fetched_at: "2026-01-01T00:00:00Z".to_string(),
+            })
+        }
+    }
+
     struct TestBaselineFetcher;
 
     #[async_trait::async_trait]
@@ -243,25 +226,71 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_u256_to_alpha_zero() {
+        let alpha = u256_to_alpha(alloy_primitives::U256::ZERO).unwrap();
+        assert_eq!(alpha, Decimal::ZERO);
+    }
+
+    #[test]
+    fn test_u256_to_alpha_one_rao() {
+        // 1 RAO = 1e-9 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1u64)).unwrap();
+        assert_eq!(alpha, Decimal::from_i128_with_scale(1, 9));
+    }
+
+    #[test]
+    fn test_u256_to_alpha_one_alpha() {
+        // 1e9 RAO = 1 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64)).unwrap();
+        assert_eq!(alpha, Decimal::ONE);
+    }
+
+    #[test]
+    fn test_u256_to_alpha_fractional() {
+        // 500_000_000 RAO = 0.5 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(500_000_000u64)).unwrap();
+        assert_eq!(alpha, Decimal::new(5, 1));
+    }
+
+    #[test]
+    fn test_u256_to_alpha_large_amount() {
+        // 5e9 RAO = 5 alpha
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(5_000_000_000u64)).unwrap();
+        assert_eq!(alpha, Decimal::from(5));
+    }
+
+    #[test]
+    fn test_u256_to_alpha_is_not_wei() {
+        // Regression: old code divided by 1e18 (wei). Verify 1e9 RAO = 1 alpha, NOT 1e-9 alpha.
+        let alpha = u256_to_alpha(alloy_primitives::U256::from(1_000_000_000u64)).unwrap();
+        assert_ne!(
+            alpha,
+            Decimal::from_i128_with_scale(1, 9),
+            "should NOT treat input as wei"
+        );
+        assert_eq!(alpha, Decimal::ONE, "1e9 RAO must equal 1 alpha");
+    }
+
+    #[test]
+    fn test_u256_to_alpha_overflow_returns_error() {
+        let result = u256_to_alpha(alloy_primitives::U256::MAX);
+        assert!(result.is_err());
+    }
+
     #[tokio::test]
     async fn test_node_id_to_hex() {
         let uuid = Uuid::new_v4();
         let hex = node_id_to_hex(&uuid.to_string()).unwrap();
-        assert_eq!(hex.len(), 32);
+        assert_eq!(hex.len(), 34); // "0x" + 32 hex chars
+        assert!(hex.starts_with("0x"));
     }
 
     #[tokio::test]
     async fn test_get_collateral_alpha_missing_returns_zero() {
         let persistence = Arc::new(SimplePersistence::for_testing().await.unwrap());
         let config = CollateralConfig::default();
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            persistence.clone(),
-            Duration::hours(24),
-        ));
-        let evaluator = Arc::new(CollateralEvaluator::new(
-            config.clone(),
-            grace_tracker.clone(),
-        ));
+        let evaluator = Arc::new(CollateralEvaluator::new(config.clone()));
         let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
         let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
             "http://localhost".to_string(),
@@ -272,14 +301,7 @@ mod tests {
             Arc::new(TestBaselineFetcher),
             Arc::new(TestFetcher),
         ));
-        let manager = CollateralManager::new(
-            persistence.clone(),
-            api_client,
-            evaluator,
-            grace_tracker,
-            1,
-            None,
-        );
+        let manager = CollateralManager::new(persistence.clone(), api_client, evaluator, 1, None);
         let alpha = manager
             .get_collateral_alpha(
                 "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
@@ -288,5 +310,91 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(alpha, Decimal::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_get_collateral_alpha_converts_rao_to_alpha() {
+        let persistence = Arc::new(SimplePersistence::for_testing().await.unwrap());
+        let hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+        let node_id = Uuid::new_v4().to_string();
+        let hotkey_hex = hotkey_ss58_to_hex(hotkey).unwrap();
+        let node_hex = node_id_to_hex(&node_id).unwrap();
+
+        // Insert 5e9 RAO (= 5 alpha) into the DB, mimicking on-chain event data.
+        sqlx::query(
+            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        )
+        .bind(&hotkey_hex)
+        .bind(&node_hex)
+        .bind("0x0000000000000000000000000000000000000001")
+        .bind("0")
+        .bind("5000000000") // 5e9 RAO = 5 alpha
+        .execute(persistence.pool())
+        .await
+        .unwrap();
+
+        let config = CollateralConfig::default();
+        let evaluator = Arc::new(CollateralEvaluator::new(config.clone()));
+        let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
+        let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
+            "http://localhost".to_string(),
+            signer,
+            reqwest::Client::new(),
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+            Arc::new(TestBaselineFetcher),
+            Arc::new(TestFetcher),
+        ));
+        let manager = CollateralManager::new(persistence, api_client, evaluator, 1, None);
+
+        let alpha = manager
+            .get_collateral_alpha(hotkey, &node_id)
+            .await
+            .unwrap();
+        assert_eq!(alpha, Decimal::from(5), "5e9 RAO should convert to 5 alpha");
+    }
+
+    #[tokio::test]
+    async fn test_tao_is_non_authoritative_for_collateral_status() {
+        let persistence = Arc::new(SimplePersistence::for_testing().await.unwrap());
+        let hotkey = "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY";
+        let node_id = Uuid::new_v4().to_string();
+        let hotkey_hex = hotkey_ss58_to_hex(hotkey).unwrap();
+        let node_hex = node_id_to_hex(&node_id).unwrap();
+
+        // Persist very high TAO with zero alpha to prove policy uses alpha only.
+        sqlx::query(
+            "INSERT INTO collateral_status (hotkey, node_id, miner, tao_collateral, alpha_collateral, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        )
+        .bind(hotkey_hex)
+        .bind(node_hex)
+        .bind("0x0000000000000000000000000000000000000001")
+        .bind("1000000000000000000000000")
+        .bind("0")
+        .execute(persistence.pool())
+        .await
+        .unwrap();
+
+        let config = CollateralConfig::default();
+        let evaluator = Arc::new(CollateralEvaluator::new(config.clone()));
+        let signer: Arc<dyn ValidatorSigner> = Arc::new(TestSigner);
+        let api_client = Arc::new(BasilicaApiClient::new_with_fetchers(
+            "http://localhost".to_string(),
+            signer,
+            reqwest::Client::new(),
+            std::time::Duration::from_secs(60),
+            std::time::Duration::from_secs(60),
+            Arc::new(TestBaselineFetcher),
+            Arc::new(FixedPriceFetcher),
+        ));
+        let manager = CollateralManager::new(persistence, api_client, evaluator, 1, None);
+
+        let (state, status) = manager
+            .get_collateral_status(hotkey, &node_id, "H100", 1)
+            .await
+            .unwrap();
+        assert!(matches!(state, CollateralState::Undercollateralized { .. }));
+        assert_eq!(status.current_alpha, Decimal::ZERO);
+        assert_eq!(status.status, "undercollateralized");
     }
 }

@@ -1,6 +1,6 @@
 services:
   alice:
-    image: ghcr.io/opentensor/subtensor-localnet:devnet-ready
+    image: ghcr.io/opentensor/subtensor-localnet:latest
     container_name: subtensor-alice
     restart: unless-stopped
     # Expose WS RPC on a non-standard host port for local init/tools
@@ -26,7 +26,7 @@ services:
       - --allow-private-ipv4
       - --discover-local
   bob:
-    image: ghcr.io/opentensor/subtensor-localnet:devnet-ready
+    image: ghcr.io/opentensor/subtensor-localnet:latest
     container_name: subtensor-bob
     depends_on:
       - alice

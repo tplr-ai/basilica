@@ -38,10 +38,7 @@ fn status_to_proto(
         current_usd_value: status.current_usd_value.to_f64().unwrap_or_default(),
         minimum_usd_required: status.minimum_usd_required.to_f64().unwrap_or_default(),
         status: status.status,
-        grace_period_remaining: status
-            .grace_period_remaining
-            .map(format_duration)
-            .unwrap_or_default(),
+        grace_period_remaining: String::new(),
         action_required: status.action_required.unwrap_or_default(),
         alpha_usd_price: status
             .alpha_usd_price
@@ -51,20 +48,8 @@ fn status_to_proto(
     }
 }
 
-fn format_duration(duration: chrono::Duration) -> String {
-    let total_seconds = duration.num_seconds().max(0);
-    let hours = total_seconds / 3600;
-    let minutes = (total_seconds % 3600) / 60;
-    if hours > 0 {
-        format!("{}h {}m", hours, minutes)
-    } else {
-        format!("{}m", minutes)
-    }
-}
-
 fn status_rank(state: &CollateralState) -> u8 {
     match state {
-        CollateralState::Excluded { .. } => 4,
         CollateralState::Undercollateralized { .. } => 3,
         CollateralState::Warning { .. } => 2,
         CollateralState::Sufficient { .. } => 1,
@@ -74,7 +59,6 @@ fn status_rank(state: &CollateralState) -> u8 {
 
 fn status_rank_from_status(status: &str) -> u8 {
     match status {
-        "excluded" => 4,
         "undercollateralized" => 3,
         "warning" => 2,
         "sufficient" => 1,

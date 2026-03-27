@@ -121,3 +121,23 @@ api_endpoint = "http://basilica-api:8000"
 
 [bid_grpc]
 listen_address = "0.0.0.0:50052"
+
+# Collateral enforcement (shadow mode for localnet rollout)
+[collateral]
+shadow_mode = true
+contract_address = "<required>"
+network = "local"
+rpc_url = "http://subtensor:9944"
+warning_threshold_multiplier = 1.5
+slash_fraction = 1.0
+trustee_key_source = "env_var"
+sync_page_size = 500
+evidence_base_url = "http://localhost:8080/evidence"
+evidence_storage_path = "/opt/basilica/data/evidence"
+
+[collateral.minimum_usd_per_gpu]
+A100 = 25
+H100 = 50
+H200 = 75
+B200 = 75
+DEFAULT = 10

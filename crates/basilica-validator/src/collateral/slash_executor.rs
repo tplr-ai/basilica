@@ -1,6 +1,5 @@
 use crate::basilica_api::ValidatorSigner;
 use crate::collateral::evidence::{EvidenceStore, SlashEvidence};
-use crate::collateral::grace_tracker::GracePeriodTracker;
 use crate::collateral::manager::{hotkey_ss58_to_hex, node_id_to_hex};
 use crate::config::collateral::{CollateralConfig, TrusteeKeySource};
 use crate::metrics::ValidatorPrometheusMetrics;
@@ -12,27 +11,24 @@ use aws_config::Region;
 use aws_sdk_secretsmanager::Client as SecretsClient;
 use chrono::Utc;
 use collateral_contract::config::{CollateralNetworkConfig, Network};
-use collateral_contract::{alpha_collaterals, slash_collateral};
+use collateral_contract::slash_collateral;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, VecDeque};
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration as StdDuration, Instant};
 use tokio::fs;
-use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 #[async_trait]
 pub trait CollateralChainClient: Send + Sync {
-    async fn alpha_collaterals(
+    async fn collaterals(
         &self,
         hotkey_bytes: [u8; 32],
         node_bytes: [u8; 16],
         network_config: &CollateralNetworkConfig,
-    ) -> Result<U256>;
+    ) -> Result<(U256, U256)>;
 
     #[allow(clippy::too_many_arguments)]
     async fn submit_slash(
@@ -42,7 +38,7 @@ pub trait CollateralChainClient: Send + Sync {
         node_bytes: [u8; 16],
         alpha_amount: U256,
         url: &str,
-        checksum: u128,
+        checksum: [u8; 32],
         network_config: &CollateralNetworkConfig,
     ) -> Result<()>;
 }
@@ -51,13 +47,13 @@ struct OnchainCollateralClient;
 
 #[async_trait]
 impl CollateralChainClient for OnchainCollateralClient {
-    async fn alpha_collaterals(
+    async fn collaterals(
         &self,
         hotkey_bytes: [u8; 32],
         node_bytes: [u8; 16],
         network_config: &CollateralNetworkConfig,
-    ) -> Result<U256> {
-        Ok(alpha_collaterals(hotkey_bytes, node_bytes, network_config).await?)
+    ) -> Result<(U256, U256)> {
+        Ok(collateral_contract::collaterals(hotkey_bytes, node_bytes, network_config).await?)
     }
 
     async fn submit_slash(
@@ -67,7 +63,7 @@ impl CollateralChainClient for OnchainCollateralClient {
         node_bytes: [u8; 16],
         alpha_amount: U256,
         url: &str,
-        checksum: u128,
+        checksum: [u8; 32],
         network_config: &CollateralNetworkConfig,
     ) -> Result<()> {
         slash_collateral(
@@ -88,9 +84,7 @@ impl CollateralChainClient for OnchainCollateralClient {
 pub struct SlashExecutor {
     config: CollateralConfig,
     evidence_store: EvidenceStore,
-    grace_tracker: Arc<GracePeriodTracker>,
     metrics: Option<Arc<ValidatorPrometheusMetrics>>,
-    rate_limiter: Arc<SlashRateLimiter>,
     signer: Option<Arc<dyn ValidatorSigner>>,
     chain_client: Arc<dyn CollateralChainClient>,
 }
@@ -175,14 +169,12 @@ impl SlashExecutor {
     pub fn new(
         config: CollateralConfig,
         evidence_store: EvidenceStore,
-        grace_tracker: Arc<GracePeriodTracker>,
         metrics: Option<Arc<ValidatorPrometheusMetrics>>,
         signer: Option<Arc<dyn ValidatorSigner>>,
     ) -> Self {
         Self::new_with_chain_client(
             config,
             evidence_store,
-            grace_tracker,
             metrics,
             signer,
             Arc::new(OnchainCollateralClient),
@@ -196,18 +188,14 @@ impl SlashExecutor {
     pub fn new_with_chain_client(
         config: CollateralConfig,
         evidence_store: EvidenceStore,
-        grace_tracker: Arc<GracePeriodTracker>,
         metrics: Option<Arc<ValidatorPrometheusMetrics>>,
         signer: Option<Arc<dyn ValidatorSigner>>,
         chain_client: Arc<dyn CollateralChainClient>,
     ) -> Self {
-        let rate_limiter = Arc::new(SlashRateLimiter::new(&config));
         Self {
             config,
             evidence_store,
-            grace_tracker,
             metrics,
-            rate_limiter,
             signer,
             chain_client,
         }
@@ -233,7 +221,6 @@ impl SlashExecutor {
             )
             .await?;
         self.record_slash_triggered(misbehaviour_type);
-        self.exclude_node(miner_hotkey, node_id).await;
 
         let hotkey_bytes = hotkey_ss58_to_bytes(miner_hotkey)?;
         let node_bytes = node_id_to_bytes(node_id)?;
@@ -252,7 +239,6 @@ impl SlashExecutor {
             return Ok(());
         }
 
-        self.enforce_rate_limit(miner_hotkey, node_id).await?;
         let private_key = self.load_private_key().await?;
         let alpha_amount = self
             .resolve_slash_amount(
@@ -282,14 +268,17 @@ impl SlashExecutor {
         if collateral.is_zero() || self.config.slash_fraction >= Decimal::ONE {
             return collateral;
         }
-        let numerator = (self.config.slash_fraction * Decimal::from(10_000u64))
+        let numerator = (self.config.slash_fraction * Decimal::from(100u64))
             .round()
             .to_u64()
             .unwrap_or(0);
-        if numerator == 0 || numerator >= 10_000 {
+        if numerator == 0 {
+            return U256::from(1u64);
+        }
+        if numerator >= 100 {
             return collateral;
         }
-        let amount = collateral * U256::from(numerator) / U256::from(10_000u64);
+        let amount = collateral * U256::from(numerator) / U256::from(100u64);
         if amount.is_zero() {
             U256::from(1u64)
         } else {
@@ -305,7 +294,7 @@ impl SlashExecutor {
         rental_id: &str,
         miner_hotkey: &str,
         node_id: &str,
-    ) -> Result<(String, u128)> {
+    ) -> Result<(String, [u8; 32])> {
         let evidence = self.build_evidence(
             misbehaviour_type,
             details,
@@ -315,7 +304,7 @@ impl SlashExecutor {
             node_id,
         )?;
         let (url, json) = self.evidence_store.store(&evidence).await?;
-        let checksum = compute_sha256_checksum_truncated(&json);
+        let checksum = compute_sha256_checksum(&json);
         Ok((url, checksum))
     }
 
@@ -357,16 +346,6 @@ impl SlashExecutor {
         }
     }
 
-    async fn exclude_node(&self, miner_hotkey: &str, node_id: &str) {
-        if let Err(err) = self
-            .grace_tracker
-            .force_exclude(miner_hotkey, node_id)
-            .await
-        {
-            warn!("Failed to mark node excluded after slash trigger: {}", err);
-        }
-    }
-
     async fn log_shadow_slash(
         &self,
         network_config: &CollateralNetworkConfig,
@@ -389,7 +368,7 @@ impl SlashExecutor {
             Ok(collateral) => {
                 let amount = self.compute_slash_amount(collateral);
                 info!(
-                    "[SHADOW] Would slash {} alpha (wei) for node {} (hotkey: {}). Evidence: {}",
+                    "[SHADOW] Would slash {} alpha (rao) for node {} (hotkey: {}). Evidence: {}",
                     amount, node_id, miner_hotkey, url
                 );
             }
@@ -402,17 +381,6 @@ impl SlashExecutor {
         }
         if let Some(metrics) = &self.metrics {
             metrics.record_collateral_slash_shadow();
-        }
-        Ok(())
-    }
-
-    async fn enforce_rate_limit(&self, miner_hotkey: &str, node_id: &str) -> Result<()> {
-        if let Err(err) = self.rate_limiter.check_and_record(miner_hotkey).await {
-            warn!(
-                "Slash rate limited for miner {} (node {}): {}",
-                miner_hotkey, node_id, err
-            );
-            return Err(err);
         }
         Ok(())
     }
@@ -493,123 +461,27 @@ struct SlashSubmission<'a> {
     node_bytes: [u8; 16],
     alpha_amount: U256,
     url: &'a str,
-    checksum: u128,
+    checksum: [u8; 32],
     network_config: &'a CollateralNetworkConfig,
 }
 
-struct SlashRateLimiter {
-    cooldown: StdDuration,
-    max_per_window: usize,
-    window: StdDuration,
-    breaker_threshold: usize,
-    breaker_window: StdDuration,
-    breaker_cooldown: StdDuration,
-    state: Mutex<SlashRateLimiterState>,
-}
-
-struct SlashRateLimiterState {
-    per_miner_last_slash: HashMap<String, Instant>,
-    global_slashes: VecDeque<Instant>,
-    breaker_events: VecDeque<Instant>,
-    circuit_open_until: Option<Instant>,
-}
-
-impl SlashRateLimiter {
-    fn new(config: &CollateralConfig) -> Self {
-        Self {
-            cooldown: StdDuration::from_secs(config.slash_cooldown_secs),
-            max_per_window: config.slash_max_per_window as usize,
-            window: StdDuration::from_secs(config.slash_window_secs),
-            breaker_threshold: config.slash_circuit_breaker_threshold as usize,
-            breaker_window: StdDuration::from_secs(config.slash_circuit_breaker_window_secs),
-            breaker_cooldown: StdDuration::from_secs(config.slash_circuit_breaker_cooldown_secs),
-            state: Mutex::new(SlashRateLimiterState {
-                per_miner_last_slash: HashMap::new(),
-                global_slashes: VecDeque::new(),
-                breaker_events: VecDeque::new(),
-                circuit_open_until: None,
-            }),
-        }
-    }
-
-    async fn check_and_record(&self, miner_hotkey: &str) -> Result<()> {
-        let mut state = self.state.lock().await;
-        let now = Instant::now();
-
-        if let Some(open_until) = state.circuit_open_until {
-            if now < open_until {
-                anyhow::bail!("circuit breaker open; retry after cooldown");
-            }
-            state.circuit_open_until = None;
-        }
-
-        state.prune(now, self.window, self.breaker_window);
-
-        if let Some(last_slash) = state.per_miner_last_slash.get(miner_hotkey) {
-            if now.duration_since(*last_slash) < self.cooldown {
-                anyhow::bail!("per-miner slash cooldown active");
-            }
-        }
-
-        if state.global_slashes.len() >= self.max_per_window {
-            anyhow::bail!("global slash rate limit exceeded");
-        }
-
-        state
-            .per_miner_last_slash
-            .insert(miner_hotkey.to_string(), now);
-        state.global_slashes.push_back(now);
-        state.breaker_events.push_back(now);
-
-        if state.breaker_events.len() >= self.breaker_threshold {
-            state.circuit_open_until = now.checked_add(self.breaker_cooldown);
-            state.breaker_events.clear();
-            anyhow::bail!("slash circuit breaker opened");
-        }
-
-        Ok(())
-    }
-}
-
-impl SlashRateLimiterState {
-    fn prune(&mut self, now: Instant, window: StdDuration, breaker_window: StdDuration) {
-        Self::prune_queue(&mut self.global_slashes, now, window);
-        Self::prune_queue(&mut self.breaker_events, now, breaker_window);
-    }
-
-    fn prune_queue(queue: &mut VecDeque<Instant>, now: Instant, window: StdDuration) {
-        let Some(cutoff) = now.checked_sub(window) else {
-            queue.clear();
-            return;
-        };
-        while queue.front().is_some_and(|ts| *ts < cutoff) {
-            queue.pop_front();
-        }
-    }
-}
-
-fn compute_sha256_checksum_truncated(contents: &[u8]) -> u128 {
+fn compute_sha256_checksum(contents: &[u8]) -> [u8; 32] {
     let digest = Sha256::digest(contents);
-    let mut truncated = [0u8; 16];
-    truncated.copy_from_slice(&digest[..16]);
-    u128::from_be_bytes(truncated)
+    digest.into()
 }
 
 fn to_network_config(config: &CollateralConfig) -> Result<CollateralNetworkConfig> {
-    let network = match config.network.as_str() {
-        "mainnet" => Network::Mainnet,
-        "testnet" => Network::Testnet,
-        "local" => Network::Local,
-        other => {
-            anyhow::bail!("Unsupported collateral network: {}", other);
-        }
-    };
-    CollateralNetworkConfig::from_network(&network, Some(config.contract_address.clone()))
+    let network: Network = config.network.parse()?;
+    CollateralNetworkConfig::from_network(
+        &network,
+        Some(config.contract_address.clone()),
+        config.rpc_url.clone(),
+    )
 }
 
 fn hotkey_ss58_to_bytes(hotkey: &str) -> Result<[u8; 32]> {
     let hex = hotkey_ss58_to_hex(hotkey)?;
-    let decoded = hex::decode(hex)?;
+    let decoded = hex::decode(hex.strip_prefix("0x").unwrap_or(&hex))?;
     let bytes: [u8; 32] = decoded
         .as_slice()
         .try_into()
@@ -619,7 +491,7 @@ fn hotkey_ss58_to_bytes(hotkey: &str) -> Result<[u8; 32]> {
 
 fn node_id_to_bytes(node_id: &str) -> Result<[u8; 16]> {
     let hex = node_id_to_hex(node_id)?;
-    let decoded = hex::decode(hex)?;
+    let decoded = hex::decode(hex.strip_prefix("0x").unwrap_or(&hex))?;
     let bytes: [u8; 16] = decoded
         .as_slice()
         .try_into()
@@ -636,18 +508,18 @@ impl SlashExecutor {
         miner_hotkey: &str,
         node_id: &str,
     ) -> Result<U256> {
-        let amount = self
+        let (_, alpha) = self
             .chain_client
-            .alpha_collaterals(*hotkey_bytes, *node_bytes, network_config)
+            .collaterals(*hotkey_bytes, *node_bytes, network_config)
             .await?;
-        if amount.is_zero() {
+        if alpha.is_zero() {
             anyhow::bail!(
                 "alpha collateral is zero for node {} (hotkey: {})",
                 node_id,
                 miner_hotkey
             );
         }
-        Ok(amount)
+        Ok(alpha)
     }
 }
 
@@ -659,9 +531,9 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
-    async fn test_sha256_checksum_truncated_nonzero() {
-        let checksum = compute_sha256_checksum_truncated(b"test");
-        assert!(checksum > 0);
+    async fn test_sha256_checksum_nonzero() {
+        let checksum = compute_sha256_checksum(b"test");
+        assert_ne!(checksum, [0u8; 32]);
     }
 
     #[tokio::test]
@@ -679,15 +551,7 @@ mod tests {
             config.evidence_base_url.clone(),
             config.evidence_storage_path.clone(),
         );
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            Arc::new(
-                crate::persistence::SimplePersistence::for_testing()
-                    .await
-                    .unwrap(),
-            ),
-            config.grace_period(),
-        ));
-        let executor = SlashExecutor::new(config, store, grace_tracker, None, None);
+        let executor = SlashExecutor::new(config, store, None, None);
         executor
             .execute_slash(
                 "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
@@ -714,19 +578,51 @@ mod tests {
             config.evidence_base_url.clone(),
             config.evidence_storage_path.clone(),
         );
-        let grace_tracker = Arc::new(GracePeriodTracker::new(
-            Arc::new(
-                crate::persistence::SimplePersistence::for_testing()
-                    .await
-                    .unwrap(),
-            ),
-            config.grace_period(),
-        ));
-        let executor = SlashExecutor::new(config, store, grace_tracker, None, None);
+        let executor = SlashExecutor::new(config, store, None, None);
         assert_eq!(
             executor.compute_slash_amount(U256::from(1000u64)),
             U256::from(500u64)
         );
         assert_eq!(executor.compute_slash_amount(U256::ZERO), U256::ZERO);
+    }
+
+    #[tokio::test]
+    async fn test_compute_slash_amount_one_percent() {
+        let temp = tempdir().unwrap();
+        let config = CollateralConfig {
+            slash_fraction: Decimal::new(1, 2), // 0.01 = 1%
+            evidence_storage_path: temp.path().to_path_buf(),
+            contract_address: "0x0000000000000000000000000000000000000001".to_string(),
+            ..CollateralConfig::default()
+        };
+        let store = EvidenceStore::new_local(
+            config.evidence_base_url.clone(),
+            config.evidence_storage_path.clone(),
+        );
+        let executor = SlashExecutor::new(config, store, None, None);
+        assert_eq!(
+            executor.compute_slash_amount(U256::from(10000u64)),
+            U256::from(100u64)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compute_slash_amount_one_percent_minimum_floor() {
+        let temp = tempdir().unwrap();
+        let config = CollateralConfig {
+            slash_fraction: Decimal::new(1, 2), // 0.01 = 1%
+            evidence_storage_path: temp.path().to_path_buf(),
+            contract_address: "0x0000000000000000000000000000000000000001".to_string(),
+            ..CollateralConfig::default()
+        };
+        let store = EvidenceStore::new_local(
+            config.evidence_base_url.clone(),
+            config.evidence_storage_path.clone(),
+        );
+        let executor = SlashExecutor::new(config, store, None, None);
+        assert_eq!(
+            executor.compute_slash_amount(U256::from(1u64)),
+            U256::from(1u64)
+        );
     }
 }

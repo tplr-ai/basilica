@@ -62,3 +62,21 @@ crate_exists() {
     local crate=$1
     [ -d "$CRATES_DIR/$crate" ] && [ -f "$CRATES_DIR/$crate/Cargo.toml" ]
 }
+
+# Read a substrate hotkey (bytes32) from a wallet pubkey JSON file.
+# Returns 0x-prefixed hex string suitable for use as a Solidity bytes32 argument.
+read_hotkey() {
+    local pubfile="$1"
+    if [[ ! -f "$pubfile" ]]; then
+        log_error "Hotkey file not found: $pubfile"
+        return 1
+    fi
+    python3 -c "import json,sys; print(json.load(sys.stdin)['publicKey'])" < "$pubfile"
+}
+
+# Compute the on-chain bytes16 node ID from a seed string (e.g. an IP address).
+# Uses the same NodeId::new() derivation as the validator and miner.
+compute_node_id() {
+    local seed="$1"
+    cargo run -q --example compute_node_id -p basilica-common -- "$seed"
+}

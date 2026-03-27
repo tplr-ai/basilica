@@ -336,6 +336,11 @@ impl Args {
                 }
             }
 
+            // Collateral staking commands
+            Commands::Collateral { action, key_file } => {
+                handlers::collateral::handle_collateral(action, key_file).await?;
+            }
+
             // Upgrade command is handled in main.rs before entering async runtime
             Commands::Upgrade { .. } => {
                 unreachable!("Upgrade command should be handled in main.rs")

@@ -204,6 +204,16 @@ pub enum Commands {
         #[command(subcommand)]
         action: VolumeAction,
     },
+
+    /// Collateral staking commands (deposit, withdraw, balance, status)
+    Collateral {
+        #[command(subcommand)]
+        action: CollateralAction,
+
+        /// Path to file containing EVM private key (hex).
+        #[arg(long, value_hint = ValueHint::FilePath)]
+        key_file: PathBuf,
+    },
 }
 
 /// Fund management actions
@@ -331,6 +341,85 @@ pub enum VolumeAction {
     },
 }
 
+/// Collateral staking actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum CollateralAction {
+    /// Show EVM wallet's TAO balance and alpha staked balance
+    Balance,
+
+    /// Show the SS58 substrate address mapped to your EVM wallet (for receiving tokens)
+    Receive,
+
+    /// Deposit alpha to the collateral contract for a node
+    Deposit {
+        /// Miner's Bittensor hotkey (SS58 format)
+        #[arg(long)]
+        hotkey: Option<String>,
+
+        /// IP address of the node (used to derive the on-chain node ID)
+        #[arg(long)]
+        node_ip: Option<String>,
+
+        /// Amount of alpha to deposit (human-readable, e.g. 5.0)
+        #[arg(long)]
+        amount: Option<String>,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+
+    /// Show collateral amounts per node
+    Status,
+
+    /// Initiate collateral reclaim (selects from your on-chain collaterals)
+    #[command(name = "reclaim-start")]
+    ReclaimStart,
+
+    /// Finalize a pending reclaim
+    #[command(name = "reclaim-finalize")]
+    ReclaimFinalize {
+        /// Reclaim request ID (decimal number, will prompt if not provided)
+        #[arg(long)]
+        request_id: Option<String>,
+    },
+
+    /// Send TAO or alpha from EVM wallet to a substrate (SS58) address
+    Send {
+        /// Destination substrate wallet address (SS58 format)
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Amount to send (human-readable, e.g. 5.0)
+        #[arg(long)]
+        amount: Option<String>,
+
+        /// Token type to send
+        #[arg(long, value_enum)]
+        token: Option<SendToken>,
+
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+}
+
+/// Token type for the `collateral send` command
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum SendToken {
+    Tao,
+    Alpha,
+}
+
+impl std::fmt::Display for SendToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SendToken::Tao => write!(f, "TAO"),
+            SendToken::Alpha => write!(f, "Alpha"),
+        }
+    }
+}
+
 impl Commands {
     /// Check if this command requires authentication
     pub fn requires_auth(&self) -> bool {
@@ -357,6 +446,9 @@ impl Commands {
 
             // Authentication commands don't require auth
             Commands::Login { .. } | Commands::Logout | Commands::Upgrade { .. } => false,
+
+            // Collateral commands are on-chain ops, not API ops
+            Commands::Collateral { .. } => false,
 
             // Test auth command requires authentication
             #[cfg(debug_assertions)]

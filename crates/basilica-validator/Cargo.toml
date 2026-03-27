@@ -84,6 +84,7 @@ libc = { workspace = true }
 
 # SSH key management
 ssh-key = { workspace = true }
+once_cell = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

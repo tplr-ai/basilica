@@ -10,21 +10,12 @@ pub const RPC_URL: &str = "https://lite.chain.opentensor.ai:443";
 
 // Test environment
 pub const TEST_CHAIN_ID: u64 = 945;
-pub const TEST_RPC_URL: &str = "https://test.finney.opentensor.ai";
+pub const TEST_RPC_URL: &str = "https://test.chain.opentensor.ai";
 
 // Local network configuration
 pub const LOCAL_CHAIN_ID: u64 = 42;
 pub const LOCAL_RPC_URL: &str = "http://localhost:9944";
 pub const LOCAL_WS_URL: &str = "ws://localhost:9944";
-
-/// Maximum number of blocks to scan in a single iteration when scanning for collateral events
-pub const MAX_BLOCKS_PER_SCAN: u64 = 1000;
-
-/// Block number at which the collateral contract was deployed. Used as starting point for event scanning.
-pub const CONTRACT_DEPLOYED_BLOCK_NUMBER: u64 = 0;
-
-pub const DEFAULT_CONTRACT_ADDRESS: Address =
-    address!("0x0000000000000000000000000000000000000002");
 
 #[derive(Debug, Clone, ValueEnum, Default)]
 pub enum Network {
@@ -37,6 +28,19 @@ pub enum Network {
     Local,
 }
 
+impl std::str::FromStr for Network {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mainnet" => Ok(Network::Mainnet),
+            "testnet" => Ok(Network::Testnet),
+            "local" => Ok(Network::Local),
+            other => Err(anyhow::anyhow!("Unsupported collateral network: {}", other)),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CollateralNetworkConfig {
     pub chain_id: u64,
@@ -46,7 +50,7 @@ pub struct CollateralNetworkConfig {
 
 impl Default for CollateralNetworkConfig {
     fn default() -> Self {
-        Self::from_network(&Network::Mainnet, None)
+        Self::from_network(&Network::Mainnet, None, None)
             .expect("Failed to create default network config")
     }
 }
@@ -55,6 +59,7 @@ impl CollateralNetworkConfig {
     pub fn from_network(
         network: &Network,
         contract_address: Option<String>,
+        rpc_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let parsed_addr: Option<Address> = match contract_address {
             Some(s) => Some(
@@ -66,18 +71,22 @@ impl CollateralNetworkConfig {
         match network {
             Network::Mainnet => Ok(CollateralNetworkConfig {
                 chain_id: CHAIN_ID,
-                rpc_url: RPC_URL.to_string(),
+                rpc_url: rpc_url.unwrap_or_else(|| RPC_URL.to_string()),
                 contract_address: parsed_addr.unwrap_or(COLLATERAL_ADDRESS),
             }),
             Network::Testnet => Ok(CollateralNetworkConfig {
                 chain_id: TEST_CHAIN_ID,
-                rpc_url: TEST_RPC_URL.to_string(),
-                contract_address: parsed_addr.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
+                rpc_url: rpc_url.unwrap_or_else(|| TEST_RPC_URL.to_string()),
+                contract_address: parsed_addr.ok_or_else(|| {
+                    anyhow::anyhow!("Contract address is required for Testnet network")
+                })?,
             }),
             Network::Local => Ok(CollateralNetworkConfig {
                 chain_id: LOCAL_CHAIN_ID,
-                rpc_url: LOCAL_RPC_URL.to_string(),
-                contract_address: parsed_addr.unwrap_or(DEFAULT_CONTRACT_ADDRESS),
+                rpc_url: rpc_url.unwrap_or_else(|| LOCAL_RPC_URL.to_string()),
+                contract_address: parsed_addr.ok_or_else(|| {
+                    anyhow::anyhow!("Contract address is required for Local network")
+                })?,
             }),
         }
     }

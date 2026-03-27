@@ -1,31 +1,22 @@
 // SPDX-License-Identifier: UNLICENSED
 
-pragma solidity ^0.8.22;
+pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 interface IStaking {
-    function transferStake(
-        bytes32 coldkey,
-        bytes32 hotkey,
-        uint256 netuid1,
-        uint256 netuid2,
-        uint256 amount
-    ) external payable;
-    function moveStake(
-        bytes32 hotkey1,
-        bytes32 hotkey2,
-        uint256 netuid1,
-        uint256 netuid2,
-        uint256 amount
-    ) external payable;
-    function getStake(
-        bytes32 hotkey,
-        bytes32 coldkey,
-        uint256 netuid
-    ) external view returns (uint256);
+    function transferStake(bytes32 coldkey, bytes32 hotkey, uint256 netuid1, uint256 netuid2, uint256 amount)
+        external
+        payable;
+    function moveStake(bytes32 hotkey1, bytes32 hotkey2, uint256 netuid1, uint256 netuid2, uint256 amount)
+        external
+        payable;
+    function getStake(bytes32 hotkey, bytes32 coldkey, uint256 netuid) external view returns (uint256);
 }
 
 interface INeuron {
@@ -33,11 +24,11 @@ interface INeuron {
     function dummy() external payable;
 }
 
-contract CollateralUpgradeable is
-    Initializable,
-    UUPSUpgradeable,
-    AccessControlUpgradeable
-{
+interface IAddressMapping {
+    function addressMapping(address evmAddress) external view returns (bytes32);
+}
+
+contract CollateralUpgradeable is Initializable, UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -50,34 +41,54 @@ contract CollateralUpgradeable is
 
     // Role for upgrading the contract
     bytes32 public constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    bytes32 public constant TRUSTEE_ROLE = keccak256("TRUSTEE_ROLE");
 
-    address public constant ISTAKING_V2_ADDRESS =
-        0x0000000000000000000000000000000000000805;
+    address public constant ISTAKING_V2_ADDRESS = 0x0000000000000000000000000000000000000805;
 
-    address public constant INEURON_ADDRESS =
-        0x0000000000000000000000000000000000000804;
+    address public constant INEURON_ADDRESS = 0x0000000000000000000000000000000000000804;
+
+    address public constant IADDRESS_MAPPING_ADDRESS = 0x000000000000000000000000000000000000080C;
 
     // State variables
-    uint16 public NETUID;
-    address public TRUSTEE;
-    uint64 public DECISION_TIMEOUT;
-    uint256 public MIN_COLLATERAL_INCREASE;
-    bytes32 public CONTRACT_COLDKEY;
-    bytes32 public CONTRACT_HOTKEY;
+    uint16 public netuid;
+    address public trustee;
+    uint64 public decisionTimeout;
+    uint256 public minCollateralIncrease;
+    uint256 public minAlphaCollateralIncrease;
+    bytes32 public contractColdkey;
+    bytes32 public validatorHotkey;
 
     mapping(bytes32 => mapping(bytes16 => address)) public nodeToMiner;
-    mapping(bytes32 => mapping(bytes16 => uint256)) public collaterals;
+    mapping(bytes32 => mapping(bytes16 => uint256)) public taoCollaterals;
     mapping(bytes32 => mapping(bytes16 => uint256)) public alphaCollaterals;
     mapping(uint256 => Reclaim) public reclaims;
 
-    mapping(bytes32 => mapping(bytes16 => uint256))
-        private collateralUnderPendingReclaims;
-    mapping(bytes32 => mapping(bytes16 => uint256))
-        private alphaCollateralUnderPendingReclaims;
+    mapping(bytes32 => mapping(bytes16 => uint256)) private taoCollateralUnderPendingReclaims;
+    mapping(bytes32 => mapping(bytes16 => uint256)) private alphaCollateralUnderPendingReclaims;
     uint256 private nextReclaimId;
+    mapping(bytes32 => mapping(bytes16 => bytes32)) public ownerColdkeys;
+
+    bool public taoDepositsEnabled;
+    bool public alphaDepositsEnabled;
+
+    // --- Active node tracking ---
+    struct NodeKey {
+        bytes32 minerHotkey;
+        bytes16 nodeId;
+    }
+
+    NodeKey[] private activeNodeKeys;
+    mapping(bytes32 => uint256) private activeNodeKeyIndex; // keccak256(minerHotkey, nodeId) => 1-based index
+
+    // --- Active reclaim tracking ---
+    uint256[] private activeReclaimIds;
+    mapping(uint256 => uint256) private activeReclaimIdIndex; // reclaimId => 1-based index
+
+    /// @dev Reserved storage gap for future upgrades.
+    uint256[49] private _gap;
 
     struct Reclaim {
-        bytes32 hotkey;
+        bytes32 minerHotkey;
         bytes16 nodeId;
         address miner;
         uint256 amount;
@@ -88,7 +99,7 @@ contract CollateralUpgradeable is
 
     // Events
     event Deposit(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address indexed miner,
         uint256 amount,
@@ -97,49 +108,36 @@ contract CollateralUpgradeable is
     );
     event ReclaimProcessStarted(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address miner,
         uint256 amount,
         bytes32 alphaColdkey,
         uint256 alphaAmount,
-        uint64 expirationTime,
-        string url,
-        bytes16 urlContentMd5Checksum
+        uint64 expirationTime
     );
     event Reclaimed(
         uint256 indexed reclaimRequestId,
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address miner,
         uint256 amount,
         bytes32 alphaColdkey,
         uint256 alphaAmount
     );
-    event Denied(
-        uint256 indexed reclaimRequestId,
-        string url,
-        bytes16 urlContentMd5Checksum
-    );
+    event Denied(uint256 indexed reclaimRequestId, string url, bytes32 urlContentSha256);
     event Slashed(
-        bytes32 indexed hotkey,
+        bytes32 indexed minerHotkey,
         bytes16 indexed nodeId,
         address indexed miner,
         uint256 slashAmount,
         uint256 slashAlphaAmount,
         string url,
-        bytes16 urlContentMd5Checksum
-    );
-    event AlphaColdkeyUpdated(
-        bytes32 indexed oldAlphaColdkey,
-        bytes32 indexed newAlphaColdkey
+        bytes32 urlContentSha256
     );
 
     // Upgrade event
-    event ContractUpgraded(
-        uint256 indexed newVersion,
-        address indexed newImplementation
-    );
+    event ContractUpgraded(uint256 indexed newVersion, address indexed newImplementation);
 
     // Custom errors
     error AmountZero();
@@ -147,63 +145,122 @@ contract CollateralUpgradeable is
     error NodeNotOwned();
     error InsufficientAmount();
     error InvalidDepositMethod();
-    error NotTrustee();
     error PastDenyTimeout();
     error ReclaimNotFound();
     error TransferFailed();
-    error InsufficientCollateralForReclaim();
     error InsufficientCollateralForSlash();
     error InvalidAlphaColdkey();
+    error TaoDepositsDisabled();
+    error AlphaDepositsDisabled();
+    error AddressMappingPrecompileCallFailed();
+    error AddressMappingPrecompileInvalidResponse();
+    error InvalidDerivedContractColdkey();
+    error InvalidDerivedOwnerColdkey();
+    error MinerMustBeEOA();
+    error TrusteeAddressZero();
+    error AdminAddressZero();
+    error ValidatorHotkeyZero();
+    error MinCollateralIncreaseZero();
+    error MinAlphaCollateralIncreaseZero();
+    error DecisionTimeoutZero();
+    error ContractColdkeyZero();
+    error NewTrusteeAddressZero();
+    error DepositAlphaCallFailed();
+    error ContractStakeDidNotIncrease();
+    error MoveStakeCallFailed();
+    error ContractStakeTooLowForWithdraw();
+    error WithdrawAlphaCallFailed();
+    error BurnRegisterCallFailed();
+    error TrusteeRoleDirectModificationForbidden();
 
     /// @notice Initializes the upgradeable collateral contract
-    /// @param netuid The netuid of the subnet
-    /// @param trustee Address of the trustee who has permissions to slash collateral or deny reclaim requests
-    /// @param minCollateralIncrease The minimum amount that can be deposited or reclaimed
-    /// @param decisionTimeout The time window (in seconds) for the trustee to deny a reclaim request
+    /// @param netuid_ The netuid of the subnet
+    /// @param trustee_ Address of the trustee who has permissions to slash collateral or deny reclaim requests
+    /// @param minCollateralIncrease_ The minimum TAO amount that can be deposited
+    /// @param minAlphaCollateralIncrease_ The minimum alpha amount that can be deposited
+    /// @param decisionTimeout_ The time window (in seconds) for the trustee to deny a reclaim request
     /// @param admin Address that will have admin and upgrader roles
+    /// @param validatorHotkey_ The Substrate hotkey of the validator where all alpha is consolidated
+    /// @param taoDepositsEnabled_ Whether TAO deposits are initially enabled
+    /// @param alphaDepositsEnabled_ Whether alpha deposits are initially enabled
     function initialize(
-        uint16 netuid,
-        address trustee,
-        uint256 minCollateralIncrease,
-        uint64 decisionTimeout,
+        uint16 netuid_,
+        address trustee_,
+        uint256 minCollateralIncrease_,
+        uint256 minAlphaCollateralIncrease_,
+        uint64 decisionTimeout_,
         address admin,
-        bytes32 alphaHotkey
+        bytes32 validatorHotkey_,
+        bool taoDepositsEnabled_,
+        bool alphaDepositsEnabled_
     ) public initializer {
-        require(trustee != address(0), "Trustee address must be non-zero");
-        require(admin != address(0), "Admin address must be non-zero");
-        require(alphaHotkey != bytes32(0), "Alpha hotkey must be non-zero");
-        require(
-            minCollateralIncrease > 0,
-            "Min collateral increase must be greater than 0"
-        );
-        require(decisionTimeout > 0, "Decision timeout must be greater than 0");
+        if (trustee_ == address(0)) {
+            revert TrusteeAddressZero();
+        }
+        if (admin == address(0)) {
+            revert AdminAddressZero();
+        }
+        if (validatorHotkey_ == bytes32(0)) {
+            revert ValidatorHotkeyZero();
+        }
+        if (minCollateralIncrease_ == 0) {
+            revert MinCollateralIncreaseZero();
+        }
+        if (minAlphaCollateralIncrease_ == 0) {
+            revert MinAlphaCollateralIncreaseZero();
+        }
+        if (decisionTimeout_ == 0) {
+            revert DecisionTimeoutZero();
+        }
 
         __UUPSUpgradeable_init();
         __AccessControl_init();
+        __ReentrancyGuard_init();
 
-        NETUID = netuid;
-        TRUSTEE = trustee;
-        MIN_COLLATERAL_INCREASE = minCollateralIncrease;
-        DECISION_TIMEOUT = decisionTimeout;
-        CONTRACT_HOTKEY = alphaHotkey;
+        netuid = netuid_;
+        trustee = trustee_;
+        minCollateralIncrease = minCollateralIncrease_;
+        minAlphaCollateralIncrease = minAlphaCollateralIncrease_;
+        decisionTimeout = decisionTimeout_;
+        validatorHotkey = validatorHotkey_;
+        contractColdkey = _deriveContractColdkey();
+        taoDepositsEnabled = taoDepositsEnabled_;
+        alphaDepositsEnabled = alphaDepositsEnabled_;
 
         // Set up roles
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(UPGRADER_ROLE, admin);
+        _grantRole(TRUSTEE_ROLE, trustee_);
     }
 
-    modifier onlyTrustee() {
-        if (msg.sender != TRUSTEE) {
-            revert NotTrustee();
+    function _addressMapping(address evmAddress) internal view returns (bytes32) {
+        (bool success, bytes memory returndata) =
+            IADDRESS_MAPPING_ADDRESS.staticcall(abi.encodeCall(IAddressMapping.addressMapping, (evmAddress)));
+        if (!success) {
+            revert AddressMappingPrecompileCallFailed();
         }
-        _;
+        if (returndata.length != 32) {
+            revert AddressMappingPrecompileInvalidResponse();
+        }
+
+        return abi.decode(returndata, (bytes32));
     }
 
-    function setContractColdkey(bytes32 alphaColdkey) external onlyTrustee {
-        require(alphaColdkey != bytes32(0), "Alpha coldkey must be non-zero");
-        bytes32 oldAlphaColdkey = CONTRACT_COLDKEY;
-        CONTRACT_COLDKEY = alphaColdkey;
-        emit AlphaColdkeyUpdated(oldAlphaColdkey, alphaColdkey);
+    function _deriveContractColdkey() internal view returns (bytes32) {
+        bytes32 derivedColdkey = _addressMapping(address(this));
+        if (derivedColdkey == bytes32(0)) {
+            revert InvalidDerivedContractColdkey();
+        }
+
+        return derivedColdkey;
+    }
+
+    function _deriveOwnerColdkey(address owner) internal view returns (bytes32) {
+        bytes32 derivedColdkey = _addressMapping(owner);
+        if (derivedColdkey == bytes32(0)) {
+            revert InvalidDerivedOwnerColdkey();
+        }
+        return derivedColdkey;
     }
 
     // Allow deposits only via deposit() function
@@ -216,237 +273,306 @@ contract CollateralUpgradeable is
         revert InvalidDepositMethod();
     }
 
+    // --- Internal helpers for active tracking (swap-and-pop) ---
+
+    function _addActiveNode(bytes32 minerHotkey, bytes16 nodeId) private {
+        bytes32 key = keccak256(abi.encode(minerHotkey, nodeId));
+        if (activeNodeKeyIndex[key] != 0) return; // already tracked
+        activeNodeKeys.push(NodeKey({minerHotkey: minerHotkey, nodeId: nodeId}));
+        activeNodeKeyIndex[key] = activeNodeKeys.length; // 1-based
+    }
+
+    function _removeActiveNode(bytes32 minerHotkey, bytes16 nodeId) private {
+        bytes32 key = keccak256(abi.encode(minerHotkey, nodeId));
+        uint256 idx = activeNodeKeyIndex[key];
+        if (idx == 0) return; // not tracked
+        uint256 lastIdx = activeNodeKeys.length;
+        if (idx != lastIdx) {
+            NodeKey storage lastKey = activeNodeKeys[lastIdx - 1];
+            activeNodeKeys[idx - 1] = lastKey;
+            activeNodeKeyIndex[keccak256(abi.encode(lastKey.minerHotkey, lastKey.nodeId))] = idx;
+        }
+        activeNodeKeys.pop();
+        delete activeNodeKeyIndex[key];
+    }
+
+    function _addActiveReclaim(uint256 reclaimId) private {
+        if (activeReclaimIdIndex[reclaimId] != 0) return; // already tracked
+        activeReclaimIds.push(reclaimId);
+        activeReclaimIdIndex[reclaimId] = activeReclaimIds.length; // 1-based
+    }
+
+    function _removeActiveReclaim(uint256 reclaimId) private {
+        uint256 idx = activeReclaimIdIndex[reclaimId];
+        if (idx == 0) return; // not tracked
+        uint256 lastIdx = activeReclaimIds.length;
+        if (idx != lastIdx) {
+            uint256 lastId = activeReclaimIds[lastIdx - 1];
+            activeReclaimIds[idx - 1] = lastId;
+            activeReclaimIdIndex[lastId] = idx;
+        }
+        activeReclaimIds.pop();
+        delete activeReclaimIdIndex[reclaimId];
+    }
+
     /// @notice Allows users to deposit collateral into the contract for a specific node
-    /// @param hotkey The netuid key for the subnet
+    /// @param minerHotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to deposit collateral for
-    /// @dev The first deposit for an nodeId sets the owner. Subsequent deposits must be from the owner.
-    /// @dev The deposited amount must be greater than or equal to MIN_COLLATERAL_INCREASE
-    /// @dev Emits a Deposit event with the hotkey, nodeId, sender's address and deposited amount
-    function deposit(
-        bytes32 hotkey,
-        bytes16 nodeId,
-        bytes32 alphaHotkey,
-        uint256 alphaAmount
-    ) external payable {
-        if (msg.value != 0 && msg.value < MIN_COLLATERAL_INCREASE) {
+    /// @param alphaHotkey The hotkey under which the miner's alpha is currently staked
+    /// @param alphaAmount The amount of alpha to transfer as collateral (in RAO)
+    /// @dev The first deposit for a nodeId sets the owner. Subsequent deposits must be from the owner.
+    /// @dev The TAO deposit amount must be greater than or equal to minCollateralIncrease
+    /// @dev Emits a Deposit event with the minerHotkey, nodeId, sender's address and deposited amount
+    function deposit(bytes32 minerHotkey, bytes16 nodeId, bytes32 alphaHotkey, uint256 alphaAmount)
+        external
+        payable
+        nonReentrant
+    {
+        if (msg.value == 0 && alphaAmount == 0) {
+            revert AmountZero();
+        }
+        if (msg.value > 0 && !taoDepositsEnabled) {
+            revert TaoDepositsDisabled();
+        }
+        if (alphaAmount > 0 && !alphaDepositsEnabled) {
+            revert AlphaDepositsDisabled();
+        }
+        if (msg.value != 0 && msg.value < minCollateralIncrease) {
+            revert InsufficientAmount();
+        }
+        if (alphaAmount != 0 && alphaAmount < minAlphaCollateralIncrease) {
             revert InsufficientAmount();
         }
 
-        address owner = nodeToMiner[hotkey][nodeId];
+        address owner = nodeToMiner[minerHotkey][nodeId];
         if (owner == address(0)) {
-            nodeToMiner[hotkey][nodeId] = msg.sender;
+            // Block constructor-based bypasses where code.length is zero during creation.
+            if (msg.sender.code.length != 0 || tx.origin != msg.sender) {
+                revert MinerMustBeEOA();
+            }
+            nodeToMiner[minerHotkey][nodeId] = msg.sender;
+            ownerColdkeys[minerHotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
         } else if (owner != msg.sender) {
             revert NodeNotOwned();
+        } else if (ownerColdkeys[minerHotkey][nodeId] == bytes32(0)) {
+            // Backfill owner coldkey for nodes that existed before this mapping.
+            ownerColdkeys[minerHotkey][nodeId] = _deriveOwnerColdkey(msg.sender);
         }
+
+        _addActiveNode(minerHotkey, nodeId);
 
         uint256 actualAlphaAmount = alphaAmount;
         if (alphaAmount > 0) {
-            require(
-                CONTRACT_COLDKEY != bytes32(0),
-                "contract coldkey must be non-zero"
-            );
+            if (contractColdkey == bytes32(0)) {
+                revert ContractColdkeyZero();
+            }
             actualAlphaAmount = transferAlpha(alphaHotkey, alphaAmount);
-            alphaCollaterals[hotkey][nodeId] += actualAlphaAmount;
+            alphaCollaterals[minerHotkey][nodeId] += actualAlphaAmount;
         }
 
-        collaterals[hotkey][nodeId] += msg.value;
+        taoCollaterals[minerHotkey][nodeId] += msg.value;
 
-        emit Deposit(
-            hotkey,
-            nodeId,
-            msg.sender,
-            msg.value,
-            alphaHotkey,
-            actualAlphaAmount
-        );
+        emit Deposit(minerHotkey, nodeId, msg.sender, msg.value, alphaHotkey, actualAlphaAmount);
     }
 
     /// @notice Initiates a process to reclaim all available collateral from a specific node
-    /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after DECISION_TIMEOUT
-    /// @param hotkey The netuid key for the subnet
+    /// @dev If it's not denied by the trustee, the collateral will be available for withdrawal after decisionTimeout
+    /// @param minerHotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to reclaim collateral from
-    /// @param url URL containing information about the reclaim request
-    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @dev Alpha payout destination is always derived from the owner address mapping.
     /// @dev Emits ReclaimProcessStarted event with reclaim details and timeout
     /// @dev Reverts with NodeNotOwned if caller is not the owner of the node
     /// @dev Reverts with AmountZero if there is no available collateral to reclaim
-    function reclaimCollateral(
-        bytes32 hotkey,
-        bytes16 nodeId,
-        bytes32 alphaColdkey,
-        string calldata url,
-        bytes16 urlContentMd5Checksum
-    ) external {
-        if (msg.sender != nodeToMiner[hotkey][nodeId]) {
+    function reclaimCollateral(bytes32 minerHotkey, bytes16 nodeId)
+        external
+        nonReentrant
+    {
+        if (msg.sender != nodeToMiner[minerHotkey][nodeId]) {
             revert NodeNotOwned();
         }
 
-        uint256 availableAmount = collaterals[hotkey][nodeId] -
-            collateralUnderPendingReclaims[hotkey][nodeId];
+        uint256 availableAmount =
+            Math.saturatingSub(taoCollaterals[minerHotkey][nodeId], taoCollateralUnderPendingReclaims[minerHotkey][nodeId]);
 
-        uint256 availableAlphaAmount = alphaCollaterals[hotkey][nodeId] -
-            alphaCollateralUnderPendingReclaims[hotkey][nodeId];
+        uint256 availableAlphaAmount =
+            Math.saturatingSub(alphaCollaterals[minerHotkey][nodeId], alphaCollateralUnderPendingReclaims[minerHotkey][nodeId]);
 
         if (availableAmount == 0 && availableAlphaAmount == 0) {
             revert AmountZero();
         }
 
-        if (availableAlphaAmount > 0 && alphaColdkey == bytes32(0)) {
+        bytes32 ownerColdkey = ownerColdkeys[minerHotkey][nodeId];
+        if (ownerColdkey == bytes32(0)) {
+            ownerColdkey = _deriveOwnerColdkey(msg.sender);
+            ownerColdkeys[minerHotkey][nodeId] = ownerColdkey;
+        }
+
+        if (availableAlphaAmount > 0 && ownerColdkey == bytes32(0)) {
             revert InvalidAlphaColdkey();
         }
 
-        uint64 denyTimeout = uint64(block.timestamp) + DECISION_TIMEOUT;
+        uint64 denyTimeout = SafeCast.toUint64(block.timestamp + decisionTimeout);
 
         reclaims[nextReclaimId] = Reclaim({
-            hotkey: hotkey,
+            minerHotkey: minerHotkey,
             nodeId: nodeId,
             miner: msg.sender,
             amount: availableAmount,
-            alphaColdkey: alphaColdkey,
+            alphaColdkey: ownerColdkey,
             alphaAmount: availableAlphaAmount,
             denyTimeout: denyTimeout
         });
 
-        collateralUnderPendingReclaims[hotkey][nodeId] += availableAmount;
-        alphaCollateralUnderPendingReclaims[hotkey][
-            nodeId
-        ] += availableAlphaAmount;
+        taoCollateralUnderPendingReclaims[minerHotkey][nodeId] += availableAmount;
+        alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] += availableAlphaAmount;
+
+        _addActiveReclaim(nextReclaimId);
 
         emit ReclaimProcessStarted(
             nextReclaimId,
-            hotkey,
+            minerHotkey,
             nodeId,
             msg.sender,
             availableAmount,
-            alphaColdkey,
+            ownerColdkey,
             availableAlphaAmount,
-            denyTimeout,
-            url,
-            urlContentMd5Checksum
+            denyTimeout
         );
 
         nextReclaimId++;
     }
 
-    /// @notice Finalizes a reclaim request after the deny timeout has expired
-    /// @dev Can only be called after the deny timeout has passed for the specific reclaim request
-    /// @dev Transfers the collateral to the miner and removes the node-to-miner mapping if successful
-    /// @dev This fully closes the relationship, allowing to request another reclaim
+    /// @notice Finalizes a reclaim request at or after the deny timeout
+    /// @dev Can only be called when block.timestamp >= denyTimeout for the specific reclaim request
+    /// @dev Transfers the collateral to the miner. Clears the node-to-miner mapping only when all balances and pending reclaims reach zero
     /// @param reclaimRequestId The ID of the reclaim request to finalize
     /// @dev Emits Reclaimed event with reclaim details if successful
     /// @dev Reverts with ReclaimNotFound if the reclaim request doesn't exist or was denied
     /// @dev Reverts with BeforeDenyTimeout if the deny timeout hasn't expired
     /// @dev Reverts with TransferFailed if the TAO transfer fails
-    function finalizeReclaim(uint256 reclaimRequestId) external {
+    function finalizeReclaim(uint256 reclaimRequestId) external nonReentrant {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
         if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
         }
-        if (reclaim.denyTimeout >= block.timestamp) {
+        if (block.timestamp < reclaim.denyTimeout) {
             revert BeforeDenyTimeout();
         }
 
-        bytes32 hotkey = reclaim.hotkey;
+        bytes32 minerHotkey = reclaim.minerHotkey;
         bytes16 nodeId = reclaim.nodeId;
         address miner = reclaim.miner;
         uint256 amount = reclaim.amount;
         bytes32 alphaColdkey = reclaim.alphaColdkey;
         uint256 alphaAmount = reclaim.alphaAmount;
 
+        // --- Effects ---
+        _removeActiveReclaim(reclaimRequestId);
         delete reclaims[reclaimRequestId];
-        collateralUnderPendingReclaims[hotkey][nodeId] -= amount;
+        taoCollateralUnderPendingReclaims[minerHotkey][nodeId] -= amount;
+        alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] -= alphaAmount;
 
-        if (collaterals[hotkey][nodeId] < amount) {
-            // miner got slashed and can't withdraw
-            revert InsufficientCollateralForReclaim();
-        }
+        // Cap TAO transfer to available balance (slash may have reduced it)
+        uint256 actualAmount = Math.min(amount, taoCollaterals[minerHotkey][nodeId]);
+        taoCollaterals[minerHotkey][nodeId] -= actualAmount;
 
-        collaterals[hotkey][nodeId] -= amount;
-
-        // check-effect-interact pattern used to prevent reentrancy attacks
-        (bool success, ) = payable(miner).call{value: amount}("");
-        if (!success) {
-            revert TransferFailed();
-        }
-
-        if (alphaAmount > 0) {
-            alphaCollaterals[hotkey][nodeId] -= alphaAmount;
-            withdrawAlpha(alphaColdkey, alphaAmount);
-        }
+        // Cap alpha transfer to available balance (slash may have reduced it)
+        uint256 actualAlphaAmount = Math.min(alphaAmount, alphaCollaterals[minerHotkey][nodeId]);
+        alphaCollaterals[minerHotkey][nodeId] -= actualAlphaAmount;
 
         if (
-            collaterals[hotkey][nodeId] == 0 &&
-            alphaCollaterals[hotkey][nodeId] == 0
+            taoCollaterals[minerHotkey][nodeId] == 0 && alphaCollaterals[minerHotkey][nodeId] == 0
+                && taoCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+                && alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
         ) {
-            nodeToMiner[hotkey][nodeId] = address(0);
+            nodeToMiner[minerHotkey][nodeId] = address(0);
+            ownerColdkeys[minerHotkey][nodeId] = bytes32(0);
+            _removeActiveNode(minerHotkey, nodeId);
         }
 
-        emit Reclaimed(
-            reclaimRequestId,
-            hotkey,
-            nodeId,
-            miner,
-            amount,
-            alphaColdkey,
-            alphaAmount
-        );
+        emit Reclaimed(reclaimRequestId, minerHotkey, nodeId, miner, actualAmount, alphaColdkey, actualAlphaAmount);
+
+        // --- Interactions ---
+        if (actualAmount > 0) {
+            (bool success,) = payable(miner).call{value: actualAmount}("");
+            if (!success) {
+                revert TransferFailed();
+            }
+        }
+
+        if (actualAlphaAmount > 0) {
+            withdrawAlpha(alphaColdkey, actualAlphaAmount);
+        }
     }
 
-    /// @notice Allows the trustee to deny a pending reclaim request before the timeout expires
-    /// @dev Can only be called by the trustee (address set in initializer)
-    /// @dev Must be called before the deny timeout expires
+    /// @notice Allows the trustee to deny a pending reclaim request strictly before the timeout
+    /// @dev Can only be called by an account with TRUSTEE_ROLE
+    /// @dev Must be called only when block.timestamp < denyTimeout
     /// @dev Removes the reclaim request and frees up the collateral for other reclaims
     /// @param reclaimRequestId The ID of the reclaim request to deny
     /// @param url URL containing the reason of denial
-    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits Denied event with the reclaim request ID
-    /// @dev Reverts with NotTrustee if called by non-trustee address
+    /// @dev Reverts with AccessControlUnauthorizedAccount if called by non-trustee address
     /// @dev Reverts with ReclaimNotFound if the reclaim request doesn't exist
-    /// @dev Reverts with PastDenyTimeout if the timeout has already expired
-    function denyReclaimRequest(
-        uint256 reclaimRequestId,
-        string calldata url,
-        bytes16 urlContentMd5Checksum
-    ) external onlyTrustee {
+    /// @dev Reverts with PastDenyTimeout if the timeout has reached or passed
+    function denyReclaimRequest(uint256 reclaimRequestId, string calldata url, bytes32 urlContentSha256)
+        external
+        onlyRole(TRUSTEE_ROLE)
+        nonReentrant
+    {
         Reclaim storage reclaim = reclaims[reclaimRequestId];
-        if (reclaim.amount == 0) {
+        if (reclaim.amount == 0 && reclaim.alphaAmount == 0) {
             revert ReclaimNotFound();
         }
-        if (reclaim.denyTimeout < block.timestamp) {
+        if (block.timestamp >= reclaim.denyTimeout) {
             revert PastDenyTimeout();
         }
 
-        collateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.nodeId
-        ] -= reclaim.amount;
-        alphaCollateralUnderPendingReclaims[reclaim.hotkey][
-            reclaim.nodeId
-        ] -= reclaim.alphaAmount;
-        emit Denied(reclaimRequestId, url, urlContentMd5Checksum);
+        bytes32 minerHotkey = reclaim.minerHotkey;
+        bytes16 nodeId = reclaim.nodeId;
 
+        taoCollateralUnderPendingReclaims[minerHotkey][nodeId] -= reclaim.amount;
+        alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] -= reclaim.alphaAmount;
+        emit Denied(reclaimRequestId, url, urlContentSha256);
+
+        _removeActiveReclaim(reclaimRequestId);
         delete reclaims[reclaimRequestId];
+
+        // Clear ownership if all balances and pending reclaims are zero
+        if (
+            taoCollaterals[minerHotkey][nodeId] == 0 && alphaCollaterals[minerHotkey][nodeId] == 0
+                && taoCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+                && alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+        ) {
+            nodeToMiner[minerHotkey][nodeId] = address(0);
+            ownerColdkeys[minerHotkey][nodeId] = bytes32(0);
+            _removeActiveNode(minerHotkey, nodeId);
+        }
     }
 
     /// @notice Allows the trustee to slash a miner's collateral for a specific node
-    /// @dev Can only be called by the trustee (address set in initializer)
-    /// @dev Removes the collateral from the node and burns it
-    /// @param hotkey The netuid key for the subnet
+    /// @dev Can only be called by an account with TRUSTEE_ROLE
+    /// @dev Removes the collateral from the node and sends it to the trustee
+    /// @param minerHotkey The miner's Bittensor hotkey under which the node is registered
     /// @param nodeId The ID of the node to slash
+    /// @param slashAmount The amount of TAO collateral to slash (in wei)
+    /// @param slashAlphaAmount The amount of alpha collateral to slash (in RAO)
     /// @param url URL containing the reason for slashing
-    /// @param urlContentMd5Checksum MD5 checksum of the content at the provided URL
+    /// @param urlContentSha256 SHA-256 checksum of the content at the provided URL
     /// @dev Emits Slashed event with the node's ID, miner's address and the amount slashed
     /// @dev Reverts with AmountZero if there is no collateral to slash
     /// @dev Reverts with TransferFailed if the TAO transfer fails
     function slashCollateral(
-        bytes32 hotkey,
+        bytes32 minerHotkey,
         bytes16 nodeId,
         uint256 slashAmount,
         uint256 slashAlphaAmount,
         string calldata url,
-        bytes16 urlContentMd5Checksum
-    ) external onlyTrustee {
-        uint256 amount = collaterals[hotkey][nodeId];
-        uint256 alphaAmount = alphaCollaterals[hotkey][nodeId];
+        bytes32 urlContentSha256
+    ) external onlyRole(TRUSTEE_ROLE) nonReentrant {
+        uint256 amount = taoCollaterals[minerHotkey][nodeId];
+        uint256 alphaAmount = alphaCollaterals[minerHotkey][nodeId];
 
         if (amount == 0 && alphaAmount == 0) {
             revert AmountZero();
@@ -456,52 +582,90 @@ contract CollateralUpgradeable is
             revert InsufficientCollateralForSlash();
         }
 
-        collaterals[hotkey][nodeId] = amount - slashAmount;
-        alphaCollaterals[hotkey][nodeId] = alphaAmount - slashAlphaAmount;
-        address miner = nodeToMiner[hotkey][nodeId];
+        taoCollaterals[minerHotkey][nodeId] = amount - slashAmount;
+        alphaCollaterals[minerHotkey][nodeId] = alphaAmount - slashAlphaAmount;
+        address miner = nodeToMiner[minerHotkey][nodeId];
+        bytes32 trusteeColdkey = bytes32(0);
+        if (slashAlphaAmount > 0) {
+            trusteeColdkey = _deriveOwnerColdkey(trustee);
+        }
 
-        // burn the collateral, alpha locked in the contract
-        (bool success, ) = payable(address(0)).call{value: slashAmount}("");
-        if (!success) {
-            revert TransferFailed();
+        if (
+            amount == slashAmount && alphaAmount == slashAlphaAmount
+                && taoCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+                && alphaCollateralUnderPendingReclaims[minerHotkey][nodeId] == 0
+        ) {
+            nodeToMiner[minerHotkey][nodeId] = address(0);
+            ownerColdkeys[minerHotkey][nodeId] = bytes32(0);
+            _removeActiveNode(minerHotkey, nodeId);
         }
-        if (amount == slashAmount && alphaAmount == slashAlphaAmount) {
-            nodeToMiner[hotkey][nodeId] = address(0);
+
+        emit Slashed(minerHotkey, nodeId, miner, slashAmount, slashAlphaAmount, url, urlContentSha256);
+
+        // send slashed TAO to the trustee
+        if (slashAmount > 0) {
+            (bool success,) = payable(trustee).call{value: slashAmount}("");
+            if (!success) {
+                revert TransferFailed();
+            }
         }
-        emit Slashed(
-            hotkey,
-            nodeId,
-            miner,
-            slashAmount,
-            slashAlphaAmount,
-            url,
-            urlContentMd5Checksum
-        );
+        // slash alpha by transferring ownership to trustee coldkey
+        if (slashAlphaAmount > 0) {
+            withdrawAlpha(trusteeColdkey, slashAlphaAmount);
+        }
     }
 
     /// @notice Updates the trustee address
     /// @param newTrustee The new trustee address
     /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
-    function updateTrustee(
-        address newTrustee
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(newTrustee != address(0), "New trustee cannot be zero address");
-        address oldTrustee = TRUSTEE;
-        TRUSTEE = newTrustee;
+    function updateTrustee(address newTrustee) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newTrustee == address(0)) {
+            revert NewTrusteeAddressZero();
+        }
+        address oldTrustee = trustee;
+        if (oldTrustee != newTrustee && oldTrustee != address(0)) {
+            _revokeRole(TRUSTEE_ROLE, oldTrustee);
+        }
+        _grantRole(TRUSTEE_ROLE, newTrustee);
+        trustee = newTrustee;
 
         // Emit an event for the trustee change
         emit TrusteeUpdated(oldTrustee, newTrustee);
     }
 
+    /// @notice Prevents direct grant of TRUSTEE_ROLE; use updateTrustee instead.
+    function grantRole(bytes32 role, address account) public override {
+        if (role == TRUSTEE_ROLE) {
+            revert TrusteeRoleDirectModificationForbidden();
+        }
+        super.grantRole(role, account);
+    }
+
+    /// @notice Prevents direct revocation of TRUSTEE_ROLE; use updateTrustee instead.
+    function revokeRole(bytes32 role, address account) public override {
+        if (role == TRUSTEE_ROLE) {
+            revert TrusteeRoleDirectModificationForbidden();
+        }
+        super.revokeRole(role, account);
+    }
+
+    /// @notice Prevents renouncing TRUSTEE_ROLE; use updateTrustee instead.
+    function renounceRole(bytes32 role, address callerConfirmation) public override {
+        if (role == TRUSTEE_ROLE) {
+            revert TrusteeRoleDirectModificationForbidden();
+        }
+        super.renounceRole(role, callerConfirmation);
+    }
+
     /// @notice Updates the decision timeout
     /// @param newTimeout The new decision timeout in seconds
     /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
-    function updateDecisionTimeout(
-        uint64 newTimeout
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(newTimeout > 0, "Decision timeout must be greater than 0");
-        uint64 oldTimeout = DECISION_TIMEOUT;
-        DECISION_TIMEOUT = newTimeout;
+    function updateDecisionTimeout(uint64 newTimeout) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newTimeout == 0) {
+            revert DecisionTimeoutZero();
+        }
+        uint64 oldTimeout = decisionTimeout;
+        decisionTimeout = newTimeout;
 
         // Emit an event for the timeout change
         emit DecisionTimeoutUpdated(oldTimeout, newTimeout);
@@ -510,126 +674,204 @@ contract CollateralUpgradeable is
     /// @notice Updates the minimum collateral increase
     /// @param newMinIncrease The new minimum collateral increase
     /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
-    function updateMinCollateralIncrease(
-        uint256 newMinIncrease
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(
-            newMinIncrease > 0,
-            "Min collateral increase must be greater than 0"
-        );
-        uint256 oldMinIncrease = MIN_COLLATERAL_INCREASE;
-        MIN_COLLATERAL_INCREASE = newMinIncrease;
+    function updateMinCollateralIncrease(uint256 newMinIncrease) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newMinIncrease == 0) {
+            revert MinCollateralIncreaseZero();
+        }
+        uint256 oldMinIncrease = minCollateralIncrease;
+        minCollateralIncrease = newMinIncrease;
 
         // Emit an event for the min increase change
         emit MinCollateralIncreaseUpdated(oldMinIncrease, newMinIncrease);
     }
 
+    /// @notice Updates the minimum alpha collateral increase
+    /// @param newMinIncrease The new minimum alpha collateral increase
+    /// @dev Can only be called by accounts with DEFAULT_ADMIN_ROLE
+    function updateMinAlphaCollateralIncrease(uint256 newMinIncrease) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newMinIncrease == 0) {
+            revert MinAlphaCollateralIncreaseZero();
+        }
+        uint256 oldMinIncrease = minAlphaCollateralIncrease;
+        minAlphaCollateralIncrease = newMinIncrease;
+
+        emit MinAlphaCollateralIncreaseUpdated(oldMinIncrease, newMinIncrease);
+    }
+
+    function updateTaoDepositsEnabled(bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        taoDepositsEnabled = enabled;
+        emit TaoDepositsEnabledUpdated(enabled);
+    }
+
+    function updateAlphaDepositsEnabled(bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        alphaDepositsEnabled = enabled;
+        emit AlphaDepositsEnabledUpdated(enabled);
+    }
+
     /// @dev Function to authorize upgrades, restricted to UPGRADER_ROLE
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override onlyRole(UPGRADER_ROLE) {
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(UPGRADER_ROLE) {
         emit ContractUpgraded(this.getVersion() + 1, newImplementation);
     }
 
     // Additional events for administrative changes
-    event TrusteeUpdated(
-        address indexed oldTrustee,
-        address indexed newTrustee
-    );
+    event TrusteeUpdated(address indexed oldTrustee, address indexed newTrustee);
     event DecisionTimeoutUpdated(uint64 oldTimeout, uint64 newTimeout);
-    event MinCollateralIncreaseUpdated(
-        uint256 oldMinIncrease,
-        uint256 newMinIncrease
-    );
+    event MinCollateralIncreaseUpdated(uint256 oldMinIncrease, uint256 newMinIncrease);
+    event MinAlphaCollateralIncreaseUpdated(uint256 oldMinIncrease, uint256 newMinIncrease);
+    event TaoDepositsEnabledUpdated(bool enabled);
+    event AlphaDepositsEnabledUpdated(bool enabled);
 
-    function getContractStake(bytes32 hotkey) public view returns (uint256) {
-        return
-            IStaking(ISTAKING_V2_ADDRESS).getStake(
-                hotkey,
-                CONTRACT_COLDKEY,
-                NETUID
-            );
+    struct NodeCollateral {
+        bytes32 minerHotkey;
+        bytes16 nodeId;
+        address miner;
+        uint256 taoCollateral;
+        uint256 alphaCollateral;
     }
 
-    function transferAlpha(
-        bytes32 alphaHotkey,
-        uint256 alphaAmount
-    ) internal returns (uint256) {
+    function getContractStake(bytes32 hotkey) public view returns (uint256) {
+        return IStaking(ISTAKING_V2_ADDRESS).getStake(hotkey, contractColdkey, netuid);
+    }
+
+    function transferAlpha(bytes32 alphaHotkey, uint256 alphaAmount) internal returns (uint256) {
         uint256 contractStake = getContractStake(alphaHotkey);
 
         bytes memory data = abi.encodeWithSelector(
-            IStaking.transferStake.selector,
-            CONTRACT_COLDKEY,
-            alphaHotkey,
-            uint256(NETUID),
-            uint256(NETUID),
-            alphaAmount
+            IStaking.transferStake.selector, contractColdkey, alphaHotkey, uint256(netuid), uint256(netuid), alphaAmount
         );
         // delegatecall the original sender should be used as origin for deposit alpha
-        (bool success, ) = address(ISTAKING_V2_ADDRESS).delegatecall{
-            gas: gasleft()
-        }(data);
-        require(success, "user deposit alpha call failed");
+        (bool success,) = address(ISTAKING_V2_ADDRESS).delegatecall{gas: gasleft()}(data);
+        if (!success) {
+            revert DepositAlphaCallFailed();
+        }
 
         uint256 newContractStake = getContractStake(alphaHotkey);
 
-        require(
-            newContractStake > contractStake,
-            "contract stake decreased after deposit"
-        );
+        if (newContractStake <= contractStake) {
+            revert ContractStakeDidNotIncrease();
+        }
 
         // use the increased stake as the actual alpha amount, for the swap fee in the move stake call
-        // the contract will take it and get compensated by laster emission of alpha
+        // the contract will take it and get compensated by later emission of alpha
         uint256 actualAlphaAmount = newContractStake - contractStake;
 
-        if (alphaHotkey != CONTRACT_HOTKEY) {
+        if (alphaHotkey != validatorHotkey) {
             data = abi.encodeWithSelector(
-                IStaking.moveStake.selector,
-                alphaHotkey,
-                CONTRACT_HOTKEY,
-                NETUID,
-                NETUID,
-                actualAlphaAmount
+                IStaking.moveStake.selector, alphaHotkey, validatorHotkey, netuid, netuid, actualAlphaAmount
             );
-            // call the origin is the proxy contract. the alpha just transfer betweend different hotkeys of contract as coldkey
-            (success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
-                data
-            );
-            require(success, "user deposit, move stake call failed");
+            // call the origin is the proxy contract. the alpha just transfers between different hotkeys of contract as coldkey
+            (success,) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(data);
+            if (!success) {
+                revert MoveStakeCallFailed();
+            }
         }
 
         return actualAlphaAmount;
     }
 
     function withdrawAlpha(bytes32 alphaColdkey, uint256 alphaAmount) internal {
-        uint256 contractStake = getContractStake(CONTRACT_HOTKEY);
-        require(
-            contractStake >= alphaAmount,
-            "contract stake is less than withdraw alpha amount"
-        );
+        uint256 contractStake = getContractStake(validatorHotkey);
+        if (contractStake < alphaAmount) {
+            revert ContractStakeTooLowForWithdraw();
+        }
 
         bytes memory data = abi.encodeWithSelector(
-            IStaking.transferStake.selector,
-            alphaColdkey,
-            CONTRACT_HOTKEY,
-            NETUID,
-            NETUID,
-            alphaAmount
+            IStaking.transferStake.selector, alphaColdkey, validatorHotkey, netuid, netuid, alphaAmount
         );
         // use call the origin should be the proxy contract
-        (bool success, ) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(
-            data
-        );
-        require(success, "user withdraw alpha call failed");
+        (bool success,) = address(ISTAKING_V2_ADDRESS).call{gas: gasleft()}(data);
+        if (!success) {
+            revert WithdrawAlphaCallFailed();
+        }
     }
 
-    function burnRegister() external onlyTrustee {
-        bytes memory data = abi.encodeWithSelector(
-            INeuron.burnedRegister.selector,
-            NETUID,
-            CONTRACT_HOTKEY
-        );
-        (bool success, ) = address(INEURON_ADDRESS).call{gas: gasleft()}(data);
-        require(success, "user burn register call failed");
+    function burnRegister() external onlyRole(TRUSTEE_ROLE) {
+        bytes memory data = abi.encodeWithSelector(INeuron.burnedRegister.selector, netuid, validatorHotkey);
+        (bool success,) = address(INEURON_ADDRESS).call{gas: gasleft()}(data);
+        if (!success) {
+            revert BurnRegisterCallFailed();
+        }
+    }
+
+    // ============ VIEW FUNCTIONS FOR ACTIVE TRACKING ============
+
+    struct ReclaimInfo {
+        uint256 reclaimRequestId;
+        bytes32 minerHotkey;
+        bytes16 nodeId;
+        address miner;
+        uint256 amount;
+        bytes32 alphaColdkey;
+        uint256 alphaAmount;
+        uint64 denyTimeout;
+    }
+
+    /// @notice Returns the number of active nodes
+    function getActiveNodeCount() external view returns (uint256) {
+        return activeNodeKeys.length;
+    }
+
+    /// @notice Returns the number of active reclaims
+    function getActiveReclaimCount() external view returns (uint256) {
+        return activeReclaimIds.length;
+    }
+
+    /// @notice Returns a paginated slice of active node collateral data.
+    ///         Amounts reflect effective collateral (total minus any pending reclaims).
+    /// @param offset Starting index in the activeNodeKeys array
+    /// @param limit Maximum number of entries to return
+    function getAllCollaterals(uint256 offset, uint256 limit)
+        external
+        view
+        returns (NodeCollateral[] memory results)
+    {
+        uint256 len = activeNodeKeys.length;
+        if (offset >= len) {
+            return new NodeCollateral[](0);
+        }
+        uint256 remaining = len - offset;
+        uint256 count = limit > remaining ? remaining : limit;
+        results = new NodeCollateral[](count);
+        for (uint256 i = 0; i < count; i++) {
+            NodeKey storage key = activeNodeKeys[offset + i];
+            results[i] = NodeCollateral({
+                minerHotkey: key.minerHotkey,
+                nodeId: key.nodeId,
+                miner: nodeToMiner[key.minerHotkey][key.nodeId],
+                taoCollateral: Math.saturatingSub(taoCollaterals[key.minerHotkey][key.nodeId], taoCollateralUnderPendingReclaims[key.minerHotkey][key.nodeId]),
+                alphaCollateral: Math.saturatingSub(alphaCollaterals[key.minerHotkey][key.nodeId], alphaCollateralUnderPendingReclaims[key.minerHotkey][key.nodeId])
+            });
+        }
+    }
+
+    /// @notice Returns a paginated slice of active reclaim data
+    /// @param offset Starting index in the activeReclaimIds array
+    /// @param limit Maximum number of entries to return
+    function getAllReclaims(uint256 offset, uint256 limit)
+        external
+        view
+        returns (ReclaimInfo[] memory results)
+    {
+        uint256 len = activeReclaimIds.length;
+        if (offset >= len) {
+            return new ReclaimInfo[](0);
+        }
+        uint256 remaining = len - offset;
+        uint256 count = limit > remaining ? remaining : limit;
+        results = new ReclaimInfo[](count);
+        for (uint256 i = 0; i < count; i++) {
+            uint256 id = activeReclaimIds[offset + i];
+            Reclaim storage r = reclaims[id];
+            results[i] = ReclaimInfo({
+                reclaimRequestId: id,
+                minerHotkey: r.minerHotkey,
+                nodeId: r.nodeId,
+                miner: r.miner,
+                amount: r.amount,
+                alphaColdkey: r.alphaColdkey,
+                alphaAmount: r.alphaAmount,
+                denyTimeout: r.denyTimeout
+            });
+        }
     }
 }

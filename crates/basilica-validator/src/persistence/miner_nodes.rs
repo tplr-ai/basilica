@@ -2,6 +2,7 @@
 //!
 //! This module contains all SQL operations related to miner-node relationships.
 
+use crate::collateral::CollateralPreference;
 use crate::miner_prover::types::MinerInfo;
 use crate::persistence::types::{AvailableNodeData, NodeData};
 use crate::persistence::SimplePersistence;
@@ -22,6 +23,17 @@ pub struct NodeBidCandidate {
     pub miner_uid: i64,
     pub hourly_rate_cents: u32,
     pub gpu_count: i64,
+    pub collateral_preference: CollateralPreference,
+}
+
+/// GPU info for a node, used by the collateral preference computation.
+#[derive(Debug, Clone)]
+pub struct NodeGpuInfo {
+    pub miner_id: String,
+    pub node_id: String,
+    pub hotkey_ss58: String,
+    pub gpu_category: Option<String>,
+    pub gpu_count: u32,
 }
 
 /// Stored bid metadata for a registered node.
@@ -32,9 +44,10 @@ pub struct RegisteredNodeBidMetadata {
 }
 
 pub(crate) fn extract_gpu_memory_gb(gpu_name: &str) -> u32 {
+    use once_cell::sync::Lazy;
     use regex::Regex;
-    let re = Regex::new(r"(\d+)GB").unwrap();
-    if let Some(captures) = re.captures(gpu_name) {
+    static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(\d+)GB").expect("valid regex"));
+    if let Some(captures) = RE.captures(gpu_name) {
         captures[1].parse().unwrap_or(0)
     } else {
         0
@@ -851,6 +864,7 @@ impl SimplePersistence {
                 m.hotkey  AS miner_hotkey,
                 CAST(REPLACE(m.id, 'miner_', '') AS INTEGER) AS miner_uid,
                 me.hourly_rate_cents,
+                me.collateral_preference,
                 COUNT(DISTINCT gua.gpu_uuid) AS gpu_count,
                 GROUP_CONCAT(gua.gpu_name) AS gpu_names
             FROM miner_nodes me
@@ -862,7 +876,7 @@ impl SimplePersistence {
                 AND me.bid_active = 1
                 AND me.hourly_rate_cents IS NOT NULL
                 AND me.hourly_rate_cents <= ?
-            GROUP BY me.node_id, me.miner_id, m.hotkey, m.id, me.hourly_rate_cents
+            GROUP BY me.node_id, me.miner_id, m.hotkey, m.id, me.hourly_rate_cents, me.collateral_preference
             HAVING COUNT(DISTINCT gua.gpu_uuid) >= ?
             ORDER BY me.hourly_rate_cents ASC
             LIMIT ?
@@ -893,6 +907,10 @@ impl SimplePersistence {
                 continue;
             }
 
+            let pref_str: String = row.get("collateral_preference");
+            let collateral_preference =
+                CollateralPreference::from_str(&pref_str).unwrap_or_default();
+
             candidates.push(NodeBidCandidate {
                 node_id: row.get("node_id"),
                 miner_id: row.get("miner_id"),
@@ -900,10 +918,74 @@ impl SimplePersistence {
                 miner_uid: row.get("miner_uid"),
                 hourly_rate_cents: row.get::<i64, _>("hourly_rate_cents") as u32,
                 gpu_count: row.get("gpu_count"),
+                collateral_preference,
             });
         }
 
         Ok(candidates)
+    }
+
+    /// Get all bid-active nodes with GPU info for collateral preference computation.
+    /// JOINs `miner_nodes` + `miners` + `gpu_uuid_assignments` to get GPU category.
+    pub async fn get_all_nodes_with_gpu_info(&self) -> Result<Vec<NodeGpuInfo>> {
+        let query = r#"
+            SELECT
+                me.miner_id,
+                me.node_id,
+                m.hotkey AS hotkey_ss58,
+                gua.gpu_name AS gpu_name,
+                COUNT(DISTINCT gua.gpu_uuid) AS gpu_count
+            FROM miner_nodes me
+            JOIN miners m ON me.miner_id = m.id
+            LEFT JOIN gpu_uuid_assignments gua
+                ON me.node_id = gua.node_id AND gua.miner_id = me.miner_id
+            WHERE me.bid_active = 1
+            GROUP BY me.miner_id, me.node_id, m.hotkey, gua.gpu_name
+        "#;
+
+        let rows = sqlx::query(query).fetch_all(self.pool()).await?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            let gpu_name: Option<String> = row.get("gpu_name");
+            let gpu_category =
+                gpu_name.and_then(|name| GpuCategory::from_str(&name).ok().map(|c| c.to_string()));
+
+            results.push(NodeGpuInfo {
+                miner_id: row.get("miner_id"),
+                node_id: row.get("node_id"),
+                hotkey_ss58: row.get("hotkey_ss58"),
+                gpu_category,
+                gpu_count: row.get::<i64, _>("gpu_count") as u32,
+            });
+        }
+
+        Ok(results)
+    }
+
+    /// Batch update collateral preferences for nodes.
+    /// Takes `(node_id, preference)` pairs and updates in a transaction.
+    pub async fn batch_update_collateral_preferences(
+        &self,
+        updates: &[(String, CollateralPreference)],
+    ) -> Result<()> {
+        if updates.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = self.pool().begin().await?;
+
+        for (node_id, preference) in updates {
+            sqlx::query("UPDATE miner_nodes SET collateral_preference = ? WHERE node_id = ?")
+                .bind(preference.as_str())
+                .bind(node_id)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+
+        Ok(())
     }
 
     // =========================================================================
@@ -914,18 +996,19 @@ impl SimplePersistence {
     // currently claimed for a rental. When NULL the node is available; when set
     // it holds the rental_id that owns the node.
     //
-    // INVARIANT: active_rental_id MUST be cleared on EVERY termination path:
-    //   1. stop_rental()                    -- user stops rental
-    //   2. deploy_container failure         -- container deploy fails
-    //   3. finalize_rental failure          -- DB save fails after deploy
-    //   4. ensure_not_banned failure        -- node is banned
-    //   5. require_ssh_endpoint failure     -- SSH endpoint missing
-    //   6. require_node_details failure     -- node details missing
-    //   7. ensure_recent_validation failure -- validation too old
-    //   8. health check timeout             -- monitoring.rs
-    //   9. health check error               -- monitoring.rs
-    //  10. container unhealthy              -- monitoring.rs
-    //  11. restart failure                  -- restart_rental() fails
+    // INVARIANT: active_rental_id MUST be cleared on EVERY termination path.
+    //
+    // Rental creation (`start_rental`):
+    //   - `claim_node()` sets active_rental_id as the FIRST step.
+    //   - All subsequent work runs inside `start_rental_inner()`.
+    //   - If `start_rental_inner` returns Err, `start_rental` calls
+    //     `release_node()` in a single catch-all handler — individual
+    //     validation/deploy helpers do NOT call release_node themselves.
+    //
+    // Rental lifecycle:
+    //   1. stop_rental()       -- user stops rental
+    //   2. restart failure     -- restart_rental() fails
+    //   3. health check        -- monitoring.rs detects terminal state
     //
     // There is NO TTL. If release_node is not called, the node stays claimed
     // forever. This is by design to avoid silent data corruption.
