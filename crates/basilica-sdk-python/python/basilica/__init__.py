@@ -102,6 +102,15 @@ from basilica._basilica import (
     PublicDeploymentMetadataResponse,
 )
 
+from basilica.sandbox import (
+    CreateSandboxRequest,
+    Sandbox,
+    SandboxClient,
+    SandboxDetail,
+    SandboxEnvVar,
+    SandboxSummary,
+)
+
 # GpuRequirementsSpec may not be available in older binaries
 try:
     from basilica._basilica import GpuRequirementsSpec

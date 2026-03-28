@@ -1258,6 +1258,53 @@ impl BasilicaClient {
         self.get_public(&path).await
     }
 
+    // ===== Sandboxes =====
+
+    /// Create a new sandbox.
+    ///
+    /// Control-plane only: creates the sandbox CRD via the API.
+    /// Data-plane operations go directly to the sandbox domain.
+    pub async fn create_sandbox(
+        &self,
+        request: crate::sandbox::CreateSandboxRequest,
+    ) -> Result<crate::sandbox::Sandbox> {
+        let resp: crate::sandbox::CreateSandboxResponse =
+            self.post("/sandboxes", &request).await?;
+        Ok(resp.into())
+    }
+
+    /// List all sandboxes for the authenticated user.
+    pub async fn list_sandboxes(&self) -> Result<crate::sandbox::SandboxListResponse> {
+        self.get("/sandboxes").await
+    }
+
+    /// Get details of a specific sandbox.
+    pub async fn get_sandbox(
+        &self,
+        sandbox_id: &str,
+    ) -> Result<crate::sandbox::SandboxDetail> {
+        let path = format!("/sandboxes/{sandbox_id}");
+        self.get(&path).await
+    }
+
+    /// Delete a sandbox.
+    pub async fn delete_sandbox(&self, sandbox_id: &str) -> Result<()> {
+        let path = format!("/sandboxes/{sandbox_id}");
+        let response = self.delete_empty(&path).await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let err = self
+                .handle_error_response::<serde_json::Value>(response)
+                .await
+                .err()
+                .unwrap_or(ApiError::Internal {
+                    message: "Unknown error".into(),
+                });
+            Err(err)
+        }
+    }
+
     // ===== Private Helper Methods =====
 
     /// Apply authentication to request

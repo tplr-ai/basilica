@@ -16,6 +16,7 @@ pub mod types;
 pub use client::{BasilicaClient, ClientBuilder};
 pub use error::{ApiError, ErrorResponse, Result};
 pub use jobs::*;
+pub use sandbox::{CreateSandboxRequest, Sandbox, SandboxDetail, SandboxEnvVar, SandboxListResponse, SandboxSummary};
 pub use types::*;
 
 /// SDK version
