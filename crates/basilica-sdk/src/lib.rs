@@ -9,6 +9,7 @@ pub mod auth;
 pub mod client;
 pub mod error;
 pub mod jobs;
+pub mod sandbox;
 pub mod types;
 
 // Re-export main types
