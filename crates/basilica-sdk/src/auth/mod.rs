@@ -9,6 +9,7 @@ pub mod refresh;
 pub mod simple_manager;
 pub mod token_store;
 pub mod types;
+pub mod wallet;
 
 // Re-export commonly used types and functions
 pub use refresh::refresh_access_token;
