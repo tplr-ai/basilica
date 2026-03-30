@@ -2067,20 +2067,16 @@ pub async fn handle_down(
         }
 
         if !skip_confirm {
-            let confirmed = tokio::task::spawn_blocking(move || {
-                let theme = dialoguer::theme::ColorfulTheme::default();
-                Confirm::with_theme(&theme)
-                    .with_prompt(format!(
-                        "Are you sure you want to stop all {} active rental{}?",
-                        all_count,
-                        if all_count == 1 { "" } else { "s" }
-                    ))
-                    .default(false)
-                    .interact()
-            })
-            .await
-            .map_err(|e| CliError::Internal(eyre!("Task join error: {}", e)))?
-            .map_err(|e| CliError::Internal(e.into()))?;
+            let theme = dialoguer::theme::ColorfulTheme::default();
+            let confirmed = Confirm::with_theme(&theme)
+                .with_prompt(format!(
+                    "Are you sure you want to stop all {} active rental{}?",
+                    all_count,
+                    if all_count == 1 { "" } else { "s" }
+                ))
+                .default(false)
+                .interact()
+                .map_err(|e| CliError::Internal(e.into()))?;
 
             if !confirmed {
                 println!("Cancelled.");
@@ -2215,17 +2211,12 @@ pub async fn handle_down(
             resolve_target_rental_unified(target, compute_filter, &api_client, true).await?;
 
         if !skip_confirm {
-            let confirm_id = rental_id.clone();
-            let confirmed = tokio::task::spawn_blocking(move || {
-                let theme = dialoguer::theme::ColorfulTheme::default();
-                Confirm::with_theme(&theme)
-                    .with_prompt(format!("Stop rental {}?", confirm_id))
-                    .default(false)
-                    .interact()
-            })
-            .await
-            .map_err(|e| CliError::Internal(eyre!("Task join error: {}", e)))?
-            .map_err(|e| CliError::Internal(e.into()))?;
+            let theme = dialoguer::theme::ColorfulTheme::default();
+            let confirmed = Confirm::with_theme(&theme)
+                .with_prompt(format!("Stop rental {}?", rental_id))
+                .default(false)
+                .interact()
+                .map_err(|e| CliError::Internal(e.into()))?;
 
             if !confirmed {
                 println!("Cancelled.");
