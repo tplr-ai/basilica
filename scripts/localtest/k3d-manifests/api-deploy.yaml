@@ -1,5 +1,9 @@
 # Basilica API Deployment for K3d Testing
 #
+# Control-plane only: creates/lists/gets/deletes sandbox CRDs.
+# No exec, websocket, file, git, or snapshot relay (H1).
+# Data-plane traffic goes directly to sandbox domains.
+#
 # This is a minimal deployment for local testing.
 # Production deployments should use the Ansible/Helm charts.
 
@@ -13,18 +17,17 @@ data:
     [server]
     host = "0.0.0.0"
     port = 8080
-    
+
     [auth]
     # Disable auth for local testing
     enabled = false
-    
+
     [kubernetes]
     namespace = "default"
     in_cluster = true
-    
+
     [sandbox]
     default_timeout_seconds = 3600
-    default_idle_timeout_seconds = 600
     max_sandboxes_per_user = 10
     exec_agent_image = "localhost:5050/basilica-exec-agent:latest"
 ---
@@ -39,18 +42,14 @@ kind: ClusterRole
 metadata:
   name: basilica-api
 rules:
-# BasilicaSandbox CRD management
+# BasilicaSandbox CRD management (control-plane only)
 - apiGroups: ["basilica.ai"]
   resources: ["basilicasandboxes", "basilicasandboxes/status"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-# Pod access for exec
+# Pod read access (for status only, not exec)
 - apiGroups: [""]
-  resources: ["pods", "pods/exec", "pods/log"]
-  verbs: ["get", "list", "watch", "create"]
-# ConfigMaps for snapshots
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "list", "watch", "create", "update", "patch"]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -146,20 +145,22 @@ spec:
   selector:
     app: basilica-api
 ---
-# Ingress for external access via K3d load balancer
+# Ingress for external access via K3d load balancer.
+# Routes /sandboxes and /health directly to the API service.
+# The API registers handlers at /sandboxes (not /api/v1/sandboxes).
+# No path prefix rewriting needed — requests arrive at the backend as-is.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: basilica-api
   namespace: default
   annotations:
-    # K3s uses Traefik by default
     kubernetes.io/ingress.class: traefik
 spec:
   rules:
   - http:
       paths:
-      - path: /api
+      - path: /sandboxes
         pathType: Prefix
         backend:
           service:
@@ -173,5 +174,3 @@ spec:
             name: basilica-api
             port:
               number: 80
-
-

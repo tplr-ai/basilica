@@ -1,5 +1,6 @@
-# Basilica Operator Deployment for K3d Testing
+# Basilica Sandbox Operator Deployment for K3d Testing
 #
+# Deploys basilica-sandbox-operator (separate from basilica-operator).
 # This is a minimal deployment for local testing.
 # Production deployments should use the Ansible/Helm charts.
 
@@ -14,88 +15,94 @@ metadata:
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: basilica-operator
+  name: basilica-sandbox-operator
   namespace: basilica-system
   labels:
-    app.kubernetes.io/name: basilica-operator
+    app.kubernetes.io/name: basilica-sandbox-operator
 ---
-# ClusterRole for operator to manage all resources
+# ClusterRole for sandbox operator to manage sandbox resources
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: basilica-operator
+  name: basilica-sandbox-operator
 rules:
-# BasilicaSandbox CRD management
+# BasilicaSandbox and BasilicaWarmPool CRD management
 - apiGroups: ["basilica.ai"]
-  resources: ["*"]
-  verbs: ["*"]
-# Pod management
+  resources: ["basilicasandboxes", "basilicasandboxes/status", "basilicawarmpools", "basilicawarmpools/status"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Pod management for sandbox pods
 - apiGroups: [""]
-  resources: ["pods", "pods/exec", "pods/log"]
-  verbs: ["*"]
-# Service management
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Service management for sandbox services
 - apiGroups: [""]
-  resources: ["services", "configmaps", "secrets"]
-  verbs: ["*"]
+  resources: ["services"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Secret management for exec-agent secrets (C1: secrets in K8s Secrets, not CRD status)
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Namespace management for tenant namespaces (u-{user_id})
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
 # Events
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
-# Network policies
+# Network policies for sandbox isolation
 - apiGroups: ["networking.k8s.io"]
   resources: ["networkpolicies"]
-  verbs: ["*"]
-# Deployments (for API)
-- apiGroups: ["apps"]
-  resources: ["deployments", "replicasets"]
-  verbs: ["*"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# ResourceQuota and LimitRange for tenant namespaces
+- apiGroups: [""]
+  resources: ["resourcequotas", "limitranges"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: basilica-operator
+  name: basilica-sandbox-operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: basilica-operator
+  name: basilica-sandbox-operator
 subjects:
 - kind: ServiceAccount
-  name: basilica-operator
+  name: basilica-sandbox-operator
   namespace: basilica-system
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: basilica-operator
+  name: basilica-sandbox-operator
   namespace: basilica-system
   labels:
-    app: basilica-operator
-    app.kubernetes.io/name: basilica-operator
-    app.kubernetes.io/component: operator
+    app: basilica-sandbox-operator
+    app.kubernetes.io/name: basilica-sandbox-operator
+    app.kubernetes.io/component: sandbox-operator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: basilica-operator
+      app: basilica-sandbox-operator
   template:
     metadata:
       labels:
-        app: basilica-operator
-        app.kubernetes.io/name: basilica-operator
+        app: basilica-sandbox-operator
+        app.kubernetes.io/name: basilica-sandbox-operator
     spec:
-      serviceAccountName: basilica-operator
+      serviceAccountName: basilica-sandbox-operator
       containers:
       - name: operator
-        image: k3d-basilica-registry:5050/basilica-operator:latest
+        image: k3d-basilica-registry:5050/basilica-sandbox-operator:latest
         imagePullPolicy: Always
         args:
-        - "--namespace"
-        - "default"
         - "--exec-agent-image"
         - "k3d-basilica-registry:5050/basilica-exec-agent:latest"
         env:
         - name: RUST_LOG
-          value: "info,basilica_operator=debug"
+          value: "info,basilica_sandbox_operator=debug"
         - name: RUST_BACKTRACE
           value: "1"
         resources:
@@ -118,5 +125,3 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
       terminationGracePeriodSeconds: 30
-
-

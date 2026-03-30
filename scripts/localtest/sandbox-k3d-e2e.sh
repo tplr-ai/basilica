@@ -39,10 +39,10 @@ NAMESPACE="default"
 PUSH_PREFIX="localhost:${REGISTRY_PORT}"
 DEPLOY_PREFIX="k3d-${REGISTRY_NAME}:${REGISTRY_PORT}"
 EXEC_AGENT_IMAGE="${PUSH_PREFIX}/basilica-exec-agent:latest"
-OPERATOR_IMAGE="${PUSH_PREFIX}/basilica-operator:latest"
+OPERATOR_IMAGE="${PUSH_PREFIX}/basilica-sandbox-operator:latest"
 API_IMAGE="${PUSH_PREFIX}/basilica-api:latest"
 EXEC_AGENT_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-exec-agent:latest"
-OPERATOR_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-operator:latest"
+OPERATOR_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-sandbox-operator:latest"
 API_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-api:latest"
 
 # Colors for output
@@ -207,36 +207,36 @@ build_exec_agent() {
 }
 
 build_operator() {
-    log_step "Building operator image..."
-    
-    local dockerfile="$BACKEND_DIR/scripts/operator/Dockerfile"
+    log_step "Building sandbox operator image..."
+
+    local dockerfile="$BACKEND_DIR/scripts/sandbox-operator/Dockerfile"
     local context="$BACKEND_DIR"
-    
+
     if [ ! -f "$dockerfile" ]; then
-        log_warn "Operator Dockerfile not found at $dockerfile"
-        log_info "Using a minimal operator image for testing..."
-        
-        # Create a minimal operator image for testing
+        log_warn "Sandbox operator Dockerfile not found at $dockerfile"
+        log_info "Using a minimal sandbox operator image for testing..."
+
+        # Create a minimal sandbox operator image for testing
         cat <<'DOCKERFILE' | docker build -t "$OPERATOR_IMAGE" -f - "$BACKEND_DIR"
 FROM rust:1.88-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-RUN cargo build --release --package basilica-operator
+RUN cargo build --release --package basilica-sandbox-operator
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/basilica-operator /usr/local/bin/
-ENTRYPOINT ["/usr/local/bin/basilica-operator"]
+COPY --from=builder /app/target/release/basilica-sandbox-operator /usr/local/bin/
+ENTRYPOINT ["/usr/local/bin/basilica-sandbox-operator"]
 DOCKERFILE
         docker push "$OPERATOR_IMAGE"
     else
         docker build -t "$OPERATOR_IMAGE" -f "$dockerfile" "$context"
         docker push "$OPERATOR_IMAGE"
     fi
-    
-    log_success "Operator image built and pushed"
+
+    log_success "Sandbox operator image built and pushed"
 }
 
 build_api() {
@@ -299,7 +299,7 @@ deploy_crds() {
         log_warn "CRD file not found at $crd_file"
         log_info "Generating CRD from operator..."
         
-        # Apply inline CRD
+        # Apply inline CRD matching the new contract
         kubectl apply -f - <<'EOF'
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -317,22 +317,18 @@ spec:
           properties:
             spec:
               type: object
-              required: ["userId", "language"]
+              required: ["userId", "sandboxId", "image"]
               properties:
                 userId:
                   type: string
-                language:
+                sandboxId:
                   type: string
-                  enum: ["python", "javascript", "typescript", "go", "rust", "bash"]
                 image:
                   type: string
-                resources:
-                  type: object
-                  properties:
-                    cpu:
-                      type: string
-                    memory:
-                      type: string
+                cpu:
+                  type: string
+                memory:
+                  type: string
                 env:
                   type: array
                   items:
@@ -342,17 +338,11 @@ spec:
                         type: string
                       value:
                         type: string
-                timeoutSeconds:
+                ttlSeconds:
                   type: integer
-                idleTimeoutSeconds:
-                  type: integer
-                autoSnapshot:
-                  type: boolean
-                restoreFrom:
-                  type: string
                 networkIsolation:
                   type: string
-                  enum: ["none", "egress", "full"]
+                  enum: ["Egress", "Full"]
             status:
               type: object
               properties:
@@ -360,19 +350,13 @@ spec:
                   type: string
                 sandboxId:
                   type: string
+                domain:
+                  type: string
                 podName:
-                  type: string
-                nodeName:
-                  type: string
-                websocketPath:
                   type: string
                 createdAt:
                   type: string
-                lastActivityAt:
-                  type: string
                 message:
-                  type: string
-                snapshotId:
                   type: string
       subresources:
         status: {}
@@ -380,9 +364,9 @@ spec:
         - name: State
           type: string
           jsonPath: .status.state
-        - name: Language
+        - name: Image
           type: string
-          jsonPath: .spec.language
+          jsonPath: .spec.image
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp
@@ -442,38 +426,38 @@ deploy_network_policies() {
 }
 
 deploy_operator() {
-    log_step "Deploying operator..."
-    
+    log_step "Deploying sandbox operator..."
+
     local deploy_file="$SCRIPT_DIR/k3d-manifests/operator-deploy.yaml"
-    
+
     if [ -f "$deploy_file" ]; then
         kubectl apply -f "$deploy_file"
     else
-        log_info "Using inline operator deployment..."
+        log_info "Using inline sandbox operator deployment..."
+        kubectl create namespace basilica-system --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create serviceaccount basilica-sandbox-operator -n basilica-system --dry-run=client -o yaml | kubectl apply -f -
         kubectl apply -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: basilica-operator
+  name: basilica-sandbox-operator
   namespace: basilica-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: basilica-operator
+      app: basilica-sandbox-operator
   template:
     metadata:
       labels:
-        app: basilica-operator
+        app: basilica-sandbox-operator
     spec:
-      serviceAccountName: basilica-operator
+      serviceAccountName: basilica-sandbox-operator
       containers:
       - name: operator
         image: ${OPERATOR_DEPLOY_IMAGE}
         imagePullPolicy: Always
         args:
-        - "--namespace"
-        - "default"
         - "--exec-agent-image"
         - "${EXEC_AGENT_DEPLOY_IMAGE}"
         env:
@@ -488,8 +472,8 @@ spec:
             memory: 128Mi
 EOF
     fi
-    
-    log_success "Operator deployed"
+
+    log_success "Sandbox operator deployed"
 }
 
 deploy_api() {
@@ -557,7 +541,14 @@ spec:
   rules:
   - http:
       paths:
-      - path: /
+      - path: /sandboxes
+        pathType: Prefix
+        backend:
+          service:
+            name: basilica-api
+            port:
+              number: 80
+      - path: /health
         pathType: Prefix
         backend:
           service:
@@ -586,9 +577,9 @@ deploy_infrastructure() {
 wait_for_deployments() {
     log_step "Waiting for deployments to be ready..."
     
-    # Wait for operator if deployed
-    if kubectl get deployment basilica-operator -n basilica-system &>/dev/null; then
-        kubectl rollout status deployment/basilica-operator -n basilica-system --timeout=120s || true
+    # Wait for sandbox operator if deployed
+    if kubectl get deployment basilica-sandbox-operator -n basilica-system &>/dev/null; then
+        kubectl rollout status deployment/basilica-sandbox-operator -n basilica-system --timeout=120s || true
     fi
     
     # Wait for API if deployed
@@ -605,17 +596,17 @@ wait_for_deployments() {
 
 run_e2e_tests() {
     log_step "Running E2E tests..."
-    
+
     local e2e_script="$SCRIPT_DIR/sandbox-e2e.sh"
-    
+
     if [ -f "$e2e_script" ]; then
         # Set environment for E2E script
         export BASILICA_API_URL="http://localhost:${API_PORT}"
         export BASILICA_API_TOKEN="test-token"
         export NAMESPACE="$NAMESPACE"
-        
-        # Run kubectl-based tests (no API required)
-        bash "$e2e_script" kubectl-all
+
+        # Run full API + data-plane tests (the real architecture path)
+        bash "$e2e_script" all
     else
         log_warn "E2E script not found at $e2e_script"
         log_info "Running manual sandbox test..."
@@ -658,13 +649,12 @@ metadata:
   namespace: ${NAMESPACE}
 spec:
   userId: "test-user"
-  language: python
-  resources:
-    cpu: "500m"
-    memory: "512Mi"
-  timeoutSeconds: 300
-  idleTimeoutSeconds: 60
-  networkIsolation: none
+  sandboxId: "${sandbox_name}"
+  image: "basilica/sandbox-python:latest"
+  cpu: "500m"
+  memory: "512Mi"
+  ttlSeconds: 300
+  networkIsolation: Egress
 EOF
     
     log_success "Sandbox created: $sandbox_name"
@@ -722,8 +712,8 @@ show_status() {
 show_logs() {
     log_step "Showing logs..."
     
-    echo "=== Operator Logs ==="
-    kubectl logs -n basilica-system -l app=basilica-operator --tail=50 2>/dev/null || echo "No operator logs"
+    echo "=== Sandbox Operator Logs ==="
+    kubectl logs -n basilica-system -l app=basilica-sandbox-operator --tail=50 2>/dev/null || echo "No operator logs"
     echo ""
     
     echo "=== API Logs ==="
