@@ -265,8 +265,9 @@ impl Sandbox {
     ) -> std::result::Result<T, crate::error::ApiError> {
         let secret = self.exec_agent_secret.as_deref().ok_or_else(|| {
             crate::error::ApiError::InvalidRequest {
-                message: "exec_agent_secret not available — sandbox was not created through this SDK"
-                    .to_string(),
+                message:
+                    "exec_agent_secret not available — sandbox was not created through this SDK"
+                        .to_string(),
             }
         })?;
 
@@ -403,10 +404,7 @@ mod tests {
             sandbox.data_plane_url(),
             "https://sb-abc123.sandboxes.basilica.ai"
         );
-        assert_eq!(
-            sandbox.ws_url(),
-            "wss://sb-abc123.sandboxes.basilica.ai/ws"
-        );
+        assert_eq!(sandbox.ws_url(), "wss://sb-abc123.sandboxes.basilica.ai/ws");
         assert_eq!(
             sandbox.exec_url(),
             "https://sb-abc123.sandboxes.basilica.ai/exec"
@@ -440,9 +438,6 @@ mod tests {
         let sandbox = Sandbox::from(resp);
         assert_eq!(sandbox.sandbox_id, "sb-test");
         assert_eq!(sandbox.domain, "sb-test.sandboxes.basilica.ai");
-        assert_eq!(
-            sandbox.exec_agent_secret.as_deref(),
-            Some("secret-123")
-        );
+        assert_eq!(sandbox.exec_agent_secret.as_deref(), Some("secret-123"));
     }
 }
