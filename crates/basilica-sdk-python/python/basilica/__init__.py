@@ -108,6 +108,7 @@ from basilica.sandbox import (
     SandboxClient,
     SandboxDetail,
     SandboxEnvVar,
+    SandboxFiles,
     SandboxSummary,
 )
 
@@ -303,6 +304,14 @@ __all__ = [
     # Public metadata types
     "EnrollMetadataResponse",
     "PublicDeploymentMetadataResponse",
+    # Sandbox types
+    "Sandbox",
+    "SandboxClient",
+    "CreateSandboxRequest",
+    "SandboxDetail",
+    "SandboxEnvVar",
+    "SandboxSummary",
+    "SandboxFiles",
 ]
 
 

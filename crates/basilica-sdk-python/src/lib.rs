@@ -702,6 +702,116 @@ impl BasilicaClient {
 
         Ok(response.into())
     }
+
+    // ===== Sandboxes (G5: typed PyO3 methods, not _post/_get/_delete) =====
+
+    /// Create a new sandbox.
+    ///
+    /// Args:
+    ///     image: Container image (must be in the server's allowlist).
+    ///     cpu: CPU resources (default: "1").
+    ///     memory: Memory resources (default: "2Gi").
+    ///     env: Environment variables as list of {"name": str, "value": str}.
+    ///     ttl_seconds: Optional TTL in seconds.
+    ///
+    /// Returns:
+    ///     dict with sandboxId, domain, status, execAgentSecret
+    #[pyo3(signature = (image, cpu=None, memory=None, env=None, ttl_seconds=None))]
+    fn create_sandbox(
+        &self,
+        py: Python,
+        image: String,
+        cpu: Option<String>,
+        memory: Option<String>,
+        env: Option<Vec<(String, String)>>,
+        ttl_seconds: Option<u32>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+        let env_vars: Vec<basilica_sdk::sandbox::SandboxEnvVar> = env
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(name, value)| basilica_sdk::sandbox::SandboxEnvVar { name, value })
+            .collect();
+
+        let request = basilica_sdk::sandbox::CreateSandboxRequest {
+            image,
+            cpu,
+            memory,
+            env: env_vars,
+            ttl_seconds,
+        };
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.create_sandbox(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        // Return the full response as a Python dict (includes exec_agent_secret)
+        to_pyobject(
+            py,
+            &serde_json::json!({
+                "sandboxId": response.sandbox_id,
+                "domain": response.domain,
+                "status": response.status,
+                "execAgentSecret": response.exec_agent_secret(),
+            }),
+        )
+    }
+
+    /// List all sandboxes for the authenticated user.
+    ///
+    /// Returns:
+    ///     dict with sandboxes list
+    fn list_sandboxes(&self, py: Python) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.list_sandboxes().await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
+    /// Get details of a specific sandbox.
+    ///
+    /// Args:
+    ///     sandbox_id: The sandbox ID.
+    ///
+    /// Returns:
+    ///     dict with sandbox details
+    fn get_sandbox(&self, py: Python, sandbox_id: String) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_sandbox(&sandbox_id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
+    /// Delete a sandbox.
+    ///
+    /// Args:
+    ///     sandbox_id: The sandbox ID.
+    fn delete_sandbox(&self, py: Python, sandbox_id: String) -> PyResult<()> {
+        let client = Arc::clone(&self.inner);
+
+        py.detach(|| {
+            self.runtime
+                .block_on(async move { client.delete_sandbox(&sandbox_id).await })
+        })
+        .map_err(|e| self.map_error_to_python(e))?;
+
+        Ok(())
+    }
 }
 
 impl BasilicaClient {

@@ -56,13 +56,13 @@ pub struct CreateSandboxResponse {
 }
 
 /// Response from listing sandboxes.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxListResponse {
     pub sandboxes: Vec<SandboxSummary>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxSummary {
     pub sandbox_id: String,
@@ -73,7 +73,7 @@ pub struct SandboxSummary {
 }
 
 /// Detailed sandbox info.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxDetail {
     pub sandbox_id: String,
@@ -199,6 +199,11 @@ pub struct Sandbox {
 }
 
 impl Sandbox {
+    /// Get the exec-agent secret for data-plane authentication, if available.
+    pub fn exec_agent_secret(&self) -> Option<&str> {
+        self.exec_agent_secret.as_deref()
+    }
+
     /// Get the base URL for data-plane operations on this sandbox.
     pub fn data_plane_url(&self) -> String {
         format!("https://{}", self.domain)
