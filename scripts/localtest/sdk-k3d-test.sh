@@ -5,7 +5,7 @@
 # Runs Rust SDK and Python SDK integration tests against a running K3d cluster.
 #
 # Prerequisites:
-#   - K3d cluster running with sandbox-test-api and operator deployed
+#   - K3d cluster running with basilica-api (dev mode) and operator deployed
 #     (use sandbox-k3d-e2e.sh setup if needed)
 #   - Rust toolchain (for Rust SDK tests)
 #   - Python 3.10+ with venv (for Python SDK tests)

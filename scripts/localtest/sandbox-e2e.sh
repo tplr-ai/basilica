@@ -3,13 +3,13 @@
 # Sandbox E2E Testing Script
 #
 # Tests the sandbox v2 architecture:
-#   - Control-plane operations (create, list, get, delete) via sandbox-test-api at /sandboxes
+#   - Control-plane operations (create, list, get, delete) via basilica-api (dev mode) at /sandboxes
 #   - Data-plane operations (exec, run, files) direct to sandbox pods via port-forward
 #   - Negative / edge case tests (invalid image, nonexistent sandbox, wrong auth)
 #
 # Prerequisites:
 #   - K3d cluster running with basilica-sandbox-test cluster
-#   - sandbox-test-api and basilica-sandbox-operator deployed
+#   - basilica-api (dev mode) and basilica-sandbox-operator deployed
 #   - BASILICA_API_URL set (default: http://localhost:18082)
 #
 # Usage:
@@ -75,7 +75,7 @@ skip() {
     log_skip "$1"
 }
 
-# API helper (no auth token needed for sandbox-test-api)
+# API helper (no auth token needed for basilica-api (dev mode))
 api_call() {
     local method="$1"
     local path="$2"
@@ -286,7 +286,7 @@ setup_data_plane_access() {
     fi
 
     local pod_name="sandbox-${SANDBOX_ID}"
-    local ns="u-test-user"  # sandbox-test-api uses fixed test user
+    local ns="u-test-user"  # basilica-api (dev mode) uses fixed test user
 
     # Wait for pod to be ready
     log_info "Waiting for sandbox pod to be ready..."

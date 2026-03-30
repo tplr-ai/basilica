@@ -1,6 +1,6 @@
 """SDK integration tests against a live K3d cluster.
 
-These tests require a running K3d cluster with sandbox-test-api and the
+These tests require a running K3d cluster with basilica-api (dev mode) and the
 sandbox operator deployed. Run with:
 
     pytest tests/test_sandbox_k3d.py -v -m k3d

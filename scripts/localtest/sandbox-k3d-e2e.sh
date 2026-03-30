@@ -240,43 +240,43 @@ DOCKERFILE
 }
 
 build_api() {
-    log_step "Building sandbox test API image..."
+    log_step "Building real basilica-api image (dev mode)..."
 
-    # For K3d E2E testing, we use the lightweight sandbox-test-api binary
-    # from the sandbox-operator crate. It serves /health and /sandboxes
-    # using in-cluster K8s config, without Bittensor/database dependencies.
-    local dockerfile="$BACKEND_DIR/scripts/sandbox-test-api/Dockerfile"
+    # Build the real basilica-api binary. In K3d E2E testing, we deploy it with
+    # dev mode config (skip_bittensor=true, skip_auth=true) and a real PostgreSQL.
+    local dockerfile="$BACKEND_DIR/scripts/api/Dockerfile"
     local context="$BACKEND_DIR"
 
-    if [ ! -f "$dockerfile" ]; then
-        log_info "Using inline sandbox-test-api Dockerfile..."
+    if [ -f "$dockerfile" ]; then
+        docker build -t "$API_IMAGE" -f "$dockerfile" "$context"
+        docker push "$API_IMAGE"
+    else
+        log_info "scripts/api/Dockerfile not found, using inline Dockerfile..."
 
         cat <<'DOCKERFILE' | docker build -t "$API_IMAGE" -f - "$BACKEND_DIR"
 FROM rust:1.88-bookworm AS builder
-RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential protobuf-compiler && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential protobuf-compiler libfuse3-dev && rm -rf /var/lib/apt/lists/*
 RUN rustup component add rustfmt
 WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 ENV CARGO_TARGET_DIR=/tmp/target
 ENV CARGO_INCREMENTAL=0
-RUN cargo build --release -p basilica-sandbox-operator --bin sandbox-test-api
+RUN cargo build --release -p basilica-api
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /tmp/target/release/sandbox-test-api /usr/local/bin/sandbox-test-api
-RUN chmod +x /usr/local/bin/sandbox-test-api
+RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -u 1000 basilica
+COPY --from=builder /tmp/target/release/basilica-api /usr/local/bin/basilica-api
+RUN chmod +x /usr/local/bin/basilica-api
+USER basilica
 EXPOSE 8080
-ENV PORT=8080
-ENTRYPOINT ["/usr/local/bin/sandbox-test-api"]
+ENTRYPOINT ["/usr/local/bin/basilica-api"]
 DOCKERFILE
-        docker push "$API_IMAGE"
-    else
-        docker build -t "$API_IMAGE" -f "$dockerfile" "$context"
         docker push "$API_IMAGE"
     fi
 
-    log_success "Sandbox test API image built and pushed"
+    log_success "Real basilica-api image built and pushed"
 }
 
 build_images() {
@@ -540,88 +540,93 @@ EOF
     log_success "Sandbox operator deployed"
 }
 
-deploy_api() {
-    log_step "Deploying API..."
-    
-    local deploy_file="$SCRIPT_DIR/k3d-manifests/api-deploy.yaml"
-    
-    if [ -f "$deploy_file" ]; then
-        kubectl apply -f "$deploy_file"
+deploy_postgres() {
+    log_step "Deploying PostgreSQL..."
+
+    # Deploy Postgres in basilica-system namespace (required by real basilica-api)
+    local postgres_yaml="$BACKEND_DIR/orchestrator/k8s/local/postgres.yaml"
+
+    if [ -f "$postgres_yaml" ]; then
+        # Ensure basilica-system namespace exists
+        kubectl create namespace basilica-system --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f "$postgres_yaml"
     else
-        log_info "Using inline API deployment..."
-        kubectl apply -f - <<EOF
+        log_info "Using inline PostgreSQL deployment..."
+        kubectl create namespace basilica-system --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: basilica-system
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: postgres
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: basilica-api
-  namespace: default
+  name: postgres
+  namespace: basilica-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: basilica-api
+      app: postgres
   template:
     metadata:
       labels:
-        app: basilica-api
-        app.kubernetes.io/name: basilica-api
+        app: postgres
     spec:
       containers:
-      - name: api
-        image: ${API_DEPLOY_IMAGE}
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 8080
-        env:
-        - name: RUST_LOG
-          value: info
-        resources:
-          limits:
-            cpu: 500m
-            memory: 256Mi
-          requests:
-            cpu: 100m
-            memory: 128Mi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: basilica-api
-  namespace: default
-spec:
-  selector:
-    app: basilica-api
-  ports:
-  - port: 80
-    targetPort: 8080
-  type: ClusterIP
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: basilica-api
-  namespace: default
-spec:
-  rules:
-  - http:
-      paths:
-      - path: /sandboxes
-        pathType: Prefix
-        backend:
-          service:
-            name: basilica-api
-            port:
-              number: 80
-      - path: /health
-        pathType: Prefix
-        backend:
-          service:
-            name: basilica-api
-            port:
-              number: 80
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_USER
+              value: api
+            - name: POSTGRES_PASSWORD
+              value: api_dev_password
+            - name: POSTGRES_DB
+              value: basilica_api
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "api"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
 EOF
     fi
-    
+
+    # Wait for Postgres to be ready before deploying API
+    log_info "Waiting for PostgreSQL to be ready..."
+    kubectl rollout status deployment/postgres -n basilica-system --timeout=120s || {
+        log_error "PostgreSQL deployment failed"
+        return 1
+    }
+
+    log_success "PostgreSQL deployed and ready"
+}
+
+deploy_api() {
+    log_step "Deploying real basilica-api in dev mode..."
+
+    # Deploy PostgreSQL first (required by real API)
+    deploy_postgres
+
+    local deploy_file="$SCRIPT_DIR/k3d-manifests/api-deploy.yaml"
+
+    if [ -f "$deploy_file" ]; then
+        # Apply the manifest with image substitution
+        sed "s|k3d-basilica-registry:5050/basilica-api:latest|${API_DEPLOY_IMAGE}|g" \
+            "$deploy_file" | kubectl apply -f -
+    else
+        log_error "api-deploy.yaml not found at $deploy_file"
+        return 1
+    fi
+
     log_success "API deployed"
 }
 

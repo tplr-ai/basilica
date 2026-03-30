@@ -1,12 +1,44 @@
-# Sandbox Test API Deployment for K3d Testing
+# Real basilica-api deployment for K3d E2E testing (dev mode)
 #
-# Uses sandbox-test-api: a lightweight control-plane-only API that serves
-# /health and /sandboxes endpoints using in-cluster K8s config.
-# No Bittensor, database, billing, or auth dependencies.
+# Uses the real basilica-api binary with dev config:
+#   - skip_bittensor=true (no Bittensor dependency)
+#   - skip_auth=true (no JWT/API key required)
+#   - Real PostgreSQL connection (deployed separately)
 #
-# This is a minimal deployment for local E2E testing only.
-# Production deployments use the full basilica-api with Ansible/Helm charts.
+# Requires: PostgreSQL in basilica-system namespace (see postgres.yaml)
 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: basilica-api-config
+  namespace: default
+data:
+  config.toml: |
+    [server]
+    bind_address = "0.0.0.0:8080"
+
+    [dev]
+    skip_bittensor = true
+    skip_auth = true
+    dev_user_id = "test-user"
+
+    [database]
+    url = "postgres://api:api_dev_password@postgres.basilica-system.svc.cluster.local:5432/basilica_api"
+    max_connections = 5
+
+    [rate_limit]
+    requests_per_second = 100
+    burst_size = 200
+    per_ip_limiting = false
+
+    [billing]
+    enabled = false
+    endpoint = "http://localhost:50051"
+
+    [payments]
+    enabled = false
+    endpoint = "http://localhost:50061"
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -72,19 +104,25 @@ spec:
       - name: api
         image: k3d-basilica-registry:5050/basilica-api:latest
         imagePullPolicy: Always
+        args: ["--config", "/etc/basilica/config.toml"]
         ports:
         - name: http
           containerPort: 8080
           protocol: TCP
         env:
         - name: RUST_LOG
-          value: "info,basilica_sandbox_operator=debug"
+          value: "info,basilica_api=debug"
         - name: RUST_BACKTRACE
           value: "1"
-        - name: PORT
-          value: "8080"
         - name: SANDBOX_EXTRA_ALLOWED_IMAGES
           value: "basilica/sandbox-python:latest,python:3.11-slim,k3d-basilica-registry:5050/basilica-exec-agent:latest"
+        # Sandbox cluster kubeconfig: use in-cluster config (same cluster for K3d testing)
+        - name: SANDBOX_CLUSTER_KUBECONFIG
+          value: ""
+        volumeMounts:
+        - name: config
+          mountPath: /etc/basilica
+          readOnly: true
         resources:
           limits:
             cpu: 500m
@@ -96,14 +134,18 @@ spec:
           httpGet:
             path: /health
             port: 8080
-          initialDelaySeconds: 5
+          initialDelaySeconds: 10
           periodSeconds: 30
         readinessProbe:
           httpGet:
             path: /health
             port: 8080
-          initialDelaySeconds: 3
+          initialDelaySeconds: 5
           periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: basilica-api-config
       terminationGracePeriodSeconds: 30
 ---
 apiVersion: v1
@@ -125,8 +167,6 @@ spec:
 ---
 # Ingress for external access via K3d load balancer.
 # Routes /sandboxes and /health directly to the API service.
-# The API registers handlers at /sandboxes (not /api/v1/sandboxes).
-# No path prefix rewriting needed — requests arrive at the backend as-is.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
