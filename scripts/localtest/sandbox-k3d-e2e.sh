@@ -864,6 +864,9 @@ main() {
         "manual-test")
             run_manual_sandbox_test
             ;;
+        "sdk-test")
+            "$SCRIPT_DIR/sdk-k3d-test.sh" all
+            ;;
         "all")
             setup
             echo ""
@@ -892,6 +895,7 @@ main() {
             echo "  test         - Run kubectl-based E2E tests (no API required)"
             echo "  api-test     - Run full API-based E2E tests (requires API)"
             echo "  manual-test  - Run quick manual sandbox test via kubectl"
+            echo "  sdk-test     - Run Rust + Python SDK integration tests"
             echo "  all          - Setup + test (default)"
             echo "  status       - Show cluster and pod status"
             echo "  logs         - Show operator and API logs"

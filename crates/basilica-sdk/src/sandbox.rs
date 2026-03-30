@@ -196,12 +196,37 @@ pub struct Sandbox {
     exec_agent_secret: Option<String>,
     /// HTTP client for data-plane requests.
     http_client: reqwest::Client,
+    /// Override the data-plane base URL (e.g. "http://localhost:12345" for K3d testing).
+    /// When set, data-plane requests use this instead of `https://{domain}`.
+    data_plane_base_url: Option<String>,
 }
 
 impl Sandbox {
     /// Get the exec-agent secret for data-plane authentication, if available.
     pub fn exec_agent_secret(&self) -> Option<&str> {
         self.exec_agent_secret.as_deref()
+    }
+
+    /// Override the data-plane base URL for local/test connectivity.
+    ///
+    /// In production, data-plane requests go to `https://{domain}`.
+    /// For local K3d testing via port-forward, set this to e.g. `http://localhost:12345`.
+    pub fn with_data_plane_url(mut self, url: String) -> Self {
+        self.data_plane_base_url = Some(url);
+        self
+    }
+
+    /// Override the exec-agent secret (e.g. when retrieved from K8s Secret).
+    pub fn with_exec_agent_secret(mut self, secret: String) -> Self {
+        self.exec_agent_secret = Some(secret);
+        self
+    }
+
+    /// Resolve the base URL for data-plane operations.
+    fn resolve_data_plane_base(&self) -> String {
+        self.data_plane_base_url
+            .clone()
+            .unwrap_or_else(|| format!("https://{}", self.domain))
     }
 
     /// Get the base URL for data-plane operations on this sandbox.
@@ -271,7 +296,8 @@ impl Sandbox {
             }
         })?;
 
-        let url = format!("https://{}{}", self.domain, path);
+        let base = self.resolve_data_plane_base();
+        let url = format!("{}{}", base, path);
         let response = self
             .http_client
             .post(&url)
@@ -308,7 +334,8 @@ impl Sandbox {
             }
         })?;
 
-        let url = format!("https://{}{}", self.domain, path);
+        let base = self.resolve_data_plane_base();
+        let url = format!("{}{}", base, path);
         let response = self
             .http_client
             .get(&url)
@@ -383,6 +410,7 @@ impl From<CreateSandboxResponse> for Sandbox {
             status: resp.status,
             exec_agent_secret: Some(resp.exec_agent_secret),
             http_client: reqwest::Client::new(),
+            data_plane_base_url: None,
         }
     }
 }
@@ -399,6 +427,7 @@ mod tests {
             status: "Running".to_string(),
             exec_agent_secret: Some("test-secret".to_string()),
             http_client: reqwest::Client::new(),
+            data_plane_base_url: None,
         };
         assert_eq!(
             sandbox.data_plane_url(),

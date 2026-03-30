@@ -68,6 +68,12 @@ class Sandbox:
     domain: str
     status: str
     exec_agent_secret: Optional[str] = None
+    _data_plane_base_url: Optional[str] = field(default=None, repr=False)
+
+    def with_data_plane_url(self, url: str) -> "Sandbox":
+        """Override the data-plane base URL (e.g. for K3d port-forward testing)."""
+        self._data_plane_base_url = url
+        return self
 
     @property
     def data_plane_url(self) -> str:
@@ -122,7 +128,8 @@ class Sandbox:
                 "exec_agent_secret not available — sandbox was not created through this SDK"
             )
 
-        url = f"https://{self.domain}{path}"
+        base = self._data_plane_base_url or f"https://{self.domain}"
+        url = f"{base}{path}"
         data = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
             url,
