@@ -240,37 +240,43 @@ DOCKERFILE
 }
 
 build_api() {
-    log_step "Building API image..."
-    
-    local dockerfile="$BACKEND_DIR/scripts/api/Dockerfile"
+    log_step "Building sandbox test API image..."
+
+    # For K3d E2E testing, we use the lightweight sandbox-test-api binary
+    # from the sandbox-operator crate. It serves /health and /sandboxes
+    # using in-cluster K8s config, without Bittensor/database dependencies.
+    local dockerfile="$BACKEND_DIR/scripts/sandbox-test-api/Dockerfile"
     local context="$BACKEND_DIR"
-    
+
     if [ ! -f "$dockerfile" ]; then
-        log_warn "API Dockerfile not found at $dockerfile"
-        log_info "Using a minimal API image for testing..."
-        
-        # Create a minimal API image for testing
+        log_info "Using inline sandbox-test-api Dockerfile..."
+
         cat <<'DOCKERFILE' | docker build -t "$API_IMAGE" -f - "$BACKEND_DIR"
-FROM rust:1.88-slim AS builder
-WORKDIR /app
-RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+FROM rust:1.88-bookworm AS builder
+RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential protobuf-compiler && rm -rf /var/lib/apt/lists/*
+RUN rustup component add rustfmt
+WORKDIR /workspace
 COPY Cargo.toml Cargo.lock ./
-COPY crates ./crates
-RUN cargo build --release --package basilica-api
+COPY crates/ ./crates/
+ENV CARGO_TARGET_DIR=/tmp/target
+ENV CARGO_INCREMENTAL=0
+RUN cargo build --release -p basilica-sandbox-operator --bin sandbox-test-api
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/basilica-api /usr/local/bin/
+RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /tmp/target/release/sandbox-test-api /usr/local/bin/sandbox-test-api
+RUN chmod +x /usr/local/bin/sandbox-test-api
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/basilica-api"]
+ENV PORT=8080
+ENTRYPOINT ["/usr/local/bin/sandbox-test-api"]
 DOCKERFILE
         docker push "$API_IMAGE"
     else
         docker build -t "$API_IMAGE" -f "$dockerfile" "$context"
         docker push "$API_IMAGE"
     fi
-    
-    log_success "API image built and pushed"
+
+    log_success "Sandbox test API image built and pushed"
 }
 
 build_images() {
@@ -289,12 +295,13 @@ build_images() {
 
 deploy_crds() {
     log_step "Deploying CRDs..."
-    
+
     local crd_file="$BACKEND_DIR/orchestrator/k8s/crds/basilica-sandbox.yaml"
-    
+    local warmpool_crd="$BACKEND_DIR/orchestrator/k8s/crds/basilica-warmpool.yaml"
+
     if [ -f "$crd_file" ]; then
         kubectl apply -f "$crd_file"
-        log_success "CRD applied from $crd_file"
+        log_success "Sandbox CRD applied from $crd_file"
     else
         log_warn "CRD file not found at $crd_file"
         log_info "Generating CRD from operator..."
@@ -379,7 +386,64 @@ spec:
       - bsb
       - sandbox
 EOF
-        log_success "CRD applied inline"
+        log_success "Sandbox CRD applied inline"
+    fi
+
+    # Also apply the warm pool CRD (operator watches both)
+    if [ -f "$warmpool_crd" ]; then
+        kubectl apply -f "$warmpool_crd"
+        log_success "WarmPool CRD applied from $warmpool_crd"
+    else
+        log_warn "WarmPool CRD not found, applying inline..."
+        kubectl apply -f - <<'EOF'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: basilicawarmpools.basilica.ai
+spec:
+  group: basilica.ai
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["image", "poolSize"]
+              properties:
+                image:
+                  type: string
+                poolSize:
+                  type: integer
+                cpu:
+                  type: string
+                memory:
+                  type: string
+                namespace:
+                  type: string
+            status:
+              type: object
+              properties:
+                readyCount:
+                  type: integer
+                creatingCount:
+                  type: integer
+                lastReconciled:
+                  type: string
+      subresources:
+        status: {}
+  scope: Namespaced
+  names:
+    plural: basilicawarmpools
+    singular: basilicawarmpool
+    kind: BasilicaWarmPool
+    shortNames:
+      - bwp
+EOF
+        log_success "WarmPool CRD applied inline"
     fi
 }
 
@@ -576,18 +640,30 @@ deploy_infrastructure() {
 
 wait_for_deployments() {
     log_step "Waiting for deployments to be ready..."
-    
-    # Wait for sandbox operator if deployed
+
+    # Wait for sandbox operator
     if kubectl get deployment basilica-sandbox-operator -n basilica-system &>/dev/null; then
-        kubectl rollout status deployment/basilica-sandbox-operator -n basilica-system --timeout=120s || true
+        log_info "Waiting for sandbox-operator rollout..."
+        if ! kubectl rollout status deployment/basilica-sandbox-operator -n basilica-system --timeout=180s; then
+            log_error "Sandbox operator deployment failed to become ready"
+            kubectl logs -n basilica-system -l app=basilica-sandbox-operator --tail=20 2>/dev/null
+            return 1
+        fi
+        log_success "Sandbox operator is ready"
     fi
-    
-    # Wait for API if deployed
+
+    # Wait for API
     if kubectl get deployment basilica-api -n default &>/dev/null; then
-        kubectl rollout status deployment/basilica-api -n default --timeout=120s || true
+        log_info "Waiting for API rollout..."
+        if ! kubectl rollout status deployment/basilica-api -n default --timeout=180s; then
+            log_error "API deployment failed to become ready"
+            kubectl logs -n default -l app=basilica-api --tail=20 2>/dev/null
+            return 1
+        fi
+        log_success "API is ready"
     fi
-    
-    log_success "Deployments ready"
+
+    log_success "All deployments ready"
 }
 
 # ============================================================================
@@ -602,8 +678,9 @@ run_e2e_tests() {
     if [ -f "$e2e_script" ]; then
         # Set environment for E2E script
         export BASILICA_API_URL="http://localhost:${API_PORT}"
-        export BASILICA_API_TOKEN="test-token"
         export NAMESPACE="$NAMESPACE"
+        # Use the exec-agent image as the sandbox image for K3d testing
+        export SANDBOX_IMAGE="${EXEC_AGENT_DEPLOY_IMAGE}"
 
         # Run full API + data-plane tests (the real architecture path)
         bash "$e2e_script" all
@@ -616,15 +693,15 @@ run_e2e_tests() {
 
 run_api_tests() {
     log_step "Running API-based E2E tests..."
-    
+
     local e2e_script="$SCRIPT_DIR/sandbox-e2e.sh"
-    
+
     if [ -f "$e2e_script" ]; then
         # Set environment for E2E script
         export BASILICA_API_URL="http://localhost:${API_PORT}"
-        export BASILICA_API_TOKEN="test-token"
         export NAMESPACE="$NAMESPACE"
-        
+        export SANDBOX_IMAGE="${EXEC_AGENT_DEPLOY_IMAGE}"
+
         # Run full API tests
         bash "$e2e_script" all
     else

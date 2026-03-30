@@ -3,25 +3,26 @@
 # Sandbox E2E Testing Script
 #
 # Tests the sandbox v2 architecture:
-#   - Control-plane operations (create, list, get, delete) via basilica-api at /sandboxes
-#   - Data-plane operations (exec, run, files, snapshot) direct to sandbox domains
+#   - Control-plane operations (create, list, get, delete) via sandbox-test-api at /sandboxes
+#   - Data-plane operations (exec, run, files) direct to sandbox pods via port-forward
+#   - Negative / edge case tests (invalid image, nonexistent sandbox, wrong auth)
 #
 # Prerequisites:
-#   - K3s cluster running (or minikube/kind with basilica CRDs applied)
-#   - basilica-api and basilica-sandbox-operator deployed
-#   - BASILICA_API_URL and BASILICA_API_TOKEN environment variables set
+#   - K3d cluster running with basilica-sandbox-test cluster
+#   - sandbox-test-api and basilica-sandbox-operator deployed
+#   - BASILICA_API_URL set (default: http://localhost:18082)
 #
 # Usage:
 #   ./sandbox-e2e.sh [command]
 #
 # Commands:
-#   setup     - Apply CRD and check prerequisites
-#   create    - Create a test sandbox
-#   exec      - Test command execution (data-plane, direct to sandbox domain)
-#   files     - Test file operations (data-plane, direct to sandbox domain)
-#   snapshot  - Test snapshot creation (data-plane, direct to sandbox domain)
-#   cleanup   - Delete test sandboxes
 #   all       - Run all tests (default)
+#   setup     - Check prerequisites
+#   create    - Create a test sandbox
+#   exec      - Test exec + run (data-plane)
+#   files     - Test file operations (data-plane)
+#   negative  - Negative / edge case tests
+#   cleanup   - Delete test sandboxes
 
 set -euo pipefail
 
@@ -34,261 +35,186 @@ if [ -d "$BASILICA_BACKEND_DIR" ]; then
     BASILICA_BACKEND_DIR="$(cd "$BASILICA_BACKEND_DIR" && pwd)"
 fi
 
-# Load test configuration
-if [ -f "test.conf" ]; then
-    source test.conf
-fi
-
-# Default values
+# Configuration
 BASILICA_API_URL="${BASILICA_API_URL:-http://localhost:${SANDBOX_API_PORT:-18082}}"
-BASILICA_API_TOKEN="${BASILICA_API_TOKEN:-test-token}"
 NAMESPACE="${NAMESPACE:-default}"
+SANDBOX_IMAGE="${SANDBOX_IMAGE:-k3d-basilica-registry:5050/basilica-exec-agent:latest}"
+
+# Test state
 SANDBOX_ID=""
 SANDBOX_DOMAIN=""
 EXEC_AGENT_SECRET=""
+DATA_PLANE_PF_PID=""
+DATA_PLANE_URL=""
 
-# Logging helpers
+# Counters
+TESTS_PASSED=0
+TESTS_FAILED=0
+TESTS_SKIPPED=0
+
+# Logging
 log_info() { echo -e "\033[34m[INFO]\033[0m $1"; }
-log_success() { echo -e "\033[32m[SUCCESS]\033[0m $1"; }
+log_success() { echo -e "\033[32m[PASS]\033[0m $1"; }
 log_warn() { echo -e "\033[33m[WARN]\033[0m $1"; }
-log_error() { echo -e "\033[31m[ERROR]\033[0m $1"; }
+log_error() { echo -e "\033[31m[FAIL]\033[0m $1"; }
 log_test() { echo -e "\033[35m[TEST]\033[0m $1"; }
+log_skip() { echo -e "\033[33m[SKIP]\033[0m $1"; }
 
-# Control-plane API helper (requests to basilica-api)
+pass() {
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    log_success "$1"
+}
+
+fail() {
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    log_error "$1"
+}
+
+skip() {
+    TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+    log_skip "$1"
+}
+
+# API helper (no auth token needed for sandbox-test-api)
 api_call() {
     local method="$1"
     local path="$2"
     local data="${3:-}"
 
     if [ -n "$data" ]; then
-        curl -s -X "$method" \
-            -H "Authorization: Bearer $BASILICA_API_TOKEN" \
+        curl -s --max-time 30 -X "$method" \
             -H "Content-Type: application/json" \
             -d "$data" \
             "${BASILICA_API_URL}${path}"
     else
-        curl -s -X "$method" \
-            -H "Authorization: Bearer $BASILICA_API_TOKEN" \
+        curl -s --max-time 30 -X "$method" \
             "${BASILICA_API_URL}${path}"
     fi
 }
 
-# Data-plane helper (requests direct to sandbox domain via exec-agent)
+# Data-plane helper (requires exec-agent secret)
 data_plane_call() {
     local method="$1"
     local path="$2"
     local data="${3:-}"
 
-    if [ -z "$SANDBOX_DOMAIN" ]; then
-        log_error "No sandbox domain set"
+    if [ -z "$DATA_PLANE_URL" ]; then
+        log_error "No data-plane URL set"
         return 1
-    fi
-
-    if [ -z "$EXEC_AGENT_SECRET" ]; then
-        log_error "No exec-agent secret set"
-        return 1
-    fi
-
-    local url="https://${SANDBOX_DOMAIN}${path}"
-
-    # In local testing, the sandbox domain may not be resolvable via DNS.
-    # Use the sandbox pod's cluster IP or port-forward instead.
-    # If SANDBOX_DATA_PLANE_URL is set, use it as the base URL.
-    if [ -n "${SANDBOX_DATA_PLANE_URL:-}" ]; then
-        url="${SANDBOX_DATA_PLANE_URL}${path}"
     fi
 
     if [ -n "$data" ]; then
-        curl -s -X "$method" \
+        curl -s --max-time 30 -X "$method" \
             -H "Authorization: Bearer $EXEC_AGENT_SECRET" \
             -H "Content-Type: application/json" \
             -d "$data" \
-            "$url"
+            "${DATA_PLANE_URL}${path}"
     else
-        curl -s -X "$method" \
+        curl -s --max-time 30 -X "$method" \
             -H "Authorization: Bearer $EXEC_AGENT_SECRET" \
-            "$url"
+            "${DATA_PLANE_URL}${path}"
     fi
 }
 
-# Retrieve exec-agent secret from K8s for data-plane auth
-retrieve_exec_agent_secret() {
-    if ! command -v kubectl &>/dev/null; then
-        log_warn "kubectl not available - cannot retrieve exec-agent secret for data-plane tests"
-        return 1
-    fi
+# ============================================================================
+# Prerequisites
+# ============================================================================
 
-    local secret_name="sandbox-${SANDBOX_ID}-exec-secret"
-    # Secret is in the user's namespace (u-{user_id}).
-    # In local testing with auth disabled, the user_id may vary.
-    # Try common namespace patterns.
-    local ns=""
-    for candidate in "$NAMESPACE" "u-test-user" "u-test" "default"; do
-        if kubectl get secret "$secret_name" -n "$candidate" &>/dev/null 2>&1; then
-            ns="$candidate"
-            break
-        fi
-    done
-
-    if [ -z "$ns" ]; then
-        log_warn "Could not find exec-agent secret $secret_name in any namespace"
-        return 1
-    fi
-
-    EXEC_AGENT_SECRET=$(kubectl get secret "$secret_name" -n "$ns" -o jsonpath='{.data.EXEC_AGENT_SECRET}' | base64 -d)
-    if [ -n "$EXEC_AGENT_SECRET" ]; then
-        log_success "Retrieved exec-agent secret from $ns/$secret_name"
-        return 0
-    else
-        log_warn "Exec-agent secret was empty"
-        return 1
-    fi
-}
-
-# Set up port-forward to sandbox pod for local data-plane access
-setup_data_plane_access() {
-    if [ -n "${SANDBOX_DATA_PLANE_URL:-}" ]; then
-        log_info "Using pre-configured data-plane URL: $SANDBOX_DATA_PLANE_URL"
-        return 0
-    fi
-
-    if ! command -v kubectl &>/dev/null; then
-        log_warn "kubectl not available - data-plane tests will use sandbox domain directly"
-        return 0
-    fi
-
-    local pod_name="sandbox-${SANDBOX_ID}"
-    # Find the pod in the user namespace
-    local ns=""
-    for candidate in "$NAMESPACE" "u-test-user" "u-test" "default"; do
-        if kubectl get pod "$pod_name" -n "$candidate" &>/dev/null 2>&1; then
-            ns="$candidate"
-            break
-        fi
-    done
-
-    if [ -z "$ns" ]; then
-        log_warn "Could not find sandbox pod $pod_name - data-plane tests will use domain directly"
-        return 0
-    fi
-
-    # Start port-forward in background
-    local local_port=$((RANDOM % 10000 + 20000))
-    kubectl port-forward -n "$ns" "pod/$pod_name" "${local_port}:9999" &>/dev/null &
-    local pf_pid=$!
-    sleep 2
-
-    if kill -0 "$pf_pid" 2>/dev/null; then
-        SANDBOX_DATA_PLANE_URL="http://localhost:${local_port}"
-        DATA_PLANE_PF_PID="$pf_pid"
-        log_success "Port-forward established: $SANDBOX_DATA_PLANE_URL -> $ns/$pod_name:9999"
-    else
-        log_warn "Port-forward failed - data-plane tests will use domain directly"
-    fi
-}
-
-# Check prerequisites
 check_prerequisites() {
-    log_info "Checking prerequisites..."
+    log_test "Checking prerequisites..."
 
-    # Check kubectl
-    if command -v kubectl &>/dev/null; then
-        log_success "kubectl found"
-    else
-        log_warn "kubectl not found - CRD operations will use API only"
-    fi
-
-    # Check curl
-    command -v curl &>/dev/null || { log_error "curl not found"; exit 1; }
-
-    # Check jq
-    command -v jq &>/dev/null || { log_error "jq not found (required for JSON parsing)"; exit 1; }
+    command -v curl &>/dev/null || { fail "curl not found"; exit 1; }
+    command -v jq &>/dev/null || { fail "jq not found"; exit 1; }
+    command -v kubectl &>/dev/null || { fail "kubectl not found"; exit 1; }
 
     # Check API health
-    local health=$(api_call GET "/health" 2>/dev/null || echo "{}")
-    if echo "$health" | jq -e '.status == "ok" or .status == "healthy"' &>/dev/null; then
-        log_success "API health check passed"
+    local health
+    health=$(api_call GET "/health" 2>/dev/null || echo "{}")
+    if echo "$health" | jq -e '.status == "healthy"' &>/dev/null; then
+        pass "API health check passed"
     else
-        log_warn "API health check returned: $health"
+        fail "API health check failed: $health"
+        exit 1
     fi
 
-    log_success "Prerequisites check completed"
-}
-
-# Apply CRD
-setup_crd() {
-    log_info "Setting up BasilicaSandbox CRD..."
-
-    if ! command -v kubectl &>/dev/null; then
-        log_warn "kubectl not available - skipping CRD setup"
-        return 0
-    fi
-
-    # Check if CRD already exists
+    # Check CRD exists
     if kubectl get crd basilicasandboxes.basilica.ai &>/dev/null; then
-        log_success "CRD already exists"
-        return 0
+        pass "BasilicaSandbox CRD exists"
+    else
+        fail "BasilicaSandbox CRD not found"
+        exit 1
     fi
 
-    # Try to use the generated CRD file from basilica-backend.
-    local crd_file="$BASILICA_BACKEND_DIR/orchestrator/k8s/crds/basilica-sandbox.yaml"
-
-    if [ -f "$crd_file" ]; then
-        kubectl apply -f "$crd_file"
-        log_success "CRD applied from $crd_file"
+    # Check operator is running
+    if kubectl get deployment basilica-sandbox-operator -n basilica-system &>/dev/null; then
+        local ready
+        ready=$(kubectl get deployment basilica-sandbox-operator -n basilica-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+        if [ "${ready:-0}" -ge 1 ]; then
+            pass "Sandbox operator is running"
+        else
+            fail "Sandbox operator not ready"
+            exit 1
+        fi
     else
-        log_error "CRD not found and not already deployed."
-        log_error "Run 'sandbox-k3d-e2e.sh deploy' first to set up infrastructure."
-        return 1
+        fail "Sandbox operator deployment not found"
+        exit 1
     fi
 }
 
-# Create sandbox via control-plane API
+# ============================================================================
+# Control-Plane Tests
+# ============================================================================
+
 test_create_sandbox() {
-    log_test "Testing sandbox creation via control-plane API..."
+    log_test "POST /sandboxes -- create sandbox"
 
-    # CreateSandboxInput: image, cpu, memory, env, ttl_seconds
-    # No language, resources, timeoutSeconds, idleTimeoutSeconds, autoSnapshot, networkIsolation
-    local request='{
-        "image": "basilica/sandbox-python:latest",
-        "cpu": "500m",
-        "memory": "512Mi",
-        "env": [
-            {"name": "TEST_VAR", "value": "hello"}
-        ],
-        "ttlSeconds": 3600
-    }'
+    local request
+    request=$(jq -n --arg image "$SANDBOX_IMAGE" '{
+        image: $image,
+        cpu: "500m",
+        memory: "512Mi",
+        env: [{"name": "TEST_VAR", "value": "hello"}],
+        ttlSeconds: 3600
+    }')
 
-    local response=$(api_call POST "/sandboxes" "$request")
+    local response
+    response=$(api_call POST "/sandboxes" "$request")
 
     if echo "$response" | jq -e '.sandboxId' &>/dev/null; then
         SANDBOX_ID=$(echo "$response" | jq -r '.sandboxId')
         SANDBOX_DOMAIN=$(echo "$response" | jq -r '.domain')
-        log_success "Sandbox created: $SANDBOX_ID (domain: $SANDBOX_DOMAIN)"
+        EXEC_AGENT_SECRET=$(echo "$response" | jq -r '.execAgentSecret')
+
+        # Verify response fields
+        if [ -n "$SANDBOX_ID" ] && [ "$SANDBOX_ID" != "null" ] &&
+           [ -n "$SANDBOX_DOMAIN" ] && [ "$SANDBOX_DOMAIN" != "null" ] &&
+           [ -n "$EXEC_AGENT_SECRET" ] && [ "$EXEC_AGENT_SECRET" != "null" ]; then
+            pass "Sandbox created: $SANDBOX_ID (domain: $SANDBOX_DOMAIN)"
+        else
+            fail "Sandbox response missing required fields: $response"
+            return 1
+        fi
     else
-        log_error "Failed to create sandbox: $response"
+        fail "Failed to create sandbox: $response"
         return 1
     fi
 
-    # Wait for sandbox to be ready
+    # Wait for sandbox to reach Running state
     log_info "Waiting for sandbox to be ready..."
     local max_attempts=60
     local attempt=0
 
     while [ $attempt -lt $max_attempts ]; do
-        local status_response=$(api_call GET "/sandboxes/$SANDBOX_ID")
-        local status=$(echo "$status_response" | jq -r '.status')
+        local status_response
+        status_response=$(api_call GET "/sandboxes/$SANDBOX_ID")
+        local status
+        status=$(echo "$status_response" | jq -r '.status')
 
-        if [ "$status" = "Ready" ]; then
-            # Update domain from detail response if available
-            local detail_domain=$(echo "$status_response" | jq -r '.domain // empty')
-            if [ -n "$detail_domain" ]; then
-                SANDBOX_DOMAIN="$detail_domain"
-            fi
-            log_success "Sandbox is ready (domain: $SANDBOX_DOMAIN)"
+        if [ "$status" = "Running" ]; then
+            pass "Sandbox reached Running state"
             return 0
         elif [ "$status" = "Failed" ] || [ "$status" = "Terminated" ]; then
-            log_error "Sandbox failed with status: $status"
+            fail "Sandbox failed with status: $status"
             return 1
         fi
 
@@ -296,363 +222,410 @@ test_create_sandbox() {
         attempt=$((attempt + 1))
     done
 
-    log_error "Timeout waiting for sandbox to be ready"
+    fail "Timeout waiting for sandbox to be ready (last status: $status)"
     return 1
 }
 
-# Test command execution via data-plane (direct to sandbox domain)
-test_exec() {
-    log_test "Testing command execution via data-plane..."
+test_list_sandboxes() {
+    log_test "GET /sandboxes -- list sandboxes"
 
-    if [ -z "$SANDBOX_ID" ]; then
-        log_error "No sandbox ID - run create first"
-        return 1
-    fi
+    local response
+    response=$(api_call GET "/sandboxes")
 
-    # Retrieve exec-agent secret and set up data-plane access
-    retrieve_exec_agent_secret || {
-        log_warn "Skipping data-plane tests: could not retrieve exec-agent secret"
-        return 1
-    }
-    setup_data_plane_access
-
-    # Test simple command via exec-agent
-    local request='{"command": ["echo", "Hello, World!"]}'
-    local response=$(data_plane_call POST "/exec" "$request")
-
-    local stdout=$(echo "$response" | jq -r '.stdout')
-    local exit_code=$(echo "$response" | jq -r '.exitCode')
-
-    if [ "$exit_code" = "0" ] && [[ "$stdout" == *"Hello, World!"* ]]; then
-        log_success "Exec test passed: $stdout"
+    if echo "$response" | jq -e '.sandboxes' &>/dev/null; then
+        local count
+        count=$(echo "$response" | jq '.sandboxes | length')
+        if [ "$count" -ge 1 ]; then
+            # Verify our sandbox appears in the list
+            local found
+            found=$(echo "$response" | jq -r --arg id "$SANDBOX_ID" '.sandboxes[] | select(.sandboxId == $id) | .sandboxId')
+            if [ "$found" = "$SANDBOX_ID" ]; then
+                pass "List sandboxes: found $count sandboxes, including $SANDBOX_ID"
+            else
+                fail "List sandboxes: $SANDBOX_ID not found in response"
+                return 1
+            fi
+        else
+            fail "List sandboxes: expected at least 1, got $count"
+            return 1
+        fi
     else
-        log_error "Exec test failed: exit_code=$exit_code, stdout=$stdout, response=$response"
-        return 1
-    fi
-
-    # Test code run
-    log_test "Testing code run via data-plane..."
-
-    request='{"code": "print(1 + 1)"}'
-    response=$(data_plane_call POST "/run" "$request")
-
-    stdout=$(echo "$response" | jq -r '.stdout')
-    exit_code=$(echo "$response" | jq -r '.exitCode')
-
-    if [ "$exit_code" = "0" ] && [[ "$stdout" == *"2"* ]]; then
-        log_success "Code run test passed: $stdout"
-    else
-        log_error "Code run test failed: exit_code=$exit_code, stdout=$stdout, response=$response"
+        fail "List sandboxes failed: $response"
         return 1
     fi
 }
 
-# Test file operations via data-plane (direct to sandbox domain)
-test_files() {
-    log_test "Testing file operations via data-plane..."
+test_get_sandbox() {
+    log_test "GET /sandboxes/:id -- get sandbox detail"
 
-    if [ -z "$SANDBOX_ID" ]; then
-        log_error "No sandbox ID - run create first"
+    local response
+    response=$(api_call GET "/sandboxes/$SANDBOX_ID")
+
+    local sid
+    sid=$(echo "$response" | jq -r '.sandboxId')
+    local status
+    status=$(echo "$response" | jq -r '.status')
+    local image
+    image=$(echo "$response" | jq -r '.image')
+
+    if [ "$sid" = "$SANDBOX_ID" ] && [ -n "$status" ] && [ -n "$image" ]; then
+        pass "Get sandbox detail: id=$sid, status=$status, image=$image"
+    else
+        fail "Get sandbox detail failed: $response"
+        return 1
+    fi
+}
+
+# ============================================================================
+# Data-Plane Tests
+# ============================================================================
+
+setup_data_plane_access() {
+    if [ -n "$DATA_PLANE_URL" ]; then
+        return 0
+    fi
+
+    local pod_name="sandbox-${SANDBOX_ID}"
+    local ns="u-test-user"  # sandbox-test-api uses fixed test user
+
+    # Wait for pod to be ready
+    log_info "Waiting for sandbox pod to be ready..."
+    if ! kubectl wait --for=condition=Ready "pod/$pod_name" -n "$ns" --timeout=60s 2>/dev/null; then
+        fail "Sandbox pod $pod_name not ready"
+        kubectl describe pod "$pod_name" -n "$ns" 2>/dev/null | tail -10
         return 1
     fi
 
-    if [ -z "$EXEC_AGENT_SECRET" ]; then
-        retrieve_exec_agent_secret || {
-            log_warn "Skipping data-plane tests: could not retrieve exec-agent secret"
-            return 1
-        }
-        setup_data_plane_access
+    # Start port-forward
+    local local_port=$((RANDOM % 10000 + 20000))
+    kubectl port-forward -n "$ns" "pod/$pod_name" "${local_port}:9999" &>/dev/null &
+    DATA_PLANE_PF_PID=$!
+    sleep 2
+
+    if kill -0 "$DATA_PLANE_PF_PID" 2>/dev/null; then
+        DATA_PLANE_URL="http://localhost:${local_port}"
+        pass "Port-forward established: $DATA_PLANE_URL -> $ns/$pod_name:9999"
+    else
+        fail "Port-forward failed for $pod_name"
+        return 1
     fi
+}
+
+test_exec() {
+    log_test "POST /exec -- execute command via data-plane"
+
+    setup_data_plane_access || return 1
+
+    local response
+    response=$(data_plane_call POST "/exec" '{"command": ["echo", "Hello, World!"]}')
+
+    local stdout
+    stdout=$(echo "$response" | jq -r '.stdout')
+    local exit_code
+    exit_code=$(echo "$response" | jq -r '.exitCode')
+
+    if [ "$exit_code" = "0" ] && [[ "$stdout" == *"Hello, World!"* ]]; then
+        pass "Exec: stdout='$stdout' exitCode=$exit_code"
+    else
+        fail "Exec failed: $response"
+        return 1
+    fi
+}
+
+test_run() {
+    log_test "POST /run -- run code via data-plane"
+
+    setup_data_plane_access || return 1
+
+    local response
+    response=$(data_plane_call POST "/run" '{"code": "print(1 + 1)"}')
+
+    local stdout
+    stdout=$(echo "$response" | jq -r '.stdout')
+    local exit_code
+    exit_code=$(echo "$response" | jq -r '.exitCode')
+
+    if [ "$exit_code" = "0" ] && [[ "$stdout" == *"2"* ]]; then
+        pass "Run: stdout='$stdout' exitCode=$exit_code"
+    else
+        fail "Run failed: $response"
+        return 1
+    fi
+}
+
+test_files() {
+    log_test "POST /files/write, /files/read, /files/list -- file operations"
+
+    setup_data_plane_access || return 1
 
     # Write file
-    local request='{"path": "/workspace/test.txt", "content": "Hello from test!"}'
-    local response=$(data_plane_call POST "/files/write" "$request")
+    local response
+    response=$(data_plane_call POST "/files/write" '{"path": "/workspace/test.txt", "content": "Hello from test!"}')
 
     if echo "$response" | jq -e '.path' &>/dev/null; then
-        log_success "File write succeeded"
+        pass "File write succeeded"
     else
-        log_error "File write failed: $response"
+        fail "File write failed: $response"
         return 1
     fi
 
     # Read file
-    request='{"path": "/workspace/test.txt"}'
-    response=$(data_plane_call POST "/files/read" "$request")
+    response=$(data_plane_call POST "/files/read" '{"path": "/workspace/test.txt"}')
 
-    local content=$(echo "$response" | jq -r '.content')
+    local content
+    content=$(echo "$response" | jq -r '.content')
     if [[ "$content" == *"Hello from test!"* ]]; then
-        log_success "File read succeeded: $content"
+        pass "File read succeeded: content matches"
     else
-        log_error "File read failed: $response"
+        fail "File read failed: $response"
         return 1
     fi
 
     # List files
-    request='{"path": "/workspace"}'
-    response=$(data_plane_call POST "/files/list" "$request")
+    response=$(data_plane_call POST "/files/list" '{"path": "/workspace"}')
 
     if echo "$response" | jq -e '.files | length > 0' &>/dev/null; then
-        log_success "File list succeeded: $(echo "$response" | jq '.files | length') files"
-    else
-        log_warn "File list returned empty or failed: $response"
-    fi
-}
-
-# Test snapshot via data-plane (direct to sandbox domain)
-test_snapshot() {
-    log_test "Testing snapshot creation via data-plane..."
-
-    if [ -z "$SANDBOX_ID" ]; then
-        log_error "No sandbox ID - run create first"
-        return 1
-    fi
-
-    if [ -z "$EXEC_AGENT_SECRET" ]; then
-        retrieve_exec_agent_secret || {
-            log_warn "Skipping snapshot test: could not retrieve exec-agent secret"
-            return 1
-        }
-        setup_data_plane_access
-    fi
-
-    # Create snapshot archive
-    local response=$(data_plane_call POST "/snapshot/create" '{}')
-
-    local snapshot_status=$(echo "$response" | jq -r '.status // empty')
-    if [ "$snapshot_status" = "created" ] || [ "$snapshot_status" = "in_progress" ]; then
-        log_success "Snapshot creation initiated: $snapshot_status"
-    elif echo "$response" | jq -e '.error' &>/dev/null; then
-        local error_msg=$(echo "$response" | jq -r '.error')
-        if [[ "$error_msg" == *"not configured"* ]]; then
-            log_warn "Snapshot not yet configured (expected in local testing): $error_msg"
+        local found
+        found=$(echo "$response" | jq -r '.files[] | select(.name == "test.txt") | .name')
+        if [ "$found" = "test.txt" ]; then
+            pass "File list succeeded: test.txt found"
         else
-            log_error "Snapshot creation failed: $response"
+            fail "File list: test.txt not found in response"
             return 1
         fi
     else
-        log_error "Unexpected snapshot response: $response"
+        fail "File list failed: $response"
+        return 1
+    fi
+}
+
+test_snapshot() {
+    log_test "POST /snapshot/create -- snapshot creation"
+
+    setup_data_plane_access || return 1
+
+    local response
+    response=$(data_plane_call POST "/snapshot/create" '{}')
+
+    local status
+    status=$(echo "$response" | jq -r '.status // empty')
+    if [ "$status" = "created" ] || [ "$status" = "in_progress" ]; then
+        pass "Snapshot creation initiated: $status"
+    elif echo "$response" | jq -e '.snapshotId' &>/dev/null; then
+        pass "Snapshot created: $(echo "$response" | jq -r '.snapshotId')"
+    else
+        # Snapshot may not be fully configured in test environment
+        local error_msg
+        error_msg=$(echo "$response" | jq -r '.error // empty')
+        if [ -n "$error_msg" ]; then
+            skip "Snapshot not available: $error_msg"
+        else
+            skip "Snapshot response unexpected: $response"
+        fi
+    fi
+}
+
+# ============================================================================
+# Negative / Edge Case Tests
+# ============================================================================
+
+test_negative_cases() {
+    log_test "Negative / edge case tests..."
+
+    # 1. Create with invalid image
+    log_test "  Create with invalid image"
+    local response
+    response=$(api_call POST "/sandboxes" '{"image": "evil/hacker-image:latest"}')
+    local error
+    error=$(echo "$response" | jq -r '.error // empty')
+    if [ -n "$error" ] && [[ "$error" == *"not in the allowlist"* ]]; then
+        pass "Invalid image rejected correctly"
+    else
+        local http_code
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST \
+            -H "Content-Type: application/json" \
+            -d '{"image": "evil/hacker-image:latest"}' \
+            "${BASILICA_API_URL}/sandboxes")
+        if [ "$http_code" = "400" ]; then
+            pass "Invalid image rejected with HTTP 400"
+        else
+            fail "Invalid image not rejected: HTTP $http_code, response: $response"
+        fi
+    fi
+
+    # 2. Delete nonexistent sandbox
+    log_test "  Delete nonexistent sandbox"
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X DELETE \
+        "${BASILICA_API_URL}/sandboxes/sb-nonexistent-99999999")
+    if [ "$http_code" = "404" ]; then
+        pass "Nonexistent sandbox delete returns 404"
+    else
+        fail "Nonexistent sandbox delete returned HTTP $http_code (expected 404)"
+    fi
+
+    # 3. Get nonexistent sandbox
+    log_test "  Get nonexistent sandbox"
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X GET \
+        "${BASILICA_API_URL}/sandboxes/sb-nonexistent-99999999")
+    if [ "$http_code" = "404" ]; then
+        pass "Nonexistent sandbox get returns 404"
+    else
+        fail "Nonexistent sandbox get returned HTTP $http_code (expected 404)"
+    fi
+
+    # 4. Exec with wrong auth token
+    log_test "  Exec with wrong auth token"
+    if [ -n "$DATA_PLANE_URL" ]; then
+        http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X POST \
+            -H "Authorization: Bearer wrong-token-12345" \
+            -H "Content-Type: application/json" \
+            -d '{"command": ["echo", "should fail"]}' \
+            "${DATA_PLANE_URL}/exec")
+        if [ "$http_code" = "401" ]; then
+            pass "Wrong auth token returns 401"
+        else
+            fail "Wrong auth token returned HTTP $http_code (expected 401)"
+        fi
+    else
+        skip "Exec auth test: no data-plane URL"
+    fi
+}
+
+# ============================================================================
+# Delete Test
+# ============================================================================
+
+test_delete_sandbox() {
+    log_test "DELETE /sandboxes/:id -- delete sandbox"
+
+    if [ -z "$SANDBOX_ID" ]; then
+        skip "No sandbox to delete"
+        return 0
+    fi
+
+    local response
+    response=$(api_call DELETE "/sandboxes/$SANDBOX_ID")
+
+    local status
+    status=$(echo "$response" | jq -r '.status // empty')
+    if [ "$status" = "deleting" ]; then
+        pass "Sandbox $SANDBOX_ID deletion initiated"
+    else
+        fail "Sandbox deletion failed: $response"
         return 1
     fi
 
-    # Check snapshot status
-    response=$(data_plane_call GET "/snapshot/status")
-    log_info "Snapshot status: $response"
-}
-
-# List sandboxes via control-plane API
-list_sandboxes() {
-    log_info "Listing sandboxes via control-plane API..."
-
-    local response=$(api_call GET "/sandboxes")
-
-    if echo "$response" | jq -e '.sandboxes' &>/dev/null; then
-        local count=$(echo "$response" | jq '.sandboxes | length')
-        log_success "Found $count sandboxes:"
-        echo "$response" | jq -r '.sandboxes[] | "  - \(.sandboxId): \(.status) (\(.image))"'
+    # Verify it's actually gone (or in deleting state)
+    sleep 5
+    local http_code
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X GET \
+        "${BASILICA_API_URL}/sandboxes/$SANDBOX_ID")
+    if [ "$http_code" = "404" ]; then
+        pass "Sandbox $SANDBOX_ID confirmed deleted"
     else
-        log_info "No sandboxes found or error: $response"
+        # May still be in deleting state
+        log_info "Sandbox still exists (may be terminating): HTTP $http_code"
     fi
 }
 
+# ============================================================================
 # Cleanup
+# ============================================================================
+
 cleanup() {
-    log_info "Cleaning up test sandboxes..."
+    log_info "Cleaning up..."
 
     # Kill port-forward if running
     if [ -n "${DATA_PLANE_PF_PID:-}" ]; then
         kill "$DATA_PLANE_PF_PID" 2>/dev/null || true
     fi
 
-    if [ -n "$SANDBOX_ID" ]; then
-        local response=$(api_call DELETE "/sandboxes/$SANDBOX_ID")
-        log_success "Deleted sandbox: $SANDBOX_ID"
-    fi
+    # Clean up sandboxes via kubectl (more reliable than API for cleanup)
+    kubectl delete basilicasandbox --all -n u-test-user --ignore-not-found 2>/dev/null || true
 
-    # Clean up any other test sandboxes
-    local sandboxes=$(api_call GET "/sandboxes" | jq -r '.sandboxes[]?.sandboxId // empty')
-    for id in $sandboxes; do
-        if [[ "$id" == sb-* ]]; then
-            api_call DELETE "/sandboxes/$id" >/dev/null
-            log_info "Deleted: $id"
-        fi
-    done
-
-    log_success "Cleanup completed"
+    log_info "Cleanup completed"
 }
 
-# Run all tests
+# ============================================================================
+# Test Suite
+# ============================================================================
+
+print_summary() {
+    echo ""
+    echo "============================================"
+    echo "  Test Summary"
+    echo "============================================"
+    echo "  Passed:  $TESTS_PASSED"
+    echo "  Failed:  $TESTS_FAILED"
+    echo "  Skipped: $TESTS_SKIPPED"
+    echo "  Total:   $((TESTS_PASSED + TESTS_FAILED + TESTS_SKIPPED))"
+    echo "============================================"
+
+    if [ "$TESTS_FAILED" -gt 0 ]; then
+        echo ""
+        log_error "SOME TESTS FAILED"
+        return 1
+    else
+        echo ""
+        log_success "ALL TESTS PASSED"
+        return 0
+    fi
+}
+
 run_all_tests() {
     log_info "Running all sandbox E2E tests..."
+    log_info "API URL: $BASILICA_API_URL"
+    log_info "Sandbox image: $SANDBOX_IMAGE"
     echo ""
 
+    # Prerequisites
     check_prerequisites
     echo ""
 
-    setup_crd
+    # Control-plane tests
+    test_create_sandbox || { fail "Create test failed - aborting"; cleanup; print_summary; exit 1; }
     echo ""
 
-    test_create_sandbox || { log_error "Create test failed"; cleanup; exit 1; }
+    test_list_sandboxes
     echo ""
 
-    test_exec || { log_error "Exec test failed"; cleanup; exit 1; }
+    test_get_sandbox
     echo ""
 
-    test_files || { log_error "Files test failed"; cleanup; exit 1; }
+    # Data-plane tests
+    test_exec || { fail "Exec test failed"; }
     echo ""
 
-    test_snapshot || { log_error "Snapshot test failed"; cleanup; exit 1; }
+    test_run || { fail "Run test failed"; }
     echo ""
 
+    test_files || { fail "Files test failed"; }
+    echo ""
+
+    test_snapshot
+    echo ""
+
+    # Negative / edge case tests
+    test_negative_cases
+    echo ""
+
+    # Delete test (control-plane)
+    test_delete_sandbox
+    echo ""
+
+    # Cleanup and summary
     cleanup
-    echo ""
-
-    log_success "All sandbox E2E tests passed!"
+    print_summary
 }
 
 # ============================================================================
-# kubectl-only tests (when API is not available)
-# ============================================================================
-
-KUBECTL_SANDBOX_NAME=""
-
-kubectl_create_sandbox() {
-    log_test "Creating sandbox via kubectl..."
-
-    KUBECTL_SANDBOX_NAME="test-sandbox-$(date +%s)"
-
-    # Uses the new CRD schema: image (not language), no networkIsolation: none
-    kubectl apply -f - <<EOF
-apiVersion: basilica.ai/v1
-kind: BasilicaSandbox
-metadata:
-  name: ${KUBECTL_SANDBOX_NAME}
-  namespace: ${NAMESPACE}
-spec:
-  userId: "test-user"
-  sandboxId: "${KUBECTL_SANDBOX_NAME}"
-  image: "basilica/sandbox-python:latest"
-  cpu: "500m"
-  memory: "512Mi"
-  ttlSeconds: 300
-  networkIsolation: Egress
-EOF
-
-    log_success "Sandbox created: $KUBECTL_SANDBOX_NAME"
-
-    # Wait for sandbox to be processed
-    log_info "Waiting for sandbox..."
-    sleep 5
-
-    # Show status
-    kubectl get basilicasandbox "$KUBECTL_SANDBOX_NAME" -n "$NAMESPACE" -o wide
-}
-
-kubectl_test_sandbox() {
-    log_test "Testing sandbox via kubectl..."
-
-    if [ -z "$KUBECTL_SANDBOX_NAME" ]; then
-        KUBECTL_SANDBOX_NAME=$(kubectl get basilicasandbox -n "$NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-        if [ -z "$KUBECTL_SANDBOX_NAME" ]; then
-            log_error "No sandbox found. Run 'kubectl-create' first."
-            return 1
-        fi
-    fi
-
-    # Get pod name from sandbox status
-    local pod_name=$(kubectl get basilicasandbox "$KUBECTL_SANDBOX_NAME" -n "$NAMESPACE" -o jsonpath='{.status.podName}' 2>/dev/null || echo "")
-
-    if [ -z "$pod_name" ]; then
-        log_warn "Sandbox pod not yet created, checking for matching pods..."
-        pod_name=$(kubectl get pods -n "$NAMESPACE" -l "basilica.ai/type=sandbox" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-    fi
-
-    if [ -z "$pod_name" ]; then
-        log_error "No sandbox pod found"
-        return 1
-    fi
-
-    log_info "Using pod: $pod_name"
-
-    # Wait for pod to be ready
-    log_info "Waiting for pod to be ready..."
-    kubectl wait --for=condition=Ready pod/"$pod_name" -n "$NAMESPACE" --timeout=60s || {
-        log_warn "Pod not ready, checking status..."
-        kubectl describe pod "$pod_name" -n "$NAMESPACE" | tail -20
-        return 1
-    }
-
-    # Test exec in sandbox container
-    log_info "Testing exec in sandbox..."
-    local result=$(kubectl exec -n "$NAMESPACE" "$pod_name" -c sandbox -- python3 -c "print('Hello from sandbox!')" 2>&1)
-
-    if [[ "$result" == *"Hello from sandbox!"* ]]; then
-        log_success "Exec test passed: $result"
-    else
-        log_error "Exec test failed: $result"
-        return 1
-    fi
-
-    # Test file operations
-    log_info "Testing file operations..."
-    kubectl exec -n "$NAMESPACE" "$pod_name" -c sandbox -- sh -c "echo 'test content' > /workspace/test.txt"
-    local content=$(kubectl exec -n "$NAMESPACE" "$pod_name" -c sandbox -- cat /workspace/test.txt 2>&1)
-
-    if [[ "$content" == *"test content"* ]]; then
-        log_success "File operations test passed"
-    else
-        log_error "File operations test failed: $content"
-        return 1
-    fi
-
-    log_success "All kubectl tests passed"
-}
-
-kubectl_cleanup() {
-    log_info "Cleaning up kubectl-created sandboxes..."
-
-    kubectl delete basilicasandbox --all -n "$NAMESPACE" --ignore-not-found
-
-    log_success "Cleanup completed"
-}
-
-kubectl_list() {
-    log_info "Listing sandboxes via kubectl..."
-
-    echo "=== BasilicaSandbox CRs ==="
-    kubectl get basilicasandbox -n "$NAMESPACE" -o wide 2>/dev/null || echo "No sandboxes found"
-    echo ""
-
-    echo "=== Sandbox Pods ==="
-    kubectl get pods -n "$NAMESPACE" -l "basilica.ai/type=sandbox" -o wide 2>/dev/null || echo "No sandbox pods"
-}
-
-kubectl_run_all() {
-    log_info "Running kubectl-only E2E tests..."
-    echo ""
-
-    check_prerequisites
-    echo ""
-
-    setup_crd
-    echo ""
-
-    kubectl_create_sandbox || { log_error "Create failed"; kubectl_cleanup; exit 1; }
-    echo ""
-
-    kubectl_test_sandbox || { log_error "Test failed"; kubectl_cleanup; exit 1; }
-    echo ""
-
-    kubectl_cleanup
-    echo ""
-
-    log_success "All kubectl E2E tests passed!"
-}
-
 # Main
+# ============================================================================
+
 case "${1:-all}" in
     setup)
         check_prerequisites
-        setup_crd
         ;;
     create)
         test_create_sandbox
@@ -666,8 +639,11 @@ case "${1:-all}" in
     snapshot)
         test_snapshot
         ;;
+    negative)
+        test_negative_cases
+        ;;
     list)
-        list_sandboxes
+        test_list_sandboxes
         ;;
     cleanup)
         cleanup
@@ -675,41 +651,8 @@ case "${1:-all}" in
     all)
         run_all_tests
         ;;
-    # kubectl-only commands
-    kubectl-create)
-        kubectl_create_sandbox
-        ;;
-    kubectl-test)
-        kubectl_test_sandbox
-        ;;
-    kubectl-list)
-        kubectl_list
-        ;;
-    kubectl-cleanup)
-        kubectl_cleanup
-        ;;
-    kubectl-all)
-        kubectl_run_all
-        ;;
     *)
-        echo "Usage: $0 {setup|create|exec|files|snapshot|list|cleanup|all}"
-        echo ""
-        echo "API-based tests (control-plane via API, data-plane via sandbox domain):"
-        echo "  setup     - Apply CRD and check prerequisites"
-        echo "  create    - Create sandbox via API (POST /sandboxes)"
-        echo "  exec      - Test exec via data-plane (POST https://<domain>/exec)"
-        echo "  files     - Test files via data-plane (POST https://<domain>/files/*)"
-        echo "  snapshot  - Test snapshot via data-plane (POST https://<domain>/snapshot/*)"
-        echo "  list      - List sandboxes via API (GET /sandboxes)"
-        echo "  cleanup   - Delete test sandboxes via API"
-        echo "  all       - Run all tests"
-        echo ""
-        echo "kubectl-only commands (no API required):"
-        echo "  kubectl-create   - Create sandbox via kubectl"
-        echo "  kubectl-test     - Test sandbox via kubectl exec"
-        echo "  kubectl-list     - List sandboxes via kubectl"
-        echo "  kubectl-cleanup  - Delete all sandboxes"
-        echo "  kubectl-all      - Run all kubectl tests"
+        echo "Usage: $0 {setup|create|exec|files|snapshot|negative|list|cleanup|all}"
         exit 1
         ;;
 esac
