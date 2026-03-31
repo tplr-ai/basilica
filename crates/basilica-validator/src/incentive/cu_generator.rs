@@ -344,7 +344,7 @@ pub fn generate_hourly_cu_windows(
                 is_rented: aggregate.is_rented,
                 gpu_category: metadata.gpu_category.clone(),
                 window_hours: config.window_hours,
-                price_usd: category_config.price_usd,
+                price_usd: category_config.price_per_gpu_usd,
                 idempotency_key: format!("{}:{}", aggregate.node_id_for_key, next_ms / 1000),
             });
         }
@@ -512,7 +512,7 @@ mod tests {
             "H100".to_string(),
             IncentiveGpuCategoryConfig {
                 target_count: 2,
-                price_usd: Decimal::from_str("3.00").unwrap(),
+                price_per_gpu_usd: Decimal::from_str("3.00").unwrap(),
             },
         );
 

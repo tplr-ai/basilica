@@ -581,8 +581,11 @@ pub struct IncentiveConfigResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IncentiveGpuCategoryConfig {
+    /// Number of nodes to target. Each node is assumed to have 8 GPUs,
+    /// so target_count=1 means 8 GPUs.
     pub target_count: u32,
-    pub price_usd: Decimal,
+    /// Price per individual GPU per hour in USD.
+    pub price_per_gpu_usd: Decimal,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -887,7 +890,7 @@ mod tests {
         let json = r#"
         {
             "gpu_categories": {
-                "H100": { "target_count": 2, "price_usd": "3.00" }
+                "H100": { "target_count": 2, "price_per_gpu_usd": "3.00" }
             },
             "window_hours": 72,
             "max_cu_value_usd": "0.05",
@@ -899,7 +902,7 @@ mod tests {
         let parsed: IncentiveConfigResponse = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.gpu_categories["H100"].target_count, 2);
         assert_eq!(
-            parsed.gpu_categories["H100"].price_usd,
+            parsed.gpu_categories["H100"].price_per_gpu_usd,
             Decimal::from_str_exact("3.00").unwrap()
         );
         assert_eq!(parsed.window_hours, 72);
@@ -1189,7 +1192,7 @@ mod tests {
             .and(path("/v1/incentive/config"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "gpu_categories": {
-                    "H100": { "target_count": 2, "price_usd": "3.00" }
+                    "H100": { "target_count": 2, "price_per_gpu_usd": "3.00" }
                 },
                 "window_hours": 72,
                 "max_cu_value_usd": "0.05",

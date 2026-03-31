@@ -15,8 +15,10 @@ service IncentiveService {
 message GetConfigRequest {}
 
 message GpuCategoryConfig {
+  // Number of nodes to target. Each node = 8 GPUs, so target_count=1 means 8 GPUs.
   uint32 target_count = 1;
-  string price_usd = 2;
+  // Price per individual GPU per hour in USD.
+  string price_per_gpu_usd = 2;
 }
 
 message GetConfigResponse {

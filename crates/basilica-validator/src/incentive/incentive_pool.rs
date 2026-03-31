@@ -510,12 +510,12 @@ mod tests {
         revenue_share_pct: Option<u32>,
     ) -> IncentiveConfigResponse {
         let mut gpu_categories = HashMap::new();
-        for (name, target_count, price_usd) in categories {
+        for (name, target_count, price_per_gpu_usd) in categories {
             gpu_categories.insert(
                 name.to_string(),
                 IncentiveGpuCategoryConfig {
                     target_count: *target_count,
-                    price_usd: d(price_usd),
+                    price_per_gpu_usd: d(price_per_gpu_usd),
                 },
             );
         }
@@ -534,14 +534,14 @@ mod tests {
             "H100".to_string(),
             IncentiveGpuCategoryConfig {
                 target_count: 1,
-                price_usd: d("10"),
+                price_per_gpu_usd: d("10"),
             },
         );
         gpu_categories.insert(
             "A100".to_string(),
             IncentiveGpuCategoryConfig {
                 target_count: 2,
-                price_usd: d("8"),
+                price_per_gpu_usd: d("8"),
             },
         );
 
