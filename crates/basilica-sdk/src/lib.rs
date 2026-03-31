@@ -18,7 +18,8 @@ pub use error::{ApiError, ErrorResponse, Result};
 pub use jobs::*;
 pub use sandbox::{
     CreateSandboxRequest, FileStatResponse, Sandbox, SandboxDetail, SandboxEnvVar,
-    SandboxListResponse, SandboxSummary, SnapshotResponse, SnapshotStatusResponse,
+    SandboxListResponse, SandboxSummary, SnapshotResponse, SnapshotRestoreResponse,
+    SnapshotStatusResponse, SnapshotUploadResponse, RotateSandboxSecretResponse,
 };
 pub use types::*;
 

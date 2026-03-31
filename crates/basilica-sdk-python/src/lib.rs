@@ -799,6 +799,26 @@ impl BasilicaClient {
         to_pyobject(py, &response)
     }
 
+    /// Rotate the exec-agent secret for a sandbox.
+    ///
+    /// Args:
+    ///     sandbox_id: The sandbox ID.
+    ///
+    /// Returns:
+    ///     dict with sandboxId and execAgentSecret
+    fn rotate_sandbox_secret(&self, py: Python, sandbox_id: String) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.rotate_sandbox_secret(&sandbox_id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
     /// Delete a sandbox.
     ///
     /// Args:
@@ -813,6 +833,162 @@ impl BasilicaClient {
         .map_err(|e| self.map_error_to_python(e))?;
 
         Ok(())
+    }
+
+    /// Execute a command against a sandbox data-plane using the Rust SDK.
+    ///
+    /// Args:
+    ///     sandbox_id: Sandbox ID.
+    ///     domain: Sandbox domain.
+    ///     secret: Exec-agent secret.
+    ///     command: Command argv.
+    ///     data_plane_url: Optional override (e.g. K3d port-forward URL).
+    ///     workdir: Optional working directory.
+    ///     stdin: Optional stdin content.
+    ///     timeout_secs: Optional timeout.
+    #[pyo3(signature = (sandbox_id, domain, secret, command, data_plane_url=None, workdir=None, stdin=None, timeout_secs=None))]
+    fn sandbox_exec(
+        &self,
+        py: Python,
+        sandbox_id: String,
+        domain: String,
+        secret: String,
+        command: Vec<String>,
+        data_plane_url: Option<String>,
+        workdir: Option<String>,
+        stdin: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let sandbox = build_sandbox_handle(sandbox_id, domain, secret, data_plane_url);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    sandbox
+                        .exec_with_options(command, workdir, stdin, timeout_secs)
+                        .await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
+    /// Write a file via the sandbox data-plane.
+    #[pyo3(signature = (sandbox_id, domain, secret, path, content, data_plane_url=None))]
+    fn sandbox_files_write(
+        &self,
+        py: Python,
+        sandbox_id: String,
+        domain: String,
+        secret: String,
+        path: String,
+        content: String,
+        data_plane_url: Option<String>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let sandbox = build_sandbox_handle(sandbox_id, domain, secret, data_plane_url);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { sandbox.files().write(&path, &content).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
+    /// Read a file via the sandbox data-plane.
+    #[pyo3(signature = (sandbox_id, domain, secret, path, data_plane_url=None))]
+    fn sandbox_files_read(
+        &self,
+        py: Python,
+        sandbox_id: String,
+        domain: String,
+        secret: String,
+        path: String,
+        data_plane_url: Option<String>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let sandbox = build_sandbox_handle(sandbox_id, domain, secret, data_plane_url);
+        let response = py
+            .detach(|| self.runtime.block_on(async move { sandbox.files().read(&path).await }))
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
+    /// List files via the sandbox data-plane.
+    #[pyo3(signature = (sandbox_id, domain, secret, path, data_plane_url=None))]
+    fn sandbox_files_list(
+        &self,
+        py: Python,
+        sandbox_id: String,
+        domain: String,
+        secret: String,
+        path: String,
+        data_plane_url: Option<String>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let sandbox = build_sandbox_handle(sandbox_id, domain, secret, data_plane_url);
+        let response = py
+            .detach(|| self.runtime.block_on(async move { sandbox.files().list(&path).await }))
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
+    /// Delete a file via the sandbox data-plane.
+    #[pyo3(signature = (sandbox_id, domain, secret, path, data_plane_url=None))]
+    fn sandbox_files_delete(
+        &self,
+        py: Python,
+        sandbox_id: String,
+        domain: String,
+        secret: String,
+        path: String,
+        data_plane_url: Option<String>,
+    ) -> PyResult<()> {
+        let sandbox = build_sandbox_handle(sandbox_id, domain, secret, data_plane_url);
+        py.detach(|| self.runtime.block_on(async move { sandbox.files().delete(&path).await }))
+            .map_err(|e| self.map_error_to_python(e))?;
+        Ok(())
+    }
+
+    /// Create a directory via the sandbox data-plane.
+    #[pyo3(signature = (sandbox_id, domain, secret, path, recursive=false, data_plane_url=None))]
+    fn sandbox_files_mkdir(
+        &self,
+        py: Python,
+        sandbox_id: String,
+        domain: String,
+        secret: String,
+        path: String,
+        recursive: bool,
+        data_plane_url: Option<String>,
+    ) -> PyResult<()> {
+        let sandbox = build_sandbox_handle(sandbox_id, domain, secret, data_plane_url);
+        py.detach(|| {
+            self.runtime
+                .block_on(async move { sandbox.files().mkdir(&path, recursive).await })
+        })
+        .map_err(|e| self.map_error_to_python(e))?;
+        Ok(())
+    }
+
+    /// Stat a file or directory via the sandbox data-plane.
+    #[pyo3(signature = (sandbox_id, domain, secret, path, data_plane_url=None))]
+    fn sandbox_files_stat(
+        &self,
+        py: Python,
+        sandbox_id: String,
+        domain: String,
+        secret: String,
+        path: String,
+        data_plane_url: Option<String>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let sandbox = build_sandbox_handle(sandbox_id, domain, secret, data_plane_url);
+        let response = py
+            .detach(|| self.runtime.block_on(async move { sandbox.files().stat(&path).await }))
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
     }
 }
 
@@ -835,6 +1011,24 @@ impl BasilicaClient {
             ApiError::Internal { message } => PyRuntimeError::new_err(message),
             _ => PyRuntimeError::new_err(error.to_string()),
         }
+    }
+}
+
+fn build_sandbox_handle(
+    sandbox_id: String,
+    domain: String,
+    secret: String,
+    data_plane_url: Option<String>,
+) -> basilica_sdk::sandbox::Sandbox {
+    let sandbox = basilica_sdk::sandbox::Sandbox::from(basilica_sdk::sandbox::CreateSandboxResponse {
+        sandbox_id,
+        domain,
+        status: "Running".to_string(),
+        exec_agent_secret: secret,
+    });
+    match data_plane_url {
+        Some(url) => sandbox.with_data_plane_url(url),
+        None => sandbox,
     }
 }
 

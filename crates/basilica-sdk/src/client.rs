@@ -661,6 +661,9 @@ impl BasilicaClient {
     ///     queue_name: None,
     ///     suspended: false,
     ///     priority: None,
+    ///     websocket: None,
+    ///     topology_spread: None,
+    ///     public_metadata: false,
     /// };
     ///
     /// let deployment = client.create_deployment(request).await?;
@@ -1281,6 +1284,15 @@ impl BasilicaClient {
     pub async fn get_sandbox(&self, sandbox_id: &str) -> Result<crate::sandbox::SandboxDetail> {
         let path = format!("/sandboxes/{sandbox_id}");
         self.get(&path).await
+    }
+
+    /// Rotate the exec-agent secret for a sandbox.
+    pub async fn rotate_sandbox_secret(
+        &self,
+        sandbox_id: &str,
+    ) -> Result<crate::sandbox::RotateSandboxSecretResponse> {
+        let path = format!("/sandboxes/{sandbox_id}/secret");
+        self.post_empty(&path).await
     }
 
     /// Delete a sandbox.

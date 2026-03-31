@@ -11,6 +11,10 @@
 
 use serde::{Deserialize, Serialize};
 
+fn default_network_isolation() -> String {
+    "egress".to_string()
+}
+
 /// Request to create a new sandbox.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,6 +63,14 @@ pub struct CreateSandboxResponse {
     pub exec_agent_secret: String,
 }
 
+/// Response from rotating a sandbox exec-agent secret.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotateSandboxSecretResponse {
+    pub sandbox_id: String,
+    pub exec_agent_secret: String,
+}
+
 /// Response from listing sandboxes.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -74,6 +86,13 @@ pub struct SandboxSummary {
     pub status: String,
     pub domain: Option<String>,
     pub created_at: Option<String>,
+    pub ttl_seconds: Option<u32>,
+    #[serde(default = "default_network_isolation")]
+    pub network_isolation: String,
+    pub ready_at: Option<String>,
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub from_warm_pool: bool,
 }
 
 /// Detailed sandbox info.
@@ -87,6 +106,13 @@ pub struct SandboxDetail {
     pub status: String,
     pub domain: Option<String>,
     pub created_at: Option<String>,
+    pub ttl_seconds: Option<u32>,
+    #[serde(default = "default_network_isolation")]
+    pub network_isolation: String,
+    pub ready_at: Option<String>,
+    pub expires_at: Option<String>,
+    #[serde(default)]
+    pub from_warm_pool: bool,
 }
 
 // ============================================================================
@@ -107,7 +133,7 @@ pub struct ExecRequest {
 }
 
 /// Response from command execution.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecResponse {
     pub stdout: String,
@@ -136,7 +162,7 @@ pub struct FileWriteRequest {
 }
 
 /// Response from file write.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileWriteResponse {
     pub path: String,
@@ -150,7 +176,7 @@ pub struct FileReadRequest {
 }
 
 /// Response from file read.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileReadResponse {
     pub content: String,
@@ -165,14 +191,14 @@ pub struct FileListRequest {
 }
 
 /// Response from file list.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileListResponse {
     pub files: Vec<FileEntry>,
 }
 
 /// A file entry in a directory listing.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub name: String,
@@ -190,30 +216,75 @@ pub struct FileEntry {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSnapshotRequest {
-    /// Optional label for the snapshot.
+    /// Optional subdirectory within the workspace to snapshot.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    pub path: Option<String>,
 }
 
 /// Response from creating a snapshot.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotResponse {
     pub snapshot_id: String,
     pub status: String,
     #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
+    pub archive_path: Option<String>,
+    #[serde(default)]
+    pub archive_size_bytes: Option<u64>,
+}
+
+/// Request to upload a snapshot archive to object storage.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotUploadRequest {
+    pub snapshot_id: String,
+    pub presigned_url: String,
+}
+
+/// Response from uploading a snapshot archive.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotUploadResponse {
+    pub status: String,
+    pub bytes_uploaded: u64,
+}
+
+/// Request to restore a snapshot archive from object storage.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotRestoreRequest {
+    pub snapshot_id: String,
+    pub presigned_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// Response from restoring a snapshot archive.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotRestoreResponse {
+    pub snapshot_id: String,
+    pub status: String,
+    pub restored_path: String,
+    pub bytes_downloaded: u64,
 }
 
 /// Response from snapshot status.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotStatusResponse {
-    pub snapshot_id: String,
+    pub snapshot_id: Option<String>,
     pub status: String,
-    pub size_bytes: Option<u64>,
     #[serde(default)]
     pub message: Option<String>,
+    #[serde(default)]
+    pub archive_size_bytes: Option<u64>,
+    #[serde(default)]
+    pub bytes_uploaded: Option<u64>,
+    #[serde(default)]
+    pub bytes_downloaded: Option<u64>,
 }
 
 // ============================================================================
@@ -244,7 +315,7 @@ pub struct FileStatRequest {
 }
 
 /// Response from file stat.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStatResponse {
     pub size: u64,
@@ -306,17 +377,48 @@ impl Sandbox {
 
     /// Get the base URL for data-plane operations on this sandbox.
     pub fn data_plane_url(&self) -> String {
-        format!("https://{}", self.domain)
+        self.resolve_data_plane_base()
     }
 
     /// Get the WebSocket URL for terminal access.
+    ///
+    /// The exec-agent authenticates WebSocket upgrades via HTTP headers
+    /// (same as all other data-plane requests):
+    /// - `Authorization: Bearer <exec_agent_secret>`, or
+    /// - `X-Exec-Secret: <exec_agent_secret>`
+    ///
+    /// Set the header on the HTTP upgrade request. Query-string auth is
+    /// deliberately NOT supported (S-4).
+    ///
+    /// For convenience, use [`ws_connect_info`] to get both the URL and
+    /// the auth header value together.
     pub fn ws_url(&self) -> String {
-        format!("wss://{}/ws", self.domain)
+        let base = self.resolve_data_plane_base();
+        let scheme = if base.starts_with("https://") { "wss" } else { "ws" };
+        let host = base
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+        format!("{scheme}://{host}/ws")
+    }
+
+    /// Get the WebSocket URL and auth header for terminal access.
+    ///
+    /// Returns `(url, header_name, header_value)` ready to pass to a
+    /// WebSocket client library (e.g. `tokio-tungstenite`).
+    ///
+    /// Returns `None` if the exec-agent secret is not available.
+    pub fn ws_connect_info(&self) -> Option<(String, &'static str, String)> {
+        let secret = self.exec_agent_secret.as_deref()?;
+        Some((
+            self.ws_url(),
+            "Authorization",
+            format!("Bearer {secret}"),
+        ))
     }
 
     /// Get the exec endpoint URL.
     pub fn exec_url(&self) -> String {
-        format!("https://{}/exec", self.domain)
+        format!("{}/exec", self.resolve_data_plane_base())
     }
 
     /// Execute a command in the sandbox.
@@ -326,20 +428,31 @@ impl Sandbox {
         &self,
         command: Vec<String>,
     ) -> std::result::Result<ExecResponse, crate::error::ApiError> {
+        self.exec_with_options(command, None, None, None).await
+    }
+
+    /// Execute a command in the sandbox with full request options.
+    pub async fn exec_with_options(
+        &self,
+        command: Vec<String>,
+        workdir: Option<String>,
+        stdin: Option<String>,
+        timeout_secs: Option<u64>,
+    ) -> std::result::Result<ExecResponse, crate::error::ApiError> {
         let req = ExecRequest {
             command,
-            stdin: None,
-            workdir: None,
-            timeout_secs: None,
+            stdin,
+            workdir,
+            timeout_secs,
         };
         self.data_plane_post("/exec", &req).await
     }
 
     /// Run code in the sandbox.
     ///
-    /// Sends POST to `https://<domain>/run` via the websocket exec-agent.
-    /// Note: The exec-agent handles code run over websocket; this sends an
-    /// HTTP request that the agent may support depending on configuration.
+    /// Sends POST to `https://<domain>/run` directly to the sandbox data-plane.
+    /// This is an authenticated HTTP request to the exec-agent, not an API
+    /// relay and not a WebSocket-only path.
     pub async fn run(
         &self,
         code: &str,
@@ -360,10 +473,44 @@ impl Sandbox {
     /// Create a filesystem snapshot of the sandbox.
     pub async fn snapshot_create(
         &self,
-        label: Option<String>,
+        path: Option<String>,
     ) -> std::result::Result<SnapshotResponse, crate::error::ApiError> {
-        self.data_plane_post("/snapshot/create", &CreateSnapshotRequest { label })
+        self.data_plane_post("/snapshot/create", &CreateSnapshotRequest { path })
             .await
+    }
+
+    /// Upload a filesystem snapshot archive to object storage.
+    pub async fn snapshot_upload(
+        &self,
+        snapshot_id: String,
+        presigned_url: String,
+    ) -> std::result::Result<SnapshotUploadResponse, crate::error::ApiError> {
+        self.data_plane_post(
+            "/snapshot/upload",
+            &SnapshotUploadRequest {
+                snapshot_id,
+                presigned_url,
+            },
+        )
+        .await
+    }
+
+    /// Restore a filesystem snapshot archive from object storage.
+    pub async fn snapshot_restore(
+        &self,
+        snapshot_id: String,
+        presigned_url: String,
+        path: Option<String>,
+    ) -> std::result::Result<SnapshotRestoreResponse, crate::error::ApiError> {
+        self.data_plane_post(
+            "/snapshot/restore",
+            &SnapshotRestoreRequest {
+                snapshot_id,
+                presigned_url,
+                path,
+            },
+        )
+        .await
     }
 
     /// Get the status of the current/last snapshot.
@@ -568,6 +715,54 @@ mod tests {
     }
 
     #[test]
+    fn test_sandbox_data_plane_url_with_override() {
+        let sandbox = Sandbox {
+            sandbox_id: "sb-abc123".to_string(),
+            domain: "sb-abc123.sandboxes.basilica.ai".to_string(),
+            status: "Running".to_string(),
+            exec_agent_secret: Some("test-secret".to_string()),
+            http_client: reqwest::Client::new(),
+            data_plane_base_url: Some("http://localhost:12345".to_string()),
+        };
+        assert_eq!(sandbox.data_plane_url(), "http://localhost:12345");
+        assert_eq!(sandbox.ws_url(), "ws://localhost:12345/ws");
+        assert_eq!(sandbox.exec_url(), "http://localhost:12345/exec");
+    }
+
+    #[test]
+    fn test_ws_connect_info_with_secret() {
+        let sandbox = Sandbox {
+            sandbox_id: "sb-abc123".to_string(),
+            domain: "sb-abc123.sandboxes.basilica.ai".to_string(),
+            status: "Running".to_string(),
+            exec_agent_secret: Some("test-secret".to_string()),
+            http_client: reqwest::Client::new(),
+            data_plane_base_url: Some("http://localhost:12345".to_string()),
+        };
+        assert_eq!(
+            sandbox.ws_connect_info(),
+            Some((
+                "ws://localhost:12345/ws".to_string(),
+                "Authorization",
+                "Bearer test-secret".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_ws_connect_info_without_secret() {
+        let sandbox = Sandbox {
+            sandbox_id: "sb-abc123".to_string(),
+            domain: "sb-abc123.sandboxes.basilica.ai".to_string(),
+            status: "Running".to_string(),
+            exec_agent_secret: None,
+            http_client: reqwest::Client::new(),
+            data_plane_base_url: None,
+        };
+        assert_eq!(sandbox.ws_connect_info(), None);
+    }
+
+    #[test]
     fn test_create_request_serialization() {
         let req = CreateSandboxRequest {
             image: "registry.basilica.ai/sandbox/python:3.11".to_string(),
@@ -582,6 +777,35 @@ mod tests {
         assert!(json.contains("3600"));
         // env should be omitted when empty
         assert!(!json.contains("env"));
+    }
+
+    #[test]
+    fn test_create_request_serialization_with_network_isolation() {
+        let req = CreateSandboxRequest {
+            image: "registry.basilica.ai/sandbox/python:3.11".to_string(),
+            cpu: None,
+            memory: None,
+            env: vec![],
+            ttl_seconds: None,
+            network_isolation: Some("full".to_string()),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"networkIsolation\":\"full\""));
+    }
+
+    #[test]
+    fn test_exec_request_serialization_with_all_fields() {
+        let req = ExecRequest {
+            command: vec!["pwd".to_string()],
+            stdin: Some("hello".to_string()),
+            workdir: Some("/tmp".to_string()),
+            timeout_secs: Some(30),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"command\":[\"pwd\"]"));
+        assert!(json.contains("\"stdin\":\"hello\""));
+        assert!(json.contains("\"workdir\":\"/tmp\""));
+        assert!(json.contains("\"timeoutSecs\":30"));
     }
 
     #[test]

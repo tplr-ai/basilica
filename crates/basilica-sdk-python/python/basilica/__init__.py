@@ -382,6 +382,113 @@ class BasilicaClient:
         """The API endpoint URL."""
         return self._base_url
 
+    # -------------------------------------------------------------------------
+    # Sandbox Data-Plane Methods (PyO3-backed)
+    # -------------------------------------------------------------------------
+
+    def sandbox_exec(
+        self,
+        sandbox_id: str,
+        domain: str,
+        secret: str,
+        command: List[str],
+        data_plane_url: Optional[str] = None,
+        workdir: Optional[str] = None,
+        stdin: Optional[str] = None,
+        timeout_secs: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Execute a command through the Rust SDK sandbox data-plane bindings."""
+        return self._client.sandbox_exec(
+            sandbox_id,
+            domain,
+            secret,
+            command,
+            data_plane_url,
+            workdir,
+            stdin,
+            timeout_secs,
+        )
+
+    def sandbox_files_write(
+        self,
+        sandbox_id: str,
+        domain: str,
+        secret: str,
+        path: str,
+        content: str,
+        data_plane_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Write a file through the Rust SDK sandbox data-plane bindings."""
+        return self._client.sandbox_files_write(
+            sandbox_id, domain, secret, path, content, data_plane_url
+        )
+
+    def sandbox_files_read(
+        self,
+        sandbox_id: str,
+        domain: str,
+        secret: str,
+        path: str,
+        data_plane_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Read a file through the Rust SDK sandbox data-plane bindings."""
+        return self._client.sandbox_files_read(
+            sandbox_id, domain, secret, path, data_plane_url
+        )
+
+    def sandbox_files_list(
+        self,
+        sandbox_id: str,
+        domain: str,
+        secret: str,
+        path: str,
+        data_plane_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """List files through the Rust SDK sandbox data-plane bindings."""
+        return self._client.sandbox_files_list(
+            sandbox_id, domain, secret, path, data_plane_url
+        )
+
+    def sandbox_files_delete(
+        self,
+        sandbox_id: str,
+        domain: str,
+        secret: str,
+        path: str,
+        data_plane_url: Optional[str] = None,
+    ) -> None:
+        """Delete a file through the Rust SDK sandbox data-plane bindings."""
+        self._client.sandbox_files_delete(
+            sandbox_id, domain, secret, path, data_plane_url
+        )
+
+    def sandbox_files_mkdir(
+        self,
+        sandbox_id: str,
+        domain: str,
+        secret: str,
+        path: str,
+        recursive: bool = False,
+        data_plane_url: Optional[str] = None,
+    ) -> None:
+        """Create a directory through the Rust SDK sandbox data-plane bindings."""
+        self._client.sandbox_files_mkdir(
+            sandbox_id, domain, secret, path, recursive, data_plane_url
+        )
+
+    def sandbox_files_stat(
+        self,
+        sandbox_id: str,
+        domain: str,
+        secret: str,
+        path: str,
+        data_plane_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Stat a path through the Rust SDK sandbox data-plane bindings."""
+        return self._client.sandbox_files_stat(
+            sandbox_id, domain, secret, path, data_plane_url
+        )
+
     def _build_deploy_request(
         self,
         name: str,

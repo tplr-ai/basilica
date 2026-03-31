@@ -78,20 +78,28 @@ class Sandbox:
         self._data_plane_base_url = url
         return self
 
+    def _resolve_data_plane_base(self) -> str:
+        return self._data_plane_base_url or f"https://{self.domain}"
+
     @property
     def data_plane_url(self) -> str:
         """Base URL for data-plane operations."""
-        return f"https://{self.domain}"
+        return self._resolve_data_plane_base()
 
     @property
     def ws_url(self) -> str:
         """WebSocket URL for terminal access."""
-        return f"wss://{self.domain}/ws"
+        base = self._resolve_data_plane_base()
+        if base.startswith("https://"):
+            return f"wss://{base.removeprefix('https://')}/ws"
+        if base.startswith("http://"):
+            return f"ws://{base.removeprefix('http://')}/ws"
+        return f"{base}/ws"
 
     @property
     def exec_url(self) -> str:
         """Exec endpoint URL."""
-        return f"https://{self.domain}/exec"
+        return f"{self._resolve_data_plane_base()}/exec"
 
     def exec(self, command: List[str]) -> Dict[str, Any]:
         """Execute a command in the sandbox via data-plane.
@@ -131,7 +139,7 @@ class Sandbox:
                 "exec_agent_secret not available — sandbox was not created through this SDK"
             )
 
-        base = self._data_plane_base_url or f"https://{self.domain}"
+        base = self._resolve_data_plane_base()
         url = f"{base}{path}"
         data = json.dumps(body).encode("utf-8")
         req = urllib.request.Request(
@@ -159,7 +167,7 @@ class Sandbox:
                 "exec_agent_secret not available — sandbox was not created through this SDK"
             )
 
-        base = self._data_plane_base_url or f"https://{self.domain}"
+        base = self._resolve_data_plane_base()
         url = f"{base}{path}"
         req = urllib.request.Request(
             url,
@@ -177,12 +185,34 @@ class Sandbox:
                 f"Data-plane request failed ({e.code}): {body_text}"
             ) from e
 
-    def snapshot_create(self, label: Optional[str] = None) -> Dict[str, Any]:
+    def snapshot_create(self, path: Optional[str] = None) -> Dict[str, Any]:
         """Create a filesystem snapshot of the sandbox."""
         body: Dict[str, Any] = {}
-        if label is not None:
-            body["label"] = label
+        if path is not None:
+            body["path"] = path
         return self._data_plane_post("/snapshot/create", body)
+
+    def snapshot_upload(self, snapshot_id: str, presigned_url: str) -> Dict[str, Any]:
+        """Upload a snapshot archive to object storage via presigned URL."""
+        return self._data_plane_post(
+            "/snapshot/upload",
+            {"snapshotId": snapshot_id, "presignedUrl": presigned_url},
+        )
+
+    def snapshot_restore(
+        self,
+        snapshot_id: str,
+        presigned_url: str,
+        path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Restore a snapshot archive from object storage via presigned URL."""
+        body: Dict[str, Any] = {
+            "snapshotId": snapshot_id,
+            "presignedUrl": presigned_url,
+        }
+        if path is not None:
+            body["path"] = path
+        return self._data_plane_post("/snapshot/restore", body)
 
     def snapshot_status(self) -> Dict[str, Any]:
         """Get the status of the current/last snapshot."""
@@ -242,6 +272,11 @@ class SandboxSummary:
     status: str
     domain: Optional[str] = None
     created_at: Optional[str] = None
+    ttl_seconds: Optional[int] = None
+    network_isolation: Optional[str] = None
+    ready_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    from_warm_pool: bool = False
 
     @classmethod
     def from_response(cls, data: Dict[str, Any]) -> "SandboxSummary":
@@ -251,6 +286,11 @@ class SandboxSummary:
             status=data["status"],
             domain=data.get("domain"),
             created_at=data.get("createdAt"),
+            ttl_seconds=data.get("ttlSeconds"),
+            network_isolation=data.get("networkIsolation"),
+            ready_at=data.get("readyAt"),
+            expires_at=data.get("expiresAt"),
+            from_warm_pool=data.get("fromWarmPool", False),
         )
 
 
@@ -265,6 +305,11 @@ class SandboxDetail:
     status: str
     domain: Optional[str] = None
     created_at: Optional[str] = None
+    ttl_seconds: Optional[int] = None
+    network_isolation: Optional[str] = None
+    ready_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    from_warm_pool: bool = False
 
     @classmethod
     def from_response(cls, data: Dict[str, Any]) -> "SandboxDetail":
@@ -276,6 +321,11 @@ class SandboxDetail:
             status=data["status"],
             domain=data.get("domain"),
             created_at=data.get("createdAt"),
+            ttl_seconds=data.get("ttlSeconds"),
+            network_isolation=data.get("networkIsolation"),
+            ready_at=data.get("readyAt"),
+            expires_at=data.get("expiresAt"),
+            from_warm_pool=data.get("fromWarmPool", False),
         )
 
 
@@ -342,6 +392,11 @@ class SandboxClient:
         """Get details of a specific sandbox."""
         response = self._client.get_sandbox(sandbox_id)
         return SandboxDetail.from_response(response)
+
+    def rotate_secret(self, sandbox_id: str) -> str:
+        """Rotate the exec-agent secret for a sandbox and return the new secret."""
+        response = self._client.rotate_sandbox_secret(sandbox_id)
+        return response["execAgentSecret"]
 
     def delete(self, sandbox_id: str) -> None:
         """Delete a sandbox."""
