@@ -204,6 +204,13 @@ pub enum Commands {
         #[command(subcommand)]
         action: VolumeAction,
     },
+
+    /// Sandbox management commands
+    #[command(alias = "sb")]
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
 }
 
 /// Fund management actions
@@ -331,6 +338,60 @@ pub enum VolumeAction {
     },
 }
 
+/// Sandbox management actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum SandboxAction {
+    /// Create a new sandbox
+    Create {
+        /// Container image (must be in the allowlist)
+        #[arg(long, default_value = "registry.basilica.ai/sandbox/python:3.11")]
+        image: String,
+
+        /// CPU resources
+        #[arg(long, default_value = "1")]
+        cpu: String,
+
+        /// Memory resources
+        #[arg(long, default_value = "2Gi")]
+        memory: String,
+
+        /// TTL in seconds (sandbox auto-deletes after this)
+        #[arg(long)]
+        ttl: Option<u32>,
+
+        /// Network isolation: egress (default) or full
+        #[arg(long, default_value = "egress")]
+        network_isolation: String,
+    },
+
+    /// List active sandboxes
+    #[command(alias = "ls")]
+    List,
+
+    /// Get sandbox details
+    Get {
+        /// Sandbox ID
+        sandbox_id: String,
+    },
+
+    /// Delete a sandbox
+    #[command(alias = "rm")]
+    Delete {
+        /// Sandbox ID
+        sandbox_id: String,
+    },
+
+    /// Execute a command in a sandbox
+    Exec {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Command to execute
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
+}
+
 impl Commands {
     /// Check if this command requires authentication
     pub fn requires_auth(&self) -> bool {
@@ -349,6 +410,7 @@ impl Commands {
             | Commands::Tokens { .. }
             | Commands::SshKeys { .. }
             | Commands::Volumes { .. }
+            | Commands::Sandbox { .. }
             | Commands::Fund { .. }
             | Commands::Balance => true,
 

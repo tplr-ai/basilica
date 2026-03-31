@@ -33,6 +33,10 @@ pub struct CreateSandboxRequest {
     /// Optional TTL in seconds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttl_seconds: Option<u32>,
+
+    /// Network isolation level: "egress" (default) or "full".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_isolation: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,6 +183,77 @@ pub struct FileEntry {
 }
 
 // ============================================================================
+// Snapshot types
+// ============================================================================
+
+/// Request to create a filesystem snapshot.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSnapshotRequest {
+    /// Optional label for the snapshot.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// Response from creating a snapshot.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotResponse {
+    pub snapshot_id: String,
+    pub status: String,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// Response from snapshot status.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotStatusResponse {
+    pub snapshot_id: String,
+    pub status: String,
+    pub size_bytes: Option<u64>,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+// ============================================================================
+// File operation types (extended)
+// ============================================================================
+
+/// Request to delete a file.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileDeleteRequest {
+    pub path: String,
+}
+
+/// Request to create a directory.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileMkdirRequest {
+    pub path: String,
+    #[serde(default)]
+    pub recursive: bool,
+}
+
+/// Request to stat a file.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStatRequest {
+    pub path: String,
+}
+
+/// Response from file stat.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStatResponse {
+    pub size: u64,
+    pub is_file: bool,
+    pub is_dir: bool,
+    pub modified: Option<String>,
+}
+
+// ============================================================================
 // Sandbox handle with data-plane client
 // ============================================================================
 
@@ -282,6 +357,22 @@ impl Sandbox {
         SandboxFiles { sandbox: self }
     }
 
+    /// Create a filesystem snapshot of the sandbox.
+    pub async fn snapshot_create(
+        &self,
+        label: Option<String>,
+    ) -> std::result::Result<SnapshotResponse, crate::error::ApiError> {
+        self.data_plane_post("/snapshot/create", &CreateSnapshotRequest { label })
+            .await
+    }
+
+    /// Get the status of the current/last snapshot.
+    pub async fn snapshot_status(
+        &self,
+    ) -> std::result::Result<SnapshotStatusResponse, crate::error::ApiError> {
+        self.data_plane_get("/snapshot/status").await
+    }
+
     /// Make an authenticated POST request to the sandbox data-plane.
     async fn data_plane_post<B: Serialize, T: serde::de::DeserializeOwned>(
         &self,
@@ -323,7 +414,6 @@ impl Sandbox {
     }
 
     /// Make an authenticated GET request to the sandbox data-plane.
-    #[allow(dead_code)]
     async fn data_plane_get<T: serde::de::DeserializeOwned>(
         &self,
         path: &str,
@@ -400,6 +490,43 @@ impl<'a> SandboxFiles<'a> {
         };
         self.sandbox.data_plane_post("/files/list", &req).await
     }
+
+    /// Delete a file or directory in the sandbox.
+    pub async fn delete(
+        &self,
+        path: &str,
+    ) -> std::result::Result<(), crate::error::ApiError> {
+        let req = FileDeleteRequest {
+            path: path.to_string(),
+        };
+        let _: serde_json::Value = self.sandbox.data_plane_post("/files/delete", &req).await?;
+        Ok(())
+    }
+
+    /// Create a directory in the sandbox.
+    pub async fn mkdir(
+        &self,
+        path: &str,
+        recursive: bool,
+    ) -> std::result::Result<(), crate::error::ApiError> {
+        let req = FileMkdirRequest {
+            path: path.to_string(),
+            recursive,
+        };
+        let _: serde_json::Value = self.sandbox.data_plane_post("/files/mkdir", &req).await?;
+        Ok(())
+    }
+
+    /// Get file/directory metadata.
+    pub async fn stat(
+        &self,
+        path: &str,
+    ) -> std::result::Result<FileStatResponse, crate::error::ApiError> {
+        let req = FileStatRequest {
+            path: path.to_string(),
+        };
+        self.sandbox.data_plane_post("/files/stat", &req).await
+    }
 }
 
 impl From<CreateSandboxResponse> for Sandbox {
@@ -448,6 +575,7 @@ mod tests {
             memory: None,
             env: vec![],
             ttl_seconds: Some(3600),
+            network_isolation: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("python:3.11"));

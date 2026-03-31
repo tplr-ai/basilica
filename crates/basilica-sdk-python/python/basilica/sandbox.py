@@ -42,6 +42,7 @@ class CreateSandboxRequest:
     memory: Optional[str] = None
     env: List[SandboxEnvVar] = field(default_factory=list)
     ttl_seconds: Optional[int] = None
+    network_isolation: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d: Dict[str, Any] = {"image": self.image}
@@ -53,6 +54,8 @@ class CreateSandboxRequest:
             d["env"] = [{"name": e.name, "value": e.value} for e in self.env]
         if self.ttl_seconds is not None:
             d["ttlSeconds"] = self.ttl_seconds
+        if self.network_isolation is not None:
+            d["networkIsolation"] = self.network_isolation
         return d
 
 
@@ -149,6 +152,42 @@ class Sandbox:
                 f"Data-plane request failed ({e.code}): {body_text}"
             ) from e
 
+    def _data_plane_get(self, path: str) -> Dict[str, Any]:
+        """Make an authenticated GET to the sandbox data-plane."""
+        if not self.exec_agent_secret:
+            raise RuntimeError(
+                "exec_agent_secret not available — sandbox was not created through this SDK"
+            )
+
+        base = self._data_plane_base_url or f"https://{self.domain}"
+        url = f"{base}{path}"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {self.exec_agent_secret}",
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode("utf-8") if e.fp else ""
+            raise RuntimeError(
+                f"Data-plane request failed ({e.code}): {body_text}"
+            ) from e
+
+    def snapshot_create(self, label: Optional[str] = None) -> Dict[str, Any]:
+        """Create a filesystem snapshot of the sandbox."""
+        body: Dict[str, Any] = {}
+        if label is not None:
+            body["label"] = label
+        return self._data_plane_post("/snapshot/create", body)
+
+    def snapshot_status(self) -> Dict[str, Any]:
+        """Get the status of the current/last snapshot."""
+        return self._data_plane_get("/snapshot/status")
+
     @classmethod
     def from_response(cls, data: Dict[str, Any]) -> "Sandbox":
         return cls(
@@ -178,6 +217,20 @@ class SandboxFiles:
     def list(self, path: str) -> Dict[str, Any]:
         """List files in a directory in the sandbox."""
         return self._sandbox._data_plane_post("/files/list", {"path": path})
+
+    def delete(self, path: str) -> Dict[str, Any]:
+        """Delete a file or directory in the sandbox."""
+        return self._sandbox._data_plane_post("/files/delete", {"path": path})
+
+    def mkdir(self, path: str, recursive: bool = True) -> Dict[str, Any]:
+        """Create a directory in the sandbox."""
+        return self._sandbox._data_plane_post(
+            "/files/mkdir", {"path": path, "recursive": recursive}
+        )
+
+    def stat(self, path: str) -> Dict[str, Any]:
+        """Get file/directory metadata."""
+        return self._sandbox._data_plane_post("/files/stat", {"path": path})
 
 
 @dataclass
@@ -251,6 +304,7 @@ class SandboxClient:
         memory: Optional[str] = None,
         env: Optional[List[SandboxEnvVar]] = None,
         ttl_seconds: Optional[int] = None,
+        network_isolation: Optional[str] = None,
     ) -> Sandbox:
         """Create a new sandbox.
 
@@ -260,6 +314,7 @@ class SandboxClient:
             memory: Memory resources (default: "2Gi").
             env: Environment variables to set.
             ttl_seconds: Optional TTL in seconds.
+            network_isolation: "egress" (default) or "full" for DNS-only.
 
         Returns:
             A Sandbox handle with the domain for direct data-plane access.
@@ -271,6 +326,7 @@ class SandboxClient:
             memory=memory,
             env=env_tuples if env_tuples else None,
             ttl_seconds=ttl_seconds,
+            network_isolation=network_isolation,
         )
         return Sandbox.from_response(response)
 

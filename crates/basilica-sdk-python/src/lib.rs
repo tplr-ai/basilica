@@ -716,7 +716,7 @@ impl BasilicaClient {
     ///
     /// Returns:
     ///     dict with sandboxId, domain, status, execAgentSecret
-    #[pyo3(signature = (image, cpu=None, memory=None, env=None, ttl_seconds=None))]
+    #[pyo3(signature = (image, cpu=None, memory=None, env=None, ttl_seconds=None, network_isolation=None))]
     fn create_sandbox(
         &self,
         py: Python,
@@ -725,6 +725,7 @@ impl BasilicaClient {
         memory: Option<String>,
         env: Option<Vec<(String, String)>>,
         ttl_seconds: Option<u32>,
+        network_isolation: Option<String>,
     ) -> PyResult<Py<pyo3::PyAny>> {
         let client = Arc::clone(&self.inner);
         let env_vars: Vec<basilica_sdk::sandbox::SandboxEnvVar> = env
@@ -739,6 +740,7 @@ impl BasilicaClient {
             memory,
             env: env_vars,
             ttl_seconds,
+            network_isolation,
         };
 
         let response = py

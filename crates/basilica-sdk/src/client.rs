@@ -2489,6 +2489,7 @@ mod tests {
                 value: "1".to_string(),
             }],
             ttl_seconds: Some(3600),
+            network_isolation: None,
         };
 
         let sandbox = client.create_sandbox(request).await.unwrap();
@@ -2529,6 +2530,7 @@ mod tests {
             memory: None,
             env: vec![],
             ttl_seconds: None,
+            network_isolation: None,
         };
 
         let sandbox = client.create_sandbox(request).await.unwrap();
@@ -2757,6 +2759,7 @@ mod tests {
             memory: None,
             env: vec![],
             ttl_seconds: None,
+            network_isolation: None,
         };
 
         let result = client.create_sandbox(request).await;
