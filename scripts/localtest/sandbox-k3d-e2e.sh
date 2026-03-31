@@ -34,16 +34,27 @@ REGISTRY_NAME="basilica-registry"
 REGISTRY_PORT="5050"
 API_PORT="${SANDBOX_API_PORT:-18082}"
 NAMESPACE="default"
+IMAGE_TAG_FILE="$SCRIPT_DIR/.sandbox-image-tag"
+ENABLE_LOCAL_SANDBOX_WEBHOOK="${ENABLE_LOCAL_SANDBOX_WEBHOOK:-true}"
+WEBHOOK_CERT_DIR="$SCRIPT_DIR/.webhook-certs"
+WEBHOOK_SECRET_NAME="sandbox-operator-webhook-tls"
+SANDBOX_SYSTEM_NAMESPACE="basilica-sandbox-system"
+
+if [ -n "${SANDBOX_IMAGE_TAG:-}" ]; then
+    IMAGE_TAG="$SANDBOX_IMAGE_TAG"
+else
+    IMAGE_TAG="$(date +%Y%m%d%H%M%S)"
+fi
 
 # Image names — push to localhost, deploy via k3d registry hostname
 PUSH_PREFIX="localhost:${REGISTRY_PORT}"
 DEPLOY_PREFIX="k3d-${REGISTRY_NAME}:${REGISTRY_PORT}"
-EXEC_AGENT_IMAGE="${PUSH_PREFIX}/basilica-exec-agent:latest"
-OPERATOR_IMAGE="${PUSH_PREFIX}/basilica-sandbox-operator:latest"
-API_IMAGE="${PUSH_PREFIX}/basilica-api:latest"
-EXEC_AGENT_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-exec-agent:latest"
-OPERATOR_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-sandbox-operator:latest"
-API_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-api:latest"
+EXEC_AGENT_IMAGE="${PUSH_PREFIX}/basilica-exec-agent:${IMAGE_TAG}"
+OPERATOR_IMAGE="${PUSH_PREFIX}/basilica-sandbox-operator:${IMAGE_TAG}"
+API_IMAGE="${PUSH_PREFIX}/basilica-api:${IMAGE_TAG}"
+EXEC_AGENT_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-exec-agent:${IMAGE_TAG}"
+OPERATOR_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-sandbox-operator:${IMAGE_TAG}"
+API_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-api:${IMAGE_TAG}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -58,6 +69,75 @@ log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${PURPLE}[STEP]${NC} $1"; }
+
+write_image_tag() {
+    printf '%s\n' "$IMAGE_TAG" > "$IMAGE_TAG_FILE"
+    log_info "Using sandbox image tag: $IMAGE_TAG"
+}
+
+generate_webhook_certs() {
+    mkdir -p "$WEBHOOK_CERT_DIR"
+
+    local ca_key="$WEBHOOK_CERT_DIR/ca.key"
+    local ca_crt="$WEBHOOK_CERT_DIR/ca.crt"
+    local tls_key="$WEBHOOK_CERT_DIR/tls.key"
+    local tls_csr="$WEBHOOK_CERT_DIR/tls.csr"
+    local tls_crt="$WEBHOOK_CERT_DIR/tls.crt"
+    local openssl_cfg="$WEBHOOK_CERT_DIR/openssl.cnf"
+
+    cat > "$openssl_cfg" <<'EOF'
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = sandbox-operator-webhook.basilica-sandbox-system.svc
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = sandbox-operator-webhook
+DNS.2 = sandbox-operator-webhook.basilica-sandbox-system
+DNS.3 = sandbox-operator-webhook.basilica-sandbox-system.svc
+DNS.4 = sandbox-operator-webhook.basilica-sandbox-system.svc.cluster.local
+EOF
+
+    openssl genrsa -out "$ca_key" 2048 >/dev/null 2>&1
+    openssl req -x509 -new -nodes -key "$ca_key" \
+        -subj "/CN=Basilica Sandbox K3d CA" \
+        -days 365 \
+        -out "$ca_crt" >/dev/null 2>&1
+
+    openssl genrsa -out "$tls_key" 2048 >/dev/null 2>&1
+    openssl req -new -key "$tls_key" -out "$tls_csr" -config "$openssl_cfg" >/dev/null 2>&1
+    openssl x509 -req -in "$tls_csr" \
+        -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial \
+        -out "$tls_crt" -days 365 \
+        -extensions v3_req -extfile "$openssl_cfg" >/dev/null 2>&1
+}
+
+deploy_webhook_tls_secret() {
+    if [ "$ENABLE_LOCAL_SANDBOX_WEBHOOK" != "true" ]; then
+        return 0
+    fi
+
+    log_step "Generating local webhook TLS materials..."
+    kubectl create namespace "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+    generate_webhook_certs
+
+    kubectl create secret generic "$WEBHOOK_SECRET_NAME" \
+        -n "$SANDBOX_SYSTEM_NAMESPACE" \
+        --from-file=tls.crt="$WEBHOOK_CERT_DIR/tls.crt" \
+        --from-file=tls.key="$WEBHOOK_CERT_DIR/tls.key" \
+        --from-file=ca.crt="$WEBHOOK_CERT_DIR/ca.crt" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_success "Webhook TLS secret applied"
+}
 
 # ============================================================================
 # Prerequisites
@@ -94,6 +174,10 @@ check_prerequisites() {
     # Check jq
     if ! command -v jq &>/dev/null; then
         missing+=("jq")
+    fi
+
+    if [ "$ENABLE_LOCAL_SANDBOX_WEBHOOK" = "true" ] && ! command -v openssl &>/dev/null; then
+        missing+=("openssl")
     fi
     
     if [ ${#missing[@]} -ne 0 ]; then
@@ -281,6 +365,7 @@ DOCKERFILE
 
 build_images() {
     log_step "Building all images..."
+    write_image_tag
 
     build_exec_agent
     build_operator
@@ -450,8 +535,13 @@ EOF
 deploy_rbac() {
     log_step "Deploying RBAC..."
     
-    local rbac_file="$BACKEND_DIR/orchestrator/k8s/services/sandbox-rbac.yaml"
-    local operator_rbac="$BACKEND_DIR/orchestrator/k8s/services/sandbox-operator-rbac.yaml"
+    local rbac_file="$BACKEND_DIR/orchestrator/k8s/local/sandbox-rbac.yaml"
+    local operator_rbac="$BACKEND_DIR/orchestrator/k8s/sandbox/rbac-template.yaml"
+    local namespace_file="$BACKEND_DIR/orchestrator/k8s/local/namespace.yaml"
+
+    if [ -f "$namespace_file" ]; then
+        kubectl apply -f "$namespace_file"
+    fi
     
     if [ -f "$rbac_file" ]; then
         kubectl apply -f "$rbac_file"
@@ -469,8 +559,8 @@ EOF
     
     if [ -f "$operator_rbac" ]; then
         # Create operator namespace and service account first
-        kubectl create namespace basilica-system --dry-run=client -o yaml | kubectl apply -f -
-        kubectl create serviceaccount basilica-operator -n basilica-system --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create serviceaccount basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
         kubectl apply -f "$operator_rbac"
         log_success "Operator RBAC applied"
     fi
@@ -479,7 +569,7 @@ EOF
 deploy_network_policies() {
     log_step "Deploying NetworkPolicies..."
     
-    local netpol_file="$BACKEND_DIR/orchestrator/k8s/networking/sandbox-network-policies.yaml"
+    local netpol_file="$BACKEND_DIR/orchestrator/k8s/local/network-policies.yaml"
     
     if [ -f "$netpol_file" ]; then
         kubectl apply -f "$netpol_file"
@@ -489,23 +579,50 @@ deploy_network_policies() {
     fi
 }
 
+deploy_validating_webhook() {
+    local webhook_file="$BACKEND_DIR/orchestrator/k8s/sandbox/validating-webhook.yaml"
+
+    if [ "$ENABLE_LOCAL_SANDBOX_WEBHOOK" != "true" ]; then
+        log_info "Skipping local validating webhook deployment"
+        return 0
+    fi
+
+    if [ ! -f "$webhook_file" ]; then
+        log_warn "Validating webhook manifest not found at $webhook_file"
+        return 0
+    fi
+
+    log_step "Deploying validating webhook..."
+    local ca_bundle
+    ca_bundle="$(base64 -w0 < "$WEBHOOK_CERT_DIR/ca.crt")"
+    awk -v ca="$ca_bundle" '
+            /cert-manager.io\/inject-ca-from/ { next }
+            { print }
+            /port: 9443/ { print "      caBundle: " ca }
+        ' "$webhook_file" | kubectl apply -f -
+    log_success "Validating webhook applied"
+}
+
 deploy_operator() {
     log_step "Deploying sandbox operator..."
 
     local deploy_file="$SCRIPT_DIR/k3d-manifests/operator-deploy.yaml"
 
     if [ -f "$deploy_file" ]; then
-        kubectl apply -f "$deploy_file"
+        sed \
+            -e "s|k3d-basilica-registry:5050/basilica-sandbox-operator:latest|${OPERATOR_DEPLOY_IMAGE}|g" \
+            -e "s|k3d-basilica-registry:5050/basilica-exec-agent:latest|${EXEC_AGENT_DEPLOY_IMAGE}|g" \
+            "$deploy_file" | kubectl apply -f -
     else
         log_info "Using inline sandbox operator deployment..."
-        kubectl create namespace basilica-system --dry-run=client -o yaml | kubectl apply -f -
-        kubectl create serviceaccount basilica-sandbox-operator -n basilica-system --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create serviceaccount basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
         kubectl apply -f - <<EOF
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: basilica-sandbox-operator
-  namespace: basilica-system
+  namespace: ${SANDBOX_SYSTEM_NAMESPACE}
 spec:
   replicas: 1
   selector:
@@ -620,7 +737,9 @@ deploy_api() {
 
     if [ -f "$deploy_file" ]; then
         # Apply the manifest with image substitution
-        sed "s|k3d-basilica-registry:5050/basilica-api:latest|${API_DEPLOY_IMAGE}|g" \
+        sed \
+            -e "s|k3d-basilica-registry:5050/basilica-api:latest|${API_DEPLOY_IMAGE}|g" \
+            -e "s|k3d-basilica-registry:5050/basilica-exec-agent:latest|${EXEC_AGENT_DEPLOY_IMAGE}|g" \
             "$deploy_file" | kubectl apply -f -
     else
         log_error "api-deploy.yaml not found at $deploy_file"
@@ -636,7 +755,9 @@ deploy_infrastructure() {
     deploy_crds
     deploy_rbac
     deploy_network_policies
+    deploy_webhook_tls_secret
     deploy_operator
+    deploy_validating_webhook
     deploy_api
     wait_for_deployments
 
@@ -647,11 +768,11 @@ wait_for_deployments() {
     log_step "Waiting for deployments to be ready..."
 
     # Wait for sandbox operator
-    if kubectl get deployment basilica-sandbox-operator -n basilica-system &>/dev/null; then
+    if kubectl get deployment basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" &>/dev/null; then
         log_info "Waiting for sandbox-operator rollout..."
-        if ! kubectl rollout status deployment/basilica-sandbox-operator -n basilica-system --timeout=180s; then
+        if ! kubectl rollout status deployment/basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" --timeout=180s; then
             log_error "Sandbox operator deployment failed to become ready"
-            kubectl logs -n basilica-system -l app=basilica-sandbox-operator --tail=20 2>/dev/null
+            kubectl logs -n "$SANDBOX_SYSTEM_NAMESPACE" -l app=basilica-sandbox-operator --tail=20 2>/dev/null
             return 1
         fi
         log_success "Sandbox operator is ready"
@@ -795,7 +916,7 @@ show_logs() {
     log_step "Showing logs..."
     
     echo "=== Sandbox Operator Logs ==="
-    kubectl logs -n basilica-system -l app=basilica-sandbox-operator --tail=50 2>/dev/null || echo "No operator logs"
+    kubectl logs -n "$SANDBOX_SYSTEM_NAMESPACE" -l app=basilica-sandbox-operator --tail=50 2>/dev/null || echo "No operator logs"
     echo ""
     
     echo "=== API Logs ==="

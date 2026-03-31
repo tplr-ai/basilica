@@ -23,9 +23,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SDK_DIR="$REPO_DIR/crates/basilica-sdk"
 PYTHON_SDK_DIR="$REPO_DIR/crates/basilica-sdk-python"
+IMAGE_TAG_FILE="$SCRIPT_DIR/.sandbox-image-tag"
 
 export BASILICA_API_URL="${BASILICA_API_URL:-http://localhost:18082}"
-export SANDBOX_IMAGE="${SANDBOX_IMAGE:-k3d-basilica-registry:5050/basilica-exec-agent:latest}"
+if [ -z "${SANDBOX_IMAGE_TAG:-}" ] && [ -f "$IMAGE_TAG_FILE" ]; then
+    SANDBOX_IMAGE_TAG="$(cat "$IMAGE_TAG_FILE")"
+fi
+export SANDBOX_IMAGE="${SANDBOX_IMAGE:-k3d-basilica-registry:5050/basilica-exec-agent:${SANDBOX_IMAGE_TAG:-latest}}"
 
 # Colors
 RED='\033[0;31m'
@@ -41,6 +45,7 @@ log_step() { echo -e "${YELLOW}[STEP]${NC} $1"; }
 
 PASSED=0
 FAILED=0
+TEST_NAMESPACE="u-test-user"
 
 check_cluster() {
     log_step "Checking K3d cluster health..."
@@ -55,12 +60,24 @@ check_cluster() {
     fi
 }
 
+cleanup_test_namespace() {
+    log_step "Cleaning sandbox test namespace (${TEST_NAMESPACE})..."
+
+    kubectl delete basilicasandbox -n "$TEST_NAMESPACE" --all --ignore-not-found --wait=true >/dev/null 2>&1 || true
+    kubectl delete pods,services -n "$TEST_NAMESPACE" -l basilica.ai/type=sandbox --ignore-not-found >/dev/null 2>&1 || true
+
+    while IFS= read -r secret; do
+        kubectl delete -n "$TEST_NAMESPACE" "$secret" --ignore-not-found >/dev/null 2>&1 || true
+    done < <(kubectl get secret -n "$TEST_NAMESPACE" -o name 2>/dev/null | grep '^secret/sandbox-.*-exec-secret$' || true)
+}
+
 run_rust_tests() {
     log_step "Running Rust SDK integration tests..."
     echo ""
 
+    cleanup_test_namespace
     cd "$REPO_DIR"
-    if cargo test --test sandbox_k3d -- --ignored --nocapture 2>&1; then
+    if cargo test --test sandbox_k3d -- --ignored --nocapture --test-threads=1 2>&1; then
         PASSED=$((PASSED + 1))
         log_success "Rust SDK integration tests passed"
     else
@@ -74,6 +91,7 @@ run_python_tests() {
     log_step "Running Python SDK integration tests..."
     echo ""
 
+    cleanup_test_namespace
     cd "$PYTHON_SDK_DIR"
 
     # Set up venv if needed

@@ -146,9 +146,9 @@ check_prerequisites() {
     fi
 
     # Check operator is running
-    if kubectl get deployment basilica-sandbox-operator -n basilica-system &>/dev/null; then
+    if kubectl get deployment basilica-sandbox-operator -n basilica-sandbox-system &>/dev/null; then
         local ready
-        ready=$(kubectl get deployment basilica-sandbox-operator -n basilica-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+        ready=$(kubectl get deployment basilica-sandbox-operator -n basilica-sandbox-system -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
         if [ "${ready:-0}" -ge 1 ]; then
             pass "Sandbox operator is running"
         else
