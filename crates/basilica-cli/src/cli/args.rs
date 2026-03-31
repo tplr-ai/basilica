@@ -350,6 +350,7 @@ impl Args {
                         memory,
                         ttl,
                         network_isolation,
+                        env,
                     } => {
                         handlers::sandbox::handle_create_sandbox(
                             &client,
@@ -358,6 +359,7 @@ impl Args {
                             memory.clone(),
                             *ttl,
                             network_isolation.clone(),
+                            env.clone(),
                             self.json,
                         )
                         .await?;
@@ -381,6 +383,21 @@ impl Args {
                             &client,
                             sandbox_id.clone(),
                             command.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::Run {
+                        sandbox_id,
+                        file,
+                        code,
+                    } => {
+                        handlers::sandbox::handle_run_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            file.clone(),
+                            code.clone(),
+                            self.json,
                         )
                         .await?;
                     }

@@ -1,9 +1,27 @@
 //! Sandbox management handlers for the CLI.
 
+use basilica_sdk::sandbox::SandboxEnvVar;
 use basilica_sdk::{BasilicaClient, CreateSandboxRequest};
 use color_eyre::eyre::eyre;
+use std::path::PathBuf;
 
 use crate::error::CliError;
+
+fn parse_env_vars(raw: &[String]) -> Result<Vec<SandboxEnvVar>, CliError> {
+    raw.iter()
+        .map(|s| {
+            let (name, value) = s.split_once('=').ok_or_else(|| {
+                CliError::from(eyre!(
+                    "invalid --env format: '{s}'. Expected KEY=VALUE"
+                ))
+            })?;
+            Ok(SandboxEnvVar {
+                name: name.to_string(),
+                value: value.to_string(),
+            })
+        })
+        .collect()
+}
 
 pub async fn handle_create_sandbox(
     client: &BasilicaClient,
@@ -12,13 +30,16 @@ pub async fn handle_create_sandbox(
     memory: String,
     ttl: Option<u32>,
     network_isolation: String,
+    env_raw: Vec<String>,
     json: bool,
 ) -> Result<(), CliError> {
+    let env = parse_env_vars(&env_raw)?;
+
     let request = CreateSandboxRequest {
         image: image.clone(),
         cpu: Some(cpu),
         memory: Some(memory),
-        env: vec![],
+        env,
         ttl_seconds: ttl,
         network_isolation: Some(network_isolation.clone()),
     };
@@ -119,45 +140,100 @@ pub async fn handle_delete_sandbox(
     Ok(())
 }
 
-pub async fn handle_exec_sandbox(
-    client: &BasilicaClient,
-    sandbox_id: String,
-    command: Vec<String>,
-) -> Result<(), CliError> {
-    let detail = client.get_sandbox(&sandbox_id).await?;
+fn sandbox_secret_from_env(action: &str) -> Result<String, CliError> {
+    std::env::var("BASILICA_SANDBOX_SECRET").map_err(|_| {
+        eyre!(
+            "BASILICA_SANDBOX_SECRET env var is required for {action}. \
+             This secret is returned when you create a sandbox — store it securely."
+        )
+        .into()
+    })
+}
 
+async fn load_sandbox_handle(
+    client: &BasilicaClient,
+    sandbox_id: &str,
+    action: &str,
+) -> Result<basilica_sdk::Sandbox, CliError> {
+    let detail = client.get_sandbox(sandbox_id).await?;
     let domain = detail
         .domain
         .as_deref()
         .ok_or_else(|| eyre!("Sandbox has no domain yet — it may still be starting"))?;
+    let secret = sandbox_secret_from_env(action)?;
 
-    // Exec requires the exec_agent_secret which is only returned at creation time.
-    // The CLI user must have stored it. Check the BASILICA_SANDBOX_SECRET env var.
-    let secret = std::env::var("BASILICA_SANDBOX_SECRET").map_err(|_| {
-        eyre!(
-            "BASILICA_SANDBOX_SECRET env var is required for exec. \
-             This secret is returned when you create a sandbox — store it securely."
-        )
-    })?;
+    Ok(basilica_sdk::Sandbox::from(
+        basilica_sdk::sandbox::CreateSandboxResponse {
+            sandbox_id: sandbox_id.to_string(),
+            domain: domain.to_string(),
+            status: detail.status,
+            exec_agent_secret: secret,
+        },
+    ))
+}
 
-    let sandbox = basilica_sdk::Sandbox::from(basilica_sdk::sandbox::CreateSandboxResponse {
-        sandbox_id: sandbox_id.clone(),
-        domain: domain.to_string(),
-        status: detail.status,
-        exec_agent_secret: secret,
-    });
-
-    let result = sandbox.exec(command).await?;
-
-    if !result.stdout.is_empty() {
-        print!("{}", result.stdout);
+fn print_exec_response(
+    result: &basilica_sdk::sandbox::ExecResponse,
+    json: bool,
+) -> Result<(), CliError> {
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(result)
+                .map_err(|e| CliError::from(eyre!("failed to serialize response: {e}")))?,
+        );
+    } else {
+        if !result.stdout.is_empty() {
+            print!("{}", result.stdout);
+        }
+        if !result.stderr.is_empty() {
+            eprint!("{}", result.stderr);
+        }
     }
-    if !result.stderr.is_empty() {
-        eprint!("{}", result.stderr);
-    }
+
     if result.exit_code != 0 {
         std::process::exit(result.exit_code);
     }
 
     Ok(())
+}
+
+pub async fn handle_exec_sandbox(
+    client: &BasilicaClient,
+    sandbox_id: String,
+    command: Vec<String>,
+    json: bool,
+) -> Result<(), CliError> {
+    let sandbox = load_sandbox_handle(client, &sandbox_id, "exec").await?;
+    let result = sandbox.exec(command).await?;
+    print_exec_response(&result, json)
+}
+
+pub async fn handle_run_sandbox(
+    client: &BasilicaClient,
+    sandbox_id: String,
+    file: Option<PathBuf>,
+    code: Option<String>,
+    json: bool,
+) -> Result<(), CliError> {
+    let sandbox = load_sandbox_handle(client, &sandbox_id, "run").await?;
+    let code = match (file, code) {
+        (Some(path), None) => std::fs::read_to_string(&path)
+            .map_err(|e| CliError::from(eyre!("failed to read {}: {e}", path.display())))?,
+        (None, Some(code)) => code,
+        (Some(_), Some(_)) => {
+            return Err(CliError::from(eyre!(
+                "pass either inline CODE or --file, not both"
+            )));
+        }
+        (None, None) => {
+            return Err(CliError::from(eyre!(
+                "missing code: pass inline CODE or --file"
+            )));
+        }
+    };
+
+    // TODO: add CLI flags for language/args once the SDK exposes a richer `run` API.
+    let result = sandbox.run(&code).await?;
+    print_exec_response(&result, json)
 }

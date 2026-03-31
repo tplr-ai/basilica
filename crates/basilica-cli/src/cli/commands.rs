@@ -362,6 +362,10 @@ pub enum SandboxAction {
         /// Network isolation: egress (default) or full
         #[arg(long, default_value = "egress")]
         network_isolation: String,
+
+        /// Environment variables (repeatable, format: KEY=VALUE)
+        #[arg(long = "env", short = 'e', value_name = "KEY=VALUE")]
+        env: Vec<String>,
     },
 
     /// List active sandboxes
@@ -389,6 +393,20 @@ pub enum SandboxAction {
         /// Command to execute
         #[arg(trailing_var_arg = true, required = true)]
         command: Vec<String>,
+    },
+
+    /// Run a code snippet in a sandbox
+    Run {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Read code from a file instead of an inline argument
+        #[arg(long, value_name = "PATH", conflicts_with = "code")]
+        file: Option<PathBuf>,
+
+        /// Inline code snippet to execute
+        #[arg(value_name = "CODE", required_unless_present = "file")]
+        code: Option<String>,
     },
 }
 

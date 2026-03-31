@@ -116,9 +116,11 @@ spec:
           value: "1"
         - name: SANDBOX_EXTRA_ALLOWED_IMAGES
           value: "basilica/sandbox-python:latest,python:3.11-slim,k3d-basilica-registry:5050/basilica-exec-agent:latest"
-        # Sandbox cluster kubeconfig: use in-cluster config (same cluster for K3d testing)
+        # Sandbox cluster kubeconfig: explicit in-cluster override for K3d-only testing.
         - name: SANDBOX_CLUSTER_KUBECONFIG
           value: ""
+        - name: SANDBOX_CLUSTER_ALLOW_IN_CLUSTER
+          value: "true"
         volumeMounts:
         - name: config
           mountPath: /etc/basilica
