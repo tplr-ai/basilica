@@ -59,6 +59,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "ComputeType",
             "#[derive(serde::Serialize, serde::Deserialize)]",
         )
+        .type_attribute(
+            "AttestationBinding",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "AttestationEvidence",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "E2eeInstanceDescriptor",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "RegisterE2eeInstanceRequest",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "RegisterE2eeInstanceResponse",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "InvokeEncryptedRequest",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
+        .type_attribute(
+            "InvokeEncryptedResponse",
+            "#[derive(serde::Serialize, serde::Deserialize)]",
+        )
         .compile(
             &[
                 "proto/common.proto",
@@ -70,6 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/incentive.proto",
                 "proto/rental.proto",
                 "proto/miner_payouts.proto",
+                "proto/e2e.proto",
             ],
             &["proto"],
         )?;
