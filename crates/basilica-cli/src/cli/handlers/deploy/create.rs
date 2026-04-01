@@ -101,6 +101,8 @@ pub async fn handle_create(
         topology_spread,
         websocket,
         public_metadata: cmd.networking.public_metadata,
+        confidential: cmd.confidential.confidential || cmd.confidential.trust_tier.is_some(),
+        trust_tier: cmd.confidential.trust_tier.map(Into::into),
     };
 
     // 13. Show progress spinner

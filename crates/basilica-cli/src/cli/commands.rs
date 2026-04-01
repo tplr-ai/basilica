@@ -1,5 +1,5 @@
 use basilica_common::types::GpuCategory;
-use basilica_sdk::types::RentalState;
+use basilica_sdk::types::{RentalState, TrustTier};
 use clap::{Subcommand, ValueEnum, ValueHint};
 use std::path::PathBuf;
 
@@ -33,6 +33,21 @@ impl From<ComputeCategoryArg> for basilica_common::types::ComputeCategory {
             ComputeCategoryArg::CommunityCloud => {
                 basilica_common::types::ComputeCategory::CommunityCloud
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum TrustTierArg {
+    Enterprise,
+    Community,
+}
+
+impl From<TrustTierArg> for TrustTier {
+    fn from(value: TrustTierArg) -> Self {
+        match value {
+            TrustTierArg::Enterprise => TrustTier::Enterprise,
+            TrustTierArg::Community => TrustTier::Community,
         }
     }
 }
@@ -560,6 +575,9 @@ pub struct DeployCommand {
     pub networking: NetworkingOptions,
 
     #[command(flatten)]
+    pub confidential: ConfidentialOptions,
+
+    #[command(flatten)]
     pub lifecycle: LifecycleOptions,
 
     /// Output as JSON
@@ -569,6 +587,17 @@ pub struct DeployCommand {
     /// Show detailed deployment phases during progress
     #[arg(long, global = true)]
     pub show_phases: bool,
+}
+
+#[derive(clap::Args, Debug, Clone, Default)]
+pub struct ConfidentialOptions {
+    /// Request Night Shade confidential compute for this deployment.
+    #[arg(long)]
+    pub confidential: bool,
+
+    /// Night Shade trust tier (defaults to enterprise when --confidential is set).
+    #[arg(long, value_enum)]
+    pub trust_tier: Option<TrustTierArg>,
 }
 
 /// Naming and identification options

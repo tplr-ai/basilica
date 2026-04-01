@@ -55,12 +55,18 @@ use crate::{
     },
     StartRentalApiRequest,
 };
+use basilica_e2ee::{
+    open_response, open_stream_chunk, open_stream_init, random_nonce_base64, seal_request,
+    ConfidentialRequestEnvelope, E2eeError, E2eeInstanceDescriptor, StreamChunkEvent,
+    StreamErrorEvent, StreamInitEvent,
+};
 
 /// Default API URL when not specified
 pub const DEFAULT_API_URL: &str = "https://api.basilica.ai";
 
 /// Default timeout in seconds for API requests
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
+use base64::Engine as _;
 use basilica_common::ApiKeyName;
 use basilica_validator::api::types::ListAvailableNodesResponse;
 use basilica_validator::rental::RentalResponse;
@@ -68,6 +74,8 @@ use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
+
+const DEFAULT_ATTESTATION_MAX_AGE_SECS: i64 = 300;
 
 /// HTTP client for interacting with the Basilica API
 #[derive(Debug)]
@@ -218,6 +226,199 @@ impl BasilicaClient {
     /// Health check
     pub async fn health_check(&self) -> Result<HealthCheckResponse> {
         self.get("/health").await
+    }
+
+    // ===== Confidential Compute =====
+
+    /// Fetch an attested Night Shade descriptor for a workload.
+    pub async fn get_confidential_instance(
+        &self,
+        workload_id: &str,
+    ) -> Result<E2eeInstanceDescriptor> {
+        let path = format!("/v1/e2e/instances/{}", urlencoding::encode(workload_id));
+        self.get(&path).await
+    }
+
+    /// Invoke a confidential workload with a JSON payload and decrypt the JSON response.
+    pub async fn invoke_confidential_json<T: Serialize, R: DeserializeOwned>(
+        &self,
+        workload_id: &str,
+        request_path: &str,
+        payload: &T,
+    ) -> Result<R> {
+        let response = self
+            .invoke_confidential_bytes(
+                workload_id,
+                request_path,
+                &serde_json::to_vec(payload).map_err(|error| ApiError::BadRequest {
+                    message: format!("failed to serialize confidential payload: {error}"),
+                })?,
+                "application/json",
+                false,
+            )
+            .await?;
+
+        serde_json::from_slice(&response).map_err(|error| ApiError::Internal {
+            message: format!("failed to deserialize confidential response: {error}"),
+        })
+    }
+
+    /// Invoke a confidential workload with an opaque payload and decrypt the binary response.
+    pub async fn invoke_confidential_bytes(
+        &self,
+        workload_id: &str,
+        request_path: &str,
+        payload: &[u8],
+        content_type: &str,
+        stream: bool,
+    ) -> Result<Vec<u8>> {
+        let descriptor = self.get_confidential_instance(workload_id).await?;
+        descriptor
+            .verify(DEFAULT_ATTESTATION_MAX_AGE_SECS)
+            .map_err(Self::map_e2ee_error)?;
+
+        let envelope = ConfidentialRequestEnvelope {
+            request_path: request_path.to_string(),
+            request_method: "POST".to_string(),
+            content_type: content_type.to_string(),
+            request_body_base64: base64::engine::general_purpose::STANDARD.encode(payload),
+            response_public_key: String::new(),
+            stream,
+            headers: std::collections::BTreeMap::new(),
+        };
+
+        let (blob, response_secret) =
+            seal_request(&descriptor.e2ee_public_key, &envelope).map_err(Self::map_e2ee_error)?;
+
+        let nonce = descriptor
+            .nonces
+            .first()
+            .cloned()
+            .unwrap_or_else(random_nonce_base64);
+
+        let response = self
+            .post_bytes(
+                "/v1/e2e/invoke",
+                blob,
+                vec![
+                    ("Content-Type", "application/octet-stream".to_string()),
+                    ("X-Deployment-Id", workload_id.to_string()),
+                    ("X-Instance-Id", descriptor.instance_id.clone()),
+                    ("X-E2E-Nonce", nonce),
+                    ("X-E2E-Stream", stream.to_string()),
+                    ("X-E2E-Path", request_path.to_string()),
+                ],
+            )
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return self.handle_error_response(response).await;
+        }
+
+        let bytes = response.bytes().await.map_err(ApiError::HttpClient)?;
+        open_response(&response_secret, &bytes).map_err(Self::map_e2ee_error)
+    }
+
+    /// Invoke a confidential workload in streaming mode and return decrypted SSE payload lines.
+    ///
+    /// TODO: switch this to an async stream so clients do not need to buffer the full response.
+    pub async fn invoke_confidential_stream(
+        &self,
+        workload_id: &str,
+        request_path: &str,
+        payload: &impl Serialize,
+    ) -> Result<Vec<String>> {
+        let descriptor = self.get_confidential_instance(workload_id).await?;
+        descriptor
+            .verify(DEFAULT_ATTESTATION_MAX_AGE_SECS)
+            .map_err(Self::map_e2ee_error)?;
+
+        let envelope = ConfidentialRequestEnvelope {
+            request_path: request_path.to_string(),
+            request_method: "POST".to_string(),
+            content_type: "application/json".to_string(),
+            request_body_base64: base64::engine::general_purpose::STANDARD.encode(
+                serde_json::to_vec(payload).map_err(|error| ApiError::BadRequest {
+                    message: format!("failed to serialize confidential stream payload: {error}"),
+                })?,
+            ),
+            response_public_key: String::new(),
+            stream: true,
+            headers: std::collections::BTreeMap::new(),
+        };
+
+        let (blob, response_secret) =
+            seal_request(&descriptor.e2ee_public_key, &envelope).map_err(Self::map_e2ee_error)?;
+        let nonce = descriptor
+            .nonces
+            .first()
+            .cloned()
+            .unwrap_or_else(random_nonce_base64);
+
+        let response = self
+            .post_bytes(
+                "/v1/e2e/invoke",
+                blob,
+                vec![
+                    ("Content-Type", "application/octet-stream".to_string()),
+                    ("X-Deployment-Id", workload_id.to_string()),
+                    ("X-Instance-Id", descriptor.instance_id.clone()),
+                    ("X-E2E-Nonce", nonce),
+                    ("X-E2E-Stream", "true".to_string()),
+                    ("X-E2E-Path", request_path.to_string()),
+                ],
+            )
+            .await?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return self.handle_error_response(response).await;
+        }
+
+        let body = response.text().await.map_err(ApiError::HttpClient)?;
+        let mut lines = Vec::new();
+        let mut stream_key: Option<[u8; 32]> = None;
+
+        for raw_line in body.lines() {
+            let line = raw_line.trim();
+            if !line.starts_with("data: ") {
+                continue;
+            }
+
+            let payload = line.trim_start_matches("data: ").trim();
+            if payload == "[DONE]" {
+                break;
+            }
+
+            if let Ok(init) = serde_json::from_str::<StreamInitEvent>(payload) {
+                stream_key = Some(
+                    open_stream_init(&response_secret, &init.e2e_init)
+                        .map_err(Self::map_e2ee_error)?,
+                );
+                continue;
+            }
+
+            if let Ok(chunk) = serde_json::from_str::<StreamChunkEvent>(payload) {
+                let key = stream_key.ok_or_else(|| ApiError::Internal {
+                    message: "received encrypted stream chunk before init".to_string(),
+                })?;
+                let decrypted =
+                    open_stream_chunk(&key, &chunk.e2e).map_err(Self::map_e2ee_error)?;
+                lines.push(String::from_utf8_lossy(&decrypted).to_string());
+                continue;
+            }
+
+            if let Ok(err) = serde_json::from_str::<StreamErrorEvent>(payload) {
+                return Err(ApiError::Internal {
+                    message: err.e2e_error,
+                });
+            }
+
+            lines.push(payload.to_string());
+        }
+
+        Ok(lines)
     }
 
     // ===== API Key Management =====
@@ -1311,6 +1512,21 @@ impl BasilicaClient {
         self.handle_response(response).await
     }
 
+    async fn post_bytes(
+        &self,
+        path: &str,
+        body: Vec<u8>,
+        headers: Vec<(&str, String)>,
+    ) -> Result<Response> {
+        let url = format!("{}{}", self.base_url, path);
+        let mut request = self.http_client.post(&url).body(body);
+        for (header, value) in headers {
+            request = request.header(header, value);
+        }
+        let request = self.apply_auth(request).await?;
+        request.send().await.map_err(ApiError::HttpClient)
+    }
+
     /// Generic DELETE request without body
     async fn delete_empty(&self, path: &str) -> Result<Response> {
         let url = format!("{}{}", self.base_url, path);
@@ -1399,6 +1615,12 @@ impl BasilicaClient {
                     message: format!("Request failed with status {status}: {error_text}"),
                 }),
             }
+        }
+    }
+
+    fn map_e2ee_error(error: E2eeError) -> ApiError {
+        ApiError::Internal {
+            message: format!("confidential compute error: {error}"),
         }
     }
 }
@@ -1844,6 +2066,8 @@ mod tests {
             topology_spread: None,
             websocket: None,
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
 
         let response = client.create_deployment(request).await.unwrap();
@@ -1931,6 +2155,8 @@ mod tests {
             topology_spread: None,
             websocket: None,
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
 
         let response = client.create_deployment(request).await.unwrap();
@@ -1982,6 +2208,8 @@ mod tests {
             topology_spread: None,
             websocket: None,
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
 
         let response = client.create_deployment(request).await.unwrap();
@@ -2203,6 +2431,8 @@ mod tests {
             topology_spread: None,
             websocket: None,
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
 
         let result = client.create_deployment(request).await;
@@ -2397,6 +2627,8 @@ mod tests {
             topology_spread: None,
             websocket: None,
             public_metadata: true,
+            confidential: false,
+            trust_tier: None,
         };
 
         let json_body = serde_json::to_string(&request).unwrap();

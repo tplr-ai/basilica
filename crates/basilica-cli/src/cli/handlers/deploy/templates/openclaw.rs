@@ -146,6 +146,8 @@ pub async fn handle_openclaw_deploy(
         topology_spread: None,
         websocket: Some(WebSocketConfig::default()),
         public_metadata: false,
+        confidential: false,
+        trust_tier: None,
     };
 
     let spinner = create_spinner(&format!("Creating OpenClaw summons '{}'...", name));

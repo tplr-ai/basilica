@@ -226,6 +226,52 @@ impl BasilicaClient {
         Ok(response.into())
     }
 
+    /// Fetch the Night Shade attestation bundle for a workload.
+    fn get_confidential_instance(
+        &self,
+        py: Python,
+        workload_id: String,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_confidential_instance(&workload_id).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
+    /// Invoke a Night Shade workload with a JSON payload string and return the decrypted JSON result.
+    fn invoke_confidential_json(
+        &self,
+        py: Python,
+        workload_id: String,
+        request_path: String,
+        payload_json: String,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+        let payload: serde_json::Value = serde_json::from_str(&payload_json)
+            .map_err(|e| PyValueError::new_err(format!("Invalid JSON payload: {}", e)))?;
+
+        let response = py
+            .detach(|| -> basilica_sdk::Result<serde_json::Value> {
+                self.runtime.block_on(async move {
+                    client
+                        .invoke_confidential_json::<_, serde_json::Value>(
+                            &workload_id,
+                            &request_path,
+                            &payload,
+                        )
+                        .await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+
+        to_pyobject(py, &response)
+    }
+
     /// Get deployment status by instance name
     ///
     /// Args:

@@ -2,6 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use basilica_e2ee::{
+    AttestationBinding, AttestationEvidence, AttestationKind, CommunityKeyShareBundle,
+    ConfidentialRequestEnvelope, E2eeInstanceDescriptor, E2eeRegistrationRequest,
+    E2eeRegistrationResponse, StreamChunkEvent, StreamErrorEvent, StreamInitEvent,
+    TpmKeyReleasePolicy, TrustTier,
+};
+
 // Re-export types from basilica-validator that are used by the client
 pub use basilica_validator::api::types::{
     AvailabilityInfo, AvailableNode, CpuSpec, GpuRequirements, GpuSpec, ListAvailableNodesQuery,
@@ -785,6 +792,12 @@ pub struct CreateDeploymentRequest {
     /// Opt-in to exposing non-sensitive metadata publicly for validator verification.
     #[serde(default)]
     pub public_metadata: bool,
+    /// Request Night Shade confidential compute for this deployment.
+    #[serde(default)]
+    pub confidential: bool,
+    /// Optional Night Shade trust tier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_tier: Option<TrustTier>,
 }
 
 fn default_enable_billing() -> bool {
@@ -1349,6 +1362,8 @@ mod tests {
             topology_spread: None,
             websocket: None,
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
         let json = serde_json::to_string(&request).unwrap();
         assert!(!json.contains("topologySpread"));
@@ -1380,6 +1395,8 @@ mod tests {
             }),
             websocket: None,
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"topologySpread\""));
@@ -1618,6 +1635,8 @@ mod tests {
             topology_spread: None,
             websocket: None,
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
         let json = serde_json::to_string(&request).unwrap();
         assert!(!json.contains("\"websocket\""));
@@ -1648,6 +1667,8 @@ mod tests {
                 idle_timeout_seconds: 1800,
             }),
             public_metadata: false,
+            confidential: false,
+            trust_tier: None,
         };
         let json = serde_json::to_string(&request).unwrap();
         assert!(json.contains("\"websocket\""));
