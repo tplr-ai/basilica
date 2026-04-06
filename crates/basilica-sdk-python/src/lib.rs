@@ -14,7 +14,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "stub-gen")]
 use pyo3_stub_gen::define_stub_info_gatherer;
 #[cfg(feature = "stub-gen")]
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction};
+use pyo3_stub_gen::derive::gen_stub_pyclass;
 use pythonize::pythonize;
 use std::sync::Arc;
 use std::time::Duration;
