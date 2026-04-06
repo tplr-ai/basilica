@@ -273,9 +273,20 @@ mod tests {
 
         ProcessGroup::configure_command(&mut command);
 
-        // Should not panic
+        // Should not panic. In restricted environments (containers, sandboxed CI),
+        // process group creation may fail with EPERM/ENOSYS — that is acceptable.
         let result = command.output().await;
-        assert!(result.is_ok());
+        match &result {
+            Ok(output) => assert!(output.status.success()),
+            Err(e) => {
+                let raw = e.raw_os_error().unwrap_or(0);
+                // EPERM(1), ENOSYS(38), EACCES(13) — environment does not support setsid/setpgid
+                assert!(
+                    matches!(raw, 1 | 13 | 38),
+                    "unexpected error (os_error={raw}): {e}"
+                );
+            }
+        }
     }
 
     #[test]
