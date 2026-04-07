@@ -36,10 +36,9 @@ pub async fn handle_create(
     json: bool,
 ) -> Result<(), CliError> {
     // Validate TTL
-    if ttl < 60 || ttl > 7200 {
+    if !(60..=7200).contains(&ttl) {
         return Err(CliError::Internal(
-            eyre!("TTL must be between 60 and 7200 seconds (got {})", ttl)
-                .into(),
+            eyre!("TTL must be between 60 and 7200 seconds (got {})", ttl),
         ));
     }
 
