@@ -1903,6 +1903,10 @@ pub struct SandboxCondition {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_transition_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// exec-agent WebSocket request frame
