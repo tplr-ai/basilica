@@ -661,6 +661,9 @@ impl BasilicaClient {
     ///     queue_name: None,
     ///     suspended: false,
     ///     priority: None,
+    ///     public_metadata: false,
+    ///     topology_spread: None,
+    ///     websocket: None,
     /// };
     ///
     /// let deployment = client.create_deployment(request).await?;
@@ -1256,6 +1259,103 @@ impl BasilicaClient {
             urlencoding::encode(instance_name)
         );
         self.get_public(&path).await
+    }
+
+    // ============================================================================
+    // Sandboxes
+    // ============================================================================
+
+    /// Create a new sandbox.
+    ///
+    /// Returns sandbox connection details including the `exec_secret` bearer
+    /// credential. The secret is returned only once — do not persist or log it.
+    ///
+    /// # Errors
+    ///
+    /// * `ApiError::BadRequest` - Invalid image or TTL/timeout out of range
+    /// * `ApiError::PaymentRequired` - Insufficient credit balance (402)
+    /// * `ApiError::ServiceUnavailable` - Sandbox subsystem not configured
+    pub async fn create_sandbox(
+        &self,
+        request: crate::types::CreateSandboxRequest,
+    ) -> Result<crate::types::CreateSandboxResponse> {
+        self.post("/sandboxes", &request).await
+    }
+
+    /// List all sandboxes for the authenticated user.
+    pub async fn list_sandboxes(&self) -> Result<crate::types::ListSandboxesResponse> {
+        self.get("/sandboxes").await
+    }
+
+    /// Get sandbox status by ID.
+    ///
+    /// Use this to poll for phase transitions (Pending → Running → Terminating → Failed).
+    pub async fn get_sandbox(
+        &self,
+        sandbox_id: &str,
+    ) -> Result<crate::types::SandboxStatusResponse> {
+        let path = format!("/sandboxes/{}", sandbox_id);
+        self.get(&path).await
+    }
+
+    /// Delete a sandbox and finalize its billing rental.
+    pub async fn delete_sandbox(
+        &self,
+        sandbox_id: &str,
+    ) -> Result<crate::types::DeleteSandboxResponse> {
+        let path = format!("/sandboxes/{}", sandbox_id);
+        self.delete(&path).await
+    }
+
+    /// Poll a sandbox until it reaches `Running` status or fails/times out.
+    ///
+    /// Returns the status response when the sandbox is running, or an error
+    /// if it enters `Failed` state or exceeds the timeout.
+    pub async fn wait_for_sandbox_running(
+        &self,
+        sandbox_id: &str,
+        timeout_secs: u64,
+        poll_interval_secs: u64,
+    ) -> Result<crate::types::SandboxStatusResponse> {
+        use std::time::{Duration, Instant};
+
+        let start = Instant::now();
+        let timeout = Duration::from_secs(timeout_secs);
+        let interval = Duration::from_secs(poll_interval_secs);
+
+        loop {
+            let status = self.get_sandbox(sandbox_id).await?;
+
+            match status.status.as_str() {
+                "Running" => return Ok(status),
+                "Failed" => {
+                    return Err(ApiError::Internal {
+                        message: format!(
+                            "Sandbox {} failed: {}",
+                            sandbox_id,
+                            status.message.unwrap_or_else(|| "unknown".to_string())
+                        ),
+                    });
+                }
+                "Terminating" => {
+                    return Err(ApiError::Internal {
+                        message: format!("Sandbox {} is terminating", sandbox_id),
+                    });
+                }
+                _ => {
+                    // Still pending
+                    if start.elapsed() > timeout {
+                        return Err(ApiError::Internal {
+                            message: format!(
+                                "Timeout waiting for sandbox {} (last status: {})",
+                                sandbox_id, status.status
+                            ),
+                        });
+                    }
+                    tokio::time::sleep(interval).await;
+                }
+            }
+        }
     }
 
     // ===== Private Helper Methods =====

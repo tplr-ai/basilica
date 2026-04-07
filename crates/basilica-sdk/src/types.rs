@@ -1247,6 +1247,163 @@ pub struct VolumeOperationResponse {
     pub message: String,
 }
 
+// ============================================================================
+// Sandbox Types
+// ============================================================================
+
+/// Request to create a new sandbox.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSandboxRequest {
+    /// Container image. Must be in the backend allowlist.
+    #[serde(default = "default_sandbox_image")]
+    pub image: String,
+
+    /// Time-to-live in seconds (60..=86400). Default: 3600.
+    #[serde(default = "default_sandbox_ttl")]
+    pub ttl_seconds: u32,
+
+    /// Idle timeout in seconds (60..=7200). Default: 1800.
+    #[serde(default = "default_sandbox_idle_timeout")]
+    pub idle_timeout_seconds: u32,
+}
+
+fn default_sandbox_image() -> String {
+    "ghcr.io/one-covenant/sandbox-base:latest".to_string()
+}
+
+fn default_sandbox_ttl() -> u32 {
+    3600
+}
+
+fn default_sandbox_idle_timeout() -> u32 {
+    1800
+}
+
+impl Default for CreateSandboxRequest {
+    fn default() -> Self {
+        Self {
+            image: default_sandbox_image(),
+            ttl_seconds: default_sandbox_ttl(),
+            idle_timeout_seconds: default_sandbox_idle_timeout(),
+        }
+    }
+}
+
+/// Response returned after sandbox creation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateSandboxResponse {
+    /// Unique sandbox identifier.
+    pub sandbox_id: String,
+    /// Routable domain: sb-{id}.sandboxes.basilica.ai
+    pub domain: String,
+    /// Bearer secret for authenticating exec-agent WebSocket connections.
+    /// Treat as a bearer credential. Never persist or log.
+    pub exec_secret: String,
+    /// Current sandbox phase: Pending, Running, Terminating, Failed.
+    pub status: String,
+    /// Billing rental ID tracking this sandbox.
+    pub rental_id: String,
+    /// Estimated hourly cost in credits.
+    pub hourly_cost: String,
+}
+
+/// Response for GET /sandboxes/{id}.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxStatusResponse {
+    /// Unique sandbox identifier.
+    pub sandbox_id: String,
+    /// Routable domain.
+    pub domain: String,
+    /// Current phase: Pending, Running, Terminating, Failed.
+    pub status: String,
+    /// Human-readable status message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// ISO 8601 creation timestamp.
+    pub created_at: String,
+    /// TTL in seconds from creation.
+    pub ttl_seconds: u32,
+    /// Idle timeout in seconds.
+    pub idle_timeout_seconds: u32,
+    /// Container image.
+    pub image: String,
+}
+
+/// Response for GET /sandboxes (list).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListSandboxesResponse {
+    pub sandboxes: Vec<SandboxStatusResponse>,
+}
+
+/// Response for DELETE /sandboxes/{id}.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteSandboxResponse {
+    pub sandbox_id: String,
+    pub status: String,
+    pub message: String,
+}
+
+// ============================================================================
+// Sandbox WebSocket Protocol Types
+// ============================================================================
+
+/// WebSocket frame types for the exec-agent protocol.
+/// Must match the backend basilica-exec-agent protocol exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxFrameType {
+    Exec,
+    ReadFile,
+    WriteFile,
+    ListDir,
+    Stat,
+    UploadR2,
+    DownloadR2,
+    Stdout,
+    Stderr,
+    Exit,
+    Error,
+}
+
+/// Client-to-agent request frame.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxExecRequest {
+    /// Unique request ID for correlating responses.
+    pub id: String,
+    /// The operation to perform.
+    pub r#type: SandboxFrameType,
+    /// Command and arguments for exec operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<Vec<String>>,
+    /// File path for file operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// File content for write operations (base64-encoded for binary).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    /// R2 object key for upload/download operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r2_key: Option<String>,
+}
+
+/// Agent-to-client response frame.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SandboxExecResponse {
+    /// Correlates to the request ID.
+    pub id: String,
+    /// The response type (stdout, stderr, exit, error, or echoed request type).
+    pub r#type: SandboxFrameType,
+    /// Output data (stdout/stderr content, file content, directory listing, etc.).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    /// Exit code for exec operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Error message if type is Error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1785,6 +1942,158 @@ mod tests {
         assert!(spec.geo.is_none());
         assert!(spec.spot.is_none());
         assert!(spec.infiniband.is_none());
+    }
+
+    #[test]
+    fn test_create_sandbox_request_defaults() {
+        let req = CreateSandboxRequest::default();
+        assert_eq!(req.image, "ghcr.io/one-covenant/sandbox-base:latest");
+        assert_eq!(req.ttl_seconds, 3600);
+        assert_eq!(req.idle_timeout_seconds, 1800);
+    }
+
+    #[test]
+    fn test_create_sandbox_request_roundtrip() {
+        let req = CreateSandboxRequest {
+            image: "ghcr.io/one-covenant/sandbox-base:v1".to_string(),
+            ttl_seconds: 7200,
+            idle_timeout_seconds: 900,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: CreateSandboxRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.image, req.image);
+        assert_eq!(deserialized.ttl_seconds, req.ttl_seconds);
+        assert_eq!(deserialized.idle_timeout_seconds, req.idle_timeout_seconds);
+    }
+
+    #[test]
+    fn test_create_sandbox_response_deserialize() {
+        let json = r#"{
+            "sandbox_id": "abc-123",
+            "domain": "sb-abc-123.sandboxes.basilica.ai",
+            "exec_secret": "deadbeef",
+            "status": "Pending",
+            "rental_id": "rental-456",
+            "hourly_cost": "0.03"
+        }"#;
+        let resp: CreateSandboxResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.sandbox_id, "abc-123");
+        assert_eq!(resp.domain, "sb-abc-123.sandboxes.basilica.ai");
+        assert_eq!(resp.exec_secret, "deadbeef");
+        assert_eq!(resp.status, "Pending");
+        assert_eq!(resp.rental_id, "rental-456");
+        assert_eq!(resp.hourly_cost, "0.03");
+    }
+
+    #[test]
+    fn test_sandbox_status_response_optional_message() {
+        let json = r#"{
+            "sandbox_id": "abc-123",
+            "domain": "sb-abc-123.sandboxes.basilica.ai",
+            "status": "Running",
+            "created_at": "2026-04-06T00:00:00Z",
+            "ttl_seconds": 3600,
+            "idle_timeout_seconds": 1800,
+            "image": "ghcr.io/one-covenant/sandbox-base:latest"
+        }"#;
+        let resp: SandboxStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "Running");
+        assert!(resp.message.is_none());
+    }
+
+    #[test]
+    fn test_sandbox_status_response_with_message() {
+        let json = r#"{
+            "sandbox_id": "abc-123",
+            "domain": "sb-abc-123.sandboxes.basilica.ai",
+            "status": "Failed",
+            "message": "OOM killed",
+            "created_at": "2026-04-06T00:00:00Z",
+            "ttl_seconds": 3600,
+            "idle_timeout_seconds": 1800,
+            "image": "ghcr.io/one-covenant/sandbox-base:latest"
+        }"#;
+        let resp: SandboxStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status, "Failed");
+        assert_eq!(resp.message.as_deref(), Some("OOM killed"));
+    }
+
+    #[test]
+    fn test_list_sandboxes_response_empty() {
+        let json = r#"{"sandboxes": []}"#;
+        let resp: ListSandboxesResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.sandboxes.is_empty());
+    }
+
+    #[test]
+    fn test_delete_sandbox_response() {
+        let json = r#"{
+            "sandbox_id": "abc-123",
+            "status": "Terminating",
+            "message": "Sandbox deletion initiated"
+        }"#;
+        let resp: DeleteSandboxResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.sandbox_id, "abc-123");
+        assert_eq!(resp.status, "Terminating");
+    }
+
+    #[test]
+    fn test_sandbox_exec_request_roundtrip() {
+        let req = SandboxExecRequest {
+            id: "req-1".to_string(),
+            r#type: SandboxFrameType::Exec,
+            command: Some(vec!["ls".to_string(), "-la".to_string()]),
+            path: None,
+            content: None,
+            r2_key: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let deserialized: SandboxExecRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, "req-1");
+        assert_eq!(deserialized.r#type, SandboxFrameType::Exec);
+        assert_eq!(
+            deserialized.command,
+            Some(vec!["ls".to_string(), "-la".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_sandbox_exec_response_exit_code() {
+        let json = r#"{"id":"req-1","type":"exit","exit_code":0}"#;
+        let resp: SandboxExecResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.r#type, SandboxFrameType::Exit);
+        assert_eq!(resp.exit_code, Some(0));
+    }
+
+    #[test]
+    fn test_sandbox_frame_type_snake_case() {
+        let ft = SandboxFrameType::ReadFile;
+        let json = serde_json::to_string(&ft).unwrap();
+        assert_eq!(json, r#""read_file""#);
+        let deserialized: SandboxFrameType = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, SandboxFrameType::ReadFile);
+    }
+
+    #[test]
+    fn test_all_sandbox_frame_types_roundtrip() {
+        let types = vec![
+            SandboxFrameType::Exec,
+            SandboxFrameType::ReadFile,
+            SandboxFrameType::WriteFile,
+            SandboxFrameType::ListDir,
+            SandboxFrameType::Stat,
+            SandboxFrameType::UploadR2,
+            SandboxFrameType::DownloadR2,
+            SandboxFrameType::Stdout,
+            SandboxFrameType::Stderr,
+            SandboxFrameType::Exit,
+            SandboxFrameType::Error,
+        ];
+        for ft in types {
+            let json = serde_json::to_string(&ft).unwrap();
+            let deserialized: SandboxFrameType = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, ft);
+        }
     }
 
     #[test]

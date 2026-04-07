@@ -204,6 +204,52 @@ pub enum Commands {
         #[command(subcommand)]
         action: VolumeAction,
     },
+
+    /// Sandbox management commands — ephemeral Linux execution environments
+    #[command(name = "sandbox", alias = "sb")]
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
+}
+
+/// Sandbox actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum SandboxAction {
+    /// Create a new sandbox
+    Create {
+        /// Container image (must be in allowlist). Default: sandbox-base:latest
+        #[arg(long)]
+        image: Option<String>,
+
+        /// Time-to-live in seconds (60-86400). Default: 3600
+        #[arg(long)]
+        ttl: Option<u32>,
+
+        /// Idle timeout in seconds (60-7200). Default: 1800
+        #[arg(long)]
+        idle_timeout: Option<u32>,
+    },
+
+    /// List all sandboxes
+    #[command(name = "ls", visible_alias = "list")]
+    List,
+
+    /// Get sandbox status
+    Status {
+        /// Sandbox ID
+        sandbox_id: String,
+    },
+
+    /// Delete a sandbox
+    Delete {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Skip confirmation prompt
+        #[arg(long, short)]
+        yes: bool,
+    },
 }
 
 /// Fund management actions
@@ -354,6 +400,9 @@ impl Commands {
 
             // Deploy commands: most require auth, except Metadata (public endpoint)
             Commands::Deploy(cmd) => !matches!(cmd.action, Some(DeployAction::Metadata { .. })),
+
+            // Sandbox commands always require auth
+            Commands::Sandbox { .. } => true,
 
             // Authentication commands don't require auth
             Commands::Login { .. } | Commands::Logout | Commands::Upgrade { .. } => false,

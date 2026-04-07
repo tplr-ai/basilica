@@ -276,6 +276,11 @@ impl Args {
                 handlers::deploy::handle_deploy(*cmd.clone(), config).await?;
             }
 
+            // Sandbox command
+            Commands::Sandbox { action } => {
+                handlers::sandbox::handle_sandbox(action.clone(), self.json, config).await?;
+            }
+
             // Volume management
             Commands::Volumes { action } => {
                 use crate::cli::commands::VolumeAction;
