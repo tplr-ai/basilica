@@ -30,6 +30,7 @@ semver = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 futures = { workspace = true }
 futures-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
 eventsource-stream = { workspace = true }
 
 # Terminal UI and interaction

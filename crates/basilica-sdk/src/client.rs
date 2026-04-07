@@ -1258,6 +1258,45 @@ impl BasilicaClient {
         self.get_public(&path).await
     }
 
+    // ===== Sandbox Methods =====
+
+    /// Create a new compute sandbox
+    pub async fn create_sandbox(
+        &self,
+        request: crate::types::CreateSandboxRequest,
+    ) -> Result<crate::types::CreateSandboxResponse> {
+        self.post("/v1/sandboxes", &request).await
+    }
+
+    /// List sandboxes for the authenticated user
+    pub async fn list_sandboxes(&self) -> Result<crate::types::SandboxListResponse> {
+        self.get("/v1/sandboxes").await
+    }
+
+    /// Get sandbox status by ID
+    pub async fn get_sandbox(&self, sandbox_id: &str) -> Result<crate::types::SandboxResponse> {
+        let path = format!("/v1/sandboxes/{}", sandbox_id);
+        self.get(&path).await
+    }
+
+    /// Delete a sandbox by ID
+    pub async fn delete_sandbox(&self, sandbox_id: &str) -> Result<()> {
+        let path = format!("/v1/sandboxes/{}", sandbox_id);
+        let response = self.delete_empty(&path).await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let err = self
+                .handle_error_response::<serde_json::Value>(response)
+                .await
+                .err()
+                .unwrap_or(ApiError::Internal {
+                    message: "Unknown error".into(),
+                });
+            Err(err)
+        }
+    }
+
     // ===== Private Helper Methods =====
 
     /// Apply authentication to request
