@@ -336,7 +336,8 @@ impl Args {
                 }
             }
 
-            // Sandbox management
+            // Sandbox management (behind feature flag until backend readiness confirmed)
+            #[cfg(feature = "sandbox")]
             Commands::Sandbox { action } => {
                 use crate::cli::commands::SandboxAction;
                 use crate::client::create_client;

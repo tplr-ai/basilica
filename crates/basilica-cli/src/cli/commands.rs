@@ -206,6 +206,7 @@ pub enum Commands {
     },
 
     /// Compute sandbox management (ephemeral Linux environments)
+    #[cfg(feature = "sandbox")]
     #[command(name = "sandbox", visible_alias = "sb")]
     Sandbox {
         #[command(subcommand)]
@@ -339,6 +340,7 @@ pub enum VolumeAction {
 }
 
 /// Sandbox management actions
+#[cfg(feature = "sandbox")]
 #[derive(Subcommand, Debug, Clone)]
 pub enum SandboxAction {
     /// Create a new compute sandbox
@@ -418,9 +420,11 @@ impl Commands {
             | Commands::Tokens { .. }
             | Commands::SshKeys { .. }
             | Commands::Volumes { .. }
-            | Commands::Sandbox { .. }
             | Commands::Fund { .. }
             | Commands::Balance => true,
+
+            #[cfg(feature = "sandbox")]
+            Commands::Sandbox { .. } => true,
 
             // Deploy commands: most require auth, except Metadata (public endpoint)
             Commands::Deploy(cmd) => !matches!(cmd.action, Some(DeployAction::Metadata { .. })),

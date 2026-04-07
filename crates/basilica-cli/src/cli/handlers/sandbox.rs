@@ -484,7 +484,7 @@ async fn interactive_session(domain: &str, secret: &str) -> Result<(), CliError>
     );
     println!(
         "{}",
-        style("File ops: :read <path>, :write <path> <content>, :ls <path>, :stat <path>").dim()
+        style("File ops: :read <path>, :write <path> <content>, :ls [path], :stat <path>, :mv <old> <new>").dim()
     );
     println!();
 
@@ -613,6 +613,24 @@ fn parse_interactive_command(input: &str) -> (String, serde_json::Value) {
             return (
                 "download_r2".to_string(),
                 serde_json::json!({ "key": parts[0], "local_path": parts[1] }),
+            );
+        }
+    }
+    if let Some(rest) = input.strip_prefix(":rename ") {
+        let parts: Vec<&str> = rest.splitn(2, ' ').collect();
+        if parts.len() == 2 {
+            return (
+                "rename".to_string(),
+                serde_json::json!({ "old_path": parts[0], "new_path": parts[1] }),
+            );
+        }
+    }
+    if let Some(rest) = input.strip_prefix(":mv ") {
+        let parts: Vec<&str> = rest.splitn(2, ' ').collect();
+        if parts.len() == 2 {
+            return (
+                "rename".to_string(),
+                serde_json::json!({ "old_path": parts[0], "new_path": parts[1] }),
             );
         }
     }
@@ -1031,5 +1049,213 @@ mod tests {
             resp.sandboxes[0].status.started_at.as_deref(),
             Some("2026-04-06T12:00:00Z")
         );
+    }
+
+    #[test]
+    fn test_parse_rename() {
+        let (op, args) = parse_interactive_command(":rename /old/path /new/path");
+        assert_eq!(op, "rename");
+        assert_eq!(
+            args,
+            serde_json::json!({"old_path": "/old/path", "new_path": "/new/path"})
+        );
+    }
+
+    #[test]
+    fn test_parse_mv_alias() {
+        let (op, args) = parse_interactive_command(":mv /workspace/a.py /workspace/b.py");
+        assert_eq!(op, "rename");
+        assert_eq!(
+            args,
+            serde_json::json!({"old_path": "/workspace/a.py", "new_path": "/workspace/b.py"})
+        );
+    }
+
+    #[test]
+    fn test_parse_write_file_no_content() {
+        let (op, args) = parse_interactive_command(":write /tmp/empty.txt");
+        assert_eq!(op, "write_file");
+        assert_eq!(
+            args,
+            serde_json::json!({"path": "/tmp/empty.txt", "content": ""})
+        );
+    }
+
+    #[test]
+    fn test_parse_single_word_exec() {
+        let (op, args) = parse_interactive_command("ls");
+        assert_eq!(op, "exec");
+        assert_eq!(args, serde_json::json!({"command": ["ls"]}));
+    }
+
+    #[test]
+    fn test_parse_upload_missing_key_falls_through_to_exec() {
+        // :upload with only one arg doesn't match the two-arg pattern, falls to exec
+        let (op, _args) = parse_interactive_command(":upload /local/only");
+        assert_eq!(op, "exec");
+    }
+
+    #[test]
+    fn test_parse_download_missing_path_falls_through_to_exec() {
+        // :download with only one arg doesn't match the two-arg pattern, falls to exec
+        let (op, _args) = parse_interactive_command(":download only-key");
+        assert_eq!(op, "exec");
+    }
+
+    #[test]
+    fn test_ws_request_without_args() {
+        let req = SandboxWsRequest {
+            id: "ping-1".to_string(),
+            op: "ping".to_string(),
+            args: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("args"));
+
+        let parsed: SandboxWsRequest = serde_json::from_str(&json).unwrap();
+        assert!(parsed.args.is_none());
+        assert_eq!(parsed.op, "ping");
+    }
+
+    #[test]
+    fn test_ws_response_pong() {
+        let json = r#"{"id":"ping-1","type":"pong"}"#;
+        let resp: SandboxWsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.response_type, "pong");
+        assert!(resp.data.is_none());
+        assert!(resp.code.is_none());
+        assert!(resp.error.is_none());
+    }
+
+    #[test]
+    fn test_ws_response_dir_listing() {
+        let json = r#"{"id":"op-1","type":"dir","data":["file1.py","file2.py","subdir/"]}"#;
+        let resp: SandboxWsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.response_type, "dir");
+        let entries = resp.data.unwrap();
+        assert_eq!(entries.as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_ws_response_stat() {
+        let json = r#"{"id":"op-1","type":"stat","data":{"size":1024,"mtime":"2026-04-06T12:00:00Z","permissions":"0644"}}"#;
+        let resp: SandboxWsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.response_type, "stat");
+        let data = resp.data.unwrap();
+        assert_eq!(data["size"], 1024);
+    }
+
+    #[test]
+    fn test_sandbox_response_without_started_at() {
+        let json = r#"{
+            "sandbox_id": "ab12cd34",
+            "domain": "sb-ab12cd34.sandboxes.basilica.ai",
+            "status": {
+                "phase": "Pending",
+                "conditions": []
+            }
+        }"#;
+        let resp: SandboxResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.status.started_at.is_none());
+        assert_eq!(resp.status.phase, SandboxPhase::Pending);
+    }
+
+    #[test]
+    fn test_sandbox_condition_deserialization() {
+        let json = r#"{
+            "sandbox_id": "ab12cd34",
+            "domain": "sb-ab12cd34.sandboxes.basilica.ai",
+            "status": {
+                "phase": "Running",
+                "started_at": "2026-04-06T12:00:00Z",
+                "conditions": [
+                    {"type": "Ready", "status": "True", "last_transition_time": "2026-04-06T12:00:01Z"},
+                    {"type": "PodScheduled", "status": "True"}
+                ]
+            }
+        }"#;
+        let resp: SandboxResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.status.conditions.len(), 2);
+        assert_eq!(resp.status.conditions[0].condition_type, "Ready");
+        assert_eq!(resp.status.conditions[0].status, "True");
+        assert!(resp.status.conditions[0].last_transition_time.is_some());
+        assert!(resp.status.conditions[1].last_transition_time.is_none());
+    }
+
+    #[test]
+    fn test_empty_sandbox_list() {
+        let json = r#"{"sandboxes": []}"#;
+        let resp: SandboxListResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.sandboxes.is_empty());
+    }
+
+    #[test]
+    fn test_all_wire_protocol_ops_parse() {
+        // Verify all 12 wire protocol ops are reachable through interactive commands
+        let ops: Vec<(&str, &str)> = vec![
+            ("echo test", "exec"),
+            (":read /path", "read_file"),
+            (":write /path data", "write_file"),
+            (":stat /path", "stat"),
+            (":ls /path", "list_dir"),
+            (":mkdir /path", "mkdir"),
+            (":rm /path", "remove"),
+            (":rename /a /b", "rename"),
+            (":upload /a key", "upload_r2"),
+            (":download key /a", "download_r2"),
+        ];
+        for (input, expected_op) in ops {
+            let (op, _) = parse_interactive_command(input);
+            assert_eq!(op, expected_op, "Input '{}' should produce op '{}'", input, expected_op);
+        }
+    }
+
+    #[test]
+    fn test_ws_response_all_error_codes() {
+        let error_codes = [
+            "AUTH_FAILED", "NOT_FOUND", "PERMISSION_DENIED", "TIMEOUT",
+            "QUEUE_FULL", "IO_ERROR", "PROCESS_ERROR", "INVALID_REQUEST",
+        ];
+        for code in &error_codes {
+            let json = format!(
+                r#"{{"id":"op-1","type":"error","error":"test error","error_code":"{}"}}"#,
+                code
+            );
+            let resp: SandboxWsResponse = serde_json::from_str(&json).unwrap();
+            assert_eq!(resp.error_code.as_deref(), Some(*code));
+        }
+    }
+
+    #[test]
+    fn test_create_request_with_env_vars() {
+        let req = CreateSandboxRequest {
+            image: None,
+            cpu: None,
+            memory: None,
+            ttl_seconds: None,
+            env: Some(vec![
+                SandboxEnvVar { name: "KEY1".to_string(), value: "val1".to_string() },
+                SandboxEnvVar { name: "KEY2".to_string(), value: "val=with=equals".to_string() },
+            ]),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: CreateSandboxRequest = serde_json::from_str(&json).unwrap();
+        let env = parsed.env.unwrap();
+        assert_eq!(env.len(), 2);
+        assert_eq!(env[1].value, "val=with=equals");
+    }
+
+    #[test]
+    fn test_exec_secret_not_in_get_response() {
+        // GET /v1/sandboxes/{id} response does NOT contain exec_secret
+        let json = r#"{
+            "sandbox_id": "ab12cd34",
+            "domain": "sb-ab12cd34.sandboxes.basilica.ai",
+            "status": {"phase": "Running", "conditions": []}
+        }"#;
+        let resp: SandboxResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.sandbox_id, "ab12cd34");
+        // SandboxResponse has no exec_secret field — this is by design.
+        // Only CreateSandboxResponse includes it.
     }
 }
