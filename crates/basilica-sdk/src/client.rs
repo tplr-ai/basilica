@@ -661,6 +661,9 @@ impl BasilicaClient {
     ///     queue_name: None,
     ///     suspended: false,
     ///     priority: None,
+    ///     topology_spread: None,
+    ///     websocket: None,
+    ///     public_metadata: false,
     /// };
     ///
     /// let deployment = client.create_deployment(request).await?;
