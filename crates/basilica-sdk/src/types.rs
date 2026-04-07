@@ -1805,3 +1805,131 @@ mod tests {
         assert!(json.contains("\"interconnect\":\"PCIe\""));
     }
 }
+
+// ============================================================================
+// Sandbox Types
+// ============================================================================
+
+/// Request to create a compute sandbox
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreateSandboxRequest {
+    /// Container image (must be in allowlist)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+
+    /// CPU allocation (e.g., "2")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<String>,
+
+    /// Memory allocation (e.g., "4Gi")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<String>,
+
+    /// Time-to-live in seconds (max 7200)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<u32>,
+
+    /// Environment variables
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<Vec<SandboxEnvVar>>,
+}
+
+/// Environment variable for sandbox
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxEnvVar {
+    pub name: String,
+    pub value: String,
+}
+
+/// Response from POST /v1/sandboxes
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CreateSandboxResponse {
+    pub sandbox_id: String,
+    pub domain: String,
+    /// Bearer credential for exec-agent WebSocket auth. NEVER persist or log.
+    pub exec_secret: String,
+    pub status: SandboxStatus,
+}
+
+/// Response from GET /v1/sandboxes/{id}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxResponse {
+    pub sandbox_id: String,
+    pub domain: String,
+    pub status: SandboxStatus,
+}
+
+/// Response from GET /v1/sandboxes
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxListResponse {
+    pub sandboxes: Vec<SandboxResponse>,
+}
+
+/// Sandbox status
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxStatus {
+    pub phase: SandboxPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub conditions: Vec<SandboxCondition>,
+}
+
+/// Sandbox lifecycle phase
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxPhase {
+    Pending,
+    Running,
+    Terminating,
+    Failed,
+}
+
+impl std::fmt::Display for SandboxPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SandboxPhase::Pending => write!(f, "Pending"),
+            SandboxPhase::Running => write!(f, "Running"),
+            SandboxPhase::Terminating => write!(f, "Terminating"),
+            SandboxPhase::Failed => write!(f, "Failed"),
+        }
+    }
+}
+
+/// Sandbox condition (K8s-style)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxCondition {
+    #[serde(rename = "type")]
+    pub condition_type: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<String>,
+}
+
+/// exec-agent WebSocket request frame
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxWsRequest {
+    pub id: String,
+    pub op: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
+}
+
+/// exec-agent WebSocket response frame
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxWsResponse {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub response_type: String,
+    /// Present on stdout/stderr/file/dir/stat/pong responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+    /// Present on exit responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
+    /// Present on error responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Error code on error responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+}
