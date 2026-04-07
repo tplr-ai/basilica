@@ -990,7 +990,7 @@ mod tests {
             }]),
         };
         let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("\"ttl_seconds\":1800"));
+        assert!(json.contains("\"ttlSeconds\":1800"));
         assert!(json.contains("\"cpu\":\"2\""));
 
         // Minimal request with None fields — they should be omitted
@@ -1009,9 +1009,9 @@ mod tests {
     #[test]
     fn test_create_sandbox_response_deserialization() {
         let json = r#"{
-            "sandbox_id": "ab12cd34",
+            "sandboxId": "ab12cd34",
             "domain": "sb-ab12cd34.sandboxes.basilica.ai",
-            "exec_secret": "deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
+            "execSecret": "deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567",
             "status": {
                 "phase": "Pending",
                 "conditions": []
@@ -1029,11 +1029,11 @@ mod tests {
         let json = r#"{
             "sandboxes": [
                 {
-                    "sandbox_id": "ab12cd34",
+                    "sandboxId": "ab12cd34",
                     "domain": "sb-ab12cd34.sandboxes.basilica.ai",
                     "status": {
                         "phase": "Running",
-                        "started_at": "2026-04-06T12:00:00Z",
+                        "startedAt": "2026-04-06T12:00:00Z",
                         "conditions": [
                             {"type": "Ready", "status": "True"}
                         ]
@@ -1147,7 +1147,7 @@ mod tests {
     #[test]
     fn test_sandbox_response_without_started_at() {
         let json = r#"{
-            "sandbox_id": "ab12cd34",
+            "sandboxId": "ab12cd34",
             "domain": "sb-ab12cd34.sandboxes.basilica.ai",
             "status": {
                 "phase": "Pending",
@@ -1162,13 +1162,13 @@ mod tests {
     #[test]
     fn test_sandbox_condition_deserialization() {
         let json = r#"{
-            "sandbox_id": "ab12cd34",
+            "sandboxId": "ab12cd34",
             "domain": "sb-ab12cd34.sandboxes.basilica.ai",
             "status": {
                 "phase": "Running",
-                "started_at": "2026-04-06T12:00:00Z",
+                "startedAt": "2026-04-06T12:00:00Z",
                 "conditions": [
-                    {"type": "Ready", "status": "True", "last_transition_time": "2026-04-06T12:00:01Z"},
+                    {"type": "Ready", "status": "True", "lastTransitionTime": "2026-04-06T12:00:01Z"},
                     {"type": "PodScheduled", "status": "True"}
                 ]
             }
@@ -1246,9 +1246,9 @@ mod tests {
 
     #[test]
     fn test_exec_secret_not_in_get_response() {
-        // GET /v1/sandboxes/{id} response does NOT contain exec_secret
+        // GET /v1/sandboxes/{id} response does NOT contain execSecret
         let json = r#"{
-            "sandbox_id": "ab12cd34",
+            "sandboxId": "ab12cd34",
             "domain": "sb-ab12cd34.sandboxes.basilica.ai",
             "status": {"phase": "Running", "conditions": []}
         }"#;

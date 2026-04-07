@@ -1812,6 +1812,7 @@ mod tests {
 
 /// Request to create a compute sandbox
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSandboxRequest {
     /// Container image (must be in allowlist)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1843,6 +1844,7 @@ pub struct SandboxEnvVar {
 
 /// Response from POST /v1/sandboxes
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSandboxResponse {
     pub sandbox_id: String,
     pub domain: String,
@@ -1853,6 +1855,7 @@ pub struct CreateSandboxResponse {
 
 /// Response from GET /v1/sandboxes/{id}
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SandboxResponse {
     pub sandbox_id: String,
     pub domain: String,
@@ -1867,6 +1870,7 @@ pub struct SandboxListResponse {
 
 /// Sandbox status
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SandboxStatus {
     pub phase: SandboxPhase,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1897,6 +1901,7 @@ impl std::fmt::Display for SandboxPhase {
 
 /// Sandbox condition (K8s-style)
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct SandboxCondition {
     #[serde(rename = "type")]
     pub condition_type: String,
