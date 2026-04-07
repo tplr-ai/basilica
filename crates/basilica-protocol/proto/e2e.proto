@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package basilica.e2e.v1;
+
+message AttestationBinding {
+  string nonce = 1;
+  string e2ee_public_key_sha256 = 2;
+  optional string tls_public_key_sha256 = 3;
+}
+
+message AttestationEvidence {
+  string workload_id = 1;
+  string instance_id = 2;
+  string trust_tier = 3;
+  string kind = 4;
+  int64 issued_at_unix_secs = 5;
+  int64 expires_at_unix_secs = 6;
+  string quote_base64 = 7;
+  optional string gpu_evidence_base64 = 8;
+  AttestationBinding binding = 9;
+  map<string, string> claims = 10;
+}
+
+message E2eeInstanceDescriptor {
+  string workload_id = 1;
+  string instance_id = 2;
+  string trust_tier = 3;
+  string e2ee_public_key = 4;
+  AttestationEvidence attestation = 5;
+  repeated string nonces = 6;
+  repeated string capabilities = 7;
+}
+
+message RegisterE2eeInstanceRequest {
+  string workload_id = 1;
+  string instance_id = 2;
+  string trust_tier = 3;
+  string endpoint_url = 4;
+  string e2ee_public_key = 5;
+  AttestationEvidence attestation = 6;
+  repeated string capabilities = 7;
+}
+
+message RegisterE2eeInstanceResponse {
+  bool accepted = 1;
+  int64 registered_at_unix_secs = 2;
+  string workload_id = 3;
+  string instance_id = 4;
+}
+
+message GetE2eeInstanceRequest {
+  string workload_id = 1;
+}
+
+message InvokeEncryptedRequest {
+  string workload_id = 1;
+  string instance_id = 2;
+  string nonce = 3;
+  string request_path = 4;
+  bool stream = 5;
+  bytes blob = 6;
+}
+
+message InvokeEncryptedResponse {
+  bytes blob = 1;
+  string content_type = 2;
+  bool stream = 3;
+}
+
+service ConfidentialComputeService {
+  rpc RegisterInstance(RegisterE2eeInstanceRequest) returns (RegisterE2eeInstanceResponse);
+  rpc GetInstance(GetE2eeInstanceRequest) returns (E2eeInstanceDescriptor);
+  rpc Invoke(InvokeEncryptedRequest) returns (InvokeEncryptedResponse);
+}

@@ -680,7 +680,7 @@ use basilica_sdk::types::{
     ReplicaStatus as SdkReplicaStatus, ResourceRequirements as SdkResourceRequirements,
     SpreadMode as SdkSpreadMode, StorageBackend as SdkStorageBackend,
     StorageSpec as SdkStorageSpec, TopologySpreadConfig as SdkTopologySpreadConfig,
-    WebSocketConfig as SdkWebSocketConfig,
+    TrustTier as SdkTrustTier, WebSocketConfig as SdkWebSocketConfig,
 };
 
 /// Environment variable for container deployments
@@ -1338,13 +1338,17 @@ pub struct CreateDeploymentRequest {
     pub websocket: Option<WebSocketConfig>,
     #[pyo3(get, set)]
     pub public_metadata: bool,
+    #[pyo3(get, set)]
+    pub confidential: bool,
+    #[pyo3(get, set)]
+    pub trust_tier: Option<String>,
 }
 
 #[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
 #[pymethods]
 impl CreateDeploymentRequest {
     #[new]
-    #[pyo3(signature = (instance_name, image, replicas, port, command=None, args=None, env=None, resources=None, ttl_seconds=None, public=true, storage=None, topology_spread=None, health_check=None, websocket=None, public_metadata=false))]
+    #[pyo3(signature = (instance_name, image, replicas, port, command=None, args=None, env=None, resources=None, ttl_seconds=None, public=true, storage=None, topology_spread=None, health_check=None, websocket=None, public_metadata=false, confidential=false, trust_tier=None))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         instance_name: String,
@@ -1362,6 +1366,8 @@ impl CreateDeploymentRequest {
         health_check: Option<HealthCheckConfig>,
         websocket: Option<WebSocketConfig>,
         public_metadata: bool,
+        confidential: bool,
+        trust_tier: Option<String>,
     ) -> Self {
         Self {
             instance_name,
@@ -1379,6 +1385,8 @@ impl CreateDeploymentRequest {
             health_check,
             websocket,
             public_metadata,
+            confidential,
+            trust_tier,
         }
     }
 }
@@ -1405,6 +1413,11 @@ impl From<CreateDeploymentRequest> for SdkCreateDeploymentRequest {
             topology_spread: req.topology_spread.map(Into::into),
             websocket: req.websocket.map(Into::into),
             public_metadata: req.public_metadata,
+            confidential: req.confidential,
+            trust_tier: req.trust_tier.as_deref().map(|value| match value {
+                "community" => SdkTrustTier::Community,
+                _ => SdkTrustTier::Enterprise,
+            }),
         }
     }
 }

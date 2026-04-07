@@ -1,0 +1,22 @@
+[package]
+name = "basilica-e2ee"
+version = "0.1.0"
+edition = "2021"
+description = "Night Shade shared E2EE primitives and types for Basilica"
+
+[dependencies]
+aes-gcm = { workspace = true }
+base64 = { workspace = true }
+hkdf = { workspace = true }
+kem = { workspace = true }
+ml-kem = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sharks = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]

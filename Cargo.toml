@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/basilica-common",
+  "crates/basilica-e2ee",
   "crates/basilica-protocol",
   "crates/basilica-miner",
   "crates/basilica-validator",
@@ -79,6 +80,10 @@ prost-types = "0.12"
 # Crypto and security
 blake3 = "1.5"
 aes-gcm = "0.10"
+hkdf = "0.12"
+kem = "0.3.0-pre.0"
+ml-kem = "0.2.3"
+sharks = "0.5"
 rand = "0.8"
 base64 = "0.21"
 

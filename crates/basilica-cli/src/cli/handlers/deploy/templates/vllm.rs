@@ -99,6 +99,8 @@ pub async fn handle_vllm_deploy(
         topology_spread: None,
         websocket: None,
         public_metadata: false,
+        confidential: false,
+        trust_tier: None,
     };
 
     // Show spinner

@@ -90,6 +90,12 @@ pub mod basilca {
             include!("gen/basilica.incentive.v1.rs");
         }
     }
+
+    pub mod e2e {
+        pub mod v1 {
+            include!("gen/basilica.e2e.v1.rs");
+        }
+    }
 }
 
 // Structured re-exports for better organization
@@ -147,6 +153,11 @@ pub mod payments {
 pub mod incentive {
     //! Incentive service for validator-facing CU/RU ledger access via backend services
     pub use crate::basilca::incentive::v1::*;
+}
+
+pub mod e2e {
+    //! Shared Night Shade E2EE service and message definitions.
+    pub use crate::basilca::e2e::v1::*;
 }
 
 // Re-export common types at crate root for convenience

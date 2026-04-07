@@ -87,6 +87,8 @@ pub async fn handle_tau_deploy(
         topology_spread: None,
         websocket: None,
         public_metadata: false,
+        confidential: false,
+        trust_tier: None,
     };
 
     let spinner = create_spinner(&format!("Creating Tau summons '{}'...", name));
