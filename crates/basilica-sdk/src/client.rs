@@ -2447,4 +2447,170 @@ mod tests {
         let response = client.create_deployment(request).await.unwrap();
         assert!(response.public_metadata);
     }
+
+    // ===== Sandbox Tests =====
+
+    #[tokio::test]
+    async fn test_create_sandbox() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/sandboxes"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "sandboxId": "abc12345",
+                "domain": "sb-abc12345.sandboxes.basilica.ai",
+                "execSecret": "deadbeef01234567deadbeef01234567deadbeef01234567deadbeef01234567",
+                "status": {
+                    "phase": "Pending",
+                    "conditions": []
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let request = crate::types::CreateSandboxRequest {
+            image: Some("registry.basilica.ai/sandbox/python:3.11".to_string()),
+            cpu: Some("2".to_string()),
+            memory: Some("4Gi".to_string()),
+            ttl_seconds: Some(1800),
+            env: None,
+        };
+
+        let response = client.create_sandbox(request).await.unwrap();
+        assert_eq!(response.sandbox_id, "abc12345");
+        assert_eq!(response.domain, "sb-abc12345.sandboxes.basilica.ai");
+        assert_eq!(response.exec_secret.len(), 64);
+        assert_eq!(
+            response.status.phase,
+            crate::types::SandboxPhase::Pending
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_sandboxes() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/sandboxes"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "sandboxes": [
+                    {
+                        "sandboxId": "aaa11111",
+                        "domain": "sb-aaa11111.sandboxes.basilica.ai",
+                        "status": {
+                            "phase": "Running",
+                            "startedAt": "2026-04-06T12:00:00Z",
+                            "conditions": [
+                                {
+                                    "type": "Ready",
+                                    "status": "True",
+                                    "lastTransitionTime": "2026-04-06T12:00:01Z"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "sandboxId": "bbb22222",
+                        "domain": "sb-bbb22222.sandboxes.basilica.ai",
+                        "status": {
+                            "phase": "Pending",
+                            "conditions": []
+                        }
+                    }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.list_sandboxes().await.unwrap();
+        assert_eq!(response.sandboxes.len(), 2);
+        assert_eq!(response.sandboxes[0].sandbox_id, "aaa11111");
+        assert_eq!(
+            response.sandboxes[0].status.phase,
+            crate::types::SandboxPhase::Running
+        );
+        assert_eq!(
+            response.sandboxes[1].status.phase,
+            crate::types::SandboxPhase::Pending
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_sandbox() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/v1/sandboxes/abc12345"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "sandboxId": "abc12345",
+                "domain": "sb-abc12345.sandboxes.basilica.ai",
+                "status": {
+                    "phase": "Running",
+                    "startedAt": "2026-04-06T12:00:00Z",
+                    "conditions": [
+                        {
+                            "type": "Ready",
+                            "status": "True",
+                            "lastTransitionTime": "2026-04-06T12:00:01Z"
+                        }
+                    ]
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.get_sandbox("abc12345").await.unwrap();
+        assert_eq!(response.sandbox_id, "abc12345");
+        assert_eq!(
+            response.status.phase,
+            crate::types::SandboxPhase::Running
+        );
+        assert_eq!(
+            response.status.started_at.as_deref(),
+            Some("2026-04-06T12:00:00Z")
+        );
+        assert_eq!(response.status.conditions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_delete_sandbox() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/v1/sandboxes/abc12345"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let result = client.delete_sandbox("abc12345").await;
+        assert!(result.is_ok());
+    }
 }
