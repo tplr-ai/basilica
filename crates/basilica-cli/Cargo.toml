@@ -75,4 +75,7 @@ basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
 
+[features]
+sandbox = []
+
 [dev-dependencies]
