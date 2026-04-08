@@ -1,0 +1,196 @@
+# Real basilica-api deployment for K3d E2E testing (dev mode)
+#
+# Uses the real basilica-api binary with dev config:
+#   - skip_bittensor=true (no Bittensor dependency)
+#   - skip_auth=true (no JWT/API key required)
+#   - Real PostgreSQL connection (deployed separately)
+#
+# Requires: PostgreSQL in basilica-system namespace (see postgres.yaml)
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: basilica-api-config
+  namespace: default
+data:
+  config.toml: |
+    [server]
+    bind_address = "0.0.0.0:8080"
+
+    [dev]
+    skip_bittensor = true
+    skip_auth = true
+    dev_user_id = "test-user"
+
+    [database]
+    url = "postgres://api:api_dev_password@postgres.basilica-system.svc.cluster.local:5432/basilica_api"
+    max_connections = 5
+
+    [rate_limit]
+    requests_per_second = 100
+    burst_size = 200
+    per_ip_limiting = false
+
+    [billing]
+    enabled = false
+    endpoint = "http://localhost:50051"
+
+    [payments]
+    enabled = false
+    endpoint = "http://localhost:50061"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: basilica-api
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: basilica-api
+rules:
+# BasilicaSandbox CRD management (control-plane only)
+- apiGroups: ["basilica.ai"]
+  resources: ["basilicasandboxes", "basilicasandboxes/status"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Pod access for status and secret-rotation restart
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "delete"]
+# Namespace management for sandbox tenants
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+# Secret management for exec-agent secrets
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: basilica-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: basilica-api
+subjects:
+- kind: ServiceAccount
+  name: basilica-api
+  namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basilica-api
+  namespace: default
+  labels:
+    app: basilica-api
+    app.kubernetes.io/name: basilica-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: basilica-api
+  template:
+    metadata:
+      labels:
+        app: basilica-api
+        app.kubernetes.io/name: basilica-api
+    spec:
+      serviceAccountName: basilica-api
+      containers:
+      - name: api
+        image: k3d-basilica-registry:5050/basilica-api:latest
+        imagePullPolicy: Always
+        args: ["--config", "/etc/basilica/config.toml"]
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,basilica_api=debug"
+        - name: RUST_BACKTRACE
+          value: "1"
+        - name: SANDBOX_EXTRA_ALLOWED_IMAGES
+          value: "basilica/sandbox-python:latest,python:3.11-slim,k3d-basilica-registry:5050/basilica-exec-agent:latest"
+        # Sandbox cluster kubeconfig: explicit in-cluster override for K3d-only testing.
+        - name: SANDBOX_CLUSTER_KUBECONFIG
+          value: ""
+        - name: SANDBOX_CLUSTER_ALLOW_IN_CLUSTER
+          value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/basilica
+          readOnly: true
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: basilica-api-config
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: basilica-api
+  namespace: default
+  labels:
+    app: basilica-api
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: basilica-api
+---
+# Ingress for external access via K3d load balancer.
+# Routes /sandboxes and /health directly to the API service.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: basilica-api
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /sandboxes
+        pathType: Prefix
+        backend:
+          service:
+            name: basilica-api
+            port:
+              number: 80
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: basilica-api
+            port:
+              number: 80

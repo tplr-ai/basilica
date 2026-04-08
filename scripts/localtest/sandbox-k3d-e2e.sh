@@ -1,0 +1,1043 @@
+#!/bin/bash
+#
+# Sandbox K3d E2E Testing Script
+#
+# Spins up a local K3d cluster, deploys sandbox infrastructure, and runs E2E tests.
+#
+# Prerequisites:
+#   - Docker installed and running
+#   - k3d installed (https://k3d.io)
+#   - kubectl installed
+#
+# Usage:
+#   ./sandbox-k3d-e2e.sh [command]
+#
+# Commands:
+#   setup     - Create K3d cluster and deploy infrastructure
+#   test      - Run sandbox E2E tests (assumes setup done)
+#   all       - Setup + test (default)
+#   cleanup   - Delete K3d cluster
+#   status    - Show cluster and pod status
+#   logs      - Show operator and API logs
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="${BASILICA_BACKEND_DIR:-$SCRIPT_DIR/../../../basilica-backend}"
+if [ -d "$BACKEND_DIR" ]; then
+    BACKEND_DIR="$(cd "$BACKEND_DIR" && pwd)"
+fi
+
+# Configuration
+CLUSTER_NAME="basilica-sandbox-test"
+REGISTRY_NAME="basilica-registry"
+REGISTRY_PORT="5050"
+API_PORT="${SANDBOX_API_PORT:-18082}"
+NAMESPACE="default"
+IMAGE_TAG_FILE="$SCRIPT_DIR/.sandbox-image-tag"
+ENABLE_LOCAL_SANDBOX_WEBHOOK="${ENABLE_LOCAL_SANDBOX_WEBHOOK:-true}"
+WEBHOOK_CERT_DIR="$SCRIPT_DIR/.webhook-certs"
+WEBHOOK_SECRET_NAME="sandbox-operator-webhook-tls"
+SANDBOX_SYSTEM_NAMESPACE="basilica-sandbox-system"
+
+if [ -n "${SANDBOX_IMAGE_TAG:-}" ]; then
+    IMAGE_TAG="$SANDBOX_IMAGE_TAG"
+else
+    IMAGE_TAG="$(date +%Y%m%d%H%M%S)"
+fi
+
+# Image names — push to localhost, deploy via k3d registry hostname
+PUSH_PREFIX="localhost:${REGISTRY_PORT}"
+DEPLOY_PREFIX="k3d-${REGISTRY_NAME}:${REGISTRY_PORT}"
+EXEC_AGENT_IMAGE="${PUSH_PREFIX}/basilica-exec-agent:${IMAGE_TAG}"
+OPERATOR_IMAGE="${PUSH_PREFIX}/basilica-sandbox-operator:${IMAGE_TAG}"
+API_IMAGE="${PUSH_PREFIX}/basilica-api:${IMAGE_TAG}"
+EXEC_AGENT_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-exec-agent:${IMAGE_TAG}"
+OPERATOR_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-sandbox-operator:${IMAGE_TAG}"
+API_DEPLOY_IMAGE="${DEPLOY_PREFIX}/basilica-api:${IMAGE_TAG}"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+NC='\033[0m' # No Color
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_step() { echo -e "${PURPLE}[STEP]${NC} $1"; }
+
+write_image_tag() {
+    printf '%s\n' "$IMAGE_TAG" > "$IMAGE_TAG_FILE"
+    log_info "Using sandbox image tag: $IMAGE_TAG"
+}
+
+generate_webhook_certs() {
+    mkdir -p "$WEBHOOK_CERT_DIR"
+
+    local ca_key="$WEBHOOK_CERT_DIR/ca.key"
+    local ca_crt="$WEBHOOK_CERT_DIR/ca.crt"
+    local tls_key="$WEBHOOK_CERT_DIR/tls.key"
+    local tls_csr="$WEBHOOK_CERT_DIR/tls.csr"
+    local tls_crt="$WEBHOOK_CERT_DIR/tls.crt"
+    local openssl_cfg="$WEBHOOK_CERT_DIR/openssl.cnf"
+
+    cat > "$openssl_cfg" <<'EOF'
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+CN = sandbox-operator-webhook.basilica-sandbox-system.svc
+
+[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = sandbox-operator-webhook
+DNS.2 = sandbox-operator-webhook.basilica-sandbox-system
+DNS.3 = sandbox-operator-webhook.basilica-sandbox-system.svc
+DNS.4 = sandbox-operator-webhook.basilica-sandbox-system.svc.cluster.local
+EOF
+
+    openssl genrsa -out "$ca_key" 2048 >/dev/null 2>&1
+    openssl req -x509 -new -nodes -key "$ca_key" \
+        -subj "/CN=Basilica Sandbox K3d CA" \
+        -days 365 \
+        -out "$ca_crt" >/dev/null 2>&1
+
+    openssl genrsa -out "$tls_key" 2048 >/dev/null 2>&1
+    openssl req -new -key "$tls_key" -out "$tls_csr" -config "$openssl_cfg" >/dev/null 2>&1
+    openssl x509 -req -in "$tls_csr" \
+        -CA "$ca_crt" -CAkey "$ca_key" -CAcreateserial \
+        -out "$tls_crt" -days 365 \
+        -extensions v3_req -extfile "$openssl_cfg" >/dev/null 2>&1
+}
+
+deploy_webhook_tls_secret() {
+    if [ "$ENABLE_LOCAL_SANDBOX_WEBHOOK" != "true" ]; then
+        return 0
+    fi
+
+    log_step "Generating local webhook TLS materials..."
+    kubectl create namespace "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+    generate_webhook_certs
+
+    kubectl create secret generic "$WEBHOOK_SECRET_NAME" \
+        -n "$SANDBOX_SYSTEM_NAMESPACE" \
+        --from-file=tls.crt="$WEBHOOK_CERT_DIR/tls.crt" \
+        --from-file=tls.key="$WEBHOOK_CERT_DIR/tls.key" \
+        --from-file=ca.crt="$WEBHOOK_CERT_DIR/ca.crt" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+    log_success "Webhook TLS secret applied"
+}
+
+# ============================================================================
+# Prerequisites
+# ============================================================================
+
+check_prerequisites() {
+    log_step "Checking prerequisites..."
+    
+    local missing=()
+    
+    # Check Docker
+    if ! command -v docker &>/dev/null; then
+        missing+=("docker")
+    elif ! docker info &>/dev/null; then
+        log_error "Docker is not running"
+        exit 1
+    fi
+    
+    # Check k3d
+    if ! command -v k3d &>/dev/null; then
+        missing+=("k3d")
+    fi
+    
+    # Check kubectl
+    if ! command -v kubectl &>/dev/null; then
+        missing+=("kubectl")
+    fi
+    
+    # Check curl
+    if ! command -v curl &>/dev/null; then
+        missing+=("curl")
+    fi
+    
+    # Check jq
+    if ! command -v jq &>/dev/null; then
+        missing+=("jq")
+    fi
+
+    if [ "$ENABLE_LOCAL_SANDBOX_WEBHOOK" = "true" ] && ! command -v openssl &>/dev/null; then
+        missing+=("openssl")
+    fi
+    
+    if [ ${#missing[@]} -ne 0 ]; then
+        log_error "Missing required tools: ${missing[*]}"
+        echo ""
+        echo "Install missing tools:"
+        for tool in "${missing[@]}"; do
+            case $tool in
+                docker) echo "  - Docker: https://docs.docker.com/get-docker/" ;;
+                k3d) echo "  - k3d: curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash" ;;
+                kubectl) echo "  - kubectl: https://kubernetes.io/docs/tasks/tools/" ;;
+                curl) echo "  - curl: apt-get install curl / brew install curl" ;;
+                jq) echo "  - jq: apt-get install jq / brew install jq" ;;
+            esac
+        done
+        exit 1
+    fi
+    
+    # Check if backend directory exists
+    if [ ! -d "$BACKEND_DIR" ]; then
+        log_error "Backend directory not found at $BACKEND_DIR"
+        log_error "Set BASILICA_BACKEND_DIR to your local basilica-backend checkout"
+        exit 1
+    fi
+    
+    log_success "All prerequisites satisfied"
+}
+
+# ============================================================================
+# K3d Cluster Management
+# ============================================================================
+
+cluster_exists() {
+    k3d cluster list 2>/dev/null | grep -q "$CLUSTER_NAME"
+}
+
+registry_exists() {
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -q "k3d-${REGISTRY_NAME}"
+}
+
+create_registry() {
+    if registry_exists; then
+        log_info "Registry already exists"
+        return 0
+    fi
+    
+    log_step "Creating local registry..."
+    k3d registry create "$REGISTRY_NAME" --port "$REGISTRY_PORT"
+    log_success "Registry created at localhost:${REGISTRY_PORT}"
+}
+
+create_cluster() {
+    if cluster_exists; then
+        log_info "Cluster '$CLUSTER_NAME' already exists"
+        k3d kubeconfig merge "$CLUSTER_NAME" --kubeconfig-switch-context
+        return 0
+    fi
+    
+    log_step "Creating K3d cluster '$CLUSTER_NAME'..."
+    
+    # Create cluster with registry
+    k3d cluster create "$CLUSTER_NAME" \
+        --registry-use "k3d-${REGISTRY_NAME}:${REGISTRY_PORT}" \
+        --port "${API_PORT}:80@loadbalancer" \
+        --agents 0 \
+        --servers 1 \
+        --wait \
+        --timeout 120s
+    
+    # Switch kubectl context
+    k3d kubeconfig merge "$CLUSTER_NAME" --kubeconfig-switch-context
+    
+    log_success "Cluster '$CLUSTER_NAME' created"
+    
+    # Wait for cluster to be ready
+    log_info "Waiting for cluster to be ready..."
+    kubectl wait --for=condition=Ready nodes --all --timeout=120s
+    
+    log_success "Cluster is ready"
+}
+
+delete_cluster() {
+    if cluster_exists; then
+        log_step "Deleting cluster '$CLUSTER_NAME'..."
+        k3d cluster delete "$CLUSTER_NAME"
+        log_success "Cluster deleted"
+    else
+        log_info "Cluster '$CLUSTER_NAME' does not exist"
+    fi
+}
+
+# ============================================================================
+# Image Building
+# ============================================================================
+
+build_exec_agent() {
+    log_step "Building exec-agent image..."
+
+    local dockerfile="$BACKEND_DIR/crates/basilica-exec-agent/Dockerfile"
+    local context="$BACKEND_DIR/crates/basilica-exec-agent"
+
+    if [ ! -f "$dockerfile" ]; then
+        log_error "Dockerfile not found at $dockerfile"
+        return 1
+    fi
+
+    docker build -t "$EXEC_AGENT_IMAGE" -f "$dockerfile" "$context"
+    docker push "$EXEC_AGENT_IMAGE"
+
+    log_success "exec-agent image built and pushed"
+}
+
+build_operator() {
+    log_step "Building sandbox operator image..."
+
+    local dockerfile="$BACKEND_DIR/scripts/sandbox-operator/Dockerfile"
+    local context="$BACKEND_DIR"
+
+    if [ ! -f "$dockerfile" ]; then
+        log_warn "Sandbox operator Dockerfile not found at $dockerfile"
+        log_info "Using a minimal sandbox operator image for testing..."
+
+        # Create a minimal sandbox operator image for testing
+        cat <<'DOCKERFILE' | docker build -t "$OPERATOR_IMAGE" -f - "$BACKEND_DIR"
+FROM rust:1.88-slim AS builder
+WORKDIR /app
+RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --release --package basilica-sandbox-operator
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/basilica-sandbox-operator /usr/local/bin/
+ENTRYPOINT ["/usr/local/bin/basilica-sandbox-operator"]
+DOCKERFILE
+        docker push "$OPERATOR_IMAGE"
+    else
+        docker build -t "$OPERATOR_IMAGE" -f "$dockerfile" "$context"
+        docker push "$OPERATOR_IMAGE"
+    fi
+
+    log_success "Sandbox operator image built and pushed"
+}
+
+build_api() {
+    log_step "Building real basilica-api image (dev mode)..."
+
+    # Build the real basilica-api binary. In K3d E2E testing, we deploy it with
+    # dev mode config (skip_bittensor=true, skip_auth=true) and a real PostgreSQL.
+    local dockerfile="$BACKEND_DIR/scripts/api/Dockerfile"
+    local context="$BACKEND_DIR"
+
+    if [ -f "$dockerfile" ]; then
+        docker build -t "$API_IMAGE" -f "$dockerfile" "$context"
+        docker push "$API_IMAGE"
+    else
+        log_info "scripts/api/Dockerfile not found, using inline Dockerfile..."
+
+        cat <<'DOCKERFILE' | docker build -t "$API_IMAGE" -f - "$BACKEND_DIR"
+FROM rust:1.88-bookworm AS builder
+RUN apt-get update && apt-get install -y pkg-config libssl-dev build-essential protobuf-compiler libfuse3-dev && rm -rf /var/lib/apt/lists/*
+RUN rustup component add rustfmt
+WORKDIR /workspace
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ ./crates/
+ENV CARGO_TARGET_DIR=/tmp/target
+ENV CARGO_INCREMENTAL=0
+RUN cargo build --release -p basilica-api
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
+RUN useradd -m -u 1000 basilica
+COPY --from=builder /tmp/target/release/basilica-api /usr/local/bin/basilica-api
+RUN chmod +x /usr/local/bin/basilica-api
+USER basilica
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/basilica-api"]
+DOCKERFILE
+        docker push "$API_IMAGE"
+    fi
+
+    log_success "Real basilica-api image built and pushed"
+}
+
+build_images() {
+    log_step "Building all images..."
+    write_image_tag
+
+    build_exec_agent
+    build_operator
+    build_api
+
+    log_success "All required images built"
+}
+
+# ============================================================================
+# Infrastructure Deployment
+# ============================================================================
+
+deploy_crds() {
+    log_step "Deploying CRDs..."
+
+    local crd_file="$BACKEND_DIR/orchestrator/k8s/crds/basilica-sandbox.yaml"
+    local warmpool_crd="$BACKEND_DIR/orchestrator/k8s/crds/basilica-warmpool.yaml"
+
+    if [ -f "$crd_file" ]; then
+        kubectl apply -f "$crd_file"
+        log_success "Sandbox CRD applied from $crd_file"
+    else
+        log_warn "CRD file not found at $crd_file"
+        log_info "Generating CRD from operator..."
+        
+        # Apply inline CRD matching the new contract
+        kubectl apply -f - <<'EOF'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: basilicasandboxes.basilica.ai
+spec:
+  group: basilica.ai
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["userId", "sandboxId", "image"]
+              properties:
+                userId:
+                  type: string
+                sandboxId:
+                  type: string
+                image:
+                  type: string
+                cpu:
+                  type: string
+                memory:
+                  type: string
+                env:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                ttlSeconds:
+                  type: integer
+                networkIsolation:
+                  type: string
+                  enum: ["Egress", "Full"]
+            status:
+              type: object
+              properties:
+                state:
+                  type: string
+                sandboxId:
+                  type: string
+                domain:
+                  type: string
+                podName:
+                  type: string
+                createdAt:
+                  type: string
+                message:
+                  type: string
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: State
+          type: string
+          jsonPath: .status.state
+        - name: Image
+          type: string
+          jsonPath: .spec.image
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+  scope: Namespaced
+  names:
+    plural: basilicasandboxes
+    singular: basilicasandbox
+    kind: BasilicaSandbox
+    shortNames:
+      - bsb
+      - sandbox
+EOF
+        log_success "Sandbox CRD applied inline"
+    fi
+
+    # Also apply the warm pool CRD (operator watches both)
+    if [ -f "$warmpool_crd" ]; then
+        kubectl apply -f "$warmpool_crd"
+        log_success "WarmPool CRD applied from $warmpool_crd"
+    else
+        log_warn "WarmPool CRD not found, applying inline..."
+        kubectl apply -f - <<'EOF'
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: basilicawarmpools.basilica.ai
+spec:
+  group: basilica.ai
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["image", "poolSize"]
+              properties:
+                image:
+                  type: string
+                poolSize:
+                  type: integer
+                cpu:
+                  type: string
+                memory:
+                  type: string
+                namespace:
+                  type: string
+            status:
+              type: object
+              properties:
+                readyCount:
+                  type: integer
+                creatingCount:
+                  type: integer
+                lastReconciled:
+                  type: string
+      subresources:
+        status: {}
+  scope: Namespaced
+  names:
+    plural: basilicawarmpools
+    singular: basilicawarmpool
+    kind: BasilicaWarmPool
+    shortNames:
+      - bwp
+EOF
+        log_success "WarmPool CRD applied inline"
+    fi
+}
+
+deploy_rbac() {
+    log_step "Deploying RBAC..."
+    
+    local rbac_file="$BACKEND_DIR/orchestrator/k8s/local/sandbox-rbac.yaml"
+    local operator_rbac="$BACKEND_DIR/orchestrator/k8s/sandbox/rbac-template.yaml"
+    local namespace_file="$BACKEND_DIR/orchestrator/k8s/local/namespace.yaml"
+
+    if [ -f "$namespace_file" ]; then
+        kubectl apply -f "$namespace_file"
+    fi
+    
+    if [ -f "$rbac_file" ]; then
+        kubectl apply -f "$rbac_file"
+        log_success "Sandbox RBAC applied"
+    else
+        log_warn "Sandbox RBAC file not found, applying minimal RBAC..."
+        kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: basilica-sandbox
+  namespace: default
+EOF
+    fi
+    
+    if [ -f "$operator_rbac" ]; then
+        # Create operator namespace and service account first
+        kubectl create namespace "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create serviceaccount basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f "$operator_rbac"
+        log_success "Operator RBAC applied"
+    fi
+}
+
+deploy_network_policies() {
+    log_step "Deploying NetworkPolicies..."
+    
+    local netpol_file="$BACKEND_DIR/orchestrator/k8s/local/network-policies.yaml"
+    
+    if [ -f "$netpol_file" ]; then
+        kubectl apply -f "$netpol_file"
+        log_success "NetworkPolicies applied"
+    else
+        log_warn "NetworkPolicies file not found, skipping..."
+    fi
+}
+
+deploy_validating_webhook() {
+    local webhook_file="$BACKEND_DIR/orchestrator/k8s/sandbox/validating-webhook.yaml"
+
+    if [ "$ENABLE_LOCAL_SANDBOX_WEBHOOK" != "true" ]; then
+        log_info "Skipping local validating webhook deployment"
+        return 0
+    fi
+
+    if [ ! -f "$webhook_file" ]; then
+        log_warn "Validating webhook manifest not found at $webhook_file"
+        return 0
+    fi
+
+    log_step "Deploying validating webhook..."
+    local ca_bundle
+    ca_bundle="$(base64 -w0 < "$WEBHOOK_CERT_DIR/ca.crt")"
+    awk -v ca="$ca_bundle" '
+            /cert-manager.io\/inject-ca-from/ { next }
+            { print }
+            /port: 9443/ { print "      caBundle: " ca }
+        ' "$webhook_file" | kubectl apply -f -
+    log_success "Validating webhook applied"
+}
+
+deploy_operator() {
+    log_step "Deploying sandbox operator..."
+
+    local deploy_file="$SCRIPT_DIR/k3d-manifests/operator-deploy.yaml"
+
+    if [ -f "$deploy_file" ]; then
+        sed \
+            -e "s|k3d-basilica-registry:5050/basilica-sandbox-operator:latest|${OPERATOR_DEPLOY_IMAGE}|g" \
+            -e "s|k3d-basilica-registry:5050/basilica-exec-agent:latest|${EXEC_AGENT_DEPLOY_IMAGE}|g" \
+            "$deploy_file" | kubectl apply -f -
+    else
+        log_info "Using inline sandbox operator deployment..."
+        kubectl create namespace "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create serviceaccount basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f - <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basilica-sandbox-operator
+  namespace: ${SANDBOX_SYSTEM_NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: basilica-sandbox-operator
+  template:
+    metadata:
+      labels:
+        app: basilica-sandbox-operator
+    spec:
+      serviceAccountName: basilica-sandbox-operator
+      containers:
+      - name: operator
+        image: ${OPERATOR_DEPLOY_IMAGE}
+        imagePullPolicy: Always
+        args:
+        - "--exec-agent-image"
+        - "${EXEC_AGENT_DEPLOY_IMAGE}"
+        env:
+        - name: RUST_LOG
+          value: info
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+EOF
+    fi
+
+    log_success "Sandbox operator deployed"
+}
+
+deploy_postgres() {
+    log_step "Deploying PostgreSQL..."
+
+    # Deploy Postgres in basilica-system namespace (required by real basilica-api)
+    local postgres_yaml="$BACKEND_DIR/orchestrator/k8s/local/postgres.yaml"
+
+    if [ -f "$postgres_yaml" ]; then
+        # Ensure basilica-system namespace exists
+        kubectl create namespace basilica-system --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f "$postgres_yaml"
+    else
+        log_info "Using inline PostgreSQL deployment..."
+        kubectl create namespace basilica-system --dry-run=client -o yaml | kubectl apply -f -
+        kubectl apply -f - <<'EOF'
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: basilica-system
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: basilica-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_USER
+              value: api
+            - name: POSTGRES_PASSWORD
+              value: api_dev_password
+            - name: POSTGRES_DB
+              value: basilica_api
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "api"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+EOF
+    fi
+
+    # Wait for Postgres to be ready before deploying API
+    log_info "Waiting for PostgreSQL to be ready..."
+    kubectl rollout status deployment/postgres -n basilica-system --timeout=120s || {
+        log_error "PostgreSQL deployment failed"
+        return 1
+    }
+
+    log_success "PostgreSQL deployed and ready"
+}
+
+deploy_api() {
+    log_step "Deploying real basilica-api in dev mode..."
+
+    # Deploy PostgreSQL first (required by real API)
+    deploy_postgres
+
+    local deploy_file="$SCRIPT_DIR/k3d-manifests/api-deploy.yaml"
+
+    if [ -f "$deploy_file" ]; then
+        # Apply the manifest with image substitution
+        sed \
+            -e "s|k3d-basilica-registry:5050/basilica-api:latest|${API_DEPLOY_IMAGE}|g" \
+            -e "s|k3d-basilica-registry:5050/basilica-exec-agent:latest|${EXEC_AGENT_DEPLOY_IMAGE}|g" \
+            "$deploy_file" | kubectl apply -f -
+    else
+        log_error "api-deploy.yaml not found at $deploy_file"
+        return 1
+    fi
+
+    log_success "API deployed"
+}
+
+deploy_infrastructure() {
+    log_step "Deploying all infrastructure..."
+
+    deploy_crds
+    deploy_rbac
+    deploy_network_policies
+    deploy_webhook_tls_secret
+    deploy_operator
+    deploy_validating_webhook
+    deploy_api
+    wait_for_deployments
+
+    log_success "Infrastructure deployed"
+}
+
+wait_for_deployments() {
+    log_step "Waiting for deployments to be ready..."
+
+    # Wait for sandbox operator
+    if kubectl get deployment basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" &>/dev/null; then
+        log_info "Waiting for sandbox-operator rollout..."
+        if ! kubectl rollout status deployment/basilica-sandbox-operator -n "$SANDBOX_SYSTEM_NAMESPACE" --timeout=180s; then
+            log_error "Sandbox operator deployment failed to become ready"
+            kubectl logs -n "$SANDBOX_SYSTEM_NAMESPACE" -l app=basilica-sandbox-operator --tail=20 2>/dev/null
+            return 1
+        fi
+        log_success "Sandbox operator is ready"
+    fi
+
+    # Wait for API
+    if kubectl get deployment basilica-api -n default &>/dev/null; then
+        log_info "Waiting for API rollout..."
+        if ! kubectl rollout status deployment/basilica-api -n default --timeout=180s; then
+            log_error "API deployment failed to become ready"
+            kubectl logs -n default -l app=basilica-api --tail=20 2>/dev/null
+            return 1
+        fi
+        log_success "API is ready"
+    fi
+
+    log_success "All deployments ready"
+}
+
+# ============================================================================
+# Testing
+# ============================================================================
+
+run_e2e_tests() {
+    log_step "Running E2E tests..."
+
+    local e2e_script="$SCRIPT_DIR/sandbox-e2e.sh"
+
+    if [ -f "$e2e_script" ]; then
+        # Set environment for E2E script
+        export BASILICA_API_URL="http://localhost:${API_PORT}"
+        export NAMESPACE="$NAMESPACE"
+        # Use the exec-agent image as the sandbox image for K3d testing
+        export SANDBOX_IMAGE="${EXEC_AGENT_DEPLOY_IMAGE}"
+
+        # Run full API + data-plane tests (the real architecture path)
+        bash "$e2e_script" all
+    else
+        log_warn "E2E script not found at $e2e_script"
+        log_info "Running manual sandbox test..."
+        run_manual_sandbox_test
+    fi
+}
+
+run_api_tests() {
+    log_step "Running API-based E2E tests..."
+
+    local e2e_script="$SCRIPT_DIR/sandbox-e2e.sh"
+
+    if [ -f "$e2e_script" ]; then
+        # Set environment for E2E script
+        export BASILICA_API_URL="http://localhost:${API_PORT}"
+        export NAMESPACE="$NAMESPACE"
+        export SANDBOX_IMAGE="${EXEC_AGENT_DEPLOY_IMAGE}"
+
+        # Run full API tests
+        bash "$e2e_script" all
+    else
+        log_error "E2E script not found at $e2e_script"
+        exit 1
+    fi
+}
+
+run_manual_sandbox_test() {
+    log_step "Running manual sandbox test..."
+    
+    # Create a test sandbox directly via kubectl
+    local sandbox_name="test-sandbox-$(date +%s)"
+    
+    log_info "Creating sandbox: $sandbox_name"
+    
+    kubectl apply -f - <<EOF
+apiVersion: basilica.ai/v1
+kind: BasilicaSandbox
+metadata:
+  name: ${sandbox_name}
+  namespace: ${NAMESPACE}
+spec:
+  userId: "test-user"
+  sandboxId: "${sandbox_name}"
+  image: "basilica/sandbox-python:latest"
+  cpu: "500m"
+  memory: "512Mi"
+  ttlSeconds: 300
+  networkIsolation: Egress
+EOF
+    
+    log_success "Sandbox created: $sandbox_name"
+    
+    # Wait for sandbox
+    log_info "Waiting for sandbox to be ready..."
+    sleep 5
+    
+    # Check status
+    kubectl get basilicasandbox "$sandbox_name" -n "$NAMESPACE" -o yaml
+    
+    # Cleanup
+    log_info "Cleaning up test sandbox..."
+    kubectl delete basilicasandbox "$sandbox_name" -n "$NAMESPACE" --ignore-not-found
+    
+    log_success "Manual sandbox test completed"
+}
+
+# ============================================================================
+# Status and Logs
+# ============================================================================
+
+show_status() {
+    log_step "Cluster Status"
+    echo ""
+    
+    echo "=== K3d Clusters ==="
+    k3d cluster list
+    echo ""
+    
+    echo "=== Nodes ==="
+    kubectl get nodes -o wide 2>/dev/null || echo "No nodes (cluster not running?)"
+    echo ""
+    
+    echo "=== Namespaces ==="
+    kubectl get namespaces 2>/dev/null || echo "Cannot get namespaces"
+    echo ""
+    
+    echo "=== CRDs ==="
+    kubectl get crd 2>/dev/null | grep -E "NAME|basilica" || echo "No Basilica CRDs"
+    echo ""
+    
+    echo "=== Pods (all namespaces) ==="
+    kubectl get pods -A 2>/dev/null || echo "Cannot get pods"
+    echo ""
+    
+    echo "=== Sandboxes ==="
+    kubectl get basilicasandbox -A 2>/dev/null || echo "No sandboxes or CRD not installed"
+    echo ""
+    
+    echo "=== Services ==="
+    kubectl get svc -A 2>/dev/null | grep -E "NAME|basilica" || echo "No Basilica services"
+}
+
+show_logs() {
+    log_step "Showing logs..."
+    
+    echo "=== Sandbox Operator Logs ==="
+    kubectl logs -n "$SANDBOX_SYSTEM_NAMESPACE" -l app=basilica-sandbox-operator --tail=50 2>/dev/null || echo "No operator logs"
+    echo ""
+    
+    echo "=== API Logs ==="
+    kubectl logs -n default -l app=basilica-api --tail=50 2>/dev/null || echo "No API logs"
+}
+
+# ============================================================================
+# Cleanup
+# ============================================================================
+
+cleanup() {
+    log_step "Cleaning up..."
+    
+    # Delete sandboxes first
+    kubectl delete basilicasandbox --all -n "$NAMESPACE" --ignore-not-found 2>/dev/null || true
+    
+    # Delete cluster
+    delete_cluster
+    
+    log_success "Cleanup completed"
+}
+
+# ============================================================================
+# Main Setup
+# ============================================================================
+
+setup() {
+    log_step "Setting up sandbox testing environment..."
+    
+    check_prerequisites
+    create_registry
+    create_cluster
+    build_images
+    deploy_infrastructure
+    
+    log_success "Setup completed!"
+    echo ""
+    show_status
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+main() {
+    case "${1:-all}" in
+        "prereq"|"prerequisites")
+            check_prerequisites
+            ;;
+        "cluster")
+            check_prerequisites
+            create_registry
+            create_cluster
+            ;;
+        "build")
+            check_prerequisites
+            build_images
+            ;;
+        "deploy")
+            deploy_infrastructure
+            ;;
+        "setup")
+            setup
+            ;;
+        "test")
+            run_e2e_tests
+            ;;
+        "api-test")
+            run_api_tests
+            ;;
+        "manual-test")
+            run_manual_sandbox_test
+            ;;
+        "sdk-test")
+            "$SCRIPT_DIR/sdk-k3d-test.sh" all
+            ;;
+        "all")
+            setup
+            echo ""
+            run_api_tests
+            ;;
+        "status")
+            show_status
+            ;;
+        "logs")
+            show_logs
+            ;;
+        "cleanup")
+            cleanup
+            ;;
+        "help"|"-h"|"--help")
+            echo "Sandbox K3d E2E Testing Script"
+            echo ""
+            echo "Usage: $0 [command]"
+            echo ""
+            echo "Commands:"
+            echo "  prereq       - Check prerequisites only"
+            echo "  cluster      - Create K3d cluster and registry"
+            echo "  build        - Build Docker images"
+            echo "  deploy       - Deploy infrastructure to cluster"
+            echo "  setup        - Full setup (cluster + build + deploy)"
+            echo "  test         - Run kubectl-based E2E tests (no API required)"
+            echo "  api-test     - Run full API-based E2E tests (requires API)"
+            echo "  manual-test  - Run quick manual sandbox test via kubectl"
+            echo "  sdk-test     - Run Rust + Python SDK integration tests"
+            echo "  all          - Setup + test (default)"
+            echo "  status       - Show cluster and pod status"
+            echo "  logs         - Show operator and API logs"
+            echo "  cleanup      - Delete K3d cluster"
+            echo "  help         - Show this help"
+            ;;
+        *)
+            log_error "Unknown command: $1"
+            echo "Run '$0 help' for usage"
+            exit 1
+            ;;
+    esac
+}
+
+# Handle Ctrl+C gracefully
+trap 'echo ""; log_warn "Interrupted"; exit 130' INT
+
+main "$@"
+

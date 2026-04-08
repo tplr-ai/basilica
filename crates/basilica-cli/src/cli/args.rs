@@ -54,6 +54,14 @@ AUTH TOKEN MANAGEMENT:
 FUND MANAGEMENT:
   basilica fund                     # Show deposit address
   basilica fund list --limit 100    # List deposits
+
+SANDBOX FILES:
+  basilica sandbox files <id> /tmp                  # `ls` is reserved by `sandbox list`
+  basilica sandbox read <id> /tmp/app.py            # Or: `cat`
+  basilica sandbox write <id> /tmp/app.py --file app.py   # Or: `tee`
+  basilica sandbox remove <id> /tmp/app.py          # `rm` is reserved by `sandbox delete`
+  basilica sandbox mkdir <id> /tmp/work             # Same as shell
+  basilica sandbox stat <id> /tmp/work              # Same as shell
 "
 )]
 pub struct Args {
@@ -329,6 +337,195 @@ impl Args {
                             &client,
                             volume.clone(),
                             *yes,
+                            self.json,
+                        )
+                        .await?;
+                    }
+                }
+            }
+
+            // Sandbox management
+            Commands::Sandbox { action } => {
+                use crate::cli::commands::SandboxAction;
+                use crate::client::create_client;
+
+                let client = create_client(config).await?;
+
+                match action {
+                    SandboxAction::Create {
+                        image,
+                        cpu,
+                        memory,
+                        ttl,
+                        network_isolation,
+                        env,
+                    } => {
+                        handlers::sandbox::handle_create_sandbox(
+                            &client,
+                            image.clone(),
+                            cpu.clone(),
+                            memory.clone(),
+                            *ttl,
+                            network_isolation.clone(),
+                            env.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::List => {
+                        handlers::sandbox::handle_list_sandboxes(&client, self.json).await?;
+                    }
+                    SandboxAction::Get { sandbox_id } => {
+                        handlers::sandbox::handle_get_sandbox(&client, sandbox_id.clone(), self.json)
+                            .await?;
+                    }
+                    SandboxAction::RotateSecret { sandbox_id } => {
+                        handlers::sandbox::handle_rotate_sandbox_secret(
+                            &client,
+                            sandbox_id.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::Delete { sandbox_id } => {
+                        handlers::sandbox::handle_delete_sandbox(&client, sandbox_id.clone())
+                            .await?;
+                    }
+                    SandboxAction::Exec {
+                        sandbox_id,
+                        command,
+                    } => {
+                        handlers::sandbox::handle_exec_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            command.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::Run {
+                        sandbox_id,
+                        file,
+                        code,
+                    } => {
+                        handlers::sandbox::handle_run_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            file.clone(),
+                            code.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::ReadFile { sandbox_id, path } => {
+                        handlers::sandbox::handle_read_sandbox_file(
+                            &client,
+                            sandbox_id.clone(),
+                            path.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::WriteFile {
+                        sandbox_id,
+                        path,
+                        file,
+                        content,
+                    } => {
+                        handlers::sandbox::handle_write_sandbox_file(
+                            &client,
+                            sandbox_id.clone(),
+                            path.clone(),
+                            file.clone(),
+                            content.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::ListFiles { sandbox_id, path } => {
+                        handlers::sandbox::handle_list_sandbox_files(
+                            &client,
+                            sandbox_id.clone(),
+                            path.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::DeleteFile { sandbox_id, path } => {
+                        handlers::sandbox::handle_delete_sandbox_file(
+                            &client,
+                            sandbox_id.clone(),
+                            path.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::Mkdir {
+                        sandbox_id,
+                        path,
+                        recursive,
+                    } => {
+                        handlers::sandbox::handle_mkdir_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            path.clone(),
+                            *recursive,
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::Stat { sandbox_id, path } => {
+                        handlers::sandbox::handle_stat_sandbox_file(
+                            &client,
+                            sandbox_id.clone(),
+                            path.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::SnapshotCreate { sandbox_id, path } => {
+                        handlers::sandbox::handle_snapshot_create_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            path.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::SnapshotUpload {
+                        sandbox_id,
+                        snapshot_id,
+                        presigned_url,
+                    } => {
+                        handlers::sandbox::handle_snapshot_upload_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            snapshot_id.clone(),
+                            presigned_url.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::SnapshotStatus { sandbox_id } => {
+                        handlers::sandbox::handle_snapshot_status_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::SnapshotRestore {
+                        sandbox_id,
+                        snapshot_id,
+                        presigned_url,
+                        path,
+                    } => {
+                        handlers::sandbox::handle_snapshot_restore_sandbox(
+                            &client,
+                            sandbox_id.clone(),
+                            snapshot_id.clone(),
+                            presigned_url.clone(),
+                            path.clone(),
                             self.json,
                         )
                         .await?;

@@ -661,6 +661,9 @@ impl BasilicaClient {
     ///     queue_name: None,
     ///     suspended: false,
     ///     priority: None,
+    ///     websocket: None,
+    ///     topology_spread: None,
+    ///     public_metadata: false,
     /// };
     ///
     /// let deployment = client.create_deployment(request).await?;
@@ -1256,6 +1259,58 @@ impl BasilicaClient {
             urlencoding::encode(instance_name)
         );
         self.get_public(&path).await
+    }
+
+    // ===== Sandboxes =====
+
+    /// Create a new sandbox.
+    ///
+    /// Control-plane only: creates the sandbox CRD via the API.
+    /// Data-plane operations go directly to the sandbox domain.
+    pub async fn create_sandbox(
+        &self,
+        request: crate::sandbox::CreateSandboxRequest,
+    ) -> Result<crate::sandbox::Sandbox> {
+        let resp: crate::sandbox::CreateSandboxResponse = self.post("/sandboxes", &request).await?;
+        Ok(resp.into())
+    }
+
+    /// List all sandboxes for the authenticated user.
+    pub async fn list_sandboxes(&self) -> Result<crate::sandbox::SandboxListResponse> {
+        self.get("/sandboxes").await
+    }
+
+    /// Get details of a specific sandbox.
+    pub async fn get_sandbox(&self, sandbox_id: &str) -> Result<crate::sandbox::SandboxDetail> {
+        let path = format!("/sandboxes/{sandbox_id}");
+        self.get(&path).await
+    }
+
+    /// Rotate the exec-agent secret for a sandbox.
+    pub async fn rotate_sandbox_secret(
+        &self,
+        sandbox_id: &str,
+    ) -> Result<crate::sandbox::RotateSandboxSecretResponse> {
+        let path = format!("/sandboxes/{sandbox_id}/secret");
+        self.post_empty(&path).await
+    }
+
+    /// Delete a sandbox.
+    pub async fn delete_sandbox(&self, sandbox_id: &str) -> Result<()> {
+        let path = format!("/sandboxes/{sandbox_id}");
+        let response = self.delete_empty(&path).await?;
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let err = self
+                .handle_error_response::<serde_json::Value>(response)
+                .await
+                .err()
+                .unwrap_or(ApiError::Internal {
+                    message: "Unknown error".into(),
+                });
+            Err(err)
+        }
     }
 
     // ===== Private Helper Methods =====
@@ -2404,5 +2459,323 @@ mod tests {
 
         let response = client.create_deployment(request).await.unwrap();
         assert!(response.public_metadata);
+    }
+
+    // ===== Sandbox control-plane integration tests (G12) =====
+
+    #[tokio::test]
+    async fn test_create_sandbox() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/sandboxes"))
+            .and(header("Authorization", "Bearer test-token"))
+            .and(body_json(json!({
+                "image": "python:3.12-slim",
+                "cpu": "2",
+                "memory": "4Gi",
+                "env": [{"name": "DEBUG", "value": "1"}],
+                "ttlSeconds": 3600
+            })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "sandboxId": "sb-a1b2c3d4",
+                "domain": "sb-a1b2c3d4.sandboxes.basilica.ai",
+                "status": "Pending",
+                "execAgentSecret": "secret-xyz-789"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let request = crate::sandbox::CreateSandboxRequest {
+            image: "python:3.12-slim".to_string(),
+            cpu: Some("2".to_string()),
+            memory: Some("4Gi".to_string()),
+            env: vec![crate::sandbox::SandboxEnvVar {
+                name: "DEBUG".to_string(),
+                value: "1".to_string(),
+            }],
+            ttl_seconds: Some(3600),
+            network_isolation: None,
+        };
+
+        let sandbox = client.create_sandbox(request).await.unwrap();
+
+        assert_eq!(sandbox.sandbox_id, "sb-a1b2c3d4");
+        assert_eq!(sandbox.domain, "sb-a1b2c3d4.sandboxes.basilica.ai");
+        assert_eq!(sandbox.status, "Pending");
+    }
+
+    #[tokio::test]
+    async fn test_create_sandbox_minimal() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/sandboxes"))
+            .and(header("Authorization", "Bearer test-token"))
+            .and(body_json(json!({
+                "image": "node:20-slim"
+            })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "sandboxId": "sb-minimal-01",
+                "domain": "sb-minimal-01.sandboxes.basilica.ai",
+                "status": "Pending",
+                "execAgentSecret": "secret-min-001"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let request = crate::sandbox::CreateSandboxRequest {
+            image: "node:20-slim".to_string(),
+            cpu: None,
+            memory: None,
+            env: vec![],
+            ttl_seconds: None,
+            network_isolation: None,
+        };
+
+        let sandbox = client.create_sandbox(request).await.unwrap();
+
+        assert_eq!(sandbox.sandbox_id, "sb-minimal-01");
+        assert_eq!(sandbox.domain, "sb-minimal-01.sandboxes.basilica.ai");
+    }
+
+    #[tokio::test]
+    async fn test_list_sandboxes() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/sandboxes"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "sandboxes": [
+                    {
+                        "sandboxId": "sb-a1b2c3d4",
+                        "image": "python:3.12-slim",
+                        "status": "Running",
+                        "domain": "sb-a1b2c3d4.sandboxes.basilica.ai",
+                        "createdAt": "2026-03-30T10:00:00Z"
+                    },
+                    {
+                        "sandboxId": "sb-e5f6g7h8",
+                        "image": "node:20-slim",
+                        "status": "Pending",
+                        "domain": null,
+                        "createdAt": "2026-03-30T11:00:00Z"
+                    }
+                ]
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.list_sandboxes().await.unwrap();
+
+        assert_eq!(response.sandboxes.len(), 2);
+        assert_eq!(response.sandboxes[0].sandbox_id, "sb-a1b2c3d4");
+        assert_eq!(response.sandboxes[0].image, "python:3.12-slim");
+        assert_eq!(response.sandboxes[0].status, "Running");
+        assert_eq!(
+            response.sandboxes[0].domain.as_deref(),
+            Some("sb-a1b2c3d4.sandboxes.basilica.ai")
+        );
+        assert_eq!(response.sandboxes[1].sandbox_id, "sb-e5f6g7h8");
+        assert_eq!(response.sandboxes[1].status, "Pending");
+        assert!(response.sandboxes[1].domain.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_sandboxes_empty() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/sandboxes"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "sandboxes": []
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.list_sandboxes().await.unwrap();
+
+        assert!(response.sandboxes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_sandbox() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/sandboxes/sb-a1b2c3d4"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "sandboxId": "sb-a1b2c3d4",
+                "image": "python:3.12-slim",
+                "cpu": "2",
+                "memory": "4Gi",
+                "status": "Running",
+                "domain": "sb-a1b2c3d4.sandboxes.basilica.ai",
+                "createdAt": "2026-03-30T10:00:00Z"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let detail = client.get_sandbox("sb-a1b2c3d4").await.unwrap();
+
+        assert_eq!(detail.sandbox_id, "sb-a1b2c3d4");
+        assert_eq!(detail.image, "python:3.12-slim");
+        assert_eq!(detail.cpu, "2");
+        assert_eq!(detail.memory, "4Gi");
+        assert_eq!(detail.status, "Running");
+        assert_eq!(
+            detail.domain.as_deref(),
+            Some("sb-a1b2c3d4.sandboxes.basilica.ai")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_sandbox_not_found() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/sandboxes/sb-nonexistent"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+                "error": {
+                    "code": "BASILICA_API_NOT_FOUND",
+                    "message": "Sandbox not found",
+                    "timestamp": "2026-03-30T10:00:00Z",
+                    "retryable": false
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let result = client.get_sandbox("sb-nonexistent").await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_delete_sandbox() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/sandboxes/sb-a1b2c3d4"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let result = client.delete_sandbox("sb-a1b2c3d4").await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_delete_sandbox_not_found() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("DELETE"))
+            .and(path("/sandboxes/sb-nonexistent"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({
+                "error": {
+                    "code": "BASILICA_API_NOT_FOUND",
+                    "message": "Sandbox not found",
+                    "timestamp": "2026-03-30T10:00:00Z",
+                    "retryable": false
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let result = client.delete_sandbox("sb-nonexistent").await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_create_sandbox_rate_limited() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/sandboxes"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(429).set_body_json(json!({
+                "error": {
+                    "code": "BASILICA_API_RATE_LIMIT",
+                    "message": "Sandbox creation rate limit exceeded",
+                    "timestamp": "2026-03-30T10:00:00Z",
+                    "retryable": true
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let request = crate::sandbox::CreateSandboxRequest {
+            image: "python:3.12-slim".to_string(),
+            cpu: None,
+            memory: None,
+            env: vec![],
+            ttl_seconds: None,
+            network_isolation: None,
+        };
+
+        let result = client.create_sandbox(request).await;
+
+        assert!(result.is_err());
     }
 }

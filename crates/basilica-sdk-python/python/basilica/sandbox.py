@@ -1,0 +1,403 @@
+"""Sandbox SDK module.
+
+Provides control-plane operations (create, list, get, delete) via the API,
+and data-plane connectivity directly to sandbox domains.
+
+Architecture:
+    Control plane: SDK -> basilica-api -> BasilicaSandbox CRD
+    Data plane:    SDK -> <sandbox-id>.sandboxes.basilica.ai (direct)
+
+H1: The API is control-plane only. No exec/ws/file relay through the API.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
+
+try:
+    import urllib.request
+    import urllib.error
+
+    _HAS_URLLIB = True
+except ImportError:
+    _HAS_URLLIB = False
+
+
+@dataclass
+class SandboxEnvVar:
+    """An environment variable to set in the sandbox."""
+
+    name: str
+    value: str
+
+
+@dataclass
+class CreateSandboxRequest:
+    """Request to create a new sandbox."""
+
+    image: str
+    cpu: Optional[str] = None
+    memory: Optional[str] = None
+    env: List[SandboxEnvVar] = field(default_factory=list)
+    ttl_seconds: Optional[int] = None
+    network_isolation: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {"image": self.image}
+        if self.cpu is not None:
+            d["cpu"] = self.cpu
+        if self.memory is not None:
+            d["memory"] = self.memory
+        if self.env:
+            d["env"] = [{"name": e.name, "value": e.value} for e in self.env]
+        if self.ttl_seconds is not None:
+            d["ttlSeconds"] = self.ttl_seconds
+        if self.network_isolation is not None:
+            d["networkIsolation"] = self.network_isolation
+        return d
+
+
+@dataclass
+class Sandbox:
+    """A sandbox handle returned after creation.
+
+    Provides the sandbox domain for direct data-plane access.
+    Data-plane traffic goes directly to the sandbox domain, NOT through the API.
+    """
+
+    sandbox_id: str
+    domain: str
+    status: str
+    exec_agent_secret: Optional[str] = None
+    _data_plane_base_url: Optional[str] = field(default=None, repr=False)
+
+    def with_data_plane_url(self, url: str) -> "Sandbox":
+        """Override the data-plane base URL (e.g. for K3d port-forward testing)."""
+        self._data_plane_base_url = url
+        return self
+
+    def _resolve_data_plane_base(self) -> str:
+        return self._data_plane_base_url or f"https://{self.domain}"
+
+    @property
+    def data_plane_url(self) -> str:
+        """Base URL for data-plane operations."""
+        return self._resolve_data_plane_base()
+
+    @property
+    def ws_url(self) -> str:
+        """WebSocket URL for terminal access."""
+        base = self._resolve_data_plane_base()
+        if base.startswith("https://"):
+            return f"wss://{base.removeprefix('https://')}/ws"
+        if base.startswith("http://"):
+            return f"ws://{base.removeprefix('http://')}/ws"
+        return f"{base}/ws"
+
+    @property
+    def exec_url(self) -> str:
+        """Exec endpoint URL."""
+        return f"{self._resolve_data_plane_base()}/exec"
+
+    def exec(self, command: List[str]) -> Dict[str, Any]:
+        """Execute a command in the sandbox via data-plane.
+
+        Args:
+            command: Command and arguments to execute.
+
+        Returns:
+            dict with stdout, stderr, exitCode.
+        """
+        return self._data_plane_post("/exec", {"command": command})
+
+    def run(self, code: str, language: Optional[str] = None) -> Dict[str, Any]:
+        """Run code in the sandbox via data-plane.
+
+        Args:
+            code: Source code to execute.
+            language: Optional language hint.
+
+        Returns:
+            dict with stdout, stderr, exitCode.
+        """
+        body: Dict[str, Any] = {"code": code}
+        if language:
+            body["language"] = language
+        return self._data_plane_post("/run", body)
+
+    @property
+    def files(self) -> "SandboxFiles":
+        """Get file operations handle."""
+        return SandboxFiles(self)
+
+    def _data_plane_post(self, path: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Make an authenticated POST to the sandbox data-plane."""
+        if not self.exec_agent_secret:
+            raise RuntimeError(
+                "exec_agent_secret not available — sandbox was not created through this SDK"
+            )
+
+        base = self._resolve_data_plane_base()
+        url = f"{base}{path}"
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.exec_agent_secret}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode("utf-8") if e.fp else ""
+            raise RuntimeError(
+                f"Data-plane request failed ({e.code}): {body_text}"
+            ) from e
+
+    def _data_plane_get(self, path: str) -> Dict[str, Any]:
+        """Make an authenticated GET to the sandbox data-plane."""
+        if not self.exec_agent_secret:
+            raise RuntimeError(
+                "exec_agent_secret not available — sandbox was not created through this SDK"
+            )
+
+        base = self._resolve_data_plane_base()
+        url = f"{base}{path}"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {self.exec_agent_secret}",
+            },
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            body_text = e.read().decode("utf-8") if e.fp else ""
+            raise RuntimeError(
+                f"Data-plane request failed ({e.code}): {body_text}"
+            ) from e
+
+    def snapshot_create(self, path: Optional[str] = None) -> Dict[str, Any]:
+        """Create a filesystem snapshot of the sandbox."""
+        body: Dict[str, Any] = {}
+        if path is not None:
+            body["path"] = path
+        return self._data_plane_post("/snapshot/create", body)
+
+    def snapshot_upload(self, snapshot_id: str, presigned_url: str) -> Dict[str, Any]:
+        """Upload a snapshot archive to object storage via presigned URL."""
+        return self._data_plane_post(
+            "/snapshot/upload",
+            {"snapshotId": snapshot_id, "presignedUrl": presigned_url},
+        )
+
+    def snapshot_restore(
+        self,
+        snapshot_id: str,
+        presigned_url: str,
+        path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Restore a snapshot archive from object storage via presigned URL."""
+        body: Dict[str, Any] = {
+            "snapshotId": snapshot_id,
+            "presignedUrl": presigned_url,
+        }
+        if path is not None:
+            body["path"] = path
+        return self._data_plane_post("/snapshot/restore", body)
+
+    def snapshot_status(self) -> Dict[str, Any]:
+        """Get the status of the current/last snapshot."""
+        return self._data_plane_get("/snapshot/status")
+
+    @classmethod
+    def from_response(cls, data: Dict[str, Any]) -> "Sandbox":
+        return cls(
+            sandbox_id=data["sandboxId"],
+            domain=data["domain"],
+            status=data.get("status", "unknown"),
+            exec_agent_secret=data.get("execAgentSecret"),
+        )
+
+
+class SandboxFiles:
+    """File operations on a sandbox."""
+
+    def __init__(self, sandbox: Sandbox):
+        self._sandbox = sandbox
+
+    def write(self, path: str, content: str) -> Dict[str, Any]:
+        """Write a file to the sandbox."""
+        return self._sandbox._data_plane_post(
+            "/files/write", {"path": path, "content": content}
+        )
+
+    def read(self, path: str) -> Dict[str, Any]:
+        """Read a file from the sandbox."""
+        return self._sandbox._data_plane_post("/files/read", {"path": path})
+
+    def list(self, path: str) -> Dict[str, Any]:
+        """List files in a directory in the sandbox."""
+        return self._sandbox._data_plane_post("/files/list", {"path": path})
+
+    def delete(self, path: str) -> Dict[str, Any]:
+        """Delete a file or directory in the sandbox."""
+        return self._sandbox._data_plane_post("/files/delete", {"path": path})
+
+    def mkdir(self, path: str, recursive: bool = True) -> Dict[str, Any]:
+        """Create a directory in the sandbox."""
+        return self._sandbox._data_plane_post(
+            "/files/mkdir", {"path": path, "recursive": recursive}
+        )
+
+    def stat(self, path: str) -> Dict[str, Any]:
+        """Get file/directory metadata."""
+        return self._sandbox._data_plane_post("/files/stat", {"path": path})
+
+
+@dataclass
+class SandboxSummary:
+    """Summary of a sandbox from list operations."""
+
+    sandbox_id: str
+    image: str
+    status: str
+    domain: Optional[str] = None
+    created_at: Optional[str] = None
+    ttl_seconds: Optional[int] = None
+    network_isolation: Optional[str] = None
+    ready_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    from_warm_pool: bool = False
+
+    @classmethod
+    def from_response(cls, data: Dict[str, Any]) -> "SandboxSummary":
+        return cls(
+            sandbox_id=data["sandboxId"],
+            image=data["image"],
+            status=data["status"],
+            domain=data.get("domain"),
+            created_at=data.get("createdAt"),
+            ttl_seconds=data.get("ttlSeconds"),
+            network_isolation=data.get("networkIsolation"),
+            ready_at=data.get("readyAt"),
+            expires_at=data.get("expiresAt"),
+            from_warm_pool=data.get("fromWarmPool", False),
+        )
+
+
+@dataclass
+class SandboxDetail:
+    """Detailed sandbox info."""
+
+    sandbox_id: str
+    image: str
+    cpu: str
+    memory: str
+    status: str
+    domain: Optional[str] = None
+    created_at: Optional[str] = None
+    ttl_seconds: Optional[int] = None
+    network_isolation: Optional[str] = None
+    ready_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    from_warm_pool: bool = False
+
+    @classmethod
+    def from_response(cls, data: Dict[str, Any]) -> "SandboxDetail":
+        return cls(
+            sandbox_id=data["sandboxId"],
+            image=data["image"],
+            cpu=data["cpu"],
+            memory=data["memory"],
+            status=data["status"],
+            domain=data.get("domain"),
+            created_at=data.get("createdAt"),
+            ttl_seconds=data.get("ttlSeconds"),
+            network_isolation=data.get("networkIsolation"),
+            ready_at=data.get("readyAt"),
+            expires_at=data.get("expiresAt"),
+            from_warm_pool=data.get("fromWarmPool", False),
+        )
+
+
+class SandboxClient:
+    """Client for sandbox control-plane operations.
+
+    Uses the basilica-api for CRD lifecycle (create/list/get/delete).
+    Data-plane operations go directly to sandbox domains via the Sandbox handle.
+
+    G5: Uses typed PyO3 methods on the BasilicaClient, not _post/_get/_delete.
+    """
+
+    def __init__(self, api_client: Any):
+        """Initialize with an authenticated API client.
+
+        Args:
+            api_client: An authenticated BasilicaClient instance.
+        """
+        self._client = api_client
+
+    def create(
+        self,
+        image: str,
+        *,
+        cpu: Optional[str] = None,
+        memory: Optional[str] = None,
+        env: Optional[List[SandboxEnvVar]] = None,
+        ttl_seconds: Optional[int] = None,
+        network_isolation: Optional[str] = None,
+    ) -> Sandbox:
+        """Create a new sandbox.
+
+        Args:
+            image: Container image (must be in the server's allowlist).
+            cpu: CPU resources (default: "1").
+            memory: Memory resources (default: "2Gi").
+            env: Environment variables to set.
+            ttl_seconds: Optional TTL in seconds.
+            network_isolation: "egress" (default) or "full" for DNS-only.
+
+        Returns:
+            A Sandbox handle with the domain for direct data-plane access.
+        """
+        env_tuples = [(e.name, e.value) for e in (env or [])]
+        response = self._client.create_sandbox(
+            image=image,
+            cpu=cpu,
+            memory=memory,
+            env=env_tuples if env_tuples else None,
+            ttl_seconds=ttl_seconds,
+            network_isolation=network_isolation,
+        )
+        return Sandbox.from_response(response)
+
+    def list(self) -> List[SandboxSummary]:
+        """List all sandboxes for the authenticated user."""
+        response = self._client.list_sandboxes()
+        return [
+            SandboxSummary.from_response(s)
+            for s in response.get("sandboxes", [])
+        ]
+
+    def get(self, sandbox_id: str) -> SandboxDetail:
+        """Get details of a specific sandbox."""
+        response = self._client.get_sandbox(sandbox_id)
+        return SandboxDetail.from_response(response)
+
+    def rotate_secret(self, sandbox_id: str) -> str:
+        """Rotate the exec-agent secret for a sandbox and return the new secret."""
+        response = self._client.rotate_sandbox_secret(sandbox_id)
+        return response["execAgentSecret"]
+
+    def delete(self, sandbox_id: str) -> None:
+        """Delete a sandbox."""
+        self._client.delete_sandbox(sandbox_id)

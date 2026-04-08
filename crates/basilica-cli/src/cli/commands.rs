@@ -204,6 +204,13 @@ pub enum Commands {
         #[command(subcommand)]
         action: VolumeAction,
     },
+
+    /// Sandbox management commands
+    #[command(alias = "sb")]
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
 }
 
 /// Fund management actions
@@ -331,6 +338,204 @@ pub enum VolumeAction {
     },
 }
 
+/// Sandbox management actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum SandboxAction {
+    /// Create a new sandbox
+    Create {
+        /// Container image (must be in the allowlist)
+        #[arg(long, default_value = "registry.basilica.ai/sandbox/python:3.11")]
+        image: String,
+
+        /// CPU resources
+        #[arg(long, default_value = "1")]
+        cpu: String,
+
+        /// Memory resources
+        #[arg(long, default_value = "2Gi")]
+        memory: String,
+
+        /// TTL in seconds (sandbox auto-deletes after this)
+        #[arg(long)]
+        ttl: Option<u32>,
+
+        /// Network isolation: egress (default) or full
+        #[arg(long, default_value = "egress")]
+        network_isolation: String,
+
+        /// Environment variables (repeatable, format: KEY=VALUE)
+        #[arg(long = "env", short = 'e', value_name = "KEY=VALUE")]
+        env: Vec<String>,
+    },
+
+    /// List active sandboxes (`ls` is reserved here, so file listing uses `files`)
+    #[command(alias = "ls")]
+    List,
+
+    /// Get sandbox details
+    #[command(alias = "show")]
+    Get {
+        /// Sandbox ID
+        sandbox_id: String,
+    },
+
+    /// Rotate the exec-agent secret for a sandbox
+    #[command(name = "secret-rotate", visible_alias = "rotate-secret", alias = "rotate")]
+    RotateSecret {
+        /// Sandbox ID
+        sandbox_id: String,
+    },
+
+    /// Delete a sandbox (`rm` is reserved here, so file deletion uses `remove`)
+    #[command(alias = "rm")]
+    Delete {
+        /// Sandbox ID
+        sandbox_id: String,
+    },
+
+    /// Execute a command in a sandbox
+    Exec {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Command to execute
+        #[arg(trailing_var_arg = true, required = true)]
+        command: Vec<String>,
+    },
+
+    /// Run a code snippet in a sandbox
+    Run {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Read code from a file instead of an inline argument
+        #[arg(long, value_name = "PATH", conflicts_with = "code")]
+        file: Option<PathBuf>,
+
+        /// Inline code snippet to execute
+        #[arg(value_name = "CODE", required_unless_present = "file")]
+        code: Option<String>,
+    },
+
+    /// Read a file from a sandbox (`cat`)
+    #[command(name = "read", visible_aliases = ["read-file", "cat"])]
+    ReadFile {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Sandbox path to read
+        path: String,
+    },
+
+    /// Write a file in a sandbox (`tee`)
+    #[command(name = "write", visible_aliases = ["write-file", "tee"], alias = "put")]
+    WriteFile {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Sandbox path to write
+        path: String,
+
+        /// Read content from a local file instead of an inline argument
+        #[arg(long, value_name = "PATH", conflicts_with = "content")]
+        file: Option<PathBuf>,
+
+        /// Inline file content
+        #[arg(value_name = "CONTENT", required_unless_present = "file")]
+        content: Option<String>,
+    },
+
+    /// List files in a sandbox directory (shell-style `ls`; use `files` because `ls` lists sandboxes)
+    #[command(name = "files", visible_alias = "list-files", alias = "ls-dir")]
+    ListFiles {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Sandbox directory path
+        path: String,
+    },
+
+    /// Delete a file or directory in a sandbox (shell-style `rm`; use `remove` because `rm` deletes sandboxes)
+    #[command(name = "remove", visible_alias = "delete-file", alias = "rm-path")]
+    DeleteFile {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Sandbox path to delete
+        path: String,
+    },
+
+    /// Create a directory in a sandbox
+    Mkdir {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Sandbox directory path
+        path: String,
+
+        /// Create parent directories as needed
+        #[arg(long, default_value_t = true)]
+        recursive: bool,
+    },
+
+    /// Stat a file or directory in a sandbox
+    Stat {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Sandbox path
+        path: String,
+    },
+
+    /// Create a snapshot archive for a sandbox workspace
+    #[command(name = "snap-create", visible_alias = "snapshot-create")]
+    SnapshotCreate {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Optional subdirectory within the workspace to snapshot
+        #[arg(long)]
+        path: Option<String>,
+    },
+
+    /// Upload a snapshot archive using a presigned URL
+    #[command(name = "snap-upload", visible_alias = "snapshot-upload")]
+    SnapshotUpload {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Snapshot ID from `snapshot-create`
+        snapshot_id: String,
+
+        /// Presigned upload URL
+        presigned_url: String,
+    },
+
+    /// Inspect the current or last snapshot status
+    #[command(name = "snap-status", visible_alias = "snapshot-status")]
+    SnapshotStatus {
+        /// Sandbox ID
+        sandbox_id: String,
+    },
+
+    /// Restore a snapshot archive using a presigned URL
+    #[command(name = "snap-restore", visible_alias = "snapshot-restore")]
+    SnapshotRestore {
+        /// Sandbox ID
+        sandbox_id: String,
+
+        /// Snapshot ID to restore
+        snapshot_id: String,
+
+        /// Presigned download URL
+        presigned_url: String,
+
+        /// Optional subdirectory within the workspace to restore into
+        #[arg(long)]
+        path: Option<String>,
+    },
+}
+
 impl Commands {
     /// Check if this command requires authentication
     pub fn requires_auth(&self) -> bool {
@@ -349,6 +554,7 @@ impl Commands {
             | Commands::Tokens { .. }
             | Commands::SshKeys { .. }
             | Commands::Volumes { .. }
+            | Commands::Sandbox { .. }
             | Commands::Fund { .. }
             | Commands::Balance => true,
 
@@ -362,6 +568,149 @@ impl Commands {
             #[cfg(debug_assertions)]
             Commands::TestAuth { .. } => true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Commands, SandboxAction};
+    use crate::cli::Args;
+    use clap::Parser;
+
+    #[test]
+    fn sandbox_read_aliases_parse_to_same_action() {
+        let primary = Args::try_parse_from(["basilica", "sandbox", "read", "sb-123", "/tmp/x"])
+            .expect("primary alias should parse");
+        let legacy = Args::try_parse_from([
+            "basilica",
+            "sandbox",
+            "read-file",
+            "sb-123",
+            "/tmp/x",
+        ])
+        .expect("legacy alias should parse");
+
+        assert!(matches!(
+            primary.command,
+            Commands::Sandbox {
+                action: SandboxAction::ReadFile {
+                    ref sandbox_id,
+                    ref path,
+                }
+            } if sandbox_id == "sb-123" && path == "/tmp/x"
+        ));
+        assert!(matches!(
+            legacy.command,
+            Commands::Sandbox {
+                action: SandboxAction::ReadFile {
+                    ref sandbox_id,
+                    ref path,
+                }
+            } if sandbox_id == "sb-123" && path == "/tmp/x"
+        ));
+    }
+
+    #[test]
+    fn sandbox_files_primary_name_parses() {
+        let args = Args::try_parse_from(["basilica", "sandbox", "files", "sb-123", "/tmp"])
+            .expect("files should parse");
+
+        assert!(matches!(
+            args.command,
+            Commands::Sandbox {
+                action: SandboxAction::ListFiles {
+                    ref sandbox_id,
+                    ref path,
+                }
+            } if sandbox_id == "sb-123" && path == "/tmp"
+        ));
+    }
+
+    #[test]
+    fn sandbox_shell_style_file_aliases_parse() {
+        let cat_args = Args::try_parse_from(["basilica", "sandbox", "cat", "sb-123", "/tmp/x"])
+            .expect("cat alias should parse");
+        let tee_args = Args::try_parse_from([
+            "basilica",
+            "sandbox",
+            "tee",
+            "sb-123",
+            "/tmp/x",
+            "hello",
+        ])
+        .expect("tee alias should parse");
+
+        assert!(matches!(
+            cat_args.command,
+            Commands::Sandbox {
+                action: SandboxAction::ReadFile { .. }
+            }
+        ));
+        assert!(matches!(
+            tee_args.command,
+            Commands::Sandbox {
+                action: SandboxAction::WriteFile {
+                    ref sandbox_id,
+                    ref path,
+                    content: Some(ref content),
+                    ..
+                }
+            } if sandbox_id == "sb-123" && path == "/tmp/x" && content == "hello"
+        ));
+    }
+
+    #[test]
+    fn sandbox_secret_rotate_aliases_parse() {
+        let primary = Args::try_parse_from([
+            "basilica",
+            "sandbox",
+            "secret-rotate",
+            "sb-123",
+        ])
+        .expect("primary command should parse");
+        let alias = Args::try_parse_from([
+            "basilica",
+            "sandbox",
+            "rotate-secret",
+            "sb-123",
+        ])
+        .expect("visible alias should parse");
+
+        assert!(matches!(
+            primary.command,
+            Commands::Sandbox {
+                action: SandboxAction::RotateSecret { ref sandbox_id }
+            } if sandbox_id == "sb-123"
+        ));
+        assert!(matches!(
+            alias.command,
+            Commands::Sandbox {
+                action: SandboxAction::RotateSecret { ref sandbox_id }
+            } if sandbox_id == "sb-123"
+        ));
+    }
+
+    #[test]
+    fn sandbox_snapshot_short_names_parse() {
+        let args = Args::try_parse_from([
+            "basilica",
+            "sandbox",
+            "snap-create",
+            "sb-123",
+            "--path",
+            "workspace",
+        ])
+        .expect("snap-create should parse");
+
+        assert!(matches!(
+            args.command,
+            Commands::Sandbox {
+                action: SandboxAction::SnapshotCreate {
+                    ref sandbox_id,
+                    path: Some(ref path),
+                }
+            } if sandbox_id == "sb-123" && path == "workspace"
+        ));
     }
 }
 

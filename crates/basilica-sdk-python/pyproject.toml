@@ -53,6 +53,11 @@ Repository = "https://github.com/one-covenant/basilica"
 Issues = "https://github.com/one-covenant/basilica/issues"
 Changelog = "https://github.com/one-covenant/basilica/blob/main/crates/basilica-sdk-python/CHANGELOG.md"
 
+[tool.pytest.ini_options]
+markers = [
+    "k3d: integration tests requiring a live K3d cluster",
+]
+
 [tool.maturin]
 features = ["pyo3/extension-module", "pyo3/abi3-py310"]
 python-source = "python"
