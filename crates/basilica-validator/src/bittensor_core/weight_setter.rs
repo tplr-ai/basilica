@@ -4,13 +4,10 @@
 //! Sets weights every N blocks based on miner scores from node validations.
 
 use crate::basilica_api::{BasilicaApiClient, IncentiveConfigResponse};
-use rust_decimal::prelude::ToPrimitive;
 use crate::config::emission::EmissionConfig;
 use crate::gpu::categorization;
 use crate::gpu::GpuScoringEngine;
-use crate::incentive::incentive_pool::{
-    compute_incentive_pool, MinerCategoryDetail,
-};
+use crate::incentive::incentive_pool::{compute_incentive_pool, MinerCategoryDetail};
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::entities::VerificationLog;
 use crate::persistence::gpu_profile_repository::GpuProfileRepository;
@@ -21,6 +18,7 @@ use basilica_common::identity::{Hotkey, MinerUid, NodeId};
 use basilica_common::{KeyValueStorage, MemoryStorage};
 use bittensor::{Metagraph, NormalizedWeight, Service as BittensorService};
 use chrono::{DateTime, Utc};
+use rust_decimal::prelude::ToPrimitive;
 use sqlx::Row;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -370,9 +368,7 @@ impl WeightSetter {
         let prom = metrics.prometheus();
 
         // Pool state
-        prom.set_incentive_pool_usd_required(
-            result.usd_required_epoch.to_f64().unwrap_or(0.0),
-        );
+        prom.set_incentive_pool_usd_required(result.usd_required_epoch.to_f64().unwrap_or(0.0));
         prom.set_incentive_pool_usd_emission_capacity(
             result.usd_emission_capacity.to_f64().unwrap_or(0.0),
         );

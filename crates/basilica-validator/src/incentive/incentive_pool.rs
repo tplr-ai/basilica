@@ -131,7 +131,8 @@ pub fn compute_incentive_pool(
     for row in &active_cu_rows {
         let vested_fraction = compute_cu_vested_fraction(row, epoch_start, epoch_end);
         let normalized_cat = normalize_gpu_category(&row.gpu_category);
-        let cumulative = compute_cumulative_vested_fraction(row.earned_at, row.window_hours, epoch_end);
+        let cumulative =
+            compute_cumulative_vested_fraction(row.earned_at, row.window_hours, epoch_end);
 
         // Always accumulate CU totals and cumulative vesting for detail,
         // even if the per-epoch vested fraction is zero for this row.
@@ -232,7 +233,11 @@ pub fn compute_incentive_pool(
             })
         })
         .collect();
-    miner_category_detail.sort_by(|a, b| a.miner_uid.cmp(&b.miner_uid).then_with(|| a.category.cmp(&b.category)));
+    miner_category_detail.sort_by(|a, b| {
+        a.miner_uid
+            .cmp(&b.miner_uid)
+            .then_with(|| a.category.cmp(&b.category))
+    });
 
     let raw_usd_required_epoch = sum_decimals(miner_payouts.values().copied());
 
