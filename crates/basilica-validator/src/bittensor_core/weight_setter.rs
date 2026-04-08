@@ -4,11 +4,12 @@
 //! Sets weights every N blocks based on miner scores from node validations.
 
 use crate::basilica_api::{BasilicaApiClient, IncentiveConfigResponse};
+use rust_decimal::prelude::ToPrimitive;
 use crate::config::emission::EmissionConfig;
 use crate::gpu::categorization;
 use crate::gpu::GpuScoringEngine;
 use crate::incentive::incentive_pool::{
-    compute_cu_vested_fraction, compute_incentive_pool, compute_ru_vested_fraction,
+    compute_incentive_pool, MinerCategoryDetail,
 };
 use crate::metrics::ValidatorMetrics;
 use crate::persistence::entities::VerificationLog;
@@ -25,7 +26,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::interval;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 // NormalizedWeight is imported from bittensor crate
@@ -45,22 +46,6 @@ pub struct NodeValidationResult {
     pub gpu_model: String,
 }
 
-/// CU contribution for one category in incentive pool logging
-struct IncentiveCuCategory {
-    category: String,
-    cu_amount: rust_decimal::Decimal,
-    cu_usd: rust_decimal::Decimal,
-}
-
-/// One miner's full payout breakdown for incentive pool logging
-struct IncentiveMinerPayout {
-    miner_uid: u16,
-    hotkey: String,
-    cu_categories: Vec<IncentiveCuCategory>,
-    ru_usd: rust_decimal::Decimal,
-    total_usd: rust_decimal::Decimal,
-}
-
 /// Result from the incentive-pool weight calculation
 struct IncentiveWeightResult {
     distribution: crate::bittensor_core::weight_allocation::WeightDistribution,
@@ -78,8 +63,8 @@ struct IncentiveWeightResult {
     incentive_config: IncentiveConfigResponse,
     // Pool breakdown
     category_payouts: HashMap<String, rust_decimal::Decimal>,
-    // Per-miner breakdown
-    miner_payouts_detail: Vec<IncentiveMinerPayout>,
+    // Per-miner per-category detail (from incentive pool)
+    miner_category_detail: Vec<MinerCategoryDetail>,
 }
 
 /// Manages weight setting operations for Bittensor network
@@ -229,6 +214,9 @@ impl WeightSetter {
         for attempt in 1..=MAX_RETRIES {
             match self.attempt_weight_setting().await {
                 Ok(()) => {
+                    if let Some(ref metrics) = self.metrics {
+                        metrics.prometheus().record_weight_setting(true);
+                    }
                     info!("Weight setting successful on attempt {}", attempt);
                     return Ok(());
                 }
@@ -245,6 +233,9 @@ impl WeightSetter {
             }
         }
 
+        if let Some(ref metrics) = self.metrics {
+            metrics.prometheus().record_weight_setting(false);
+        }
         Err(anyhow::anyhow!(
             "Failed to set weights after {} attempts",
             MAX_RETRIES
@@ -254,6 +245,7 @@ impl WeightSetter {
     /// Attempt to set weights (extracted for retry logic).
     ///
     /// Uses the CU/RU incentive pool to compute and submit weights.
+    #[instrument(skip(self), name = "weight_setting")]
     async fn attempt_weight_setting(&self) -> Result<()> {
         info!(
             "Setting weights for subnet {} with GPU-based allocation",
@@ -272,6 +264,7 @@ impl WeightSetter {
             .compute_incentive_pool_weights(&epoch, &hotkey_to_uid, &metagraph)
             .await?;
         self.log_incentive_weight_result(&result);
+        self.record_incentive_pool_metrics(&result);
 
         let weight_distribution = &result.distribution;
         self.log_weight_distribution(weight_distribution);
@@ -329,25 +322,18 @@ impl WeightSetter {
             "Incentive pool summary"
         );
 
-        // Per-miner breakdown
-        for miner in &result.miner_payouts_detail {
-            let cu_breakdown: String = miner
-                .cu_categories
-                .iter()
-                .map(|c| {
-                    format!(
-                        "{}: {:.2} CU (vested ${:.2} this epoch)",
-                        c.category, c.cu_amount, c.cu_usd
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
+        // Per-miner per-category breakdown
+        for detail in &result.miner_category_detail {
+            let total_usd = detail.cu_usd + detail.ru_usd;
             info!(
-                miner_uid = miner.miner_uid,
-                hotkey = %miner.hotkey,
-                cu_breakdown = %cu_breakdown,
-                ru_usd = %miner.ru_usd,
-                total_usd = %miner.total_usd,
+                miner_uid = detail.miner_uid,
+                hotkey = %detail.hotkey,
+                category = %detail.category,
+                cu_amount = %detail.cu_amount,
+                cu_vested_pct = %detail.cu_vested_pct,
+                cu_usd = %detail.cu_usd,
+                ru_usd = %detail.ru_usd,
+                total_usd = %total_usd,
                 "Miner payout"
             );
         }
@@ -376,6 +362,55 @@ impl WeightSetter {
         );
     }
 
+    /// Record incentive pool metrics to Prometheus gauges.
+    fn record_incentive_pool_metrics(&self, result: &IncentiveWeightResult) {
+        let Some(ref metrics) = self.metrics else {
+            return;
+        };
+        let prom = metrics.prometheus();
+
+        // Pool state
+        prom.set_incentive_pool_usd_required(
+            result.usd_required_epoch.to_f64().unwrap_or(0.0),
+        );
+        prom.set_incentive_pool_usd_emission_capacity(
+            result.usd_emission_capacity.to_f64().unwrap_or(0.0),
+        );
+
+        // Token prices
+        prom.set_alpha_price_usd(result.alpha_price_usd.to_f64().unwrap_or(0.0));
+        prom.set_tao_price_usd(result.tao_price_usd.to_f64().unwrap_or(0.0));
+
+        // Incentive config per category (resolved window_hours)
+        let global_window = result.incentive_config.window_hours;
+        for (category, cat_config) in &result.incentive_config.gpu_categories {
+            let resolved_window = cat_config.window_hours.unwrap_or(global_window);
+            prom.set_incentive_config_gpu_category(
+                category,
+                cat_config.target_count,
+                cat_config.price_per_gpu_cents,
+                resolved_window,
+            );
+        }
+
+        // Global config
+        prom.set_incentive_config_global(
+            result.incentive_config.revenue_share_pct,
+            result.incentive_config.slash_pct,
+        );
+
+        // Per-miner per-category CU detail
+        for detail in &result.miner_category_detail {
+            prom.set_incentive_miner_cu(
+                detail.miner_uid,
+                &detail.category,
+                detail.cu_amount.to_f64().unwrap_or(0.0),
+                detail.cu_vested_pct.to_f64().unwrap_or(0.0),
+            );
+        }
+    }
+
+    #[instrument(skip_all, fields(epoch_id = epoch.id))]
     async fn compute_incentive_pool_weights(
         &self,
         epoch: &WeightSetEpoch,
@@ -413,16 +448,6 @@ impl WeightSetter {
             alpha_tokens_per_block * miner_emission_share * blocks_per_epoch;
         let usd_emission_capacity = miner_alpha_per_epoch * token_prices.alpha_price_usd;
 
-        // Build per-miner-per-category CU/RU breakdown from raw rows
-        let miner_payouts_detail = self.compute_miner_breakdown(
-            &incentive_config,
-            &cu_rows,
-            &ru_rows,
-            epoch_start,
-            epoch.period_end,
-            hotkey_to_uid,
-        );
-
         let incentive_result = compute_incentive_pool(
             &incentive_config,
             &cu_rows,
@@ -448,133 +473,8 @@ impl WeightSetter {
             blocks_per_epoch: self.blocks_per_weight_set,
             incentive_config,
             category_payouts: incentive_result.category_payouts,
-            miner_payouts_detail,
+            miner_category_detail: incentive_result.miner_category_detail,
         })
-    }
-
-    /// Build per-miner breakdown of CU (per category) and RU (total) for logging.
-    /// Replicates the payout math from `compute_incentive_pool` but keeps CU/RU separate.
-    fn compute_miner_breakdown(
-        &self,
-        config: &IncentiveConfigResponse,
-        cu_rows: &[crate::basilica_api::CuLedgerRowResponse],
-        ru_rows: &[crate::basilica_api::RuLedgerRowResponse],
-        epoch_start: DateTime<Utc>,
-        epoch_end: DateTime<Utc>,
-        hotkey_to_uid: &HashMap<String, u16>,
-    ) -> Vec<IncentiveMinerPayout> {
-        use rust_decimal::Decimal;
-
-        // CU supply per category (dilution denominator)
-        let mut category_cu_supply: HashMap<String, Decimal> = HashMap::new();
-        for row in cu_rows {
-            if row.is_slashed
-                || !hotkey_to_uid.contains_key(&row.hotkey)
-                || !config.gpu_categories.contains_key(&row.gpu_category)
-            {
-                continue;
-            }
-            *category_cu_supply
-                .entry(row.gpu_category.clone())
-                .or_insert(Decimal::ZERO) += row.cu_amount;
-        }
-
-        // Accumulate CU per (hotkey, category)
-        let mut cu_accum: HashMap<String, HashMap<String, (Decimal, Decimal)>> = HashMap::new();
-        for row in cu_rows {
-            if row.is_slashed
-                || !hotkey_to_uid.contains_key(&row.hotkey)
-                || !config.gpu_categories.contains_key(&row.gpu_category)
-            {
-                continue;
-            }
-            let vested = compute_cu_vested_fraction(row, epoch_start, epoch_end);
-            if vested <= Decimal::ZERO {
-                continue;
-            }
-            let Some(cat_config) = config.gpu_categories.get(&row.gpu_category) else {
-                continue;
-            };
-            let supply = category_cu_supply
-                .get(&row.gpu_category)
-                .copied()
-                .unwrap_or(Decimal::ZERO);
-            if supply <= Decimal::ZERO {
-                continue;
-            }
-            let target_gpus = Decimal::from(cat_config.target_count) * Decimal::from(8u32);
-            let row_price_usd = Decimal::from(row.price_per_gpu_cents) / Decimal::from(100u32);
-            let capacity_budget = target_gpus * Decimal::from(row.window_hours) * row_price_usd;
-            let per_cu_budget = capacity_budget / supply;
-            let effective_price = row_price_usd.min(per_cu_budget);
-            let cu_usd = vested * row.cu_amount * effective_price;
-            if cu_usd <= Decimal::ZERO {
-                continue;
-            }
-
-            let entry = cu_accum
-                .entry(row.hotkey.clone())
-                .or_default()
-                .entry(row.gpu_category.clone())
-                .or_insert((Decimal::ZERO, Decimal::ZERO));
-            entry.0 += row.cu_amount;
-            entry.1 += cu_usd;
-        }
-
-        // Accumulate RU per hotkey (total, not per category)
-        let mut ru_accum: HashMap<String, Decimal> = HashMap::new();
-        for row in ru_rows {
-            if row.is_slashed || !hotkey_to_uid.contains_key(&row.hotkey) {
-                continue;
-            }
-            let vested = compute_ru_vested_fraction(row, epoch_start, epoch_end);
-            if vested <= Decimal::ZERO {
-                continue;
-            }
-            let ru_usd = vested * row.ru_amount * Decimal::from(row.revenue_share_pct)
-                / Decimal::from(100u32);
-            if ru_usd <= Decimal::ZERO {
-                continue;
-            }
-            *ru_accum.entry(row.hotkey.clone()).or_insert(Decimal::ZERO) += ru_usd;
-        }
-
-        // Merge into Vec<IncentiveMinerPayout>
-        let all_hotkeys: std::collections::HashSet<&String> =
-            cu_accum.keys().chain(ru_accum.keys()).collect();
-
-        let mut payouts: Vec<IncentiveMinerPayout> = all_hotkeys
-            .into_iter()
-            .filter_map(|hotkey| {
-                let uid = hotkey_to_uid.get(hotkey)?;
-                let cu_categories: Vec<IncentiveCuCategory> = cu_accum
-                    .get(hotkey)
-                    .map(|cats| {
-                        cats.iter()
-                            .map(|(cat, (amount, usd))| IncentiveCuCategory {
-                                category: cat.clone(),
-                                cu_amount: *amount,
-                                cu_usd: *usd,
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let ru_usd = ru_accum.get(hotkey).copied().unwrap_or(Decimal::ZERO);
-                let cu_total: Decimal = cu_categories.iter().map(|c| c.cu_usd).sum();
-                let total_usd = cu_total + ru_usd;
-
-                Some(IncentiveMinerPayout {
-                    miner_uid: *uid,
-                    hotkey: hotkey.clone(),
-                    cu_categories,
-                    ru_usd,
-                    total_usd,
-                })
-            })
-            .collect();
-
-        payouts.sort_by_key(|p| p.miner_uid);
-        payouts
     }
 
     async fn fetch_metagraph_with_logging(&self) -> Result<Metagraph> {
@@ -840,6 +740,7 @@ impl WeightSetter {
     }
 
     /// Submit weights to chain with retry logic
+    #[instrument(skip(self, normalized_weights), fields(weight_count = normalized_weights.len()))]
     async fn submit_weights_to_chain_with_retry(
         &self,
         normalized_weights: Vec<NormalizedWeight>,
@@ -877,6 +778,7 @@ impl WeightSetter {
     }
 
     /// Submit weights to chain using the provided set_weights_payload function
+    #[instrument(skip(self, normalized_weights), fields(weight_count = normalized_weights.len(), version_key))]
     async fn submit_weights_to_chain(
         &self,
         normalized_weights: Vec<NormalizedWeight>,

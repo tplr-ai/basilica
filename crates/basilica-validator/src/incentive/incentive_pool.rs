@@ -10,7 +10,23 @@ use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
+
+/// Per-miner per-category breakdown of CU amounts and vesting progress.
+#[derive(Debug, Clone)]
+pub struct MinerCategoryDetail {
+    pub hotkey: String,
+    pub miner_uid: u16,
+    pub category: String,
+    /// Total CU amount with pending vesting.
+    pub cu_amount: Decimal,
+    /// Cumulative vesting progress (0–100).
+    pub cu_vested_pct: Decimal,
+    /// Vested USD payout this epoch (from CU).
+    pub cu_usd: Decimal,
+    /// Vested USD payout this epoch (from RU).
+    pub ru_usd: Decimal,
+}
 
 #[derive(Debug, Clone)]
 pub struct IncentivePoolResult {
@@ -21,6 +37,7 @@ pub struct IncentivePoolResult {
     pub usd_emission_capacity: Decimal,
     pub category_payouts: HashMap<String, Decimal>,
     pub miner_payouts: HashMap<String, Decimal>,
+    pub miner_category_detail: Vec<MinerCategoryDetail>,
 }
 
 pub fn compute_cu_vested_fraction(
@@ -46,6 +63,7 @@ fn normalize_gpu_category(raw: &str) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[instrument(skip_all, fields(cu_rows = cu_rows.len(), ru_rows = ru_rows.len()))]
 pub fn compute_incentive_pool(
     config: &IncentiveConfigResponse,
     cu_rows: &[CuLedgerRowResponse],
@@ -103,8 +121,26 @@ pub fn compute_incentive_pool(
     let mut category_payouts = HashMap::new();
     let mut category_miners: HashMap<String, HashSet<String>> = HashMap::new();
 
-    for row in active_cu_rows {
+    // Accumulators for per-miner-per-category detail.
+    // Key: (hotkey, normalized_category)
+    // Value: (total_cu, vested_cu, cu_usd)
+    type DetailKey = (String, String);
+    let mut cu_detail: HashMap<DetailKey, (Decimal, Decimal, Decimal)> = HashMap::new();
+    let mut ru_detail: HashMap<DetailKey, Decimal> = HashMap::new();
+
+    for row in &active_cu_rows {
         let vested_fraction = compute_cu_vested_fraction(row, epoch_start, epoch_end);
+        let normalized_cat = normalize_gpu_category(&row.gpu_category);
+        let cumulative = compute_cumulative_vested_fraction(row.earned_at, row.window_hours, epoch_end);
+
+        // Always accumulate CU totals and cumulative vesting for detail,
+        // even if the per-epoch vested fraction is zero for this row.
+        let detail_entry = cu_detail
+            .entry((row.hotkey.clone(), normalized_cat.clone()))
+            .or_insert((Decimal::ZERO, Decimal::ZERO, Decimal::ZERO));
+        detail_entry.0 += row.cu_amount;
+        detail_entry.1 += cumulative * row.cu_amount;
+
         if vested_fraction <= Decimal::ZERO {
             continue;
         }
@@ -112,7 +148,6 @@ pub fn compute_incentive_pool(
         let Some(category_config) = config.gpu_categories.get(&row.gpu_category) else {
             continue;
         };
-        let normalized_cat = normalize_gpu_category(&row.gpu_category);
         let category_supply = category_cu_supply
             .get(&normalized_cat)
             .copied()
@@ -131,6 +166,7 @@ pub fn compute_incentive_pool(
             continue;
         }
 
+        detail_entry.2 += row_payout;
         *miner_payouts
             .entry(row.hotkey.clone())
             .or_insert(Decimal::ZERO) += row_payout;
@@ -156,6 +192,9 @@ pub fn compute_incentive_pool(
         }
 
         let normalized_cat = normalize_gpu_category(&row.gpu_category);
+        *ru_detail
+            .entry((row.hotkey.clone(), normalized_cat.clone()))
+            .or_insert(Decimal::ZERO) += row_payout;
         *miner_payouts
             .entry(row.hotkey.clone())
             .or_insert(Decimal::ZERO) += row_payout;
@@ -167,6 +206,33 @@ pub fn compute_incentive_pool(
             .or_default()
             .insert(row.hotkey.clone());
     }
+
+    // Build miner_category_detail from accumulators
+    let mut miner_category_detail: Vec<MinerCategoryDetail> = cu_detail
+        .into_iter()
+        .filter_map(|((hotkey, category), (total_cu, vested_cu, cu_usd))| {
+            let miner_uid = *hotkey_to_uid.get(&hotkey)?;
+            let cu_vested_pct = if total_cu > Decimal::ZERO {
+                (vested_cu / total_cu) * Decimal::from(100u32)
+            } else {
+                Decimal::ZERO
+            };
+            let ru_usd = ru_detail
+                .get(&(hotkey.clone(), category.clone()))
+                .copied()
+                .unwrap_or(Decimal::ZERO);
+            Some(MinerCategoryDetail {
+                hotkey,
+                miner_uid,
+                category,
+                cu_amount: total_cu,
+                cu_vested_pct,
+                cu_usd,
+                ru_usd,
+            })
+        })
+        .collect();
+    miner_category_detail.sort_by(|a, b| a.miner_uid.cmp(&b.miner_uid).then_with(|| a.category.cmp(&b.category)));
 
     let raw_usd_required_epoch = sum_decimals(miner_payouts.values().copied());
 
@@ -181,6 +247,7 @@ pub fn compute_incentive_pool(
             usd_emission_capacity,
             category_payouts,
             miner_payouts,
+            miner_category_detail,
         ));
     }
 
@@ -213,6 +280,7 @@ pub fn compute_incentive_pool(
             usd_emission_capacity,
             scaled_category_payouts,
             scaled_miner_payouts,
+            miner_category_detail,
         ));
     }
 
@@ -296,6 +364,7 @@ pub fn compute_incentive_pool(
         usd_emission_capacity,
         category_payouts: scaled_category_payouts,
         miner_payouts: scaled_miner_payouts,
+        miner_category_detail,
     })
 }
 
@@ -322,6 +391,26 @@ fn compute_vested_fraction(
         / Decimal::from_i128_with_scale(window_ms, 0)
 }
 
+/// Cumulative vesting fraction: how much of a CU row has vested in total
+/// (across all past epochs up to `now`), as opposed to the per-epoch overlap.
+fn compute_cumulative_vested_fraction(
+    earned_at: DateTime<Utc>,
+    window_hours: u32,
+    now: DateTime<Utc>,
+) -> Decimal {
+    if window_hours == 0 {
+        return Decimal::ZERO;
+    }
+    let window_ms = (window_hours as i128) * 3_600_000;
+    let elapsed_ms = (now.timestamp_millis() as i128) - (earned_at.timestamp_millis() as i128);
+    if elapsed_ms <= 0 {
+        return Decimal::ZERO;
+    }
+    let fraction =
+        Decimal::from_i128_with_scale(elapsed_ms, 0) / Decimal::from_i128_with_scale(window_ms, 0);
+    min_decimal(fraction, Decimal::ONE)
+}
+
 fn scale_decimal_map(
     values: &HashMap<String, Decimal>,
     scale_factor: Decimal,
@@ -337,6 +426,7 @@ fn all_burn_result(
     usd_emission_capacity: Decimal,
     category_payouts: HashMap<String, Decimal>,
     miner_payouts: HashMap<String, Decimal>,
+    miner_category_detail: Vec<MinerCategoryDetail>,
 ) -> IncentivePoolResult {
     IncentivePoolResult {
         distribution: WeightDistribution {
@@ -359,6 +449,7 @@ fn all_burn_result(
         usd_emission_capacity,
         category_payouts,
         miner_payouts,
+        miner_category_detail,
     }
 }
 

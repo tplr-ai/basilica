@@ -199,6 +199,56 @@ impl ValidatorPrometheusMetrics {
             "Current validation state of nodes (0=not in state, 1=current, 2=failed)"
         );
 
+        // Incentive pool metrics
+        describe_gauge!(
+            "basilica_validator_incentive_pool_usd_required",
+            "USD required to pay all miners this epoch"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_pool_usd_emission_capacity",
+            "USD emission capacity this epoch"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_config_target_count",
+            "Configured target node count per GPU category"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_config_price_per_gpu_cents",
+            "Configured price per GPU per hour in cents per category"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_config_window_hours",
+            "Resolved vesting window hours per GPU category"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_config_revenue_share_pct",
+            "Configured revenue share percentage"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_config_slash_pct",
+            "Configured slash percentage"
+        );
+        describe_counter!(
+            "basilica_validator_weight_setting_total",
+            "Total weight setting attempts by outcome"
+        );
+        describe_gauge!(
+            "basilica_validator_alpha_price_usd",
+            "Current alpha token price in USD"
+        );
+        describe_gauge!(
+            "basilica_validator_tao_price_usd",
+            "Current TAO token price in USD"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_miner_cu_total",
+            "Total CU amount with pending vesting per miner per GPU category"
+        );
+        describe_gauge!(
+            "basilica_validator_incentive_miner_cu_vested_pct",
+            "Cumulative CU vesting progress (0-100) per miner per GPU category"
+        );
+
         // Billing telemetry metrics
         describe_counter!(
             "basilica_validator_billing_telemetry_collected_total",
@@ -715,6 +765,78 @@ impl ValidatorPrometheusMetrics {
             )
             .set(0.0);
         }
+    }
+
+    // ── Incentive pool metrics ──
+
+    pub fn set_incentive_pool_usd_required(&self, usd: f64) {
+        gauge!("basilica_validator_incentive_pool_usd_required").set(usd);
+    }
+
+    pub fn set_incentive_pool_usd_emission_capacity(&self, usd: f64) {
+        gauge!("basilica_validator_incentive_pool_usd_emission_capacity").set(usd);
+    }
+
+    pub fn set_incentive_config_gpu_category(
+        &self,
+        gpu_category: &str,
+        target_count: u32,
+        price_per_gpu_cents: u32,
+        window_hours: u32,
+    ) {
+        let cat = gpu_category.to_string();
+        gauge!("basilica_validator_incentive_config_target_count",
+            "gpu_category" => cat.clone()
+        )
+        .set(target_count as f64);
+        gauge!("basilica_validator_incentive_config_price_per_gpu_cents",
+            "gpu_category" => cat.clone()
+        )
+        .set(price_per_gpu_cents as f64);
+        gauge!("basilica_validator_incentive_config_window_hours",
+            "gpu_category" => cat
+        )
+        .set(window_hours as f64);
+    }
+
+    pub fn set_incentive_config_global(&self, revenue_share_pct: Option<u32>, slash_pct: u32) {
+        gauge!("basilica_validator_incentive_config_revenue_share_pct")
+            .set(revenue_share_pct.unwrap_or(0) as f64);
+        gauge!("basilica_validator_incentive_config_slash_pct").set(slash_pct as f64);
+    }
+
+    pub fn record_weight_setting(&self, success: bool) {
+        let status = if success { "success" } else { "error" };
+        counter!("basilica_validator_weight_setting_total", "status" => status).increment(1);
+    }
+
+    pub fn set_alpha_price_usd(&self, price: f64) {
+        gauge!("basilica_validator_alpha_price_usd").set(price);
+    }
+
+    pub fn set_tao_price_usd(&self, price: f64) {
+        gauge!("basilica_validator_tao_price_usd").set(price);
+    }
+
+    pub fn set_incentive_miner_cu(
+        &self,
+        miner_uid: u16,
+        gpu_category: &str,
+        cu_total: f64,
+        cu_vested_pct: f64,
+    ) {
+        let uid = miner_uid.to_string();
+        let cat = gpu_category.to_string();
+        gauge!("basilica_validator_incentive_miner_cu_total",
+            "miner_uid" => uid.clone(),
+            "gpu_category" => cat.clone()
+        )
+        .set(cu_total);
+        gauge!("basilica_validator_incentive_miner_cu_vested_pct",
+            "miner_uid" => uid,
+            "gpu_category" => cat
+        )
+        .set(cu_vested_pct);
     }
 
     pub fn record_billing_telemetry_collected(&self, rental_id: &str) {
