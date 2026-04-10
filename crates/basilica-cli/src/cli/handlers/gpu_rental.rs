@@ -28,6 +28,7 @@ use basilica_sdk::ApiError;
 use color_eyre::eyre::eyre;
 use color_eyre::Section;
 use console::style;
+use dialoguer::Confirm;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1994,6 +1995,7 @@ pub async fn handle_down(
     target: Option<String>,
     compute: Option<ComputeCategoryArg>,
     all: bool,
+    skip_confirm: bool,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     use super::gpu_rental_helpers::resolve_target_rental_unified;
@@ -2044,6 +2046,43 @@ pub async fn handle_down(
         };
 
         complete_spinner_and_clear(spinner);
+
+        // Count total rentals to confirm
+        let all_count = community_rentals
+            .as_ref()
+            .map(|c| c.rentals.len())
+            .unwrap_or(0)
+            + secure_rentals
+                .as_ref()
+                .map(|s| s.rentals.iter().filter(|r| r.stopped_at.is_none()).count())
+                .unwrap_or(0)
+            + cpu_rentals
+                .as_ref()
+                .map(|c| c.rentals.iter().filter(|r| r.stopped_at.is_none()).count())
+                .unwrap_or(0);
+
+        if all_count == 0 {
+            println!("No active rentals found.");
+            return Ok(());
+        }
+
+        if !skip_confirm {
+            let theme = dialoguer::theme::ColorfulTheme::default();
+            let confirmed = Confirm::with_theme(&theme)
+                .with_prompt(format!(
+                    "Are you sure you want to stop all {} active rental{}?",
+                    all_count,
+                    if all_count == 1 { "" } else { "s" }
+                ))
+                .default(false)
+                .interact()
+                .map_err(|e| CliError::Internal(e.into()))?;
+
+            if !confirmed {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        }
 
         let mut total_count = 0;
         let mut success_count = 0;
@@ -2170,6 +2209,20 @@ pub async fn handle_down(
         // exclude_vip=true: VIP rentals cannot be stopped by users
         let (rental_id, compute_type) =
             resolve_target_rental_unified(target, compute_filter, &api_client, true).await?;
+
+        if !skip_confirm {
+            let theme = dialoguer::theme::ColorfulTheme::default();
+            let confirmed = Confirm::with_theme(&theme)
+                .with_prompt(format!("Stop rental {}?", rental_id))
+                .default(false)
+                .interact()
+                .map_err(|e| CliError::Internal(e.into()))?;
+
+            if !confirmed {
+                println!("Cancelled.");
+                return Ok(());
+            }
+        }
 
         let spinner = create_spinner(&format!("Stopping rental: {}", rental_id));
 
