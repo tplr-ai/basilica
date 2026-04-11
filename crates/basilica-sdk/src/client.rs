@@ -36,7 +36,7 @@
 //! ```
 
 use crate::{
-    auth::TokenManager,
+    auth::{wallet, TokenManager},
     error::{ApiError, ErrorResponse, Result},
     jobs::{
         CreateJobRequest, CreateJobResponse, DeleteJobResponse, JobLogsResponse, JobStatusResponse,
@@ -47,7 +47,7 @@ use crate::{
         CreateDeploymentRequest, CreateDepositAccountResponse, DeleteDeploymentResponse,
         DeleteShareTokenResponse, DeploymentEventsResponse, DeploymentListResponse,
         DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse,
-        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery, ListDepositsQuery,
+        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery,
         ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
         RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalStatusWithSshResponse,
         RentalUsageResponse, ScaleDeploymentRequest, ShareTokenStatusResponse, SshKeyResponse,
@@ -64,17 +64,26 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
 use basilica_common::ApiKeyName;
 use basilica_validator::api::types::ListAvailableNodesResponse;
 use basilica_validator::rental::RentalResponse;
-use reqwest::{RequestBuilder, Response, StatusCode};
+use reqwest::{Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 
 /// HTTP client for interacting with the Basilica API
-#[derive(Debug)]
 pub struct BasilicaClient {
     http_client: reqwest::Client,
     base_url: String,
     token_manager: Arc<TokenManager>,
+    wallet_signer: Option<Arc<dyn wallet::RequestSigner>>,
+}
+
+impl std::fmt::Debug for BasilicaClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("BasilicaClient")
+            .field("base_url", &self.base_url)
+            .field("wallet_signer", &self.wallet_signer.as_ref().map(|s| s.address().to_string()))
+            .finish()
+    }
 }
 
 impl BasilicaClient {
@@ -83,6 +92,7 @@ impl BasilicaClient {
         base_url: impl Into<String>,
         timeout: Duration,
         token_manager: Arc<TokenManager>,
+        wallet_signer: Option<Arc<dyn wallet::RequestSigner>>,
     ) -> Result<Self> {
         let http_client = reqwest::Client::builder()
             .timeout(timeout)
@@ -93,6 +103,7 @@ impl BasilicaClient {
             http_client,
             base_url: base_url.into(),
             token_manager,
+            wallet_signer,
         })
     }
 
@@ -143,8 +154,7 @@ impl BasilicaClient {
         follow: bool,
         tail: Option<u32>,
     ) -> Result<reqwest::Response> {
-        let url = format!("{}/rentals/{}/logs", self.base_url, rental_id);
-        let mut request = self.http_client.get(&url);
+        let mut path = format!("/rentals/{}/logs", rental_id);
 
         let mut params: Vec<(&str, String)> = vec![];
         if follow {
@@ -155,11 +165,15 @@ impl BasilicaClient {
         }
 
         if !params.is_empty() {
-            request = request.query(&params);
+            let qs = params
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join("&");
+            path = format!("{}?{}", path, qs);
         }
 
-        let request = self.apply_auth(request).await?;
-        request.send().await.map_err(ApiError::HttpClient)
+        self.send_request_raw(reqwest::Method::GET, &path, None).await
     }
 
     /// List rentals
@@ -167,16 +181,14 @@ impl BasilicaClient {
         &self,
         query: Option<ListRentalsQuery>,
     ) -> Result<ApiListRentalsResponse> {
-        let url = format!("{}/rentals", self.base_url);
-        let mut request = self.http_client.get(&url);
-
+        let mut path = "/rentals".to_string();
         if let Some(q) = &query {
-            request = request.query(&q);
+            let qs = serde_urlencoded::to_string(q).unwrap_or_default();
+            if !qs.is_empty() {
+                path = format!("{}?{}", path, qs);
+            }
         }
-
-        let request = self.apply_auth(request).await?;
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        self.send_request(reqwest::Method::GET, &path, None).await
     }
 
     /// List historical (completed/failed) rentals
@@ -184,16 +196,12 @@ impl BasilicaClient {
         &self,
         limit: Option<u32>,
     ) -> Result<HistoricalRentalsResponse> {
-        let url = format!("{}/rentals/history", self.base_url);
-        let mut request = self.http_client.get(&url);
-
-        if let Some(limit) = limit {
-            request = request.query(&[("limit", limit)]);
-        }
-
-        let request = self.apply_auth(request).await?;
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        let path = if let Some(limit) = limit {
+            format!("/rentals/history?limit={}", limit)
+        } else {
+            "/rentals/history".to_string()
+        };
+        self.send_request(reqwest::Method::GET, &path, None).await
     }
 
     /// List available nodes for rental
@@ -201,16 +209,14 @@ impl BasilicaClient {
         &self,
         query: Option<ListAvailableNodesQuery>,
     ) -> Result<ListAvailableNodesResponse> {
-        let url = format!("{}/nodes", self.base_url);
-        let mut request = self.http_client.get(&url);
-
+        let mut path = "/nodes".to_string();
         if let Some(q) = &query {
-            request = request.query(&q);
+            let qs = serde_urlencoded::to_string(q).unwrap_or_default();
+            if !qs.is_empty() {
+                path = format!("{}?{}", path, qs);
+            }
         }
-
-        let request = self.apply_auth(request).await?;
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        self.send_request(reqwest::Method::GET, &path, None).await
     }
 
     // ===== Health & Discovery =====
@@ -361,18 +367,10 @@ impl BasilicaClient {
         limit: Option<u32>,
         offset: Option<u32>,
     ) -> Result<ListDepositsResponse> {
-        let query = ListDepositsQuery {
-            limit: limit.unwrap_or(50),
-            offset: offset.unwrap_or(0),
-        };
-
-        let url = format!("{}/payments/deposits", self.base_url);
-        let mut request = self.http_client.get(&url);
-        request = request.query(&query);
-
-        let request = self.apply_auth(request).await?;
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        let l = limit.unwrap_or(50);
+        let o = offset.unwrap_or(0);
+        let path = format!("/payments/deposits?limit={}&offset={}", l, o);
+        self.send_request(reqwest::Method::GET, &path, None).await
     }
 
     // ===== Billing Management =====
@@ -390,22 +388,18 @@ impl BasilicaClient {
     ) -> Result<UsageHistoryResponse> {
         let mut params = Vec::new();
         if let Some(limit) = limit {
-            params.push(("limit", limit.to_string()));
+            params.push(format!("limit={}", limit));
         }
         if let Some(offset) = offset {
-            params.push(("offset", offset.to_string()));
+            params.push(format!("offset={}", offset));
         }
 
-        let url = format!("{}/billing/usage", self.base_url);
-        let mut request = self.http_client.get(&url);
-
-        if !params.is_empty() {
-            request = request.query(&params);
-        }
-
-        let request = self.apply_auth(request).await?;
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        let path = if params.is_empty() {
+            "/billing/usage".to_string()
+        } else {
+            format!("/billing/usage?{}", params.join("&"))
+        };
+        self.send_request(reqwest::Method::GET, &path, None).await
     }
 
     /// Get detailed usage for a specific rental
@@ -831,23 +825,21 @@ impl BasilicaClient {
         follow: bool,
         tail: Option<u32>,
     ) -> Result<reqwest::Response> {
-        let url = format!("{}/deployments/{}/logs", self.base_url, instance_name);
+        let mut path = format!("/deployments/{}/logs", instance_name);
 
         let mut params = Vec::new();
         if follow {
-            params.push(("follow", follow.to_string()));
+            params.push(format!("follow={}", follow));
         }
         if let Some(t) = tail {
-            params.push(("tail", t.to_string()));
+            params.push(format!("tail={}", t));
         }
 
-        let mut request = self.http_client.get(&url);
         if !params.is_empty() {
-            request = request.query(&params);
+            path = format!("{}?{}", path, params.join("&"));
         }
-        let request = self.apply_auth(request).await?;
 
-        request.send().await.map_err(ApiError::HttpClient)
+        self.send_request_raw(reqwest::Method::GET, &path, None).await
     }
 
     /// Get deployment events
@@ -868,16 +860,12 @@ impl BasilicaClient {
         instance_name: &str,
         limit: Option<u32>,
     ) -> Result<DeploymentEventsResponse> {
-        let url = format!("{}/deployments/{}/events", self.base_url, instance_name);
-        let mut request = self.http_client.get(&url);
-
-        if let Some(l) = limit {
-            request = request.query(&[("limit", l)]);
-        }
-
-        let request = self.apply_auth(request).await?;
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        let path = if let Some(l) = limit {
+            format!("/deployments/{}/events?limit={}", instance_name, l)
+        } else {
+            format!("/deployments/{}/events", instance_name)
+        };
+        self.send_request(reqwest::Method::GET, &path, None).await
     }
 
     /// Scale a deployment to a specific number of replicas
@@ -1260,27 +1248,62 @@ impl BasilicaClient {
 
     // ===== Private Helper Methods =====
 
-    /// Apply authentication to request
-    /// Uses TokenManager for automatic token refresh
-    async fn apply_auth(&self, request: RequestBuilder) -> Result<RequestBuilder> {
-        let token =
-            self.token_manager
-                .get_access_token()
-                .await
-                .map_err(|e| ApiError::Internal {
-                    message: format!("Failed to get access token: {}", e),
-                })?;
-        Ok(request.header("Authorization", format!("Bearer {}", token)))
+    /// Send an authenticated request, handling both wallet and token auth.
+    async fn send_request<T: DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&[u8]>,
+    ) -> Result<T> {
+        let response = self.send_request_raw(method, path, body).await?;
+        self.handle_response(response).await
+    }
+
+    /// Send an authenticated request and return the raw response.
+    async fn send_request_raw(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&[u8]>,
+    ) -> Result<Response> {
+        let url = format!("{}{}", self.base_url, path);
+        let body_bytes = body.unwrap_or(b"");
+
+        let mut request = self.http_client.request(method.clone(), &url);
+
+        if let Some(signer) = &self.wallet_signer {
+            let headers =
+                wallet::sign_request(signer.as_ref(), method.as_str(), path, body_bytes)
+                    .map_err(|e| ApiError::Internal {
+                        message: format!("Failed to sign request: {}", e),
+                    })?;
+            request = request
+                .header("X-Wallet-Address", &headers.address)
+                .header("X-Wallet-Signature", &headers.signature)
+                .header("X-Timestamp", &headers.timestamp);
+        } else {
+            let token =
+                self.token_manager
+                    .get_access_token()
+                    .await
+                    .map_err(|e| ApiError::Internal {
+                        message: format!("Failed to get access token: {}", e),
+                    })?;
+            request = request.header("Authorization", format!("Bearer {}", token));
+        }
+
+        if let Some(json_bytes) = body {
+            request = request
+                .header("Content-Type", "application/json")
+                .body(json_bytes.to_vec());
+        }
+
+        request.send().await.map_err(ApiError::HttpClient)
     }
 
     /// Generic GET request
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.get(&url);
-        let request = self.apply_auth(request).await?;
-
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        self.send_request(reqwest::Method::GET, path, None).await
     }
 
     /// Unauthenticated GET request for public endpoints
@@ -1293,42 +1316,27 @@ impl BasilicaClient {
 
     /// Generic POST request
     async fn post<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T> {
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.post(&url).json(body);
-        let request = self.apply_auth(request).await?;
-
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        let json_bytes = serde_json::to_vec(body).map_err(|e| ApiError::Internal {
+            message: format!("Failed to serialize request body: {}", e),
+        })?;
+        self.send_request(reqwest::Method::POST, path, Some(&json_bytes))
+            .await
     }
 
     /// Generic POST request without body
     async fn post_empty<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.post(&url);
-        let request = self.apply_auth(request).await?;
-
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        self.send_request(reqwest::Method::POST, path, None).await
     }
 
     /// Generic DELETE request without body
     async fn delete_empty(&self, path: &str) -> Result<Response> {
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.delete(&url);
-        let request = self.apply_auth(request).await?;
-
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        Ok(response)
+        self.send_request_raw(reqwest::Method::DELETE, path, None)
+            .await
     }
 
     /// Generic DELETE request with typed response
     async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
-        let url = format!("{}{}", self.base_url, path);
-        let request = self.http_client.delete(&url);
-        let request = self.apply_auth(request).await?;
-
-        let response = request.send().await.map_err(ApiError::HttpClient)?;
-        self.handle_response(response).await
+        self.send_request(reqwest::Method::DELETE, path, None).await
     }
 
     /// Handle successful response
@@ -1422,7 +1430,6 @@ fn format_phase_message(phase: &str) -> &'static str {
 }
 
 /// Builder for constructing a BasilicaClient with custom configuration
-#[derive(Default)]
 pub struct ClientBuilder {
     base_url: Option<String>,
     access_token: Option<String>,
@@ -1432,6 +1439,25 @@ pub struct ClientBuilder {
     pool_max_idle_per_host: Option<usize>,
     use_file_auth: bool,
     api_key: Option<String>,
+    wallet_signer: Option<Arc<dyn wallet::RequestSigner>>,
+}
+
+// Cannot derive Default because wallet::RequestSigner is not Default
+impl Default for ClientBuilder {
+    #[allow(clippy::derivable_impls)]
+    fn default() -> Self {
+        Self {
+            base_url: None,
+            access_token: None,
+            refresh_token: None,
+            timeout: None,
+            connect_timeout: None,
+            pool_max_idle_per_host: None,
+            use_file_auth: false,
+            api_key: None,
+            wallet_signer: None,
+        }
+    }
 }
 
 impl ClientBuilder {
@@ -1490,10 +1516,17 @@ impl ClientBuilder {
         self
     }
 
+    /// Use wallet-based authentication. The signer handles signing -- we never see the private key.
+    pub fn with_wallet_signer(mut self, signer: Arc<dyn wallet::RequestSigner>) -> Self {
+        self.wallet_signer = Some(signer);
+        self
+    }
+
     /// Build the client with automatic authentication detection
     /// This will automatically find and use CLI tokens if available
     pub async fn build_auto(self) -> Result<BasilicaClient> {
         let base_url = self.base_url.unwrap_or_else(|| DEFAULT_API_URL.to_string());
+        let wallet_signer = self.wallet_signer;
 
         // Always try file-based auth for auto mode
         let token_manager = TokenManager::new_file_based().map_err(|e| ApiError::Internal {
@@ -1504,15 +1537,19 @@ impl ClientBuilder {
             .timeout
             .unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
-        BasilicaClient::new(base_url, timeout, Arc::new(token_manager))
+        BasilicaClient::new(base_url, timeout, Arc::new(token_manager), wallet_signer)
     }
 
     /// Build the client
     pub fn build(self) -> Result<BasilicaClient> {
         let base_url = self.base_url.unwrap_or_else(|| DEFAULT_API_URL.to_string());
+        let wallet_signer = self.wallet_signer;
 
-        // Create token manager based on auth configuration
-        let token_manager = if let Some(api_key) = self.api_key {
+        // If wallet signer is present, token manager is unused but we still need one
+        let token_manager = if wallet_signer.is_some() {
+            // Create a dummy token manager -- wallet auth doesn't use it
+            TokenManager::new_api_key("unused".to_string())
+        } else if let Some(api_key) = self.api_key {
             // API key takes precedence
             TokenManager::new_api_key(api_key)
         } else if self.use_file_auth {
@@ -1526,7 +1563,7 @@ impl ClientBuilder {
             TokenManager::new_direct(access_token, refresh_token)
         } else {
             return Err(ApiError::InvalidRequest {
-                message: "Either use with_tokens() with both access and refresh tokens, with_file_auth(), or with_api_key()"
+                message: "Either use with_tokens() with both access and refresh tokens, with_file_auth(), with_api_key(), or with_wallet_signer()"
                     .into(),
             });
         };
@@ -1535,7 +1572,7 @@ impl ClientBuilder {
             .timeout
             .unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
 
-        BasilicaClient::new(base_url, timeout, Arc::new(token_manager))
+        BasilicaClient::new(base_url, timeout, Arc::new(token_manager), wallet_signer)
     }
 }
 
@@ -2404,5 +2441,76 @@ mod tests {
 
         let response = client.create_deployment(request).await.unwrap();
         assert!(response.public_metadata);
+    }
+
+    #[tokio::test]
+    async fn test_wallet_client_sends_wallet_headers() {
+        use crate::auth::wallet::Sr25519Signer;
+        use basilica_common::crypto::wallet::generate_sr25519_wallet;
+        use wiremock::matchers::header_exists;
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .and(header_exists("X-Wallet-Address"))
+            .and(header_exists("X-Wallet-Signature"))
+            .and(header_exists("X-Timestamp"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "healthy",
+                "version": "1.0.0",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "healthy_validators": 10,
+                "total_validators": 10,
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let wallet = generate_sr25519_wallet(42).unwrap();
+        let signer = Sr25519Signer::from_mnemonic(&wallet.mnemonic, 42).unwrap();
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_wallet_signer(Arc::new(signer))
+            .build()
+            .unwrap();
+
+        let health = client.health_check().await.unwrap();
+        assert_eq!(health.status, "healthy");
+    }
+
+    #[tokio::test]
+    async fn test_wallet_client_does_not_send_authorization_header() {
+        use crate::auth::wallet::Sr25519Signer;
+        use basilica_common::crypto::wallet::generate_sr25519_wallet;
+        use wiremock::matchers::header_exists;
+
+        let mock_server = MockServer::start().await;
+
+        // This mock requires NO Authorization header and DOES require wallet headers
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .and(header_exists("X-Wallet-Address"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "status": "healthy",
+                "version": "1.0.0",
+                "timestamp": "2024-01-01T00:00:00Z",
+                "healthy_validators": 10,
+                "total_validators": 10,
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let wallet = generate_sr25519_wallet(42).unwrap();
+        let signer = Sr25519Signer::from_mnemonic(&wallet.mnemonic, 42).unwrap();
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_wallet_signer(Arc::new(signer))
+            .build()
+            .unwrap();
+
+        let health = client.health_check().await.unwrap();
+        assert_eq!(health.status, "healthy");
     }
 }

@@ -69,6 +69,10 @@ regex = { workspace = true }
 # URL encoding
 urlencoding = { workspace = true }
 
+# Crypto for wallet key loading
+bittensor = { workspace = true }
+hex = { workspace = true }
+
 # Internal crate dependencies
 basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }

@@ -68,6 +68,18 @@ pub struct Args {
     #[arg(long, global = true)]
     pub json: bool,
 
+    /// Path to sr25519 key file for wallet authentication
+    #[arg(long, global = true, value_hint = ValueHint::FilePath)]
+    pub wallet_key_file: Option<PathBuf>,
+
+    /// SS58 wallet address (required with --wallet-key-file)
+    #[arg(long, global = true)]
+    pub wallet_address: Option<String>,
+
+    /// API token for authentication
+    #[arg(long, global = true, env = "BASILICA_API_TOKEN")]
+    pub api_token: Option<String>,
+
     /// Subcommand to execute
     #[command(subcommand)]
     pub command: Commands,
@@ -84,6 +96,13 @@ impl Args {
             CliConfig::load()?
         };
 
+        // Set global auth options from CLI flags before any command runs
+        crate::client::set_auth_options(crate::client::AuthOptions {
+            wallet_key_file: self.wallet_key_file.clone(),
+            wallet_address: self.wallet_address.clone(),
+            api_token: self.api_token.clone(),
+        });
+
         // Check if command requires authentication and handle auto-login if needed
         if self.command.requires_auth() {
             self.execute_with_auth_retry(&config).await
@@ -99,6 +118,11 @@ impl Args {
             Err(err) => {
                 // Check if this is specifically a login_required error
                 if matches!(&err, CliError::Auth(_)) {
+                    // Don't try interactive login when non-interactive auth is active
+                    if self.is_non_interactive_auth() {
+                        return Err(err);
+                    }
+
                     // Inform user we need to authenticate
                     println!("You need to authenticate to continue.");
                     println!();
@@ -124,6 +148,20 @@ impl Args {
             }
             Ok(result) => Ok(result),
         }
+    }
+
+    /// Check if non-interactive auth is configured (wallet, API token, or env vars)
+    fn is_non_interactive_auth(&self) -> bool {
+        self.wallet_key_file.is_some()
+            || self.api_token.is_some()
+            || std::env::var("BASILICA_WALLET_MNEMONIC")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .is_some()
+            || std::env::var("BASILICA_API_TOKEN")
+                .ok()
+                .filter(|v| !v.is_empty())
+                .is_some()
     }
 
     /// Execute the actual command
