@@ -689,6 +689,7 @@ async fn handle_rental_with_offering(
     use basilica_sdk::types::StartSecureCloudRentalRequest;
 
     let request = StartSecureCloudRentalRequest {
+        name: None,
         offering_id: offering.id().to_string(),
         ssh_public_key_id: ssh_key_id,
     };
@@ -932,6 +933,7 @@ async fn handle_community_cloud_rental_with_selection(
         })?;
 
     let request = StartRentalApiRequest {
+        name: None,
         gpu_category: selection.gpu_category,
         gpu_count: selection.gpu_count,
         min_memory_gb: None,

@@ -49,9 +49,9 @@ use crate::{
         DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse,
         HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery, ListDepositsQuery,
         ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
-        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalStatusWithSshResponse,
-        RentalUsageResponse, ScaleDeploymentRequest, ShareTokenStatusResponse, SshKeyResponse,
-        UsageHistoryResponse, WaitOptions, WaitResult,
+        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalResponse,
+        RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
+        ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse, WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
 };
@@ -63,7 +63,6 @@ pub const DEFAULT_API_URL: &str = "https://api.basilica.ai";
 pub const DEFAULT_TIMEOUT_SECS: u64 = 1200;
 use basilica_common::ApiKeyName;
 use basilica_validator::api::types::ListAvailableNodesResponse;
-use basilica_validator::rental::RentalResponse;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;

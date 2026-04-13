@@ -672,7 +672,8 @@ pub async fn handle_attach_volume(
 
     // Attach the volume with spinner
     let request = AttachVolumeRequest {
-        rental_id: rental_id.clone(),
+        rental_name: None,
+        rental_id: Some(rental_id.clone()),
     };
 
     let rental_id_short = &rental_id[..8.min(rental_id.len())];
