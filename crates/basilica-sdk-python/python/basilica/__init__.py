@@ -1125,9 +1125,9 @@ class BasilicaClient:
         """Get rental status by ID."""
         return self._client.get_rental(rental_id)
 
-    def stop_rental(self, rental_id: str) -> None:
-        """Stop a rental by ID."""
-        self._client.stop_rental(rental_id)
+    def stop_rental(self, rental_id: str) -> "StopRentalResponse":
+        """Stop a rental by ID or name."""
+        return self._client.stop_rental(rental_id)
 
     def list_rentals(
         self,

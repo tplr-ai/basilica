@@ -39,6 +39,19 @@ pub struct RentalResponse {
     pub container_info: basilica_validator::rental::ContainerInfo,
 }
 
+/// Response from stopping a community rental.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StopRentalResponse {
+    /// User-facing rental name
+    pub name: String,
+
+    /// Internal rental ID
+    pub rental_id: String,
+
+    /// Rental status after stopping
+    pub status: String,
+}
+
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HealthCheckResponse {
@@ -256,15 +269,13 @@ impl RentalStatusWithSshResponse {
     /// Create from validator response, database SSH credentials, port mappings, and public key
     pub fn from_validator_response(
         response: ValidatorRentalStatusResponse,
+        name: String,
         ssh_credentials: Option<String>,
         port_mappings: Option<Vec<basilica_validator::rental::PortMapping>>,
         ssh_public_key: Option<String>,
     ) -> Self {
         Self {
-            name: format!(
-                "rental-{}",
-                response.rental_id.chars().take(57).collect::<String>()
-            ),
+            name,
             rental_id: response.rental_id,
             status: response.status,
             node: response.node,
