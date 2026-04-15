@@ -109,9 +109,10 @@ impl BasilicaClient {
     }
 
     /// Stop a rental
-    pub async fn stop_rental(&self, rental_id: &str) -> Result<crate::types::StopRentalResponse> {
+    pub async fn stop_rental(&self, rental_id: &str) -> Result<()> {
         let path = format!("/rentals/{rental_id}");
-        self.delete(&path).await
+        self.delete_empty(&path).await?;
+        Ok(())
     }
 
     /// Restart a rental's container

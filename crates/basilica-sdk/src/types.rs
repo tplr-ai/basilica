@@ -39,19 +39,6 @@ pub struct RentalResponse {
     pub container_info: basilica_validator::rental::ContainerInfo,
 }
 
-/// Response from stopping a community rental.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StopRentalResponse {
-    /// User-facing rental name
-    pub name: String,
-
-    /// Internal rental ID
-    pub rental_id: String,
-
-    /// Rental status after stopping
-    pub status: String,
-}
-
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HealthCheckResponse {

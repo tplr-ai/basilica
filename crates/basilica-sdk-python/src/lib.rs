@@ -169,16 +169,11 @@ impl BasilicaClient {
     ///
     /// Args:
     ///     rental_id: The rental ID
-    fn stop_rental(
-        &self,
-        _py: Python,
-        rental_id: String,
-    ) -> PyResult<crate::types::StopRentalResponse> {
+    fn stop_rental(&self, _py: Python, rental_id: String) -> PyResult<()> {
         let client = Arc::clone(&self.inner);
 
         self.runtime
             .block_on(async move { client.stop_rental(&rental_id).await })
-            .map(|r| r.into())
             .map_err(|e| self.map_error_to_python(e))
     }
 

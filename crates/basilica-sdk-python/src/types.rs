@@ -21,7 +21,6 @@ use basilica_sdk::types::{
     SecureCloudRentalResponse as SdkSecureCloudRentalResponse, SshAccess as SdkSshAccess,
     SshKeyResponse as SdkSshKeyResponse, StartRentalApiRequest as SdkStartRentalApiRequest,
     StartSecureCloudRentalRequest as SdkStartSecureCloudRentalRequest,
-    StopRentalResponse as SdkStopRentalResponse,
     StopSecureCloudRentalResponse as SdkStopSecureCloudRentalResponse,
     VolumeMountRequest as SdkVolumeMountRequest,
 };
@@ -180,29 +179,6 @@ impl From<SdkRentalResponse> for RentalResponse {
             container_id: response.container_info.container_id,
             container_name: response.container_info.container_name,
             status: response.container_info.status,
-        }
-    }
-}
-
-/// Response from stopping a community rental
-#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
-#[derive(Clone)]
-pub struct StopRentalResponse {
-    #[pyo3(get)]
-    pub name: String,
-    #[pyo3(get)]
-    pub rental_id: String,
-    #[pyo3(get)]
-    pub status: String,
-}
-
-impl From<SdkStopRentalResponse> for StopRentalResponse {
-    fn from(response: SdkStopRentalResponse) -> Self {
-        Self {
-            name: response.name,
-            rental_id: response.rental_id,
-            status: response.status,
         }
     }
 }
