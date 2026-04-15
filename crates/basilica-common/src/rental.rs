@@ -1,6 +1,112 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 use crate::compute::Resources;
+
+// ============================================================================
+// Rental Name
+// ============================================================================
+
+const DEFAULT_RENTAL_NAME_PREFIX: &str = "rental-";
+pub const MAX_RENTAL_NAME_LEN: usize = 64;
+const DEFAULT_RENTAL_ID_CHARS: usize = MAX_RENTAL_NAME_LEN - DEFAULT_RENTAL_NAME_PREFIX.len();
+
+/// A validated rental name.
+///
+/// Invariants enforced at construction:
+/// - 1..=64 characters
+/// - Starts with a lowercase ASCII letter or digit
+/// - Contains only lowercase ASCII letters, digits, dash, or underscore
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct RentalName(String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvalidRentalName(pub String);
+
+impl fmt::Display for InvalidRentalName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for InvalidRentalName {}
+
+impl RentalName {
+    pub fn new(name: impl Into<String>) -> Result<Self, InvalidRentalName> {
+        let name = name.into();
+        let mut chars = name.chars();
+
+        let Some(first) = chars.next() else {
+            return Err(InvalidRentalName("Rental name cannot be empty".to_string()));
+        };
+
+        if name.len() > MAX_RENTAL_NAME_LEN {
+            return Err(InvalidRentalName(
+                "Rental name cannot exceed 64 characters".to_string(),
+            ));
+        }
+
+        if !first.is_ascii_lowercase() && !first.is_ascii_digit() {
+            return Err(InvalidRentalName(
+                "Rental name must start with a lowercase letter or digit".to_string(),
+            ));
+        }
+
+        if !chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
+            return Err(InvalidRentalName(
+                "Rental name may only contain lowercase letters, digits, dash, or underscore"
+                    .to_string(),
+            ));
+        }
+
+        Ok(Self(name))
+    }
+
+    /// Generate a default name from a rental ID. Always valid by construction.
+    pub fn default_from_id(rental_id: &str) -> Self {
+        let suffix: String = rental_id.chars().take(DEFAULT_RENTAL_ID_CHARS).collect();
+        Self(format!("{DEFAULT_RENTAL_NAME_PREFIX}{suffix}"))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl TryFrom<String> for RentalName {
+    type Error = InvalidRentalName;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<RentalName> for String {
+    fn from(name: RentalName) -> Self {
+        name.0
+    }
+}
+
+impl fmt::Display for RentalName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// Generate a default rental name string from a rental ID.
+///
+/// Prefer `RentalName::default_from_id` when you need a validated type.
+/// This function is kept for contexts that work with raw strings (e.g. DB fallbacks).
+pub fn generate_default_rental_name(rental_id: &str) -> String {
+    let suffix: String = rental_id.chars().take(DEFAULT_RENTAL_ID_CHARS).collect();
+    format!("{DEFAULT_RENTAL_NAME_PREFIX}{suffix}")
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AccessType {
