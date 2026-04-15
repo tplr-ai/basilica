@@ -1113,16 +1113,6 @@ pub async fn handle_up(
 ) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
-    // Resolve rental name: use --name arg if provided, otherwise prompt interactively
-    let name = match options.name.take() {
-        Some(n) => {
-            // Validate the name provided via --name
-            RentalName::new(n.trim()).map_err(|e| CliError::Internal(eyre!(e.to_string())))?;
-            n.trim().to_string()
-        }
-        None => prompt_rental_name()?,
-    };
-
     // Ensure SSH key is registered before proceeding (needed for both clouds)
     ensure_ssh_key_registered(&api_client).await?;
 
@@ -1155,6 +1145,16 @@ pub async fn handle_up(
     )
     .await
     .map_err(CliError::Internal)?;
+
+    // Resolve rental name: use --name arg if provided, otherwise prompt interactively
+    let name = match options.name.take() {
+        Some(n) => {
+            // Validate the name provided via --name
+            RentalName::new(n.trim()).map_err(|e| CliError::Internal(eyre!(e.to_string())))?;
+            n.trim().to_string()
+        }
+        None => prompt_rental_name()?,
+    };
 
     match selected {
         SelectedOffering::SecureCloud(offering) => {
