@@ -63,9 +63,10 @@ def main():
     print(f"  - Storage: {offering.storage_gb}GB")
     print(f"  - Hourly rate: ${offering.hourly_rate}")
 
-    rental = client.start_secure_cloud_rental(offering_id=offering.id)
+    rental = client.start_secure_cloud_rental(offering_id=offering.id, name="example-gpu")
 
     print("\nRental request submitted!")
+    print(f"  Name: {rental.name}")
     print(f"  Rental ID: {rental.rental_id}")
     print(f"  Provider: {rental.provider}")
     print(f"  Hourly cost: ${rental.hourly_cost:.4f}")
@@ -90,7 +91,8 @@ def main():
     print("=" * 60)
 
     # Display all rental information
-    print(f"\n  Rental ID: {ready_rental.rental_id}")
+    print(f"\n  Name: {ready_rental.name}")
+    print(f"  Rental ID: {ready_rental.rental_id}")
     print(f"  Status: {ready_rental.status}")
     print(f"  Provider: {ready_rental.provider}")
 
@@ -138,17 +140,18 @@ def main():
         input()
     except KeyboardInterrupt:
         print("\n\nExiting without terminating the rental.")
-        print(f"To manually stop later, run: client.stop_secure_cloud_rental('{rental.rental_id}')")
+        print(f"To manually stop later, run: client.stop_secure_cloud_rental('{rental.name}')")
         return
 
     # Step 7: Stop the rental
     print("\n[Step 7] Stopping rental...")
     try:
-        result = client.stop_secure_cloud_rental(rental.rental_id)
+        result = client.stop_secure_cloud_rental(rental.name)
         print("\n" + "=" * 60)
         print("  RENTAL STOPPED")
         print("=" * 60)
-        print(f"\n  Rental ID: {result.rental_id}")
+        print(f"\n  Name: {result.name}")
+        print(f"  Rental ID: {result.rental_id}")
         print(f"  Status: {result.status}")
         print(f"  Duration: {result.duration_hours:.4f} hours")
         print(f"  Total cost: ${result.total_cost:.4f}")

@@ -25,6 +25,9 @@ def main():
 
     # Start a rental with all available configuration options
     rental = client.start_rental(
+        # Rental name (optional, auto-generated if omitted)
+        name="my-training-box",
+
         # Container configuration
         container_image="pytorch/pytorch:2.0.0-cuda11.7-cudnn8-runtime",  # Default: basilica default image
 
@@ -58,6 +61,7 @@ def main():
     print("\nRental started successfully!")
 
     # Access rental details
+    print(f"Name: {rental.name}")
     print(f"Rental ID: {rental.rental_id}")
     print(f"Container: {rental.container_name}")
     print(f"Status: {rental.status}")
@@ -74,8 +78,8 @@ def main():
     for gpu in status.node.gpu_specs:
         print(f"GPU: {gpu.name} - {gpu.memory_gb} GB")
 
-    # Stop rental when done
-    # client.stop_rental(rental.rental_id)
+    # Stop rental when done (can use name or rental_id)
+    # client.stop_rental(rental.name)
 
 
 if __name__ == "__main__":
