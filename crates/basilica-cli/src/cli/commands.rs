@@ -80,13 +80,13 @@ pub enum Commands {
 
     /// Check instance status
     Status {
-        /// Rental UUID (optional)
+        /// Rental name or ID (optional)
         target: Option<String>,
     },
 
     /// View instance logs
     Logs {
-        /// Rental UUID (optional)
+        /// Rental name or ID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -96,7 +96,7 @@ pub enum Commands {
     /// Terminate instance
     #[command(alias = "stop")]
     Down {
-        /// Rental UUID to terminate (optional)
+        /// Rental name or ID to terminate (optional)
         target: Option<String>,
 
         /// Compute source: 'citadel' (The Citadel) or 'bourse' (The Bourse)
@@ -110,7 +110,7 @@ pub enum Commands {
 
     /// Restart instance container
     Restart {
-        /// Rental UUID to restart (optional)
+        /// Rental name or ID to restart (optional)
         target: Option<String>,
     },
 
@@ -119,7 +119,7 @@ pub enum Commands {
         /// Command to execute
         command: String,
 
-        /// Rental UUID (optional)
+        /// Rental name or ID (optional)
         #[arg(long)]
         target: Option<String>,
     },
@@ -127,7 +127,7 @@ pub enum Commands {
     /// SSH into instances
     #[command(alias = "connect")]
     Ssh {
-        /// Rental UUID (optional)
+        /// Rental name or ID (optional)
         target: Option<String>,
 
         #[command(flatten)]
@@ -136,11 +136,11 @@ pub enum Commands {
 
     /// Copy files to/from instances
     Cp {
-        /// Source path (local or remote)
+        /// Source path (local or rental_name:remote_path)
         #[arg(value_hint = ValueHint::AnyPath)]
         source: String,
 
-        /// Destination path (local or remote)
+        /// Destination path (local or rental_name:remote_path)
         #[arg(value_hint = ValueHint::AnyPath)]
         destination: String,
     },
@@ -315,7 +315,7 @@ pub enum VolumeAction {
         /// Volume ID or name (will prompt if not provided)
         volume: Option<String>,
 
-        /// Rental ID to attach to (will prompt if not provided)
+        /// Rental name or ID to attach to (will prompt if not provided)
         #[arg(long)]
         rental: Option<String>,
     },
@@ -424,7 +424,7 @@ pub struct UpOptions {
     #[arg(long)]
     pub env: Vec<String>,
 
-    /// Instance name
+    /// Rental name (lowercase letters, digits, dash, underscore; max 64 chars)
     #[arg(long)]
     pub name: Option<String>,
 

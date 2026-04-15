@@ -133,21 +133,30 @@ pub fn aggregate_nodes_by_gpu_category(nodes: &[AvailableNode]) -> Vec<GpuCatego
     aggregations
 }
 
-/// Resolve target rental ID - if not provided, fetch active rentals and prompt for selection
+/// Check whether a string looks like a UUID (rental ID) vs a rental name
+fn is_uuid(s: &str) -> bool {
+    uuid::Uuid::parse_str(s).is_ok()
+}
+
+/// Result of resolving a rental target (name or ID) to its full identity
+pub struct ResolvedRental {
+    pub rental_id: String,
+    pub name: String,
+    pub compute_type: ComputeCategory,
+}
+
+/// Resolve target rental — if not provided, fetch active rentals and prompt for selection.
+/// Returns (rental_id, name).
 ///
 /// # Arguments
-/// * `target` - Optional rental ID provided by user
+/// * `target` - Optional rental name or ID provided by user
 /// * `api_client` - Authenticated API client
 /// * `require_ssh` - If true, only show rentals with SSH access
 pub async fn resolve_target_rental(
     target: Option<String>,
     api_client: &BasilicaClient,
     require_ssh: bool,
-) -> Result<String> {
-    if let Some(t) = target {
-        return Ok(t);
-    }
-
+) -> Result<(String, String)> {
     let spinner = if require_ssh {
         create_spinner("Fetching rentals with SSH access...")
     } else {
@@ -168,7 +177,7 @@ pub async fn resolve_target_rental(
             .rentals
             .into_iter()
             .filter(|r| r.has_ssh)
-            .collect()
+            .collect::<Vec<_>>()
     } else {
         rentals_list.rentals
     };
@@ -183,6 +192,20 @@ pub async fn resolve_target_rental(
         };
     }
 
+    // If target provided, resolve by name or ID
+    if let Some(t) = target {
+        let rental = if is_uuid(&t) {
+            eligible_rentals.iter().find(|r| r.rental_id == t)
+        } else {
+            eligible_rentals.iter().find(|r| r.name == t)
+        };
+        if let Some(rental) = rental {
+            return Ok((rental.rental_id.clone(), rental.name.clone()));
+        }
+        return Err(eyre!("Rental '{}' not found", t)
+            .suggestion("Try 'basilica ps' to see your active rentals"));
+    }
+
     // Use interactive selector to choose a rental (use compact mode for better readability)
     let selector = crate::interactive::InteractiveSelector::new();
     Ok(selector.select_rental(&eligible_rentals, false)?)
@@ -191,38 +214,33 @@ pub async fn resolve_target_rental(
 /// Unified rental item for selection across both compute types
 #[derive(Clone)]
 struct UnifiedRentalItem {
+    name: String,
     rental_id: String,
     compute_type: ComputeCategory,
     provider_or_node: String,
-    location: String,
     gpu_info: String,
     status: String,
-    created_at: String,
     ip_address: Option<String>,
 }
 
-/// Resolve target rental ID with unified selection across compute types
+/// Resolve target rental with unified selection across compute types.
+///
+/// Accepts a rental name or ID as target. If not provided, shows interactive selection.
 ///
 /// # Arguments
-/// * `target` - Optional rental ID provided by user
+/// * `target` - Optional rental name or ID provided by user
 /// * `compute_filter` - Optional compute category to filter rentals
 /// * `api_client` - Authenticated API client
 /// * `exclude_vip` - If true, VIP rentals will be excluded from selection (for commands like `down`)
 ///
 /// # Returns
-/// Returns (rental_id, compute_category) tuple
+/// Returns `ResolvedRental` with rental_id, name, and compute_type
 pub async fn resolve_target_rental_unified(
     target: Option<String>,
     compute_filter: Option<ComputeCategory>,
     api_client: &BasilicaClient,
     exclude_vip: bool,
-) -> Result<(String, ComputeCategory)> {
-    // If target provided, determine type based on filter or default
-    if let Some(t) = target {
-        let compute_type = compute_filter.unwrap_or(ComputeCategory::SecureCloud);
-        return Ok((t, compute_type));
-    }
-
+) -> Result<ResolvedRental> {
     let spinner = create_spinner("Fetching active rentals...");
 
     // Fetch rentals based on filter
@@ -290,22 +308,13 @@ pub async fn resolve_target_rental_unified(
                 format!("{}x {}", rental.gpu_specs.len(), rental.gpu_specs[0].name)
             };
 
-            // Extract country code from location
-            let location_code = rental
-                .location
-                .as_ref()
-                .and_then(|loc| extract_country_code(loc))
-                .unwrap_or("--")
-                .to_string();
-
             unified_items.push(UnifiedRentalItem {
+                name: rental.name.clone(),
                 rental_id: rental.rental_id.clone(),
                 compute_type: ComputeCategory::CommunityCloud,
                 provider_or_node: rental.node_id.clone(),
-                location: location_code,
                 gpu_info,
                 status: format!("{:?}", rental.state),
-                created_at: rental.created_at.clone(),
                 ip_address: None, // IP not available in community cloud list response
             });
         }
@@ -335,22 +344,13 @@ pub async fn resolve_target_rental_unified(
                 base_gpu
             };
 
-            // Extract country code from location_code
-            let location_code = rental
-                .location_code
-                .as_ref()
-                .and_then(|loc| extract_country_code(loc))
-                .unwrap_or("--")
-                .to_string();
-
             unified_items.push(UnifiedRentalItem {
+                name: rental.name.clone(),
                 rental_id: rental.rental_id.clone(),
                 compute_type: ComputeCategory::SecureCloud,
                 provider_or_node: rental.provider.clone(),
-                location: location_code,
                 gpu_info,
                 status: rental.status.clone(),
-                created_at: rental.created_at.to_rfc3339(),
                 ip_address: rental.ip_address.clone(),
             });
         }
@@ -381,24 +381,52 @@ pub async fn resolve_target_rental_unified(
                 (None, None) => "CPU-only".to_string(),
             };
 
-            // Extract country code from location_code
-            let location_code = rental
-                .location_code
-                .as_ref()
-                .and_then(|loc| extract_country_code(loc))
-                .unwrap_or("--")
-                .to_string();
-
             unified_items.push(UnifiedRentalItem {
+                name: rental.name.clone(),
                 rental_id: rental.rental_id.clone(),
                 compute_type: ComputeCategory::SecureCloud,
                 provider_or_node: rental.provider.clone(),
-                location: location_code,
                 gpu_info: cpu_info,
                 status: rental.status.clone(),
-                created_at: rental.created_at.to_rfc3339(),
                 ip_address: rental.ip_address.clone(),
             });
+        }
+    }
+
+    // If target was provided, resolve it from the unified list
+    if let Some(ref t) = target {
+        let matches: Vec<_> = if is_uuid(t) {
+            unified_items
+                .iter()
+                .filter(|item| item.rental_id == *t)
+                .collect()
+        } else {
+            unified_items
+                .iter()
+                .filter(|item| item.name == *t)
+                .collect()
+        };
+
+        match matches.len() {
+            0 => {
+                return Err(eyre!("Rental '{}' not found", t)
+                    .suggestion("Try 'basilica ps' to see your active rentals")
+                    .note("The rental may have expired or been terminated"));
+            }
+            1 => {
+                let item = matches[0];
+                return Ok(ResolvedRental {
+                    rental_id: item.rental_id.clone(),
+                    name: item.name.clone(),
+                    compute_type: item.compute_type,
+                });
+            }
+            _ => {
+                return Err(eyre!(
+                    "Multiple rentals named '{}' found. Use --compute citadel|bourse to disambiguate.",
+                    t
+                ));
+            }
         }
     }
 
@@ -417,7 +445,7 @@ pub async fn resolve_target_rental_unified(
         }
     }
 
-    // Format items for selection
+    // Format items for selection with name as first column
     let items: Vec<String> = unified_items
         .iter()
         .map(|item| {
@@ -433,14 +461,13 @@ pub async fn resolve_target_rental_unified(
                 .unwrap_or_else(|| "--".to_string());
 
             format!(
-                "{} | {:<15} | {:<15} | {:<4} | {:<30} | {:<12} | {}",
+                "{:<20} | {} | {:<15} | {:<20} | {:<12} | {}",
+                truncate(&item.name, 20),
                 style(type_label).cyan(),
                 truncate(&item.provider_or_node, 15),
-                ip_display,
-                item.location,
-                truncate(&item.gpu_info, 30),
+                truncate(&item.gpu_info, 20),
                 item.status,
-                truncate(&item.created_at, 19)
+                ip_display,
             )
         })
         .collect();
@@ -448,13 +475,13 @@ pub async fn resolve_target_rental_unified(
     // Show header hint
     println!(
         "{}",
-        style("  Type      | Provider        | IP              | Loc  | GPU                            | Status       | Created").dim()
+        style("  Name                 | Type      | Provider        | GPU                  | Status       | IP").dim()
     );
 
     // Use dialoguer to select
     let theme = dialoguer::theme::ColorfulTheme::default();
     let selection = Select::with_theme(&theme)
-        .with_prompt("Select rental to stop")
+        .with_prompt("Select rental")
         .items(&items)
         .default(0)
         .interact_opt()
@@ -470,7 +497,11 @@ pub async fn resolve_target_rental_unified(
     let _ = term.clear_last_lines(2);
 
     let selected = &unified_items[selection];
-    Ok((selected.rental_id.clone(), selected.compute_type))
+    Ok(ResolvedRental {
+        rental_id: selected.rental_id.clone(),
+        name: selected.name.clone(),
+        compute_type: selected.compute_type,
+    })
 }
 
 /// Community cloud GPU selection for rental
@@ -957,12 +988,14 @@ pub async fn resolve_offering_unified(
 
 /// Resolve a rental ID to its compute category by checking both cloud types.
 ///
+/// Resolve a rental identifier (name or ID) to its compute category, rental_id, and name.
+///
 /// Fetches rentals from both community and secure clouds (in parallel with timeout),
 /// and determines which cloud the rental belongs to.
-pub async fn resolve_rental_by_id(
-    target_id: &str,
+pub async fn resolve_rental_by_identifier(
+    target: &str,
     api_client: &BasilicaClient,
-) -> Result<ComputeCategory, CliError> {
+) -> Result<ResolvedRental, CliError> {
     let spinner = create_spinner("Looking up rental...");
 
     let community_future = api_client.list_rentals(active_rentals_query());
@@ -975,30 +1008,59 @@ pub async fn resolve_rental_by_id(
 
     complete_spinner_and_clear(spinner);
 
+    let by_id = is_uuid(target);
+
     // Check community cloud first
     if let Ok(community) = community_result {
-        if community.rentals.iter().any(|r| r.rental_id == target_id) {
-            return Ok(ComputeCategory::CommunityCloud);
+        let found = if by_id {
+            community.rentals.iter().find(|r| r.rental_id == target)
+        } else {
+            community.rentals.iter().find(|r| r.name == target)
+        };
+        if let Some(rental) = found {
+            return Ok(ResolvedRental {
+                rental_id: rental.rental_id.clone(),
+                name: rental.name.clone(),
+                compute_type: ComputeCategory::CommunityCloud,
+            });
         }
     }
 
     // Check secure cloud CPU rentals
-    if let Ok(cpu) = &cpu_result {
-        if cpu.rentals.iter().any(|r| r.rental_id == target_id) {
-            return Ok(ComputeCategory::SecureCloud);
+    if let Ok(ref cpu) = cpu_result {
+        let found = if by_id {
+            cpu.rentals.iter().find(|r| r.rental_id == target)
+        } else {
+            cpu.rentals.iter().find(|r| r.name == target)
+        };
+        if let Some(rental) = found {
+            return Ok(ResolvedRental {
+                rental_id: rental.rental_id.clone(),
+                name: rental.name.clone(),
+                compute_type: ComputeCategory::SecureCloud,
+            });
         }
     }
 
     // Check secure cloud GPU rentals
-    if let Ok(secure) = &secure_result {
-        if secure.rentals.iter().any(|r| r.rental_id == target_id) {
-            return Ok(ComputeCategory::SecureCloud);
+    if let Ok(ref secure) = secure_result {
+        let found = if by_id {
+            secure.rentals.iter().find(|r| r.rental_id == target)
+        } else {
+            secure.rentals.iter().find(|r| r.name == target)
+        };
+        if let Some(rental) = found {
+            return Ok(ResolvedRental {
+                rental_id: rental.rental_id.clone(),
+                name: rental.name.clone(),
+                compute_type: ComputeCategory::SecureCloud,
+            });
         }
     }
 
     // Not found in either - provide helpful error
     Err(CliError::Internal(
-        eyre!("Rental '{}' not found", target_id)
+        eyre!("Rental '{}' not found", target)
             .suggestion("Try 'basilica ps' to see your active rentals")
             .note("The rental may have expired or been terminated"),
     ))
@@ -1007,6 +1069,7 @@ pub async fn resolve_rental_by_id(
 /// Result of resolving a rental with SSH access
 pub struct RentalWithSsh {
     pub rental_id: String,
+    pub name: String,
     pub compute_type: ComputeCategory,
     pub ssh_command: String,
     pub ssh_public_key: Option<String>,
@@ -1029,16 +1092,16 @@ pub async fn get_ssh_private_key_path(api_client: &BasilicaClient) -> Result<std
     crate::ssh::find_private_key_for_public_key(&ssh_key.public_key)
 }
 
-/// Resolve a rental ID to its compute category and fetch SSH credentials.
+/// Resolve a rental target (name or ID) to its compute category and fetch SSH credentials.
 ///
-/// When `target_id` is provided, locates the rental and fetches SSH credentials.
-/// When `target_id` is None, uses interactive selector then fetches SSH credentials.
+/// When `target` is provided, locates the rental and fetches SSH credentials.
+/// When `target` is None, uses interactive selector then fetches SSH credentials.
 pub async fn resolve_rental_with_ssh(
-    target_id: Option<&str>,
+    target: Option<&str>,
     api_client: &BasilicaClient,
 ) -> Result<RentalWithSsh, CliError> {
-    if let Some(target_id) = target_id {
-        // Rental ID provided - find it and get SSH credentials
+    if let Some(target) = target {
+        // Rental name or ID provided - find it and get SSH credentials
         let spinner = create_spinner("Looking up rental...");
 
         let community_future = api_client.list_rentals(active_rentals_query());
@@ -1051,12 +1114,21 @@ pub async fn resolve_rental_with_ssh(
 
         complete_spinner_and_clear(spinner);
 
+        let by_id = is_uuid(target);
+
         // Check community cloud first
         if let Ok(ref community) = community_result {
-            if let Some(rental) = community.rentals.iter().find(|r| r.rental_id == target_id) {
-                let (ssh_command, _) = fetch_community_ssh_info(target_id, api_client).await?;
+            let found = if by_id {
+                community.rentals.iter().find(|r| r.rental_id == target)
+            } else {
+                community.rentals.iter().find(|r| r.name == target)
+            };
+            if let Some(rental) = found {
+                let (ssh_command, _) =
+                    fetch_community_ssh_info(&rental.rental_id, api_client).await?;
                 return Ok(RentalWithSsh {
-                    rental_id: target_id.to_string(),
+                    rental_id: rental.rental_id.clone(),
+                    name: rental.name.clone(),
                     compute_type: ComputeCategory::CommunityCloud,
                     ssh_command,
                     ssh_public_key: rental.ssh_public_key.clone(),
@@ -1066,11 +1138,17 @@ pub async fn resolve_rental_with_ssh(
 
         // Check secure cloud CPU rentals
         if let Ok(cpu) = cpu_result {
-            if let Some(rental) = cpu.rentals.iter().find(|r| r.rental_id == target_id) {
+            let found = if by_id {
+                cpu.rentals.iter().find(|r| r.rental_id == target)
+            } else {
+                cpu.rentals.iter().find(|r| r.name == target)
+            };
+            if let Some(rental) = found {
                 let (ssh_command, ssh_public_key) =
-                    secure_rental_ssh_info(target_id, rental, api_client).await?;
+                    secure_rental_ssh_info(&rental.rental_id, rental, api_client).await?;
                 return Ok(RentalWithSsh {
-                    rental_id: target_id.to_string(),
+                    rental_id: rental.rental_id.clone(),
+                    name: rental.name.clone(),
                     compute_type: ComputeCategory::SecureCloud,
                     ssh_command,
                     ssh_public_key,
@@ -1080,11 +1158,17 @@ pub async fn resolve_rental_with_ssh(
 
         // Check secure cloud GPU rentals
         if let Ok(secure) = secure_result {
-            if let Some(rental) = secure.rentals.iter().find(|r| r.rental_id == target_id) {
+            let found = if by_id {
+                secure.rentals.iter().find(|r| r.rental_id == target)
+            } else {
+                secure.rentals.iter().find(|r| r.name == target)
+            };
+            if let Some(rental) = found {
                 let (ssh_command, ssh_public_key) =
-                    secure_rental_ssh_info(target_id, rental, api_client).await?;
+                    secure_rental_ssh_info(&rental.rental_id, rental, api_client).await?;
                 return Ok(RentalWithSsh {
-                    rental_id: target_id.to_string(),
+                    rental_id: rental.rental_id.clone(),
+                    name: rental.name.clone(),
                     compute_type: ComputeCategory::SecureCloud,
                     ssh_command,
                     ssh_public_key,
@@ -1093,25 +1177,27 @@ pub async fn resolve_rental_with_ssh(
         }
 
         Err(CliError::Internal(
-            eyre!("Rental '{}' not found", target_id)
+            eyre!("Rental '{}' not found", target)
                 .suggestion("Try 'basilica ps' to see your active rentals"),
         ))
     } else {
-        // No rental ID - use interactive selector
+        // No target - use interactive selector
         // exclude_vip=false: VIP rentals can be accessed via SSH
-        let (rental_id, compute_type) =
-            resolve_target_rental_unified(None, None, api_client, false).await?;
+        let resolved = resolve_target_rental_unified(None, None, api_client, false).await?;
 
-        let (ssh_command, ssh_public_key) = match compute_type {
+        let (ssh_command, ssh_public_key) = match resolved.compute_type {
             ComputeCategory::CommunityCloud => {
-                fetch_community_ssh_info(&rental_id, api_client).await?
+                fetch_community_ssh_info(&resolved.rental_id, api_client).await?
             }
-            ComputeCategory::SecureCloud => fetch_secure_ssh_info(&rental_id, api_client).await?,
+            ComputeCategory::SecureCloud => {
+                fetch_secure_ssh_info(&resolved.rental_id, api_client).await?
+            }
         };
 
         Ok(RentalWithSsh {
-            rental_id,
-            compute_type,
+            rental_id: resolved.rental_id,
+            name: resolved.name,
+            compute_type: resolved.compute_type,
             ssh_command,
             ssh_public_key,
         })
