@@ -63,6 +63,8 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
 
     #[derive(Tabled)]
     struct RentalRow {
+        #[tabled(rename = "Name")]
+        name: String,
         #[tabled(rename = "GPU")]
         gpu: String,
         #[tabled(rename = "State")]
@@ -120,6 +122,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
             let (rate_per_hour, total_cost) = get_rental_pricing(rental);
 
             RentalRow {
+                name: rental.name.clone(),
                 gpu,
                 state: rental.state.to_string(),
                 ssh: ssh.to_string(),
@@ -751,8 +754,8 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
 
     #[derive(Tabled)]
     struct HistoryRow {
-        #[tabled(rename = "Rental ID")]
-        rental_id: String,
+        #[tabled(rename = "Name")]
+        name: String,
         #[tabled(rename = "GPUs")]
         gpu_count: String,
         #[tabled(rename = "Status")]
@@ -773,7 +776,9 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
             let total_cost = format_usd(&rental.total_cost);
 
             HistoryRow {
-                rental_id: rental.rental_id.clone(),
+                name: rental.name.clone().unwrap_or_else(|| {
+                    format!("id:{}", &rental.rental_id[..8.min(rental.rental_id.len())])
+                }),
                 gpu_count: format!("{}x GPU", rental.gpu_count),
                 status: rental.status.clone(),
                 total_cost,
@@ -810,6 +815,8 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
 
     #[derive(Tabled)]
     struct CpuHistoryRow {
+        #[tabled(rename = "Name")]
+        name: String,
         #[tabled(rename = "Provider")]
         provider: String,
         #[tabled(rename = "vCPU")]
@@ -851,6 +858,9 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
                 .unwrap_or_else(|| "-".to_string());
 
             CpuHistoryRow {
+                name: rental.name.clone().unwrap_or_else(|| {
+                    format!("id:{}", &rental.rental_id[..8.min(rental.rental_id.len())])
+                }),
                 provider: rental.provider.clone().unwrap_or_else(|| "-".to_string()),
                 vcpu,
                 ram,
@@ -892,6 +902,8 @@ pub fn display_secure_cloud_rentals(
 
     #[derive(Tabled)]
     struct SecureCloudRentalRow {
+        #[tabled(rename = "Name")]
+        name: String,
         #[tabled(rename = "Provider")]
         provider: String,
         #[tabled(rename = "GPU")]
@@ -958,6 +970,7 @@ pub fn display_secure_cloud_rentals(
                 .unwrap_or_else(|| "-".to_string());
 
             SecureCloudRentalRow {
+                name: rental.name.clone(),
                 provider: rental.provider.clone(),
                 gpu: gpu_str,
                 status: rental.status.clone(),
@@ -1047,6 +1060,8 @@ pub fn display_cpu_rentals(
 
     #[derive(Tabled)]
     struct CpuRentalRow {
+        #[tabled(rename = "Name")]
+        name: String,
         #[tabled(rename = "Provider")]
         provider: String,
         #[tabled(rename = "vCPU")]
@@ -1098,6 +1113,7 @@ pub fn display_cpu_rentals(
                 .unwrap_or_else(|| "-".to_string());
 
             CpuRentalRow {
+                name: rental.name.clone(),
                 provider: rental.provider.clone(),
                 vcpu,
                 ram,

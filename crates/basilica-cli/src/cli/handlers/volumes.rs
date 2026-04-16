@@ -300,8 +300,8 @@ async fn select_rental_for_volume(
     }
 
     // Format items for selection
-    // Header: Compute | Status | Provider | Rental ID
-    let header = "  Compute              │       Status │   Provider │ Rental ID";
+    // Header: Name | Compute | Status | Provider
+    let header = "  Name                 │ Compute              │       Status │   Provider";
     let prompt = "Select rental to attach volume to";
     let full_prompt = format!("{}\n{}", prompt, style(header).dim());
 
@@ -322,11 +322,11 @@ async fn select_rental_for_volume(
             };
 
             format!(
-                "{:<20} │ {:>12} │ {:>10} │ {}",
+                "{:<20} │ {:<20} │ {:>12} │ {:>10}",
+                truncate(&r.name, 20),
                 truncate(&compute_str, 20),
                 r.status,
                 r.provider,
-                truncate(&r.rental_id, 12)
             )
         })
         .collect();
@@ -352,7 +352,7 @@ async fn select_rental_for_volume(
     let term = Term::stdout();
     let _ = term.clear_last_lines(2);
 
-    Ok(compatible_rentals[selection].rental_id.clone())
+    Ok(compatible_rentals[selection].name.clone())
 }
 
 /// Find a volume by ID or name from the user's volumes
@@ -664,21 +664,28 @@ pub async fn handle_attach_volume(
         )));
     }
 
-    // Get rental ID - either from argument or interactive selection
-    let rental_id = match rental_id {
+    // Get rental name or ID - either from argument or interactive selection
+    let rental_identifier = match rental_id {
         Some(id) => id,
         None => select_rental_for_volume(client, &volume).await?,
     };
 
-    // Attach the volume with spinner
-    let request = AttachVolumeRequest {
-        rental_id: rental_id.clone(),
+    // Attach the volume with spinner — use rental_name if it's not a UUID, rental_id otherwise
+    let request = if uuid::Uuid::parse_str(&rental_identifier).is_ok() {
+        AttachVolumeRequest {
+            rental_name: None,
+            rental_id: Some(rental_identifier.clone()),
+        }
+    } else {
+        AttachVolumeRequest {
+            rental_name: Some(rental_identifier.clone()),
+            rental_id: None,
+        }
     };
 
-    let rental_id_short = &rental_id[..8.min(rental_id.len())];
     let spinner = create_spinner(&format!(
-        "Attaching volume \"{}\" to rental {}...",
-        volume.name, rental_id_short
+        "Attaching volume \"{}\" to rental '{}'...",
+        volume.name, rental_identifier
     ));
 
     let response = client

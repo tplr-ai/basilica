@@ -4,7 +4,7 @@ use crate::cli::commands::{ComputeCategoryArg, ListFilters, LogsOptions, PsFilte
 use crate::cli::handlers::deploy::helpers::stream_logs_to_stdout;
 use crate::cli::handlers::gpu_rental_helpers::{
     active_rentals_query, get_ssh_private_key_path, print_cloud_section_header,
-    resolve_offering_unified, resolve_rental_by_id, resolve_rental_with_ssh,
+    resolve_offering_unified, resolve_rental_by_identifier, resolve_rental_with_ssh,
     resolve_target_rental_unified, with_validator_timeout, CommunityCloudSelection, RentalWithSsh,
     SelectedOffering,
 };
@@ -18,6 +18,7 @@ use crate::output::{
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use crate::ssh::{find_private_key_for_public_key, parse_ssh_credentials, SshClient};
 use crate::CliError;
+use basilica_common::rental::RentalName;
 use basilica_common::types::{ComputeCategory, GpuCategory};
 use basilica_common::utils::{parse_env_vars, parse_port_mappings};
 use basilica_sdk::types::{
@@ -28,6 +29,7 @@ use basilica_sdk::ApiError;
 use color_eyre::eyre::eyre;
 use color_eyre::Section;
 use console::style;
+use dialoguer::Input;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -37,6 +39,22 @@ use tracing::{debug, warn};
 
 /// Maximum time to wait for rental to become active and SSH to be ready
 const RENTAL_READY_TIMEOUT: Duration = Duration::from_secs(300);
+
+fn prompt_rental_name() -> Result<String, CliError> {
+    let default_name = basilica_common::rental::generate_random_rental_name();
+    let theme = dialoguer::theme::ColorfulTheme::default();
+    let name: String = Input::with_theme(&theme)
+        .with_prompt("Rental name")
+        .default(default_name)
+        .validate_with(|input: &String| {
+            RentalName::new(input.trim())
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+        .interact_text()
+        .map_err(|e| CliError::Internal(e.into()))?;
+    Ok(name.trim().to_string())
+}
 
 fn usd_per_gpu_hour_to_cents(value: f64) -> Result<u32, CliError> {
     if !value.is_finite() {
@@ -663,6 +681,7 @@ pub async fn ensure_ssh_key_registered(
 async fn handle_rental_with_offering(
     api_client: basilica_sdk::BasilicaClient,
     offering: RentalOffering,
+    name: String,
     options: UpOptions,
     config: &CliConfig,
 ) -> Result<(), CliError> {
@@ -689,6 +708,7 @@ async fn handle_rental_with_offering(
     use basilica_sdk::types::StartSecureCloudRentalRequest;
 
     let request = StartSecureCloudRentalRequest {
+        name: Some(name.clone()),
         offering_id: offering.id().to_string(),
         ssh_public_key_id: ssh_key_id,
     };
@@ -709,10 +729,7 @@ async fn handle_rental_with_offering(
     };
     complete_spinner_and_clear(spinner);
 
-    print_success(&format!(
-        "Successfully started {} {}",
-        rental_type, response.rental_id
-    ));
+    print_success(&format!("Successfully started {} '{}'", rental_type, name));
 
     if options.detach {
         if let Some(ssh_cmd) = &response.ssh_command {
@@ -720,7 +737,7 @@ async fn handle_rental_with_offering(
                 .await
                 .map_err(CliError::Internal)?;
             display_secure_cloud_reconnection_instructions(
-                &response.rental_id,
+                &name,
                 ssh_cmd,
                 &private_key_path,
                 &format!("To connect to this {}:", rental_noun),
@@ -731,7 +748,7 @@ async fn handle_rental_with_offering(
                 "{} is starting up. Use 'basilica ps' to check status.",
                 instance_noun
             ));
-            print_info(&format!("SSH with: basilica ssh {}", response.rental_id));
+            print_info(&format!("SSH with: basilica ssh {}", name));
         }
         return Ok(());
     }
@@ -773,7 +790,7 @@ async fn handle_rental_with_offering(
                 Ok(_) => {
                     print_info("SSH session closed");
                     display_secure_cloud_reconnection_instructions(
-                        &response.rental_id,
+                        &name,
                         ssh_cmd,
                         &private_key_path,
                         &format!("To reconnect to this {}:", rental_noun),
@@ -782,7 +799,7 @@ async fn handle_rental_with_offering(
                 Err(e) => {
                     print_error(&format!("SSH connection failed: {}", e));
                     display_secure_cloud_reconnection_instructions(
-                        &response.rental_id,
+                        &name,
                         ssh_cmd,
                         &private_key_path,
                         "Try manually connecting using:",
@@ -801,7 +818,7 @@ async fn handle_rental_with_offering(
                     .collect::<String>()
                     + &rental_noun[1..]
             ));
-            print_info(&format!("SSH with: basilica ssh {}", response.rental_id));
+            print_info(&format!("SSH with: basilica ssh {}", name));
         }
     } else {
         println!();
@@ -816,7 +833,7 @@ async fn handle_rental_with_offering(
                 + &rental_noun[1..]
         ));
         print_info("Check status with: basilica ps");
-        print_info(&format!("SSH with: basilica ssh {}", response.rental_id));
+        print_info(&format!("SSH with: basilica ssh {}", name));
     }
 
     Ok(())
@@ -871,6 +888,7 @@ async fn poll_cpu_rental_status(
 async fn handle_community_cloud_rental_with_selection(
     api_client: basilica_sdk::BasilicaClient,
     selection: CommunityCloudSelection,
+    name: String,
     options: UpOptions,
     config: &CliConfig,
 ) -> Result<(), CliError> {
@@ -932,6 +950,7 @@ async fn handle_community_cloud_rental_with_selection(
         })?;
 
     let request = StartRentalApiRequest {
+        name: Some(name.clone()),
         gpu_category: selection.gpu_category,
         gpu_count: selection.gpu_count,
         min_memory_gb: None,
@@ -963,10 +982,7 @@ async fn handle_community_cloud_rental_with_selection(
 
     complete_spinner_and_clear(spinner);
 
-    print_success(&format!(
-        "Successfully started Bourse rental {}",
-        response.rental_id
-    ));
+    print_success(&format!("Successfully started Bourse rental '{}'", name));
 
     let ssh_creds = match response.ssh_credentials {
         Some(ref creds) => creds,
@@ -982,7 +998,7 @@ async fn handle_community_cloud_rental_with_selection(
             .await
             .map_err(CliError::Internal)?;
         display_ssh_connection_instructions(
-            &response.rental_id,
+            &name,
             ssh_creds,
             &private_key_path,
             "SSH connection options:",
@@ -1016,7 +1032,7 @@ async fn handle_community_cloud_rental_with_selection(
                 Ok(_) => {
                     print_info("SSH session closed");
                     display_ssh_connection_instructions(
-                        &response.rental_id,
+                        &name,
                         ssh_creds,
                         &private_key_path,
                         "To reconnect to this rental:",
@@ -1025,7 +1041,7 @@ async fn handle_community_cloud_rental_with_selection(
                 Err(e) => {
                     print_error(&format!("SSH connection failed: {}", e));
                     display_ssh_connection_instructions(
-                        &response.rental_id,
+                        &name,
                         ssh_creds,
                         &private_key_path,
                         "Try manually connecting using:",
@@ -1036,7 +1052,7 @@ async fn handle_community_cloud_rental_with_selection(
             println!();
             print_info("Rental is taking longer than expected to become active");
             print_info("Check status with: basilica ps");
-            print_info(&format!("SSH with: basilica ssh {}", response.rental_id));
+            print_info(&format!("SSH with: basilica ssh {}", name));
         }
     }
 
@@ -1093,7 +1109,7 @@ fn validate_no_community_cloud_options(options: &UpOptions) -> Result<(), CliErr
 /// selection UI across both secure and community clouds.
 pub async fn handle_up(
     target: Option<GpuTarget>,
-    options: UpOptions,
+    mut options: UpOptions,
     compute: Option<ComputeCategoryArg>,
     config: &CliConfig,
 ) -> Result<(), CliError> {
@@ -1132,26 +1148,40 @@ pub async fn handle_up(
     .await
     .map_err(CliError::Internal)?;
 
+    // Resolve rental name: use --name arg if provided, otherwise prompt interactively
+    let name = match options.name.take() {
+        Some(n) => {
+            // Validate the name provided via --name
+            RentalName::new(n.trim()).map_err(|e| CliError::Internal(eyre!(e.to_string())))?;
+            n.trim().to_string()
+        }
+        None => prompt_rental_name()?,
+    };
+
     match selected {
         SelectedOffering::SecureCloud(offering) => {
             validate_no_community_cloud_options(&options)?;
             handle_rental_with_offering(
                 api_client,
                 RentalOffering::SecureCloud(offering),
+                name,
                 options,
                 config,
             )
             .await
         }
         SelectedOffering::CommunityCloud(selection) => {
-            handle_community_cloud_rental_with_selection(api_client, selection, options, config)
-                .await
+            handle_community_cloud_rental_with_selection(
+                api_client, selection, name, options, config,
+            )
+            .await
         }
         SelectedOffering::CpuOnly(offering) => {
             validate_no_community_cloud_options(&options)?;
             handle_rental_with_offering(
                 api_client,
                 RentalOffering::CpuOnly(offering),
+                name,
                 options,
                 config,
             )
@@ -1673,16 +1703,18 @@ pub async fn handle_status(
 ) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
 
-    // Determine rental ID and compute type
-    let (rental_id, compute_type) = if let Some(target_id) = target {
-        // Rental ID provided - resolve which cloud it belongs to
-        let compute_type = resolve_rental_by_id(&target_id, &api_client).await?;
-        (target_id, compute_type)
+    // Determine rental ID, name, and compute type
+    let resolved = if let Some(target_id) = target {
+        // Rental identifier provided - resolve which cloud it belongs to
+        resolve_rental_by_identifier(&target_id, &api_client).await?
     } else {
-        // No rental ID provided - use unified selector
+        // No rental identifier provided - use unified selector
         // exclude_vip=false: VIP rentals can be viewed
         resolve_target_rental_unified(None, None, &api_client, false).await?
     };
+    let rental_id = resolved.rental_id;
+    let _name = resolved.name;
+    let compute_type = resolved.compute_type;
 
     let spinner = create_spinner("Fetching rental status...");
 
@@ -1768,7 +1800,8 @@ pub async fn handle_status(
                     json_output(&rental)?;
                 } else {
                     // Display secure cloud CPU rental details
-                    println!("Rental Status: {}", rental.rental_id);
+                    println!("Rental: {}", rental.name);
+                    println!("  ID: {}", rental.rental_id);
                     println!("  Provider: {}", rental.provider);
                     println!("  Status: {}", rental.status);
                     if let Some(vcpu) = rental.vcpu_count {
@@ -1836,7 +1869,8 @@ pub async fn handle_status(
                     json_output(&rental)?;
                 } else {
                     // Display secure cloud GPU rental details
-                    println!("Rental Status: {}", rental.rental_id);
+                    println!("Rental: {}", rental.name);
+                    println!("  ID: {}", rental.rental_id);
                     println!("  Provider: {}", rental.provider);
                     println!("  Status: {}", rental.status);
                     let gpu_label = format!("{}x {}", rental.gpu_count, rental.gpu_type);
@@ -1913,16 +1947,18 @@ pub async fn handle_logs(
     // Create API client
     let api_client = create_authenticated_client(config).await?;
 
-    // Determine rental ID and compute type
-    let (rental_id, compute_type) = if let Some(target_id) = target {
-        // Rental ID provided - resolve which cloud it belongs to
-        let compute_type = resolve_rental_by_id(&target_id, &api_client).await?;
-        (target_id, compute_type)
+    // Determine rental ID, name, and compute type
+    let resolved = if let Some(target_id) = target {
+        // Rental identifier provided - resolve which cloud it belongs to
+        resolve_rental_by_identifier(&target_id, &api_client).await?
     } else {
-        // No rental ID provided - use unified selector
+        // No rental identifier provided - use unified selector
         // exclude_vip=false: VIP rentals can be viewed
         resolve_target_rental_unified(None, None, &api_client, false).await?
     };
+    let rental_id = resolved.rental_id;
+    let name = resolved.name;
+    let compute_type = resolved.compute_type;
 
     // Check if this is a secure cloud rental
     if matches!(compute_type, ComputeCategory::SecureCloud) {
@@ -1931,7 +1967,7 @@ pub async fn handle_logs(
                 .note("Secure cloud logs support is coming soon")
                 .suggestion(format!(
                     "For now, use SSH to access logs manually: basilica ssh {}",
-                    rental_id
+                    name
                 )),
         ));
     }
@@ -1981,7 +2017,7 @@ pub async fn handle_logs(
 
     complete_spinner_and_clear(spinner);
 
-    println!("Streaming logs for rental {}...", target);
+    println!("Streaming logs for rental '{}'...", name);
     if options.follow {
         println!("Following log output - press Ctrl+C to stop");
     }
@@ -2054,20 +2090,24 @@ pub async fn handle_down(
             for rental in community.rentals {
                 total_count += 1;
                 let rental_id = &rental.rental_id;
-                let spinner = create_spinner(&format!("Stopping rental: {}", rental_id));
+                let rental_name = &rental.name;
+                let spinner = create_spinner(&format!("Stopping rental '{}'...", rental_name));
 
                 match api_client.stop_rental(rental_id).await {
                     Ok(_) => {
                         complete_spinner_and_clear(spinner);
-                        print_success(&format!("Successfully stopped Bourse rental {}", rental_id));
+                        print_success(&format!(
+                            "Successfully stopped Bourse rental '{}'",
+                            rental_name
+                        ));
                         success_count += 1;
                     }
                     Err(e) => {
                         complete_spinner_error(
                             spinner,
-                            &format!("Failed to stop rental: {}", rental_id),
+                            &format!("Failed to stop rental: {}", rental_name),
                         );
-                        failed_rentals.push((rental_id.clone(), "community".to_string(), e));
+                        failed_rentals.push((rental_name.clone(), "community".to_string(), e));
                     }
                 }
             }
@@ -2083,23 +2123,24 @@ pub async fn handle_down(
 
                 total_count += 1;
                 let rental_id = &rental.rental_id;
-                let spinner = create_spinner(&format!("Stopping rental: {}", rental_id));
+                let rental_name = &rental.name;
+                let spinner = create_spinner(&format!("Stopping rental '{}'...", rental_name));
 
                 match api_client.stop_secure_cloud_rental(rental_id).await {
                     Ok(_) => {
                         complete_spinner_and_clear(spinner);
                         print_success(&format!(
-                            "Successfully stopped Citadel (GPU) rental {}",
-                            rental_id
+                            "Successfully stopped Citadel (GPU) rental '{}'",
+                            rental_name
                         ));
                         success_count += 1;
                     }
                     Err(e) => {
                         complete_spinner_error(
                             spinner,
-                            &format!("Failed to stop rental: {}", rental_id),
+                            &format!("Failed to stop rental: {}", rental_name),
                         );
-                        failed_rentals.push((rental_id.clone(), "secure-gpu".to_string(), e));
+                        failed_rentals.push((rental_name.clone(), "secure-gpu".to_string(), e));
                     }
                 }
             }
@@ -2115,23 +2156,24 @@ pub async fn handle_down(
 
                 total_count += 1;
                 let rental_id = &rental.rental_id;
-                let spinner = create_spinner(&format!("Stopping CPU rental: {}", rental_id));
+                let rental_name = &rental.name;
+                let spinner = create_spinner(&format!("Stopping CPU rental '{}'...", rental_name));
 
                 match api_client.stop_cpu_rental(rental_id).await {
                     Ok(_) => {
                         complete_spinner_and_clear(spinner);
                         print_success(&format!(
-                            "Successfully stopped CPU-only rental {}",
-                            rental_id
+                            "Successfully stopped CPU-only rental '{}'",
+                            rental_name
                         ));
                         success_count += 1;
                     }
                     Err(e) => {
                         complete_spinner_error(
                             spinner,
-                            &format!("Failed to stop CPU rental: {}", rental_id),
+                            &format!("Failed to stop CPU rental: {}", rental_name),
                         );
-                        failed_rentals.push((rental_id.clone(), "cpu-only".to_string(), e));
+                        failed_rentals.push((rental_name.clone(), "cpu-only".to_string(), e));
                     }
                 }
             }
@@ -2168,21 +2210,24 @@ pub async fn handle_down(
     } else {
         // Single rental termination using unified resolution
         // exclude_vip=true: VIP rentals cannot be stopped by users
-        let (rental_id, compute_type) =
+        let resolved =
             resolve_target_rental_unified(target, compute_filter, &api_client, true).await?;
+        let rental_id = resolved.rental_id;
+        let name = resolved.name;
+        let compute_type = resolved.compute_type;
 
-        let spinner = create_spinner(&format!("Stopping rental: {}", rental_id));
+        let spinner = create_spinner(&format!("Stopping rental '{}'...", name));
 
         match compute_type {
             ComputeCategory::CommunityCloud => {
-                // Stop community cloud rental
+                // Stop community cloud rental (API requires rental_id, not name)
                 api_client
                     .stop_rental(&rental_id)
                     .await
                     .map_err(|e| -> CliError {
                         complete_spinner_error(spinner.clone(), "Failed to stop rental");
                         let report = match e {
-                            ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
+                            ApiError::NotFound { .. } => eyre!("Rental '{}' not found", name)
                                 .suggestion("Try 'basilica ps' to see your active rentals")
                                 .note("The rental may have already been stopped"),
                             _ => {
@@ -2193,7 +2238,7 @@ pub async fn handle_down(
                     })?;
 
                 complete_spinner_and_clear(spinner);
-                print_success(&format!("Successfully stopped Bourse rental {}", rental_id));
+                print_success(&format!("Successfully stopped Bourse rental '{}'", name));
             }
             ComputeCategory::SecureCloud => {
                 // Check if this is a CPU rental by looking in CPU rentals list first
@@ -2213,7 +2258,7 @@ pub async fn handle_down(
                             let report = match e {
                                 ApiError::NotFound { .. } => eyre!(
                                     "CPU rental '{}' not found",
-                                    rental_id
+                                    name
                                 )
                                 .suggestion(
                                     "Try 'basilica ps --compute secure-cloud' to see your rentals",
@@ -2226,10 +2271,7 @@ pub async fn handle_down(
                         })?;
 
                     complete_spinner_and_clear(spinner);
-                    print_success(&format!(
-                        "Successfully stopped CPU-only rental {}",
-                        rental_id
-                    ));
+                    print_success(&format!("Successfully stopped CPU-only rental '{}'", name));
                 } else {
                     // Stop secure cloud GPU rental
                     api_client
@@ -2240,7 +2282,7 @@ pub async fn handle_down(
                             let report = match e {
                                 ApiError::NotFound { .. } => eyre!(
                                     "Rental '{}' not found",
-                                    rental_id
+                                    name
                                 )
                                 .suggestion(
                                     "Try 'basilica ps --compute secure-cloud' to see your rentals",
@@ -2253,10 +2295,7 @@ pub async fn handle_down(
                         })?;
 
                     complete_spinner_and_clear(spinner);
-                    print_success(&format!(
-                        "Successfully stopped Citadel rental {}",
-                        rental_id
-                    ));
+                    print_success(&format!("Successfully stopped Citadel rental '{}'", name));
                 }
             }
         }
@@ -2271,9 +2310,10 @@ pub async fn handle_restart(target: Option<String>, config: &CliConfig) -> Resul
 
     // Single rental restart (no --all flag as per requirements)
     // exclude_vip=false: VIP rentals included in selector (though restart may fail for secure cloud)
-    let (rental_id, _compute_type) =
-        resolve_target_rental_unified(target, None, &api_client, false).await?;
-    let spinner = create_spinner(&format!("Restarting rental: {}", rental_id));
+    let resolved = resolve_target_rental_unified(target, None, &api_client, false).await?;
+    let rental_id = resolved.rental_id;
+    let name = resolved.name;
+    let spinner = create_spinner(&format!("Restarting rental '{}'...", name));
 
     api_client
         .restart_rental(&rental_id)
@@ -2281,7 +2321,7 @@ pub async fn handle_restart(target: Option<String>, config: &CliConfig) -> Resul
         .map_err(|e| -> CliError {
             complete_spinner_error(spinner.clone(), "Failed to restart rental");
             let report = match e {
-                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", rental_id)
+                ApiError::NotFound { .. } => eyre!("Rental '{}' not found", name)
                     .suggestion("Try 'basilica ps' to see your active rentals"),
                 ApiError::Conflict { message } => {
                     eyre!("Cannot restart rental: {}", message).suggestion(
@@ -2294,7 +2334,7 @@ pub async fn handle_restart(target: Option<String>, config: &CliConfig) -> Resul
         })?;
 
     complete_spinner_and_clear(spinner);
-    print_success(&format!("Successfully restarted rental: {}", rental_id));
+    print_success(&format!("Successfully restarted rental '{}'", name));
 
     Ok(())
 }
@@ -2311,17 +2351,19 @@ pub async fn handle_exec(
     // Resolve rental and SSH credentials
     let RentalWithSsh {
         rental_id,
+        name,
         compute_type,
         ssh_command,
         ssh_public_key,
     } = resolve_rental_with_ssh(target.as_deref(), &api_client).await?;
 
     debug!(
-        "Executing command on {} rental: {}",
+        "Executing command on {} rental '{}': {}",
         match compute_type {
             ComputeCategory::CommunityCloud => "The Bourse",
             ComputeCategory::SecureCloud => "The Citadel",
         },
+        name,
         rental_id
     );
 
@@ -2368,17 +2410,19 @@ pub async fn handle_ssh(
     // Resolve rental and SSH credentials
     let RentalWithSsh {
         rental_id,
+        name,
         compute_type,
         ssh_command,
         ssh_public_key,
     } = resolve_rental_with_ssh(target.as_deref(), &api_client).await?;
 
     debug!(
-        "Opening SSH connection to {} rental: {}",
+        "Opening SSH connection to {} rental '{}': {}",
         match compute_type {
             ComputeCategory::CommunityCloud => "The Bourse",
             ComputeCategory::SecureCloud => "The Citadel",
         },
+        name,
         rental_id
     );
 
@@ -2466,6 +2510,7 @@ pub async fn handle_cp(
 
     // Resolve rental and fetch SSH credentials
     let RentalWithSsh {
+        name: _name,
         ssh_command: ssh_credentials,
         ssh_public_key,
         ..
@@ -2791,7 +2836,7 @@ async fn retry_ssh_connection(
 
 /// Display SSH connection instructions after rental creation
 fn display_ssh_connection_instructions(
-    rental_id: &str,
+    name: &str,
     ssh_credentials: &str,
     private_key_path: &std::path::Path,
     message: &str,
@@ -2807,7 +2852,7 @@ fn display_ssh_connection_instructions(
     println!("  1. Using Basilica CLI:");
     println!(
         "     {}",
-        console::style(format!("basilica ssh {}", rental_id))
+        console::style(format!("basilica ssh {}", name))
             .cyan()
             .bold()
     );
@@ -2833,7 +2878,7 @@ fn display_ssh_connection_instructions(
 
 /// Display SSH connection instructions for secure cloud rentals
 fn display_secure_cloud_reconnection_instructions(
-    rental_id: &str,
+    name: &str,
     ssh_command: &str,
     private_key_path: &std::path::Path,
     message: &str,
@@ -2849,7 +2894,7 @@ fn display_secure_cloud_reconnection_instructions(
     println!("  1. Using Basilica CLI:");
     println!(
         "     {}",
-        console::style(format!("basilica ssh {}", rental_id))
+        console::style(format!("basilica ssh {}", name))
             .cyan()
             .bold()
     );
@@ -2885,7 +2930,8 @@ fn display_rental_status_with_details(
     status: &basilica_sdk::types::RentalStatusWithSshResponse,
     private_key_path: Option<&std::path::Path>,
 ) {
-    println!("Rental Status: {}", status.rental_id);
+    println!("Rental: {}", status.name);
+    println!("  ID: {}", status.rental_id);
     println!("  Status: {:?}", status.status);
     println!("  Node: {}", status.node.id);
     println!(
@@ -2920,7 +2966,7 @@ fn display_rental_status_with_details(
             println!("  1. Using Basilica CLI:");
             println!(
                 "     {}",
-                console::style(format!("basilica ssh {}", status.rental_id))
+                console::style(format!("basilica ssh {}", status.name))
                     .cyan()
                     .bold()
             );

@@ -1037,6 +1037,7 @@ class BasilicaClient:
         environment: Optional[Dict[str, str]] = None,
         ports: Optional[List[Dict[str, Any]]] = None,
         command: Optional[List[str]] = None,
+        name: Optional[str] = None,
     ) -> RentalResponse:
         """
         Start a new GPU rental.
@@ -1051,9 +1052,11 @@ class BasilicaClient:
             environment: Environment variables
             ports: Port mappings
             command: Command to run
+            name: Rental name (lowercase letters, digits, dash, underscore; max 64 chars).
+                  Auto-generated if not provided.
 
         Returns:
-            RentalResponse with rental details
+            RentalResponse with rental details including name
         """
         if container_image is None:
             container_image = DEFAULT_CONTAINER_IMAGE
@@ -1117,17 +1120,18 @@ class BasilicaClient:
             resources=resource_req,
             command=command if command is not None else DEFAULT_COMMAND,
             volumes=[],
+            name=name,
         )
 
         return self._client.start_rental(request)
 
-    def get_rental(self, rental_id: str) -> RentalStatusWithSshResponse:
-        """Get rental status by ID."""
-        return self._client.get_rental(rental_id)
+    def get_rental(self, rental_id_or_name: str) -> RentalStatusWithSshResponse:
+        """Get rental status by ID or name."""
+        return self._client.get_rental(rental_id_or_name)
 
-    def stop_rental(self, rental_id: str) -> None:
-        """Stop a rental by ID."""
-        self._client.stop_rental(rental_id)
+    def stop_rental(self, rental_id_or_name: str) -> None:
+        """Stop a rental by ID or name."""
+        self._client.stop_rental(rental_id_or_name)
 
     def list_rentals(
         self,
@@ -1397,6 +1401,7 @@ class BasilicaClient:
         self,
         offering_id: str,
         ssh_public_key_id: Optional[str] = None,
+        name: Optional[str] = None,
     ) -> CpuRentalResponse:
         """
         Start a CPU-only rental.
@@ -1404,13 +1409,15 @@ class BasilicaClient:
         Args:
             offering_id: The offering ID from list_cpu_offerings()
             ssh_public_key_id: SSH key ID (auto-detected if not provided)
+            name: Rental name (lowercase letters, digits, dash, underscore; max 64 chars).
+                  Auto-generated if not provided.
 
         Returns:
             CpuRentalResponse with rental details and SSH command
 
         Example:
             >>> offerings = client.list_cpu_offerings()
-            >>> rental = client.start_cpu_rental(offerings[0].id)
+            >>> rental = client.start_cpu_rental(offerings[0].id, name="my-cpu")
             >>> print(f"SSH: {rental.ssh_command}")
         """
         # Auto-detect SSH key ID if not provided
@@ -1425,21 +1432,22 @@ class BasilicaClient:
         request = StartCpuRentalRequest(
             offering_id=offering_id,
             ssh_public_key_id=ssh_public_key_id,
+            name=name,
         )
 
         return self._client.start_cpu_rental(request)
 
-    def stop_cpu_rental(self, rental_id: str) -> StopCpuRentalResponse:
+    def stop_cpu_rental(self, rental_id_or_name: str) -> StopCpuRentalResponse:
         """
         Stop a CPU rental.
 
         Args:
-            rental_id: The rental ID to stop
+            rental_id_or_name: The rental ID or name to stop
 
         Returns:
             StopCpuRentalResponse with duration and total cost
         """
-        return self._client.stop_cpu_rental(rental_id)
+        return self._client.stop_cpu_rental(rental_id_or_name)
 
     def list_cpu_rentals(self) -> ListCpuRentalsResponse:
         """
@@ -1482,6 +1490,7 @@ class BasilicaClient:
         self,
         offering_id: str,
         ssh_public_key_id: Optional[str] = None,
+        name: Optional[str] = None,
     ) -> SecureCloudRentalResponse:
         """
         Start a secure cloud GPU rental from a datacenter provider.
@@ -1489,14 +1498,16 @@ class BasilicaClient:
         Args:
             offering_id: The offering ID from list_secure_cloud_gpus()
             ssh_public_key_id: SSH key ID (auto-detected if not provided)
+            name: Rental name (lowercase letters, digits, dash, underscore; max 64 chars).
+                  Auto-generated if not provided.
 
         Returns:
             SecureCloudRentalResponse with rental details and SSH command
 
         Example:
             >>> offerings = client.list_secure_cloud_gpus()
-            >>> rental = client.start_secure_cloud_rental(offerings[0].id)
-            >>> print(f"SSH: {rental.ssh_command}")
+            >>> rental = client.start_secure_cloud_rental(offerings[0].id, name="my-gpu")
+            >>> print(f"Name: {rental.name}, SSH: {rental.ssh_command}")
         """
         # Auto-detect SSH key ID if not provided
         if ssh_public_key_id is None:
@@ -1510,34 +1521,35 @@ class BasilicaClient:
         request = StartSecureCloudRentalRequest(
             offering_id=offering_id,
             ssh_public_key_id=ssh_public_key_id,
+            name=name,
         )
 
         return self._client.start_secure_cloud_rental(request)
 
-    def stop_secure_cloud_rental(self, rental_id: str) -> StopSecureCloudRentalResponse:
+    def stop_secure_cloud_rental(self, rental_id_or_name: str) -> StopSecureCloudRentalResponse:
         """
         Stop a secure cloud GPU rental.
 
         Terminates the provider instance, finalizes billing, and returns total cost.
 
         Args:
-            rental_id: The rental ID to stop
+            rental_id_or_name: The rental ID or name to stop
 
         Returns:
             StopSecureCloudRentalResponse with duration and total cost
 
         Example:
-            >>> result = client.stop_secure_cloud_rental(rental_id)
+            >>> result = client.stop_secure_cloud_rental("my-gpu")
             >>> print(f"Total cost: ${result.total_cost}")
         """
-        return self._client.stop_secure_cloud_rental(rental_id)
+        return self._client.stop_secure_cloud_rental(rental_id_or_name)
 
     def list_secure_cloud_rentals(self) -> ListSecureCloudRentalsResponse:
         """
         List all secure cloud GPU rentals for the authenticated user.
 
         Returns all datacenter GPU rentals including their status, IP addresses,
-        and cost information.
+        names, and cost information.
 
         Returns:
             ListSecureCloudRentalsResponse with rental list and total count
@@ -1546,7 +1558,7 @@ class BasilicaClient:
             >>> rentals = client.list_secure_cloud_rentals()
             >>> print(f"Active rentals: {rentals.total_count}")
             >>> for r in rentals.rentals:
-            ...     print(f"  {r.rental_id}: {r.gpu_count}x {r.gpu_type} - ${r.hourly_cost}/hr")
+            ...     print(f"  {r.name}: {r.gpu_count}x {r.gpu_type} - ${r.hourly_cost}/hr")
         """
         return self._client.list_secure_cloud_rentals()
 

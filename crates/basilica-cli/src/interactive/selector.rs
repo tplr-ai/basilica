@@ -20,8 +20,13 @@ impl InteractiveSelector {
         Self { theme }
     }
 
-    /// Let user select a single instance from active instances
-    pub fn select_rental(&self, rentals: &[ApiRentalListItem], detailed: bool) -> Result<String> {
+    /// Let user select a single instance from active instances.
+    /// Returns (rental_id, name).
+    pub fn select_rental(
+        &self,
+        rentals: &[ApiRentalListItem],
+        detailed: bool,
+    ) -> Result<(String, String)> {
         if rentals.is_empty() {
             return Err(eyre!("No active instances").into());
         }
@@ -69,7 +74,10 @@ impl InteractiveSelector {
                     }
                 };
 
-                format!("{:<30} {:<30}", gpu, rental.container_image)
+                format!(
+                    "{:<20} {:<20} {:<30}",
+                    rental.name, gpu, rental.container_image
+                )
             })
             .collect();
 
@@ -88,7 +96,10 @@ impl InteractiveSelector {
         let term = Term::stdout();
         let _ = term.clear_last_lines(1);
 
-        Ok(rentals[selection].rental_id.clone())
+        Ok((
+            rentals[selection].rental_id.clone(),
+            rentals[selection].name.clone(),
+        ))
     }
 
     /// Let user select instance items for termination
@@ -124,7 +135,10 @@ impl InteractiveSelector {
                     }
                 };
 
-                format!("{:<30} {:<30}", gpu, rental.container_image)
+                format!(
+                    "{:<20} {:<20} {:<30}",
+                    rental.name, gpu, rental.container_image
+                )
             })
             .collect();
 

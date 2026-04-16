@@ -23,6 +23,22 @@ pub use basilica_validator::rental::types::RentalState;
 
 // SDK-specific types
 
+/// Response from starting a rental through the API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RentalResponse {
+    /// User-facing rental name
+    pub name: String,
+
+    /// Internal rental ID
+    pub rental_id: String,
+
+    /// SSH credentials when available
+    pub ssh_credentials: Option<String>,
+
+    /// Container details
+    pub container_info: basilica_validator::rental::ContainerInfo,
+}
+
 /// Health check response
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HealthCheckResponse {
@@ -64,6 +80,9 @@ pub type RentalStatusResponse = ValidatorRentalStatusResponse;
 /// API rental list item with GPU information
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ApiRentalListItem {
+    /// User-facing rental name
+    pub name: String,
+
     pub rental_id: String,
     pub node_id: String,
     pub container_id: String,
@@ -109,6 +128,9 @@ pub struct ApiListRentalsResponse {
 /// Historical rental item from billing service
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoricalRentalItem {
+    /// User-facing rental name
+    pub name: Option<String>,
+
     pub rental_id: String,
     pub node_id: Option<String>,
     pub status: String,
@@ -152,6 +174,10 @@ pub struct LogStreamQuery {
 /// Start rental request with GPU-based node selection
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StartRentalApiRequest {
+    /// Optional user-facing rental name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
     /// GPU category: "H100", "A100", "B200", etc. (required)
     pub gpu_category: String,
 
@@ -195,6 +221,9 @@ pub struct StartRentalApiRequest {
 /// Extended rental status response that includes SSH credentials from the database
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RentalStatusWithSshResponse {
+    /// User-facing rental name
+    pub name: String,
+
     /// Rental ID
     pub rental_id: String,
 
@@ -227,11 +256,13 @@ impl RentalStatusWithSshResponse {
     /// Create from validator response, database SSH credentials, port mappings, and public key
     pub fn from_validator_response(
         response: ValidatorRentalStatusResponse,
+        name: String,
         ssh_credentials: Option<String>,
         port_mappings: Option<Vec<basilica_validator::rental::PortMapping>>,
         ssh_public_key: Option<String>,
     ) -> Self {
         Self {
+            name,
             rental_id: response.rental_id,
             status: response.status,
             node: response.node,
@@ -326,6 +357,10 @@ pub struct SshKeyResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartSecureCloudRentalRequest {
+    /// Optional user-facing rental name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
     /// Offering ID from list_gpu_prices endpoint
     pub offering_id: String,
 
@@ -336,6 +371,9 @@ pub struct StartSecureCloudRentalRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecureCloudRentalResponse {
+    /// User-facing rental name
+    pub name: String,
+
     /// Rental ID (for API tracking)
     pub rental_id: String,
 
@@ -364,6 +402,9 @@ pub struct SecureCloudRentalResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StopSecureCloudRentalResponse {
+    /// User-facing rental name
+    pub name: Option<String>,
+
     /// Rental ID
     pub rental_id: String,
 
@@ -519,6 +560,9 @@ pub struct GpuPriceQuery {
 /// Secure cloud rental list item for PS command display
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecureCloudRentalListItem {
+    /// User-facing rental name
+    pub name: String,
+
     /// Rental ID
     pub rental_id: String,
 
@@ -1230,8 +1274,13 @@ pub struct CreateVolumeRequest {
 /// Attach volume request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttachVolumeRequest {
+    /// Rental name to attach the volume to
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rental_name: Option<String>,
+
     /// Rental ID to attach the volume to
-    pub rental_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rental_id: Option<String>,
 }
 
 /// Response for volume attach/detach operations
