@@ -108,6 +108,25 @@ pub fn generate_default_rental_name(rental_id: &str) -> String {
     format!("{DEFAULT_RENTAL_NAME_PREFIX}{suffix}")
 }
 
+/// Generate a random human-friendly rental name in `adjective-adjective-noun` format.
+///
+/// Uses the curated word lists from `node_identity::words`. The result is always
+/// a valid `RentalName` (lowercase alpha + dashes, well under 64 chars).
+pub fn generate_random_rental_name() -> String {
+    use crate::node_identity::words::{ADJECTIVES, NOUNS};
+    use rand::seq::SliceRandom;
+
+    let mut rng = rand::thread_rng();
+    let adj1 = ADJECTIVES
+        .choose(&mut rng)
+        .expect("ADJECTIVES is non-empty");
+    let adj2 = ADJECTIVES
+        .choose(&mut rng)
+        .expect("ADJECTIVES is non-empty");
+    let noun = NOUNS.choose(&mut rng).expect("NOUNS is non-empty");
+    format!("{adj1}-{adj2}-{noun}")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AccessType {
     #[serde(rename = "ssh")]
@@ -322,5 +341,16 @@ mod tests {
         let json = serde_json::to_string(&spec).unwrap();
         let de: RentalSpec = serde_json::from_str(&json).unwrap();
         assert_eq!(de, spec);
+    }
+
+    #[test]
+    fn test_generate_random_rental_name_is_valid() {
+        for _ in 0..100 {
+            let name = generate_random_rental_name();
+            RentalName::new(&name)
+                .unwrap_or_else(|e| panic!("Generated name '{name}' failed validation: {e}"));
+            let parts: Vec<&str> = name.split('-').collect();
+            assert_eq!(parts.len(), 3, "Expected 3 parts in '{name}'");
+        }
     }
 }

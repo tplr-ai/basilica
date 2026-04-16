@@ -41,9 +41,11 @@ use tracing::{debug, warn};
 const RENTAL_READY_TIMEOUT: Duration = Duration::from_secs(300);
 
 fn prompt_rental_name() -> Result<String, CliError> {
+    let default_name = basilica_common::rental::generate_random_rental_name();
     let theme = dialoguer::theme::ColorfulTheme::default();
     let name: String = Input::with_theme(&theme)
         .with_prompt("Rental name")
+        .default(default_name)
         .validate_with(|input: &String| {
             RentalName::new(input.trim())
                 .map(|_| ())
