@@ -1228,7 +1228,7 @@ pub async fn handle_ps(
                         .iter()
                         .filter(|r| r.cloud_type == "community")
                         .collect();
-                    community_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    community_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     table_output::display_rental_history(&community_history)?;
 
@@ -1300,7 +1300,7 @@ pub async fn handle_ps(
                         .filter(|r| r.cloud_type == "secure" && !is_secure_cpu_history_item(r))
                         .cloned()
                         .collect();
-                    secure_gpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_gpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     let mut secure_cpu_history: Vec<_> = history
                         .rentals
@@ -1308,7 +1308,7 @@ pub async fn handle_ps(
                         .filter(|r| r.cloud_type == "secure" && is_secure_cpu_history_item(r))
                         .cloned()
                         .collect();
-                    secure_cpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_cpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     let output = json!({
                         "secure_cloud_history": secure_gpu_history,
@@ -1322,14 +1322,14 @@ pub async fn handle_ps(
                         .iter()
                         .filter(|r| r.cloud_type == "secure" && !is_secure_cpu_history_item(r))
                         .collect();
-                    secure_gpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_gpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     let mut secure_cpu_history: Vec<_> = history
                         .rentals
                         .iter()
                         .filter(|r| r.cloud_type == "secure" && is_secure_cpu_history_item(r))
                         .collect();
-                    secure_cpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_cpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     print_cloud_section_header("The Citadel (GPU) Rental History", true);
                     table_output::display_rental_history(&secure_gpu_history)?;
@@ -1478,21 +1478,21 @@ pub async fn handle_ps(
                         .filter(|r| r.cloud_type == "community")
                         .cloned()
                         .collect();
-                    community_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    community_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
                     let mut secure_gpu_history: Vec<_> = history
                         .rentals
                         .iter()
                         .filter(|r| r.cloud_type == "secure" && !is_secure_cpu_history_item(r))
                         .cloned()
                         .collect();
-                    secure_gpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_gpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
                     let mut secure_cpu_history: Vec<_> = history
                         .rentals
                         .iter()
                         .filter(|r| r.cloud_type == "secure" && is_secure_cpu_history_item(r))
                         .cloned()
                         .collect();
-                    secure_cpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_cpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
                     let output = json!({
                         "community_cloud_history": community_history,
                         "secure_cloud_history": secure_gpu_history,
@@ -1506,21 +1506,21 @@ pub async fn handle_ps(
                         .iter()
                         .filter(|r| r.cloud_type == "community")
                         .collect();
-                    community_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    community_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     let mut secure_gpu_history: Vec<_> = history
                         .rentals
                         .iter()
                         .filter(|r| r.cloud_type == "secure" && !is_secure_cpu_history_item(r))
                         .collect();
-                    secure_gpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_gpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     let mut secure_cpu_history: Vec<_> = history
                         .rentals
                         .iter()
                         .filter(|r| r.cloud_type == "secure" && is_secure_cpu_history_item(r))
                         .collect();
-                    secure_cpu_history.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+                    secure_cpu_history.sort_by_key(|item| std::cmp::Reverse(item.started_at));
 
                     // Display community cloud history
                     print_cloud_section_header("The Bourse History", true);

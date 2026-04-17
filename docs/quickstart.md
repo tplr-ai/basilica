@@ -1,239 +1,187 @@
-# Quick Start Guide
+# Quickstart
 
-This guide provides step-by-step instructions for quickly getting started with Basilica network participation.
+Get from zero to a running GPU rental or deployed service in a few minutes.
 
-## Deployment Options
-
-Basilica supports two primary roles with multiple deployment methods:
-
-**Roles:**
-
-- **Validator** - Verifies GPU availability and performance, sets weights
-- **Miner** - Orchestrates validator access to GPU nodes via SSH
-
-**Deployment Methods:**
-
-1. **Production Docker Compose** (Recommended) - Fully automated with monitoring
-2. **Manual Build and Deploy** - For development and customization
-3. **Remote Deployment** - Automated deployment to remote servers
-
-## Key Features
-
-- **Dynamic UID Discovery**: Services automatically discover their UID from the Bittensor metagraph
-- **Auto Network Detection**: Chain endpoints are automatically configured based on network type
-- **Flexible Wallet Support**: Works with both JSON wallet files and raw seed phrases
-- **Production Ready**: Includes monitoring, auto-updates, and health checks
-
-## Prerequisites
-
-- **Docker and Docker Compose** (for production deployment)
-- **Bittensor wallet** with sufficient TAO for staking
-- **Linux server** with internet connectivity
-- **Hardware requirements** vary by role (see individual guides)
-
-## Option 1: Production Deployment (Recommended)
-
-This is the fastest way to get started with production-ready deployment.
-
-### Validator
+## 1. Install the CLI
 
 ```bash
-# 1. Navigate to validator scripts
-cd scripts/validator
-
-# 2. Prepare configuration
-cp ../../config/validator.toml.example /opt/basilica/config/validator.toml
-# Edit /opt/basilica/config/validator.toml with your settings:
-# - wallet_name and hotkey_name
-# - external_ip (your public IP)
-# - network ("finney" for mainnet)
-# - netuid (39 for mainnet)
-
-# 3. Ensure wallet exists and create directories
-ls ~/.bittensor/wallets/your_wallet/hotkeys/
-mkdir -p /opt/basilica/config /opt/basilica/data /var/log/basilica
-
-# 4. Deploy with auto-updates and monitoring
-docker compose -f compose.prod.yml up -d
-
-# 5. Check status
-docker logs basilica-validator
+curl -sSL https://basilica.ai/install.sh | bash
 ```
 
-### Miner
+Verify it's on your `$PATH`:
 
 ```bash
-# 1. Navigate to miner scripts
-cd scripts/miner
-
-# 2. Prepare configuration
-cp ../../config/miner.toml.example /opt/basilica/config/miner.toml
-# Edit /opt/basilica/config/miner.toml with your settings:
-# - wallet_name and hotkey_name
-# - external_ip (your public IP)
-# - node_management.nodes (GPU node SSH endpoints)
-# - bidding.strategy.static.static_prices (price per GPU-hour for each category)
-# - network ("finney" for mainnet)
-# - netuid (39 for mainnet)
-
-# 3. Create directories and set up SSH key for GPU node access
-mkdir -p /opt/basilica/config /opt/basilica/data /var/log/basilica
-ssh-keygen -t ed25519 -f ~/.ssh/miner_node_key -N ""
-
-# 4. Deploy key to your GPU nodes
-ssh-copy-id -i ~/.ssh/miner_node_key.pub basilica@<gpu_node_ip>
-
-# 5. Deploy with auto-updates and monitoring
-docker compose -f compose.prod.yml up -d
-
-# 6. Check status
-docker logs basilica-miner
+basilica --version
 ```
 
-**GPU node requirements** (must be set up before deploying the miner):
-- NVIDIA CUDA drivers version ≥12.8
-- Docker installed with NVIDIA Container Toolkit (nvidia runtime), so containers have GPU access
-- SSH server running and accessible from the miner server
-- See [Miner Guide](miner.md) for detailed GPU node setup instructions
-
-## Option 2: Remote Deployment
-
-Deploy to remote servers using the automated deployment script:
+## 2. Log in
 
 ```bash
-# Deploy individual services to remote servers
-./scripts/validator/deploy.sh -s user@validator-server:port -w --health-check
-./scripts/miner/deploy.sh -s user@miner-server:port -w --health-check
+basilica login
 ```
 
-## Option 3: Development Build
-
-For development and customization:
+For headless terminals (SSH sessions, remote boxes, CI):
 
 ```bash
-# 1. Build components using the build scripts
-./scripts/validator/build.sh
-./scripts/miner/build.sh
-
-# 2. Prepare configuration
-cp config/validator.toml.example config/validator.toml
-cp config/miner.toml.example config/miner.toml
-# Edit configurations with your settings
-
-# 3. Run services
-./validator --config config/validator.toml start
-./miner --config config/miner.toml
+basilica login --device-code
 ```
 
-## Network Configuration
+## 3. Fund your account (if needed)
 
-### Mainnet (Finney)
-
-```toml
-[bittensor]
-network = "finney"
-netuid = 39
-chain_endpoint = "wss://entrypoint-finney.opentensor.ai:443"
-```
-
-## Monitoring Your Deployment
-
-### Check Service Status
+Top up credits with TAO. The CLI will generate a deposit address for you:
 
 ```bash
-# Check if containers are running
-docker ps
-
-# View logs
-docker logs basilica-validator
-docker logs basilica-miner
-
-# Check health endpoints
-curl http://localhost:8080/health    # validator API
-curl http://localhost:9090/metrics   # miner metrics
+basilica fund
+basilica balance
+basilica fund list
 ```
 
-### Access Monitoring Dashboard
+---
 
-If monitoring is enabled (automatic with production compose files):
+## Rent a GPU directly
 
-- **Grafana**: <http://localhost:3000> (admin/admin)
-- **Prometheus**: <http://localhost:9090>
+Use this path when you need SSH access — training, custom environments, long-lived development boxes, or debugging.
 
-### Metrics Endpoints
+### Browse available GPUs
 
 ```bash
-# Validator metrics (default port 9090)
-curl http://localhost:9090/metrics
-
-# Miner metrics (default port 9090)
-curl http://localhost:9090/metrics
+basilica ls
 ```
 
-## Common Issues
-
-### Container Won't Start
+Filter by GPU type, region, or spot:
 
 ```bash
-# Check logs for specific errors
-docker logs container-name
-
-# Common fixes:
-# 1. Check configuration file syntax
-# 2. Ensure wallet files exist
-# 3. Check port conflicts
-# 4. Verify permissions on mounted volumes
+basilica ls --gpu h100 --region US
+basilica ls --gpu a100 --exclude-spot
 ```
 
-### Wallet Not Found
+### Start a rental
 
 ```bash
-# Ensure wallet exists
-ls ~/.bittensor/wallets/your_wallet/hotkeys/
-
-# Verify wallet name matches config
-grep wallet_name /opt/basilica/config/validator.toml
+basilica up --gpu h100 --gpu-count 1
 ```
 
-### Network Connection Issues
+The CLI prompts for a name and your SSH key, then returns a rental ID and connection info.
+
+### Work with your rental
 
 ```bash
-# Test network connectivity
-ping entrypoint-finney.opentensor.ai
-
-# Check firewall rules
-sudo ufw status
-
-# Verify port configuration matches your setup
-# Validator: 8080 (API), 9090 (metrics), axon_port (Bittensor)
-# Miner: 50051 (gRPC), 8091 (axon), 9090 (metrics)
-netstat -tlnp | grep -E "8080|50051|8091|9090"
+basilica ps                    # list active rentals
+basilica status <rental-id>    # details
+basilica ssh <rental-id>       # interactive shell
+basilica exec <rental-id> -- nvidia-smi
+basilica cp ./local-file <rental-id>:/workspace/
 ```
 
-### SSH Connection Issues (Miner)
+### Tear it down
 
 ```bash
-# Test SSH access to GPU nodes
-ssh -i ~/.ssh/miner_node_key basilica@<gpu_node_ip>
-
-# Check SSH key permissions
-chmod 600 ~/.ssh/miner_node_key
-chmod 644 ~/.ssh/miner_node_key.pub
+basilica down <rental-id>
 ```
 
-## Next Steps
+---
 
-Choose your role and dive deeper:
+## Deploy a service
 
-- **[Validator Guide](validator.md)** - Detailed validator setup and operation
-- **[Miner Guide](miner.md)** - Comprehensive miner management and GPU node operations
-- **[Architecture Guide](architecture.md)** - Understand the system design
-- **[Monitoring Guide](monitoring.md)** - Advanced monitoring and alerting setup
+Use this path when you want a public HTTP endpoint, a containerized app, or a hosted inference server.
 
+### Basic deploy
 
-## Support
+```bash
+basilica deploy my-app nginx:latest --port 80 --ttl 3600
+basilica deploy status my-app
+basilica deploy logs my-app
+```
 
-- Check the individual component guides for detailed troubleshooting
-- [GitHub](https://github.com/one-covenant/basilica)
-- [Discord](https://discord.gg/Cy7c9vPsNK)
-- [Website](https://www.basilica.ai/)
+`--ttl` ensures the deployment auto-cleans; drop it for a persistent service.
+
+### Inference servers
+
+```bash
+basilica deploy vllm my-llm --model meta-llama/Meta-Llama-3-8B-Instruct
+basilica deploy sglang my-sglang --model Qwen/Qwen2.5-7B-Instruct
+```
+
+### Scale and share
+
+```bash
+basilica deploy scale my-app --replicas 3
+basilica deploy share-token my-app          # generate token for private deploys
+```
+
+### Delete
+
+```bash
+basilica deploy delete my-app
+```
+
+---
+
+## Drive it from Python
+
+```bash
+pip install basilica-sdk
+basilica tokens create my-agent-token
+export BASILICA_API_TOKEN="basilica_..."
+```
+
+```python
+from basilica import BasilicaClient
+
+client = BasilicaClient()
+
+# Health
+print(client.health_check().status)
+
+# List GPU offerings
+for node in client.list_nodes(available=True)[:5]:
+    gpu = node.node.gpu_specs[0]
+    print(f"{node.node.id}: {gpu.name} x{len(node.node.gpu_specs)}")
+```
+
+See [GETTING-STARTED.md](GETTING-STARTED.md) for the full SDK walkthrough.
+
+---
+
+## What's next
+
+- [`examples/`](../examples/) — runnable end-to-end scripts for deployments, inference, GPU training, storage.
+- [GETTING-STARTED.md](GETTING-STARTED.md) — the canonical SDK guide.
+- [agent-cloud-ops.md](agent-cloud-ops.md) — copy-paste playbook for agents and automation.
+
+## Troubleshooting
+
+### CLI install didn't land in `$PATH`
+
+The installer writes to `~/.basilica/bin`. Add it to your shell profile:
+
+```bash
+echo 'export PATH="$HOME/.basilica/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### `basilica login` can't open a browser
+
+Use device-code flow:
+
+```bash
+basilica login --device-code
+```
+
+### API token auth fails from Python
+
+Confirm the env var is exported in the shell running your script:
+
+```bash
+echo $BASILICA_API_TOKEN
+```
+
+Create a fresh token if needed:
+
+```bash
+basilica tokens create fresh-token
+```
+
+### Something else
+
+Check the [getting-started guide](GETTING-STARTED.md) troubleshooting section, or reach out on [Discord](https://discord.gg/Cy7c9vPsNK).
