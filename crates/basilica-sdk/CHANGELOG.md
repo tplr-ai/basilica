@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-04-18
+
+### Added
+- `name` field on `RentalResponse`, `RentalStatusWithSshResponse`,
+  `ApiRentalListItem`, `HistoricalRentalItem`, and the Secure Cloud
+  rental response and list-item variants.
+- Optional `name` field on `StartRentalApiRequest`,
+  `StartSecureCloudRentalRequest`, and `StartCpuRentalRequest`.
+- `stop_rental` and `get_rental_status` accept either a rental name or a
+  rental ID as the target.
+
+### Changed
+- `stop_rental` now returns `()` to match the backend's HTTP 204 No
+  Content response.
+- `RentalStatusWithSshResponse::from_validator_response()` now accepts the
+  rental name as a parameter rather than defaulting to a placeholder
+  that callers had to overwrite.
+
 ## [0.25.0] - 2026-03-05
 
 ### Added

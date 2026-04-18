@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-04-18
+
+### Added
+- Rental names are now the primary user-facing identifier across every
+  CLI command. The `Name` column appears first in `ps` and rental history
+  tables for community, secure-GPU, and CPU rentals, and in all
+  interactive rental selectors.
+- `basilica down`, `status`, `logs`, `ssh`, `exec`, `restart`, and `cp`
+  accept either a rental name or a rental ID as the target. Same-name
+  collisions across compute categories are disambiguated.
+- `basilica up` prompts interactively for a rental name when `--name` is
+  not provided, with a randomly-generated adjective-adjective-noun default
+  (e.g. `bold-swift-falcon`) that you can accept with Enter or replace by
+  typing. Names are validated client-side against the backend rules.
+- The name prompt now appears after offering selection, so you name the
+  rental once you know what you are renting.
+- `basilica volumes attach` sends `rental_name` to the API when given a
+  name, rather than resolving it to an ID client-side first.
+
+### Changed
+- All spinner and success messages, and the SSH hints surfaced after `up`,
+  reference the rental name when one is available.
+
 ## [0.25.1] - 2026-03-26
 
 ### Fixed

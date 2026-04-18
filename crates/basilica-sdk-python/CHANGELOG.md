@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-04-18
+
+### Added
+- Optional `name` parameter on `start_rental()`,
+  `start_secure_cloud_rental()`, and `start_cpu_rental()`.
+- `stop_rental()` and `get_rental_status()` accept a rental name or
+  rental ID as the target.
+- Rental response objects expose a `name` property.
+- `start_rental.py`, `start_secure_cloud_gpu_rental.py`, and
+  `start_cpu_rental.py` examples updated to demonstrate naming rentals
+  and displaying names in status output.
+
+### Changed
+- `stop_rental()` now returns `None` to match the backend's HTTP 204 No
+  Content response.
+
 ## [0.25.2] - 2026-03-11
 
 ### Fixed
