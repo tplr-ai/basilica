@@ -3,6 +3,7 @@ name = "basilica-protocol"
 version = "0.1.0"
 edition = "2021"
 description = "gRPC protocol definitions and message types for Basilca  communication"
+license = "MIT"
 rust-version = "1.70"
 
 [dependencies]
