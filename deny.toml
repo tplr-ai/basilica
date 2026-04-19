@@ -55,6 +55,11 @@ ignore = [
     "RUSTSEC-2025-0119",  # libsecp256k1 unmaintained
     "RUSTSEC-2025-0134",  # rustls-pemfile unmaintained
     "RUSTSEC-2025-0161",  # number_prefix unmaintained
+
+    # Unsound-but-not-exploited-in-our-usage advisories reaching the shared
+    # deps via transitive paths. Our code does not hit the affected APIs.
+    "RUSTSEC-2026-0002",  # lru IterMut violates Stacked Borrows (subnet stack)
+    "RUSTSEC-2026-0097",  # rand: unsound with custom logger using rand::rng()
 ]
 
 # ---------------------------------------------------------------------------
