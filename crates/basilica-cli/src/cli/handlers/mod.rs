@@ -12,4 +12,6 @@ pub mod ssh_keys;
 pub mod test_auth;
 pub mod tokens;
 pub mod upgrade;
+#[cfg(feature = "sandbox")]
+pub mod sandbox;
 pub mod volumes;

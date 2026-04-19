@@ -1853,4 +1853,377 @@ mod tests {
         assert!(json.contains("\"minGpuMemoryGb\":40"));
         assert!(json.contains("\"interconnect\":\"PCIe\""));
     }
+
+    // ===== Sandbox Types Tests =====
+
+    #[test]
+    fn test_create_sandbox_request_serde() {
+        let request = CreateSandboxRequest {
+            image: Some("registry.basilica.ai/sandbox/python:3.11".to_string()),
+            cpu: Some("2".to_string()),
+            memory: Some("4Gi".to_string()),
+            ttl_seconds: Some(1800),
+            env: Some(vec![SandboxEnvVar {
+                name: "WORKSPACE_DIR".to_string(),
+                value: "/workspace".to_string(),
+            }]),
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"ttlSeconds\":1800"));
+        assert!(json.contains("\"cpu\":\"2\""));
+        assert!(json.contains("\"memory\":\"4Gi\""));
+
+        let roundtrip: CreateSandboxRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip.ttl_seconds, Some(1800));
+        assert_eq!(roundtrip.cpu, Some("2".to_string()));
+    }
+
+    #[test]
+    fn test_create_sandbox_request_defaults_omit_none() {
+        let request = CreateSandboxRequest {
+            image: None,
+            cpu: None,
+            memory: None,
+            ttl_seconds: None,
+            env: None,
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert_eq!(json, "{}");
+    }
+
+    #[test]
+    fn test_sandbox_response_serde() {
+        let json = r#"{
+            "sandboxId": "abc12345",
+            "domain": "sb-abc12345.sandboxes.basilica.ai",
+            "status": {
+                "phase": "Running",
+                "startedAt": "2026-04-06T12:00:00Z",
+                "conditions": [
+                    {
+                        "type": "Ready",
+                        "status": "True",
+                        "lastTransitionTime": "2026-04-06T12:00:01Z"
+                    }
+                ]
+            }
+        }"#;
+        let response: SandboxResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.sandbox_id, "abc12345");
+        assert_eq!(response.domain, "sb-abc12345.sandboxes.basilica.ai");
+        assert_eq!(response.status.phase, SandboxPhase::Running);
+        assert_eq!(
+            response.status.started_at.as_deref(),
+            Some("2026-04-06T12:00:00Z")
+        );
+        assert_eq!(response.status.conditions.len(), 1);
+        assert_eq!(response.status.conditions[0].condition_type, "Ready");
+        assert_eq!(response.status.conditions[0].status, "True");
+    }
+
+    #[test]
+    fn test_create_sandbox_response_serde() {
+        let json = r#"{
+            "sandboxId": "abc12345",
+            "domain": "sb-abc12345.sandboxes.basilica.ai",
+            "execSecret": "deadbeef01234567deadbeef01234567deadbeef01234567deadbeef01234567",
+            "status": {
+                "phase": "Pending",
+                "conditions": []
+            }
+        }"#;
+        let response: CreateSandboxResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.sandbox_id, "abc12345");
+        assert_eq!(response.exec_secret.len(), 64);
+        assert_eq!(response.status.phase, SandboxPhase::Pending);
+        assert!(response.status.started_at.is_none());
+    }
+
+    #[test]
+    fn test_sandbox_list_response_serde() {
+        let json = r#"{
+            "sandboxes": [
+                {
+                    "sandboxId": "aaa11111",
+                    "domain": "sb-aaa11111.sandboxes.basilica.ai",
+                    "status": {"phase": "Running", "conditions": []}
+                },
+                {
+                    "sandboxId": "bbb22222",
+                    "domain": "sb-bbb22222.sandboxes.basilica.ai",
+                    "status": {"phase": "Pending", "conditions": []}
+                }
+            ]
+        }"#;
+        let response: SandboxListResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.sandboxes.len(), 2);
+        assert_eq!(response.sandboxes[0].sandbox_id, "aaa11111");
+        assert_eq!(response.sandboxes[1].status.phase, SandboxPhase::Pending);
+    }
+
+    #[test]
+    fn test_sandbox_phase_all_variants() {
+        for (s, expected) in [
+            ("\"Pending\"", SandboxPhase::Pending),
+            ("\"Running\"", SandboxPhase::Running),
+            ("\"Terminating\"", SandboxPhase::Terminating),
+            ("\"Failed\"", SandboxPhase::Failed),
+        ] {
+            let phase: SandboxPhase = serde_json::from_str(s).unwrap();
+            assert_eq!(phase, expected);
+            let display = format!("{}", phase);
+            assert_eq!(display, s.trim_matches('"'));
+        }
+    }
+
+    #[test]
+    fn test_sandbox_ws_request_all_ops() {
+        let ops = [
+            "exec", "signal", "read_file", "write_file", "stat", "list_dir", "mkdir", "remove",
+            "rename", "upload_r2", "download_r2", "ping",
+        ];
+        for op in ops {
+            let req = SandboxWsRequest {
+                id: "req-001".to_string(),
+                op: op.to_string(),
+                args: Some(serde_json::json!({"key": "value"})),
+            };
+            let json = serde_json::to_string(&req).unwrap();
+            let roundtrip: SandboxWsRequest = serde_json::from_str(&json).unwrap();
+            assert_eq!(roundtrip.op, op);
+            assert_eq!(roundtrip.id, "req-001");
+            assert!(roundtrip.args.is_some());
+        }
+    }
+
+    #[test]
+    fn test_sandbox_ws_request_no_args() {
+        let req = SandboxWsRequest {
+            id: "ping-1".to_string(),
+            op: "ping".to_string(),
+            args: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("args"));
+        let roundtrip: SandboxWsRequest = serde_json::from_str(&json).unwrap();
+        assert!(roundtrip.args.is_none());
+    }
+
+    #[test]
+    fn test_sandbox_ws_response_all_types() {
+        // ok
+        let ok: SandboxWsResponse =
+            serde_json::from_str(r#"{"id":"1","type":"ok"}"#).unwrap();
+        assert_eq!(ok.response_type, "ok");
+        assert!(ok.data.is_none());
+
+        // stdout with data
+        let stdout: SandboxWsResponse =
+            serde_json::from_str(r#"{"id":"2","type":"stdout","data":"hello\n"}"#).unwrap();
+        assert_eq!(stdout.response_type, "stdout");
+        assert_eq!(stdout.data.unwrap(), "hello\n");
+
+        // stderr
+        let stderr: SandboxWsResponse =
+            serde_json::from_str(r#"{"id":"3","type":"stderr","data":"err"}"#).unwrap();
+        assert_eq!(stderr.response_type, "stderr");
+
+        // exit with code
+        let exit: SandboxWsResponse =
+            serde_json::from_str(r#"{"id":"4","type":"exit","code":0}"#).unwrap();
+        assert_eq!(exit.response_type, "exit");
+        assert_eq!(exit.code, Some(0));
+
+        // error with error_code
+        let err: SandboxWsResponse = serde_json::from_str(
+            r#"{"id":"5","type":"error","error":"not found","error_code":"NOT_FOUND"}"#,
+        )
+        .unwrap();
+        assert_eq!(err.response_type, "error");
+        assert_eq!(err.error.as_deref(), Some("not found"));
+        assert_eq!(err.error_code.as_deref(), Some("NOT_FOUND"));
+
+        // pong
+        let pong: SandboxWsResponse =
+            serde_json::from_str(r#"{"id":"6","type":"pong"}"#).unwrap();
+        assert_eq!(pong.response_type, "pong");
+
+        // file, stat, dir
+        for resp_type in ["file", "stat", "dir"] {
+            let json = format!(r#"{{"id":"7","type":"{}","data":{{"k":"v"}}}}"#, resp_type);
+            let resp: SandboxWsResponse = serde_json::from_str(&json).unwrap();
+            assert_eq!(resp.response_type, resp_type);
+            assert!(resp.data.is_some());
+        }
+    }
+
+    #[test]
+    fn test_sandbox_ws_response_roundtrip() {
+        let resp = SandboxWsResponse {
+            id: "x".to_string(),
+            response_type: "exit".to_string(),
+            data: None,
+            code: Some(42),
+            error: None,
+            error_code: None,
+        };
+        let json = serde_json::to_string(&resp).unwrap();
+        let roundtrip: SandboxWsResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip.code, Some(42));
+        assert!(!json.contains("\"error\""));
+        assert!(!json.contains("\"data\""));
+    }
+
+    #[test]
+    fn test_sandbox_condition_serde() {
+        let json = r#"{
+            "type": "Ready",
+            "status": "True",
+            "lastTransitionTime": "2026-04-06T12:00:01Z",
+            "reason": "PodReady",
+            "message": "Pod is running"
+        }"#;
+        let cond: SandboxCondition = serde_json::from_str(json).unwrap();
+        assert_eq!(cond.condition_type, "Ready");
+        assert_eq!(cond.status, "True");
+        assert_eq!(cond.reason.as_deref(), Some("PodReady"));
+        assert_eq!(cond.message.as_deref(), Some("Pod is running"));
+    }
+}
+
+// ============================================================================
+// Sandbox Types
+// ============================================================================
+
+/// Request to create a compute sandbox
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSandboxRequest {
+    /// Container image (must be in allowlist)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+
+    /// CPU allocation (e.g., "2")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<String>,
+
+    /// Memory allocation (e.g., "4Gi")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<String>,
+
+    /// Time-to-live in seconds (max 7200)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<u32>,
+
+    /// Environment variables
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<Vec<SandboxEnvVar>>,
+}
+
+/// Environment variable for sandbox
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxEnvVar {
+    pub name: String,
+    pub value: String,
+}
+
+/// Response from POST /v1/sandboxes
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSandboxResponse {
+    pub sandbox_id: String,
+    pub domain: String,
+    /// Bearer credential for exec-agent WebSocket auth. NEVER persist or log.
+    pub exec_secret: String,
+    pub status: SandboxStatus,
+}
+
+/// Response from GET /v1/sandboxes/{id}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SandboxResponse {
+    pub sandbox_id: String,
+    pub domain: String,
+    pub status: SandboxStatus,
+}
+
+/// Response from GET /v1/sandboxes
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxListResponse {
+    pub sandboxes: Vec<SandboxResponse>,
+}
+
+/// Sandbox status
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SandboxStatus {
+    pub phase: SandboxPhase,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub conditions: Vec<SandboxCondition>,
+}
+
+/// Sandbox lifecycle phase
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum SandboxPhase {
+    Pending,
+    Running,
+    Terminating,
+    Failed,
+}
+
+impl std::fmt::Display for SandboxPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SandboxPhase::Pending => write!(f, "Pending"),
+            SandboxPhase::Running => write!(f, "Running"),
+            SandboxPhase::Terminating => write!(f, "Terminating"),
+            SandboxPhase::Failed => write!(f, "Failed"),
+        }
+    }
+}
+
+/// Sandbox condition (K8s-style)
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SandboxCondition {
+    #[serde(rename = "type")]
+    pub condition_type: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_transition_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// exec-agent WebSocket request frame
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxWsRequest {
+    pub id: String,
+    pub op: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<serde_json::Value>,
+}
+
+/// exec-agent WebSocket response frame
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SandboxWsResponse {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub response_type: String,
+    /// Present on stdout/stderr/file/dir/stat/pong responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
+    /// Present on exit responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
+    /// Present on error responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Error code on error responses
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
 }

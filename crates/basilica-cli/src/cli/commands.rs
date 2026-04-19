@@ -204,6 +204,14 @@ pub enum Commands {
         #[command(subcommand)]
         action: VolumeAction,
     },
+
+    /// Compute sandbox management (ephemeral Linux environments)
+    #[cfg(feature = "sandbox")]
+    #[command(name = "sandbox", visible_alias = "sb")]
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
 }
 
 /// Fund management actions
@@ -331,6 +339,69 @@ pub enum VolumeAction {
     },
 }
 
+/// Sandbox management actions
+#[cfg(feature = "sandbox")]
+#[derive(Subcommand, Debug, Clone)]
+pub enum SandboxAction {
+    /// Create a new compute sandbox
+    Create {
+        /// Container image (default: python:3.11)
+        #[arg(long)]
+        image: Option<String>,
+
+        /// CPU cores (default: "2")
+        #[arg(long, default_value = "2")]
+        cpu: String,
+
+        /// Memory allocation (default: "4Gi")
+        #[arg(long, default_value = "4Gi")]
+        memory: String,
+
+        /// Time-to-live in seconds (60-7200, default: 1800)
+        #[arg(long, default_value = "1800")]
+        ttl: u32,
+
+        /// Environment variables (KEY=VALUE)
+        #[arg(short, long, value_name = "KEY=VALUE")]
+        env: Vec<String>,
+    },
+
+    /// List active sandboxes
+    #[command(alias = "list")]
+    Ls,
+
+    /// Get sandbox status
+    Status {
+        /// Sandbox ID
+        id: String,
+    },
+
+    /// Delete a sandbox
+    #[command(alias = "rm")]
+    Delete {
+        /// Sandbox ID
+        id: String,
+
+        /// Skip confirmation
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
+
+    /// Connect to a running sandbox via WebSocket
+    Connect {
+        /// Sandbox ID
+        id: String,
+
+        /// exec-agent secret (from create response). Prompted if not provided.
+        #[arg(long)]
+        secret: Option<String>,
+
+        /// Execute a single command and exit (non-interactive)
+        #[arg(long)]
+        exec: Option<String>,
+    },
+}
+
 impl Commands {
     /// Check if this command requires authentication
     pub fn requires_auth(&self) -> bool {
@@ -351,6 +422,9 @@ impl Commands {
             | Commands::Volumes { .. }
             | Commands::Fund { .. }
             | Commands::Balance => true,
+
+            #[cfg(feature = "sandbox")]
+            Commands::Sandbox { .. } => true,
 
             // Deploy commands: most require auth, except Metadata (public endpoint)
             Commands::Deploy(cmd) => !matches!(cmd.action, Some(DeployAction::Metadata { .. })),

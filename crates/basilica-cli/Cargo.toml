@@ -30,6 +30,7 @@ semver = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 futures = { workspace = true }
 futures-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
 eventsource-stream = { workspace = true }
 
 # Terminal UI and interaction
@@ -73,5 +74,8 @@ urlencoding = { workspace = true }
 basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
+
+[features]
+sandbox = []
 
 [dev-dependencies]

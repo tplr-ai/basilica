@@ -336,6 +336,55 @@ impl Args {
                 }
             }
 
+            // Sandbox management (behind feature flag until backend readiness confirmed)
+            #[cfg(feature = "sandbox")]
+            Commands::Sandbox { action } => {
+                use crate::cli::commands::SandboxAction;
+                use crate::client::create_client;
+
+                let client = create_client(config).await?;
+
+                match action {
+                    SandboxAction::Create {
+                        image,
+                        cpu,
+                        memory,
+                        ttl,
+                        env,
+                    } => {
+                        handlers::sandbox::handle_create(
+                            &client,
+                            image.clone(),
+                            cpu.clone(),
+                            memory.clone(),
+                            *ttl,
+                            env.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                    SandboxAction::Ls => {
+                        handlers::sandbox::handle_list(&client, self.json).await?;
+                    }
+                    SandboxAction::Status { id } => {
+                        handlers::sandbox::handle_status(&client, id, self.json).await?;
+                    }
+                    SandboxAction::Delete { id, yes } => {
+                        handlers::sandbox::handle_delete(&client, id, *yes, self.json).await?;
+                    }
+                    SandboxAction::Connect { id, secret, exec } => {
+                        handlers::sandbox::handle_connect(
+                            &client,
+                            id,
+                            secret.clone(),
+                            exec.clone(),
+                            self.json,
+                        )
+                        .await?;
+                    }
+                }
+            }
+
             // Upgrade command is handled in main.rs before entering async runtime
             Commands::Upgrade { .. } => {
                 unreachable!("Upgrade command should be handled in main.rs")
