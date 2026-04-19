@@ -103,6 +103,21 @@ jobs:
           tool: nextest
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Check basilica-sdk-python version consistency
+        # Guard: maturin uses pyproject.toml for the wheel version, while the
+        # Rust crate reads Cargo.toml. When these drift, a tag-triggered
+        # release can build wheels matching the pyproject version and get
+        # silently skipped by PyPI's `skip-existing`.
+        run: |
+          set -euo pipefail
+          cargo_ver=$(awk -F\" '/^version = / {print $2; exit}' crates/basilica-sdk-python/Cargo.toml)
+          pyproject_ver=$(awk -F\" '/^version = / {print $2; exit}' crates/basilica-sdk-python/pyproject.toml)
+          echo "Cargo.toml    version: $cargo_ver"
+          echo "pyproject.toml version: $pyproject_ver"
+          if [ "$cargo_ver" != "$pyproject_ver" ]; then
+            echo "::error file=crates/basilica-sdk-python/pyproject.toml::basilica-sdk-python version drift: Cargo.toml=$cargo_ver, pyproject.toml=$pyproject_ver"
+            exit 1
+          fi
       - name: Quick check builds
         run: |
           cargo check -p basilica-common -p basilica-protocol
