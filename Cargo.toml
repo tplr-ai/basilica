@@ -193,7 +193,7 @@ bollard = "0.15"
 
 # OCI client for Docker image validation
 # MUSL COMPATIBILITY: Use rustls-tls instead of native-tls
-oci-client = { version = "0.13", default-features = false, features = [
+oci-client = { version = "0.16", default-features = false, features = [
   "rustls-tls",
 ] }
 
