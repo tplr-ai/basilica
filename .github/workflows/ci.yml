@@ -40,7 +40,7 @@ jobs:
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: changes
         with:
           filters: |
