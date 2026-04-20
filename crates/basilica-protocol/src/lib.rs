@@ -90,6 +90,12 @@ pub mod basilca {
             include!("gen/basilica.incentive.v1.rs");
         }
     }
+
+    pub mod stripe {
+        pub mod v1 {
+            include!("gen/basilica.stripe.v1.rs");
+        }
+    }
 }
 
 // Structured re-exports for better organization
@@ -147,6 +153,16 @@ pub mod payments {
 pub mod incentive {
     //! Incentive service for validator-facing CU/RU ledger access via backend services
     pub use crate::basilca::incentive::v1::*;
+}
+
+pub mod stripe {
+    //! Stripe Checkout session creation and status for credit purchases.
+    //!
+    //! The service is VPC-internal only — basilica-api authenticates callers
+    //! and forwards `caller_user_id`; basilica-stripe enforces per-user
+    //! scoping in SQL and returns NotFound for cross-tenant lookups so
+    //! session existence never leaks.
+    pub use crate::basilca::stripe::v1::*;
 }
 
 // Re-export common types at crate root for convenience

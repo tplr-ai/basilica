@@ -47,4 +47,9 @@ pub mod basilica {
             include!("basilica.rental.v1.rs");
         }
     }
+    pub mod stripe {
+        pub mod v1 {
+            include!("basilica.stripe.v1.rs");
+        }
+    }
 }
