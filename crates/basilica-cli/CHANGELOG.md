@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-04-20
+
+### Added
+- Shadeform cloud provider support (`CloudProvider::Shadeform`). The CLI
+  can now list, filter, and display GPU offerings served from the
+  Shadeform multi-cloud aggregator without deserialization errors.
+
 ## [0.26.0] - 2026-04-18
 
 ### Added

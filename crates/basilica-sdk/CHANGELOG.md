@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-04-20
+
+### Added
+- Shadeform cloud provider support (`CloudProvider::Shadeform`).
+  `GpuOffering` responses from `/secure-cloud/gpu-prices` that include
+  Shadeform offerings now deserialize successfully instead of failing
+  the entire response.
+
 ## [0.26.0] - 2026-04-18
 
 ### Added
