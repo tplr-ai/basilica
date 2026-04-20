@@ -1,0 +1,44 @@
+version: 2
+updates:
+  # GitHub Actions: keep the SHA pins in .github/workflows/*.yml current.
+  # All `uses:` refs are pinned to commit SHAs — without Dependabot they
+  # will never move, which means missing security fixes in the actions
+  # themselves.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      # Bundle actions from the same publisher to reduce PR churn.
+      actions:
+        patterns:
+          - "actions/*"
+      rust-toolchain-and-cache:
+        patterns:
+          - "dtolnay/rust-toolchain"
+          - "Swatinem/rust-cache"
+          - "taiki-e/install-action"
+
+  # Rust workspace dependencies.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
+      include: scope
+    # Pre-emptively ignore the majors that would require a real migration;
+    # bump these by hand when we're ready.
+    ignore:
+      # reqwest 0.11 -> 0.12/0.13 requires oauth2 4 -> 5 coordinated migration
+      - dependency-name: reqwest
+        update-types: [version-update:semver-major]
+      - dependency-name: oauth2
+        update-types: [version-update:semver-major]
