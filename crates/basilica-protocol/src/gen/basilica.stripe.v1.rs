@@ -9,13 +9,9 @@ pub struct CreateCheckoutSessionRequest {
     /// min/max bounds; out-of-range values return InvalidArgument.
     #[prost(int64, tag = "2")]
     pub amount_cents: i64,
-    #[prost(string, tag = "3")]
-    pub success_url: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
-    pub cancel_url: ::prost::alloc::string::String,
     /// Client-generated nonce. basilica-stripe derives the Stripe
     /// idempotency key from this, so retries collapse on Stripe's side.
-    #[prost(string, tag = "5")]
+    #[prost(string, tag = "3")]
     pub request_nonce: ::prost::alloc::string::String,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -209,7 +205,10 @@ pub mod stripe_service_client {
         /// Create a Stripe Checkout session for a custom dollar amount. The server
         /// validates bounds and rejects out-of-range amounts with InvalidArgument
         /// before calling Stripe. `request_nonce` drives the Stripe idempotency
-        /// key so retried gRPC calls collapse into a single Stripe session.
+        /// key so retried gRPC calls collapse into a single Stripe session. Return
+        /// URLs (`success_url` / `cancel_url`) are sourced from basilica-stripe's
+        /// own config — they are a global Basilica property, not caller-controlled,
+        /// so this RPC does not accept them.
         pub async fn create_checkout_session(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateCheckoutSessionRequest>,
@@ -314,7 +313,10 @@ pub mod stripe_service_server {
         /// Create a Stripe Checkout session for a custom dollar amount. The server
         /// validates bounds and rejects out-of-range amounts with InvalidArgument
         /// before calling Stripe. `request_nonce` drives the Stripe idempotency
-        /// key so retried gRPC calls collapse into a single Stripe session.
+        /// key so retried gRPC calls collapse into a single Stripe session. Return
+        /// URLs (`success_url` / `cancel_url`) are sourced from basilica-stripe's
+        /// own config — they are a global Basilica property, not caller-controlled,
+        /// so this RPC does not accept them.
         async fn create_checkout_session(
             &self,
             request: tonic::Request<super::CreateCheckoutSessionRequest>,

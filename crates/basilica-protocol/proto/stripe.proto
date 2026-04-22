@@ -14,7 +14,10 @@ service StripeService {
     // Create a Stripe Checkout session for a custom dollar amount. The server
     // validates bounds and rejects out-of-range amounts with InvalidArgument
     // before calling Stripe. `request_nonce` drives the Stripe idempotency
-    // key so retried gRPC calls collapse into a single Stripe session.
+    // key so retried gRPC calls collapse into a single Stripe session. Return
+    // URLs (`success_url` / `cancel_url`) are sourced from basilica-stripe's
+    // own config — they are a global Basilica property, not caller-controlled,
+    // so this RPC does not accept them.
     rpc CreateCheckoutSession(CreateCheckoutSessionRequest)
         returns (CreateCheckoutSessionResponse);
 
@@ -44,11 +47,9 @@ message CreateCheckoutSessionRequest {
     // Amount in cents to charge. Server-validated against configured
     // min/max bounds; out-of-range values return InvalidArgument.
     int64 amount_cents = 2;
-    string success_url = 3;
-    string cancel_url = 4;
     // Client-generated nonce. basilica-stripe derives the Stripe
     // idempotency key from this, so retries collapse on Stripe's side.
-    string request_nonce = 5;
+    string request_nonce = 3;
 }
 
 message CreateCheckoutSessionResponse {
