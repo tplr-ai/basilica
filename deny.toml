@@ -37,10 +37,15 @@ ignore = [
     # RSA timing sidechannel (via bittensor/subxt chain)
     "RUSTSEC-2023-0071",  # rsa: Marvin Attack
 
-    # rustls-webpki (pre-0.103.12 via reqwest 0.11 and 0.12 chains)
+    # rustls-webpki (pre-0.103.13 via reqwest 0.11 + rustls 0.21 subnet chain).
+    # The reqwest 0.12 / rustls 0.23 chain was bumped to rustls-webpki 0.103.13
+    # on 2026-04-23 via Cargo.lock; the remaining 0.101.x hits come from the
+    # rustls 0.21 / reqwest 0.11 / kube 0.88 / sqlx 0.7 / tonic 0.10 stack
+    # that is scheduled for removal in the 0.27.0 subnet cleanup.
     "RUSTSEC-2026-0049",  # CRL distribution point matching
     "RUSTSEC-2026-0098",  # URI name constraints incorrectly accepted
     "RUSTSEC-2026-0099",  # wildcard-CN name constraints accepted
+    "RUSTSEC-2026-0104",  # CRL parsing reachable panic; 0.101.x has no upstream patch (added 2026-04-23)
 
     # Other transitives through the subnet stack
     "RUSTSEC-2024-0363",  # sqlx binary protocol misinterpretation
