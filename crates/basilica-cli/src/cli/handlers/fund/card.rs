@@ -1,5 +1,6 @@
-//! Stripe-backed funding flow: create a Checkout session via basilica-api,
-//! open it in the browser, and poll until it completes or expires.
+//! Card funding flow: create a Stripe-backed checkout session via
+//! basilica-api, open it in the browser, and poll until it completes or
+//! expires.
 
 use std::time::{Duration, Instant};
 
@@ -32,7 +33,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// so a session that is still `pending` gets one last tick before we give up.
 const POLL_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 
-pub async fn handle_stripe_checkout(
+pub async fn handle_card_funding(
     client: &BasilicaClient,
     amount_usd: Option<u32>,
     json: bool,
@@ -109,14 +110,14 @@ fn map_create_error(err: ApiError) -> CliError {
             "Checkout rejected: {message}. Amounts must be whole dollars between $1 and $1000."
         )),
         ApiError::ServiceUnavailable => CliError::Internal(eyre!(
-            "Stripe funding is not available right now. Try 'basilica fund --tao' to fund with TAO instead."
+            "Card funding is not available right now. Try 'basilica fund --tao' to fund with TAO instead."
         )),
         _ => CliError::Api(err),
     }
 }
 
 fn print_checkout_url(session: &CheckoutSessionResponse) {
-    println!("{}", style("Funding method: Credit card (Stripe)").bold());
+    println!("{}", style("Funding method: Card").bold());
     println!();
     println!("Complete your purchase at:");
     println!("  {}", style(&session.checkout_url).cyan().underlined());

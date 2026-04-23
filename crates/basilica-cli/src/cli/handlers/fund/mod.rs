@@ -1,7 +1,7 @@
-//! `basilica fund` command: picks a funding method (TAO or Stripe) and
+//! `basilica fund` command: picks a funding method (TAO or card) and
 //! delegates to the matching submodule.
 
-pub mod stripe;
+pub mod card;
 pub mod tao;
 
 use std::io::IsTerminal;
@@ -15,12 +15,12 @@ use crate::error::CliError;
 #[derive(Debug, Clone, Copy)]
 enum FundMethod {
     Tao,
-    Stripe,
+    Card,
 }
 
 /// Dispatch `basilica fund` based on flags or an interactive picker.
 ///
-/// Flag precedence: `--tao` wins if set; otherwise `--usd` implies Stripe.
+/// Flag precedence: `--tao` wins if set; otherwise `--usd` implies card.
 /// With neither, prompt the user when stdin is a TTY; error out otherwise
 /// (including `--json` mode).
 pub async fn handle_fund(
@@ -32,7 +32,7 @@ pub async fn handle_fund(
     let method = select_method(amount_usd, tao, json)?;
     match method {
         FundMethod::Tao => tao::handle_show_deposit_address(client, json).await,
-        FundMethod::Stripe => stripe::handle_stripe_checkout(client, amount_usd, json).await,
+        FundMethod::Card => card::handle_card_funding(client, amount_usd, json).await,
     }
 }
 
@@ -42,7 +42,7 @@ fn select_method(amount_usd: Option<u32>, tao: bool, json: bool) -> Result<FundM
             "--tao and --usd cannot be combined; pass one or the other"
         ))),
         (true, false) => Ok(FundMethod::Tao),
-        (false, true) => Ok(FundMethod::Stripe),
+        (false, true) => Ok(FundMethod::Card),
         (false, false) => {
             if json || !std::io::stdin().is_terminal() {
                 return Err(CliError::Internal(eyre!(
@@ -55,7 +55,7 @@ fn select_method(amount_usd: Option<u32>, tao: bool, json: bool) -> Result<FundM
 }
 
 fn prompt_for_method() -> Result<FundMethod, CliError> {
-    let items = ["Bittensor (TAO)", "Credit card (Stripe)"];
+    let items = ["Bittensor (TAO)", "Card"];
     let theme = ColorfulTheme::default();
     let selection = Select::with_theme(&theme)
         .with_prompt("How do you want to fund?")
@@ -66,6 +66,6 @@ fn prompt_for_method() -> Result<FundMethod, CliError> {
     Ok(if selection == 0 {
         FundMethod::Tao
     } else {
-        FundMethod::Stripe
+        FundMethod::Card
     })
 }

@@ -365,12 +365,12 @@ impl BasilicaClient {
         self.handle_response(response).await
     }
 
-    // ===== Checkout (Stripe) =====
+    // ===== Card checkout =====
 
-    /// Create a Stripe Checkout session for the authenticated user.
+    /// Create a card checkout session for the authenticated user.
     ///
     /// `idempotency_key` is sent as the required `Idempotency-Key` header;
-    /// retries with the same value collapse to a single Stripe session.
+    /// retries with the same value collapse to a single checkout session.
     /// Callers should generate a fresh UUID per invocation unless they
     /// intentionally want a retry to hit the same session.
     pub async fn create_checkout_session(

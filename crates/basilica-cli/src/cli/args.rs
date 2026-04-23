@@ -52,9 +52,9 @@ AUTH TOKEN MANAGEMENT:
   basilica tokens revoke <name>     # Revoke API token
 
 FUND MANAGEMENT:
-  basilica fund                     # Pick method (TAO or credit card)
+  basilica fund                     # Pick method (TAO or card)
   basilica fund --tao               # Show TAO deposit address directly
-  basilica fund --usd 25            # Buy $25 of credits via Stripe Checkout
+  basilica fund --usd 25            # Buy $25 of credits with a card
   basilica fund list --limit 100    # List TAO deposits
 "
 )]

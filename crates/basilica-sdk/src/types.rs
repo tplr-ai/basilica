@@ -476,7 +476,7 @@ pub struct ListDepositsQuery {
     pub offset: u32,
 }
 
-// Stripe Checkout Types
+// Card checkout types
 //
 // Amounts are `u64` in the SDK: the server uses `i64` because Postgres
 // BIGINT is signed, but payments are never negative. Keeping the SDK
@@ -517,7 +517,7 @@ pub struct ListCheckoutSessionsResponse {
     pub sessions: Vec<CheckoutSessionSummary>,
 }
 
-/// Lifecycle state of a Stripe Checkout session.
+/// Lifecycle state of a card checkout session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CheckoutSessionStatus {
