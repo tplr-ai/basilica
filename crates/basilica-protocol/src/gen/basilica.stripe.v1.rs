@@ -52,6 +52,11 @@ pub struct ListSessionsRequest {
     /// pagination. Negative values are treated as zero.
     #[prost(int32, tag = "3")]
     pub offset: i32,
+    /// Optional lifecycle filter. Omit or send `SESSION_STATUS_UNSPECIFIED`
+    /// to return sessions in every state; otherwise only sessions matching
+    /// the supplied status are returned.
+    #[prost(enumeration = "SessionStatus", optional, tag = "4")]
+    pub status: ::core::option::Option<i32>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -80,6 +85,25 @@ pub struct SessionSummary {
     pub completed_at: ::core::option::Option<::prost_types::Timestamp>,
     #[prost(message, optional, tag = "8")]
     pub expires_at: ::core::option::Option<::prost_types::Timestamp>,
+    /// Stripe-hosted payment receipt URL. Populated from the PaymentIntent's
+    /// latest charge on `charge.succeeded`; always available once a session
+    /// completes, regardless of whether `invoice_creation` was enabled.
+    #[prost(string, optional, tag = "9")]
+    pub receipt_url: ::core::option::Option<::prost::alloc::string::String>,
+    /// Stripe Invoice id (`in_...`). Populated when basilica-stripe is
+    /// configured with `\[stripe.invoice_creation\]`; absent otherwise.
+    #[prost(string, optional, tag = "10")]
+    pub invoice_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// Human-readable invoice number (e.g. `INV-0001`). Populated on
+    /// `invoice.finalized`.
+    #[prost(string, optional, tag = "11")]
+    pub invoice_number: ::core::option::Option<::prost::alloc::string::String>,
+    /// Stripe-hosted invoice page URL. Populated on `invoice.finalized`.
+    #[prost(string, optional, tag = "12")]
+    pub hosted_invoice_url: ::core::option::Option<::prost::alloc::string::String>,
+    /// Direct URL to the invoice PDF. Populated on `invoice.finalized`.
+    #[prost(string, optional, tag = "13")]
+    pub invoice_pdf: ::core::option::Option<::prost::alloc::string::String>,
 }
 /// Lifecycle state of a checkout session. Only two transitions exist in v1:
 /// `PENDING -> COMPLETED` (credit grant fires) and `PENDING -> EXPIRED`.

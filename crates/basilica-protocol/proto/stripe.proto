@@ -75,6 +75,10 @@ message ListSessionsRequest {
     // Number of rows to skip before applying `limit`, for offset-based
     // pagination. Negative values are treated as zero.
     int32 offset = 3;
+    // Optional lifecycle filter. Omit or send `SESSION_STATUS_UNSPECIFIED`
+    // to return sessions in every state; otherwise only sessions matching
+    // the supplied status are returned.
+    optional SessionStatus status = 4;
 }
 
 message ListSessionsResponse {
@@ -92,4 +96,23 @@ message SessionSummary {
     google.protobuf.Timestamp created_at = 6;
     optional google.protobuf.Timestamp completed_at = 7;
     google.protobuf.Timestamp expires_at = 8;
+
+    // Stripe-hosted payment receipt URL. Populated from the PaymentIntent's
+    // latest charge on `charge.succeeded`; always available once a session
+    // completes, regardless of whether `invoice_creation` was enabled.
+    optional string receipt_url = 9;
+
+    // Stripe Invoice id (`in_...`). Populated when basilica-stripe is
+    // configured with `[stripe.invoice_creation]`; absent otherwise.
+    optional string invoice_id = 10;
+
+    // Human-readable invoice number (e.g. `INV-0001`). Populated on
+    // `invoice.finalized`.
+    optional string invoice_number = 11;
+
+    // Stripe-hosted invoice page URL. Populated on `invoice.finalized`.
+    optional string hosted_invoice_url = 12;
+
+    // Direct URL to the invoice PDF. Populated on `invoice.finalized`.
+    optional string invoice_pdf = 13;
 }
