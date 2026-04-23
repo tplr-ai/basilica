@@ -484,7 +484,7 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
 /// Display deposits history in table format
 pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
     println!();
-    println!("{}", style("# Deposit History").dim());
+    println!("{}", style("Deposit History").bold());
     println!();
 
     let mut builder = Builder::default();
@@ -553,11 +553,11 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
 /// Display card checkout (Stripe-backed) payment history in table format.
 pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Result<()> {
     println!();
-    println!("{}", style("# Card Payment History").dim());
+    println!("{}", style("Card Payment History").bold());
     println!();
 
     let mut builder = Builder::default();
-    builder.push_record(["Date (UTC)", "Amount", "Status", "Session ID"]);
+    builder.push_record(["Date (UTC)", "Amount", "Status"]);
 
     let mut total_paid_cents: u64 = 0;
 
@@ -567,38 +567,16 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "-".to_string());
 
-        let amount = match session.paid_amount_cents {
-            Some(paid) if paid != session.requested_amount_cents => format!(
-                "{} → {}",
-                format_cents(session.requested_amount_cents),
-                style(format_cents(paid)).green(),
-            ),
-            _ => format_cents(session.requested_amount_cents),
-        };
+        let amount = format_cents(session.requested_amount_cents);
 
         let status = match session.status {
-            CheckoutSessionStatus::Completed => style("Completed").green().to_string(),
-            CheckoutSessionStatus::Pending => style("Pending").yellow().to_string(),
-            CheckoutSessionStatus::Expired => style("Expired").red().to_string(),
-            CheckoutSessionStatus::Unspecified => "Unspecified".to_string(),
+            CheckoutSessionStatus::Completed => "Completed",
+            CheckoutSessionStatus::Pending => "Pending",
+            CheckoutSessionStatus::Expired => "Expired",
+            CheckoutSessionStatus::Unspecified => "Unspecified",
         };
 
-        let session_id = if session.session_id.len() > 14 {
-            format!(
-                "{}...{}",
-                &session.session_id[..8],
-                &session.session_id[session.session_id.len() - 3..]
-            )
-        } else {
-            session.session_id.clone()
-        };
-
-        builder.push_record([
-            date.as_str(),
-            amount.as_str(),
-            status.as_str(),
-            session_id.as_str(),
-        ]);
+        builder.push_record([date.as_str(), amount.as_str(), status]);
 
         if matches!(session.status, CheckoutSessionStatus::Completed) {
             total_paid_cents += session
