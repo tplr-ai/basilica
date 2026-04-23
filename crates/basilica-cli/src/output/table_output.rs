@@ -1310,3 +1310,108 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use basilica_sdk::types::{CheckoutSessionStatus, CheckoutSessionSummary};
+
+    fn session(
+        hosted_invoice_url: Option<&str>,
+        receipt_url: Option<&str>,
+        invoice_number: Option<&str>,
+    ) -> CheckoutSessionSummary {
+        CheckoutSessionSummary {
+            session_id: "cs_test".to_string(),
+            status: CheckoutSessionStatus::Completed,
+            requested_amount_cents: 1000,
+            paid_amount_cents: Some(1000),
+            checkout_url: "https://checkout.stripe.test/cs_test".to_string(),
+            created_at: None,
+            completed_at: None,
+            expires_at: None,
+            receipt_url: receipt_url.map(String::from),
+            invoice_id: hosted_invoice_url.map(|_| "in_abc".to_string()),
+            invoice_number: invoice_number.map(String::from),
+            hosted_invoice_url: hosted_invoice_url.map(String::from),
+            // `invoice_pdf` intentionally `None` everywhere to confirm
+            // the CLI never reaches for it — the public contract is that
+            // the hosted invoice page carries the PDF link.
+            invoice_pdf: None,
+        }
+    }
+
+    #[test]
+    fn invoice_is_preferred_when_both_urls_are_present() {
+        // Common `invoice_creation = true` steady state: Stripe emits both
+        // artifacts. The invoice page already renders the paid-charge
+        // detail the receipt would duplicate, so the invoice wins.
+        let s = session(
+            Some("https://invoice.stripe.com/i/abc"),
+            Some("https://pay.stripe.com/receipts/xyz"),
+            Some("INV-0001"),
+        );
+        let (kind, url) = session_primary_link(&s).expect("both urls → some link");
+        assert!(matches!(kind, PrimaryLinkKind::Invoice));
+        assert_eq!(url, "https://invoice.stripe.com/i/abc");
+    }
+
+    #[test]
+    fn falls_back_to_receipt_when_invoice_is_absent() {
+        // Sessions created before `invoice_creation` was flipped on (or
+        // against a backend without it configured) have no invoice URLs
+        // but still land `receipt_url` on `charge.succeeded`. The receipt
+        // must surface so those rows are never dead-ends in the CLI.
+        let s = session(None, Some("https://pay.stripe.com/receipts/xyz"), None);
+        let (kind, url) = session_primary_link(&s).expect("receipt only → some link");
+        assert!(matches!(kind, PrimaryLinkKind::Receipt));
+        assert_eq!(url, "https://pay.stripe.com/receipts/xyz");
+    }
+
+    #[test]
+    fn invoice_only_is_rendered_as_invoice() {
+        // Transient state where `invoice.finalized` has landed but
+        // `charge.succeeded` has not yet been captured. The invoice page
+        // already covers the user-facing need, so render it.
+        let s = session(
+            Some("https://invoice.stripe.com/i/abc"),
+            None,
+            Some("INV-0001"),
+        );
+        let (kind, _) = session_primary_link(&s).expect("invoice only → some link");
+        assert!(matches!(kind, PrimaryLinkKind::Invoice));
+    }
+
+    #[test]
+    fn pending_session_with_no_artifacts_has_no_link() {
+        // Freshly-created sessions (no webhooks landed yet) carry only
+        // `checkout_url`. The Invoice/Receipt cell collapses to `-`
+        // via the `None` arm in `display_checkout_sessions`.
+        let s = session(None, None, None);
+        assert!(session_primary_link(&s).is_none());
+    }
+
+    #[test]
+    fn link_cell_wraps_label_in_osc8_and_ansi_styling() {
+        // Guards the two terminal features we depend on:
+        //   * OSC 8 hyperlink: `\x1b]8;;URL\x1b\` … `\x1b]8;;\x1b\`
+        //   * ANSI blue + underline on the visible label so terminals
+        //     without OSC 8 support still see a link-shaped cell.
+        //
+        // Force the `console` style machinery on — under `cargo test`
+        // stdout is not a TTY, so `style(..).blue()` would otherwise
+        // no-op and we would not observe the SGR bytes we actually emit
+        // in real CLI runs.
+        console::set_colors_enabled(true);
+
+        let cell = link_cell("INV-1", "https://example.test/x");
+
+        assert!(cell.starts_with("\x1b]8;;https://example.test/x\x1b\\"));
+        assert!(cell.ends_with("\x1b]8;;\x1b\\"));
+        assert!(cell.contains("INV-1"));
+        // URL must not bleed into the visible portion.
+        assert_eq!(cell.matches("https://example.test/x").count(), 1);
+        // SGR style bytes (e.g. underline/color) must wrap the label.
+        assert!(cell.contains("\x1b["));
+    }
+}
