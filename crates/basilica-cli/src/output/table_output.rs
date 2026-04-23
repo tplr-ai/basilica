@@ -591,20 +591,24 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
     table.with(Style::modern());
     println!("{}", table);
 
-    // Trailing URL block — URLs are long so they don't fit inside the table;
-    // listing them per-session here keeps the overview scannable while
-    // making every clickable link reachable in one `fund list` call.
+    // Trailing link block — URLs would blow out the table columns on any
+    // normal terminal. Per-session, show the most informative single link:
+    // the hosted invoice page when `invoice_creation` is on (already bundles
+    // receipt-style payment detail), or the charge receipt when it isn't.
+    // Terminals that support OSC 8 hyperlinks render the label as clickable;
+    // older terminals show just the label and users can re-run with --json
+    // to get the raw URLs.
     let has_links = response
         .sessions
         .iter()
-        .any(|s| session_has_link(s));
+        .any(|s| session_primary_link(s).is_some());
     if has_links {
         println!();
         println!("{}:", style("Receipts & Invoices").bold());
         for session in &response.sessions {
-            if !session_has_link(session) {
+            let Some((kind, url)) = session_primary_link(session) else {
                 continue;
-            }
+            };
             let label = session
                 .invoice_number
                 .as_deref()
@@ -614,16 +618,16 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
                 .or(session.created_at)
                 .map(|dt| dt.format("%Y-%m-%d").to_string())
                 .unwrap_or_else(|| "-".to_string());
-            println!("  {} ({}):", style(label).cyan(), date);
-            if let Some(url) = session.hosted_invoice_url.as_deref() {
-                println!("    Invoice page: {}", url);
-            }
-            if let Some(url) = session.invoice_pdf.as_deref() {
-                println!("    Invoice PDF:  {}", url);
-            }
-            if let Some(url) = session.receipt_url.as_deref() {
-                println!("    Receipt:      {}", url);
-            }
+            let link_text = match kind {
+                PrimaryLinkKind::Invoice => "Open invoice",
+                PrimaryLinkKind::Receipt => "Open receipt",
+            };
+            println!(
+                "  {} ({}):  {}",
+                style(label).cyan(),
+                date,
+                hyperlink(link_text, url),
+            );
         }
     }
 
@@ -634,10 +638,37 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
     Ok(())
 }
 
-fn session_has_link(session: &basilica_sdk::types::CheckoutSessionSummary) -> bool {
-    session.hosted_invoice_url.is_some()
-        || session.invoice_pdf.is_some()
-        || session.receipt_url.is_some()
+#[derive(Debug, Clone, Copy)]
+enum PrimaryLinkKind {
+    Invoice,
+    Receipt,
+}
+
+/// Choose the single most informative link to surface per session.
+///
+/// Prefer the hosted invoice page when present — it renders both the
+/// invoice detail AND the payment confirmation, so showing the receipt
+/// alongside it would be redundant. `invoice_pdf` is intentionally kept
+/// on the SDK type but not surfaced here: Stripe's hosted invoice page
+/// already exposes a "Download PDF" button.
+fn session_primary_link(
+    session: &basilica_sdk::types::CheckoutSessionSummary,
+) -> Option<(PrimaryLinkKind, &str)> {
+    if let Some(url) = session.hosted_invoice_url.as_deref() {
+        return Some((PrimaryLinkKind::Invoice, url));
+    }
+    if let Some(url) = session.receipt_url.as_deref() {
+        return Some((PrimaryLinkKind::Receipt, url));
+    }
+    None
+}
+
+/// Emit an OSC 8 terminal hyperlink. Modern terminals (iTerm2, Terminal.app,
+/// wezterm, Ghostty, VSCode terminal, kitty, GNOME Terminal, ...) render
+/// the label as a clickable link that opens the URL. Terminals without OSC
+/// 8 support ignore the escape bytes and show only the label.
+fn hyperlink(label: &str, url: &str) -> String {
+    format!("\x1b]8;;{url}\x1b\\{label}\x1b]8;;\x1b\\")
 }
 
 /// Display detailed usage for a specific rental
