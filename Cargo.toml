@@ -155,7 +155,7 @@ wiremock = "0.6"
 dialoguer = "0.11"
 indicatif = "0.17"
 console = "0.15"
-tabled = "0.15"
+tabled = { version = "0.15", default-features = true, features = ["ansi"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 shellexpand = "3.1"
 etcetera = "0.8"

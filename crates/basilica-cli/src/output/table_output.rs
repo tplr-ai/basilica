@@ -557,7 +557,7 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
     println!();
 
     let mut builder = Builder::default();
-    builder.push_record(["Date (UTC)", "Amount", "Status", "Invoice #"]);
+    builder.push_record(["Date (UTC)", "Amount", "Status", "Invoice/Receipt"]);
 
     let mut total_paid_cents: u64 = 0;
 
@@ -576,23 +576,23 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
             CheckoutSessionStatus::Unspecified => "Unspecified",
         };
 
-        // The Invoice # cell doubles as the per-session link. Modern
+        // Invoice/Receipt cell doubles as the per-session link. Modern
         // terminals (iTerm2, Terminal.app, wezterm, Ghostty, VSCode,
         // kitty, GNOME Terminal) render the OSC 8 escape as clickable;
-        // unsupported terminals ignore the escape and show only the
-        // label text. We prefer the hosted invoice page when present
-        // (it already bundles the charge-receipt detail, so a separate
-        // receipt link would be redundant); receipt-only sessions fall
-        // back to a `Receipt` label linking `receipt_url`. `invoice_pdf`
-        // stays on the SDK type for programmatic callers but is not
-        // surfaced here — the hosted invoice page has a "Download PDF"
-        // button anyway.
+        // unsupported terminals show only the styled label and users can
+        // drop to --json for the raw URL. Styling the label blue +
+        // underlined (web-browser link convention) signals clickability
+        // visually even before hovering. Prefer the hosted invoice page
+        // when present — it bundles receipt-style payment detail already,
+        // so a separate receipt link would be redundant. `invoice_pdf`
+        // stays on the SDK type but isn't surfaced here because the
+        // hosted invoice page has a "Download PDF" button.
         let invoice_cell = match session_primary_link(session) {
             Some((PrimaryLinkKind::Invoice, url)) => {
                 let label = session.invoice_number.as_deref().unwrap_or("Invoice");
-                hyperlink(label, url)
+                link_cell(label, url)
             }
-            Some((PrimaryLinkKind::Receipt, url)) => hyperlink("Receipt", url),
+            Some((PrimaryLinkKind::Receipt, url)) => link_cell("Receipt", url),
             None => "-".to_string(),
         };
 
@@ -639,11 +639,15 @@ fn session_primary_link(
     None
 }
 
-/// Emit an OSC 8 terminal hyperlink so the label becomes clickable on
-/// supporting terminals. Unsupported terminals ignore the escape bytes
-/// and show only the label.
-fn hyperlink(label: &str, url: &str) -> String {
-    format!("\x1b]8;;{url}\x1b\\{label}\x1b]8;;\x1b\\")
+/// Build the table cell for a session's per-session link. The visible
+/// label is styled blue + underlined (conventional web-link look), and
+/// the OSC 8 escape wrapper makes it clickable on supporting terminals.
+/// Width is calculated correctly because `tabled` is compiled with the
+/// `ansi` feature, which strips both ANSI CSI (color/underline) and OSC
+/// 8 escape bytes before measuring.
+fn link_cell(label: &str, url: &str) -> String {
+    let styled = style(label).blue().underlined().to_string();
+    format!("\x1b]8;;{url}\x1b\\{styled}\x1b]8;;\x1b\\")
 }
 
 /// Display detailed usage for a specific rental
