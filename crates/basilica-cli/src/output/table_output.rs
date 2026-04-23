@@ -557,7 +557,7 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
     println!();
 
     let mut builder = Builder::default();
-    builder.push_record(["Date (UTC)", "Amount", "Status"]);
+    builder.push_record(["Date (UTC)", "Amount", "Status", "Invoice #"]);
 
     let mut total_paid_cents: u64 = 0;
 
@@ -576,7 +576,9 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
             CheckoutSessionStatus::Unspecified => "Unspecified",
         };
 
-        builder.push_record([date.as_str(), amount.as_str(), status]);
+        let invoice_number = session.invoice_number.as_deref().unwrap_or("-");
+
+        builder.push_record([date.as_str(), amount.as_str(), status, invoice_number]);
 
         if matches!(session.status, CheckoutSessionStatus::Completed) {
             total_paid_cents += session
@@ -589,11 +591,53 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
     table.with(Style::modern());
     println!("{}", table);
 
+    // Trailing URL block — URLs are long so they don't fit inside the table;
+    // listing them per-session here keeps the overview scannable while
+    // making every clickable link reachable in one `fund list` call.
+    let has_links = response
+        .sessions
+        .iter()
+        .any(|s| session_has_link(s));
+    if has_links {
+        println!();
+        println!("{}:", style("Receipts & Invoices").bold());
+        for session in &response.sessions {
+            if !session_has_link(session) {
+                continue;
+            }
+            let label = session
+                .invoice_number
+                .as_deref()
+                .unwrap_or(session.session_id.as_str());
+            let date = session
+                .completed_at
+                .or(session.created_at)
+                .map(|dt| dt.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| "-".to_string());
+            println!("  {} ({}):", style(label).cyan(), date);
+            if let Some(url) = session.hosted_invoice_url.as_deref() {
+                println!("    Invoice page: {}", url);
+            }
+            if let Some(url) = session.invoice_pdf.as_deref() {
+                println!("    Invoice PDF:  {}", url);
+            }
+            if let Some(url) = session.receipt_url.as_deref() {
+                println!("    Receipt:      {}", url);
+            }
+        }
+    }
+
     println!();
     println!("{}:", style("Total Card Payments").bold());
     println!("  {}", style(format_cents(total_paid_cents)).green());
 
     Ok(())
+}
+
+fn session_has_link(session: &basilica_sdk::types::CheckoutSessionSummary) -> bool {
+    session.hosted_invoice_url.is_some()
+        || session.invoice_pdf.is_some()
+        || session.receipt_url.is_some()
 }
 
 /// Display detailed usage for a specific rental

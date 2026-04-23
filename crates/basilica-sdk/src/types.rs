@@ -509,6 +509,24 @@ pub struct CheckoutSessionSummary {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Stripe-hosted receipt page for the underlying charge. Present once
+    /// `charge.succeeded` has landed for this session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt_url: Option<String>,
+    /// Stripe Invoice id (`in_...`). Present only when the backend was
+    /// configured with `[stripe.invoice_creation]` at the time the session
+    /// was created.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoice_id: Option<String>,
+    /// Sequenced human-readable invoice number (e.g. `INV-0001`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoice_number: Option<String>,
+    /// Stripe-hosted invoice page URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hosted_invoice_url: Option<String>,
+    /// Direct URL to the invoice PDF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoice_pdf: Option<String>,
 }
 
 /// Response from GET /checkout/sessions.
