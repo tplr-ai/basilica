@@ -217,7 +217,7 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
         })
         .collect();
 
-    rows.sort_by(|a, b| a.key.cmp(&b.key));
+    rows.sort_by_key(|r| r.key.clone());
 
     let mut table = Table::new(rows);
     table.with(Style::modern());
@@ -710,7 +710,7 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
         })
         .collect();
 
-    rows.sort_by(|a, b| b.started.cmp(&a.started));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
     println!(
         "{} ({} total)",
@@ -797,7 +797,7 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
         })
         .collect();
 
-    rows.sort_by(|a, b| b.started.cmp(&a.started));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
     let mut table = Table::new(&rows);
     table.with(Style::modern());
@@ -882,7 +882,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
         })
         .collect();
 
-    rows.sort_by(|a, b| b.started.cmp(&a.started));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
     let mut table = Table::new(&rows);
     table.with(Style::modern());

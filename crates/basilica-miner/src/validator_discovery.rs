@@ -215,7 +215,7 @@ impl AssignmentStrategy for HighestStakeAssignment {
         _nodes: Vec<RegisteredNode>,
     ) -> Result<Option<ValidatorInfo>> {
         // Sort by stake (highest first)
-        validators.sort_by(|a, b| b.stake.cmp(&a.stake));
+        validators.sort_by_key(|v| std::cmp::Reverse(v.stake));
 
         // Take the highest staked validator
         Ok(validators.into_iter().next())

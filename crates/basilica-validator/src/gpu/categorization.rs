@@ -151,7 +151,7 @@ impl MinerGpuProfile {
             .map(|(k, v)| (k.clone(), *v))
             .collect();
 
-        models.sort_by(|a, b| b.1.cmp(&a.1));
+        models.sort_by_key(|m| std::cmp::Reverse(m.1));
         models
     }
 }
