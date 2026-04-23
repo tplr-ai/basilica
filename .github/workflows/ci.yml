@@ -132,16 +132,21 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - name: Install cargo-deny
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+      - name: cargo deny check
+        # Use the official cargo-deny-action: it installs cargo-deny and
+        # manages the advisory-db fetch reliably. The direct `cargo deny`
+        # install path fails on these runners because the advisory-db
+        # metadata lookup does not handle a missing per-db directory.
+        uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb # v2.0.17
         with:
-          tool: cargo-deny
+          command: check
+          # Respect `all-features = false` in deny.toml; the action default
+          # of `--all-features` would otherwise override it.
+          arguments: ""
       - name: Install cargo-audit
         uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
         with:
           tool: cargo-audit
-      - name: cargo deny check
-        run: cargo deny check
       - name: cargo audit (advisory only)
         # cargo-audit runs in addition to cargo-deny to surface anything the
         # policy in deny.toml does not cover (e.g. non-security informational
