@@ -256,7 +256,7 @@ impl Args {
                         handlers::fund::handle_fund(&client, *usd, *tao, self.json).await?;
                     }
                     Some(FundAction::List { limit, offset }) => {
-                        handlers::fund::tao::handle_list_deposits(
+                        handlers::fund::list::handle_list_payments(
                             &client, *limit, *offset, self.json,
                         )
                         .await?;

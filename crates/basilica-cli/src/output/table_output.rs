@@ -1,13 +1,14 @@
 //! Table formatting for CLI output
 
-use super::format_usd;
+use super::{format_cents, format_usd};
 use crate::error::Result;
 use basilica_common::types::GpuOffering;
 use basilica_common::{types::GpuCategory, LocationProfile};
 use basilica_sdk::{
     types::{
-        ApiKeyInfo, ApiRentalListItem, GpuSpec, HistoricalRentalItem, ListDepositsResponse,
-        RentalUsageResponse, UsageHistoryResponse, VolumeResponse,
+        ApiKeyInfo, ApiRentalListItem, CheckoutSessionStatus, GpuSpec, HistoricalRentalItem,
+        ListCheckoutSessionsResponse, ListDepositsResponse, RentalUsageResponse,
+        UsageHistoryResponse, VolumeResponse,
     },
     AvailableNode,
 };
@@ -545,6 +546,74 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
     println!();
     println!("{}:", style("Total Deposits").bold());
     println!("  {} TAO", style(format!("{:.3}", total_tao)).green());
+
+    Ok(())
+}
+
+/// Display card checkout (Stripe-backed) payment history in table format.
+pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Result<()> {
+    println!();
+    println!("{}", style("# Card Payment History").dim());
+    println!();
+
+    let mut builder = Builder::default();
+    builder.push_record(["Date (UTC)", "Amount", "Status", "Session ID"]);
+
+    let mut total_paid_cents: u64 = 0;
+
+    for session in &response.sessions {
+        let date = session
+            .created_at
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "-".to_string());
+
+        let amount = match session.paid_amount_cents {
+            Some(paid) if paid != session.requested_amount_cents => format!(
+                "{} → {}",
+                format_cents(session.requested_amount_cents),
+                style(format_cents(paid)).green(),
+            ),
+            _ => format_cents(session.requested_amount_cents),
+        };
+
+        let status = match session.status {
+            CheckoutSessionStatus::Completed => style("Completed").green().to_string(),
+            CheckoutSessionStatus::Pending => style("Pending").yellow().to_string(),
+            CheckoutSessionStatus::Expired => style("Expired").red().to_string(),
+            CheckoutSessionStatus::Unspecified => "Unspecified".to_string(),
+        };
+
+        let session_id = if session.session_id.len() > 14 {
+            format!(
+                "{}...{}",
+                &session.session_id[..8],
+                &session.session_id[session.session_id.len() - 3..]
+            )
+        } else {
+            session.session_id.clone()
+        };
+
+        builder.push_record([
+            date.as_str(),
+            amount.as_str(),
+            status.as_str(),
+            session_id.as_str(),
+        ]);
+
+        if matches!(session.status, CheckoutSessionStatus::Completed) {
+            total_paid_cents += session
+                .paid_amount_cents
+                .unwrap_or(session.requested_amount_cents);
+        }
+    }
+
+    let mut table = builder.build();
+    table.with(Style::modern());
+    println!("{}", table);
+
+    println!();
+    println!("{}:", style("Total Card Payments").bold());
+    println!("  {}", style(format_cents(total_paid_cents)).green());
 
     Ok(())
 }

@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 use crate::{
     error::CliError,
-    output::json_output,
+    output::{format_cents, json_output},
     progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner},
 };
 
@@ -192,8 +192,4 @@ fn announce_success(summary: &CheckoutSessionSummary) {
         style(format_cents(paid)).bold(),
         style("'basilica balance'").yellow()
     );
-}
-
-fn format_cents(cents: u64) -> String {
-    format!("${}.{:02}", cents / 100, cents % 100)
 }

@@ -2,6 +2,7 @@
 //! delegates to the matching submodule.
 
 pub mod card;
+pub mod list;
 pub mod tao;
 
 use std::io::IsTerminal;

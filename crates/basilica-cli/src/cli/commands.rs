@@ -217,13 +217,13 @@ pub enum Commands {
 /// Fund management actions
 #[derive(Subcommand, Debug, Clone)]
 pub enum FundAction {
-    /// List deposit history
+    /// List TAO deposit and card payment history
     List {
-        /// Limit number of results (default: 50)
+        /// Limit number of results per source (default: 50)
         #[arg(long, default_value = "50")]
         limit: u32,
 
-        /// Offset for pagination (default: 0)
+        /// Offset for pagination, applied to both sources (default: 0)
         #[arg(long, default_value = "0")]
         offset: u32,
     },
