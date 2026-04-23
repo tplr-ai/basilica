@@ -512,7 +512,7 @@ pub struct CheckoutSessionSummary {
 }
 
 /// Response from GET /checkout/sessions.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ListCheckoutSessionsResponse {
     pub sessions: Vec<CheckoutSessionSummary>,
 }

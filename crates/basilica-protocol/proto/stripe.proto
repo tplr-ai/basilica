@@ -72,6 +72,9 @@ message ListSessionsRequest {
     string caller_user_id = 1;
     // Optional cap on returned rows. Server uses a sensible default when zero.
     int32 limit = 2;
+    // Number of rows to skip before applying `limit`, for offset-based
+    // pagination. Negative values are treated as zero.
+    int32 offset = 3;
 }
 
 message ListSessionsResponse {

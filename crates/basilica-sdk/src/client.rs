@@ -399,11 +399,15 @@ impl BasilicaClient {
     pub async fn list_checkout_sessions(
         &self,
         limit: Option<i32>,
+        offset: Option<i32>,
     ) -> Result<ListCheckoutSessionsResponse> {
         let url = format!("{}/checkout/sessions", self.base_url);
         let mut builder = self.http_client.get(&url);
         if let Some(limit) = limit {
             builder = builder.query(&[("limit", limit)]);
+        }
+        if let Some(offset) = offset {
+            builder = builder.query(&[("offset", offset)]);
         }
         let builder = self.apply_auth(builder).await?;
         let response = builder.send().await.map_err(ApiError::HttpClient)?;

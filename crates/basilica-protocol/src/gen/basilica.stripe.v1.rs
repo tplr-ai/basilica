@@ -48,6 +48,10 @@ pub struct ListSessionsRequest {
     /// Optional cap on returned rows. Server uses a sensible default when zero.
     #[prost(int32, tag = "2")]
     pub limit: i32,
+    /// Number of rows to skip before applying `limit`, for offset-based
+    /// pagination. Negative values are treated as zero.
+    #[prost(int32, tag = "3")]
+    pub offset: i32,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
