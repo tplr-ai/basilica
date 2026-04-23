@@ -52,8 +52,10 @@ AUTH TOKEN MANAGEMENT:
   basilica tokens revoke <name>     # Revoke API token
 
 FUND MANAGEMENT:
-  basilica fund                     # Show deposit address
-  basilica fund list --limit 100    # List deposits
+  basilica fund                     # Pick method (TAO or credit card)
+  basilica fund --tao               # Show TAO deposit address directly
+  basilica fund --usd 25            # Buy $25 of credits via Stripe Checkout
+  basilica fund list --limit 100    # List TAO deposits
 "
 )]
 pub struct Args {
@@ -242,7 +244,7 @@ impl Args {
             }
 
             // Fund management
-            Commands::Fund { action } => {
+            Commands::Fund { action, usd, tao } => {
                 use crate::cli::commands::FundAction;
                 use crate::client::create_authenticated_client;
 
@@ -251,12 +253,13 @@ impl Args {
 
                 match action {
                     None => {
-                        // Default action: show deposit address
-                        handlers::fund::handle_show_deposit_address(&client, self.json).await?;
+                        handlers::fund::handle_fund(&client, *usd, *tao, self.json).await?;
                     }
                     Some(FundAction::List { limit, offset }) => {
-                        handlers::fund::handle_list_deposits(&client, *limit, *offset, self.json)
-                            .await?;
+                        handlers::fund::tao::handle_list_deposits(
+                            &client, *limit, *offset, self.json,
+                        )
+                        .await?;
                     }
                 }
             }

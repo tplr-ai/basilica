@@ -175,10 +175,19 @@ pub enum Commands {
         action: SshKeyAction,
     },
 
-    /// Fund your account with Bittensor TAO
+    /// Fund your account (Bittensor TAO or credit card via Stripe)
     Fund {
         #[command(subcommand)]
         action: Option<FundAction>,
+
+        /// Fund with a credit card (Stripe) for this USD amount.
+        /// Implies card funding; skips the method prompt.
+        #[arg(long, value_name = "AMOUNT", conflicts_with = "tao")]
+        usd: Option<u32>,
+
+        /// Fund with Bittensor TAO; skips the method prompt.
+        #[arg(long)]
+        tao: bool,
     },
 
     /// Check your account balance

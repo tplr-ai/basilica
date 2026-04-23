@@ -476,6 +476,57 @@ pub struct ListDepositsQuery {
     pub offset: u32,
 }
 
+// Stripe Checkout Types
+//
+// Amounts are `u64` in the SDK: the server uses `i64` because Postgres
+// BIGINT is signed, but payments are never negative. Keeping the SDK
+// unsigned rejects a negative wire value at the deserialize boundary
+// instead of silently passing it up the stack.
+
+/// Request body for POST /checkout/session.
+#[derive(Debug, Serialize)]
+pub struct CreateCheckoutSessionRequest {
+    pub amount_cents: u64,
+}
+
+/// Response from POST /checkout/session.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckoutSessionResponse {
+    pub session_id: String,
+    pub checkout_url: String,
+    pub requested_amount_cents: u64,
+    pub status: CheckoutSessionStatus,
+}
+
+/// Session summary shared by GET /checkout/session/{id} and /checkout/sessions.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckoutSessionSummary {
+    pub session_id: String,
+    pub status: CheckoutSessionStatus,
+    pub requested_amount_cents: u64,
+    pub paid_amount_cents: Option<u64>,
+    pub checkout_url: String,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Response from GET /checkout/sessions.
+#[derive(Debug, Deserialize)]
+pub struct ListCheckoutSessionsResponse {
+    pub sessions: Vec<CheckoutSessionSummary>,
+}
+
+/// Lifecycle state of a Stripe Checkout session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckoutSessionStatus {
+    Unspecified,
+    Pending,
+    Completed,
+    Expired,
+}
+
 // Billing Management Types
 
 /// Balance response from billing service
