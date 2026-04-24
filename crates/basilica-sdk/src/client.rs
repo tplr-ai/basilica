@@ -43,16 +43,15 @@ use crate::{
         ReadFileRequest, ReadFileResponse, ResumeJobResponse, SuspendJobResponse,
     },
     types::{
-        ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse,
-        CheckoutSessionResponse, CheckoutSessionSummary, CreateApiKeyRequest,
-        CreateCheckoutSessionRequest, CreateDeploymentRequest, CreateDepositAccountResponse,
-        DeleteDeploymentResponse, DeleteShareTokenResponse, DeploymentEventsResponse,
-        DeploymentListResponse, DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest,
-        EnrollMetadataResponse, HealthCheckResponse, HistoricalRentalsResponse,
-        ListAvailableNodesQuery, ListCheckoutSessionsResponse, ListDepositsQuery,
-        ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
-        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalResponse,
-        RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
+        ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
+        CardPurchaseSummary, CreateApiKeyRequest, CreateCardPurchaseRequest,
+        CreateDeploymentRequest, CreateDepositAccountResponse, DeleteDeploymentResponse,
+        DeleteShareTokenResponse, DeploymentEventsResponse, DeploymentListResponse,
+        DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse,
+        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery,
+        ListCardPurchasesResponse, ListDepositsQuery, ListDepositsResponse, ListRentalsQuery,
+        PublicDeploymentMetadataResponse, RegenerateShareTokenResponse, RegisterSshKeyRequest,
+        RentalResponse, RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
         ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse, WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
@@ -365,20 +364,20 @@ impl BasilicaClient {
         self.handle_response(response).await
     }
 
-    // ===== Card checkout =====
+    // ===== Card payments =====
 
-    /// Create a card checkout session for the authenticated user.
+    /// Create a card purchase for the authenticated user.
     ///
     /// `idempotency_key` is sent as the required `Idempotency-Key` header;
-    /// retries with the same value collapse to a single checkout session.
+    /// retries with the same value collapse to a single purchase.
     /// Callers should generate a fresh UUID per invocation unless they
-    /// intentionally want a retry to hit the same session.
-    pub async fn create_checkout_session(
+    /// intentionally want a retry to hit the same purchase.
+    pub async fn create_card_purchase(
         &self,
-        request: &CreateCheckoutSessionRequest,
+        request: &CreateCardPurchaseRequest,
         idempotency_key: &str,
-    ) -> Result<CheckoutSessionResponse> {
-        let url = format!("{}/checkout/session", self.base_url);
+    ) -> Result<CardPurchaseResponse> {
+        let url = format!("{}/card-payments/purchases", self.base_url);
         let builder = self
             .http_client
             .post(&url)
@@ -389,19 +388,19 @@ impl BasilicaClient {
         self.handle_response(response).await
     }
 
-    /// Fetch a single checkout session belonging to the authenticated user.
-    pub async fn get_checkout_session(&self, session_id: &str) -> Result<CheckoutSessionSummary> {
-        let path = format!("/checkout/session/{session_id}");
+    /// Fetch a single card purchase belonging to the authenticated user.
+    pub async fn get_card_purchase(&self, id: &str) -> Result<CardPurchaseSummary> {
+        let path = format!("/card-payments/purchases/{id}");
         self.get(&path).await
     }
 
-    /// List recent checkout sessions for the authenticated user.
-    pub async fn list_checkout_sessions(
+    /// List recent card purchases for the authenticated user.
+    pub async fn list_card_purchases(
         &self,
         limit: Option<i32>,
         offset: Option<i32>,
-    ) -> Result<ListCheckoutSessionsResponse> {
-        let url = format!("{}/checkout/sessions", self.base_url);
+    ) -> Result<ListCardPurchasesResponse> {
+        let url = format!("{}/card-payments/purchases", self.base_url);
         let mut builder = self.http_client.get(&url);
         if let Some(limit) = limit {
             builder = builder.query(&[("limit", limit)]);

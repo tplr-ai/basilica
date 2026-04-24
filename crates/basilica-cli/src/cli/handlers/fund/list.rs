@@ -2,7 +2,7 @@
 //! side by side. The two sources are fetched in parallel so a partial
 //! outage of either still surfaces the data that did come back.
 
-use basilica_sdk::types::{ListCheckoutSessionsResponse, ListDepositsResponse};
+use basilica_sdk::types::{ListCardPurchasesResponse, ListDepositsResponse};
 use basilica_sdk::BasilicaClient;
 use color_eyre::{eyre::eyre, Help, Result as EyreResult};
 use console::style;
@@ -28,7 +28,7 @@ pub async fn handle_list_payments(
     let card_offset = i32::try_from(offset).unwrap_or(i32::MAX);
     let (tao_result, card_result) = tokio::join!(
         client.list_deposits(Some(limit), Some(offset)),
-        client.list_checkout_sessions(Some(card_limit), Some(card_offset)),
+        client.list_card_purchases(Some(card_limit), Some(card_offset)),
     );
 
     complete_spinner_and_clear(spinner);
@@ -45,7 +45,7 @@ pub async fn handle_list_payments(
 
 fn render_text(
     tao: &SourceResult<ListDepositsResponse>,
-    card: &SourceResult<ListCheckoutSessionsResponse>,
+    card: &SourceResult<ListCardPurchasesResponse>,
 ) -> EyreResult<(), CliError> {
     if let (Err(tao_err), Err(card_err)) = (tao, card) {
         return Err(CliError::Internal(
@@ -57,7 +57,7 @@ fn render_text(
     }
 
     let tao_empty = matches!(tao, Ok(r) if r.deposits.is_empty());
-    let card_empty = matches!(card, Ok(r) if r.sessions.is_empty());
+    let card_empty = matches!(card, Ok(r) if r.purchases.is_empty());
 
     match tao {
         Ok(resp) if !resp.deposits.is_empty() => table_output::display_deposits(resp)?,
@@ -70,7 +70,7 @@ fn render_text(
     }
 
     match card {
-        Ok(resp) if !resp.sessions.is_empty() => table_output::display_checkout_sessions(resp)?,
+        Ok(resp) if !resp.purchases.is_empty() => table_output::display_card_purchases(resp)?,
         Ok(_) => {
             if tao.is_err() {
                 print_info("No card payments found yet");
@@ -88,11 +88,11 @@ fn render_text(
 
 fn render_json(
     tao: &SourceResult<ListDepositsResponse>,
-    card: &SourceResult<ListCheckoutSessionsResponse>,
+    card: &SourceResult<ListCardPurchasesResponse>,
 ) -> EyreResult<(), CliError> {
     let payload = PaymentHistoryJson {
         deposits: tao.as_ref().ok(),
-        card_sessions: card.as_ref().ok(),
+        card_purchases: card.as_ref().ok(),
         errors: PaymentHistoryErrors {
             tao: tao.as_ref().err().cloned(),
             card: card.as_ref().err().cloned(),
@@ -131,7 +131,7 @@ fn print_empty_state() {
 #[derive(Serialize)]
 struct PaymentHistoryJson<'a> {
     deposits: Option<&'a ListDepositsResponse>,
-    card_sessions: Option<&'a ListCheckoutSessionsResponse>,
+    card_purchases: Option<&'a ListCardPurchasesResponse>,
     #[serde(skip_serializing_if = "PaymentHistoryErrors::is_empty")]
     errors: PaymentHistoryErrors,
 }

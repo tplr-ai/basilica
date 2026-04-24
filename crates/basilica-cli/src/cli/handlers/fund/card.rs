@@ -1,4 +1,4 @@
-//! Card funding flow: create a Stripe-backed checkout session via
+//! Card funding flow: create a Stripe-backed card purchase via
 //! basilica-api, open it in the browser, and poll until it completes or
 //! expires.
 
@@ -6,8 +6,7 @@ use std::time::{Duration, Instant};
 
 use basilica_sdk::error::ApiError;
 use basilica_sdk::types::{
-    CheckoutSessionResponse, CheckoutSessionStatus, CheckoutSessionSummary,
-    CreateCheckoutSessionRequest,
+    CardPurchaseResponse, CardPurchaseStatus, CardPurchaseSummary, CreateCardPurchaseRequest,
 };
 use basilica_sdk::BasilicaClient;
 use color_eyre::{eyre::eyre, Result as EyreResult};
@@ -27,7 +26,7 @@ use crate::{
 const MIN_USD: u32 = 1;
 const MAX_USD: u32 = 1000;
 
-/// How often the poll loop checks session status.
+/// How often the poll loop checks purchase status.
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// Hard ceiling on polling — slightly past Stripe's 30-min default expiry
 /// so a session that is still `pending` gets one last tick before we give up.
@@ -45,10 +44,10 @@ pub async fn handle_card_funding(
     let amount_cents = u64::from(amount_usd) * 100;
 
     let idempotency_key = Uuid::new_v4().to_string();
-    let spinner = create_spinner("Creating checkout session...");
-    let session = match client
-        .create_checkout_session(
-            &CreateCheckoutSessionRequest { amount_cents },
+    let spinner = create_spinner("Creating card purchase...");
+    let purchase = match client
+        .create_card_purchase(
+            &CreateCardPurchaseRequest { amount_cents },
             &idempotency_key,
         )
         .await
@@ -58,26 +57,26 @@ pub async fn handle_card_funding(
             session
         }
         Err(err) => {
-            complete_spinner_error(spinner, "Failed to create checkout session");
+            complete_spinner_error(spinner, "Failed to create card purchase");
             return Err(map_create_error(err));
         }
     };
 
     if json {
-        json_output(&session)?;
+        json_output(&purchase)?;
         return Ok(());
     }
 
-    print_checkout_url(&session);
-    open_in_browser(&session.checkout_url);
+    print_checkout_url(&purchase);
+    open_in_browser(&purchase.checkout_url);
 
-    match wait_for_terminal_state(client, &session.session_id).await {
+    match wait_for_terminal_state(client, &purchase.id).await {
         PollOutcome::Completed(summary) => {
             announce_success(&summary);
             Ok(())
         }
         PollOutcome::Expired => Err(CliError::Internal(eyre!(
-            "Checkout session expired before payment completed. Run 'basilica fund' again to start a new session."
+            "Card purchase expired before payment completed. Run 'basilica fund' again to start a new purchase."
         ))),
         PollOutcome::Timeout => Err(CliError::Internal(eyre!(
             "Timed out waiting for payment. If you completed the checkout, run 'basilica balance' to see the new balance."
@@ -107,7 +106,7 @@ fn prompt_amount_usd() -> Result<u32, CliError> {
 fn map_create_error(err: ApiError) -> CliError {
     match &err {
         ApiError::BadRequest { message } => CliError::Internal(eyre!(
-            "Checkout rejected: {message}. Amounts must be whole dollars between $1 and $1000."
+            "Card purchase rejected: {message}. Amounts must be whole dollars between $1 and $1000."
         )),
         ApiError::ServiceUnavailable => CliError::Internal(eyre!(
             "Card funding is not available right now. Try 'basilica fund --tao' to fund with TAO instead."
@@ -116,16 +115,16 @@ fn map_create_error(err: ApiError) -> CliError {
     }
 }
 
-fn print_checkout_url(session: &CheckoutSessionResponse) {
+fn print_checkout_url(purchase: &CardPurchaseResponse) {
     println!("{}", style("Funding method: Card").bold());
     println!();
     println!("Complete your purchase at:");
-    println!("  {}", style(&session.checkout_url).cyan().underlined());
+    println!("  {}", style(&purchase.checkout_url).cyan().underlined());
     println!();
     println!(
         "  {}: {}",
         style("Amount").dim(),
-        style(format_cents(session.requested_amount_cents)).bold()
+        style(format_cents(purchase.requested_amount_cents)).bold()
     );
     println!();
 }
@@ -137,39 +136,39 @@ fn open_in_browser(url: &str) {
 }
 
 enum PollOutcome {
-    Completed(CheckoutSessionSummary),
+    Completed(CardPurchaseSummary),
     Expired,
     Timeout,
     Cancelled,
 }
 
-async fn wait_for_terminal_state(client: &BasilicaClient, session_id: &str) -> PollOutcome {
+async fn wait_for_terminal_state(client: &BasilicaClient, purchase_id: &str) -> PollOutcome {
     let spinner = create_spinner("Waiting for payment...");
     let outcome = tokio::select! {
         _ = tokio::signal::ctrl_c() => PollOutcome::Cancelled,
-        outcome = poll_loop(client, session_id) => outcome,
+        outcome = poll_loop(client, purchase_id) => outcome,
     };
     match &outcome {
         PollOutcome::Completed(_) => complete_spinner_and_clear(spinner),
-        PollOutcome::Expired => complete_spinner_error(spinner, "Checkout session expired"),
+        PollOutcome::Expired => complete_spinner_error(spinner, "Card purchase expired"),
         PollOutcome::Timeout => complete_spinner_error(spinner, "Timed out waiting for payment"),
         PollOutcome::Cancelled => complete_spinner_error(spinner, "Cancelled"),
     }
     outcome
 }
 
-async fn poll_loop(client: &BasilicaClient, session_id: &str) -> PollOutcome {
+async fn poll_loop(client: &BasilicaClient, purchase_id: &str) -> PollOutcome {
     let deadline = Instant::now() + POLL_TIMEOUT;
     loop {
         tokio::time::sleep(POLL_INTERVAL).await;
         if Instant::now() >= deadline {
             return PollOutcome::Timeout;
         }
-        match client.get_checkout_session(session_id).await {
+        match client.get_card_purchase(purchase_id).await {
             Ok(summary) => match summary.status {
-                CheckoutSessionStatus::Completed => return PollOutcome::Completed(summary),
-                CheckoutSessionStatus::Expired => return PollOutcome::Expired,
-                CheckoutSessionStatus::Pending | CheckoutSessionStatus::Unspecified => continue,
+                CardPurchaseStatus::Completed => return PollOutcome::Completed(summary),
+                CardPurchaseStatus::Expired => return PollOutcome::Expired,
+                CardPurchaseStatus::Pending | CardPurchaseStatus::Unspecified => continue,
             },
             Err(err) => {
                 // Transient failures (network blip, server hiccup) should not
@@ -182,7 +181,7 @@ async fn poll_loop(client: &BasilicaClient, session_id: &str) -> PollOutcome {
     }
 }
 
-fn announce_success(summary: &CheckoutSessionSummary) {
+fn announce_success(summary: &CardPurchaseSummary) {
     let paid = summary
         .paid_amount_cents
         .unwrap_or(summary.requested_amount_cents);

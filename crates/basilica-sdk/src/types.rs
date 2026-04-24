@@ -476,33 +476,34 @@ pub struct ListDepositsQuery {
     pub offset: u32,
 }
 
-// Card checkout types
+// Card payment types
 //
 // Amounts are `u64` in the SDK: the server uses `i64` because Postgres
 // BIGINT is signed, but payments are never negative. Keeping the SDK
 // unsigned rejects a negative wire value at the deserialize boundary
 // instead of silently passing it up the stack.
 
-/// Request body for POST /checkout/session.
+/// Request body for POST /card-payments/purchases.
 #[derive(Debug, Serialize)]
-pub struct CreateCheckoutSessionRequest {
+pub struct CreateCardPurchaseRequest {
     pub amount_cents: u64,
 }
 
-/// Response from POST /checkout/session.
+/// Response from POST /card-payments/purchases.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CheckoutSessionResponse {
-    pub session_id: String,
+pub struct CardPurchaseResponse {
+    pub id: String,
     pub checkout_url: String,
     pub requested_amount_cents: u64,
-    pub status: CheckoutSessionStatus,
+    pub status: CardPurchaseStatus,
 }
 
-/// Session summary shared by GET /checkout/session/{id} and /checkout/sessions.
+/// Purchase summary shared by GET /card-payments/purchases/{id} and
+/// /card-payments/purchases.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct CheckoutSessionSummary {
-    pub session_id: String,
-    pub status: CheckoutSessionStatus,
+pub struct CardPurchaseSummary {
+    pub id: String,
+    pub status: CardPurchaseStatus,
     pub requested_amount_cents: u64,
     pub paid_amount_cents: Option<u64>,
     pub checkout_url: String,
@@ -529,16 +530,16 @@ pub struct CheckoutSessionSummary {
     pub invoice_pdf: Option<String>,
 }
 
-/// Response from GET /checkout/sessions.
+/// Response from GET /card-payments/purchases.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ListCheckoutSessionsResponse {
-    pub sessions: Vec<CheckoutSessionSummary>,
+pub struct ListCardPurchasesResponse {
+    pub purchases: Vec<CardPurchaseSummary>,
 }
 
-/// Lifecycle state of a card checkout session.
+/// Lifecycle state of a card purchase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum CheckoutSessionStatus {
+pub enum CardPurchaseStatus {
     Unspecified,
     Pending,
     Completed,

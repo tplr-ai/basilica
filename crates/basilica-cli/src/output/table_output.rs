@@ -6,9 +6,9 @@ use basilica_common::types::GpuOffering;
 use basilica_common::{types::GpuCategory, LocationProfile};
 use basilica_sdk::{
     types::{
-        ApiKeyInfo, ApiRentalListItem, CheckoutSessionStatus, GpuSpec, HistoricalRentalItem,
-        ListCheckoutSessionsResponse, ListDepositsResponse, RentalUsageResponse,
-        UsageHistoryResponse, VolumeResponse,
+        ApiKeyInfo, ApiRentalListItem, CardPurchaseStatus, GpuSpec, HistoricalRentalItem,
+        ListCardPurchasesResponse, ListDepositsResponse, RentalUsageResponse, UsageHistoryResponse,
+        VolumeResponse,
     },
     AvailableNode,
 };
@@ -550,8 +550,8 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
     Ok(())
 }
 
-/// Display card checkout (Stripe-backed) payment history in table format.
-pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Result<()> {
+/// Display card payment history in table format.
+pub fn display_card_purchases(response: &ListCardPurchasesResponse) -> Result<()> {
     println!();
     println!("{}", style("Card Payment History").bold());
     println!();
@@ -561,19 +561,19 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
 
     let mut total_paid_cents: u64 = 0;
 
-    for session in &response.sessions {
-        let date = session
+    for purchase in &response.purchases {
+        let date = purchase
             .created_at
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "-".to_string());
 
-        let amount = format_cents(session.requested_amount_cents);
+        let amount = format_cents(purchase.requested_amount_cents);
 
-        let status = match session.status {
-            CheckoutSessionStatus::Completed => "Completed",
-            CheckoutSessionStatus::Pending => "Pending",
-            CheckoutSessionStatus::Expired => "Expired",
-            CheckoutSessionStatus::Unspecified => "Unspecified",
+        let status = match purchase.status {
+            CardPurchaseStatus::Completed => "Completed",
+            CardPurchaseStatus::Pending => "Pending",
+            CardPurchaseStatus::Expired => "Expired",
+            CardPurchaseStatus::Unspecified => "Unspecified",
         };
 
         // Invoice/Receipt cell doubles as the per-session link. Modern
@@ -587,9 +587,9 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
         // so a separate receipt link would be redundant. `invoice_pdf`
         // stays on the SDK type but isn't surfaced here because the
         // hosted invoice page has a "Download PDF" button.
-        let invoice_cell = match session_primary_link(session) {
+        let invoice_cell = match purchase_primary_link(purchase) {
             Some((PrimaryLinkKind::Invoice, url)) => {
-                let label = session.invoice_number.as_deref().unwrap_or("Invoice");
+                let label = purchase.invoice_number.as_deref().unwrap_or("Invoice");
                 link_cell(label, url)
             }
             Some((PrimaryLinkKind::Receipt, url)) => link_cell("Receipt", url),
@@ -598,10 +598,10 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
 
         builder.push_record([date.as_str(), amount.as_str(), status, &invoice_cell]);
 
-        if matches!(session.status, CheckoutSessionStatus::Completed) {
-            total_paid_cents += session
+        if matches!(purchase.status, CardPurchaseStatus::Completed) {
+            total_paid_cents += purchase
                 .paid_amount_cents
-                .unwrap_or(session.requested_amount_cents);
+                .unwrap_or(purchase.requested_amount_cents);
         }
     }
 
@@ -627,13 +627,13 @@ enum PrimaryLinkKind {
 /// Prefer the hosted invoice page when present — it renders both the
 /// invoice detail and the payment confirmation, so showing the receipt
 /// alongside would be redundant.
-fn session_primary_link(
-    session: &basilica_sdk::types::CheckoutSessionSummary,
+fn purchase_primary_link(
+    purchase: &basilica_sdk::types::CardPurchaseSummary,
 ) -> Option<(PrimaryLinkKind, &str)> {
-    if let Some(url) = session.hosted_invoice_url.as_deref() {
+    if let Some(url) = purchase.hosted_invoice_url.as_deref() {
         return Some((PrimaryLinkKind::Invoice, url));
     }
-    if let Some(url) = session.receipt_url.as_deref() {
+    if let Some(url) = purchase.receipt_url.as_deref() {
         return Some((PrimaryLinkKind::Receipt, url));
     }
     None
@@ -1314,16 +1314,16 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use basilica_sdk::types::{CheckoutSessionStatus, CheckoutSessionSummary};
+    use basilica_sdk::types::{CardPurchaseStatus, CardPurchaseSummary};
 
-    fn session(
+    fn purchase(
         hosted_invoice_url: Option<&str>,
         receipt_url: Option<&str>,
         invoice_number: Option<&str>,
-    ) -> CheckoutSessionSummary {
-        CheckoutSessionSummary {
-            session_id: "cs_test".to_string(),
-            status: CheckoutSessionStatus::Completed,
+    ) -> CardPurchaseSummary {
+        CardPurchaseSummary {
+            id: "cs_test".to_string(),
+            status: CardPurchaseStatus::Completed,
             requested_amount_cents: 1000,
             paid_amount_cents: Some(1000),
             checkout_url: "https://checkout.stripe.test/cs_test".to_string(),
@@ -1346,12 +1346,12 @@ mod tests {
         // Common `invoice_creation = true` steady state: Stripe emits both
         // artifacts. The invoice page already renders the paid-charge
         // detail the receipt would duplicate, so the invoice wins.
-        let s = session(
+        let purchase = purchase(
             Some("https://invoice.stripe.com/i/abc"),
             Some("https://pay.stripe.com/receipts/xyz"),
             Some("INV-0001"),
         );
-        let (kind, url) = session_primary_link(&s).expect("both urls → some link");
+        let (kind, url) = purchase_primary_link(&purchase).expect("both urls -> some link");
         assert!(matches!(kind, PrimaryLinkKind::Invoice));
         assert_eq!(url, "https://invoice.stripe.com/i/abc");
     }
@@ -1362,8 +1362,8 @@ mod tests {
         // against a backend without it configured) have no invoice URLs
         // but still land `receipt_url` on `charge.succeeded`. The receipt
         // must surface so those rows are never dead-ends in the CLI.
-        let s = session(None, Some("https://pay.stripe.com/receipts/xyz"), None);
-        let (kind, url) = session_primary_link(&s).expect("receipt only → some link");
+        let purchase = purchase(None, Some("https://pay.stripe.com/receipts/xyz"), None);
+        let (kind, url) = purchase_primary_link(&purchase).expect("receipt only -> some link");
         assert!(matches!(kind, PrimaryLinkKind::Receipt));
         assert_eq!(url, "https://pay.stripe.com/receipts/xyz");
     }
@@ -1373,22 +1373,22 @@ mod tests {
         // Transient state where `invoice.finalized` has landed but
         // `charge.succeeded` has not yet been captured. The invoice page
         // already covers the user-facing need, so render it.
-        let s = session(
+        let purchase = purchase(
             Some("https://invoice.stripe.com/i/abc"),
             None,
             Some("INV-0001"),
         );
-        let (kind, _) = session_primary_link(&s).expect("invoice only → some link");
+        let (kind, _) = purchase_primary_link(&purchase).expect("invoice only -> some link");
         assert!(matches!(kind, PrimaryLinkKind::Invoice));
     }
 
     #[test]
-    fn pending_session_with_no_artifacts_has_no_link() {
-        // Freshly-created sessions (no webhooks landed yet) carry only
+    fn pending_purchase_with_no_artifacts_has_no_link() {
+        // Freshly-created purchases (no webhooks landed yet) carry only
         // `checkout_url`. The Invoice/Receipt cell collapses to `-`
-        // via the `None` arm in `display_checkout_sessions`.
-        let s = session(None, None, None);
-        assert!(session_primary_link(&s).is_none());
+        // via the `None` arm in `display_card_purchases`.
+        let purchase = purchase(None, None, None);
+        assert!(purchase_primary_link(&purchase).is_none());
     }
 
     #[test]
