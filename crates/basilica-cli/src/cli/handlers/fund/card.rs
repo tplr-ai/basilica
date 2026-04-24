@@ -136,7 +136,7 @@ fn open_in_browser(url: &str) {
 }
 
 enum PollOutcome {
-    Completed(CardPurchaseSummary),
+    Completed(Box<CardPurchaseSummary>),
     Expired,
     Timeout,
     Cancelled,
@@ -166,7 +166,7 @@ async fn poll_loop(client: &BasilicaClient, purchase_id: &str) -> PollOutcome {
         }
         match client.get_card_purchase(purchase_id).await {
             Ok(summary) => match summary.status {
-                CardPurchaseStatus::Completed => return PollOutcome::Completed(summary),
+                CardPurchaseStatus::Completed => return PollOutcome::Completed(Box::new(summary)),
                 CardPurchaseStatus::Expired => return PollOutcome::Expired,
                 CardPurchaseStatus::Pending | CardPurchaseStatus::Unspecified => continue,
             },

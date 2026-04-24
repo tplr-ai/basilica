@@ -3,6 +3,7 @@ name = "basilica-validator"
 version = "0.1.0"
 edition = "2021"
 description = "Basilca Validator - Bittensor neuron for verification and scoring"
+license = "MIT"
 rust-version = "1.70"
 
 [lib]

@@ -39,8 +39,8 @@ jobs:
       basilica-sdk-python: ${{ steps.changes.outputs.basilica-sdk-python }}
       workspace: ${{ steps.changes.outputs.workspace }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
         id: changes
         with:
           filters: |
@@ -79,30 +79,45 @@ jobs:
   quick-checks:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
+        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
         with:
           tool: nextest
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Check basilica-sdk-python version consistency
+        # Guard: maturin uses pyproject.toml for the wheel version, while the
+        # Rust crate reads Cargo.toml. When these drift, a tag-triggered
+        # release can build wheels matching the pyproject version and get
+        # silently skipped by PyPI's `skip-existing`.
+        run: |
+          set -euo pipefail
+          cargo_ver=$(awk -F\" '/^version = / {print $2; exit}' crates/basilica-sdk-python/Cargo.toml)
+          pyproject_ver=$(awk -F\" '/^version = / {print $2; exit}' crates/basilica-sdk-python/pyproject.toml)
+          echo "Cargo.toml    version: $cargo_ver"
+          echo "pyproject.toml version: $pyproject_ver"
+          if [ "$cargo_ver" != "$pyproject_ver" ]; then
+            echo "::error file=crates/basilica-sdk-python/pyproject.toml::basilica-sdk-python version drift: Cargo.toml=$cargo_ver, pyproject.toml=$pyproject_ver"
+            exit 1
+          fi
       - name: Quick check builds
         run: |
           cargo check -p basilica-common -p basilica-protocol
@@ -110,31 +125,59 @@ jobs:
         run: |
           cargo clippy -p basilica-common -p basilica-protocol --all-targets -- -D warnings
 
-  # Lint complex packages
+  # Supply-chain checks: advisories, licenses, bans, sources.
+  # Policy lives in `deny.toml`.
+  security-audit:
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: cargo deny check
+        # Use the official cargo-deny-action: it installs cargo-deny and
+        # manages the advisory-db fetch reliably. The direct `cargo deny`
+        # install path fails on these runners because the advisory-db
+        # metadata lookup does not handle a missing per-db directory.
+        uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb # v2.0.17
+        with:
+          command: check
+          # Respect `all-features = false` in deny.toml; the action default
+          # of `--all-features` would otherwise override it.
+          arguments: ""
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit (advisory only)
+        # cargo-audit runs in addition to cargo-deny to surface anything the
+        # policy in deny.toml does not cover (e.g. non-security informational
+        # advisories). Non-blocking for now — tighten after 0.27.0 removes
+        # the subnet stack that inherits the current noise.
+        continue-on-error: true
+        run: cargo audit --deny warnings
   lint-complex:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: quick-checks
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
+        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
         with:
           tool: nextest
       - name: Run clippy on complex packages
@@ -153,31 +196,31 @@ jobs:
       matrix:
         rust-version: [stable]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: ${{ matrix.rust-version }}
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
+        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
         with:
           tool: nextest
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
+        uses: useblacksmith/setup-docker-builder@ac083cc84672d01c60d5e8561d0a939b697de542 # v1
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
@@ -197,7 +240,7 @@ jobs:
           chmod +x scripts/validator/build.sh
           BITTENSOR_NETWORK=finney ./scripts/validator/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
         with:
           image-ref: basilica/validator:latest
           format: 'table'
@@ -214,31 +257,31 @@ jobs:
       matrix:
         rust-version: [stable]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: ${{ matrix.rust-version }}
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
+        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
         with:
           tool: nextest
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
+        uses: useblacksmith/setup-docker-builder@ac083cc84672d01c60d5e8561d0a939b697de542 # v1
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
@@ -258,7 +301,7 @@ jobs:
           chmod +x scripts/miner/build.sh
           BITTENSOR_NETWORK=finney ./scripts/miner/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
         with:
           image-ref: basilica/miner:latest
           format: 'table'
@@ -275,27 +318,27 @@ jobs:
       matrix:
         rust-version: [stable]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           toolchain: ${{ matrix.rust-version }}
           components: rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
+        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
         with:
           tool: nextest
       - name: Build and test basilica-cli
@@ -313,28 +356,28 @@ jobs:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install protoc
-        uses: arduino/setup-protoc@v3
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
           version: "25.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
+        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
@@ -379,6 +422,7 @@ jobs:
     needs:
       - quick-checks
       - lint-complex
+      - security-audit
       - build-validator
       - build-miner
       - build-cli
@@ -389,6 +433,7 @@ jobs:
         run: |
           if [[ "${{ needs.quick-checks.result }}" == "success" && \
                 "${{ needs.lint-complex.result }}" == "success" && \
+                "${{ needs.security-audit.result }}" == "success" && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
                 ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") && \
@@ -415,10 +460,10 @@ jobs:
       packages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
+        uses: useblacksmith/setup-docker-builder@ac083cc84672d01c60d5e8561d0a939b697de542 # v1
 
       - name: Resolve image tag
         shell: bash
@@ -429,7 +474,7 @@ jobs:
           echo "TAG=$TAG" >> $GITHUB_ENV
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -444,7 +489,7 @@ jobs:
             --image-tag "$TAG" \
             --no-extract
       - name: Scan validator image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
         with:
           image-ref: ghcr.io/one-covenant/basilica/validator:${{ env.TAG }}
           format: 'table'
@@ -468,7 +513,7 @@ jobs:
             --image-tag "$TAG" \
             --no-extract
       - name: Scan miner image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
         with:
           image-ref: ghcr.io/one-covenant/basilica/miner:${{ env.TAG }}
           format: 'table'
@@ -491,7 +536,7 @@ jobs:
             --image-tag "$TAG" \
             --no-extract
       - name: Scan CLI image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
         with:
           image-ref: ghcr.io/one-covenant/basilica/cli:${{ env.TAG }}
           format: 'table'

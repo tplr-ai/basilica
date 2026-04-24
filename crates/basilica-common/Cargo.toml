@@ -3,6 +3,7 @@ name = "basilica-common"
 version = "0.1.0"
 edition = "2021"
 description = "Core shared types, errors, traits, and cryptographic utilities for Basilica "
+license = "MIT"
 rust-version = "1.70"
 build = "build.rs"
 

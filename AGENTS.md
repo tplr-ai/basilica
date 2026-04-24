@@ -1,15 +1,12 @@
 # AGENTS.md
 
-This repository has two very different surfaces:
+This repository is the customer-facing surface for Basilica: the `basilica` CLI, the Python and Rust SDKs, and runnable examples. All agent work should target this surface.
 
-- `validator` / `miner` / subnet infrastructure
-- Basilica cloud customer operations via the `basilica` CLI and Python SDK
-
-If the user is asking how to **use Basilica as a customer/operator** for compute, billing, rentals, deployments, inference, or OpenClaw-style apps, ignore most of the subnet docs and start here:
+Start here:
 
 - CLI source: `crates/basilica-cli/src/`
 - Python SDK: `crates/basilica-sdk-python/`
-- user docs: `crates/basilica-sdk-python/README.md`, `examples/`, `docs/GETTING-STARTED.md`
+- user docs: `docs/GETTING-STARTED.md`, `docs/quickstart.md`, `examples/`
 
 ## What To Use
 
@@ -125,8 +122,9 @@ Be careful with stale examples in old docs or transcripts.
 These files are the best source of truth for agent docs and command behavior:
 
 - `README.md`
+- `docs/README.md`
 - `docs/GETTING-STARTED.md`
-- `config/README.md`
+- `docs/quickstart.md`
 - `examples/README.md`
 - `examples/15_cli_deploy/README.md`
 - `examples/inference/README.md`

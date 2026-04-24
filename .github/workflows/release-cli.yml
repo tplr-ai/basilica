@@ -21,13 +21,18 @@ permissions:
 jobs:
   create-release:
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    # Protection chokepoint for the whole CLI release pipeline. Configure
+    # `cli-release` in repo settings > Environments with required reviewers;
+    # nothing else in this workflow runs until approval lands because every
+    # downstream job `needs: create-release`.
+    environment: cli-release
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
       release_id: ${{ steps.create_release.outputs.id }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Extract version
         id: version
@@ -50,7 +55,7 @@ jobs:
 
       - name: Create Release
         id: create_release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: Basilica CLI ${{ steps.version.outputs.version }}
@@ -91,16 +96,16 @@ jobs:
       CARGO_NET_RETRY: 10
       RUST_BACKTRACE: short
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt
           targets: ${{ matrix.target }}
 
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           key: release-cli-${{ matrix.target }}
 
@@ -158,7 +163,7 @@ jobs:
 
       # Upload binary
       - name: Upload Release Binary
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.create-release.outputs.tag }}
           files: |

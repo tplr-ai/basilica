@@ -770,6 +770,8 @@ pub enum CloudProvider {
     Verda,
     /// Mass Compute - VM-based GPU rental provider (polling-based, no webhooks)
     MassCompute,
+    /// Shadeform - multi-cloud GPU aggregator (routes to underlying clouds like hyperstack, tensordock)
+    Shadeform,
     /// The Priory - VIP managed machines (not a real cloud provider, but uses Deployment model)
     Vip,
 }
@@ -782,6 +784,7 @@ impl CloudProvider {
             CloudProvider::HydraHost => "hydrahost",
             CloudProvider::Verda => "verda",
             CloudProvider::MassCompute => "masscompute",
+            CloudProvider::Shadeform => "shadeform",
             CloudProvider::Vip => "vip",
         }
     }
@@ -804,6 +807,7 @@ impl FromStr for CloudProvider {
             "hydrahost" => Ok(CloudProvider::HydraHost),
             "verda" => Ok(CloudProvider::Verda),
             "masscompute" | "mass_compute" | "mass-compute" => Ok(CloudProvider::MassCompute),
+            "shadeform" | "shade_form" | "shade-form" => Ok(CloudProvider::Shadeform),
             "vip" => Ok(CloudProvider::Vip),
             _ => Err(format!("Unknown provider: {}", s)),
         }
@@ -849,6 +853,7 @@ mod cloud_provider_tests {
         assert_eq!(CloudProvider::HydraHost.as_str(), "hydrahost");
         assert_eq!(CloudProvider::Verda.as_str(), "verda");
         assert_eq!(CloudProvider::MassCompute.as_str(), "masscompute");
+        assert_eq!(CloudProvider::Shadeform.as_str(), "shadeform");
         assert_eq!(CloudProvider::Vip.as_str(), "vip");
     }
 
@@ -879,6 +884,30 @@ mod cloud_provider_tests {
         assert_eq!(
             "MASSCOMPUTE".parse::<CloudProvider>().unwrap(),
             CloudProvider::MassCompute
+        );
+    }
+
+    #[test]
+    fn test_cloud_provider_from_str_shadeform() {
+        assert_eq!(
+            "shadeform".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Shadeform
+        );
+        assert_eq!(
+            "shade_form".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Shadeform
+        );
+        assert_eq!(
+            "shade-form".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Shadeform
+        );
+        assert_eq!(
+            "Shadeform".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Shadeform
+        );
+        assert_eq!(
+            "SHADEFORM".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Shadeform
         );
     }
 
@@ -931,6 +960,7 @@ mod cloud_provider_tests {
             (CloudProvider::HydraHost, "\"hydrahost\""),
             (CloudProvider::Verda, "\"verda\""),
             (CloudProvider::MassCompute, "\"masscompute\""),
+            (CloudProvider::Shadeform, "\"shadeform\""),
             (CloudProvider::Vip, "\"vip\""),
         ];
 
@@ -949,6 +979,31 @@ mod cloud_provider_tests {
                 expected_json
             );
         }
+    }
+
+    #[test]
+    fn test_gpu_offering_with_shadeform_provider() {
+        let json = r#"{
+            "id": "shadeform-hyperstack-H100-canada-1",
+            "provider": "shadeform",
+            "gpu_type": "H100",
+            "gpu_memory_gb_per_gpu": 80,
+            "gpu_count": 8,
+            "interconnect": "NVLink",
+            "system_memory_gb": 1800,
+            "vcpu_count": 208,
+            "region": "canada-1",
+            "hourly_rate_per_gpu": "2.10",
+            "availability": true,
+            "is_spot": false,
+            "fetched_at": "2025-01-01T00:00:00Z"
+        }"#;
+
+        let offering: GpuOffering = serde_json::from_str(json).unwrap();
+        assert_eq!(offering.provider, CloudProvider::Shadeform);
+        assert_eq!(offering.gpu_type, GpuCategory::H100);
+        assert_eq!(offering.gpu_count, 8);
+        assert_eq!(offering.region, "canada-1");
     }
 
     #[test]

@@ -1,0 +1,142 @@
+# cargo-deny policy for the basilica workspace.
+#
+# Enforced by the `security-audit` job in .github/workflows/ci.yml.
+# Local invocation: `cargo deny check`.
+#
+# The advisory ignore list below is entirely composed of findings inherited
+# through the `basilica-validator` / `basilica-miner` stack (and its subxt +
+# aws-lc-sys + rustls-webpki transitives). These crates are scheduled for
+# removal; each ignore should be re-evaluated when that cleanup lands. Do
+# NOT add new entries here without a dated rationale.
+
+[graph]
+all-features = false
+no-default-features = false
+
+# ---------------------------------------------------------------------------
+# Security advisories
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # Yanked crates inherited through the subnet-era dep graph; will be
+    # resolved when validator/miner are dropped in 0.27.0.
+    { crate = "keccak@0.1.5", reason = "yanked upstream; pulled via alloy/proptest chain inside the subnet stack" },
+
+    # aws-lc-sys (via bittensor's TLS stack)
+    "RUSTSEC-2026-0044",  # X.509 Name Constraints bypass via wildcard/Unicode CN
+    "RUSTSEC-2026-0045",  # AES-CCM timing side-channel
+    "RUSTSEC-2026-0046",  # PKCS7_verify cert chain validation bypass
+    "RUSTSEC-2026-0047",  # PKCS7_verify signature validation bypass
+    "RUSTSEC-2026-0048",  # CRL distribution point scope check logic error
+
+    # QUIC transport stack (via reqwest 0.12 -> quinn)
+    "RUSTSEC-2026-0037",  # quinn-proto unauthenticated DoS
+
+    # RSA timing sidechannel (via bittensor/subxt chain)
+    "RUSTSEC-2023-0071",  # rsa: Marvin Attack
+
+    # rustls-webpki (pre-0.103.13 via reqwest 0.11 + rustls 0.21 subnet chain).
+    # The reqwest 0.12 / rustls 0.23 chain was bumped to rustls-webpki 0.103.13
+    # on 2026-04-23 via Cargo.lock; the remaining 0.101.x hits come from the
+    # rustls 0.21 / reqwest 0.11 / kube 0.88 / sqlx 0.7 / tonic 0.10 stack
+    # that is scheduled for removal in the 0.27.0 subnet cleanup.
+    "RUSTSEC-2026-0049",  # CRL distribution point matching
+    "RUSTSEC-2026-0098",  # URI name constraints incorrectly accepted
+    "RUSTSEC-2026-0099",  # wildcard-CN name constraints accepted
+    "RUSTSEC-2026-0104",  # CRL parsing reachable panic; 0.101.x has no upstream patch (added 2026-04-23)
+
+    # Other transitives through the subnet stack
+    "RUSTSEC-2024-0363",  # sqlx binary protocol misinterpretation
+    "RUSTSEC-2026-0067",  # tar: unpack_in chmod via symlinks
+    "RUSTSEC-2026-0068",  # tar: PAX size headers ignored when nonzero
+    "RUSTSEC-2026-0009",  # time: stack exhaustion DoS
+
+    # Unmaintained transitives through the subnet stack. Treated as advisories
+    # because cargo-deny surfaces them; functional risk is low.
+    "RUSTSEC-2024-0370",  # proc-macro-error unmaintained
+    "RUSTSEC-2024-0436",  # paste unmaintained
+    "RUSTSEC-2025-0119",  # libsecp256k1 unmaintained
+    "RUSTSEC-2025-0134",  # rustls-pemfile unmaintained
+    "RUSTSEC-2025-0161",  # number_prefix unmaintained
+
+    # Unsound-but-not-exploited-in-our-usage advisories reaching the shared
+    # deps via transitive paths. Our code does not hit the affected APIs.
+    "RUSTSEC-2026-0002",  # lru IterMut violates Stacked Borrows (subnet stack)
+    "RUSTSEC-2026-0097",  # rand: unsound with custom logger using rand::rng()
+]
+
+# ---------------------------------------------------------------------------
+# Licenses
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+    "Unlicense",
+    "0BSD",
+    "CDLA-Permissive-2.0",  # webpki-root-certs / webpki-roots
+]
+
+# In-workspace crates: allow any missing license by name.
+# (We do set `license = "MIT"` on all workspace members; this is a belt-and-
+# suspenders guard in case metadata drifts.)
+[[licenses.clarify]]
+name = "basilica-common"
+expression = "MIT"
+license-files = []
+[[licenses.clarify]]
+name = "basilica-miner"
+expression = "MIT"
+license-files = []
+[[licenses.clarify]]
+name = "basilica-protocol"
+expression = "MIT"
+license-files = []
+[[licenses.clarify]]
+name = "basilica-validator"
+expression = "MIT"
+license-files = []
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+# ---------------------------------------------------------------------------
+# Bans (duplicate versions, wildcards, specific crates)
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+# Add specific bans here as they come up, e.g.:
+# { name = "openssl", reason = "prefer rustls for consistency" }
+deny = []
+skip = []
+skip-tree = []
+
+# ---------------------------------------------------------------------------
+# Allowed dependency sources
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    # bittensor SDK, pulled by basilica-common / basilica-validator / basilica-miner
+    "https://github.com/one-covenant/bittensor-rs",
+    # Patched fork of crabtensor used for metadata compatibility
+    "https://github.com/one-covenant/crabtensor",
+]

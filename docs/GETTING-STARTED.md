@@ -24,16 +24,14 @@ Before you begin, ensure you have:
 
 ### Installing the Basilica CLI
 
-If you don't have the CLI installed yet:
+```bash
+curl -sSL https://basilica.ai/install.sh | bash
+```
+
+For headless shells:
 
 ```bash
-# From the repository root
-cargo install --path crates/basilica-cli
-
-# Or build from source
-cd crates/basilica-cli
-cargo build --release
-sudo cp target/release/basilica /usr/local/bin/
+basilica login --device-code
 ```
 
 Verify installation:
@@ -46,7 +44,7 @@ basilica --version
 
 ## Generating Your API Token
 
-There are three methods to generate a `BASILICA_API_TOKEN`:
+There are two methods to generate a `BASILICA_API_TOKEN`:
 
 ### Method 1: Using the CLI (Recommended)
 
@@ -109,28 +107,7 @@ echo $BASILICA_API_TOKEN
 # Should output: basilica_1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z
 ```
 
-### Method 2: Using the Bootstrap Script (Development/Testing)
-
-For development and testing environments, you can use the bootstrap script:
-
-```bash
-cd scripts/e2e
-
-# Generate token for a test user
-./bootstrap-api-key.sh --user test-user --name my-test-token --scopes "rentals:* jobs:*"
-```
-
-**Output:**
-
-```
-Generated API token for user: test-user
-Token: basilica_abc123...
-
-Run this command to set it:
-  export BASILICA_API_TOKEN="basilica_abc123..."
-```
-
-### Method 3: Programmatic Generation (Advanced)
+### Method 2: Programmatic Generation (Advanced)
 
 For automated systems, you can generate tokens programmatically using the Rust SDK:
 
@@ -691,15 +668,14 @@ python3 ../../../examples/deploy_container.py
 ### Read Documentation
 
 - **SDK Reference**: `crates/basilica-sdk-python/README.md`
-- **Deployment Guide**: `examples/README-deployments.md`
-- **Integration Tests**: `tests/integration/README.md`
-- **Architecture**: `prompts/k3s-basilica-sdk.architecture.md`
+- **Quickstart**: `docs/quickstart.md`
+- **Agent Cloud Ops**: `docs/agent-cloud-ops.md`
 
 ### Join the Community
 
-- GitHub: <https://github.com/your-org/basilica>
+- GitHub: <https://github.com/one-covenant/basilica>
 - Discord: <https://discord.gg/Cy7c9vPsNK>
-- Documentation: <https://docs.basilica.ai>
+- Website: <https://basilica.ai/>
 
 ---
 
