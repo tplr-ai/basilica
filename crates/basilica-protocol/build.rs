@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/incentive.proto",
                 "proto/rental.proto",
                 "proto/miner_payouts.proto",
-                "proto/stripe.proto",
+                "proto/card_payments.proto",
             ],
             &["proto"],
         )?;

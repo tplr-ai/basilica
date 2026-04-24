@@ -91,9 +91,9 @@ pub mod basilca {
         }
     }
 
-    pub mod stripe {
+    pub mod card_payments {
         pub mod v1 {
-            include!("gen/basilica.stripe.v1.rs");
+            include!("gen/basilica.card_payments.v1.rs");
         }
     }
 }
@@ -155,14 +155,14 @@ pub mod incentive {
     pub use crate::basilca::incentive::v1::*;
 }
 
-pub mod stripe {
-    //! Stripe Checkout session creation and status for credit purchases.
+pub mod card_payments {
+    //! Card purchase creation and status for credit purchases.
     //!
     //! The service is VPC-internal only — basilica-api authenticates callers
-    //! and forwards `caller_user_id`; basilica-stripe enforces per-user
-    //! scoping in SQL and returns NotFound for cross-tenant lookups so
-    //! session existence never leaks.
-    pub use crate::basilca::stripe::v1::*;
+    //! and forwards `caller_user_id`; the backing card payments service
+    //! enforces per-user scoping in SQL and returns NotFound for cross-tenant
+    //! lookups so purchase existence never leaks.
+    pub use crate::basilca::card_payments::v1::*;
 }
 
 // Re-export common types at crate root for convenience
