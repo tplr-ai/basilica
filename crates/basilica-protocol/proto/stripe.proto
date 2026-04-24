@@ -11,12 +11,13 @@ import "google/protobuf/timestamp.proto";
 // paths and returns NotFound (not PermissionDenied) for cross-tenant lookups
 // so session existence never leaks across users.
 service StripeService {
-    // Create a Stripe Checkout session for a custom dollar amount. The server
-    // validates bounds and rejects out-of-range amounts with InvalidArgument
-    // before calling Stripe. `request_nonce` drives the Stripe idempotency
-    // key so retried gRPC calls collapse into a single Stripe session. Return
-    // URLs (`success_url` / `cancel_url`) are sourced from basilica-stripe's
-    // own config — they are a global Basilica property, not caller-controlled,
+    // Create a Stripe Checkout session. The buyer enters the dollar amount
+    // on the Stripe-hosted checkout page (backed by a Price with
+    // `custom_unit_amount.enabled = true`), so no amount is passed in.
+    // `request_nonce` drives the Stripe idempotency key so retried gRPC
+    // calls collapse into a single Stripe session. Return URLs
+    // (`success_url` / `cancel_url`) are sourced from basilica-stripe's own
+    // config — they are a global Basilica property, not caller-controlled,
     // so this RPC does not accept them.
     rpc CreateCheckoutSession(CreateCheckoutSessionRequest)
         returns (CreateCheckoutSessionResponse);
@@ -44,9 +45,8 @@ enum SessionStatus {
 message CreateCheckoutSessionRequest {
     // Authenticated user id populated by basilica-api from the bearer/JWT.
     string caller_user_id = 1;
-    // Amount in cents to charge. Server-validated against configured
-    // min/max bounds; out-of-range values return InvalidArgument.
-    int64 amount_cents = 2;
+    reserved 2;
+    reserved "amount_cents";
     // Client-generated nonce. basilica-stripe derives the Stripe
     // idempotency key from this, so retries collapse on Stripe's side.
     string request_nonce = 3;
@@ -55,7 +55,8 @@ message CreateCheckoutSessionRequest {
 message CreateCheckoutSessionResponse {
     string session_id = 1;
     string checkout_url = 2;
-    int64 requested_amount_cents = 3;
+    reserved 3;
+    reserved "requested_amount_cents";
     SessionStatus status = 4;
 }
 
@@ -88,9 +89,11 @@ message ListSessionsResponse {
 message SessionSummary {
     string session_id = 1;
     SessionStatus status = 2;
-    int64 requested_amount_cents = 3;
+    reserved 3;
+    reserved "requested_amount_cents";
     // Populated from Stripe's `amount_total` on `checkout.session.completed`;
-    // null while the session is still pending.
+    // null while the session is still pending — the buyer chooses the amount
+    // on the hosted checkout page, so nothing is known at creation time.
     optional int64 paid_amount_cents = 4;
     string checkout_url = 5;
     google.protobuf.Timestamp created_at = 6;

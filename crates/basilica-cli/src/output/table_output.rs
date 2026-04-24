@@ -567,7 +567,12 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .unwrap_or_else(|| "-".to_string());
 
-        let amount = format_cents(session.requested_amount_cents);
+        // The amount is unknown until the webhook lands `amount_total` into
+        // `paid_amount_cents`; pending sessions have no figure to show.
+        let amount = match session.paid_amount_cents {
+            Some(cents) => format_cents(cents),
+            None => "-".to_string(),
+        };
 
         let status = match session.status {
             CheckoutSessionStatus::Completed => "Completed",
@@ -599,9 +604,7 @@ pub fn display_checkout_sessions(response: &ListCheckoutSessionsResponse) -> Res
         builder.push_record([date.as_str(), amount.as_str(), status, &invoice_cell]);
 
         if matches!(session.status, CheckoutSessionStatus::Completed) {
-            total_paid_cents += session
-                .paid_amount_cents
-                .unwrap_or(session.requested_amount_cents);
+            total_paid_cents += session.paid_amount_cents.unwrap_or(0);
         }
     }
 
@@ -1324,7 +1327,6 @@ mod tests {
         CheckoutSessionSummary {
             session_id: "cs_test".to_string(),
             status: CheckoutSessionStatus::Completed,
-            requested_amount_cents: 1000,
             paid_amount_cents: Some(1000),
             checkout_url: "https://checkout.stripe.test/cs_test".to_string(),
             created_at: None,

@@ -54,7 +54,7 @@ AUTH TOKEN MANAGEMENT:
 FUND MANAGEMENT:
   basilica fund                     # Pick method (TAO or card)
   basilica fund --tao               # Show TAO deposit address directly
-  basilica fund --usd 25            # Buy $25 of credits with a card
+  basilica fund --card              # Open the Stripe checkout page
   basilica fund list --limit 100    # List TAO deposits
 "
 )]
@@ -244,7 +244,7 @@ impl Args {
             }
 
             // Fund management
-            Commands::Fund { action, usd, tao } => {
+            Commands::Fund { action, card, tao } => {
                 use crate::cli::commands::FundAction;
                 use crate::client::create_authenticated_client;
 
@@ -253,7 +253,7 @@ impl Args {
 
                 match action {
                     None => {
-                        handlers::fund::handle_fund(&client, *usd, *tao, self.json).await?;
+                        handlers::fund::handle_fund(&client, *card, *tao, self.json).await?;
                     }
                     Some(FundAction::List { limit, offset }) => {
                         handlers::fund::list::handle_list_payments(

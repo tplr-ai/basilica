@@ -1,6 +1,7 @@
 //! Card funding flow: create a Stripe-backed checkout session via
 //! basilica-api, open it in the browser, and poll until it completes or
-//! expires.
+//! expires. The dollar amount is entered by the buyer on the Stripe-hosted
+//! page — the CLI does not ask for it.
 
 use std::time::{Duration, Instant};
 
@@ -12,7 +13,6 @@ use basilica_sdk::types::{
 use basilica_sdk::BasilicaClient;
 use color_eyre::{eyre::eyre, Result as EyreResult};
 use console::style;
-use dialoguer::{theme::ColorfulTheme, Input};
 use tracing::warn;
 use uuid::Uuid;
 
@@ -22,11 +22,6 @@ use crate::{
     progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner},
 };
 
-/// `amount_cents` bounds the SDK accepts before even hitting the server.
-/// Matches basilica-stripe's default config of $1–$1000.
-const MIN_USD: u32 = 1;
-const MAX_USD: u32 = 1000;
-
 /// How often the poll loop checks session status.
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// Hard ceiling on polling — slightly past Stripe's 30-min default expiry
@@ -35,22 +30,12 @@ const POLL_TIMEOUT: Duration = Duration::from_secs(31 * 60);
 
 pub async fn handle_card_funding(
     client: &BasilicaClient,
-    amount_usd: Option<u32>,
     json: bool,
 ) -> EyreResult<(), CliError> {
-    let amount_usd = match amount_usd {
-        Some(n) => n,
-        None => prompt_amount_usd()?,
-    };
-    let amount_cents = u64::from(amount_usd) * 100;
-
     let idempotency_key = Uuid::new_v4().to_string();
     let spinner = create_spinner("Creating checkout session...");
     let session = match client
-        .create_checkout_session(
-            &CreateCheckoutSessionRequest { amount_cents },
-            &idempotency_key,
-        )
+        .create_checkout_session(&CreateCheckoutSessionRequest::default(), &idempotency_key)
         .await
     {
         Ok(session) => {
@@ -88,27 +73,8 @@ pub async fn handle_card_funding(
     }
 }
 
-fn prompt_amount_usd() -> Result<u32, CliError> {
-    let theme = ColorfulTheme::default();
-    let amount: u32 = Input::with_theme(&theme)
-        .with_prompt(format!("Amount in USD (${}-${})", MIN_USD, MAX_USD))
-        .validate_with(|input: &u32| {
-            if (MIN_USD..=MAX_USD).contains(input) {
-                Ok(())
-            } else {
-                Err("Amount must be between $1 and $1000")
-            }
-        })
-        .interact_text()
-        .map_err(|e| CliError::Internal(e.into()))?;
-    Ok(amount)
-}
-
 fn map_create_error(err: ApiError) -> CliError {
     match &err {
-        ApiError::BadRequest { message } => CliError::Internal(eyre!(
-            "Checkout rejected: {message}. Amounts must be whole dollars between $1 and $1000."
-        )),
         ApiError::ServiceUnavailable => CliError::Internal(eyre!(
             "Card funding is not available right now. Try 'basilica fund --tao' to fund with TAO instead."
         )),
@@ -119,14 +85,8 @@ fn map_create_error(err: ApiError) -> CliError {
 fn print_checkout_url(session: &CheckoutSessionResponse) {
     println!("{}", style("Funding method: Card").bold());
     println!();
-    println!("Complete your purchase at:");
+    println!("Enter the amount and complete your purchase at:");
     println!("  {}", style(&session.checkout_url).cyan().underlined());
-    println!();
-    println!(
-        "  {}: {}",
-        style("Amount").dim(),
-        style(format_cents(session.requested_amount_cents)).bold()
-    );
     println!();
 }
 
@@ -183,13 +143,17 @@ async fn poll_loop(client: &BasilicaClient, session_id: &str) -> PollOutcome {
 }
 
 fn announce_success(summary: &CheckoutSessionSummary) {
-    let paid = summary
-        .paid_amount_cents
-        .unwrap_or(summary.requested_amount_cents);
-    println!(
-        "{} {} added — run {} to see your credit balance.",
-        style("✓").green().bold(),
-        style(format_cents(paid)).bold(),
-        style("'basilica balance'").yellow()
-    );
+    match summary.paid_amount_cents {
+        Some(paid) => println!(
+            "{} {} added — run {} to see your credit balance.",
+            style("✓").green().bold(),
+            style(format_cents(paid)).bold(),
+            style("'basilica balance'").yellow()
+        ),
+        None => println!(
+            "{} Payment completed — run {} to see your credit balance.",
+            style("✓").green().bold(),
+            style("'basilica balance'").yellow()
+        ),
+    }
 }

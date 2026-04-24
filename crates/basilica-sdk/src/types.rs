@@ -483,18 +483,16 @@ pub struct ListDepositsQuery {
 // unsigned rejects a negative wire value at the deserialize boundary
 // instead of silently passing it up the stack.
 
-/// Request body for POST /checkout/session.
-#[derive(Debug, Serialize)]
-pub struct CreateCheckoutSessionRequest {
-    pub amount_cents: u64,
-}
+/// Request body for POST /checkout/session. Empty: the buyer enters the
+/// dollar amount on the Stripe-hosted checkout page.
+#[derive(Debug, Default, Serialize)]
+pub struct CreateCheckoutSessionRequest {}
 
 /// Response from POST /checkout/session.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckoutSessionResponse {
     pub session_id: String,
     pub checkout_url: String,
-    pub requested_amount_cents: u64,
     pub status: CheckoutSessionStatus,
 }
 
@@ -503,7 +501,6 @@ pub struct CheckoutSessionResponse {
 pub struct CheckoutSessionSummary {
     pub session_id: String,
     pub status: CheckoutSessionStatus,
-    pub requested_amount_cents: u64,
     pub paid_amount_cents: Option<u64>,
     pub checkout_url: String,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,

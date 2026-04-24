@@ -5,10 +5,6 @@ pub struct CreateCheckoutSessionRequest {
     /// Authenticated user id populated by basilica-api from the bearer/JWT.
     #[prost(string, tag = "1")]
     pub caller_user_id: ::prost::alloc::string::String,
-    /// Amount in cents to charge. Server-validated against configured
-    /// min/max bounds; out-of-range values return InvalidArgument.
-    #[prost(int64, tag = "2")]
-    pub amount_cents: i64,
     /// Client-generated nonce. basilica-stripe derives the Stripe
     /// idempotency key from this, so retries collapse on Stripe's side.
     #[prost(string, tag = "3")]
@@ -21,8 +17,6 @@ pub struct CreateCheckoutSessionResponse {
     pub session_id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub checkout_url: ::prost::alloc::string::String,
-    #[prost(int64, tag = "3")]
-    pub requested_amount_cents: i64,
     #[prost(enumeration = "SessionStatus", tag = "4")]
     pub status: i32,
 }
@@ -71,10 +65,9 @@ pub struct SessionSummary {
     pub session_id: ::prost::alloc::string::String,
     #[prost(enumeration = "SessionStatus", tag = "2")]
     pub status: i32,
-    #[prost(int64, tag = "3")]
-    pub requested_amount_cents: i64,
     /// Populated from Stripe's `amount_total` on `checkout.session.completed`;
-    /// null while the session is still pending.
+    /// null while the session is still pending — the buyer chooses the amount
+    /// on the hosted checkout page, so nothing is known at creation time.
     #[prost(int64, optional, tag = "4")]
     pub paid_amount_cents: ::core::option::Option<i64>,
     #[prost(string, tag = "5")]
@@ -230,12 +223,13 @@ pub mod stripe_service_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// Create a Stripe Checkout session for a custom dollar amount. The server
-        /// validates bounds and rejects out-of-range amounts with InvalidArgument
-        /// before calling Stripe. `request_nonce` drives the Stripe idempotency
-        /// key so retried gRPC calls collapse into a single Stripe session. Return
-        /// URLs (`success_url` / `cancel_url`) are sourced from basilica-stripe's
-        /// own config — they are a global Basilica property, not caller-controlled,
+        /// Create a Stripe Checkout session. The buyer enters the dollar amount
+        /// on the Stripe-hosted checkout page (backed by a Price with
+        /// `custom_unit_amount.enabled = true`), so no amount is passed in.
+        /// `request_nonce` drives the Stripe idempotency key so retried gRPC
+        /// calls collapse into a single Stripe session. Return URLs
+        /// (`success_url` / `cancel_url`) are sourced from basilica-stripe's own
+        /// config — they are a global Basilica property, not caller-controlled,
         /// so this RPC does not accept them.
         pub async fn create_checkout_session(
             &mut self,
@@ -338,12 +332,13 @@ pub mod stripe_service_server {
     /// Generated trait containing gRPC methods that should be implemented for use with StripeServiceServer.
     #[async_trait]
     pub trait StripeService: Send + Sync + 'static {
-        /// Create a Stripe Checkout session for a custom dollar amount. The server
-        /// validates bounds and rejects out-of-range amounts with InvalidArgument
-        /// before calling Stripe. `request_nonce` drives the Stripe idempotency
-        /// key so retried gRPC calls collapse into a single Stripe session. Return
-        /// URLs (`success_url` / `cancel_url`) are sourced from basilica-stripe's
-        /// own config — they are a global Basilica property, not caller-controlled,
+        /// Create a Stripe Checkout session. The buyer enters the dollar amount
+        /// on the Stripe-hosted checkout page (backed by a Price with
+        /// `custom_unit_amount.enabled = true`), so no amount is passed in.
+        /// `request_nonce` drives the Stripe idempotency key so retried gRPC
+        /// calls collapse into a single Stripe session. Return URLs
+        /// (`success_url` / `cancel_url`) are sourced from basilica-stripe's own
+        /// config — they are a global Basilica property, not caller-controlled,
         /// so this RPC does not accept them.
         async fn create_checkout_session(
             &self,

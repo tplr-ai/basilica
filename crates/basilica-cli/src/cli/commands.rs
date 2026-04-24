@@ -180,9 +180,10 @@ pub enum Commands {
         #[command(subcommand)]
         action: Option<FundAction>,
 
-        /// Fund with a card for this USD amount. Skips the method prompt.
-        #[arg(long, value_name = "AMOUNT", conflicts_with = "tao")]
-        usd: Option<u32>,
+        /// Fund with a card. Skips the method prompt. The dollar amount is
+        /// entered on the Stripe-hosted checkout page.
+        #[arg(long, conflicts_with = "tao")]
+        card: bool,
 
         /// Fund with Bittensor TAO; skips the method prompt.
         #[arg(long)]

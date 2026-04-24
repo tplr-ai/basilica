@@ -21,33 +21,33 @@ enum FundMethod {
 
 /// Dispatch `basilica fund` based on flags or an interactive picker.
 ///
-/// Flag precedence: `--tao` wins if set; otherwise `--usd` implies card.
+/// Flag precedence: `--tao` wins if set; otherwise `--card` implies card.
 /// With neither, prompt the user when stdin is a TTY; error out otherwise
 /// (including `--json` mode).
 pub async fn handle_fund(
     client: &BasilicaClient,
-    amount_usd: Option<u32>,
+    card: bool,
     tao: bool,
     json: bool,
 ) -> EyreResult<(), CliError> {
-    let method = select_method(amount_usd, tao, json)?;
+    let method = select_method(card, tao, json)?;
     match method {
         FundMethod::Tao => tao::handle_show_deposit_address(client, json).await,
-        FundMethod::Card => card::handle_card_funding(client, amount_usd, json).await,
+        FundMethod::Card => card::handle_card_funding(client, json).await,
     }
 }
 
-fn select_method(amount_usd: Option<u32>, tao: bool, json: bool) -> Result<FundMethod, CliError> {
-    match (tao, amount_usd.is_some()) {
+fn select_method(card: bool, tao: bool, json: bool) -> Result<FundMethod, CliError> {
+    match (tao, card) {
         (true, true) => Err(CliError::Internal(eyre!(
-            "--tao and --usd cannot be combined; pass one or the other"
+            "--tao and --card cannot be combined; pass one or the other"
         ))),
         (true, false) => Ok(FundMethod::Tao),
         (false, true) => Ok(FundMethod::Card),
         (false, false) => {
             if json || !std::io::stdin().is_terminal() {
                 return Err(CliError::Internal(eyre!(
-                    "basilica fund requires --usd <amount> or --tao when stdin is not a TTY or --json is set"
+                    "basilica fund requires --card or --tao when stdin is not a TTY or --json is set"
                 )));
             }
             prompt_for_method()
