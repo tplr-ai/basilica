@@ -285,7 +285,7 @@ jobs:
           chmod +x scripts/validator/build.sh
           BITTENSOR_NETWORK=finney ./scripts/validator/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # master
         with:
           image-ref: basilica/validator:latest
           format: 'table'
@@ -361,7 +361,7 @@ jobs:
           chmod +x scripts/miner/build.sh
           BITTENSOR_NETWORK=finney ./scripts/miner/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # master
         with:
           image-ref: basilica/miner:latest
           format: 'table'
@@ -579,7 +579,7 @@ jobs:
             --image-tag "$TAG" \
             --no-extract
       - name: Scan validator image
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # master
         with:
           image-ref: ghcr.io/one-covenant/basilica/validator:${{ env.TAG }}
           format: 'table'
@@ -603,7 +603,7 @@ jobs:
             --image-tag "$TAG" \
             --no-extract
       - name: Scan miner image
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # master
         with:
           image-ref: ghcr.io/one-covenant/basilica/miner:${{ env.TAG }}
           format: 'table'
@@ -626,7 +626,7 @@ jobs:
             --image-tag "$TAG" \
             --no-extract
       - name: Scan CLI image
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # master
         with:
           image-ref: ghcr.io/one-covenant/basilica/cli:${{ env.TAG }}
           format: 'table'
