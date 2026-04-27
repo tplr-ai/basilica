@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GpuOffering` responses from `/secure-cloud/gpu-prices` that include
   Denvr offerings now deserialize successfully instead of failing
   the entire response.
+- Card payment APIs on the payments client: create checkout session,
+  paginated listing of card purchases, status filtering, and receipt
+  + invoice metadata fields on each session.
+
+### Security
+- Bumped rustls-webpki to 0.103.13 to address RUSTSEC-2026-0104
+  (reachable panic in CRL parsing).
 
 ## [0.27.0] - 2026-04-20
 

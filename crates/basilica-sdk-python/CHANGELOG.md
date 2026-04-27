@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   time via `importlib.metadata.version("basilica-sdk")` so it can no
   longer drift.
 
+### Security
+- Bumped rustls-webpki to 0.103.13 in the bundled native extension to
+  address RUSTSEC-2026-0104 (reachable panic in CRL parsing).
+
 ## [0.27.0] - 2026-04-20
 
 ### Added
