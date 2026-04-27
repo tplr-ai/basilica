@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-04-27
+
+### Added
+- Denvr Data cloud provider support (`CloudProvider::Denvr`). The CLI
+  can now list, filter, and display GPU offerings served from Denvr's
+  Hou1 and Msc1 clusters without deserialization errors.
+
 ## [0.27.0] - 2026-04-20
 
 ### Added

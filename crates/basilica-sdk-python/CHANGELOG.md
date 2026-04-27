@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-04-27
+
+### Added
+- Denvr Data cloud provider support. Secure cloud GPU listings that
+  include Denvr offerings now deserialize successfully instead of
+  failing the entire response.
+
+### Fixed
+- `basilica.__version__` now reflects the installed package version.
+  Previously the module exposed a hardcoded literal that drifted from
+  `pyproject.toml` across releases (e.g. 0.27.0 wheels reported
+  `__version__ == "0.17.0"`). The attribute is now resolved at import
+  time via `importlib.metadata.version("basilica-sdk")` so it can no
+  longer drift.
+
 ## [0.27.0] - 2026-04-20
 
 ### Added
