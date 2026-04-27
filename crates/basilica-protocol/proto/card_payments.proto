@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package basilica.card_payments.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// CardPaymentsService owns card-based credit purchase creation and status
+// lookups for the Basilica credit-purchase flow. The service is VPC-internal
+// only — basilica-api authenticates the caller and forwards `caller_user_id`
+// on every request; the backing card processor service enforces per-user
+// scoping in SQL on read paths and returns NotFound (not PermissionDenied) for
+// cross-tenant lookups so purchase existence never leaks across users.
+service CardPaymentsService {
+    // Create a card purchase for a custom dollar amount. The server validates
+    // bounds and rejects out-of-range amounts with InvalidArgument before
+    // calling the backing payment processor. `request_nonce` drives
+    // idempotency so retried gRPC calls collapse into a single purchase.
+    // Return URLs are sourced from service config — they are a global Basilica
+    // property, not caller-controlled, so this RPC does not accept them.
+    rpc CreateCardPurchase(CreateCardPurchaseRequest)
+        returns (CreateCardPurchaseResponse);
+
+    // Fetch a single purchase owned by the caller. NotFound covers both
+    // "purchase does not exist" and "purchase exists but belongs to another
+    // user" — callers cannot use this RPC to probe tenant membership.
+    rpc GetCardPurchase(GetCardPurchaseRequest)
+        returns (GetCardPurchaseResponse);
+
+    // List purchases owned by the caller, newest first. `limit` caps the
+    // result set; the server substitutes a sane default when zero.
+    rpc ListCardPurchases(ListCardPurchasesRequest) returns (ListCardPurchasesResponse);
+}
+
+// Lifecycle state of a card purchase. Only two transitions exist in v1:
+// `PENDING -> COMPLETED` (credit grant fires) and `PENDING -> EXPIRED`.
+enum CardPurchaseStatus {
+    CARD_PURCHASE_STATUS_UNSPECIFIED = 0;
+    CARD_PURCHASE_STATUS_PENDING = 1;
+    CARD_PURCHASE_STATUS_COMPLETED = 2;
+    CARD_PURCHASE_STATUS_EXPIRED = 3;
+}
+
+message CreateCardPurchaseRequest {
+    // Authenticated user id populated by basilica-api from the bearer/JWT.
+    string caller_user_id = 1;
+    // Amount in cents to charge. Server-validated against configured
+    // min/max bounds; out-of-range values return InvalidArgument.
+    int64 amount_cents = 2;
+    // Client-generated nonce. The backing service derives the processor
+    // idempotency key from this, so retries collapse on the processor side.
+    string request_nonce = 3;
+}
+
+message CreateCardPurchaseResponse {
+    string purchase_id = 1;
+    string checkout_url = 2;
+    int64 requested_amount_cents = 3;
+    CardPurchaseStatus status = 4;
+}
+
+message GetCardPurchaseRequest {
+    string caller_user_id = 1;
+    string purchase_id = 2;
+}
+
+message GetCardPurchaseResponse {
+    CardPurchase purchase = 1;
+}
+
+message ListCardPurchasesRequest {
+    string caller_user_id = 1;
+    // Optional cap on returned rows. Server uses a sensible default when zero.
+    int32 limit = 2;
+    // Number of rows to skip before applying `limit`, for offset-based
+    // pagination. Negative values are treated as zero.
+    int32 offset = 3;
+    // Optional lifecycle filter. Omit or send `CARD_PURCHASE_STATUS_UNSPECIFIED`
+    // to return purchases in every state; otherwise only purchases matching
+    // the supplied status are returned.
+    optional CardPurchaseStatus status = 4;
+}
+
+message ListCardPurchasesResponse {
+    repeated CardPurchase purchases = 1;
+}
+
+message CardPurchase {
+    string purchase_id = 1;
+    CardPurchaseStatus status = 2;
+    int64 requested_amount_cents = 3;
+    // Populated from the payment processor once payment completes; null while
+    // the purchase is still pending.
+    optional int64 paid_amount_cents = 4;
+    string checkout_url = 5;
+    google.protobuf.Timestamp created_at = 6;
+    optional google.protobuf.Timestamp completed_at = 7;
+    google.protobuf.Timestamp expires_at = 8;
+
+    // Processor-hosted payment receipt URL. Always available once a purchase
+    // completes, regardless of whether `invoice_creation` was enabled.
+    optional string receipt_url = 9;
+
+    // Payment processor invoice id. Populated when invoice creation is
+    // configured; absent otherwise.
+    optional string invoice_id = 10;
+
+    // Human-readable invoice number (e.g. `INV-0001`). Populated on
+    // `invoice.finalized`.
+    optional string invoice_number = 11;
+
+    // Stripe-hosted invoice page URL. Populated on `invoice.finalized`.
+    optional string hosted_invoice_url = 12;
+
+    // Direct URL to the invoice PDF. Populated on `invoice.finalized`.
+    optional string invoice_pdf = 13;
+}

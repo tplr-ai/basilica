@@ -476,6 +476,76 @@ pub struct ListDepositsQuery {
     pub offset: u32,
 }
 
+// Card payment types
+//
+// Amounts are `u64` in the SDK: the server uses `i64` because Postgres
+// BIGINT is signed, but payments are never negative. Keeping the SDK
+// unsigned rejects a negative wire value at the deserialize boundary
+// instead of silently passing it up the stack.
+
+/// Request body for POST /card-payments/purchases.
+#[derive(Debug, Serialize)]
+pub struct CreateCardPurchaseRequest {
+    pub amount_cents: u64,
+}
+
+/// Response from POST /card-payments/purchases.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CardPurchaseResponse {
+    pub id: String,
+    pub checkout_url: String,
+    pub requested_amount_cents: u64,
+    pub status: CardPurchaseStatus,
+}
+
+/// Purchase summary shared by GET /card-payments/purchases/{id} and
+/// /card-payments/purchases.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CardPurchaseSummary {
+    pub id: String,
+    pub status: CardPurchaseStatus,
+    pub requested_amount_cents: u64,
+    pub paid_amount_cents: Option<u64>,
+    pub checkout_url: String,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Stripe-hosted receipt page for the underlying charge. Present once
+    /// `charge.succeeded` has landed for this session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt_url: Option<String>,
+    /// Stripe Invoice id (`in_...`). Present only when the backend was
+    /// configured with `[stripe.invoice_creation]` at the time the session
+    /// was created.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoice_id: Option<String>,
+    /// Sequenced human-readable invoice number (e.g. `INV-0001`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoice_number: Option<String>,
+    /// Stripe-hosted invoice page URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hosted_invoice_url: Option<String>,
+    /// Direct URL to the invoice PDF.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invoice_pdf: Option<String>,
+}
+
+/// Response from GET /card-payments/purchases.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListCardPurchasesResponse {
+    pub purchases: Vec<CardPurchaseSummary>,
+}
+
+/// Lifecycle state of a card purchase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CardPurchaseStatus {
+    Unspecified,
+    Pending,
+    Completed,
+    Expired,
+}
+
 // Billing Management Types
 
 /// Balance response from billing service

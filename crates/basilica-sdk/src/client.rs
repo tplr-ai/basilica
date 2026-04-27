@@ -43,14 +43,15 @@ use crate::{
         ReadFileRequest, ReadFileResponse, ResumeJobResponse, SuspendJobResponse,
     },
     types::{
-        ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CreateApiKeyRequest,
+        ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
+        CardPurchaseSummary, CreateApiKeyRequest, CreateCardPurchaseRequest,
         CreateDeploymentRequest, CreateDepositAccountResponse, DeleteDeploymentResponse,
         DeleteShareTokenResponse, DeploymentEventsResponse, DeploymentListResponse,
         DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse,
-        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery, ListDepositsQuery,
-        ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
-        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalResponse,
-        RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
+        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery,
+        ListCardPurchasesResponse, ListDepositsQuery, ListDepositsResponse, ListRentalsQuery,
+        PublicDeploymentMetadataResponse, RegenerateShareTokenResponse, RegisterSshKeyRequest,
+        RentalResponse, RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
         ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse, WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
@@ -360,6 +361,55 @@ impl BasilicaClient {
 
         let request = self.apply_auth(request).await?;
         let response = request.send().await.map_err(ApiError::HttpClient)?;
+        self.handle_response(response).await
+    }
+
+    // ===== Card payments =====
+
+    /// Create a card purchase for the authenticated user.
+    ///
+    /// `idempotency_key` is sent as the required `Idempotency-Key` header;
+    /// retries with the same value collapse to a single purchase.
+    /// Callers should generate a fresh UUID per invocation unless they
+    /// intentionally want a retry to hit the same purchase.
+    pub async fn create_card_purchase(
+        &self,
+        request: &CreateCardPurchaseRequest,
+        idempotency_key: &str,
+    ) -> Result<CardPurchaseResponse> {
+        let url = format!("{}/card-payments/purchases", self.base_url);
+        let builder = self
+            .http_client
+            .post(&url)
+            .header("Idempotency-Key", idempotency_key)
+            .json(request);
+        let builder = self.apply_auth(builder).await?;
+        let response = builder.send().await.map_err(ApiError::HttpClient)?;
+        self.handle_response(response).await
+    }
+
+    /// Fetch a single card purchase belonging to the authenticated user.
+    pub async fn get_card_purchase(&self, id: &str) -> Result<CardPurchaseSummary> {
+        let path = format!("/card-payments/purchases/{id}");
+        self.get(&path).await
+    }
+
+    /// List recent card purchases for the authenticated user.
+    pub async fn list_card_purchases(
+        &self,
+        limit: Option<i32>,
+        offset: Option<i32>,
+    ) -> Result<ListCardPurchasesResponse> {
+        let url = format!("{}/card-payments/purchases", self.base_url);
+        let mut builder = self.http_client.get(&url);
+        if let Some(limit) = limit {
+            builder = builder.query(&[("limit", limit)]);
+        }
+        if let Some(offset) = offset {
+            builder = builder.query(&[("offset", offset)]);
+        }
+        let builder = self.apply_auth(builder).await?;
+        let response = builder.send().await.map_err(ApiError::HttpClient)?;
         self.handle_response(response).await
     }
 

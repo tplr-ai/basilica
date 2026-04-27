@@ -1,13 +1,14 @@
 //! Table formatting for CLI output
 
-use super::format_usd;
+use super::{format_cents, format_usd};
 use crate::error::Result;
 use basilica_common::types::GpuOffering;
 use basilica_common::{types::GpuCategory, LocationProfile};
 use basilica_sdk::{
     types::{
-        ApiKeyInfo, ApiRentalListItem, GpuSpec, HistoricalRentalItem, ListDepositsResponse,
-        RentalUsageResponse, UsageHistoryResponse, VolumeResponse,
+        ApiKeyInfo, ApiRentalListItem, CardPurchaseStatus, GpuSpec, HistoricalRentalItem,
+        ListCardPurchasesResponse, ListDepositsResponse, RentalUsageResponse, UsageHistoryResponse,
+        VolumeResponse,
     },
     AvailableNode,
 };
@@ -217,7 +218,7 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
         })
         .collect();
 
-    rows.sort_by(|a, b| a.key.cmp(&b.key));
+    rows.sort_by_key(|r| r.key.clone());
 
     let mut table = Table::new(rows);
     table.with(Style::modern());
@@ -483,7 +484,7 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
 /// Display deposits history in table format
 pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
     println!();
-    println!("{}", style("# Deposit History").dim());
+    println!("{}", style("Deposit History").bold());
     println!();
 
     let mut builder = Builder::default();
@@ -547,6 +548,106 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
     println!("  {} TAO", style(format!("{:.3}", total_tao)).green());
 
     Ok(())
+}
+
+/// Display card payment history in table format.
+pub fn display_card_purchases(response: &ListCardPurchasesResponse) -> Result<()> {
+    println!();
+    println!("{}", style("Card Payment History").bold());
+    println!();
+
+    let mut builder = Builder::default();
+    builder.push_record(["Date (UTC)", "Amount", "Status", "Invoice/Receipt"]);
+
+    let mut total_paid_cents: u64 = 0;
+
+    for purchase in &response.purchases {
+        let date = purchase
+            .created_at
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| "-".to_string());
+
+        let amount = format_cents(purchase.requested_amount_cents);
+
+        let status = match purchase.status {
+            CardPurchaseStatus::Completed => "Completed",
+            CardPurchaseStatus::Pending => "Pending",
+            CardPurchaseStatus::Expired => "Expired",
+            CardPurchaseStatus::Unspecified => "Unspecified",
+        };
+
+        // Invoice/Receipt cell doubles as the per-session link. Modern
+        // terminals (iTerm2, Terminal.app, wezterm, Ghostty, VSCode,
+        // kitty, GNOME Terminal) render the OSC 8 escape as clickable;
+        // unsupported terminals show only the styled label and users can
+        // drop to --json for the raw URL. Styling the label blue +
+        // underlined (web-browser link convention) signals clickability
+        // visually even before hovering. Prefer the hosted invoice page
+        // when present — it bundles receipt-style payment detail already,
+        // so a separate receipt link would be redundant. `invoice_pdf`
+        // stays on the SDK type but isn't surfaced here because the
+        // hosted invoice page has a "Download PDF" button.
+        let invoice_cell = match purchase_primary_link(purchase) {
+            Some((PrimaryLinkKind::Invoice, url)) => {
+                let label = purchase.invoice_number.as_deref().unwrap_or("Invoice");
+                link_cell(label, url)
+            }
+            Some((PrimaryLinkKind::Receipt, url)) => link_cell("Receipt", url),
+            None => "-".to_string(),
+        };
+
+        builder.push_record([date.as_str(), amount.as_str(), status, &invoice_cell]);
+
+        if matches!(purchase.status, CardPurchaseStatus::Completed) {
+            total_paid_cents += purchase
+                .paid_amount_cents
+                .unwrap_or(purchase.requested_amount_cents);
+        }
+    }
+
+    let mut table = builder.build();
+    table.with(Style::modern());
+    println!("{}", table);
+
+    println!();
+    println!("{}:", style("Total Card Payments").bold());
+    println!("  {}", style(format_cents(total_paid_cents)).green());
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PrimaryLinkKind {
+    Invoice,
+    Receipt,
+}
+
+/// Choose the single most informative link to surface per session.
+///
+/// Prefer the hosted invoice page when present — it renders both the
+/// invoice detail and the payment confirmation, so showing the receipt
+/// alongside would be redundant.
+fn purchase_primary_link(
+    purchase: &basilica_sdk::types::CardPurchaseSummary,
+) -> Option<(PrimaryLinkKind, &str)> {
+    if let Some(url) = purchase.hosted_invoice_url.as_deref() {
+        return Some((PrimaryLinkKind::Invoice, url));
+    }
+    if let Some(url) = purchase.receipt_url.as_deref() {
+        return Some((PrimaryLinkKind::Receipt, url));
+    }
+    None
+}
+
+/// Build the table cell for a session's per-session link. The visible
+/// label is styled blue + underlined (conventional web-link look), and
+/// the OSC 8 escape wrapper makes it clickable on supporting terminals.
+/// Width is calculated correctly because `tabled` is compiled with the
+/// `ansi` feature, which strips both ANSI CSI (color/underline) and OSC
+/// 8 escape bytes before measuring.
+fn link_cell(label: &str, url: &str) -> String {
+    let styled = style(label).blue().underlined().to_string();
+    format!("\x1b]8;;{url}\x1b\\{styled}\x1b]8;;\x1b\\")
 }
 
 /// Display detailed usage for a specific rental
@@ -710,7 +811,7 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
         })
         .collect();
 
-    rows.sort_by(|a, b| b.started.cmp(&a.started));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
     println!(
         "{} ({} total)",
@@ -797,7 +898,7 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
         })
         .collect();
 
-    rows.sort_by(|a, b| b.started.cmp(&a.started));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
     let mut table = Table::new(&rows);
     table.with(Style::modern());
@@ -882,7 +983,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
         })
         .collect();
 
-    rows.sort_by(|a, b| b.started.cmp(&a.started));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
     let mut table = Table::new(&rows);
     table.with(Style::modern());
@@ -1208,4 +1309,109 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
     println!("{}", table);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use basilica_sdk::types::{CardPurchaseStatus, CardPurchaseSummary};
+
+    fn purchase(
+        hosted_invoice_url: Option<&str>,
+        receipt_url: Option<&str>,
+        invoice_number: Option<&str>,
+    ) -> CardPurchaseSummary {
+        CardPurchaseSummary {
+            id: "cs_test".to_string(),
+            status: CardPurchaseStatus::Completed,
+            requested_amount_cents: 1000,
+            paid_amount_cents: Some(1000),
+            checkout_url: "https://checkout.stripe.test/cs_test".to_string(),
+            created_at: None,
+            completed_at: None,
+            expires_at: None,
+            receipt_url: receipt_url.map(String::from),
+            invoice_id: hosted_invoice_url.map(|_| "in_abc".to_string()),
+            invoice_number: invoice_number.map(String::from),
+            hosted_invoice_url: hosted_invoice_url.map(String::from),
+            // `invoice_pdf` intentionally `None` everywhere to confirm
+            // the CLI never reaches for it — the public contract is that
+            // the hosted invoice page carries the PDF link.
+            invoice_pdf: None,
+        }
+    }
+
+    #[test]
+    fn invoice_is_preferred_when_both_urls_are_present() {
+        // Common `invoice_creation = true` steady state: Stripe emits both
+        // artifacts. The invoice page already renders the paid-charge
+        // detail the receipt would duplicate, so the invoice wins.
+        let purchase = purchase(
+            Some("https://invoice.stripe.com/i/abc"),
+            Some("https://pay.stripe.com/receipts/xyz"),
+            Some("INV-0001"),
+        );
+        let (kind, url) = purchase_primary_link(&purchase).expect("both urls -> some link");
+        assert!(matches!(kind, PrimaryLinkKind::Invoice));
+        assert_eq!(url, "https://invoice.stripe.com/i/abc");
+    }
+
+    #[test]
+    fn falls_back_to_receipt_when_invoice_is_absent() {
+        // Sessions created before `invoice_creation` was flipped on (or
+        // against a backend without it configured) have no invoice URLs
+        // but still land `receipt_url` on `charge.succeeded`. The receipt
+        // must surface so those rows are never dead-ends in the CLI.
+        let purchase = purchase(None, Some("https://pay.stripe.com/receipts/xyz"), None);
+        let (kind, url) = purchase_primary_link(&purchase).expect("receipt only -> some link");
+        assert!(matches!(kind, PrimaryLinkKind::Receipt));
+        assert_eq!(url, "https://pay.stripe.com/receipts/xyz");
+    }
+
+    #[test]
+    fn invoice_only_is_rendered_as_invoice() {
+        // Transient state where `invoice.finalized` has landed but
+        // `charge.succeeded` has not yet been captured. The invoice page
+        // already covers the user-facing need, so render it.
+        let purchase = purchase(
+            Some("https://invoice.stripe.com/i/abc"),
+            None,
+            Some("INV-0001"),
+        );
+        let (kind, _) = purchase_primary_link(&purchase).expect("invoice only -> some link");
+        assert!(matches!(kind, PrimaryLinkKind::Invoice));
+    }
+
+    #[test]
+    fn pending_purchase_with_no_artifacts_has_no_link() {
+        // Freshly-created purchases (no webhooks landed yet) carry only
+        // `checkout_url`. The Invoice/Receipt cell collapses to `-`
+        // via the `None` arm in `display_card_purchases`.
+        let purchase = purchase(None, None, None);
+        assert!(purchase_primary_link(&purchase).is_none());
+    }
+
+    #[test]
+    fn link_cell_wraps_label_in_osc8_and_ansi_styling() {
+        // Guards the two terminal features we depend on:
+        //   * OSC 8 hyperlink: `\x1b]8;;URL\x1b\` … `\x1b]8;;\x1b\`
+        //   * ANSI blue + underline on the visible label so terminals
+        //     without OSC 8 support still see a link-shaped cell.
+        //
+        // Force the `console` style machinery on — under `cargo test`
+        // stdout is not a TTY, so `style(..).blue()` would otherwise
+        // no-op and we would not observe the SGR bytes we actually emit
+        // in real CLI runs.
+        console::set_colors_enabled(true);
+
+        let cell = link_cell("INV-1", "https://example.test/x");
+
+        assert!(cell.starts_with("\x1b]8;;https://example.test/x\x1b\\"));
+        assert!(cell.ends_with("\x1b]8;;\x1b\\"));
+        assert!(cell.contains("INV-1"));
+        // URL must not bleed into the visible portion.
+        assert_eq!(cell.matches("https://example.test/x").count(), 1);
+        // SGR style bytes (e.g. underline/color) must wrap the label.
+        assert!(cell.contains("\x1b["));
+    }
 }

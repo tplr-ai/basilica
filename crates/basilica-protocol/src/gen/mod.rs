@@ -27,6 +27,11 @@ pub mod basilica {
             include!("basilica.billing.v1.rs");
         }
     }
+    pub mod card_payments {
+        pub mod v1 {
+            include!("basilica.card_payments.v1.rs");
+        }
+    }
     pub mod incentive {
         pub mod v1 {
             include!("basilica.incentive.v1.rs");

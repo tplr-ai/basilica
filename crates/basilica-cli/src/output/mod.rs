@@ -109,3 +109,8 @@ pub fn format_usd(value: &str) -> String {
         format!("${:.2}", abs_amount)
     }
 }
+
+/// Format a USD amount expressed in whole cents as `$X.YZ`.
+pub fn format_cents(cents: u64) -> String {
+    format!("${}.{:02}", cents / 100, cents % 100)
+}
