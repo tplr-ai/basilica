@@ -108,7 +108,7 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
@@ -202,7 +202,7 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
@@ -256,7 +256,7 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang
           version: 1.0
@@ -332,7 +332,7 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
@@ -408,7 +408,7 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
@@ -467,7 +467,7 @@ jobs:
           protoc --version
 
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
