@@ -403,6 +403,52 @@ develop-python:
     echo "Virtual environment: .venv (root directory)"
 
 # =============================================================================
+# SANDBOX E2E TESTING (K3d)
+# =============================================================================
+
+# Setup K3d cluster for sandbox testing
+sandbox-setup:
+    #!/usr/bin/env bash
+    chmod +x scripts/localtest/sandbox-k3d-e2e.sh
+    ./scripts/localtest/sandbox-k3d-e2e.sh setup
+
+# Run sandbox E2E tests (kubectl-based, no API required)
+sandbox-test:
+    #!/usr/bin/env bash
+    chmod +x scripts/localtest/sandbox-k3d-e2e.sh
+    ./scripts/localtest/sandbox-k3d-e2e.sh test
+
+# Run sandbox API tests (requires API deployment)
+sandbox-api-test:
+    #!/usr/bin/env bash
+    chmod +x scripts/localtest/sandbox-k3d-e2e.sh
+    ./scripts/localtest/sandbox-k3d-e2e.sh api-test
+
+# Setup and run all sandbox tests
+sandbox-all:
+    #!/usr/bin/env bash
+    chmod +x scripts/localtest/sandbox-k3d-e2e.sh
+    ./scripts/localtest/sandbox-k3d-e2e.sh all
+
+# Show sandbox cluster status
+sandbox-status:
+    #!/usr/bin/env bash
+    chmod +x scripts/localtest/sandbox-k3d-e2e.sh
+    ./scripts/localtest/sandbox-k3d-e2e.sh status
+
+# Show sandbox operator/API logs
+sandbox-logs:
+    #!/usr/bin/env bash
+    chmod +x scripts/localtest/sandbox-k3d-e2e.sh
+    ./scripts/localtest/sandbox-k3d-e2e.sh logs
+
+# Cleanup sandbox K3d cluster
+sandbox-cleanup:
+    #!/usr/bin/env bash
+    chmod +x scripts/localtest/sandbox-k3d-e2e.sh
+    ./scripts/localtest/sandbox-k3d-e2e.sh cleanup
+
+# =============================================================================
 # SHOW HELP
 # =============================================================================
 

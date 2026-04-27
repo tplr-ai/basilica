@@ -1,0 +1,120 @@
+# Basilica Operator Deployment for K3d Testing
+#
+# This is a minimal deployment for local testing.
+# Production deployments should use the Ansible/Helm charts.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: basilica-system
+  labels:
+    app.kubernetes.io/name: basilica
+    app.kubernetes.io/component: system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: basilica-operator
+  namespace: basilica-system
+  labels:
+    app.kubernetes.io/name: basilica-operator
+---
+# ClusterRole for operator to manage all resources
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: basilica-operator
+rules:
+# BasilicaSandbox CRD management
+- apiGroups: ["basilica.ai"]
+  resources: ["*"]
+  verbs: ["*"]
+# Pod management
+- apiGroups: [""]
+  resources: ["pods", "pods/exec", "pods/log"]
+  verbs: ["*"]
+# Service management
+- apiGroups: [""]
+  resources: ["services", "configmaps", "secrets"]
+  verbs: ["*"]
+# Events
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+# Network policies
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["*"]
+# Deployments (for API)
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: basilica-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: basilica-operator
+subjects:
+- kind: ServiceAccount
+  name: basilica-operator
+  namespace: basilica-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basilica-operator
+  namespace: basilica-system
+  labels:
+    app: basilica-operator
+    app.kubernetes.io/name: basilica-operator
+    app.kubernetes.io/component: operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: basilica-operator
+  template:
+    metadata:
+      labels:
+        app: basilica-operator
+        app.kubernetes.io/name: basilica-operator
+    spec:
+      serviceAccountName: basilica-operator
+      containers:
+      - name: operator
+        image: localhost:5050/basilica-operator:latest
+        imagePullPolicy: Always
+        args:
+        - "--namespace"
+        - "default"
+        env:
+        - name: RUST_LOG
+          value: "info,basilica_operator=debug"
+        - name: RUST_BACKTRACE
+          value: "1"
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      terminationGracePeriodSeconds: 30
+
+

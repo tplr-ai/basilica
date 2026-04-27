@@ -167,6 +167,32 @@ from .source import SourcePackager
 from .spec import DeploymentSpec
 from .volume import Volume
 
+# Sandbox module
+from .sandbox import (
+    Sandbox,
+    SandboxState,
+    SandboxError,
+    SandboxNotFound,
+    SandboxNotReady,
+    ExecutionError,
+    ExecResult,
+    FileInfo,
+    Snapshot,
+    NetworkIsolation,
+    GpuSpec as SandboxGpuSpec,
+    ResourceSpec as SandboxResourceSpec,
+    # Namespace classes for improved DX
+    SandboxFiles,
+    SandboxProcess,
+    SandboxGit,
+    # Git result types
+    GitCloneResult,
+    GitStatusResult,
+    GitCommitResult,
+    GitPushResult,
+    GitPullResult,
+)
+
 # Default command is a list in Python
 DEFAULT_COMMAND = ["/bin/bash"]
 
@@ -210,8 +236,79 @@ def _build_inference_health_check(port: int) -> HealthCheckConfig:
     )
 
 
+# =============================================================================
+# Global Configuration
+# =============================================================================
+
+class _Config:
+    """Global configuration singleton for Basilica SDK."""
+    
+    def __init__(self):
+        self._api_url: Optional[str] = None
+        self._api_key: Optional[str] = None
+    
+    @property
+    def api_url(self) -> str:
+        """Get API URL from config or environment."""
+        if self._api_url:
+            return self._api_url
+        return os.environ.get("BASILICA_API_URL", DEFAULT_API_URL)
+    
+    @property
+    def api_key(self) -> Optional[str]:
+        """Get API key from config or environment."""
+        if self._api_key:
+            return self._api_key
+        return os.environ.get("BASILICA_API_TOKEN")
+    
+    def set(self, api_url: Optional[str] = None, api_key: Optional[str] = None) -> None:
+        """Set global configuration values."""
+        if api_url is not None:
+            self._api_url = api_url
+        if api_key is not None:
+            self._api_key = api_key
+    
+    def reset(self) -> None:
+        """Reset configuration to defaults (use environment variables)."""
+        self._api_url = None
+        self._api_key = None
+
+
+# Global config instance
+_config = _Config()
+
+
+def configure(api_url: Optional[str] = None, api_key: Optional[str] = None) -> None:
+    """
+    Configure global Basilica SDK settings.
+    
+    This sets defaults for all SDK operations. Individual calls can still
+    override these values.
+    
+    Args:
+        api_url: Basilica API URL (default: BASILICA_API_URL env var or https://api.basilica.ai)
+        api_key: API authentication token (default: BASILICA_API_TOKEN env var)
+    
+    Example:
+        >>> import basilica
+        >>> basilica.configure(api_url="https://api.basilica.ai", api_key="basilica_...")
+        >>> 
+        >>> # Now all SDK calls use these defaults
+        >>> sandbox = basilica.Sandbox.create(language="python")
+    """
+    _config.set(api_url=api_url, api_key=api_key)
+
+
+def get_config() -> _Config:
+    """Get the global configuration object."""
+    return _config
+
+
 __version__ = "0.17.0"
 __all__ = [
+    # Configuration
+    "configure",
+    "get_config",
     # Main client
     "BasilicaClient",
     # Decorator API
@@ -224,6 +321,29 @@ __all__ = [
     "DeploymentStatus",
     "ProgressInfo",
     "SourcePackager",
+    # Sandbox API
+    "Sandbox",
+    "SandboxState",
+    "SandboxError",
+    "SandboxNotFound",
+    "SandboxNotReady",
+    "ExecutionError",
+    "ExecResult",
+    "FileInfo",
+    "Snapshot",
+    "NetworkIsolation",
+    "SandboxGpuSpec",
+    "SandboxResourceSpec",
+    # Sandbox namespace classes
+    "SandboxFiles",
+    "SandboxProcess",
+    "SandboxGit",
+    # Sandbox Git
+    "GitCloneResult",
+    "GitStatusResult",
+    "GitCommitResult",
+    "GitPushResult",
+    "GitPullResult",
     # Exceptions
     "BasilicaError",
     "AuthenticationError",
@@ -294,7 +414,65 @@ __all__ = [
     # Public metadata types
     "EnrollMetadataResponse",
     "PublicDeploymentMetadataResponse",
+    # Quick-start factory functions
+    "python_sandbox",
+    "javascript_sandbox",
+    "js_sandbox",
 ]
+
+
+# =============================================================================
+# Quick-Start Factory Functions
+# =============================================================================
+
+def python_sandbox(**kwargs) -> Sandbox:
+    """
+    Create a Python sandbox with sensible defaults.
+    
+    This is a convenience function for quick sandbox creation.
+    All keyword arguments are passed to Sandbox.create().
+    
+    Example:
+        >>> with python_sandbox() as sb:
+        ...     result = sb.run("print('Hello!')")
+        ...     print(result.stdout)
+        Hello!
+        
+        >>> # With custom settings
+        >>> with python_sandbox(memory="1Gi", timeout_seconds=600) as sb:
+        ...     sb.run("import numpy as np")
+    
+    Returns:
+        Sandbox: A Python sandbox ready for use
+    """
+    kwargs.setdefault("language", "python")
+    kwargs.setdefault("runtime", "container")
+    return Sandbox.create(**kwargs)
+
+
+def javascript_sandbox(**kwargs) -> Sandbox:
+    """
+    Create a JavaScript/Node.js sandbox with sensible defaults.
+    
+    This is a convenience function for quick sandbox creation.
+    All keyword arguments are passed to Sandbox.create().
+    
+    Example:
+        >>> with javascript_sandbox() as sb:
+        ...     result = sb.run("console.log('Hello!')")
+        ...     print(result.stdout)
+        Hello!
+    
+    Returns:
+        Sandbox: A JavaScript sandbox ready for use
+    """
+    kwargs.setdefault("language", "javascript")
+    kwargs.setdefault("runtime", "container")
+    return Sandbox.create(**kwargs)
+
+
+# Alias for convenience
+js_sandbox = javascript_sandbox
 
 
 class BasilicaClient:

@@ -41,7 +41,7 @@ classifiers = [
   "Topic :: System :: Distributed Computing",
   "Typing :: Typed",
 ]
-dependencies = []
+dependencies = ["requests>=2.31.0"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "mypy>=1.0", "maturin>=1.0"]

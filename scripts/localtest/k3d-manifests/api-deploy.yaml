@@ -1,0 +1,177 @@
+# Basilica API Deployment for K3d Testing
+#
+# This is a minimal deployment for local testing.
+# Production deployments should use the Ansible/Helm charts.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: basilica-api-config
+  namespace: default
+data:
+  config.toml: |
+    [server]
+    host = "0.0.0.0"
+    port = 8080
+    
+    [auth]
+    # Disable auth for local testing
+    enabled = false
+    
+    [kubernetes]
+    namespace = "default"
+    in_cluster = true
+    
+    [sandbox]
+    default_timeout_seconds = 3600
+    default_idle_timeout_seconds = 600
+    max_sandboxes_per_user = 10
+    exec_agent_image = "localhost:5050/basilica-exec-agent:latest"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: basilica-api
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: basilica-api
+rules:
+# BasilicaSandbox CRD management
+- apiGroups: ["basilica.ai"]
+  resources: ["basilicasandboxes", "basilicasandboxes/status"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Pod access for exec
+- apiGroups: [""]
+  resources: ["pods", "pods/exec", "pods/log"]
+  verbs: ["get", "list", "watch", "create"]
+# ConfigMaps for snapshots
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: basilica-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: basilica-api
+subjects:
+- kind: ServiceAccount
+  name: basilica-api
+  namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basilica-api
+  namespace: default
+  labels:
+    app: basilica-api
+    app.kubernetes.io/name: basilica-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: basilica-api
+  template:
+    metadata:
+      labels:
+        app: basilica-api
+        app.kubernetes.io/name: basilica-api
+    spec:
+      serviceAccountName: basilica-api
+      containers:
+      - name: api
+        image: localhost:5050/basilica-api:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: RUST_LOG
+          value: "info,basilica_api=debug"
+        - name: RUST_BACKTRACE
+          value: "1"
+        - name: CONFIG_PATH
+          value: "/etc/basilica/config.toml"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/basilica
+          readOnly: true
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: basilica-api-config
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: basilica-api
+  namespace: default
+  labels:
+    app: basilica-api
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: basilica-api
+---
+# Ingress for external access via K3d load balancer
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: basilica-api
+  namespace: default
+  annotations:
+    # K3s uses Traefik by default
+    kubernetes.io/ingress.class: traefik
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: basilica-api
+            port:
+              number: 80
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: basilica-api
+            port:
+              number: 80
+
+

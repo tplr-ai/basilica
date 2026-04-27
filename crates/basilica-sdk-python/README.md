@@ -386,6 +386,107 @@ deployment = client.deploy(
 )
 ```
 
+## Sandboxes
+
+Sandboxes are isolated execution environments for running untrusted code. They're perfect for:
+- AI agent code execution
+- Running user-submitted code
+- Automated testing and evaluation
+- Interactive code playgrounds
+
+### Quick Start with Sandboxes
+
+```python
+from basilica import python_sandbox
+
+# Simple one-liner with context manager (auto-cleanup!)
+with python_sandbox() as sb:
+    result = sb.run("print('Hello from sandbox!')")
+    print(result.stdout)  # Hello from sandbox!
+```
+
+### Factory Functions
+
+Create sandboxes with sensible defaults:
+
+```python
+from basilica import python_sandbox, js_sandbox
+
+# Python sandbox
+with python_sandbox() as sb:
+    sb.run("import sys; print(sys.version)")
+
+# JavaScript sandbox
+with js_sandbox() as sb:
+    sb.run("console.log('Hello from Node.js!')")
+```
+
+### Namespaced API
+
+Clean, organized API with automatic path handling:
+
+```python
+with python_sandbox() as sb:
+    # File operations (relative paths auto-prefixed with /workspace)
+    sb.files.write("app.py", "print('hello')")  # -> /workspace/app.py
+    content = sb.files.read("app.py")
+    exists = sb.files.exists("app.py")
+    
+    # Process execution
+    result = sb.process.run("print(1 + 1)")
+    result = sb.process.exec(["python3", "app.py"], cwd="/workspace")
+    
+    # Git operations
+    sb.git.clone("https://github.com/user/repo")
+    sb.git.commit("Fix bug")
+    sb.git.push()
+```
+
+### Global Configuration
+
+Configure once, use everywhere:
+
+```python
+import basilica
+
+# Set global defaults (optional - uses env vars by default)
+basilica.configure(
+    api_url="https://api.basilica.ai",
+    api_key="basilica_..."
+)
+
+# Now all sandboxes use these settings
+with python_sandbox() as sb:
+    sb.run("print('configured!')")
+```
+
+### Full Sandbox Control
+
+For advanced use cases:
+
+```python
+from basilica import Sandbox, NetworkIsolation
+
+sandbox = Sandbox.create(
+    language="python",
+    runtime="container",  # or "firecracker" for microVMs
+    cpu="1",
+    memory="2Gi",
+    gpu_count=1,
+    gpu_models=["A100"],
+    timeout_seconds=3600,
+    network_isolation=NetworkIsolation.EGRESS,  # Allow outbound only
+)
+
+try:
+    # Full access to all methods
+    result = sandbox.run("import torch; print(torch.cuda.is_available())")
+    sandbox.write_file("/workspace/model.py", model_code)
+    sandbox.exec(["python3", "/workspace/model.py"])
+finally:
+    sandbox.delete()
+```
+
 ## API Reference
 
 ### BasilicaClient
