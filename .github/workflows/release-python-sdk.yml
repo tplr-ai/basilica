@@ -124,10 +124,25 @@ jobs:
           python-version: '3.10'
 
       - name: Install protoc
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
-        with:
-          version: "25.x"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROTOC_VERSION=25.9
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          DOWNLOAD_URL=https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o /tmp/${PROTOC_ZIP} "${DOWNLOAD_URL}"; then
+              break
+            fi
+            if [ "${attempt}" = "5" ]; then
+              echo "ERROR: protoc download failed after 5 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+          sudo unzip -q -o /tmp/${PROTOC_ZIP} -d /usr/local
+          rm -f /tmp/${PROTOC_ZIP}
+          protoc --version
 
       - name: Build sdist
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
