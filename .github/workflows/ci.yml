@@ -90,7 +90,7 @@ jobs:
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
-          version: "25.x"
+          version: "25.9"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
@@ -169,7 +169,7 @@ jobs:
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
-          version: "25.x"
+          version: "25.9"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
@@ -208,7 +208,7 @@ jobs:
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
-          version: "25.x"
+          version: "25.9"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
@@ -269,7 +269,7 @@ jobs:
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
-          version: "25.x"
+          version: "25.9"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
@@ -330,7 +330,7 @@ jobs:
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
-          version: "25.x"
+          version: "25.9"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Cache and install system dependencies
         uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
@@ -373,7 +373,7 @@ jobs:
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3
         with:
-          version: "25.x"
+          version: "25.9"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache and install system dependencies
