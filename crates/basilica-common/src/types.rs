@@ -772,6 +772,14 @@ pub enum CloudProvider {
     MassCompute,
     /// Shadeform - multi-cloud GPU aggregator (routes to underlying clouds like hyperstack, tensordock)
     Shadeform,
+    /// Compute Broker - internal Basilica service that owns a finite, admin-managed inventory
+    /// of underlying machines purchased from fixed-contract suppliers (e.g. Contabo). Exposes
+    /// inventory through the standard Provider-trait REST API; from the aggregator's perspective
+    /// it is just another datacenter. Backend-specific quirks (monthly contracts, no pricing API,
+    /// re-image between tenants) live inside the broker, not in the platform.
+    /// Tracking issue: basilica-backend#326
+    #[serde(rename = "compute-broker")]
+    ComputeBroker,
     /// The Priory - VIP managed machines (not a real cloud provider, but uses Deployment model)
     Vip,
 }
@@ -785,6 +793,7 @@ impl CloudProvider {
             CloudProvider::Verda => "verda",
             CloudProvider::MassCompute => "masscompute",
             CloudProvider::Shadeform => "shadeform",
+            CloudProvider::ComputeBroker => "compute-broker",
             CloudProvider::Vip => "vip",
         }
     }
@@ -808,6 +817,7 @@ impl FromStr for CloudProvider {
             "verda" => Ok(CloudProvider::Verda),
             "masscompute" | "mass_compute" | "mass-compute" => Ok(CloudProvider::MassCompute),
             "shadeform" | "shade_form" | "shade-form" => Ok(CloudProvider::Shadeform),
+            "compute-broker" | "compute_broker" | "computebroker" => Ok(CloudProvider::ComputeBroker),
             "vip" => Ok(CloudProvider::Vip),
             _ => Err(format!("Unknown provider: {}", s)),
         }
@@ -854,6 +864,7 @@ mod cloud_provider_tests {
         assert_eq!(CloudProvider::Verda.as_str(), "verda");
         assert_eq!(CloudProvider::MassCompute.as_str(), "masscompute");
         assert_eq!(CloudProvider::Shadeform.as_str(), "shadeform");
+        assert_eq!(CloudProvider::ComputeBroker.as_str(), "compute-broker");
         assert_eq!(CloudProvider::Vip.as_str(), "vip");
     }
 
@@ -912,6 +923,30 @@ mod cloud_provider_tests {
     }
 
     #[test]
+    fn test_cloud_provider_from_str_compute_broker() {
+        assert_eq!(
+            "compute-broker".parse::<CloudProvider>().unwrap(),
+            CloudProvider::ComputeBroker
+        );
+        assert_eq!(
+            "compute_broker".parse::<CloudProvider>().unwrap(),
+            CloudProvider::ComputeBroker
+        );
+        assert_eq!(
+            "computebroker".parse::<CloudProvider>().unwrap(),
+            CloudProvider::ComputeBroker
+        );
+        assert_eq!(
+            "ComputeBroker".parse::<CloudProvider>().unwrap(),
+            CloudProvider::ComputeBroker
+        );
+        assert_eq!(
+            "COMPUTE-BROKER".parse::<CloudProvider>().unwrap(),
+            CloudProvider::ComputeBroker
+        );
+    }
+
+    #[test]
     fn test_cloud_provider_from_str_existing() {
         assert_eq!(
             "hyperstack".parse::<CloudProvider>().unwrap(),
@@ -961,6 +996,7 @@ mod cloud_provider_tests {
             (CloudProvider::Verda, "\"verda\""),
             (CloudProvider::MassCompute, "\"masscompute\""),
             (CloudProvider::Shadeform, "\"shadeform\""),
+            (CloudProvider::ComputeBroker, "\"compute-broker\""),
             (CloudProvider::Vip, "\"vip\""),
         ];
 
@@ -1004,6 +1040,32 @@ mod cloud_provider_tests {
         assert_eq!(offering.gpu_type, GpuCategory::H100);
         assert_eq!(offering.gpu_count, 8);
         assert_eq!(offering.region, "canada-1");
+    }
+
+    #[test]
+    fn test_gpu_offering_with_compute_broker_provider() {
+        // Mirrors the offering ID format declared in
+        // docs/architecture/COMPUTE-BROKER-ARCHITECTURE.md §16.1:
+        //   compute-broker-<backend>-<product_id>-<region>
+        let json = r#"{
+            "id": "compute-broker-contabo-V92-EU",
+            "provider": "compute-broker",
+            "gpu_type": "Other",
+            "gpu_memory_gb_per_gpu": 0,
+            "gpu_count": 0,
+            "system_memory_gb": 8,
+            "vcpu_count": 4,
+            "region": "EU",
+            "hourly_rate_per_gpu": "0.12",
+            "availability": true,
+            "is_spot": false,
+            "fetched_at": "2026-04-26T00:00:00Z"
+        }"#;
+
+        let offering: GpuOffering = serde_json::from_str(json).unwrap();
+        assert_eq!(offering.provider, CloudProvider::ComputeBroker);
+        assert_eq!(offering.region, "EU");
+        assert_eq!(offering.id, "compute-broker-contabo-V92-EU");
     }
 
     #[test]
