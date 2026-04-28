@@ -95,7 +95,7 @@ fn prompt_amount_usd() -> Result<u32, CliError> {
             if (MIN_USD..=MAX_USD).contains(input) {
                 Ok(())
             } else {
-                Err("Amount must be between $10 and $5000")
+                Err(format!("Amount must be between ${} and ${}", MIN_USD, MAX_USD))
             }
         })
         .interact_text()
@@ -106,7 +106,9 @@ fn prompt_amount_usd() -> Result<u32, CliError> {
 fn map_create_error(err: ApiError) -> CliError {
     match &err {
         ApiError::BadRequest { message } => CliError::Internal(eyre!(
-            "Card purchase rejected: {message}. Amounts must be whole dollars between $10 and $5000."
+            "Card purchase rejected: {message}. Amounts must be whole dollars between ${} and ${}.",
+            MIN_USD,
+            MAX_USD
         )),
         ApiError::ServiceUnavailable => CliError::Internal(eyre!(
             "Card funding is not available right now. Try 'basilica fund --tao' to fund with TAO instead."
