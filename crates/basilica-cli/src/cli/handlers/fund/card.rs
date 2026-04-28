@@ -95,7 +95,10 @@ fn prompt_amount_usd() -> Result<u32, CliError> {
             if (MIN_USD..=MAX_USD).contains(input) {
                 Ok(())
             } else {
-                Err(format!("Amount must be between ${} and ${}", MIN_USD, MAX_USD))
+                Err(format!(
+                    "Amount must be between ${} and ${}",
+                    MIN_USD, MAX_USD
+                ))
             }
         })
         .interact_text()
