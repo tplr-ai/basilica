@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Resume link for pending card purchases in `basilica fund list`
+
+## [0.28.0] - 2026-04-27
+
+### Added
+- Card funding via `basilica fund`
+- Card payment history in `basilica fund list`
+
 ## [0.27.0] - 2026-04-20
 
 ### Added

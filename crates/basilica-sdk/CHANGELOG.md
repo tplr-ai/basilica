@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-04-27
+
+### Added
+- Card-purchase types for the Stripe checkout flow: `CreateCardPurchaseRequest`, `CardPurchaseResponse`, `CardPurchaseSummary`, `ListCardPurchasesResponse`, `CardPurchaseStatus`
+- `create_card_purchase`, `get_card_purchase`, and `list_card_purchases` methods on `BasilicaClient`
+
 ## [0.27.0] - 2026-04-20
 
 ### Added
