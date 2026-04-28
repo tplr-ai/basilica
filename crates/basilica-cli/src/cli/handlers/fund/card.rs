@@ -22,8 +22,8 @@ use crate::{
 };
 
 /// `amount_cents` bounds the SDK accepts before even hitting the server.
-/// Matches basilica-stripe's default config of $1–$5000.
-const MIN_USD: u32 = 1;
+/// Matches basilica-stripe's default config of $10–$5000.
+const MIN_USD: u32 = 10;
 const MAX_USD: u32 = 5000;
 
 /// How often the poll loop checks purchase status.
@@ -95,7 +95,10 @@ fn prompt_amount_usd() -> Result<u32, CliError> {
             if (MIN_USD..=MAX_USD).contains(input) {
                 Ok(())
             } else {
-                Err("Amount must be between $1 and $5000")
+                Err(format!(
+                    "Amount must be between ${} and ${}",
+                    MIN_USD, MAX_USD
+                ))
             }
         })
         .interact_text()
@@ -106,7 +109,9 @@ fn prompt_amount_usd() -> Result<u32, CliError> {
 fn map_create_error(err: ApiError) -> CliError {
     match &err {
         ApiError::BadRequest { message } => CliError::Internal(eyre!(
-            "Card purchase rejected: {message}. Amounts must be whole dollars between $1 and $5000."
+            "Card purchase rejected: {message}. Amounts must be whole dollars between ${} and ${}.",
+            MIN_USD,
+            MAX_USD
         )),
         ApiError::ServiceUnavailable => CliError::Internal(eyre!(
             "Card funding is not available right now. Try 'basilica fund --tao' to fund with TAO instead."
