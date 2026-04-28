@@ -12,7 +12,7 @@ use basilica_sdk::{
     },
     AvailableNode,
 };
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use console::style;
 use rust_decimal::Decimal;
 use std::{collections::HashMap, str::FromStr};
@@ -593,6 +593,7 @@ pub fn display_card_purchases(response: &ListCardPurchasesResponse) -> Result<()
                 link_cell(label, url)
             }
             Some((PrimaryLinkKind::Receipt, url)) => link_cell("Receipt", url),
+            Some((PrimaryLinkKind::Resume, url)) => link_cell("Resume", url),
             None => "-".to_string(),
         };
 
@@ -620,13 +621,18 @@ pub fn display_card_purchases(response: &ListCardPurchasesResponse) -> Result<()
 enum PrimaryLinkKind {
     Invoice,
     Receipt,
+    Resume,
 }
 
 /// Choose the single most informative link to surface per session.
 ///
-/// Prefer the hosted invoice page when present — it renders both the
-/// invoice detail and the payment confirmation, so showing the receipt
-/// alongside would be redundant.
+/// Completed sessions land on the hosted invoice page when present —
+/// it renders both the invoice detail and the payment confirmation,
+/// so a separate receipt link would be redundant. Pending sessions
+/// whose Stripe checkout has not yet expired fall through to a Resume
+/// link so users can pick up the existing checkout instead of starting
+/// a new session. A `None` `expires_at` is treated as resumable; only
+/// a known-past timestamp disqualifies the row.
 fn purchase_primary_link(
     purchase: &basilica_sdk::types::CardPurchaseSummary,
 ) -> Option<(PrimaryLinkKind, &str)> {
@@ -635,6 +641,11 @@ fn purchase_primary_link(
     }
     if let Some(url) = purchase.receipt_url.as_deref() {
         return Some((PrimaryLinkKind::Receipt, url));
+    }
+    if matches!(purchase.status, CardPurchaseStatus::Pending)
+        && purchase.expires_at.is_none_or(|t| t > Utc::now())
+    {
+        return Some((PrimaryLinkKind::Resume, &purchase.checkout_url));
     }
     None
 }
@@ -1384,10 +1395,95 @@ mod tests {
 
     #[test]
     fn pending_purchase_with_no_artifacts_has_no_link() {
-        // Freshly-created purchases (no webhooks landed yet) carry only
-        // `checkout_url`. The Invoice/Receipt cell collapses to `-`
-        // via the `None` arm in `display_card_purchases`.
+        // The shared `purchase()` helper hardcodes `status = Completed`,
+        // so a row with no invoice/receipt artifacts collapses to `-`.
+        // The Pending-row case is exercised by the Resume tests below.
         let purchase = purchase(None, None, None);
+        assert!(purchase_primary_link(&purchase).is_none());
+    }
+
+    fn purchase_with(
+        status: CardPurchaseStatus,
+        expires_at: Option<chrono::DateTime<Utc>>,
+        hosted_invoice_url: Option<&str>,
+        receipt_url: Option<&str>,
+    ) -> CardPurchaseSummary {
+        CardPurchaseSummary {
+            id: "cs_test".to_string(),
+            status,
+            requested_amount_cents: 1000,
+            paid_amount_cents: None,
+            checkout_url: "https://checkout.stripe.test/cs_test".to_string(),
+            created_at: None,
+            completed_at: None,
+            expires_at,
+            receipt_url: receipt_url.map(String::from),
+            invoice_id: hosted_invoice_url.map(|_| "in_abc".to_string()),
+            invoice_number: None,
+            hosted_invoice_url: hosted_invoice_url.map(String::from),
+            invoice_pdf: None,
+        }
+    }
+
+    #[test]
+    fn pending_with_future_expiry_resumes_to_checkout_url() {
+        // Mirrors the website behavior: a pending session whose Stripe
+        // checkout has not yet expired surfaces a Resume link pointing
+        // at `checkout_url`.
+        let future = Utc::now() + chrono::Duration::minutes(15);
+        let purchase = purchase_with(CardPurchaseStatus::Pending, Some(future), None, None);
+        let (kind, url) = purchase_primary_link(&purchase).expect("future expiry -> resume");
+        assert!(matches!(kind, PrimaryLinkKind::Resume));
+        assert_eq!(url, "https://checkout.stripe.test/cs_test");
+    }
+
+    #[test]
+    fn pending_with_no_expiry_is_resumable() {
+        // `expires_at == None` should not block resumption — only a
+        // known-past timestamp disqualifies the row.
+        let purchase = purchase_with(CardPurchaseStatus::Pending, None, None, None);
+        let (kind, _) = purchase_primary_link(&purchase).expect("no expiry -> resume");
+        assert!(matches!(kind, PrimaryLinkKind::Resume));
+    }
+
+    #[test]
+    fn pending_with_past_expiry_has_no_link() {
+        // The session is technically `Pending` until Stripe's webhook
+        // flips it to `Expired`, but the checkout URL no longer works.
+        // Render `-` instead of a broken Resume link.
+        let past = Utc::now() - chrono::Duration::minutes(1);
+        let purchase = purchase_with(CardPurchaseStatus::Pending, Some(past), None, None);
+        assert!(purchase_primary_link(&purchase).is_none());
+    }
+
+    #[test]
+    fn invoice_wins_over_resume_for_pending_with_invoice_url() {
+        // Defensive: in the unlikely case a pending row already has an
+        // invoice URL attached, the invoice link still wins so users
+        // see the most informative artifact.
+        let future = Utc::now() + chrono::Duration::minutes(15);
+        let purchase = purchase_with(
+            CardPurchaseStatus::Pending,
+            Some(future),
+            Some("https://invoice.stripe.com/i/abc"),
+            None,
+        );
+        let (kind, url) = purchase_primary_link(&purchase).expect("invoice on pending -> invoice");
+        assert!(matches!(kind, PrimaryLinkKind::Invoice));
+        assert_eq!(url, "https://invoice.stripe.com/i/abc");
+    }
+
+    #[test]
+    fn expired_status_has_no_link() {
+        // Once Stripe (or the backend) has marked the session Expired,
+        // the row is terminal and no link is meaningful.
+        let purchase = purchase_with(CardPurchaseStatus::Expired, None, None, None);
+        assert!(purchase_primary_link(&purchase).is_none());
+    }
+
+    #[test]
+    fn unspecified_status_has_no_link() {
+        let purchase = purchase_with(CardPurchaseStatus::Unspecified, None, None, None);
         assert!(purchase_primary_link(&purchase).is_none());
     }
 
