@@ -13,8 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.28.0] - 2026-04-27
 
 ### Added
-- Card funding via `basilica fund`
-- Card payment history in `basilica fund list`
+- Denvr Data cloud provider support (`CloudProvider::Denvr`). The CLI
+  can now list, filter, and display GPU offerings served from Denvr's
+  Hou1 and Msc1 clusters without deserialization errors.
+- Card payment support in `basilica fund`. Users can top up their
+  account with a credit or debit card via a hosted Stripe checkout
+  session alongside the existing TAO funding flow.
+- `basilica fund list` now renders card payment history alongside
+  TAO deposits, with hyperlinked receipt and invoice artifacts in
+  the Invoice column and status filtering on the listing.
+
+### Changed
+- Card funding cap raised from $1000 to $5000 per checkout session.
+
+### Security
+- Bumped rustls-webpki to 0.103.13 to address RUSTSEC-2026-0104
+  (reachable panic in CRL parsing).
 
 ## [0.27.0] - 2026-04-20
 
