@@ -20,19 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Ensure all protobuf types are generated in a flat structure
         .file_descriptor_set_path(out_dir.join("descriptor.bin"))
         .include_file("mod.rs")
-        // Enable serde serialization for messages that don't contain timestamps
-        .type_attribute(
-            "ChallengeParameters",
-            "#[derive(serde::Serialize, serde::Deserialize)]",
-        )
-        .type_attribute(
-            "ChallengeResult",
-            "#[derive(serde::Serialize, serde::Deserialize)]",
-        )
-        .type_attribute(
-            "GpuPerformanceBaseline",
-            "#[derive(serde::Serialize, serde::Deserialize)]",
-        )
+        // Enable serde serialization for select messages
         .type_attribute(
             "MachineInfo",
             "#[derive(serde::Serialize, serde::Deserialize)]",
@@ -64,13 +52,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/common.proto",
                 "proto/miner_discovery.proto",
                 "proto/validator_api.proto",
-                "proto/gpu_pow.proto",
-                "proto/billing.proto",
-                "proto/payments.proto",
-                "proto/incentive.proto",
                 "proto/rental.proto",
                 "proto/miner_payouts.proto",
-                "proto/card_payments.proto",
             ],
             &["proto"],
         )?;

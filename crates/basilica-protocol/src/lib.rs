@@ -66,36 +66,6 @@ pub mod basilca {
             include!("gen/basilca.validator.v1.rs");
         }
     }
-
-    pub mod gpu_pow {
-        pub mod v1 {
-            include!("gen/basilca.gpu_pow.v1.rs");
-        }
-    }
-
-    pub mod billing {
-        pub mod v1 {
-            include!("gen/basilica.billing.v1.rs");
-        }
-    }
-
-    pub mod payments {
-        pub mod v1 {
-            include!("gen/basilica.payments.v1.rs");
-        }
-    }
-
-    pub mod incentive {
-        pub mod v1 {
-            include!("gen/basilica.incentive.v1.rs");
-        }
-    }
-
-    pub mod card_payments {
-        pub mod v1 {
-            include!("gen/basilica.card_payments.v1.rs");
-        }
-    }
 }
 
 // Structured re-exports for better organization
@@ -126,43 +96,6 @@ pub mod validator_api {
     //! - Rent GPU capacity with container specifications
     //! - Manage rental lifecycle (terminate, status, logs)
     pub use crate::basilca::validator::v1::*;
-}
-
-pub mod billing {
-    //! Billing service for credit management and rental tracking
-    //!
-    //! Provides comprehensive billing functionality:
-    //! - Credit balance management and reservations
-    //! - Rental lifecycle tracking with usage metrics
-    //! - Real-time telemetry ingestion and aggregation
-    //! - Billing packages and rules engine
-    pub use crate::basilca::billing::v1::*;
-}
-
-pub mod payments {
-    //! Payments service for deposit account management and TAO → USD credit conversion
-    //!
-    //! Provides payment processing functionality:
-    //! - Per-user deposit wallet generation
-    //! - Blockchain monitoring for TAO deposits
-    //! - Automatic credit conversion based on configured rates
-    //! - Integration with billing service for credit application
-    pub use crate::basilca::payments::v1::*;
-}
-
-pub mod incentive {
-    //! Incentive service for validator-facing CU/RU ledger access via backend services
-    pub use crate::basilca::incentive::v1::*;
-}
-
-pub mod card_payments {
-    //! Card purchase creation and status for credit purchases.
-    //!
-    //! The service is VPC-internal only — basilica-api authenticates callers
-    //! and forwards `caller_user_id`; the backing card payments service
-    //! enforces per-user scoping in SQL and returns NotFound for cross-tenant
-    //! lookups so purchase existence never leaks.
-    pub use crate::basilca::card_payments::v1::*;
 }
 
 // Re-export common types at crate root for convenience
