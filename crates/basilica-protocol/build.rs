@@ -52,6 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "proto/common.proto",
                 "proto/miner_discovery.proto",
                 "proto/validator_api.proto",
+                "proto/billing.proto",
                 "proto/rental.proto",
                 "proto/miner_payouts.proto",
             ],

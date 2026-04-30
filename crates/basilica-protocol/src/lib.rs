@@ -66,6 +66,12 @@ pub mod basilca {
             include!("gen/basilca.validator.v1.rs");
         }
     }
+
+    pub mod billing {
+        pub mod v1 {
+            include!("gen/basilica.billing.v1.rs");
+        }
+    }
 }
 
 // Structured re-exports for better organization
@@ -96,6 +102,17 @@ pub mod validator_api {
     //! - Rent GPU capacity with container specifications
     //! - Manage rental lifecycle (terminate, status, logs)
     pub use crate::basilca::validator::v1::*;
+}
+
+pub mod billing {
+    //! Billing service for credit management and rental tracking
+    //!
+    //! Provides comprehensive billing functionality:
+    //! - Credit balance management and reservations
+    //! - Rental lifecycle tracking with usage metrics
+    //! - Real-time telemetry ingestion and aggregation
+    //! - Billing packages and rules engine
+    pub use crate::basilca::billing::v1::*;
 }
 
 // Re-export common types at crate root for convenience
