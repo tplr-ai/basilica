@@ -21,7 +21,8 @@
 //! ## Usage
 //!
 //! The protocol crate provides generated gRPC service definitions and message types.
-//! See the generated code in `src/gen/` for the exact structure of all types.
+//! Generated code is emitted to `OUT_DIR` at build time and included here via
+//! `tonic::include_proto!`.
 //!
 //! ### Client Example
 //!
@@ -41,35 +42,38 @@
 //! let response = client.discover_nodes(request).await?;
 //! ```
 
-// Create proper module hierarchy for generated protobuf code
+// Create proper module hierarchy for generated protobuf code.
+// `tonic::include_proto!("foo.bar.v1")` expands to
+// `include!(concat!(env!("OUT_DIR"), "/foo.bar.v1.rs"))` so the generated
+// files live in the cargo OUT_DIR rather than the source tree.
 pub mod basilca {
     pub mod common {
         pub mod v1 {
-            include!("gen/basilca.common.v1.rs");
+            tonic::include_proto!("basilca.common.v1");
         }
     }
 
     pub mod rental {
         pub mod v1 {
-            include!("gen/basilica.rental.v1.rs");
+            tonic::include_proto!("basilica.rental.v1");
         }
     }
 
     pub mod miner {
         pub mod v1 {
-            include!("gen/basilca.miner.v1.rs");
+            tonic::include_proto!("basilca.miner.v1");
         }
     }
 
     pub mod validator {
         pub mod v1 {
-            include!("gen/basilca.validator.v1.rs");
+            tonic::include_proto!("basilca.validator.v1");
         }
     }
 
     pub mod billing {
         pub mod v1 {
-            include!("gen/basilica.billing.v1.rs");
+            tonic::include_proto!("basilica.billing.v1");
         }
     }
 }
@@ -224,7 +228,8 @@ pub const PROTOCOL_VERSION: &str = "1.0.0";
 
 // Implementation notes for generated types:
 // The protobuf-generated types may have different field names than expected.
-// Always check the generated code in src/gen/ for the actual structure.
+// Generated code lives in cargo's OUT_DIR; inspect with `cargo expand` or by
+// running `cargo build` and reading `target/.../build/.../out/*.rs`.
 // Key differences from common expectations:
 // - HealthCheckResponse uses 'status' as an i32 enum value, not a struct field
 // - SystemProfileResponse uses encrypted_profile instead of direct machine_info
@@ -232,7 +237,8 @@ pub const PROTOCOL_VERSION: &str = "1.0.0";
 
 // Implementation notes for generated types:
 // The protobuf-generated types may have different field names than expected.
-// Always check the generated code in src/gen/ for the actual structure.
+// Generated code lives in cargo's OUT_DIR; inspect with `cargo expand` or by
+// running `cargo build` and reading `target/.../build/.../out/*.rs`.
 // Key differences from common expectations:
 // - HealthCheckResponse uses 'status' as an i32 enum value, not a struct field
 // - SystemProfileResponse uses encrypted_profile instead of direct machine_info

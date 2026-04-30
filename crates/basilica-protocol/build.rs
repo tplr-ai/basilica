@@ -1,7 +1,8 @@
-//! Build script for protocol_basilca crate
+//! Build script for basilica-protocol crate.
 //!
-//! This script compiles .proto files into Rust code using tonic-build.
-//! Generated code is placed in src/gen/ directory.
+//! Compiles `.proto` files into Rust code with tonic-build. Generated code
+//! is emitted to `OUT_DIR` and included via `tonic::include_proto!` — the
+//! files are never written into the source tree.
 
 use std::env;
 use std::path::PathBuf;
@@ -9,17 +10,10 @@ use std::path::PathBuf;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    // Create the gen directory if it doesn't exist
-    std::fs::create_dir_all("src/gen")?;
-
-    // Configure tonic-build with proper module structure
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
-        .out_dir("src/gen")
-        // Ensure all protobuf types are generated in a flat structure
         .file_descriptor_set_path(out_dir.join("descriptor.bin"))
-        .include_file("mod.rs")
         // Enable serde serialization for select messages
         .type_attribute(
             "MachineInfo",
@@ -59,7 +53,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &["proto"],
         )?;
 
-    // Tell cargo to recompile if any proto files change
     println!("cargo:rerun-if-changed=proto/");
 
     Ok(())
