@@ -29,7 +29,13 @@ from basilica import ProviderFilter, WorldSize
 
 @basilica.distributed(
     name="dlc-example-diloco",
-    image="pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+    # The basilica-distributed-trainer image is the canonical base for
+    # distributed UDs: it ships torch + `python-etcd` (the latter is
+    # required by torchrun's `--rdzv-backend=etcd` legacy backend that
+    # the operator currently maps `etcd-v2` to; see operator
+    # distributed.rs build_worker_command). A bare pytorch image does
+    # not include `python-etcd` so torchrun would fail at rendezvous.
+    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
     world_size=WorldSize(min=2, target=4, max=4),
     gpu_count=1,
     gpu_models=["H100", "A100"],
@@ -38,9 +44,9 @@ from basilica import ProviderFilter, WorldSize
     memory="32Gi",
     provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
     topology_spread="provider-aware",
+    bench="on-start",  # 2-rank NCCL bench probe; result on training.bench.
     nccl_env={"NCCL_DEBUG": "WARN"},
-    pip_packages=["torch>=2.4"],
-    ttl_seconds=600,
+    ttl_seconds=900,
     timeout=900,
 )
 def train() -> None:
