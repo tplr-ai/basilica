@@ -357,6 +357,30 @@ impl BasilicaClient {
         Ok(response.into())
     }
 
+    /// Get K8s Events for a deployment, scoped to the user's namespace.
+    ///
+    /// Returns the response as a Python dict (pythonize-passthrough)
+    /// rather than typed PyO3 mirrors -- the Event shape is small and
+    /// users iterate by key. `limit` caps the per-call event count;
+    /// the operator returns most recent first.
+    #[pyo3(signature = (instance_name, limit=None))]
+    fn get_deployment_events(
+        &self,
+        py: Python,
+        instance_name: String,
+        limit: Option<u32>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client.get_deployment_events(&instance_name, limit).await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        to_pyobject(py, &response)
+    }
+
     /// Get deployment logs
     ///
     /// Args:

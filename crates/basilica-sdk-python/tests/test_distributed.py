@@ -368,10 +368,84 @@ class TestBuildDistributedRequest:
         assert d["topologySpread"]["strategy"] == "provider-aware"
         assert d["bench"]["mode"] == "on-start"
         assert d["nccl"]["env"]["NCCL_DEBUG"] == "WARN"
+        # BYO command: shlex-joined, NOT auto-mapped to "auto" because
+        # `source` was None (regression guard for review-comment fix).
+        assert d["command"] != "auto"
+        assert "python" in d["command"]
+        assert "train.py" in d["command"]
+
+    def test_neither_source_nor_command_raises(self) -> None:
+        from basilica.exceptions import ValidationError
+
+        client = self._client()
+        with pytest.raises(ValidationError) as exc_info:
+            client._build_distributed_request(
+                name="dlc-test",
+                source=None,
+                image="x",
+                port=80,
+                env=None,
+                cpu="1",
+                memory="1Gi",
+                gpu_count=1,
+                gpu_models=None,
+                min_gpu_memory_gb=None,
+                world_size=WorldSize(min=1, target=1, max=1),
+                provider_filter=None,
+                topology_spread="provider-aware",
+                nccl_env=None,
+                bench="off",
+                rendezvous_backend="etcd-v2",
+                command=None,
+                args=None,
+                pip_packages=None,
+                ttl_seconds=None,
+                enable_billing=True,
+            )
+        # Reviewer concern: with neither `source` nor `command`, we used
+        # to silently default `distributed.command` to "auto", breaking
+        # the BYO-launcher example. Now we hard-fail.
+        msg = str(exc_info.value).lower()
+        assert "source" in msg or "command" in msg
+
+    def test_source_string_ships_via_b64(self) -> None:
+        # Source-shipping path: writes /workspace/__basilica_source.py via
+        # base64-decoded bash one-liner. Operator wraps in `sh -c`.
+        client = self._client()
+        req = client._build_distributed_request(
+            name="dlc-source-test",
+            source="print('hello')\n",
+            image="my-image",
+            port=18789,
+            env=None,
+            cpu="1",
+            memory="1Gi",
+            gpu_count=1,
+            gpu_models=None,
+            min_gpu_memory_gb=None,
+            world_size=WorldSize(min=1, target=1, max=1),
+            provider_filter=None,
+            topology_spread="provider-aware",
+            nccl_env=None,
+            bench="off",
+            rendezvous_backend="etcd-v2",
+            command=None,
+            args=None,
+            pip_packages=None,
+            ttl_seconds=None,
+            enable_billing=True,
+        )
+        d_cmd = req["distributed"]["command"]
+        assert "base64 -d > /workspace/__basilica_source.py" in d_cmd
+        assert "exec torchrun" in d_cmd
+        assert "$BASILICA_RDZV_ENDPOINT" in d_cmd
+        assert d_cmd != "auto"
 
     def test_invalid_bench_mode_rejected(self) -> None:
+        from basilica.exceptions import ValidationError
+
         client = self._client()
-        with pytest.raises(Exception):  # ValidationError from basilica
+        with pytest.raises(ValidationError) as exc_info:
             client._build_distributed_request(
                 name="dlc-test",
                 source=None,
@@ -389,12 +463,13 @@ class TestBuildDistributedRequest:
                 nccl_env=None,
                 bench="invalid-mode",
                 rendezvous_backend="etcd-v2",
-                command=None,
+                command=["python", "x.py"],
                 args=None,
                 pip_packages=None,
                 ttl_seconds=None,
                 enable_billing=True,
             )
+        assert exc_info.value.field == "bench"
 
 
 # =============================================================================
@@ -466,13 +541,22 @@ class TestExceptionAttributes:
         assert e.requested == 6
         assert e.limit == 10
 
-    def test_below_minimum_world_carries_ready_and_required(self) -> None:
+    def test_below_minimum_world_carries_ready_required_and_timeout(self) -> None:
         e = BelowMinimumWorld(
             "ready=2, required_min=4 (timeout 300s)",
-            ready=2, required_min=4,
+            ready=2,
+            required_min=4,
+            timeout=300,
         )
         assert e.ready == 2
         assert e.required_min == 4
+        assert e.timeout == 300
+
+    def test_below_minimum_world_timeout_optional(self) -> None:
+        # Outside a wait context (e.g. raised from event-stream parsing),
+        # timeout may be None.
+        e = BelowMinimumWorld("inline", ready=0, required_min=2)
+        assert e.timeout is None
 
     def test_world_size_out_of_bounds_carries_full_triple(self) -> None:
         e = WorldSizeOutOfBounds(

@@ -28,77 +28,88 @@ import time
 
 from basilica import BasilicaClient, ProviderFilter, WorldSize
 
-client = BasilicaClient()
 
-training = client.deploy_distributed(
-    name="dlc-example-bench",
-    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
-    args=["--", "python3", "/workspace/all_reduce_smoke.py"],
-    world_size=WorldSize(min=2, target=2, max=2),
-    gpu_count=1,
-    gpu_models=["A100"],
-    min_gpu_memory_gb=40,
-    cpu="8",
-    memory="32Gi",
-    provider_filter=ProviderFilter(include=["verda"]),
-    topology_spread="pack",  # Pack for the smallest measured pair.
-    bench="on-start",  # Schedule the 2-rank NCCL probe.
-    nccl_env={"NCCL_DEBUG": "WARN"},
-    ttl_seconds=900,
-    timeout=900,
-)
+def main() -> None:
+    """
+    Wrapped in main() so importing the module does NOT spin up a paid
+    distributed cluster. Per the coding guidelines, deploy/start_*_rental
+    calls are cost-bearing and must be tied to an explicit script run.
+    """
+    client = BasilicaClient()
 
-print(f"Deployed: {training.name}")
-print(f"Bench probe scheduled (rank-budget cost: worker(2) + bench(2) = 4)")
+    training = client.deploy_distributed(
+        name="dlc-example-bench",
+        image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+        command=["python3", "/workspace/all_reduce_smoke.py"],
+        world_size=WorldSize(min=2, target=2, max=2),
+        gpu_count=1,
+        gpu_models=["A100"],
+        min_gpu_memory_gb=40,
+        cpu="8",
+        memory="32Gi",
+        provider_filter=ProviderFilter(include=["verda"]),
+        topology_spread="pack",  # Pack for the smallest measured pair.
+        bench="on-start",  # Schedule the 2-rank NCCL probe.
+        nccl_env={"NCCL_DEBUG": "WARN"},
+        ttl_seconds=900,
+        timeout=900,
+    )
 
-# Poll for the probe to complete. The probe runs ~5 minutes
-# (all_reduce_perf sweep) plus scheduling overhead. The bench Job has
-# `activeDeadlineSeconds=900` (architecture doc § 11.1).
-deadline = time.time() + 1200
-while time.time() < deadline:
-    training.refresh()
-    if training.bench is not None:
-        break
-    time.sleep(20)
+    print(f"Deployed: {training.name}")
+    print("Bench probe scheduled (rank-budget cost: worker(2) + bench(2) = 4)")
 
-if training.bench is None:
-    print("Bench probe did not complete within 20 minutes.")
-    print("Check `kubectl get job -n <ns> -l basilica.ai/distributed-role=bench`.")
+    # Poll for the probe to complete. The probe runs ~5 minutes
+    # (all_reduce_perf sweep) plus scheduling overhead. The bench Job
+    # has `activeDeadlineSeconds=900` (architecture doc § 11.1).
+    deadline = time.time() + 1200
+    while time.time() < deadline:
+        training.refresh()
+        if training.bench is not None:
+            break
+        time.sleep(20)
+
+    if training.bench is None:
+        print("Bench probe did not complete within 20 minutes.")
+        print("Check `kubectl get job -n <ns> -l basilica.ai/distributed-role=bench`.")
+        training.delete()
+        raise SystemExit(1)
+
+    result = training.bench
+    print("--- Bench result ---")
+    print(f"  measured_at:        {result.measured_at}")
+    print(f"  busbw_gbps_p10:     {result.busbw_gbps_p10}")
+    print(f"  busbw_gbps_p50:     {result.busbw_gbps_p50}")
+    print(f"  busbw_gbps_p90:     {result.busbw_gbps_p90}")
+    print(f"  algbw_gbps_p50:     {result.algbw_gbps_p50}")
+    print(f"  latency_us_at_1mib: {result.latency_us_at_1mib}")
+    print(f"  size_bytes_swept:   {result.size_bytes_swept}")
+    print(f"  probe_node_a:       {result.probe_node_a}")
+    print(f"  probe_node_b:       {result.probe_node_b}")
+
+    # Researchers writing papers can serialize this to JSON and aggregate
+    # across many UDs offline -- each measurement is on their own nodes,
+    # billed against their own usage, with no cross-tenant shared cache.
+    out = {
+        "name": training.name,
+        "world_size": {
+            "min": training.world.min,
+            "target": training.world.target,
+            "max": training.world.max,
+        },
+        "bench": {
+            "busbw_gbps_p50": result.busbw_gbps_p50,
+            "latency_us_at_1mib": result.latency_us_at_1mib,
+            "probe_node_a": result.probe_node_a,
+            "probe_node_b": result.probe_node_b,
+        },
+    }
+    with open(f"/tmp/{training.name}-bench.json", "w") as f:
+        json.dump(out, f, indent=2, default=str)
+    print(f"Saved bench result: /tmp/{training.name}-bench.json")
+
     training.delete()
-    raise SystemExit(1)
+    print("Cleanup complete.")
 
-result = training.bench
-print("--- Bench result ---")
-print(f"  measured_at:        {result.measured_at}")
-print(f"  busbw_gbps_p10:     {result.busbw_gbps_p10}")
-print(f"  busbw_gbps_p50:     {result.busbw_gbps_p50}")
-print(f"  busbw_gbps_p90:     {result.busbw_gbps_p90}")
-print(f"  algbw_gbps_p50:     {result.algbw_gbps_p50}")
-print(f"  latency_us_at_1mib: {result.latency_us_at_1mib}")
-print(f"  size_bytes_swept:   {result.size_bytes_swept}")
-print(f"  probe_node_a:       {result.probe_node_a}")
-print(f"  probe_node_b:       {result.probe_node_b}")
 
-# Researchers writing papers can serialize this to JSON and aggregate
-# across many UDs offline -- each measurement is on their own nodes,
-# billed against their own usage, with no cross-tenant shared cache.
-out = {
-    "name": training.name,
-    "world_size": {
-        "min": training.world.min,
-        "target": training.world.target,
-        "max": training.world.max,
-    },
-    "bench": {
-        "busbw_gbps_p50": result.busbw_gbps_p50,
-        "latency_us_at_1mib": result.latency_us_at_1mib,
-        "probe_node_a": result.probe_node_a,
-        "probe_node_b": result.probe_node_b,
-    },
-}
-with open(f"/tmp/{training.name}-bench.json", "w") as f:
-    json.dump(out, f, indent=2, default=str)
-print(f"Saved bench result: /tmp/{training.name}-bench.json")
-
-training.delete()
-print("Cleanup complete.")
+if __name__ == "__main__":
+    main()

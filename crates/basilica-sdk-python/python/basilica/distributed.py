@@ -316,9 +316,19 @@ class DistributedTraining:
         return await asyncio.get_event_loop().run_in_executor(None, self.metrics)
 
     def events(self, since: Optional[str] = None) -> List[Dict[str, Any]]:
-        """K8s Events for this UD's namespace, filtered by involvedObject. SDK arch § 6."""
-        # Wraps the existing events endpoint; passes through `since` filter.
-        return self._client.get_deployment_events(self.name, since=since)
+        """
+        K8s Events for this UD's namespace, scoped by `involvedObject` to
+        this UD. SDK arch § 6. Returns a list of `{event_type, reason,
+        message, count, last_timestamp}` dicts. The `since` filter is
+        accepted for forward-compat (Phase 6 server-side filter); current
+        behavior is "all available events, most recent first".
+        """
+        response = self._client.get_deployment_events(self.name, since=since)
+        # The PyO3 binding returns a dict like
+        # `{events: [...], total: N}` (pythonize of DeploymentEventsResponse).
+        if isinstance(response, dict):
+            return list(response.get("events", []))
+        return []
 
     async def events_async(self, since: Optional[str] = None) -> List[Dict[str, Any]]:
         """Async variant of `events`."""
@@ -336,12 +346,14 @@ class DistributedTraining:
         intended new state; ranks join/drain asynchronously. Use
         `wait_until_target_world(timeout=...)` to block.
 
-        Validates `target >= 1` locally before issuing the network call.
-        Server-side bounds check (`min <= target <= max`) returns a 400
-        if the spec's max is smaller than the request.
+        Validates locally before the network call:
+        - `target >= 1` (immediate rejection)
+        - `target` falls within the deployment's current
+          `[worldSize.min, worldSize.max]` (refresh first to guard
+          against stale cached bounds)
 
         Raises:
-            WorldSizeOutOfBounds: target < 1.
+            WorldSizeOutOfBounds: target < 1, or target outside `[min, max]`.
         """
         if target < 1:
             raise WorldSizeOutOfBounds(
@@ -349,6 +361,23 @@ class DistributedTraining:
                 requested=target,
                 min=1,
                 max=1,
+            )
+        # Refresh so the bounds check uses the live `worldSize.{min,max}`,
+        # not whatever was cached from earlier (the operator can mutate
+        # min/max only at create-time, but a stale cache from before
+        # creation would show min=max=0).
+        self.refresh()
+        ws = self.world
+        # ws.min == 0 means we have not yet observed the operator's first
+        # status write; in that case skip the bounds check and let the
+        # API gateway return its 400 with the canonical message.
+        if ws.min > 0 and (target < ws.min or target > ws.max):
+            raise WorldSizeOutOfBounds(
+                f"scale: target {target} out of bounds "
+                f"[{ws.min}, {ws.max}]",
+                requested=target,
+                min=ws.min,
+                max=ws.max,
             )
         # Issue the patch via the new POST /deployments/{name}/scale-distributed
         # endpoint shipped in the Phase 5b precursor (basilica-backend #421).
@@ -387,6 +416,7 @@ class DistributedTraining:
                 f"(ready={ws.ready}, required_min={ws.min})",
                 ready=ws.ready,
                 required_min=ws.min,
+                timeout=timeout,
             )
 
     async def wait_until_min_world_async(self, timeout: int = 300) -> None:
@@ -408,6 +438,7 @@ class DistributedTraining:
                 f"(ready={ws.ready}, required_min={ws.min})",
                 ready=ws.ready,
                 required_min=ws.min,
+                timeout=timeout,
             )
 
     def wait_until_target_world(self, timeout: int = 600) -> None:
@@ -429,6 +460,7 @@ class DistributedTraining:
                 f"(ready={ws.ready}, required_min={ws.target})",
                 ready=ws.ready,
                 required_min=ws.target,
+                timeout=timeout,
             )
 
     async def wait_until_target_world_async(self, timeout: int = 600) -> None:
@@ -450,6 +482,7 @@ class DistributedTraining:
                 f"(ready={ws.ready}, required_min={ws.target})",
                 ready=ws.ready,
                 required_min=ws.target,
+                timeout=timeout,
             )
 
     def delete(self) -> None:
@@ -474,30 +507,41 @@ class DistributedTraining:
 
     def logs(
         self,
-        rank: int = 0,
         tail: Optional[int] = None,
         follow: bool = False,
+        rank: Optional[int] = None,
     ) -> str:
         """
-        Get logs for a single rank. SDK arch § 6.
+        Get logs for the deployment. SDK arch § 6.
 
-        For multi-rank streaming use `stream_logs(ranks=[...])`. Uses the
-        existing per-pod logs endpoint with rank ordinal => pod-index
-        substitution.
+        Phase 5b: the underlying `/deployments/{name}/logs` endpoint
+        does not support per-rank filtering server-side, so the `rank`
+        argument is accepted for forward-compat but ignored. All ranks'
+        logs are returned merged. Per-rank filtering is a Phase 6
+        backend enhancement (basilica-backend follow-up).
         """
+        if rank is not None and rank > 0:
+            import warnings as _warnings
+            _warnings.warn(
+                "DistributedTraining.logs(rank=...) is accepted for "
+                "forward-compat but ignored in Phase 5b: the API does "
+                "not yet support per-rank log filtering. All ranks' "
+                "logs returned merged.",
+                stacklevel=2,
+            )
         return self._client.get_deployment_logs(
-            self.name, follow=follow, tail=tail, rank=rank
+            self.name, follow=follow, tail=tail
         )
 
     async def logs_async(
         self,
-        rank: int = 0,
         tail: Optional[int] = None,
         follow: bool = False,
+        rank: Optional[int] = None,
     ) -> str:
-        """Async variant of `logs`."""
+        """Async variant of `logs`. Same Phase 5b rank-filter limitation."""
         return await asyncio.get_event_loop().run_in_executor(
-            None, lambda: self.logs(rank=rank, tail=tail, follow=follow)
+            None, lambda: self.logs(tail=tail, follow=follow, rank=rank)
         )
 
     def stream_logs(
@@ -505,27 +549,39 @@ class DistributedTraining:
         ranks: Optional[List[int]] = None,
     ) -> Iterator[Tuple[int, str]]:
         """
-        Multiplex logs across the given ranks (or all ranks if None).
-        Yields `(rank, line)` in arrival order. SDK arch § 6 / § 13.
+        Yield `(rank, line)` tuples for each log line.
 
-        The SDK does the per-rank fan-out via the existing logs(follow=True)
-        plumbing; the platform does not need a new multiplexed endpoint.
+        Phase 5b: the API returns merged logs without rank tags, so
+        every line is yielded as `(0, line)`. The `ranks` filter is
+        accepted for forward-compat but ignored. SDK arch § 6 / § 13
+        per-rank multiplexing is a Phase 6 backend enhancement.
         """
-        target_ranks = ranks if ranks is not None else [r.rank for r in self.ranks]
-        for r in target_ranks:
-            for line in self.logs(rank=r, follow=False).splitlines():
-                yield (r, line)
+        if ranks is not None:
+            import warnings as _warnings
+            _warnings.warn(
+                "DistributedTraining.stream_logs(ranks=...) is accepted "
+                "but ignored in Phase 5b: per-rank streaming is a "
+                "Phase 6 backend enhancement.",
+                stacklevel=2,
+            )
+        for line in self.logs(follow=False).splitlines():
+            yield (0, line)
 
     async def stream_logs_async(
         self,
         ranks: Optional[List[int]] = None,
     ) -> AsyncIterator[Tuple[int, str]]:
-        """Async variant of `stream_logs`. Yields `(rank, line)` in arrival order."""
-        target_ranks = ranks if ranks is not None else [r.rank for r in self.ranks]
-        for r in target_ranks:
-            text = await self.logs_async(rank=r, follow=False)
-            for line in text.splitlines():
-                yield (r, line)
+        """Async variant of `stream_logs`. Same Phase 5b limitations."""
+        if ranks is not None:
+            import warnings as _warnings
+            _warnings.warn(
+                "DistributedTraining.stream_logs_async(ranks=...) is "
+                "accepted but ignored in Phase 5b.",
+                stacklevel=2,
+            )
+        text = await self.logs_async(follow=False)
+        for line in text.splitlines():
+            yield (0, line)
 
     # -------------------------------------------------------------------------
     # Internal helpers

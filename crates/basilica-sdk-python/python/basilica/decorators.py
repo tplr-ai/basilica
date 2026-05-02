@@ -354,7 +354,7 @@ def distributed(
     rendezvous_backend: str = "etcd-v2",
     env: Optional[Dict[str, str]] = None,
     pip_packages: Optional[List[str]] = None,
-    ttl_seconds: Optional[int] = None,
+    ttl_seconds: Optional[int] = 86400,
     timeout: int = 600,
     enable_billing: bool = True,
 ) -> Callable[[Callable], DistributedFunction]:

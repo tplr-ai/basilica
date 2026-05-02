@@ -1362,18 +1362,26 @@ pub enum TrainRendezvousBackend {
 #[derive(Subcommand, Debug, Clone)]
 pub enum TrainAction {
     /// Launch a distributed training UD.
+    ///
+    /// CLI-side launches are BYO-launcher only: the user provides
+    /// `--command` (the bash one-liner the operator runs in `sh -c`).
+    /// Source-shipping (read a local .py file and embed it) is a Python
+    /// SDK feature -- use `client.deploy_distributed(source=...)` or
+    /// `@basilica.distributed`. See SDK arch § 5 / § 10.
     Up {
         /// Deployment name.
         name: String,
 
-        /// Path to the per-rank training script (file path; the operator
-        /// renders torchrun around it via `command="auto"`).
-        #[arg(long, value_hint = ValueHint::FilePath)]
-        source: PathBuf,
-
         /// World size triple `min:target:max`. Example: `4:8:16`.
         #[arg(long, value_name = "MIN:TARGET:MAX")]
         world_size: WorldSizeTriple,
+
+        /// BYO-launcher command (will be passed to `sh -c` by the
+        /// operator). Example: `--command 'torchrun --rdzv-backend=etcd-v2
+        /// --rdzv-endpoint=$BASILICA_RDZV_ENDPOINT ... /workspace/train.py'`.
+        /// The image is expected to contain the script.
+        #[arg(long, value_name = "BASH_ONELINER")]
+        command: String,
 
         /// GPUs per rank pod (default 1; set higher for NVLink ranks).
         #[arg(long, default_value = "1")]
@@ -1428,13 +1436,12 @@ pub enum TrainAction {
         #[arg(long, value_enum, default_value_t = TrainRendezvousBackend::EtcdV2)]
         rendezvous_backend: TrainRendezvousBackend,
 
-        /// Auto-delete after N seconds.
-        #[arg(long)]
-        ttl_seconds: Option<u32>,
-
-        /// Seconds to wait for `min` ranks to be ready.
-        #[arg(long, default_value = "600")]
-        timeout: u32,
+        /// Auto-delete after N seconds (default 24 hours).
+        /// Defensive default: distributed training jobs are cost-bearing
+        /// and should not persist unless explicitly requested. Pass
+        /// `--ttl-seconds 0` for "no auto-delete" (escape hatch).
+        #[arg(long, default_value = "86400")]
+        ttl_seconds: u32,
     },
 
     /// List distributed training deployments.
@@ -1453,14 +1460,15 @@ pub enum TrainAction {
         target: u32,
     },
 
-    /// Get logs for a single rank (or all ranks).
+    /// Get merged logs for the deployment.
+    ///
+    /// Phase 5b: per-rank filtering is not supported by the underlying
+    /// `/deployments/{name}/logs` endpoint -- all ranks' logs are
+    /// returned merged. Phase 6 backend follow-up tracks per-rank
+    /// streaming.
     Logs {
         /// Deployment name.
         name: String,
-
-        /// Rank ordinal (0-based). Omit for rank 0.
-        #[arg(long, default_value = "0")]
-        rank: u32,
 
         /// Tail the last N lines.
         #[arg(long)]

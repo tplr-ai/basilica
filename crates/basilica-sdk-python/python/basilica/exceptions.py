@@ -469,10 +469,12 @@ class BelowMinimumWorld(DistributedError):
     Attributes:
         ready: Ranks that did become ready.
         required_min: `worldSize.min` from the spec.
+        timeout: The timeout value (seconds) the wait used. `None` when
+            the exception is raised outside a wait context.
 
     Example:
         >>> training = client.deploy_distributed(..., timeout=300)
-        BelowMinimumWorld: ready=2, required_min=4 (timeout after 300s)
+        BelowMinimumWorld: ready=2, required_min=4, timeout=300s
     """
 
     def __init__(
@@ -480,9 +482,11 @@ class BelowMinimumWorld(DistributedError):
         message: str,
         ready: int,
         required_min: int,
+        timeout: Optional[int] = None,
     ):
         self.ready = ready
         self.required_min = required_min
+        self.timeout = timeout
         super().__init__(
             message=message,
             code="DISTRIBUTED_BELOW_MINIMUM_WORLD",

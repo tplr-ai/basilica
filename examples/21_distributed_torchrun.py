@@ -22,55 +22,73 @@ import time
 
 from basilica import BasilicaClient, ProviderFilter, WorldSize
 
-client = BasilicaClient()
 
-training = client.deploy_distributed(
-    name="dlc-example-torchrun",
-    # No `source=` -> operator does NOT auto-wrap with torchrun.
-    # The image's ENTRYPOINT + the `args` below define the launcher.
-    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
-    args=[
-        "--",
-        "torchrun",
-        "--rdzv-backend=etcd-v2",
-        "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
-        "--rdzv-id=$BASILICA_RDZV_ID",
-        "--nnodes=$BASILICA_WORLD_TARGET",
-        "--nproc-per-node=$BASILICA_GPUS_PER_POD",
-        "--max-restarts=10",
-        "/workspace/all_reduce_smoke.py",
-    ],
-    world_size=WorldSize(min=2, target=2, max=4),
-    gpu_count=1,
-    gpu_models=["A100", "H100"],
-    min_gpu_memory_gb=40,
-    cpu="8",
-    memory="32Gi",
-    provider_filter=ProviderFilter(include=["verda"]),
-    topology_spread="provider-aware",
-    nccl_env={"NCCL_DEBUG": "WARN"},
-    ttl_seconds=600,
-    timeout=900,
-)
+def main() -> None:
+    """
+    Wrapped in main() so importing the module (e.g. from doc tooling or
+    a test runner) does NOT spin up a paid distributed cluster. Per the
+    coding guidelines, deploy/start_*_rental calls are cost-bearing and
+    must be tied to an explicit script run.
+    """
+    client = BasilicaClient()
 
-print(f"Deployed: {training.name}")
-print(f"Namespace: {training.namespace}")
-print(f"World: {training.world}")
+    # BYO-launcher: pass `command=` explicitly. The operator's CRD has
+    # no "use image ENTRYPOINT, just pass args" mode -- distributed UDs
+    # must specify either `source=` (auto-torchrun wrapping) or
+    # `command=` (verbatim launcher). See operator's CRD § 4 / SDK
+    # arch § 4 footnote on auto-torchrun wrapping. The basilica-
+    # distributed-trainer image's `/workspace/all_reduce_smoke.py`
+    # fixture is the smoke target.
+    training = client.deploy_distributed(
+        name="dlc-example-torchrun",
+        image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+        command=[
+            "torchrun",
+            "--rdzv-backend=etcd-v2",
+            "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+            "--rdzv-id=$BASILICA_RDZV_ID",
+            "--nnodes=$BASILICA_WORLD_TARGET",
+            "--nproc-per-node=$BASILICA_GPUS_PER_POD",
+            "--max-restarts=10",
+            "/workspace/all_reduce_smoke.py",
+        ],
+        world_size=WorldSize(min=2, target=2, max=4),
+        gpu_count=1,
+        gpu_models=["A100", "H100"],
+        min_gpu_memory_gb=40,
+        cpu="8",
+        memory="32Gi",
+        provider_filter=ProviderFilter(include=["verda"]),
+        topology_spread="provider-aware",
+        nccl_env={"NCCL_DEBUG": "WARN"},
+        ttl_seconds=600,
+        timeout=900,
+    )
 
-# Scale up by one rank, mid-run. Demonstrates Phase 2 elasticity:
-# torchelastic re-rendezvouses workers when the StatefulSet replica count
-# changes, and the new rank joins.
-time.sleep(30)
-new_world = training.scale(target=3)
-print(f"Scaled to target=3; world now: {new_world}")
+    print(f"Deployed: {training.name}")
+    print(f"Namespace: {training.namespace}")
+    print(f"World: {training.world}")
 
-# Wait for the new rank to join.
-training.wait_until_target_world(timeout=300)
-print(f"All 3 ranks ready: {training.world}")
+    # Scale up by one rank, mid-run. Demonstrates Phase 2 elasticity:
+    # torchelastic re-rendezvouses workers when the StatefulSet replica count
+    # changes, and the new rank joins.
+    time.sleep(30)
+    new_world = training.scale(target=3)
+    print(f"Scaled to target=3; world now: {new_world}")
 
-# Tail rank-0 logs briefly so the example surfaces "is it actually running".
-print("--- rank-0 logs ---")
-print(training.logs(rank=0, tail=30))
+    # Wait for the new rank to join.
+    training.wait_until_target_world(timeout=300)
+    print(f"All 3 ranks ready: {training.world}")
 
-training.delete()
-print("Cleanup complete.")
+    # Tail logs briefly so the example surfaces "is it actually running".
+    # Phase 5b: per-rank filtering not yet supported by the API; logs are
+    # returned merged across ranks.
+    print("--- merged logs ---")
+    print(training.logs(tail=30))
+
+    training.delete()
+    print("Cleanup complete.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1029,7 +1029,7 @@ class BasilicaClient:
         command: Optional[List[str]] = None,
         args: Optional[List[str]] = None,
         pip_packages: Optional[List[str]] = None,
-        ttl_seconds: Optional[int] = None,
+        ttl_seconds: Optional[int] = 86400,
         timeout: int = 600,
         enable_billing: bool = True,
     ) -> DistributedTraining:
@@ -1158,18 +1158,13 @@ class BasilicaClient:
         SDK's `CreateDistributedDeploymentRequest`. Wire shape exactly
         matches the operator's CRD `spec.distributed`.
         """
-        # Source packaging: if source is set, ship the user's script and
-        # let the operator render command="auto"; otherwise pass through
-        # explicit command (BYO launcher).
+        # `spec.command` (top-level) is appended to the operator's BYO
+        # launcher as positional `$@`; for distributed-mode source-shipping
+        # we want the bash script in `spec.distributed.command` to be
+        # self-contained and ignore `$@`. So `spec.command` stays None
+        # for the request, while source-shipping happens via
+        # `spec.distributed.command` below (operator wraps in `sh -c`).
         rendered_command: Optional[List[str]] = None
-        if source is not None:
-            if callable(source):
-                packager = SourcePackager.from_function(source)
-            else:
-                packager = SourcePackager(source)
-            rendered_command = packager.build_command(pip_packages=pip_packages)
-        elif command is not None:
-            rendered_command = command
 
         # Resources: distributed UDs always need GPU; default to 1 GPU per
         # rank pod. The operator's `--nproc-per-node` consumes this.
@@ -1184,10 +1179,69 @@ class BasilicaClient:
         if min_gpu_memory_gb is not None:
             resources["gpus"]["minGpuMemoryGb"] = min_gpu_memory_gb
 
-        # Distributed spec, camelCase + kebab-case enums (matches operator CRD).
+        # `spec.distributed.command` policy:
+        #
+        # - `source` set -> read source text, ship via base64 in a bash
+        #   one-liner that writes `/workspace/__basilica_source.py` then
+        #   exec's torchrun on it. The operator wraps this with `sh -c`
+        #   in BYO mode (operator distributed.rs build_worker_command:
+        #   `command=["/bin/sh", "-c"], args=[<distributed.command>, "--",
+        #   ...user_command, ...user_args]`). Why not "auto"? The
+        #   operator's auto-torchrun renderer does NOT ship source --
+        #   it expects `/workspace/<script>` already in the image. Phase
+        #   5b ships source via this BYO heredoc-free path; Phase 6 may
+        #   move source-shipping into the operator via init container.
+        #
+        # - `command` set -> shlex-join (NOT plain " ".join, which would
+        #   break embedded whitespace / quotes). Operator passes verbatim.
+        #
+        # - neither -> ValidationError. The operator's distributed-mode
+        #   renderer has no "use image ENTRYPOINT, just pass args" mode;
+        #   either source-shipping or explicit launcher is required.
+        if source is not None:
+            import base64 as _b64
+            import shlex as _shlex
+            if callable(source):
+                src_text = SourcePackager.from_function(source).code
+            else:
+                src_text = SourcePackager(source).code
+            src_b64 = _b64.b64encode(src_text.encode("utf-8")).decode("ascii")
+            pip_install = ""
+            if pip_packages:
+                pkg_args = " ".join(_shlex.quote(p) for p in pip_packages)
+                pip_install = f"pip install --quiet {pkg_args} && "
+            backend_token = (
+                "etcd-v2"
+                if rendezvous_backend == "etcd-v2"
+                else rendezvous_backend
+            )
+            distributed_command = (
+                f"{pip_install}"
+                f"echo {src_b64} | base64 -d > /workspace/__basilica_source.py && "
+                f"exec torchrun "
+                f"--rdzv-backend={backend_token} "
+                f"--rdzv-endpoint=\"$BASILICA_RDZV_ENDPOINT\" "
+                f"--rdzv-id=\"$BASILICA_RDZV_ID\" "
+                f"--nnodes=\"$BASILICA_WORLD_MIN\":\"$BASILICA_WORLD_MAX\" "
+                f"--nproc-per-node=\"$BASILICA_GPUS_PER_POD\" "
+                f"--max-restarts=10 "
+                f"/workspace/__basilica_source.py"
+            )
+        elif command is not None:
+            import shlex as _shlex
+            distributed_command = _shlex.join(command)
+        else:
+            raise ValidationError(
+                "deploy_distributed requires either source= (Phase 5b "
+                "ships source via a base64-encoded bash launcher) or "
+                "command= (BYO launcher). Image-entrypoint-only mode is "
+                "not supported by the operator's distributed-mode "
+                "renderer.",
+                field="source",
+            )
         distributed: Dict[str, Any] = {
             "enabled": True,
-            "command": "auto" if source is not None or command is None else " ".join(command),
+            "command": distributed_command,
             "worldSize": {
                 "min": world_size.min,
                 "target": world_size.target,
@@ -1565,6 +1619,19 @@ class BasilicaClient:
         """Get deployment logs."""
         return self._client.get_deployment_logs(instance_name, follow, tail)
 
+    def get_deployment_events(
+        self, instance_name: str, limit: Optional[int] = None, **_ignored: Any
+    ) -> Dict[str, Any]:
+        """
+        Get K8s Events for a deployment, scoped to the user's namespace.
+
+        Returns a dict with `events: [{event_type, reason, message, count,
+        last_timestamp}, ...]`. Used by `DistributedTraining.events()`.
+        Tolerates an unused `since=` kwarg for forward-compat with the
+        Phase 6 server-side filter.
+        """
+        return self._client.get_deployment_events(instance_name, limit)
+
     def get_balance(self) -> Dict[str, Any]:
         """Get account balance."""
         return self._client.get_balance()
@@ -1936,7 +2003,7 @@ class BasilicaClient:
         command: Optional[List[str]] = None,
         args: Optional[List[str]] = None,
         pip_packages: Optional[List[str]] = None,
-        ttl_seconds: Optional[int] = None,
+        ttl_seconds: Optional[int] = 86400,
         timeout: int = 600,
         enable_billing: bool = True,
     ) -> DistributedTraining:
