@@ -388,3 +388,165 @@ class SourceError(BasilicaError):
             code="SOURCE_ERROR",
             retryable=False
         )
+
+
+# =============================================================================
+# Distributed-training exceptions (SDK arch § 8).
+#
+# Specific subclasses for the operational shapes a researcher iterating on
+# `world_size` will hit, with the actionable numeric context surfaced as
+# attributes (current/limit, ready/required_min, requested/min/max). Generic
+# ValidationError or RuntimeError would force the caller to re-parse the
+# message string -- these structured exceptions don't.
+# =============================================================================
+
+
+class DistributedError(BasilicaError):
+    """
+    Base class for distributed-training-specific errors.
+
+    All exceptions raised by `client.deploy_distributed(...)` and methods
+    on the `DistributedTraining` facade derive from this class. Catch this
+    to handle any distributed-training failure mode generically.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        code: str = "DISTRIBUTED_ERROR",
+        retryable: bool = False,
+    ):
+        super().__init__(message=message, code=code, retryable=retryable)
+
+
+class QuotaExceeded(DistributedError):
+    """
+    Raised when a distributed deployment would exceed the namespace's rank
+    budget.
+
+    The platform enforces a per-namespace cap on concurrent distributed
+    ranks (default 10; override via `basilica.ai/distributed-rank-budget`
+    annotation on the namespace). When `bench.mode = on-start`, the bench
+    probe (2 ranks) counts against the same budget.
+
+    Attributes:
+        current: Ranks currently in use across the namespace.
+        requested: Ranks the new (or scaled) deployment would add.
+        limit: Hard cap from the namespace annotation.
+
+    Example:
+        >>> # Namespace already at 8/10, requesting 4-rank UD with bench
+        >>> client.deploy_distributed(...)
+        QuotaExceeded: namespace rank budget exceeded:
+            current=8, requested=worker(4)+bench(2)=6, limit=10
+    """
+
+    def __init__(
+        self,
+        message: str,
+        current: int,
+        requested: int,
+        limit: int,
+    ):
+        self.current = current
+        self.requested = requested
+        self.limit = limit
+        super().__init__(
+            message=message,
+            code="DISTRIBUTED_QUOTA_EXCEEDED",
+            retryable=False,
+        )
+
+
+class BelowMinimumWorld(DistributedError):
+    """
+    Raised by `wait_until_min_world(timeout=...)` when the timeout expires
+    before `min` ranks are ready.
+
+    The UD is NOT auto-deleted; the caller decides whether to keep waiting
+    (capacity may still arrive) or `delete()`. SDK arch § 11.
+
+    Attributes:
+        ready: Ranks that did become ready.
+        required_min: `worldSize.min` from the spec.
+
+    Example:
+        >>> training = client.deploy_distributed(..., timeout=300)
+        BelowMinimumWorld: ready=2, required_min=4 (timeout after 300s)
+    """
+
+    def __init__(
+        self,
+        message: str,
+        ready: int,
+        required_min: int,
+    ):
+        self.ready = ready
+        self.required_min = required_min
+        super().__init__(
+            message=message,
+            code="DISTRIBUTED_BELOW_MINIMUM_WORLD",
+            retryable=True,
+        )
+
+
+class RendezvousUnavailable(DistributedError):
+    """
+    Raised when the per-UD rendezvous Pod fails to start within a bounded
+    retry window. The UD is NOT auto-deleted; investigation is the
+    researcher's call (likely to require platform-team support).
+
+    Common causes:
+    - Operator error rendering the rendezvous Deployment.
+    - Image pull failure on the rendezvous (etcd) image.
+    - NetworkPolicy misconfiguration blocking workers from reaching
+      port 2379 on the rendezvous Pod.
+    """
+
+    def __init__(self, message: str = "Rendezvous Pod unavailable"):
+        super().__init__(
+            message=message,
+            code="DISTRIBUTED_RENDEZVOUS_UNAVAILABLE",
+            retryable=True,
+        )
+
+
+class WorldSizeOutOfBounds(DistributedError):
+    """
+    Raised when a `WorldSize` triple violates `1 <= min <= target <= max`,
+    or when `scale(target)` is called with a target outside
+    `[worldSize.min, worldSize.max]`.
+
+    The dataclass `WorldSize.__post_init__` raises this for construction-
+    time violations (`min=0`, `min > target`, `target > max`); the API
+    raises it for `scale()` calls that pass dataclass validation but
+    violate the live bounds.
+
+    Attributes:
+        requested: The target / value that failed validation.
+        min: `worldSize.min` (or 1 if unknown).
+        max: `worldSize.max` (or large sentinel if unknown).
+
+    Example:
+        >>> WorldSize(min=4, target=2, max=8)  # target < min
+        WorldSizeOutOfBounds: requested=2, min=4, max=8
+
+        >>> training.scale(target=12)  # if max=8
+        WorldSizeOutOfBounds: requested=12, min=4, max=8
+    """
+
+    def __init__(
+        self,
+        message: str,
+        requested: int,
+        min: int,
+        max: int,
+    ):
+        self.requested = requested
+        self.min = min
+        self.max = max
+        super().__init__(
+            message=message,
+            code="DISTRIBUTED_WORLD_SIZE_OUT_OF_BOUNDS",
+            retryable=False,
+        )

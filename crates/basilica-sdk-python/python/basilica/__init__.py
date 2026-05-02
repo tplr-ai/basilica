@@ -144,24 +144,38 @@ except ImportError:
             self.infiniband = infiniband
 
 
-from .decorators import DeployedFunction, deployment
+from .decorators import DeployedFunction, DistributedFunction, deployment, distributed
 
 # Import new modules
 from ._deployment import Deployment, DeploymentStatus, ProgressInfo
+from .distributed import (
+    BenchResult,
+    DistributedMetrics,
+    DistributedTraining,
+    ProviderFilter,
+    RankStatus,
+    WorldSize,
+    WorldStatus,
+)
 from .exceptions import (
     AuthenticationError,
     AuthorizationError,
     BasilicaError,
+    BelowMinimumWorld,
     DeploymentError,
     DeploymentFailed,
     DeploymentNotFound,
     DeploymentTimeout,
+    DistributedError,
     NetworkError,
+    QuotaExceeded,
     RateLimitError,
+    RendezvousUnavailable,
     ResourceError,
     SourceError,
     StorageError,
     ValidationError,
+    WorldSizeOutOfBounds,
 )
 from .source import SourcePackager
 from .spec import DeploymentSpec
@@ -985,6 +999,235 @@ class BasilicaClient:
         return deployments
 
     # -------------------------------------------------------------------------
+    # Distributed Training (SDK arch § 4)
+    #
+    # NOTE: There is intentionally NO `client.preflight(...)` and NO
+    # `client.nccl_baseline(...)` standalone helper. Per SDK arch § 7,
+    # bench data is per-UD (read via `training.bench` after deploying
+    # with `bench="on-start"`). Cross-tenant aggregated bench queries
+    # would violate the platform's tenancy invariant.
+    # -------------------------------------------------------------------------
+
+    def deploy_distributed(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = None,
+        timeout: int = 600,
+        enable_billing: bool = True,
+    ) -> DistributedTraining:
+        """
+        Deploy a distributed-training UserDeployment (SDK arch § 4).
+
+        Switches the workload from a single-replica Deployment to a
+        per-UD StatefulSet + rendezvous Pod + per-rank pods. Use this
+        for NCCL-collective workloads (DiLoCo, SparseLoCo, etc.); for
+        single-replica or HTTP services, use `deploy(...)`.
+
+        Args:
+            name: Deployment name (DNS-safe).
+            source: Python source (file path, inline code, or callable). When
+                set, the operator's `command="auto"` builds a torchrun
+                invocation around the user's script. When None, set
+                `command` and `args` explicitly (BYO launcher).
+            image: Container image. Default is the canonical pytorch image.
+            port: Worker container port. Default 18789 (matches non-distributed
+                UD convention; honored by the operator's headless governance
+                Service).
+            env: Environment variables.
+            cpu, memory, gpu_count, gpu_models, min_gpu_memory_gb: Resource
+                requirements per rank pod. `gpu_count=1` means 1 GPU per rank;
+                set higher (e.g. 8) for NVLink ranks.
+            world_size: `WorldSize(min, target, max)` triple. Required.
+            provider_filter: Inclusive/exclusive provider filter. Defaults
+                to no filter (any provider).
+            topology_spread: One of `pack | provider-aware | region-aware
+                | none`. Default `provider-aware`. SDK arch § 4.
+            nccl_env: NCCL env vars merged on top of operator defaults.
+                User values win on collision.
+            bench: `"on-start"` to schedule a 2-rank NCCL bench probe in the
+                user's namespace alongside workers (counts against the
+                namespace rank budget; result lands on `training.bench`).
+                `"off"` (default) skips the probe. SDK arch § 7.
+            rendezvous_backend: One of `etcd-v2 | c10d | static`. Default
+                `etcd-v2` (the only backend with full elasticity).
+            command: BYO-launcher escape hatch. When set, the operator does
+                NOT wrap with torchrun.
+            args: Args to pass to the entrypoint.
+            pip_packages: Additional pip packages.
+            ttl_seconds: Auto-delete after N seconds.
+            timeout: Seconds to wait for `min` ranks to be ready. Default 600.
+            enable_billing: Whether to bill for this deployment. Default True.
+
+        Returns:
+            DistributedTraining: Facade with scale/wait/logs/bench/delete and
+                all `_async` counterparts. SDK arch § 6.
+
+        Raises:
+            WorldSizeOutOfBounds: `world_size` triple violates `1 <= min <=
+                target <= max` (caught at dataclass construction).
+            QuotaExceeded: namespace rank budget exceeded.
+            BelowMinimumWorld: `wait_until_min_world` timed out before `min`
+                ranks were ready.
+        """
+        if world_size is None:
+            raise ValidationError("deploy_distributed requires world_size", field="world_size")
+
+        request_dict = self._build_distributed_request(
+            name=name,
+            source=source,
+            image=image,
+            port=port,
+            env=env,
+            cpu=cpu,
+            memory=memory,
+            gpu_count=gpu_count,
+            gpu_models=gpu_models,
+            min_gpu_memory_gb=min_gpu_memory_gb,
+            world_size=world_size,
+            provider_filter=provider_filter,
+            topology_spread=topology_spread,
+            nccl_env=nccl_env,
+            bench=bench,
+            rendezvous_backend=rendezvous_backend,
+            command=command,
+            args=args,
+            pip_packages=pip_packages,
+            ttl_seconds=ttl_seconds,
+            enable_billing=enable_billing,
+        )
+
+        response = self._client.create_distributed_deployment(request_dict)
+        training = DistributedTraining(self, response.instance_name)
+        training.refresh()
+        # Block until min ranks are ready (per SDK arch § 4 "Behaviour around
+        # wait_until_ready"); raises BelowMinimumWorld on timeout.
+        try:
+            training.wait_until_min_world(timeout=timeout)
+        except BelowMinimumWorld:
+            # Re-raise with the deployment intact so the caller can inspect
+            # `training.world` / `training.events()` and decide whether to
+            # `delete()` or keep waiting.
+            raise
+        return training
+
+    def _build_distributed_request(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]],
+        image: str,
+        port: int,
+        env: Optional[Dict[str, str]],
+        cpu: str,
+        memory: str,
+        gpu_count: int,
+        gpu_models: Optional[List[str]],
+        min_gpu_memory_gb: Optional[int],
+        world_size: WorldSize,
+        provider_filter: Optional[ProviderFilter],
+        topology_spread: str,
+        nccl_env: Optional[Dict[str, str]],
+        bench: str,
+        rendezvous_backend: str,
+        command: Optional[List[str]],
+        args: Optional[List[str]],
+        pip_packages: Optional[List[str]],
+        ttl_seconds: Optional[int],
+        enable_billing: bool,
+    ) -> Dict[str, Any]:
+        """
+        Build the camelCase JSON dict that PyO3's
+        `create_distributed_deployment` will depythonize into the Rust
+        SDK's `CreateDistributedDeploymentRequest`. Wire shape exactly
+        matches the operator's CRD `spec.distributed`.
+        """
+        # Source packaging: if source is set, ship the user's script and
+        # let the operator render command="auto"; otherwise pass through
+        # explicit command (BYO launcher).
+        rendered_command: Optional[List[str]] = None
+        if source is not None:
+            if callable(source):
+                packager = SourcePackager.from_function(source)
+            else:
+                packager = SourcePackager(source)
+            rendered_command = packager.build_command(pip_packages=pip_packages)
+        elif command is not None:
+            rendered_command = command
+
+        # Resources: distributed UDs always need GPU; default to 1 GPU per
+        # rank pod. The operator's `--nproc-per-node` consumes this.
+        resources: Dict[str, Any] = {
+            "cpu": cpu,
+            "memory": memory,
+            "gpus": {
+                "count": gpu_count,
+                "model": gpu_models or [],
+            },
+        }
+        if min_gpu_memory_gb is not None:
+            resources["gpus"]["minGpuMemoryGb"] = min_gpu_memory_gb
+
+        # Distributed spec, camelCase + kebab-case enums (matches operator CRD).
+        distributed: Dict[str, Any] = {
+            "enabled": True,
+            "command": "auto" if source is not None or command is None else " ".join(command),
+            "worldSize": {
+                "min": world_size.min,
+                "target": world_size.target,
+                "max": world_size.max,
+            },
+            "rendezvous": {"backend": rendezvous_backend},
+            "providerFilter": {
+                "include": list(provider_filter.include) if provider_filter else [],
+                "exclude": list(provider_filter.exclude) if provider_filter else [],
+            },
+            "topologySpread": {"strategy": topology_spread},
+            "nccl": {"env": dict(nccl_env) if nccl_env else {}},
+        }
+        if bench in ("on-start", "off"):
+            distributed["bench"] = {"mode": bench}
+        else:
+            raise ValidationError(
+                f"bench must be 'on-start' or 'off', got {bench!r}",
+                field="bench",
+                value=bench,
+            )
+
+        request: Dict[str, Any] = {
+            "instanceName": name,
+            "image": image,
+            "replicas": world_size.target,
+            "port": port,
+            "command": rendered_command,
+            "args": args,
+            "env": env,
+            "resources": resources,
+            "ttlSeconds": ttl_seconds,
+            "enableBilling": enable_billing,
+            "distributed": distributed,
+        }
+        # Strip None-valued top-level keys so JSON shape matches the
+        # operator's `#[serde(skip_serializing_if = "Option::is_none")]`.
+        return {k: v for k, v in request.items() if v is not None}
+
+    # -------------------------------------------------------------------------
     # Low-Level API Methods (for advanced use cases)
     # -------------------------------------------------------------------------
 
@@ -1671,6 +1914,75 @@ class BasilicaClient:
         await deployment.refresh_async()
 
         return deployment
+
+    async def deploy_distributed_async(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = None,
+        timeout: int = 600,
+        enable_billing: bool = True,
+    ) -> DistributedTraining:
+        """
+        Async variant of `deploy_distributed`. Same arguments and semantics
+        per SDK arch § 9; uses `run_in_executor` over the underlying Rust
+        client and `asyncio.sleep` for the wait loop.
+        """
+        if world_size is None:
+            raise ValidationError("deploy_distributed_async requires world_size", field="world_size")
+
+        request_dict = self._build_distributed_request(
+            name=name,
+            source=source,
+            image=image,
+            port=port,
+            env=env,
+            cpu=cpu,
+            memory=memory,
+            gpu_count=gpu_count,
+            gpu_models=gpu_models,
+            min_gpu_memory_gb=min_gpu_memory_gb,
+            world_size=world_size,
+            provider_filter=provider_filter,
+            topology_spread=topology_spread,
+            nccl_env=nccl_env,
+            bench=bench,
+            rendezvous_backend=rendezvous_backend,
+            command=command,
+            args=args,
+            pip_packages=pip_packages,
+            ttl_seconds=ttl_seconds,
+            enable_billing=enable_billing,
+        )
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, self._client.create_distributed_deployment, request_dict
+        )
+        training = DistributedTraining(self, response.instance_name)
+        await training.refresh_async()
+        try:
+            await training.wait_until_min_world_async(timeout=timeout)
+        except BelowMinimumWorld:
+            raise
+        return training
 
     async def get_async(self, name: str) -> Deployment:
         """
