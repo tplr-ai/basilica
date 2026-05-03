@@ -953,6 +953,10 @@ pub struct DeploymentResponse {
     pub instance_name: String,
     pub user_id: String,
     pub namespace: String,
+    /// Container image. Populated by basilica-api from the underlying
+    /// `UserDeployment.spec.image`.
+    #[serde(default)]
+    pub image: String,
     pub state: String,
     pub url: String,
     pub replicas: ReplicaStatus,
@@ -979,6 +983,15 @@ pub struct DeploymentResponse {
     /// Whether public metadata enrollment is enabled for this deployment.
     #[serde(default)]
     pub public_metadata: bool,
+    /// Read-only mirror of `status.distributed` from the `UserDeployment`
+    /// CR (issue #431, exposed end-to-end via #449). `None` for
+    /// non-distributed UDs; the JSON key is omitted entirely thanks to
+    /// `skip_serializing_if` so older API responses without `distributed`
+    /// continue to deserialize correctly. Populated by basilica-api's
+    /// `extract_distributed_status` helper from
+    /// `crates/basilica-api/src/api/routes/deployments/distributed_status.rs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distributed: Option<DistributedStatus>,
 }
 
 /// Deployment summary for list responses
@@ -1390,19 +1403,162 @@ pub struct DistributedBenchStatus {
     pub last_attempt_outcome: Option<String>,
 }
 
+/// Structured condition on a distributed UD's status. Operator source:
+/// `crd::user_deployment::DistributedCondition`. Mirror of
+/// `basilica-api::DistributedCondition` (issue #449).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedCondition {
+    /// Stable token, e.g. `Admitted`, `BelowMinimum`, `MeshCapable`.
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// `True` | `False` | `Unknown`.
+    pub status: String,
+    /// Stable machine-readable token, e.g. `QuotaExceeded`,
+    /// `DistributedShapeInvalid`, `RanksReady`.
+    pub reason: String,
+    pub message: String,
+    pub last_transition_time: String,
+}
+
+/// Read-only mirror of what the operator rendered for the rendezvous Pod.
+/// Operator source: `crd::user_deployment::RendezvousStatus`. Mirror of
+/// `basilica-api::RendezvousStatus` (issue #449).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedRendezvousStatus {
+    /// `etcd-v2` | `c10d` | `static`.
+    pub backend: String,
+    pub port: u16,
+    /// Container image rendered for the rendezvous Pod. Empty when
+    /// `backend=c10d`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub image: String,
+    /// Monotonic count of rendezvous-Pod restart events the operator has
+    /// observed.
+    #[serde(default)]
+    pub restart_count: u32,
+    /// Phase 2.1: RFC3339 timestamp of the last operator-mediated rendezvous
+    /// reset (resize, auto-recovery, or rank-loss).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reset_at: Option<String>,
+}
+
+/// A single transition in `worldSize.target`. Operator source:
+/// `crd::user_deployment::WorldSizeTransition`. Mirror of
+/// `basilica-api::WorldSizeTransition` (issue #449).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedWorldSizeTransition {
+    pub timestamp: String,
+    pub target: u32,
+    pub ready: u32,
+}
+
+/// Record of the most recent `worldSize.target` resize. Operator source:
+/// `crd::user_deployment::ResizeRecord`. Mirror of
+/// `basilica-api::ResizeRecord` (issue #449).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedResizeRecord {
+    pub from_target: u32,
+    pub to_target: u32,
+    pub timestamp: String,
+    pub reason: String,
+}
+
+/// One-shot lifecycle event recorded by the operator. Operator source:
+/// `crd::user_deployment::Milestone`. Mirror of `basilica-api::Milestone`
+/// (issue #449).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedMilestone {
+    pub name: String,
+    pub timestamp: String,
+}
+
+/// Phase 2.1 record of one operator-mediated rendezvous reset triggered by
+/// stuck-restarting worker ranks. Operator source:
+/// `crd::user_deployment::RankLossReset`. Mirror of
+/// `basilica-api::RankLossReset` (issue #449).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedRankLossReset {
+    pub timestamp: String,
+    pub ranks: Vec<u32>,
+}
+
+/// Phase 4b preflight band the operator pulled from the bench collector.
+/// Operator source: `crd::user_deployment::PreflightEstimate`. Mirror of
+/// `basilica-api::PreflightEstimate` (issue #449).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedPreflightEstimate {
+    pub freshness: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub busbw_gbps_p10: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub busbw_gbps_p50: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub busbw_gbps_p90: Option<f64>,
+    #[serde(default)]
+    pub sample_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_sample_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_queried_at: Option<String>,
+}
+
 /// Read-only mirror of `status.distributed`. Populated by the operator
-/// after first reconcile. Architecture doc § 17.1.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// after first reconcile. Architecture doc § 17.1. Mirror of
+/// `basilica-api::DistributedStatus` -- field-for-field, byte-equal at the
+/// JSON layer (issue #449).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DistributedStatus {
     pub world_size: DistributedWorldStatus,
     #[serde(default)]
     pub ranks: Vec<DistributedRankStatus>,
+    /// Structured operator conditions (e.g. `Admitted`, `RanksReady`).
+    /// Populated by the operator's reconciler.
+    #[serde(default)]
+    pub conditions: Vec<DistributedCondition>,
     /// `hub-relay` (Phase 1) | `direct-mesh` | `mixed` (Tier 2+). Reserved
     /// shape; consult only as a hint.
     pub transport: String,
+    /// Read-only mirror of the rendezvous Pod the operator rendered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rendezvous: Option<DistributedRendezvousStatus>,
+    /// Append-only history of `worldSize.target` transitions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub world_size_history: Vec<DistributedWorldSizeTransition>,
+    /// Most recent `worldSize.target` resize.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_resize: Option<DistributedResizeRecord>,
+    /// One-shot lifecycle events recorded by the operator.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub milestones: Vec<DistributedMilestone>,
+    /// Original `worldSize.max` at admission; preserved across resizes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_max: Option<u32>,
+    /// Phase 2.1: operator-mediated rendezvous resets due to stuck ranks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rank_loss_resets: Vec<DistributedRankLossReset>,
+    /// Phase 4b preflight band pulled from the bench collector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preflight: Option<DistributedPreflightEstimate>,
+    /// Phase 5a per-UD NCCL bench probe state. `None` when bench is off
+    /// or the probe has not yet completed its first attempt.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bench: Option<DistributedBenchStatus>,
+    /// Phase 5a deprecation flag for the legacy preflight surface.
+    #[serde(default, skip_serializing_if = "is_false_status")]
+    pub preflight_deprecation_warned: bool,
+}
+
+#[inline]
+fn is_false_status(b: &bool) -> bool {
+    !*b
 }
 
 /// Deployment progress information
@@ -2417,11 +2573,238 @@ mod tests {
                 restarts: 0,
             }],
             transport: "hub-relay".to_string(),
-            bench: None,
+            ..Default::default()
         };
         let v = serde_json::to_value(&status).unwrap();
         assert_eq!(v["worldSize"]["belowMinimum"], false);
         assert_eq!(v["ranks"][0]["podName"], "dlc-test-0");
         assert_eq!(v["transport"], "hub-relay");
+    }
+
+    // -------------------------------------------------------------------------
+    // Issue #449 regression tests: status.distributed wired into
+    // DeploymentResponse end-to-end. The 4-test floor is the load-bearing
+    // gate that keeps the PyO3 deserializer from silently dropping the
+    // distributed block again.
+    // -------------------------------------------------------------------------
+
+    fn _sample_deployment_with_distributed() -> DeploymentResponse {
+        DeploymentResponse {
+            instance_name: "dlc-449".to_string(),
+            user_id: "u-test".to_string(),
+            namespace: "u-test".to_string(),
+            image: "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime".to_string(),
+            state: "running".to_string(),
+            url: "https://dlc-449.deployments.basilica.ai".to_string(),
+            replicas: ReplicaStatus {
+                desired: 2,
+                ready: 2,
+            },
+            created_at: "2026-05-02T10:00:00Z".to_string(),
+            updated_at: Some("2026-05-02T10:05:00Z".to_string()),
+            pods: None,
+            phase: Some("Running".to_string()),
+            message: None,
+            progress: None,
+            share_token: None,
+            share_url: None,
+            websocket: None,
+            public_metadata: false,
+            distributed: Some(DistributedStatus {
+                world_size: DistributedWorldStatus {
+                    ready: 2,
+                    target: 2,
+                    min: 2,
+                    max: 3,
+                    below_minimum: false,
+                },
+                ranks: vec![
+                    DistributedRankStatus {
+                        rank: 0,
+                        pod_name: "dlc-449-0".to_string(),
+                        node_name: Some("basilica-verda-fin-03".to_string()),
+                        provider: Some("verda".to_string()),
+                        region: Some("FIN-03".to_string()),
+                        phase: "Running".to_string(),
+                        restarts: 0,
+                    },
+                    DistributedRankStatus {
+                        rank: 1,
+                        pod_name: "dlc-449-1".to_string(),
+                        node_name: Some("basilica-verda-fin-04".to_string()),
+                        provider: Some("verda".to_string()),
+                        region: Some("FIN-04".to_string()),
+                        phase: "Running".to_string(),
+                        restarts: 0,
+                    },
+                ],
+                conditions: vec![],
+                transport: "hub-relay".to_string(),
+                rendezvous: None,
+                world_size_history: vec![],
+                last_resize: None,
+                milestones: vec![],
+                original_max: Some(3),
+                rank_loss_resets: vec![],
+                preflight: None,
+                bench: Some(DistributedBenchStatus {
+                    mode: DistributedBenchMode::OnStart,
+                    result: Some(DistributedBenchResult {
+                        measured_at: "2026-05-02T10:00:30Z".to_string(),
+                        busbw_gbps_p50: Some(0.00897),
+                        size_bytes_swept: vec![1_048_576, 16_777_216],
+                        probe_node_a: "basilica-verda-fin-03".to_string(),
+                        probe_node_b: "basilica-verda-fin-04".to_string(),
+                        ..Default::default()
+                    }),
+                    last_attempt_at: Some("2026-05-02T10:00:35Z".to_string()),
+                    last_attempt_outcome: Some("success".to_string()),
+                }),
+                preflight_deprecation_warned: false,
+            }),
+        }
+    }
+
+    #[test]
+    fn test_deployment_response_with_distributed_round_trips() {
+        // Issue #449: full round-trip with the distributed block populated.
+        // This is the load-bearing test: a regression that drops `distributed`
+        // from the SDK's serde_json round-trip would fail this assertion.
+        let original = _sample_deployment_with_distributed();
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: DeploymentResponse = serde_json::from_str(&json).unwrap();
+        assert!(parsed.distributed.is_some());
+        let d = parsed.distributed.unwrap();
+        assert_eq!(d.world_size.ready, 2);
+        assert_eq!(d.world_size.target, 2);
+        assert_eq!(d.world_size.min, 2);
+        assert_eq!(d.world_size.max, 3);
+        assert!(!d.world_size.below_minimum);
+        assert_eq!(d.ranks.len(), 2);
+        assert_eq!(d.ranks[0].pod_name, "dlc-449-0");
+        assert_eq!(d.ranks[1].provider.as_deref(), Some("verda"));
+        assert_eq!(d.transport, "hub-relay");
+        assert_eq!(d.original_max, Some(3));
+        let bench = d.bench.expect("bench present");
+        assert_eq!(bench.mode, DistributedBenchMode::OnStart);
+        let result = bench.result.expect("bench.result present");
+        assert_eq!(result.busbw_gbps_p50, Some(0.00897));
+        assert_eq!(result.probe_node_a, "basilica-verda-fin-03");
+    }
+
+    #[test]
+    fn test_deployment_response_without_distributed_omits_key() {
+        // Issue #449 backwards-compat guard: when `distributed` is None, the
+        // JSON output must NOT include the `distributed` key. Older API
+        // responses without this field continue to deserialize correctly.
+        let mut resp = _sample_deployment_with_distributed();
+        resp.distributed = None;
+        let v = serde_json::to_value(&resp).unwrap();
+        assert!(
+            v.get("distributed").is_none(),
+            "distributed key must be omitted when None (skip_serializing_if), \
+             else older API responses without this field break: {v}"
+        );
+        // And the remaining fields still round-trip cleanly.
+        let json = serde_json::to_string(&resp).unwrap();
+        let parsed: DeploymentResponse = serde_json::from_str(&json).unwrap();
+        assert!(parsed.distributed.is_none());
+        assert_eq!(
+            parsed.image,
+            "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
+        );
+    }
+
+    #[test]
+    fn test_distributed_status_json_is_camelcase() {
+        // Issue #449 wire-shape lock: the operator emits camelCase
+        // (`belowMinimum`, `worldSize`, `lastResize`, `originalMax`,
+        // `worldSizeHistory`, `rankLossResets`, `preflightDeprecationWarned`).
+        // The SDK's Python facade reads camelCase. A regression toward
+        // snake_case would silently break every read property.
+        let resp = _sample_deployment_with_distributed();
+        let v = serde_json::to_value(&resp).unwrap();
+        let d = &v["distributed"];
+        // Top-level: required `worldSize`, `ranks`, `transport`.
+        assert!(d.get("worldSize").is_some(), "worldSize key missing: {v}");
+        assert!(d.get("ranks").is_some(), "ranks key missing: {v}");
+        assert!(d.get("transport").is_some(), "transport key missing: {v}");
+        // Nested: `belowMinimum` (camelCase, not snake_case).
+        assert_eq!(d["worldSize"]["belowMinimum"], false);
+        // Optional but present here: `originalMax`. `lastResize`,
+        // `worldSizeHistory`, `rankLossResets`, `milestones`,
+        // `preflightDeprecationWarned` are skipped when empty/false.
+        assert_eq!(d["originalMax"], 3);
+        assert!(
+            d.get("lastResize").is_none(),
+            "lastResize must be omitted when None (got: {d})"
+        );
+        assert!(
+            d.get("worldSizeHistory").is_none(),
+            "worldSizeHistory must be omitted when empty (got: {d})"
+        );
+        assert!(
+            d.get("rankLossResets").is_none(),
+            "rankLossResets must be omitted when empty (got: {d})"
+        );
+        assert!(
+            d.get("milestones").is_none(),
+            "milestones must be omitted when empty (got: {d})"
+        );
+        assert!(
+            d.get("preflightDeprecationWarned").is_none(),
+            "preflightDeprecationWarned must be omitted when false (got: {d})"
+        );
+        // Rank fields: `podName`, `nodeName`.
+        assert_eq!(d["ranks"][0]["podName"], "dlc-449-0");
+        assert_eq!(d["ranks"][0]["nodeName"], "basilica-verda-fin-03");
+        // Bench: `lastAttemptAt`, `lastAttemptOutcome`, `probeNodeA`/`B`.
+        let bench = &d["bench"];
+        assert_eq!(bench["mode"], "on-start"); // kebab-case enum
+        assert_eq!(bench["lastAttemptOutcome"], "success");
+        assert_eq!(bench["result"]["busbwGbpsP50"], 0.00897);
+        assert_eq!(bench["result"]["probeNodeA"], "basilica-verda-fin-03");
+        assert_eq!(bench["result"]["probeNodeB"], "basilica-verda-fin-04");
+        assert_eq!(bench["result"]["measuredAt"], "2026-05-02T10:00:30Z");
+    }
+
+    #[test]
+    fn test_distributed_status_bench_result_round_trips() {
+        // Issue #449: bench sub-shape locks the wire contract for
+        // `BenchResult`. The SDK's Python facade calls
+        // `BenchResult.from_status_dict(raw)` with this exact JSON; a drift
+        // in field naming silently produces zero values on the Python side.
+        let json = r#"{
+            "worldSize": {"ready": 2, "target": 2, "min": 2, "max": 2, "belowMinimum": false},
+            "transport": "hub-relay",
+            "bench": {
+                "mode": "on-start",
+                "result": {
+                    "measuredAt": "2026-05-02T11:00:00Z",
+                    "busbwGbpsP10": 0.0042,
+                    "busbwGbpsP50": 0.00897,
+                    "busbwGbpsP90": 0.012,
+                    "algbwGbpsP50": 0.0085,
+                    "latencyUsAt1mib": 1820.5,
+                    "sizeBytesSwept": [1048576, 16777216, 268435456],
+                    "probeNodeA": "basilica-verda-fin-03",
+                    "probeNodeB": "basilica-verda-fin-04"
+                },
+                "lastAttemptAt": "2026-05-02T11:00:05Z",
+                "lastAttemptOutcome": "success"
+            }
+        }"#;
+        let status: DistributedStatus = serde_json::from_str(json).unwrap();
+        let bench = status.bench.expect("bench present");
+        let result = bench.result.expect("bench.result present");
+        assert_eq!(result.busbw_gbps_p50, Some(0.00897));
+        assert_eq!(result.busbw_gbps_p10, Some(0.0042));
+        assert_eq!(result.latency_us_at_1mib, Some(1820.5));
+        assert_eq!(
+            result.size_bytes_swept,
+            vec![1_048_576, 16_777_216, 268_435_456]
+        );
+        assert_eq!(result.probe_node_a, "basilica-verda-fin-03");
+        assert_eq!(bench.last_attempt_outcome.as_deref(), Some("success"));
     }
 }
