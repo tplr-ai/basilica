@@ -233,6 +233,12 @@ class DeploymentProgress:
 class DeploymentResponse:
     r"""
     Deployment response
+
+    Issue #449: previously the PyO3 binding was missing `image` and
+    `distributed`. The Python facade `_coerce_to_dict` consequently saw
+    only 4 attributes (`namespace`, `state`, `url`, `userId`) so every
+    `DistributedTraining.world` / `.ranks` / `.bench` / `.metrics` read
+    returned zeros. Both fields are now exposed end-to-end.
     """
     @property
     def instance_name(self) -> builtins.str: ...
@@ -240,6 +246,12 @@ class DeploymentResponse:
     def user_id(self) -> builtins.str: ...
     @property
     def namespace(self) -> builtins.str: ...
+    @property
+    def image(self) -> builtins.str:
+        r"""
+        Container image. Issue #449: missing from PyO3 binding before this
+        PR even though the API has always returned it.
+        """
     @property
     def state(self) -> builtins.str: ...
     @property
@@ -272,6 +284,15 @@ class DeploymentResponse:
     def websocket(self) -> typing.Optional[WebSocketConfig]: ...
     @property
     def public_metadata(self) -> builtins.bool: ...
+    @property
+    def distributed(self) -> typing.Optional[typing.Dict[builtins.str, typing.Any]]:
+        r"""
+        Read-only mirror of `status.distributed` from the operator. Returns
+        a Python dict with camelCase keys (`worldSize`, `ranks`, `bench`,
+        ...) or `None` for non-distributed UDs (issue #449). Consumed by
+        the `DistributedTraining` facade in
+        `crates/basilica-sdk-python/python/basilica/distributed.py`.
+        """
 
 class DeploymentSummary:
     r"""
