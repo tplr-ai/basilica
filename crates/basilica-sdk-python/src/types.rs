@@ -1443,6 +1443,12 @@ impl From<SdkDeploymentProgress> for DeploymentProgress {
 }
 
 /// Deployment response
+///
+/// Issue #449: previously the PyO3 binding was missing `image` and
+/// `distributed`. The Python facade `_coerce_to_dict` consequently saw
+/// only 4 attributes (`namespace`, `state`, `url`, `userId`) so every
+/// `DistributedTraining.world` / `.ranks` / `.bench` / `.metrics` read
+/// returned zeros. Both fields are now exposed end-to-end.
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
 #[pyclass]
 #[derive(Clone)]
@@ -1453,6 +1459,10 @@ pub struct DeploymentResponse {
     pub user_id: String,
     #[pyo3(get)]
     pub namespace: String,
+    /// Container image. Issue #449: missing from PyO3 binding before this
+    /// PR even though the API has always returned it.
+    #[pyo3(get)]
+    pub image: String,
     #[pyo3(get)]
     pub state: String,
     #[pyo3(get)]
@@ -1481,14 +1491,54 @@ pub struct DeploymentResponse {
     pub websocket: Option<WebSocketConfig>,
     #[pyo3(get)]
     pub public_metadata: bool,
+    /// Read-only mirror of `status.distributed` from the operator.
+    /// Stored as JSON internally; exposed to Python as a dict via the
+    /// `distributed` getter (issue #449). The Python facade
+    /// `DistributedTraining` walks the dict's camelCase keys to
+    /// produce typed `WorldStatus`, `RankStatus`, `BenchResult` views.
+    /// Not annotated `#[pyo3(get)]` because `serde_json::Value` is not
+    /// `IntoPyObject`; see the `distributed` method on the impl block.
+    pub distributed: Option<serde_json::Value>,
+}
+
+#[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
+#[pymethods]
+impl DeploymentResponse {
+    /// Convert the cached `status.distributed` JSON into a Python dict
+    /// (or `None` for non-distributed UDs).
+    ///
+    /// `pythonize` is only available with a `Python<'_>` token, so this
+    /// must be a `#[pymethods]` getter rather than a `#[pyo3(get)]`
+    /// auto-getter on the field. Python access pattern is identical
+    /// (`response.distributed`).
+    #[getter]
+    fn distributed(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        match &self.distributed {
+            None => Ok(None),
+            Some(v) => Ok(Some(pythonize::pythonize(py, v)?.unbind())),
+        }
+    }
 }
 
 impl From<SdkDeploymentResponse> for DeploymentResponse {
     fn from(response: SdkDeploymentResponse) -> Self {
+        // Re-serialize the strongly-typed `DistributedStatus` to JSON so
+        // we can hand it to Python as a camelCase dict. This is cheap
+        // (a few hundred bytes per deployment) and keeps the Python
+        // facade's `_coerce_to_dict` walk identical to the operator's
+        // wire shape. `serde_json::to_value` cannot fail for any of the
+        // SDK's `Serialize`-deriving types, but we map the error through
+        // `Option` defensively rather than `expect`-panic on the SDK
+        // hot path.
+        let distributed = response
+            .distributed
+            .as_ref()
+            .and_then(|d| serde_json::to_value(d).ok());
         Self {
             instance_name: response.instance_name,
             user_id: response.user_id,
             namespace: response.namespace,
+            image: response.image,
             state: response.state,
             url: response.url,
             replicas: response.replicas.into(),
@@ -1504,6 +1554,7 @@ impl From<SdkDeploymentResponse> for DeploymentResponse {
             share_url: response.share_url,
             websocket: response.websocket.map(Into::into),
             public_metadata: response.public_metadata,
+            distributed,
         }
     }
 }

@@ -597,32 +597,55 @@ def _coerce_to_dict(obj: Any) -> Dict[str, Any]:
     """
     PyO3 DeploymentResponse -> Python dict for status field access.
     Tolerates dict input (already-converted) and PyO3 wrappers.
+
+    Issue #449: the dict produced here MUST include the `distributed`
+    block end-to-end. Earlier SDK builds dropped it because the PyO3
+    binding had no `distributed` getter; the read properties on
+    `DistributedTraining` walked an absent key and returned zeros.
+
+    The PyO3 `DeploymentResponse` exposes attributes in snake_case
+    (Rust convention); this helper maps them to the camelCase keys
+    the operator emits on the wire. `distributed` is already a
+    camelCase Python dict on the binding side (built via
+    `pythonize` from the strongly-typed `DistributedStatus` JSON), so
+    it is copied through verbatim.
     """
     if isinstance(obj, dict):
         return obj
     out: Dict[str, Any] = {}
+    # Scalar / Optional[str] / Optional[bool] fields. Each maps to its
+    # camelCase wire key.
     for attr in (
         "instance_name",
         "user_id",
         "namespace",
+        "image",
         "state",
         "url",
+        "created_at",
+        "updated_at",
         "phase",
         "message",
+        "share_token",
+        "share_url",
+        "public_metadata",
     ):
         if hasattr(obj, attr):
             out[_to_camel(attr)] = getattr(obj, attr)
-    if hasattr(obj, "namespace"):
-        out["namespace"] = obj.namespace
-    # The PyO3 DeploymentResponse does not currently expose status.distributed
-    # as a typed field. The Python facade reads from `obj.status` if present;
-    # otherwise an empty distributed block. The operator-side patch from the
-    # Phase 5b precursor (basilica-backend #421) populates this on the CR but
-    # the API gateway does not yet pass it through `DeploymentResponse`. The
-    # Python facade will read distributed status from `client.get(...)` once
-    # the API exposes it; until then `world` returns zeros and `bench` returns
-    # None.
-    if hasattr(obj, "_distributed_status"):
+    # Pass-through dict (from PyO3 `pythonize` on the Rust side). The
+    # operator emits camelCase, so this dict is already in the shape the
+    # `world` / `ranks` / `bench` / `metrics` properties expect. Type-check
+    # against `dict` so MagicMock auto-attrs (which are truthy but not
+    # dicts) do not silently leak into the output and shadow the
+    # `_distributed_status` test-mock fallback below.
+    if hasattr(obj, "distributed"):
+        d = getattr(obj, "distributed", None)
+        if isinstance(d, dict):
+            out["distributed"] = d
+    # Test-mock back-compat: callers that build a MagicMock with a
+    # `_distributed_status` attribute (the pre-#449 mock pattern) keep
+    # working without rewrites.
+    if "distributed" not in out and hasattr(obj, "_distributed_status"):
         out["distributed"] = obj._distributed_status  # type: ignore[attr-defined]
     return out
 
