@@ -566,3 +566,182 @@ class TestExceptionAttributes:
         assert e.requested == 12
         assert e.min == 4
         assert e.max == 8
+
+
+# =============================================================================
+# Issue #449 regression tests: status.distributed is read end-to-end.
+#
+# Before #449 the PyO3 binding had no `distributed` getter; every read
+# property on `DistributedTraining` returned zeros / empty / None on a
+# healthy cluster, and `wait_until_min_world(timeout=N)` raised
+# BelowMinimumWorld immediately. These tests lock the contract: a
+# regression that drops `distributed` from the PyO3 binding (or from
+# `_coerce_to_dict`) would fail the negative test loudly.
+# =============================================================================
+
+
+class TestIssue449DeploymentResponseDistributed:
+    """Mocked end-to-end: `client.get` -> `_coerce_to_dict` -> facade reads."""
+
+    def _fake_pyo3_response(self) -> Any:
+        """Build a stand-in for the PyO3 `DeploymentResponse` that exposes
+        the full attribute set landed by issue #449.
+
+        Uses an explicit instance with declared attributes (rather than a
+        plain MagicMock) because the post-#449 `_coerce_to_dict` checks
+        `isinstance(d, dict)` to distinguish a real PyO3 `distributed`
+        attribute from a MagicMock auto-generated attribute.
+        """
+
+        class FakeDeployment:
+            instance_name = "dlc-449-mock"
+            user_id = "u-test"
+            namespace = "u-test"
+            image = "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
+            state = "running"
+            url = "https://dlc-449-mock.deployments.basilica.ai"
+            created_at = "2026-05-02T10:00:00Z"
+            updated_at = "2026-05-02T10:05:00Z"
+            phase = "Running"
+            message = None
+            share_token = None
+            share_url = None
+            public_metadata = False
+            distributed = {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 3,
+                    "belowMinimum": False,
+                },
+                "ranks": [
+                    {
+                        "rank": 0,
+                        "podName": "dlc-449-mock-0",
+                        "nodeName": "basilica-verda-fin-03",
+                        "provider": "verda",
+                        "region": "FIN-03",
+                        "phase": "Running",
+                        "restarts": 0,
+                    },
+                    {
+                        "rank": 1,
+                        "podName": "dlc-449-mock-1",
+                        "nodeName": "basilica-verda-fin-04",
+                        "provider": "verda",
+                        "region": "FIN-04",
+                        "phase": "Running",
+                        "restarts": 0,
+                    },
+                ],
+                "transport": "hub-relay",
+                "bench": {
+                    "mode": "on-start",
+                    "result": {
+                        "measuredAt": "2026-05-02T10:00:30Z",
+                        "busbwGbpsP50": 0.00897,
+                        "sizeBytesSwept": [1048576, 16777216],
+                        "probeNodeA": "basilica-verda-fin-03",
+                        "probeNodeB": "basilica-verda-fin-04",
+                    },
+                    "lastAttemptOutcome": "success",
+                },
+            }
+
+        return FakeDeployment()
+
+    def test_world_returns_real_values_not_zeros(self) -> None:
+        # The original bug: facade read zeros on a healthy cluster.
+        client = MagicMock()
+        client.get.return_value = self._fake_pyo3_response()
+        training = DistributedTraining(client, "dlc-449-mock")
+        ws = training.world
+        assert ws.ready == 2
+        assert ws.target == 2
+        assert ws.min == 2
+        assert ws.max == 3
+        assert ws.below_minimum is False
+
+    def test_ranks_returns_two_pods_with_provider_and_region(self) -> None:
+        client = MagicMock()
+        client.get.return_value = self._fake_pyo3_response()
+        training = DistributedTraining(client, "dlc-449-mock")
+        ranks = training.ranks
+        assert len(ranks) == 2
+        assert ranks[0].rank == 0
+        assert ranks[0].pod_name == "dlc-449-mock-0"
+        assert ranks[0].node == "basilica-verda-fin-03"
+        assert ranks[0].provider == "verda"
+        assert ranks[0].region == "FIN-03"
+        assert ranks[0].phase == "Running"
+        assert ranks[1].rank == 1
+        assert ranks[1].pod_name == "dlc-449-mock-1"
+        assert ranks[1].provider == "verda"
+
+    def test_bench_returns_populated_result(self) -> None:
+        client = MagicMock()
+        client.get.return_value = self._fake_pyo3_response()
+        training = DistributedTraining(client, "dlc-449-mock")
+        bench = training.bench
+        assert bench is not None
+        assert bench.busbw_gbps_p50 == 0.00897
+        assert bench.size_bytes_swept == [1048576, 16777216]
+        assert bench.probe_node_a == "basilica-verda-fin-03"
+        assert bench.probe_node_b == "basilica-verda-fin-04"
+
+    def test_metrics_returns_real_world_size(self) -> None:
+        client = MagicMock()
+        client.get.return_value = self._fake_pyo3_response()
+        training = DistributedTraining(client, "dlc-449-mock")
+        m = training.metrics()
+        assert m.world_ready == 2
+        assert m.world_target == 2
+        assert m.rank_restarts_total == 0
+
+    def test_wait_until_min_world_returns_immediately_when_at_min(self) -> None:
+        # Before #449, this raised BelowMinimumWorld(ready=0, required_min=0)
+        # because both zeros came from the dropped `distributed` block.
+        client = MagicMock()
+        client.get.return_value = self._fake_pyo3_response()
+        training = DistributedTraining(client, "dlc-449-mock")
+        # Should NOT raise (ready=2 >= min=2).
+        training.wait_until_min_world(timeout=10)
+
+    def test_NEGATIVE_coerce_to_dict_carries_distributed_and_image(self) -> None:
+        """Locks the bug from regressing.
+
+        Before #449: `_coerce_to_dict(client.get(name))` returned a dict
+        with only `[namespace, state, url, userId]` (4 keys). After #449
+        the dict MUST also carry `image`, `phase`, `createdAt`, and
+        crucially `distributed`. A regression that drops the PyO3
+        `distributed` getter (or stops walking it in `_coerce_to_dict`)
+        would fail this test loudly.
+        """
+        from basilica.distributed import _coerce_to_dict
+
+        d = _coerce_to_dict(self._fake_pyo3_response())
+        # The fields the original bug-report logged as missing:
+        for required_key in (
+            "instanceName",
+            "userId",
+            "namespace",
+            "image",
+            "state",
+            "url",
+            "createdAt",
+            "updatedAt",
+            "phase",
+            "distributed",
+        ):
+            assert required_key in d, (
+                f"_coerce_to_dict must carry '{required_key}' (issue #449); "
+                f"got keys: {sorted(d.keys())}"
+            )
+        # And the distributed block carries the operator's camelCase shape.
+        dist = d["distributed"]
+        assert dist["worldSize"]["ready"] == 2
+        assert dist["worldSize"]["belowMinimum"] is False
+        assert len(dist["ranks"]) == 2
+        assert dist["bench"]["mode"] == "on-start"
+        assert dist["bench"]["result"]["busbwGbpsP50"] == 0.00897
