@@ -1,13 +1,15 @@
 """
 Decorator-based deployment API.
 
-Provides @deployment decorator for declarative function deployments.
+Provides @deployment decorator for declarative function deployments and
+@distributed decorator for distributed-training (NCCL collective) jobs.
 """
 import functools
 import inspect
 import textwrap
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Union
 
+from .distributed import DistributedTraining, ProviderFilter, WorldSize
 from .spec import DeploymentSpec
 from .volume import Volume
 
@@ -229,5 +231,218 @@ def deployment(
             health_check=health_check,
         )
         return DeployedFunction(func, spec)
+
+    return decorator
+
+
+# =============================================================================
+# Distributed-training decorator (SDK arch § 5).
+#
+# Mirrors @deployment: source-introspection, returns a wrapper, calling the
+# wrapper deploys. Differences:
+#   1. The decorated function body is the PER-RANK entrypoint -- the SDK
+#      wraps it under torchrun via the operator's `command="auto"` rendering.
+#   2. The wrapper returns DistributedTraining (not Deployment).
+#   3. Resource flags are distributed-shaped: world_size, provider_filter,
+#      topology_spread, bench, rendezvous_backend, nccl_env.
+#
+# Resolves SDK arch § 13 open question 1 in the simplest direction: rank /
+# world_size / provider / region are accessible inside the decorated body
+# only via env vars (BASILICA_RANK, BASILICA_WORLD_TARGET, BASILICA_PROVIDER,
+# etc.) -- no decorator-injected globals. Matches PyTorch's idiomatic
+# `os.environ['RANK']` pattern.
+# =============================================================================
+
+
+class DistributedFunction:
+    """
+    Wrapper around a function decorated with `@basilica.distributed`.
+
+    Calling the wrapper deploys; `.deploy(client=...)` for explicit-client
+    usage; `.local()` for in-process single-rank testing (mirrors the
+    existing `@deployment.local()` pattern).
+
+    Returns a `DistributedTraining` from `.deploy()` -- NOT a `Deployment`.
+    """
+
+    def __init__(self, func: Callable, kwargs: Dict[str, Any]):
+        self._func = func
+        self._kwargs = kwargs
+        self._training: Optional[DistributedTraining] = None
+        functools.update_wrapper(self, func)
+
+    @property
+    def training(self) -> Optional[DistributedTraining]:
+        """Most recent `DistributedTraining` from `.deploy()`, or None if not yet deployed."""
+        return self._training
+
+    def local(self, *args, **kwargs):
+        """
+        Execute the function locally (single rank, no rendezvous, no NCCL).
+        Matches the @deployment .local() escape hatch for unit testing the
+        function body without a deploy round-trip.
+        """
+        return self._func(*args, **kwargs)
+
+    def deploy(self, client=None) -> DistributedTraining:
+        """
+        Deploy the decorated function as a distributed training job.
+
+        Args:
+            client: Optional BasilicaClient instance. If None, uses default.
+
+        Returns:
+            DistributedTraining: facade with scale/wait/logs/bench/delete
+                and `_async` counterparts.
+        """
+        from . import BasilicaClient
+
+        client = client or BasilicaClient()
+        source = self._extract_source()
+
+        self._training = client.deploy_distributed(
+            source=source,
+            **self._kwargs,
+        )
+        return self._training
+
+    def __call__(self, *args, **kwargs) -> DistributedTraining:
+        """Calling the wrapped function deploys it. SDK arch § 5 example."""
+        return self.deploy()
+
+    def _extract_source(self) -> str:
+        """
+        Extract function body as executable source code, packaged as the
+        per-rank entrypoint. Mirrors `DeployedFunction._extract_source`
+        but emits a torchrun-friendly shape: the body runs once per
+        rank, each rank's torchrun invocation provides
+        `BASILICA_RANK`/`BASILICA_WORLD_*` env vars.
+        """
+        full_source = inspect.getsource(self._func)
+        lines = full_source.split("\n")
+
+        def_idx = 0
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("def "):
+                def_idx = i
+                break
+
+        func_lines = lines[def_idx:]
+        func_source = textwrap.dedent("\n".join(func_lines))
+        func_name = self._func.__name__
+        return f"""{func_source}
+
+if __name__ == "__main__":
+    {func_name}()
+"""
+
+
+def distributed(
+    name: str,
+    image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+    port: int = 18789,
+    cpu: str = "8",
+    memory: str = "32Gi",
+    gpu_count: int = 1,
+    gpu_models: Optional[List[str]] = None,
+    min_gpu_memory_gb: Optional[int] = None,
+    world_size: Optional[WorldSize] = None,
+    provider_filter: Optional[Union[ProviderFilter, Dict[str, List[str]]]] = None,
+    topology_spread: str = "provider-aware",
+    nccl_env: Optional[Dict[str, str]] = None,
+    bench: str = "off",
+    rendezvous_backend: str = "etcd-v2",
+    env: Optional[Dict[str, str]] = None,
+    pip_packages: Optional[List[str]] = None,
+    ttl_seconds: Optional[int] = 86400,
+    timeout: int = 600,
+    enable_billing: bool = True,
+) -> Callable[[Callable], DistributedFunction]:
+    """
+    Decorator marking a function as the per-rank entrypoint for a
+    distributed-training UserDeployment. SDK arch § 5.
+
+    The decorated function body is what each rank executes. The standard
+    PyTorch idiom applies: `dist.init_process_group(backend="nccl")` then
+    your training loop. torchrun + the operator handle fan-out; you do
+    NOT branch on `rank == 0`.
+
+    Args:
+        name: Deployment name (DNS-safe).
+        image: Container image (default: pytorch + cuda runtime).
+        port: Worker container port.
+        cpu, memory, gpu_count, gpu_models, min_gpu_memory_gb: Resources
+            per rank pod.
+        world_size: WorldSize(min, target, max). REQUIRED.
+        provider_filter: ProviderFilter or `{"include": [...], "exclude": [...]}` dict.
+        topology_spread: One of `pack | provider-aware | region-aware | none`.
+        nccl_env: NCCL env vars merged on top of operator defaults.
+        bench: `on-start` to schedule a 2-rank NCCL bench probe; `off` (default).
+        rendezvous_backend: `etcd-v2` (default) | `c10d` | `static`.
+        env: Environment variables passed to the worker pods.
+        pip_packages: Additional pip packages to install.
+        ttl_seconds: Auto-delete after N seconds.
+        timeout: Seconds to wait for `min` ranks to be ready. Default 600.
+        enable_billing: Whether to bill for this deployment.
+
+    Returns:
+        DistributedFunction wrapper. Calling it deploys; `.local()` runs
+        in-process for single-rank testing; `.deploy(client=...)` for
+        explicit-client usage.
+
+    Example:
+        >>> import basilica
+        >>> from basilica import WorldSize
+        >>>
+        >>> @basilica.distributed(
+        ...     name="dlc-llama-7b",
+        ...     world_size=WorldSize(min=4, target=8, max=16),
+        ...     gpu_count=1,
+        ...     gpu_models=["H100"],
+        ... )
+        ... def train():
+        ...     import os
+        ...     import torch.distributed as dist
+        ...     dist.init_process_group(backend="nccl")
+        ...     rank = dist.get_rank()
+        ...     # ... DiLoCo loop ...
+        >>>
+        >>> training = train()  # deploys, returns DistributedTraining
+        >>> training.scale(target=12)
+    """
+    if world_size is None:
+        raise ValueError("@distributed requires world_size")
+
+    # Normalize provider_filter dict -> ProviderFilter.
+    if isinstance(provider_filter, dict):
+        provider_filter = ProviderFilter(
+            include=provider_filter.get("include", []),
+            exclude=provider_filter.get("exclude", []),
+        )
+
+    kwargs: Dict[str, Any] = {
+        "name": name,
+        "image": image,
+        "port": port,
+        "cpu": cpu,
+        "memory": memory,
+        "gpu_count": gpu_count,
+        "gpu_models": gpu_models,
+        "min_gpu_memory_gb": min_gpu_memory_gb,
+        "world_size": world_size,
+        "provider_filter": provider_filter,
+        "topology_spread": topology_spread,
+        "nccl_env": nccl_env,
+        "bench": bench,
+        "rendezvous_backend": rendezvous_backend,
+        "env": env,
+        "pip_packages": pip_packages,
+        "ttl_seconds": ttl_seconds,
+        "timeout": timeout,
+        "enable_billing": enable_billing,
+    }
+
+    def decorator(func: Callable) -> DistributedFunction:
+        return DistributedFunction(func, kwargs)
 
     return decorator

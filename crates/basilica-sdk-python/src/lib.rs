@@ -6,6 +6,7 @@ mod types;
 use basilica_sdk::{
     client::{DEFAULT_API_URL, DEFAULT_TIMEOUT_SECS},
     BasilicaClient as RustClient, ClientBuilder,
+    CreateDistributedDeploymentRequest as SdkCreateDistributedDeploymentRequest,
 };
 use pyo3::exceptions::{
     PyConnectionError, PyKeyError, PyPermissionError, PyRuntimeError, PyValueError,
@@ -15,7 +16,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::define_stub_info_gatherer;
 #[cfg(feature = "stub-gen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyfunction};
-use pythonize::pythonize;
+use pythonize::{depythonize, pythonize};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Runtime;
@@ -297,6 +298,87 @@ impl BasilicaClient {
             .map_err(|e| self.map_error_to_python(e))?;
 
         Ok(response.into())
+    }
+
+    /// Create a distributed-training UserDeployment.
+    ///
+    /// `request` is a Python dict conforming to the
+    /// `CreateDistributedDeploymentRequest` JSON shape (camelCase keys,
+    /// matches the operator CRD's `spec.distributed`). The Python facade
+    /// `BasilicaClient.deploy_distributed(...)` builds this dict from the
+    /// `WorldSize`, `ProviderFilter`, etc. dataclasses (SDK arch § 8) so
+    /// users do not interact with this layer directly.
+    ///
+    /// Done as a depythonize-passthrough rather than 8 nested PyO3 type
+    /// mirrors because the distributed wire shape is deeply nested
+    /// (DistributedSpec → WorldSize / RendezvousSpec / ProviderFilter /
+    /// TopologySpread / NcclSpec / BenchSpec) and each nested struct as
+    /// its own #[pyclass] would be pure boilerplate.
+    fn create_distributed_deployment(
+        &self,
+        py: Python,
+        request: Bound<'_, PyAny>,
+    ) -> PyResult<DeploymentResponse> {
+        let sdk_request: SdkCreateDistributedDeploymentRequest =
+            depythonize(&request).map_err(|e| {
+                PyValueError::new_err(format!("Invalid distributed deployment request: {}", e))
+            })?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client.create_distributed_deployment(sdk_request).await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        Ok(response.into())
+    }
+
+    /// Scale a distributed UserDeployment by patching
+    /// `spec.distributed.worldSize.target`. Bounds-checked at the API
+    /// against the CR's current `[worldSize.min, worldSize.max]`. Returns
+    /// the updated DeploymentResponse; ranks join/drain asynchronously.
+    fn scale_distributed_deployment(
+        &self,
+        py: Python,
+        instance_name: String,
+        target: u32,
+    ) -> PyResult<DeploymentResponse> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client
+                        .scale_distributed_deployment(&instance_name, target)
+                        .await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        Ok(response.into())
+    }
+
+    /// Get K8s Events for a deployment, scoped to the user's namespace.
+    ///
+    /// Returns the response as a Python dict (pythonize-passthrough)
+    /// rather than typed PyO3 mirrors -- the Event shape is small and
+    /// users iterate by key. `limit` caps the per-call event count;
+    /// the operator returns most recent first.
+    #[pyo3(signature = (instance_name, limit=None))]
+    fn get_deployment_events(
+        &self,
+        py: Python,
+        instance_name: String,
+        limit: Option<u32>,
+    ) -> PyResult<Py<pyo3::PyAny>> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime.block_on(async move {
+                    client.get_deployment_events(&instance_name, limit).await
+                })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        to_pyobject(py, &response)
     }
 
     /// Get deployment logs
