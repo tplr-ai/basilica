@@ -1182,7 +1182,7 @@ class BasilicaClient:
         # `spec.distributed.command` policy:
         #
         # - `source` set -> read source text, ship via base64 in a bash
-        #   one-liner that writes `/workspace/__basilica_source.py` then
+        #   one-liner that writes `/tmp/__basilica_source.py` then
         #   exec's torchrun on it. The operator wraps this with `sh -c`
         #   in BYO mode (operator distributed.rs build_worker_command:
         #   `command=["/bin/sh", "-c"], args=[<distributed.command>, "--",
@@ -1215,9 +1215,14 @@ class BasilicaClient:
                 if rendezvous_backend == "etcd-v2"
                 else rendezvous_backend
             )
+            # /tmp/ used because /workspace/ in pytorch base images is
+            # root-owned and pods run as uid=1000 (operator
+            # distributed.rs build_security_contexts: runAsUser=1000,
+            # no /workspace emptyDir mounted). /tmp/ is the standard
+            # tmpfs scratch location writable by any uid. See issue #448.
             distributed_command = (
                 f"{pip_install}"
-                f"echo {src_b64} | base64 -d > /workspace/__basilica_source.py && "
+                f"echo {src_b64} | base64 -d > /tmp/__basilica_source.py && "
                 f"exec torchrun "
                 f"--rdzv-backend={backend_token} "
                 f"--rdzv-endpoint=\"$BASILICA_RDZV_ENDPOINT\" "
@@ -1225,7 +1230,7 @@ class BasilicaClient:
                 f"--nnodes=\"$BASILICA_WORLD_MIN\":\"$BASILICA_WORLD_MAX\" "
                 f"--nproc-per-node=\"$BASILICA_GPUS_PER_POD\" "
                 f"--max-restarts=10 "
-                f"/workspace/__basilica_source.py"
+                f"/tmp/__basilica_source.py"
             )
         elif command is not None:
             import shlex as _shlex

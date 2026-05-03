@@ -409,8 +409,10 @@ class TestBuildDistributedRequest:
         assert "source" in msg or "command" in msg
 
     def test_source_string_ships_via_b64(self) -> None:
-        # Source-shipping path: writes /workspace/__basilica_source.py via
+        # Source-shipping path: writes /tmp/__basilica_source.py via
         # base64-decoded bash one-liner. Operator wraps in `sh -c`.
+        # /tmp/ (not /workspace/) because the operator pod template
+        # runs as uid=1000 with no writable /workspace mount. See #448.
         client = self._client()
         req = client._build_distributed_request(
             name="dlc-source-test",
@@ -436,10 +438,55 @@ class TestBuildDistributedRequest:
             enable_billing=True,
         )
         d_cmd = req["distributed"]["command"]
-        assert "base64 -d > /workspace/__basilica_source.py" in d_cmd
+        assert "base64 -d > /tmp/__basilica_source.py" in d_cmd
         assert "exec torchrun" in d_cmd
         assert "$BASILICA_RDZV_ENDPOINT" in d_cmd
         assert d_cmd != "auto"
+
+    def test_source_shipping_writes_to_tmp_not_workspace(self) -> None:
+        # Issue #448 regression guard. The pytorch base image has
+        # /workspace owned by uid=0; pods run as uid=1000 with no
+        # writable /workspace mount, so writing the source there
+        # crashes every rank with "Permission denied" and CrashLoopBackoff.
+        # /tmp/ is writable by any uid in any standard base image.
+        # NEGATIVE assertion locks the contract: a regression that
+        # restores /workspace/ would fail this test loudly.
+        client = self._client()
+        req = client._build_distributed_request(
+            name="dlc-issue-448",
+            source="print('rank-up')\n",
+            image="pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime",
+            port=18789,
+            env=None,
+            cpu="1",
+            memory="1Gi",
+            gpu_count=1,
+            gpu_models=None,
+            min_gpu_memory_gb=None,
+            world_size=WorldSize(min=2, target=2, max=2),
+            provider_filter=None,
+            topology_spread="provider-aware",
+            nccl_env=None,
+            bench="off",
+            rendezvous_backend="etcd-v2",
+            command=None,
+            args=None,
+            pip_packages=None,
+            ttl_seconds=None,
+            enable_billing=True,
+        )
+        d_cmd = req["distributed"]["command"]
+        # Positive: write target + torchrun arg both reference /tmp/.
+        assert d_cmd.count("/tmp/__basilica_source.py") == 2, (
+            f"expected /tmp/__basilica_source.py to appear twice (write "
+            f"target + torchrun arg), got command: {d_cmd!r}"
+        )
+        # Negative: no /workspace/ anywhere -- locks the #448 fix.
+        assert "/workspace/" not in d_cmd, (
+            f"command must not write to /workspace/ -- pytorch base "
+            f"image's /workspace is root-owned and pods run as uid=1000. "
+            f"See issue #448. command: {d_cmd!r}"
+        )
 
     def test_invalid_bench_mode_rejected(self) -> None:
         from basilica.exceptions import ValidationError
