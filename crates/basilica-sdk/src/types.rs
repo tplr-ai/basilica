@@ -951,6 +951,8 @@ pub struct PodInfo {
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentResponse {
     pub instance_name: String,
+    #[serde(default)]
+    pub friendly_name: String,
     pub user_id: String,
     pub namespace: String,
     pub state: String,
@@ -986,6 +988,8 @@ pub struct DeploymentResponse {
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentSummary {
     pub instance_name: String,
+    #[serde(default)]
+    pub friendly_name: String,
     pub state: String,
     pub url: String,
     pub replicas: ReplicaStatus,
@@ -1062,6 +1066,8 @@ pub struct EnrollMetadataResponse {
 #[serde(rename_all = "camelCase")]
 pub struct PublicDeploymentMetadataResponse {
     pub instance_name: String,
+    #[serde(default)]
+    pub friendly_name: String,
     pub image: String,
     pub image_tag: String,
     pub id: String,
