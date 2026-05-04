@@ -4,12 +4,13 @@ use super::helpers::display_name;
 use crate::cli::commands::ShareTokenAction;
 use crate::error::{CliError, DeployError};
 use crate::progress::{complete_spinner_and_clear, create_spinner};
-use basilica_sdk::{ApiError, BasilicaClient};
+use basilica_sdk::{types::DeploymentSummary, ApiError, BasilicaClient};
 use color_eyre::eyre::eyre;
 use console::style;
 
 /// Identifier pair used by share-token handlers: the UUID for API calls, the
 /// friendly label for human output.
+#[derive(Debug)]
 struct ResolvedShareTarget {
     instance_name: String,
     display_name: String,
@@ -179,29 +180,14 @@ async fn resolve_private_deployment_name(
     let list = client.list_deployments().await.map_err(CliError::Api)?;
     complete_spinner_and_clear(spinner);
 
+    if let Some(input) = name {
+        return match_share_target(&list.deployments, &input);
+    }
+
     let private: Vec<_> = list.deployments.iter().filter(|d| !d.public).collect();
 
     if private.is_empty() {
         return Err(CliError::Deploy(DeployError::NoPrivateDeployments));
-    }
-
-    if let Some(input) = name {
-        if let Some(d) = private
-            .iter()
-            .find(|d| !d.friendly_name.is_empty() && d.friendly_name == input)
-        {
-            return Ok(ResolvedShareTarget {
-                instance_name: d.instance_name.clone(),
-                display_name: display_name(&d.friendly_name, &d.instance_name).to_string(),
-            });
-        }
-        if let Some(d) = private.iter().find(|d| d.instance_name == input) {
-            return Ok(ResolvedShareTarget {
-                instance_name: d.instance_name.clone(),
-                display_name: display_name(&d.friendly_name, &d.instance_name).to_string(),
-            });
-        }
-        return Err(CliError::Deploy(DeployError::NotFound { name: input }));
     }
 
     let labels: Vec<String> = private
@@ -225,9 +211,127 @@ async fn resolve_private_deployment_name(
     })
 }
 
+/// Match a user-typed identifier against the deployment list for share-token ops.
+///
+/// Distinguishes three outcomes the bare "filter to private then match" approach
+/// collapsed into a single `NotFound`: matched-private (ok), matched-public
+/// (precise "is public" error), or absent (`NotFound`). Friendly-name matches
+/// skip empty `friendly_name` entries so a `""` input cannot collide with
+/// deployments that lack a friendly label.
+fn match_share_target(
+    deployments: &[DeploymentSummary],
+    input: &str,
+) -> Result<ResolvedShareTarget, CliError> {
+    let identifies = |d: &DeploymentSummary| {
+        (!d.friendly_name.is_empty() && d.friendly_name == input) || d.instance_name == input
+    };
+
+    if let Some(d) = deployments.iter().find(|d| !d.public && identifies(d)) {
+        return Ok(ResolvedShareTarget {
+            instance_name: d.instance_name.clone(),
+            display_name: display_name(&d.friendly_name, &d.instance_name).to_string(),
+        });
+    }
+
+    if deployments.iter().any(|d| d.public && identifies(d)) {
+        return Err(public_deployment_error(input));
+    }
+
+    Err(CliError::Deploy(DeployError::NotFound {
+        name: input.to_string(),
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use basilica_sdk::types::ReplicaStatus;
+
+    fn summary(instance: &str, friendly: &str, public: bool) -> DeploymentSummary {
+        DeploymentSummary {
+            instance_name: instance.to_string(),
+            friendly_name: friendly.to_string(),
+            state: "Running".to_string(),
+            url: String::new(),
+            replicas: ReplicaStatus {
+                desired: 1,
+                ready: 1,
+            },
+            created_at: String::new(),
+            public,
+            websocket: None,
+            public_metadata: false,
+        }
+    }
+
+    #[test]
+    fn match_share_target_private_friendly_match() {
+        let list = vec![summary("uuid-1", "alpha", false)];
+        let r = match_share_target(&list, "alpha").unwrap();
+        assert_eq!(r.instance_name, "uuid-1");
+        assert_eq!(r.display_name, "alpha");
+    }
+
+    #[test]
+    fn match_share_target_private_uuid_match() {
+        let list = vec![summary("uuid-1", "alpha", false)];
+        let r = match_share_target(&list, "uuid-1").unwrap();
+        assert_eq!(r.instance_name, "uuid-1");
+    }
+
+    #[test]
+    fn match_share_target_public_friendly_yields_public_error() {
+        let list = vec![summary("uuid-1", "alpha", true)];
+        let err = match_share_target(&list, "alpha").unwrap_err();
+        match err {
+            CliError::Deploy(DeployError::ShareTokenError { message }) => {
+                assert!(message.contains("alpha"));
+                assert!(message.contains("public"));
+            }
+            other => panic!("expected ShareTokenError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn match_share_target_public_uuid_yields_public_error() {
+        let list = vec![summary("uuid-pub", "", true)];
+        let err = match_share_target(&list, "uuid-pub").unwrap_err();
+        assert!(matches!(
+            err,
+            CliError::Deploy(DeployError::ShareTokenError { .. })
+        ));
+    }
+
+    #[test]
+    fn match_share_target_missing_yields_not_found() {
+        let list = vec![summary("uuid-1", "alpha", false)];
+        let err = match_share_target(&list, "ghost").unwrap_err();
+        match err {
+            CliError::Deploy(DeployError::NotFound { name }) => assert_eq!(name, "ghost"),
+            other => panic!("expected NotFound, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn match_share_target_empty_input_does_not_match_empty_friendly() {
+        let list = vec![summary("uuid-1", "", false), summary("uuid-2", "", true)];
+        let err = match_share_target(&list, "").unwrap_err();
+        // Empty friendly_name guard prevents false friendly match; UUIDs don't match "" either.
+        assert!(matches!(
+            err,
+            CliError::Deploy(DeployError::NotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn match_share_target_prefers_private_when_friendly_collides() {
+        let list = vec![
+            summary("uuid-pub", "shared", true),
+            summary("uuid-priv", "shared", false),
+        ];
+        let r = match_share_target(&list, "shared").unwrap();
+        assert_eq!(r.instance_name, "uuid-priv");
+    }
 
     #[test]
     fn test_public_deployment_error_message() {
