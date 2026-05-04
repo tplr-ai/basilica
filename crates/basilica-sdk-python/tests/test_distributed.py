@@ -518,6 +518,132 @@ class TestBuildDistributedRequest:
             )
         assert exc_info.value.field == "bench"
 
+    # -------------------------------------------------------------------------
+    # Issue #452: $VAR expansion in `command=` must survive the `sh -c` wrap.
+    #
+    # The operator wraps `distributed.command` in `["/bin/sh", "-c", <cmd>]`
+    # (operator distributed.rs build_worker_command). The pre-fix
+    # implementation used plain `shlex.join`, which single-quotes any token
+    # containing `$`, killing shell expansion. Live failure on UD f01dd43a
+    # (2026-05-02 smoke): `int('$BASILICA_WORLD_TARGET')` raised ValueError.
+    # -------------------------------------------------------------------------
+
+    def _build_with_command(
+        self, client: BasilicaClient, command: list
+    ) -> Dict[str, Any]:
+        return client._build_distributed_request(
+            name="dlc-452",
+            source=None,
+            image="my-image",
+            port=18789,
+            env=None,
+            cpu="1",
+            memory="1Gi",
+            gpu_count=1,
+            gpu_models=None,
+            min_gpu_memory_gb=None,
+            world_size=WorldSize(min=1, target=1, max=1),
+            provider_filter=None,
+            topology_spread="provider-aware",
+            nccl_env=None,
+            bench="off",
+            rendezvous_backend="etcd-v2",
+            command=command,
+            args=None,
+            pip_packages=None,
+            ttl_seconds=None,
+            enable_billing=True,
+        )
+
+    def test_command_bash_dash_c_emits_script_verbatim(self) -> None:
+        # Canonical "I am a shell script" shape: the script string lands
+        # on `distributed.command` byte-for-byte, no surrounding quotes,
+        # no escape of `$`. Issue #452.
+        client = self._client()
+        script = "echo $BASILICA_WORLD_TARGET"
+        req = self._build_with_command(client, ["bash", "-c", script])
+        assert req["distributed"]["command"] == script
+        # Belt-and-braces: no single-quotes wrapping the env-var ref.
+        assert "'$BASILICA_WORLD_TARGET'" not in req["distributed"]["command"]
+
+    def test_command_sh_dash_c_also_recognised(self) -> None:
+        # All four launcher spellings are recognised; the wrapper layer
+        # is what matters, not which busybox/bash flavour the user typed.
+        client = self._client()
+        for launcher in ("sh", "bash", "/bin/sh", "/bin/bash"):
+            req = self._build_with_command(
+                client, [launcher, "-c", "true && echo $X"]
+            )
+            assert req["distributed"]["command"] == "true && echo $X", launcher
+
+    def test_command_torchrun_argv_preserves_dollar_vars(self) -> None:
+        # Real shape from examples/21_distributed_torchrun.py: a flat argv
+        # list containing `$BASILICA_*` tokens. Pre-fix `shlex.join` wrote
+        # `'--nnodes=$BASILICA_WORLD_TARGET'` (single-quoted), the operator
+        # passed THAT to `sh -c`, the literal string reached the user's
+        # `int(...)`, ValueError. Post-fix: tokens stay verbatim.
+        client = self._client()
+        req = self._build_with_command(
+            client,
+            [
+                "torchrun",
+                "--rdzv-backend=etcd-v2",
+                "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+                "--rdzv-id=$BASILICA_RDZV_ID",
+                "--nnodes=$BASILICA_WORLD_TARGET",
+                "--nproc-per-node=$BASILICA_GPUS_PER_POD",
+                "--max-restarts=10",
+                "/workspace/all_reduce_smoke.py",
+            ],
+        )
+        cmd = req["distributed"]["command"]
+        # Positive: every $VAR ref appears unquoted.
+        for var in (
+            "$BASILICA_RDZV_ENDPOINT",
+            "$BASILICA_RDZV_ID",
+            "$BASILICA_WORLD_TARGET",
+            "$BASILICA_GPUS_PER_POD",
+        ):
+            assert var in cmd, f"missing {var} in {cmd!r}"
+        # Negative regression guard: the OLD `shlex.join` wrapped any
+        # token containing `$` in single quotes (e.g.
+        # `'--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT'`). Locks the #452
+        # fix in place -- if a future refactor restores `shlex.join`,
+        # these substrings would re-appear and the test would fail.
+        assert "'--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT'" not in cmd, (
+            f"regression: `shlex.join` quoting of $VAR token returned. "
+            f"command: {cmd!r}"
+        )
+        assert "'--nnodes=$BASILICA_WORLD_TARGET'" not in cmd, (
+            f"regression: `shlex.join` quoting of $VAR token returned. "
+            f"command: {cmd!r}"
+        )
+        # Structure preserved.
+        assert cmd.startswith("torchrun ")
+        assert cmd.endswith(" /workspace/all_reduce_smoke.py")
+
+    def test_command_with_whitespace_token_falls_back_to_quote(self) -> None:
+        # Safety: a token with embedded whitespace MUST be quoted, otherwise
+        # sh would split it into multiple argv elements. The fallback path
+        # uses `shlex.quote` to preserve argv shape.
+        client = self._client()
+        req = self._build_with_command(
+            client, ["my-binary", "--flag", "value with spaces"]
+        )
+        cmd = req["distributed"]["command"]
+        # Quoted somehow (single-quote is shlex.quote's choice).
+        assert "'value with spaces'" in cmd
+        # Bare tokens stay bare.
+        assert cmd.startswith("my-binary --flag ")
+
+    def test_command_simple_invocation_no_quoting_overhead(self) -> None:
+        # `command=["my-binary"]` produces just `my-binary` -- no quoting
+        # added, no list-bracket leakage. Smoke that the trivial case
+        # works after the helper refactor.
+        client = self._client()
+        req = self._build_with_command(client, ["my-binary"])
+        assert req["distributed"]["command"] == "my-binary"
+
 
 # =============================================================================
 # Decorator (SDK arch § 5).

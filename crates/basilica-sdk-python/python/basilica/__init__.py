@@ -187,6 +187,56 @@ DEFAULT_COMMAND = ["/bin/bash"]
 # Default Python image for source deployments
 DEFAULT_PYTHON_IMAGE = "python:3.11-slim"
 
+# Shell-safe alphabet for distributed-mode `command=` joining (issue #452).
+# Mirrors `shlex._find_unsafe`'s safe set `[\w@%+=:,./-]` PLUS `$`, so tokens
+# like `--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT` survive verbatim and get
+# the shell expansion the user intends when the operator wraps the whole
+# string in `["/bin/sh", "-c", ...]`. Tokens containing whitespace, quotes,
+# semicolons, backticks, parens, etc. still go through `shlex.quote`.
+_SHELL_DOLLAR_SAFE_RE = re.compile(r"^[\w@%+=:,./\-$]+$", re.ASCII)
+
+# Recognised shell-script wrapper shapes for `deploy_distributed(command=...)`.
+# When `command` matches `[<one-of-these>, "-c", <script>]`, the script is
+# emitted verbatim instead of being shlex-joined -- see issue #452.
+_SHELL_SCRIPT_LAUNCHERS = frozenset({"bash", "sh", "/bin/bash", "/bin/sh"})
+
+
+def _shell_join_preserving_vars(command: List[str]) -> str:
+    """
+    Join an argv list into a single shell command string for the operator's
+    `["/bin/sh", "-c", <cmd>]` wrapper, preserving `$VAR` expansion.
+
+    Issue #452: `shlex.join` single-quotes any token containing `$`,
+    so `["torchrun", "--nnodes=$BASILICA_WORLD_TARGET"]` became
+    `torchrun '--nnodes=$BASILICA_WORLD_TARGET'`, the operator handed
+    that to `sh -c`, and the user's training code received the literal
+    string `$BASILICA_WORLD_TARGET` (then crashed on `int(...)`).
+
+    Behaviour:
+    - `["bash"|"sh"|"/bin/bash"|"/bin/sh", "-c", <script>]` -> verbatim
+      `<script>`. This is the canonical "I am a shell script" shape.
+    - argv list -> per-token: verbatim if it matches the shell-safe
+      alphabet plus `$` (so `$VAR` survives); otherwise `shlex.quote`
+      (preserves argv structure for whitespace / metachars at the cost
+      of expansion -- a genuinely ambiguous case we err on the safe side).
+    """
+    import shlex as _shlex
+
+    if (
+        len(command) == 3
+        and command[0] in _SHELL_SCRIPT_LAUNCHERS
+        and command[1] == "-c"
+    ):
+        return command[2]
+
+    parts: List[str] = []
+    for token in command:
+        if token and _SHELL_DOLLAR_SAFE_RE.match(token):
+            parts.append(token)
+        else:
+            parts.append(_shlex.quote(token))
+    return " ".join(parts)
+
 
 def _build_inference_health_check(port: int) -> HealthCheckConfig:
     """Build default health check config for inference servers (vLLM, SGLang).
@@ -1192,8 +1242,23 @@ class BasilicaClient:
         #   5b ships source via this BYO heredoc-free path; Phase 6 may
         #   move source-shipping into the operator via init container.
         #
-        # - `command` set -> shlex-join (NOT plain " ".join, which would
-        #   break embedded whitespace / quotes). Operator passes verbatim.
+        # - `command` set -> shell-safe join that preserves `$VAR`
+        #   expansion. The operator passes `distributed.command` to
+        #   `["/bin/sh", "-c", <cmd>]` (operator distributed.rs
+        #   build_worker_command), so user-supplied `$BASILICA_*` tokens
+        #   in `command` are intended to expand at sh-eval time. Plain
+        #   `shlex.join` single-quotes any token containing `$`, which
+        #   defeats expansion -- see issue #452 (literal
+        #   `'$BASILICA_WORLD_TARGET'` reached `int(...)` and crashed).
+        #   Two shapes are recognised here:
+        #   1. `["bash"|"sh"|"/bin/bash"|"/bin/sh", "-c", <script>]`
+        #      -> emit <script> verbatim (canonical "I am a shell script")
+        #   2. argv list -> per-token: leave verbatim if shlex-safe over
+        #      the alphabet `[\w@%+=:,./-]` plus `$` (i.e. only `$VAR`
+        #      makes it "unsafe" in plain shlex); otherwise shlex.quote.
+        #      A token mixing `$` with whitespace/metachars is genuinely
+        #      ambiguous -- we choose safety (quote, lose expansion) so
+        #      argv structure is preserved.
         #
         # - neither -> ValidationError. The operator's distributed-mode
         #   renderer has no "use image ENTRYPOINT, just pass args" mode;
@@ -1233,8 +1298,7 @@ class BasilicaClient:
                 f"/tmp/__basilica_source.py"
             )
         elif command is not None:
-            import shlex as _shlex
-            distributed_command = _shlex.join(command)
+            distributed_command = _shell_join_preserving_vars(command)
         else:
             raise ValidationError(
                 "deploy_distributed requires either source= (Phase 5b "
