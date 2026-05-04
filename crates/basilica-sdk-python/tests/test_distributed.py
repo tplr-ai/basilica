@@ -792,3 +792,214 @@ class TestIssue449DeploymentResponseDistributed:
         assert len(dist["ranks"]) == 2
         assert dist["bench"]["mode"] == "on-start"
         assert dist["bench"]["result"]["busbwGbpsP50"] == 0.00897
+
+
+# =============================================================================
+# Issue #454 / #453 regression tests: the `Deployment` wrapper preserves
+# `distributed` (and other PyO3 fields) end-to-end through `client.get(name)`.
+#
+# PR #451 fixed the PyO3 binding (`DeploymentResponse.distributed` getter)
+# but the lock-down test only covered `_coerce_to_dict(pyo3_response)`,
+# NOT `_coerce_to_dict(client.get(name))`. The high-level Python wrapper
+# `Deployment._from_response(...)` continued to drop `distributed`,
+# `image`, `phase`, `message`, `share_token`, `share_url`,
+# `public_metadata`, so the wrapper-path was still broken on `main` after
+# #451 merged. Issues #453 (elasticity-demo agent) and #454 (this fix)
+# both reported the same wrapper-strip symptom.
+# =============================================================================
+
+
+class TestIssue454DeploymentWrapperCarriesDistributed:
+    """End-to-end: `BasilicaClient(...).get(name)` -> `Deployment` wrapper
+    -> `_coerce_to_dict` -> facade reads. The mock injects at the lowest
+    layer (`_BasilicaClient.get_deployment`) so the assertion exercises
+    the real `Deployment._from_response` factory.
+    """
+
+    def _fake_pyo3_response(self) -> Any:
+        """Mirror of the issue #449 fixture but used through the wrapper path.
+
+        Must use a class with declared attributes (not MagicMock) for the
+        same reason as `TestIssue449...`: `_coerce_to_dict` does an
+        `isinstance(d, dict)` check on `obj.distributed`, which a
+        MagicMock auto-attr would falsely truthy past.
+        """
+
+        class FakeReplicas:
+            ready = 2
+            desired = 2
+
+        class FakeDeployment:
+            instance_name = "dlc-454-mock"
+            user_id = "u-test"
+            namespace = "u-test"
+            image = "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
+            state = "running"
+            url = "https://dlc-454-mock.deployments.basilica.ai"
+            created_at = "2026-05-02T10:00:00Z"
+            updated_at = "2026-05-02T10:05:00Z"
+            phase = "Running"
+            message = None
+            share_token = None
+            share_url = None
+            public_metadata = False
+            replicas = FakeReplicas()
+            distributed = {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 3,
+                    "belowMinimum": False,
+                },
+                "ranks": [
+                    {
+                        "rank": 0,
+                        "podName": "dlc-454-mock-0",
+                        "nodeName": "basilica-verda-fin-03",
+                        "provider": "verda",
+                        "region": "FIN-03",
+                        "phase": "Running",
+                        "restarts": 0,
+                    },
+                    {
+                        "rank": 1,
+                        "podName": "dlc-454-mock-1",
+                        "nodeName": "basilica-verda-fin-04",
+                        "provider": "verda",
+                        "region": "FIN-04",
+                        "phase": "Running",
+                        "restarts": 0,
+                    },
+                ],
+                "transport": "hub-relay",
+                "bench": {
+                    "mode": "on-start",
+                    "result": {
+                        "measuredAt": "2026-05-02T10:00:30Z",
+                        "busbwGbpsP50": 0.00897,
+                        "sizeBytesSwept": [1048576, 16777216],
+                        "probeNodeA": "basilica-verda-fin-03",
+                        "probeNodeB": "basilica-verda-fin-04",
+                    },
+                    "lastAttemptOutcome": "success",
+                },
+            }
+
+        return FakeDeployment()
+
+    def _build_client(self) -> BasilicaClient:
+        """Construct a real `BasilicaClient` with a mocked `_BasilicaClient`
+        underneath so the wrapper path (`get` -> `get_deployment` ->
+        `Deployment._from_response`) executes for real.
+        """
+        client = BasilicaClient(
+            base_url="https://api.test.invalid",
+            api_key="fake-test-token",
+        )
+        # Replace the PyO3 inner client with a mock that returns our fixture.
+        # `BasilicaClient.get_deployment` delegates to `self._client.get_deployment`.
+        client._client = MagicMock()
+        client._client.get_deployment.return_value = self._fake_pyo3_response()
+        return client
+
+    def test_wrapper_carries_distributed(self) -> None:
+        """The load-bearing assertion: `client.get(name).distributed` must
+        be the operator's camelCase dict, not None and not stripped.
+        """
+        client = self._build_client()
+        deployment = client.get("dlc-454-mock")
+        assert deployment.distributed is not None, (
+            "Deployment wrapper dropped `distributed` (issue #454). "
+            "PR #451 fixed PyO3; the wrapper was still broken on main."
+        )
+        assert deployment.distributed["worldSize"]["ready"] == 2
+        assert deployment.distributed["worldSize"]["target"] == 2
+        assert deployment.distributed["worldSize"]["min"] == 2
+        assert deployment.distributed["worldSize"]["belowMinimum"] is False
+        assert len(deployment.distributed["ranks"]) == 2
+
+    def test_wrapper_carries_other_previously_dropped_fields(self) -> None:
+        """`image`, `phase`, `message`, `share_token`, `share_url`,
+        `public_metadata` were all dropped by `Deployment._from_response`
+        before this fix. They are part of the PyO3 binding's surface
+        (see `crates/basilica-sdk-python/src/types.rs::DeploymentResponse`)
+        and must reach the user.
+        """
+        client = self._build_client()
+        deployment = client.get("dlc-454-mock")
+        assert deployment.image == "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime"
+        assert deployment.phase == "Running"
+        assert deployment.message is None
+        assert deployment.share_token is None
+        assert deployment.share_url is None
+        assert deployment.public_metadata is False
+        # Pre-existing fields should still survive.
+        assert deployment.name == "dlc-454-mock"
+        assert deployment.namespace == "u-test"
+        assert deployment.user_id == "u-test"
+        assert deployment.state == "running"
+        assert deployment.created_at == "2026-05-02T10:00:00Z"
+        assert deployment.updated_at == "2026-05-02T10:05:00Z"
+
+    def test_NEGATIVE_coerce_to_dict_after_wrapper_carries_distributed(self) -> None:
+        """The test PR #451 should have had.
+
+        PR #451's `test_NEGATIVE_coerce_to_dict_carries_distributed_and_image`
+        passed a raw PyO3 fixture into `_coerce_to_dict` and asserted the
+        keys round-trip. That test did NOT exercise
+        `Deployment._from_response`, so the wrapper-strip bug went
+        undetected and shipped to users.
+
+        This test goes one layer deeper: the input to `_coerce_to_dict`
+        is the `Deployment` wrapper produced by `client.get(name)`. If
+        the wrapper drops a field, this assertion fails.
+        """
+        from basilica.distributed import _coerce_to_dict
+
+        client = self._build_client()
+        deployment = client.get("dlc-454-mock")
+        d = _coerce_to_dict(deployment)
+        for required_key in (
+            "instanceName",
+            "userId",
+            "namespace",
+            "image",
+            "state",
+            "url",
+            "createdAt",
+            "updatedAt",
+            "phase",
+            "distributed",
+        ):
+            assert required_key in d, (
+                f"_coerce_to_dict(client.get(name)) must carry "
+                f"'{required_key}' (issue #454); got keys: {sorted(d.keys())}"
+            )
+        # The distributed block survives the wrapper round-trip.
+        dist = d["distributed"]
+        assert dist["worldSize"]["ready"] == 2
+        assert dist["worldSize"]["belowMinimum"] is False
+        assert len(dist["ranks"]) == 2
+        assert dist["bench"]["mode"] == "on-start"
+
+    def test_distributed_training_facade_reads_via_wrapper(self) -> None:
+        """The user-visible symptom: `DistributedTraining.world` must
+        return real values when driven through `client.get(name)`. This
+        is the path the elasticity-demo agent (#453) exercised before
+        having to subclass `refresh()` to bypass the wrapper.
+        """
+        client = self._build_client()
+        training = DistributedTraining(client, "dlc-454-mock")
+        ws = training.world
+        assert ws.ready == 2, (
+            f"DistributedTraining.world.ready must be 2 (got {ws.ready}); "
+            f"this is the symptom #453 / #454 reported on a healthy UD."
+        )
+        assert ws.target == 2
+        assert ws.min == 2
+        assert ws.max == 3
+        assert ws.below_minimum is False
+        # `wait_until_min_world` must NOT raise BelowMinimumWorld here:
+        # ready=2 >= min=2.
+        training.wait_until_min_world(timeout=1)
