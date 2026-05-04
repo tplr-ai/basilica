@@ -67,6 +67,7 @@ Using `@basilica.deployment` decorator:
 | `32_public_metadata_cli/` | Public metadata CLI reference | See directory README |
 | `33_websocket.py` | WebSocket deployment via Python SDK | `python3 33_websocket.py` |
 | `33_websocket.sh` | WebSocket deployment via CLI | `./33_websocket.sh` |
+| `36_get_by_name.py` | Look up an existing deployment by name | `python3 36_get_by_name.py` |
 
 ## Large Model Deployment Notes
 

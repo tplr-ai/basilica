@@ -38,24 +38,24 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
     match cmd.action {
         Some(DeployAction::List) => handle_list(&client, json).await,
         Some(DeployAction::Status { name, show_token }) => {
-            let name = helpers::resolve_deployment_name(name, &client).await?;
-            handle_status(&client, &name, json, show_phases, show_token).await
+            let resolved = helpers::resolve_deployment_name(name, &client).await?;
+            handle_status(&client, &resolved, json, show_phases, show_token).await
         }
         Some(DeployAction::Logs { name, follow, tail }) => {
-            let name = helpers::resolve_deployment_name(name, &client).await?;
-            handle_logs(&client, &name, follow, tail).await
+            let resolved = helpers::resolve_deployment_name(name, &client).await?;
+            handle_logs(&client, &resolved.instance_name, follow, tail).await
         }
         Some(DeployAction::Delete { name, yes }) => {
-            let name = helpers::resolve_deployment_name(name, &client).await?;
-            handle_delete(&client, &name, yes).await
+            let resolved = helpers::resolve_deployment_name(name, &client).await?;
+            handle_delete(&client, &resolved, yes).await
         }
         Some(DeployAction::Scale { name, replicas }) => {
-            let name = helpers::resolve_deployment_name(name, &client).await?;
-            handle_scale(&client, &name, replicas).await
+            let resolved = helpers::resolve_deployment_name(name, &client).await?;
+            handle_scale(&client, &resolved, replicas).await
         }
         Some(DeployAction::Restart { name }) => {
-            let name = helpers::resolve_deployment_name(name, &client).await?;
-            handle_restart(&client, &name).await
+            let resolved = helpers::resolve_deployment_name(name, &client).await?;
+            handle_restart(&client, &resolved).await
         }
         Some(DeployAction::ShareToken { action }) => {
             share_token::handle_share_token(&client, action).await
@@ -65,8 +65,8 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
             enable,
             disable,
         }) => {
-            let name = helpers::resolve_deployment_name(name, &client).await?;
-            metadata::handle_enroll_metadata(&client, &name, enable, disable).await
+            let resolved = helpers::resolve_deployment_name(name, &client).await?;
+            metadata::handle_enroll_metadata(&client, &resolved, enable, disable).await
         }
         Some(DeployAction::Metadata { .. }) => {
             unreachable!("Metadata handled above before auth")
@@ -119,18 +119,18 @@ async fn handle_list(client: &basilica_sdk::BasilicaClient, json: bool) -> Resul
 /// Get deployment status with phase tracking
 async fn handle_status(
     client: &basilica_sdk::BasilicaClient,
-    name: &str,
+    resolved: &helpers::ResolvedDeployment,
     json: bool,
     verbose: bool,
     show_token: bool,
 ) -> Result<(), CliError> {
-    let spinner = create_spinner(&format!("Fetching summons '{}'...", name));
-    let result = client.get_deployment(name).await;
+    let spinner = create_spinner(&format!("Fetching summons '{}'...", resolved.display_name));
+    let result = client.get_deployment(&resolved.instance_name).await;
     complete_spinner_and_clear(spinner);
     let response = result.map_err(|e| {
         if matches!(e, basilica_sdk::error::ApiError::NotFound { .. }) {
             CliError::Deploy(DeployError::NotFound {
-                name: name.to_string(),
+                name: resolved.display_name.clone(),
             })
         } else {
             CliError::Api(e)
@@ -143,7 +143,7 @@ async fn handle_status(
         helpers::print_deployment_details(&response, verbose);
 
         if show_token {
-            handle_show_token_status(client, name).await?;
+            handle_show_token_status(client, &resolved.instance_name).await?;
         }
     }
 
@@ -207,14 +207,15 @@ async fn handle_logs(
 /// Delete a deployment
 async fn handle_delete(
     client: &basilica_sdk::BasilicaClient,
-    name: &str,
+    resolved: &helpers::ResolvedDeployment,
     skip_confirm: bool,
 ) -> Result<(), CliError> {
+    let display = &resolved.display_name;
     if !skip_confirm {
         use dialoguer::{theme::ColorfulTheme, Confirm};
 
         let confirm = Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt(format!("Delete summons '{}'?", name))
+            .with_prompt(format!("Delete summons '{}'?", display))
             .default(false)
             .interact()
             .map_err(|e| {
@@ -227,12 +228,12 @@ async fn handle_delete(
         }
     }
 
-    let spinner = create_spinner(&format!("Deleting summons '{}'...", name));
-    let result = client.delete_deployment(name).await;
+    let spinner = create_spinner(&format!("Deleting summons '{}'...", display));
+    let result = client.delete_deployment(&resolved.instance_name).await;
     complete_spinner_and_clear(spinner);
     result.map_err(CliError::Api)?;
 
-    print_success(&format!("Summons '{}' deletion initiated", name));
+    print_success(&format!("Summons '{}' deletion initiated", display));
 
     Ok(())
 }
@@ -240,66 +241,44 @@ async fn handle_delete(
 /// Scale deployment replicas
 async fn handle_scale(
     client: &basilica_sdk::BasilicaClient,
-    name: &str,
+    resolved: &helpers::ResolvedDeployment,
     replicas: u32,
 ) -> Result<(), CliError> {
+    let display = &resolved.display_name;
     let spinner = create_spinner(&format!(
         "Scaling summons '{}' to {} replicas...",
-        name, replicas
+        display, replicas
     ));
 
-    // Verify deployment exists before scaling
-    let verify_result = client.get_deployment(name).await;
-    if let Err(e) = verify_result {
-        complete_spinner_and_clear(spinner);
-        return Err(
-            if matches!(e, basilica_sdk::error::ApiError::NotFound { .. }) {
-                CliError::Deploy(DeployError::NotFound {
-                    name: name.to_string(),
-                })
-            } else {
-                CliError::Api(e)
-            },
-        );
-    }
-
-    // Scale via dedicated endpoint
-    let scale_result = client.scale_deployment(name, replicas).await;
+    // Resolution already confirmed the deployment exists; go straight to scale.
+    let scale_result = client
+        .scale_deployment(&resolved.instance_name, replicas)
+        .await;
     complete_spinner_and_clear(spinner);
     scale_result.map_err(CliError::Api)?;
 
     print_success(&format!(
         "Summons '{}' scaled to {} replicas",
-        name, replicas
+        display, replicas
     ));
 
     Ok(())
 }
 
 /// Restart a deployment (rolling restart)
-async fn handle_restart(client: &basilica_sdk::BasilicaClient, name: &str) -> Result<(), CliError> {
-    let spinner = create_spinner(&format!("Restarting summons '{}'...", name));
+async fn handle_restart(
+    client: &basilica_sdk::BasilicaClient,
+    resolved: &helpers::ResolvedDeployment,
+) -> Result<(), CliError> {
+    let display = &resolved.display_name;
+    let spinner = create_spinner(&format!("Restarting summons '{}'...", display));
 
-    // Verify deployment exists before restarting
-    let verify_result = client.get_deployment(name).await;
-    if let Err(e) = verify_result {
-        complete_spinner_and_clear(spinner);
-        return Err(
-            if matches!(e, basilica_sdk::error::ApiError::NotFound { .. }) {
-                CliError::Deploy(DeployError::NotFound {
-                    name: name.to_string(),
-                })
-            } else {
-                CliError::Api(e)
-            },
-        );
-    }
-
-    let restart_result = client.restart_deployment(name).await;
+    // Resolution already confirmed the deployment exists; go straight to restart.
+    let restart_result = client.restart_deployment(&resolved.instance_name).await;
     complete_spinner_and_clear(spinner);
     restart_result.map_err(CliError::Api)?;
 
-    print_success(&format!("Summons '{}' restart initiated", name));
+    print_success(&format!("Summons '{}' restart initiated", display));
 
     Ok(())
 }

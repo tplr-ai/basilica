@@ -1021,6 +1021,36 @@ class BasilicaClient:
                 raise DeploymentNotFound(name) from None
             raise
 
+    def get_by_name(self, friendly_name: str) -> Deployment:
+        """
+        Get an existing deployment by its user-supplied friendly name.
+
+        Looks the deployment up by the human-readable name the user chose
+        at creation time (e.g. "my-api"), rather than the UUID instance
+        name shown in `basilica deploy ls`. Internally lists the user's
+        deployments and matches client-side, so this is O(n) in the
+        number of active deployments.
+
+        Args:
+            friendly_name: The human-readable deployment name.
+
+        Returns:
+            Deployment: A deployment object.
+
+        Raises:
+            DeploymentNotFound: If no deployment with that friendly name exists.
+
+        Example:
+            >>> deployment = client.get_by_name("my-api")
+            >>> print(deployment.url)
+        """
+        listing = self.list_deployments()
+        for summary in listing.deployments:
+            if summary.friendly_name == friendly_name:
+                response = self.get_deployment(summary.instance_name)
+                return Deployment._from_response(self, response)
+        raise DeploymentNotFound(friendly_name)
+
     def list(self) -> List[Deployment]:
         """
         List all deployments.
@@ -2145,6 +2175,34 @@ class BasilicaClient:
             if "not found" in error_msg.lower() or "Not found" in error_msg:
                 raise DeploymentNotFound(name) from None
             raise
+
+    async def get_by_name_async(self, friendly_name: str) -> Deployment:
+        """
+        Get an existing deployment by its user-supplied friendly name asynchronously.
+
+        See `get_by_name` for full semantics. Lists the user's deployments
+        and matches client-side, so this is O(n) in the number of active
+        deployments.
+
+        Args:
+            friendly_name: The human-readable deployment name.
+
+        Returns:
+            Deployment: A deployment object.
+
+        Raises:
+            DeploymentNotFound: If no deployment with that friendly name exists.
+
+        Example:
+            >>> deployment = await client.get_by_name_async("my-api")
+            >>> print(deployment.url)
+        """
+        listing = await self.list_deployments_async()
+        for summary in listing.deployments:
+            if summary.friendly_name == friendly_name:
+                response = await self.get_deployment_async(summary.instance_name)
+                return Deployment._from_response(self, response)
+        raise DeploymentNotFound(friendly_name)
 
     async def list_async(self) -> List[Deployment]:
         """

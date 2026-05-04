@@ -172,6 +172,7 @@ class Deployment:
         replicas_ready: int = 0,
         replicas_desired: int = 1,
         updated_at: Optional[str] = None,
+        friendly_name: str = "",
         image: str = "",
         phase: Optional[str] = None,
         message: Optional[str] = None,
@@ -197,6 +198,7 @@ class Deployment:
         """
         self._client = client
         self._name = instance_name
+        self._friendly_name = friendly_name
         self._url = url
         self._namespace = namespace
         self._user_id = user_id
@@ -215,8 +217,13 @@ class Deployment:
 
     @property
     def name(self) -> str:
-        """The deployment instance name."""
+        """The deployment instance name (stable UUID identifier used in URLs and K8s)."""
         return self._name
+
+    @property
+    def friendly_name(self) -> str:
+        """The user-supplied display name for the deployment."""
+        return self._friendly_name
 
     @property
     def instance_name(self) -> str:
@@ -797,6 +804,7 @@ class Deployment:
         return cls(
             client=client,
             instance_name=response.instance_name,
+            friendly_name=getattr(response, "friendly_name", "") or "",
             url=response.url,
             namespace=response.namespace,
             user_id=response.user_id,

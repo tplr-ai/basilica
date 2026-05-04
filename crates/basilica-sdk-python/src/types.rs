@@ -1456,6 +1456,8 @@ pub struct DeploymentResponse {
     #[pyo3(get)]
     pub instance_name: String,
     #[pyo3(get)]
+    pub friendly_name: String,
+    #[pyo3(get)]
     pub user_id: String,
     #[pyo3(get)]
     pub namespace: String,
@@ -1536,6 +1538,7 @@ impl From<SdkDeploymentResponse> for DeploymentResponse {
             .and_then(|d| serde_json::to_value(d).ok());
         Self {
             instance_name: response.instance_name,
+            friendly_name: response.friendly_name,
             user_id: response.user_id,
             namespace: response.namespace,
             image: response.image,
@@ -1567,6 +1570,8 @@ pub struct DeploymentSummary {
     #[pyo3(get)]
     pub instance_name: String,
     #[pyo3(get)]
+    pub friendly_name: String,
+    #[pyo3(get)]
     pub state: String,
     #[pyo3(get)]
     pub url: String,
@@ -1587,6 +1592,7 @@ impl From<SdkDeploymentSummary> for DeploymentSummary {
     fn from(summary: SdkDeploymentSummary) -> Self {
         Self {
             instance_name: summary.instance_name,
+            friendly_name: summary.friendly_name,
             state: summary.state,
             url: summary.url,
             replicas: summary.replicas.into(),
@@ -2323,6 +2329,8 @@ pub struct PublicDeploymentMetadataResponse {
     #[pyo3(get)]
     pub instance_name: String,
     #[pyo3(get)]
+    pub friendly_name: String,
+    #[pyo3(get)]
     pub image: String,
     #[pyo3(get)]
     pub image_tag: String,
@@ -2340,6 +2348,7 @@ impl From<SdkPublicDeploymentMetadataResponse> for PublicDeploymentMetadataRespo
     fn from(response: SdkPublicDeploymentMetadataResponse) -> Self {
         Self {
             instance_name: response.instance_name,
+            friendly_name: response.friendly_name,
             image: response.image,
             image_tag: response.image_tag,
             id: response.id,

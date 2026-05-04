@@ -1529,6 +1529,7 @@ dependencies = [
  "pyo3-stub-gen-derive",
  "pythonize",
  "serde",
+ "serde_json",
  "tokio",
 ]
 

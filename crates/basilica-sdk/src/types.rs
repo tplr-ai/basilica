@@ -951,6 +951,8 @@ pub struct PodInfo {
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentResponse {
     pub instance_name: String,
+    #[serde(default)]
+    pub friendly_name: String,
     pub user_id: String,
     pub namespace: String,
     /// Container image. Populated by basilica-api from the underlying
@@ -999,6 +1001,8 @@ pub struct DeploymentResponse {
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentSummary {
     pub instance_name: String,
+    #[serde(default)]
+    pub friendly_name: String,
     pub state: String,
     pub url: String,
     pub replicas: ReplicaStatus,
@@ -1075,6 +1079,8 @@ pub struct EnrollMetadataResponse {
 #[serde(rename_all = "camelCase")]
 pub struct PublicDeploymentMetadataResponse {
     pub instance_name: String,
+    #[serde(default)]
+    pub friendly_name: String,
     pub image: String,
     pub image_tag: String,
     pub id: String,
@@ -2591,6 +2597,7 @@ mod tests {
     fn _sample_deployment_with_distributed() -> DeploymentResponse {
         DeploymentResponse {
             instance_name: "dlc-449".to_string(),
+            friendly_name: "dlc-449".to_string(),
             user_id: "u-test".to_string(),
             namespace: "u-test".to_string(),
             image: "pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime".to_string(),

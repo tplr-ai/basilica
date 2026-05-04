@@ -94,6 +94,9 @@ pub async fn handle_tau_deploy(
     complete_spinner_and_clear(spinner);
 
     let actual_name = response.instance_name.clone();
+    let display =
+        super::super::helpers::display_name(&response.friendly_name, &response.instance_name)
+            .to_string();
 
     if !common.detach {
         let result = wait_for_ready(client, &actual_name, common.timeout, "Tau").await?;
@@ -103,18 +106,18 @@ pub async fn handle_tau_deploy(
                 if common.json {
                     crate::output::json_output(&deployment)?;
                 } else {
-                    print_tau_success(&deployment, &actual_name);
+                    print_tau_success(&deployment);
                 }
             }
             WaitResult::Failed(reason) => {
                 return Err(CliError::Deploy(DeployError::DeploymentFailed {
-                    name: actual_name,
+                    name: display,
                     reason,
                 }));
             }
             WaitResult::Timeout => {
                 return Err(CliError::Deploy(DeployError::Timeout {
-                    name: actual_name,
+                    name: display,
                     timeout_secs: common.timeout,
                 }));
             }
@@ -124,9 +127,9 @@ pub async fn handle_tau_deploy(
     } else {
         print_success(&format!(
             "Tau summons '{}' created (detached mode)",
-            actual_name
+            display
         ));
-        println!("  Check status: basilica summon status {}", actual_name);
+        println!("  Check status: basilica summon status {}", display);
     }
 
     Ok(())
@@ -195,9 +198,11 @@ fn build_tau_health_check() -> HealthCheckConfig {
     }
 }
 
-fn print_tau_success(deployment: &basilica_sdk::types::DeploymentResponse, name: &str) {
-    print_success(&format!("Tau summons '{}' is ready!", name));
+fn print_tau_success(deployment: &basilica_sdk::types::DeploymentResponse) {
+    let label =
+        super::super::helpers::display_name(&deployment.friendly_name, &deployment.instance_name);
+    print_success(&format!("Tau summons '{}' is ready!", label));
     println!("  URL: {}", deployment.url);
     println!("  Next: send a message to your Telegram bot to initialize chat_id.txt");
-    println!("  Logs: basilica summon logs {}", name);
+    println!("  Logs: basilica summon logs {}", label);
 }

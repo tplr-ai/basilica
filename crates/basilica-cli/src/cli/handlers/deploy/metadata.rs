@@ -13,22 +13,25 @@ use basilica_sdk::BasilicaClient;
 /// With --disable: disable metadata enrollment.
 pub async fn handle_enroll_metadata(
     client: &BasilicaClient,
-    name: &str,
+    resolved: &super::helpers::ResolvedDeployment,
     enable: bool,
     disable: bool,
 ) -> Result<(), CliError> {
     if !enable && !disable {
-        return show_enrollment_status(client, name).await;
+        return show_enrollment_status(client, resolved).await;
     }
 
+    let display = &resolved.display_name;
     let enabled = enable;
     let action_word = if enabled { "Enabling" } else { "Disabling" };
     let spinner = create_spinner(&format!(
         "{} metadata enrollment for '{}'...",
-        action_word, name
+        action_word, display
     ));
 
-    let result = client.enroll_metadata(name, enabled).await;
+    let result = client
+        .enroll_metadata(&resolved.instance_name, enabled)
+        .await;
     complete_spinner_and_clear(spinner);
 
     match result {
@@ -36,14 +39,14 @@ pub async fn handle_enroll_metadata(
             if response.public_metadata {
                 print_success(&format!(
                     "Public metadata enrollment enabled for '{}'",
-                    name
+                    display
                 ));
                 println!("  Validators can now verify this deployment via:");
-                println!("  basilica deploy metadata {}", name);
+                println!("  basilica deploy metadata {}", resolved.instance_name);
             } else {
                 print_success(&format!(
                     "Public metadata enrollment disabled for '{}'",
-                    name
+                    display
                 ));
             }
             Ok(())
@@ -57,9 +60,15 @@ pub async fn handle_enroll_metadata(
 }
 
 /// Display current enrollment status.
-async fn show_enrollment_status(client: &BasilicaClient, name: &str) -> Result<(), CliError> {
-    let spinner = create_spinner(&format!("Checking enrollment status for '{}'...", name));
-    let result = client.get_enrollment_status(name).await;
+async fn show_enrollment_status(
+    client: &BasilicaClient,
+    resolved: &super::helpers::ResolvedDeployment,
+) -> Result<(), CliError> {
+    let spinner = create_spinner(&format!(
+        "Checking enrollment status for '{}'...",
+        resolved.display_name
+    ));
+    let result = client.get_enrollment_status(&resolved.instance_name).await;
     complete_spinner_and_clear(spinner);
 
     let response = result.map_err(CliError::Api)?;
@@ -121,7 +130,10 @@ pub async fn handle_get_public_metadata(
     if json {
         crate::output::json_output(&metadata)?;
     } else {
-        println!("Public Deployment Metadata: {}", metadata.instance_name);
+        println!(
+            "Public Deployment Metadata: {}",
+            super::helpers::display_name(&metadata.friendly_name, &metadata.instance_name)
+        );
         println!();
         println!("  Image:    {}:{}", metadata.image, metadata.image_tag);
         println!("  ID:       {}", metadata.id);
