@@ -87,12 +87,30 @@ pub fn parse_primary_port(ports: &[String]) -> Result<u16, DeployError> {
         })
 }
 
+/// Human label for a deployment: prefer `friendly_name`, fall back to `instance_name`
+/// when the friendly name is empty (e.g. responses from older API versions where
+/// the field is `#[serde(default)]`).
+pub fn display_name<'a>(friendly: &'a str, instance: &'a str) -> &'a str {
+    if friendly.is_empty() {
+        instance
+    } else {
+        friendly
+    }
+}
+
+/// Resolved deployment identifier pair returned by `resolve_deployment_name`.
+///
+/// `instance_name` is the stable UUID the API expects in request paths.
+/// `display_name` is what we surface to humans (friendly name, falling back to UUID).
+pub struct ResolvedDeployment {
+    pub instance_name: String,
+    pub display_name: String,
+}
+
 /// Print summons success message
 pub fn print_deployment_success(deployment: &DeploymentResponse) {
-    print_success(&format!(
-        "Summons '{}' created successfully!",
-        deployment.instance_name
-    ));
+    let label = display_name(&deployment.friendly_name, &deployment.instance_name);
+    print_success(&format!("Summons '{}' created successfully!", label));
     println!();
     println!("  URL:      {}", deployment.url);
     println!("  State:    {}", deployment.state);
@@ -107,18 +125,9 @@ pub fn print_deployment_success(deployment: &DeploymentResponse) {
 
     println!();
     println!("Commands:");
-    println!(
-        "  View status:  basilica summon status {}",
-        deployment.instance_name
-    );
-    println!(
-        "  View logs:    basilica summon logs {}",
-        deployment.instance_name
-    );
-    println!(
-        "  Delete:       basilica summon delete {}",
-        deployment.instance_name
-    );
+    println!("  View status:  basilica summon status {}", label);
+    println!("  View logs:    basilica summon logs {}", label);
+    println!("  Delete:       basilica summon delete {}", label);
 }
 
 /// Print share token information with security warning.
@@ -168,7 +177,7 @@ pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
     let rows: Vec<Row> = deployments
         .iter()
         .map(|d| Row {
-            name: d.instance_name.clone(),
+            name: display_name(&d.friendly_name, &d.instance_name).to_string(),
             state: d.state.clone(),
             access: if d.public {
                 "Public".to_string()
@@ -193,7 +202,10 @@ pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
 
 /// Print summons details
 pub fn print_deployment_details(deployment: &DeploymentResponse, verbose: bool) {
-    println!("Summons: {}", deployment.instance_name);
+    println!(
+        "Summons: {}",
+        display_name(&deployment.friendly_name, &deployment.instance_name)
+    );
     println!();
     println!("  Namespace:  {}", deployment.namespace);
     println!("  State:      {}", deployment.state);
@@ -371,18 +383,46 @@ fn truncate(s: &str, max_len: usize) -> String {
     }
 }
 
-/// Resolve summons name - if not provided, fetch summons and prompt for selection
+/// Resolve a user-supplied identifier to the UUID `instance_name` plus a human
+/// `display_name`.
+///
+/// - If `name` is `Some`, list deployments and match `friendly_name` first, then fall
+///   back to a direct `instance_name` (UUID) match. This lets users pass either form.
+/// - If `name` is `None`, prompt the user to pick from a list rendered by friendly
+///   name. The selected row's UUID is returned for API calls.
+///
+/// API request paths still use `instance_name`; `display_name` is for output only.
 pub async fn resolve_deployment_name(
     name: Option<String>,
     client: &BasilicaClient,
-) -> Result<String, CliError> {
-    if let Some(n) = name {
-        return Ok(n);
-    }
-
+) -> Result<ResolvedDeployment, CliError> {
     let spinner = create_spinner("Fetching summons...");
     let response = client.list_deployments().await.map_err(CliError::Api)?;
     complete_spinner_and_clear(spinner);
+
+    if let Some(input) = name {
+        if let Some(d) = response
+            .deployments
+            .iter()
+            .find(|d| !d.friendly_name.is_empty() && d.friendly_name == input)
+        {
+            return Ok(ResolvedDeployment {
+                instance_name: d.instance_name.clone(),
+                display_name: display_name(&d.friendly_name, &d.instance_name).to_string(),
+            });
+        }
+        if let Some(d) = response
+            .deployments
+            .iter()
+            .find(|d| d.instance_name == input)
+        {
+            return Ok(ResolvedDeployment {
+                instance_name: d.instance_name.clone(),
+                display_name: display_name(&d.friendly_name, &d.instance_name).to_string(),
+            });
+        }
+        return Err(CliError::Deploy(DeployError::NotFound { name: input }));
+    }
 
     if response.deployments.is_empty() {
         return Err(CliError::Internal(eyre!(
@@ -390,14 +430,14 @@ pub async fn resolve_deployment_name(
         )));
     }
 
-    // Format for selection display
+    // Format for selection display - render friendly name (falling back to UUID).
     let items: Vec<String> = response
         .deployments
         .iter()
         .map(|d| {
             format!(
                 "{:<30} │ {:<10} │ {}/{}",
-                truncate(&d.instance_name, 30),
+                truncate(display_name(&d.friendly_name, &d.instance_name), 30),
                 d.state,
                 d.replicas.ready,
                 d.replicas.desired
@@ -421,7 +461,11 @@ pub async fn resolve_deployment_name(
     // Clear prompt (includes header) and selection
     let _ = Term::stdout().clear_last_lines(2);
 
-    Ok(response.deployments[selection].instance_name.clone())
+    let chosen = &response.deployments[selection];
+    Ok(ResolvedDeployment {
+        instance_name: chosen.instance_name.clone(),
+        display_name: display_name(&chosen.friendly_name, &chosen.instance_name).to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -533,6 +577,16 @@ mod tests {
         let input = "Just plain text with no escape codes";
         let output = sanitize_ansi(input);
         assert_eq!(output, input);
+    }
+
+    #[test]
+    fn test_display_name_prefers_friendly() {
+        assert_eq!(display_name("my-app", "uuid-1234"), "my-app");
+    }
+
+    #[test]
+    fn test_display_name_falls_back_to_instance_when_friendly_empty() {
+        assert_eq!(display_name("", "uuid-1234"), "uuid-1234");
     }
 
     #[test]

@@ -113,6 +113,9 @@ pub async fn handle_sglang_deploy(
     complete_spinner_and_clear(spinner);
 
     let actual_name = response.instance_name.clone();
+    let display =
+        super::super::helpers::display_name(&response.friendly_name, &response.instance_name)
+            .to_string();
 
     // Wait for ready if not detached
     if !common.detach {
@@ -128,13 +131,13 @@ pub async fn handle_sglang_deploy(
             }
             WaitResult::Failed(reason) => {
                 return Err(CliError::Deploy(DeployError::DeploymentFailed {
-                    name: actual_name,
+                    name: display,
                     reason,
                 }));
             }
             WaitResult::Timeout => {
                 return Err(CliError::Deploy(DeployError::Timeout {
-                    name: actual_name,
+                    name: display,
                     timeout_secs: common.timeout,
                 }));
             }
@@ -144,9 +147,9 @@ pub async fn handle_sglang_deploy(
     } else {
         print_success(&format!(
             "SGLang summons '{}' created (detached mode)",
-            actual_name
+            display
         ));
-        println!("  Check status: basilica summon status {}", actual_name);
+        println!("  Check status: basilica summon status {}", display);
     }
 
     Ok(())
@@ -302,10 +305,9 @@ fn build_sglang_health_check() -> HealthCheckConfig {
 
 /// Print SGLang summons success message
 fn print_sglang_success(deployment: &DeploymentResponse, model: &str) {
-    print_success(&format!(
-        "SGLang summons '{}' is ready!",
-        deployment.instance_name
-    ));
+    let label =
+        super::super::helpers::display_name(&deployment.friendly_name, &deployment.instance_name);
+    print_success(&format!("SGLang summons '{}' is ready!", label));
     println!();
     println!("  Model:      {}", model);
     println!("  URL:        {}", deployment.url);
@@ -326,16 +328,7 @@ fn print_sglang_success(deployment: &DeploymentResponse, model: &str) {
     println!("    -d '{{\"text\": \"Hello, \", \"sampling_params\": {{\"max_new_tokens\": 64}}}}'");
     println!();
     println!("Commands:");
-    println!(
-        "  View status:  basilica summon status {}",
-        deployment.instance_name
-    );
-    println!(
-        "  View logs:    basilica summon logs {}",
-        deployment.instance_name
-    );
-    println!(
-        "  Delete:       basilica summon delete {}",
-        deployment.instance_name
-    );
+    println!("  View status:  basilica summon status {}", label);
+    println!("  View logs:    basilica summon logs {}", label);
+    println!("  Delete:       basilica summon delete {}", label);
 }

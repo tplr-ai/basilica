@@ -153,6 +153,9 @@ pub async fn handle_openclaw_deploy(
     complete_spinner_and_clear(spinner);
 
     let actual_name = response.instance_name.clone();
+    let display =
+        super::super::helpers::display_name(&response.friendly_name, &response.instance_name)
+            .to_string();
 
     if !common.detach {
         let result = wait_for_ready(client, &actual_name, common.timeout, "OpenClaw").await?;
@@ -164,18 +167,18 @@ pub async fn handle_openclaw_deploy(
                 } else {
                     let token = wait_for_gateway_token(client, &actual_name).await?;
                     wait_for_public_url_ready(&deployment.url, 90).await?;
-                    print_openclaw_success(&deployment, &actual_name, &token);
+                    print_openclaw_success(&deployment, &token);
                 }
             }
             WaitResult::Failed(reason) => {
                 return Err(CliError::Deploy(DeployError::DeploymentFailed {
-                    name: actual_name,
+                    name: display,
                     reason,
                 }));
             }
             WaitResult::Timeout => {
                 return Err(CliError::Deploy(DeployError::Timeout {
-                    name: actual_name,
+                    name: display,
                     timeout_secs: common.timeout,
                 }));
             }
@@ -185,9 +188,9 @@ pub async fn handle_openclaw_deploy(
     } else {
         print_success(&format!(
             "OpenClaw summons '{}' created (detached mode)",
-            actual_name
+            display
         ));
-        println!("  Check status: basilica summon status {}", actual_name);
+        println!("  Check status: basilica summon status {}", display);
     }
 
     Ok(())
@@ -360,12 +363,10 @@ fn build_openclaw_health_check() -> HealthCheckConfig {
     }
 }
 
-fn print_openclaw_success(
-    deployment: &basilica_sdk::types::DeploymentResponse,
-    name: &str,
-    token: &str,
-) {
-    print_success(&format!("OpenClaw summons '{}' is ready!", name));
+fn print_openclaw_success(deployment: &basilica_sdk::types::DeploymentResponse, token: &str) {
+    let label =
+        super::super::helpers::display_name(&deployment.friendly_name, &deployment.instance_name);
+    print_success(&format!("OpenClaw summons '{}' is ready!", label));
     println!("  URL: {}", deployment.url);
     println!(
         "  Control UI: {}/chat?session=main&token={}",
