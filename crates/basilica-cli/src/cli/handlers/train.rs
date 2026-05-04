@@ -160,7 +160,10 @@ async fn handle_up(
         },
         topology_spread: DistributedTopologySpread { strategy: topology },
         nccl: DistributedNcclSpec { env: nccl_env_map },
-        bench: Some(DistributedBenchSpec { mode: bench_mode }),
+        bench: Some(DistributedBenchSpec {
+            mode: bench_mode,
+            placement: None,
+        }),
         command: "auto".to_string(),
     };
 

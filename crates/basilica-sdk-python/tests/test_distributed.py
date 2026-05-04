@@ -488,6 +488,115 @@ class TestBuildDistributedRequest:
             f"See issue #448. command: {d_cmd!r}"
         )
 
+    def test_bench_placement_default_omits_field(self) -> None:
+        # Architecture doc § 11.1 placement knob: default `preferred`
+        # MUST NOT appear on the wire. The operator's serde default is
+        # also `Preferred`, so omitting the field keeps wire-compat with
+        # operators that don't yet know about the field. Locks the
+        # `bench_placement="preferred"` -> no `placement` key contract.
+        client = self._client()
+        req = client._build_distributed_request(
+            name="dlc-pref",
+            source=None,
+            image="x",
+            port=80,
+            env=None,
+            cpu="1",
+            memory="1Gi",
+            gpu_count=1,
+            gpu_models=None,
+            min_gpu_memory_gb=None,
+            world_size=WorldSize(min=2, target=2, max=2),
+            provider_filter=None,
+            topology_spread="provider-aware",
+            nccl_env=None,
+            bench="on-start",
+            rendezvous_backend="etcd-v2",
+            command=["python", "x.py"],
+            args=None,
+            pip_packages=None,
+            ttl_seconds=None,
+            enable_billing=True,
+            # explicit default — same as omitting the kwarg.
+            bench_placement="preferred",
+        )
+        bench_dict = req["distributed"]["bench"]
+        assert bench_dict["mode"] == "on-start"
+        assert "placement" not in bench_dict, (
+            "default bench_placement='preferred' must NOT emit the field "
+            f"on the wire (keeps wire-compat with operators that don't "
+            f"know the placement enum yet); got: {bench_dict!r}"
+        )
+
+    def test_bench_placement_strict_emits_lowercase_token(self) -> None:
+        # Architecture doc § 11.1 placement knob: opt-in `strict` lands
+        # on the wire as `placement: "strict"` (lowercase, matches the
+        # operator's serde rename).
+        client = self._client()
+        req = client._build_distributed_request(
+            name="dlc-strict",
+            source=None,
+            image="x",
+            port=80,
+            env=None,
+            cpu="1",
+            memory="1Gi",
+            gpu_count=1,
+            gpu_models=None,
+            min_gpu_memory_gb=None,
+            world_size=WorldSize(min=2, target=2, max=2),
+            provider_filter=None,
+            topology_spread="provider-aware",
+            nccl_env=None,
+            bench="on-start",
+            rendezvous_backend="etcd-v2",
+            command=["python", "x.py"],
+            args=None,
+            pip_packages=None,
+            ttl_seconds=None,
+            enable_billing=True,
+            bench_placement="strict",
+        )
+        bench_dict = req["distributed"]["bench"]
+        assert bench_dict["mode"] == "on-start"
+        assert bench_dict["placement"] == "strict", (
+            f"bench_placement='strict' must emit lowercase 'strict' on "
+            f"the wire; got: {bench_dict!r}"
+        )
+
+    def test_invalid_bench_placement_rejected(self) -> None:
+        # Negative: only "preferred" / "strict" are accepted. Anything
+        # else raises ValidationError before the request leaves the SDK.
+        from basilica.exceptions import ValidationError
+
+        client = self._client()
+        with pytest.raises(ValidationError) as exc_info:
+            client._build_distributed_request(
+                name="dlc-bad",
+                source=None,
+                image="x",
+                port=80,
+                env=None,
+                cpu="1",
+                memory="1Gi",
+                gpu_count=1,
+                gpu_models=None,
+                min_gpu_memory_gb=None,
+                world_size=WorldSize(min=1, target=1, max=1),
+                provider_filter=None,
+                topology_spread="provider-aware",
+                nccl_env=None,
+                bench="on-start",
+                rendezvous_backend="etcd-v2",
+                command=["python", "x.py"],
+                args=None,
+                pip_packages=None,
+                ttl_seconds=None,
+                enable_billing=True,
+                bench_placement="invalid-placement",
+            )
+        assert exc_info.value.field == "bench_placement"
+
     def test_invalid_bench_mode_rejected(self) -> None:
         from basilica.exceptions import ValidationError
 

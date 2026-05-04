@@ -1258,11 +1258,36 @@ pub enum DistributedBenchMode {
     OnStart,
 }
 
+/// Architecture doc § 11.1 placement knob: bench Pod node-placement mode.
+///
+/// - `Preferred` (default): the bench Pod prefers the worker pair's
+///   nodes but falls back to any worker-eligible GPU node when the pair
+///   has no spare GPU. Bench always schedules; the resulting BenchResult
+///   may not measure the worker pair's link if it falls back.
+/// - `Strict`: bench measures the worker pair's link or stays Pending —
+///   never silently mismeasures. Architecturally correct for honest
+///   measurement on multi-GPU/node hardware.
+///
+/// Default is `Preferred` (operator-side default; `None` on the wire is
+/// treated identically). Wire token is lowercase: `"preferred"` |
+/// `"strict"`, matching the operator's serde rename.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DistributedBenchPlacement {
+    #[default]
+    Preferred,
+    Strict,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DistributedBenchSpec {
     #[serde(default)]
     pub mode: DistributedBenchMode,
+    /// Optional placement override. `None` is treated as `Preferred`
+    /// operator-side. Field omitted from the wire when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<DistributedBenchPlacement>,
 }
 
 /// World-size triple: `min ≤ target ≤ max`. The operator clamps the worker
@@ -2390,6 +2415,7 @@ mod tests {
             },
             bench: Some(DistributedBenchSpec {
                 mode: DistributedBenchMode::OnStart,
+                placement: None,
             }),
             command: "auto".to_string(),
         }
@@ -2459,6 +2485,60 @@ mod tests {
             serde_json::to_string(&DistributedBenchMode::OnStart).unwrap(),
             "\"on-start\""
         );
+    }
+
+    #[test]
+    fn test_distributed_bench_placement_lowercase_tokens() {
+        // Architecture doc § 11.1: wire tokens are lowercase, matching
+        // the operator's `BenchPlacement` serde rename. Round-trip via
+        // BenchSpec to lock the field name (`"placement"`) too.
+        assert_eq!(
+            serde_json::to_string(&DistributedBenchPlacement::Preferred).unwrap(),
+            "\"preferred\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DistributedBenchPlacement::Strict).unwrap(),
+            "\"strict\""
+        );
+
+        let spec = DistributedBenchSpec {
+            mode: DistributedBenchMode::OnStart,
+            placement: Some(DistributedBenchPlacement::Strict),
+        };
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(
+            json.contains("\"placement\":\"strict\""),
+            "BenchSpec JSON must contain placement=strict, got: {json}"
+        );
+        assert!(
+            json.contains("\"mode\":\"on-start\""),
+            "BenchSpec JSON must keep mode=on-start, got: {json}"
+        );
+        // Round-trip back.
+        let back: DistributedBenchSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, spec);
+    }
+
+    #[test]
+    fn test_distributed_bench_spec_placement_omitted_when_none() {
+        // Architecture doc § 11.1 wire-compat: pre-placement SDKs emit
+        // BenchSpec without the field. Locks `skip_serializing_if =
+        // Option::is_none` so a wire upgrade does not break older
+        // operators (`None` is interpreted as Preferred operator-side).
+        let spec = DistributedBenchSpec {
+            mode: DistributedBenchMode::OnStart,
+            placement: None,
+        };
+        let v: serde_json::Value = serde_json::to_value(&spec).unwrap();
+        assert_eq!(v["mode"], "on-start");
+        assert!(
+            v.get("placement").is_none(),
+            "placement omitted when None, got: {v}"
+        );
+        // And accepts an incoming JSON that lacks the field.
+        let parsed: DistributedBenchSpec = serde_json::from_str(r#"{"mode":"on-start"}"#).unwrap();
+        assert_eq!(parsed.mode, DistributedBenchMode::OnStart);
+        assert!(parsed.placement.is_none());
     }
 
     #[test]

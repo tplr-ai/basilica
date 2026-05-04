@@ -1105,6 +1105,7 @@ class BasilicaClient:
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
         bench: str = "off",
+        bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,
         args: Optional[List[str]] = None,
@@ -1146,6 +1147,19 @@ class BasilicaClient:
                 user's namespace alongside workers (counts against the
                 namespace rank budget; result lands on `training.bench`).
                 `"off"` (default) skips the probe. SDK arch § 7.
+            bench_placement: Placement policy for the bench Pod pair on
+                multi-tenant clusters. `"preferred"` (default) lets the
+                bench fall back off the worker pair when those nodes have
+                no spare GPU — bench always schedules but may measure a
+                different pair than the workers. `"strict"` keeps the
+                bench pinned to the worker pair's nodes — bench measures
+                the worker pair's link or stays Pending; never silently
+                mismeasures. Architecture doc § 11.1: silently-wrong
+                outranks no-number, so `strict` is the architecturally
+                honest mode for research papers / SLA evidence on multi-
+                GPU/node hardware. Default is `"preferred"` for
+                runnability on the current single-GPU/node fleet.
+                Ignored when `bench == "off"`.
             rendezvous_backend: One of `etcd-v2 | c10d | static`. Default
                 `etcd-v2` (the only backend with full elasticity).
             command: BYO-launcher escape hatch. When set, the operator does
@@ -1186,6 +1200,7 @@ class BasilicaClient:
             topology_spread=topology_spread,
             nccl_env=nccl_env,
             bench=bench,
+            bench_placement=bench_placement,
             rendezvous_backend=rendezvous_backend,
             command=command,
             args=args,
@@ -1231,6 +1246,7 @@ class BasilicaClient:
         pip_packages: Optional[List[str]],
         ttl_seconds: Optional[int],
         enable_billing: bool,
+        bench_placement: str = "preferred",
     ) -> Dict[str, Any]:
         """
         Build the camelCase JSON dict that PyO3's
@@ -1355,7 +1371,21 @@ class BasilicaClient:
             "nccl": {"env": dict(nccl_env) if nccl_env else {}},
         }
         if bench in ("on-start", "off"):
-            distributed["bench"] = {"mode": bench}
+            bench_dict: Dict[str, Any] = {"mode": bench}
+            # Architecture doc § 11.1 placement knob. Only emit the
+            # field when the user opts into a non-default; `None` on the
+            # wire is interpreted as Preferred operator-side, so
+            # omitting `placement` keeps backwards-compat with operators
+            # that don't yet know about the field.
+            if bench_placement not in ("preferred", "strict"):
+                raise ValidationError(
+                    f"bench_placement must be 'preferred' or 'strict', got {bench_placement!r}",
+                    field="bench_placement",
+                    value=bench_placement,
+                )
+            if bench == "on-start" and bench_placement == "strict":
+                bench_dict["placement"] = "strict"
+            distributed["bench"] = bench_dict
         else:
             raise ValidationError(
                 f"bench must be 'on-start' or 'off', got {bench!r}",
@@ -2098,6 +2128,7 @@ class BasilicaClient:
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
         bench: str = "off",
+        bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,
         args: Optional[List[str]] = None,
@@ -2130,6 +2161,7 @@ class BasilicaClient:
             topology_spread=topology_spread,
             nccl_env=nccl_env,
             bench=bench,
+            bench_placement=bench_placement,
             rendezvous_backend=rendezvous_backend,
             command=command,
             args=args,
