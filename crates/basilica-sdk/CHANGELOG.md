@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-05-04
+
+### Added
+- Distributed-training endpoints — `create_distributed_deployment`
+  and `scale_distributed_deployment` on `BasilicaClient`, with
+  `CreateDistributedDeploymentRequest` and `DistributedSpec` on the
+  write path and `DistributedStatus` on the read path.
+- `image` and `distributed` fields on `DeploymentResponse`, mirroring
+  the API wire shape for distributed deployments.
+- `friendly_name` field on `DeploymentResponse`, `DeploymentSummary`,
+  and `PublicDeploymentMetadataResponse`, exposing the user-supplied
+  display name alongside the UUID `instance_name`.
+
 ## [0.28.0] - 2026-04-27
 
 ### Added

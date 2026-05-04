@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-05-04
+
+### Added
+- Distributed training via `deploy_distributed()` and the
+  `@distributed` decorator, returning a `DistributedTraining` facade
+  with `scale()`, `wait_until_min_world()`, `logs()`, `events()`,
+  `metrics()`, and `bench()`, plus rank/world status reporting and
+  bench results. Full `_async` parity.
+- `BasilicaClient.get_by_name()` looks up a `Deployment` by the
+  user-supplied display name instead of the UUID `instance_name`.
+- `friendly_name` property on the `Deployment` wrapper and on
+  deployment response objects.
+
+### Fixed
+- `client.get()` and the `Deployment` wrapper now expose `image`,
+  `phase`, `message`, `share_token`, `share_url`, and
+  `public_metadata`, which the SDK had been silently dropping from
+  the API response.
+
 ## [0.28.0] - 2026-04-27
 
 ### Added

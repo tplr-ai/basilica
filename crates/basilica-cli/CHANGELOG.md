@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-05-04
+
 ### Added
-- Resume link for pending card purchases in `basilica fund list`
+- `basilica train` command group for distributed training, with
+  `up`, `ls`, `ps`, `scale`, `logs`, `events`, `down`, and `bench`
+  subcommands.
+- Resume link for pending card purchases in `basilica fund list`.
+
+### Changed
+- Deployment commands now show and accept the friendly deployment
+  name in place of the UUID across `deploy ls`, `status`, `logs`,
+  `delete`, `scale`, `restart`, `share-token`, and metadata views.
+
+### Fixed
+- Card funding minimum in `basilica fund` corrected from $1 to $10
+  to match the server-enforced minimum.
 
 ## [0.28.0] - 2026-04-27
 
