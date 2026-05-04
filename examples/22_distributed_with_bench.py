@@ -37,10 +37,57 @@ def main() -> None:
     """
     client = BasilicaClient()
 
+    # `source=` (string) is the recommended path for typical SDK users:
+    # the SDK ships the source via base64 to /tmp/__basilica_source.py and
+    # the operator's BYO renderer exec's torchrun on it. RANK / WORLD_SIZE
+    # / MASTER_* are set by torchrun -- the user code just reads them.
+    #
+    # Contrast with `command=["python3", "/workspace/foo.py"]` which skips
+    # torchrun entirely; ranks would crash with `RANK env var missing`.
+    # For users who want full control over the launcher, see example 21
+    # (BYO torchrun via `command=[...]`).
     training = client.deploy_distributed(
         name="dlc-example-bench",
         image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
-        command=["python3", "/workspace/all_reduce_smoke.py"],
+        source="""\
+import os
+import time
+
+import torch
+import torch.distributed as dist
+
+
+def main() -> None:
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
+    dist.init_process_group(backend="nccl")
+    device = torch.device(f"cuda:{local_rank}")
+    print(f"[rank {rank}] joined; world={world_size} device={device}", flush=True)
+
+    # Brief NCCL all_reduce loop -- proves the workers rendezvoused and
+    # the collective fabric is up. Each step sums a 1024-float tensor
+    # across all ranks; expected sum at step k is world_size (because we
+    # start from ones and re-fill each step).
+    for step in range(5):
+        x = torch.ones(1024, device=device)
+        dist.all_reduce(x)
+        torch.cuda.synchronize()
+        print(
+            f"[rank {rank}] step {step + 1}/5 sum={x.sum().item():.0f} "
+            f"(expected {world_size * 1024})",
+            flush=True,
+        )
+        time.sleep(2)
+
+    dist.destroy_process_group()
+    print(f"[rank {rank}] done", flush=True)
+
+
+if __name__ == "__main__":
+    main()
+""",
         world_size=WorldSize(min=2, target=2, max=2),
         gpu_count=1,
         gpu_models=["A100"],
