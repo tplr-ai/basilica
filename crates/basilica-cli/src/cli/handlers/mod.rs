@@ -11,5 +11,6 @@ pub mod ssh_keys;
 #[cfg(debug_assertions)]
 pub mod test_auth;
 pub mod tokens;
+pub mod train;
 pub mod upgrade;
 pub mod volumes;

@@ -45,14 +45,16 @@ use crate::{
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
         CardPurchaseSummary, CreateApiKeyRequest, CreateCardPurchaseRequest,
-        CreateDeploymentRequest, CreateDepositAccountResponse, DeleteDeploymentResponse,
-        DeleteShareTokenResponse, DeploymentEventsResponse, DeploymentListResponse,
-        DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse,
-        HealthCheckResponse, HistoricalRentalsResponse, ListAvailableNodesQuery,
-        ListCardPurchasesResponse, ListDepositsQuery, ListDepositsResponse, ListRentalsQuery,
-        PublicDeploymentMetadataResponse, RegenerateShareTokenResponse, RegisterSshKeyRequest,
-        RentalResponse, RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
-        ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse, WaitOptions, WaitResult,
+        CreateDeploymentRequest, CreateDepositAccountResponse, CreateDistributedDeploymentRequest,
+        DeleteDeploymentResponse, DeleteShareTokenResponse, DeploymentEventsResponse,
+        DeploymentListResponse, DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest,
+        EnrollMetadataResponse, HealthCheckResponse, HistoricalRentalsResponse,
+        ListAvailableNodesQuery, ListCardPurchasesResponse, ListDepositsQuery,
+        ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
+        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalResponse,
+        RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
+        ScaleDistributedRequest, ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse,
+        WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
 };
@@ -957,6 +959,48 @@ impl BasilicaClient {
     ) -> Result<DeploymentResponse> {
         let path = format!("/deployments/{}/scale", instance_name);
         let request = ScaleDeploymentRequest { replicas };
+        self.post(&path, &request).await
+    }
+
+    /// Create a distributed-training UserDeployment.
+    ///
+    /// Posts to `POST /deployments` with `spec.distributed` populated; the
+    /// operator switches the workload from a single-replica Deployment to
+    /// a per-UD StatefulSet + rendezvous Pod + per-rank pods. SDK arch
+    /// § 4 / § 12.
+    ///
+    /// Use this when the workload uses NCCL collectives across multiple
+    /// pods (DiLoCo, SparseLoCo, etc.). For single-replica or HTTP
+    /// services, use `create_deployment` instead.
+    ///
+    /// # Errors
+    ///
+    /// * `ApiError::Validation` — `worldSize` bounds invalid (`min > target`,
+    ///   `target > max`, or any of them zero), or non-distributed admission
+    ///   constraints fail.
+    /// * `ApiError::ResourceUnavailable` — namespace rank-budget exceeded.
+    pub async fn create_distributed_deployment(
+        &self,
+        request: CreateDistributedDeploymentRequest,
+    ) -> Result<DeploymentResponse> {
+        self.post("/deployments", &request).await
+    }
+
+    /// Scale a distributed UserDeployment by patching
+    /// `spec.distributed.worldSize.target`. Bounds checked at the API
+    /// against `[worldSize.min, worldSize.max]` of the current spec.
+    ///
+    /// `target` must satisfy `min ≤ target ≤ max`; out-of-bounds requests
+    /// fail synchronously with `ApiError::Validation`. Does NOT block;
+    /// new ranks join asynchronously. Use the SDK's `wait_until_target_world`
+    /// to block on convergence.
+    pub async fn scale_distributed_deployment(
+        &self,
+        instance_name: &str,
+        target: u32,
+    ) -> Result<DeploymentResponse> {
+        let path = format!("/deployments/{}/scale-distributed", instance_name);
+        let request = ScaleDistributedRequest { target };
         self.post(&path, &request).await
     }
 

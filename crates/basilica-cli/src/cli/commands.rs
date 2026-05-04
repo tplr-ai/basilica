@@ -207,6 +207,20 @@ pub enum Commands {
     #[command(name = "deploy", visible_alias = "summon", alias = "d")]
     Deploy(Box<DeployCommand>),
 
+    /// Distributed training commands (NCCL collectives, multi-rank UDs).
+    ///
+    /// Sibling verb to `deploy` -- distributed training has a different
+    /// cognitive model (rendezvous, world-size triple, per-rank pods)
+    /// from "run a service", so it gets its own subcommand group rather
+    /// than a flag on `deploy`. SDK arch § 10.
+    ///
+    /// Notably absent: `basilica train preflight` and
+    /// `basilica nccl-baseline`. Bench data is per-UD via
+    /// `basilica train up --bench on-start` followed by
+    /// `basilica train bench <name>` (SDK arch § 7 tenancy invariant).
+    #[command(name = "train")]
+    Train(Box<TrainCommand>),
+
     /// Volume management commands
     Volumes {
         #[command(subcommand)]
@@ -362,6 +376,9 @@ impl Commands {
 
             // Deploy commands: most require auth, except Metadata (public endpoint)
             Commands::Deploy(cmd) => !matches!(cmd.action, Some(DeployAction::Metadata { .. })),
+
+            // Train commands always require auth (no public surface).
+            Commands::Train(_) => true,
 
             // Authentication commands don't require auth
             Commands::Login { .. } | Commands::Logout | Commands::Upgrade { .. } => false,
@@ -1235,4 +1252,378 @@ pub struct TauOptions {
     /// Chat model override for Tau (maps to TAU_CHAT_MODEL)
     #[arg(long, value_name = "MODEL", env = "TAU_CHAT_MODEL")]
     pub chat_model: Option<String>,
+}
+
+// ============================================================================
+// Distributed Training Command Definitions (SDK arch § 10)
+//
+// `basilica train ...` -- sibling to `basilica deploy ...` for distributed
+// (NCCL collective) UDs. The shape mirrors SDK arch § 10 1:1.
+//
+// Deliberately absent: `basilica train preflight` and
+// `basilica nccl-baseline`. Per SDK arch § 7 / § 10, bench data is per-UD
+// (`basilica train up --bench on-start` followed by
+// `basilica train bench <name>`); cross-tenant aggregated bench queries
+// would violate the platform's tenancy invariant. Phase 5b lock-down test:
+// `cargo test test_train_subcommands_no_preflight_or_baseline`.
+// ============================================================================
+
+/// `basilica train ...` umbrella command.
+#[derive(clap::Parser, Debug, Clone)]
+pub struct TrainCommand {
+    #[command(subcommand)]
+    pub action: TrainAction,
+
+    /// Output as JSON (some subcommands).
+    #[arg(long, global = true)]
+    pub json: bool,
+}
+
+/// World-size triple parser: `min:target:max`. Example: `4:8:16`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorldSizeTriple {
+    pub min: u32,
+    pub target: u32,
+    pub max: u32,
+}
+
+impl std::str::FromStr for WorldSizeTriple {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 3 {
+            return Err(format!(
+                "expected `min:target:max` (3 colon-separated u32s), got {:?}",
+                s
+            ));
+        }
+        let min: u32 = parts[0]
+            .parse()
+            .map_err(|e| format!("invalid min: {}", e))?;
+        let target: u32 = parts[1]
+            .parse()
+            .map_err(|e| format!("invalid target: {}", e))?;
+        let max: u32 = parts[2]
+            .parse()
+            .map_err(|e| format!("invalid max: {}", e))?;
+        if min == 0 {
+            return Err("worldSize.min must be >= 1".to_string());
+        }
+        if target < min {
+            return Err(format!(
+                "worldSize.target ({}) must be >= min ({})",
+                target, min
+            ));
+        }
+        if max < target {
+            return Err(format!(
+                "worldSize.max ({}) must be >= target ({})",
+                max, target
+            ));
+        }
+        Ok(Self { min, target, max })
+    }
+}
+
+/// Topology spread strategies. Mirror SDK arch § 4.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+#[value(rename_all = "kebab-case")]
+pub enum TrainTopologySpread {
+    Pack,
+    ProviderAware,
+    RegionAware,
+    None,
+}
+
+/// Bench mode for `train up --bench`.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+#[value(rename_all = "kebab-case")]
+pub enum TrainBenchMode {
+    Off,
+    OnStart,
+}
+
+/// Rendezvous backend for `train up --rendezvous-backend`.
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+#[value(rename_all = "kebab-case")]
+pub enum TrainRendezvousBackend {
+    EtcdV2,
+    C10d,
+    Static,
+}
+
+// `Up` carries enough flags to push the variant past the
+// large-enum-variant default budget. The CLI parses `TrainAction` exactly
+// once per invocation, so the size delta is not a hot-path concern; the
+// boxing alternative would require touching every match arm with no
+// runtime benefit.
+#[allow(clippy::large_enum_variant)]
+#[derive(Subcommand, Debug, Clone)]
+pub enum TrainAction {
+    /// Launch a distributed training UD.
+    ///
+    /// CLI-side launches are BYO-launcher only: the user provides
+    /// `--command` (the bash one-liner the operator runs in `sh -c`).
+    /// Source-shipping (read a local .py file and embed it) is a Python
+    /// SDK feature -- use `client.deploy_distributed(source=...)` or
+    /// `@basilica.distributed`. See SDK arch § 5 / § 10.
+    Up {
+        /// Deployment name.
+        name: String,
+
+        /// World size triple `min:target:max`. Example: `4:8:16`.
+        #[arg(long, value_name = "MIN:TARGET:MAX")]
+        world_size: WorldSizeTriple,
+
+        /// BYO-launcher command (will be passed to `sh -c` by the
+        /// operator). Example: `--command 'torchrun --rdzv-backend=etcd-v2
+        /// --rdzv-endpoint=$BASILICA_RDZV_ENDPOINT ... /workspace/train.py'`.
+        /// The image is expected to contain the script.
+        #[arg(long, value_name = "BASH_ONELINER")]
+        command: String,
+
+        /// GPUs per rank pod (default 1; set higher for NVLink ranks).
+        #[arg(long, default_value = "1")]
+        gpu_count: u32,
+
+        /// GPU model(s). Repeatable. Example: `--gpu-model H100`.
+        #[arg(long = "gpu-model")]
+        gpu_models: Vec<String>,
+
+        /// Minimum GPU VRAM in GB.
+        #[arg(long)]
+        min_gpu_memory_gb: Option<u32>,
+
+        /// Container image. Default: pytorch + cuda runtime.
+        #[arg(long, default_value = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime")]
+        image: String,
+
+        /// CPU per rank pod.
+        #[arg(long, default_value = "8")]
+        cpu: String,
+
+        /// Memory per rank pod.
+        #[arg(long, default_value = "32Gi")]
+        memory: String,
+
+        /// Provider include list (comma-separated).
+        /// Example: `--provider hyperstack,verda`.
+        #[arg(long, value_delimiter = ',')]
+        provider: Vec<String>,
+
+        /// Provider exclude list (comma-separated).
+        #[arg(long = "exclude-provider", value_delimiter = ',')]
+        exclude_provider: Vec<String>,
+
+        /// Topology spread strategy.
+        #[arg(long, value_enum, default_value_t = TrainTopologySpread::ProviderAware)]
+        topology_spread: TrainTopologySpread,
+
+        /// NCCL env var (`KEY=VALUE`). Repeatable.
+        /// User values win on collision with operator defaults.
+        #[arg(long = "nccl-env")]
+        nccl_env: Vec<String>,
+
+        /// Per-UD bench probe mode. `on-start` schedules a 2-rank NCCL
+        /// probe in the user's namespace alongside workers; `off` skips.
+        /// Counts against the namespace rank budget. SDK arch § 7.
+        #[arg(long, value_enum, default_value_t = TrainBenchMode::Off)]
+        bench: TrainBenchMode,
+
+        /// Rendezvous backend. Default `etcd-v2` (the only backend with
+        /// full elasticity).
+        #[arg(long, value_enum, default_value_t = TrainRendezvousBackend::EtcdV2)]
+        rendezvous_backend: TrainRendezvousBackend,
+
+        /// Auto-delete after N seconds (default 24 hours).
+        /// Defensive default: distributed training jobs are cost-bearing
+        /// and should not persist unless explicitly requested. Pass
+        /// `--ttl-seconds 0` for "no auto-delete" (escape hatch).
+        #[arg(long, default_value = "86400")]
+        ttl_seconds: u32,
+    },
+
+    /// List distributed training deployments.
+    Ls,
+
+    /// Show active distributed training jobs.
+    Ps,
+
+    /// Patch `worldSize.target` for an admitted UD.
+    Scale {
+        /// Deployment name.
+        name: String,
+
+        /// New `worldSize.target`. Must be in `[min, max]` of the spec.
+        #[arg(long)]
+        target: u32,
+    },
+
+    /// Get merged logs for the deployment.
+    ///
+    /// Phase 5b: per-rank filtering is not supported by the underlying
+    /// `/deployments/{name}/logs` endpoint -- all ranks' logs are
+    /// returned merged. Phase 6 backend follow-up tracks per-rank
+    /// streaming.
+    Logs {
+        /// Deployment name.
+        name: String,
+
+        /// Tail the last N lines.
+        #[arg(long)]
+        tail: Option<u32>,
+
+        /// Follow log output.
+        #[arg(long, short)]
+        follow: bool,
+    },
+
+    /// Show K8s Events for a UD.
+    Events {
+        /// Deployment name.
+        name: String,
+    },
+
+    /// Show the per-UD NCCL bench probe result.
+    ///
+    /// Reads from `status.distributed.bench.result` populated when the UD
+    /// was launched with `--bench on-start`. SDK arch § 7. NEVER queries a
+    /// shared cluster-wide cache (no such surface exists by design).
+    Bench {
+        /// Deployment name.
+        name: String,
+    },
+
+    /// Delete a UD. Owner-references cascade to StatefulSet, rendezvous,
+    /// bench Job, NetworkPolicies, ConfigMap.
+    Down {
+        /// Deployment name.
+        name: String,
+    },
+}
+
+#[cfg(test)]
+mod train_command_tests {
+    use super::*;
+    use std::str::FromStr;
+
+    // -----------------------------------------------------------------
+    // WorldSizeTriple parser.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn world_size_triple_parses_valid_input() {
+        let ws: WorldSizeTriple = "4:8:16".parse().unwrap();
+        assert_eq!(
+            ws,
+            WorldSizeTriple {
+                min: 4,
+                target: 8,
+                max: 16
+            }
+        );
+
+        let ws: WorldSizeTriple = "1:1:1".parse().unwrap();
+        assert_eq!(
+            ws,
+            WorldSizeTriple {
+                min: 1,
+                target: 1,
+                max: 1
+            }
+        );
+    }
+
+    #[test]
+    fn world_size_triple_rejects_min_zero() {
+        let err = WorldSizeTriple::from_str("0:1:2").unwrap_err();
+        assert!(err.contains("min must be >= 1"));
+    }
+
+    #[test]
+    fn world_size_triple_rejects_target_below_min() {
+        let err = WorldSizeTriple::from_str("4:2:8").unwrap_err();
+        assert!(err.contains("target"));
+        assert!(err.contains("min"));
+    }
+
+    #[test]
+    fn world_size_triple_rejects_max_below_target() {
+        let err = WorldSizeTriple::from_str("2:8:4").unwrap_err();
+        assert!(err.contains("max"));
+        assert!(err.contains("target"));
+    }
+
+    #[test]
+    fn world_size_triple_rejects_wrong_arity() {
+        assert!(WorldSizeTriple::from_str("4:8").is_err());
+        assert!(WorldSizeTriple::from_str("4:8:16:32").is_err());
+        assert!(WorldSizeTriple::from_str("4-8-16").is_err());
+    }
+
+    #[test]
+    fn world_size_triple_rejects_non_numeric() {
+        assert!(WorldSizeTriple::from_str("a:b:c").is_err());
+        assert!(WorldSizeTriple::from_str("4:eight:16").is_err());
+    }
+
+    // -----------------------------------------------------------------
+    // Subcommand presence -- LOAD-BEARING for SDK arch § 7 / § 10.
+    //
+    // `basilica train preflight` and `basilica nccl-baseline` must not
+    // be reachable through clap. A future agent restoring either as a
+    // Rust-side CLI command will fail this assertion. This is the CLI
+    // counterpart to the Python `test_basilica_client_has_no_preflight`
+    // assertion in test_distributed.py.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn train_subcommands_no_preflight_or_baseline() {
+        // `TrainAction` is a Subcommand-derive (not Parser), so the
+        // CommandFactory trait isn't auto-implemented. We mount it under
+        // a dummy parent and inspect the resulting clap::Command tree.
+        let parent = clap::Command::new("train");
+        let cmd = TrainAction::augment_subcommands(parent);
+        let names: Vec<&str> = cmd.get_subcommands().map(|sc| sc.get_name()).collect();
+
+        // Sanity: the subcommands we DO want are present.
+        for required in ["up", "ls", "ps", "scale", "logs", "events", "down", "bench"] {
+            assert!(
+                names.contains(&required),
+                "expected `train {}` subcommand, got {:?}",
+                required,
+                names,
+            );
+        }
+
+        // CRITICAL: the SDK arch § 7 / § 10 prohibitions.
+        assert!(
+            !names.contains(&"preflight"),
+            "`basilica train preflight` was removed in SDK arch § 10. Restoring \
+             it implies a cross-tenant aggregated bench cache, which violates \
+             the platform's tenancy invariant. Per-UD bench is via \
+             `basilica train up --bench on-start` + `basilica train bench <name>`."
+        );
+        assert!(
+            !names.contains(&"nccl-baseline"),
+            "`basilica train nccl-baseline` was removed for the same SDK arch § 7 \
+             reason as preflight."
+        );
+    }
+
+    #[test]
+    fn train_top_level_command_no_nccl_baseline() {
+        // The top-level Commands enum must not have a `NcclBaseline` variant
+        // either (it would surface as `basilica nccl-baseline ...`).
+        let parent = clap::Command::new("basilica");
+        let cmd = Commands::augment_subcommands(parent);
+        let names: Vec<&str> = cmd.get_subcommands().map(|sc| sc.get_name()).collect();
+        assert!(
+            !names.contains(&"nccl-baseline"),
+            "top-level `basilica nccl-baseline` was removed in SDK arch § 10"
+        );
+        // Sanity: the `train` subcommand IS at the top level.
+        assert!(names.contains(&"train"));
+    }
 }

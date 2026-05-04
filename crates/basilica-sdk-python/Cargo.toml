@@ -1,6 +1,6 @@
 [package]
 name = "basilica-sdk-python"
-version = "0.27.0"
+version = "0.28.0"
 edition = "2021"
 authors = ["Basilica Team"]
 description = "Python bindings for the Basilica SDK"
@@ -26,6 +26,7 @@ pyo3-stub-gen = { workspace = true, optional = true }
 pyo3-stub-gen-derive = { workspace = true, optional = true }
 tokio = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 pythonize = { workspace = true }
 
 [build-dependencies]

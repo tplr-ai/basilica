@@ -24,7 +24,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 from urllib.parse import urlparse
 
 from basilica.exceptions import DeploymentFailed, DeploymentTimeout
@@ -173,12 +173,28 @@ class Deployment:
         replicas_desired: int = 1,
         updated_at: Optional[str] = None,
         friendly_name: str = "",
+        image: str = "",
+        phase: Optional[str] = None,
+        message: Optional[str] = None,
+        share_token: Optional[str] = None,
+        share_url: Optional[str] = None,
+        public_metadata: bool = False,
+        distributed: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize a Deployment instance.
 
         Note: Users should not create Deployment objects directly.
         Use client.deploy() or client.get_deployment() instead.
+
+        Issues #453 / #454: prior to this fix the wrapper dropped
+        `image`, `phase`, `distributed` (and several other fields) that
+        the PyO3 layer exposes. The Python facade `_coerce_to_dict`
+        consequently saw a 4-key dict on the wrapper path
+        (`client.get(name)`) even after PR #451 fixed the PyO3 layer,
+        so every `DistributedTraining.world` / `.ranks` / `.bench`
+        read returned zeros. The wrapper now preserves the full
+        attribute surface the binding exposes.
         """
         self._client = client
         self._name = instance_name
@@ -191,6 +207,13 @@ class Deployment:
         self._updated_at = updated_at
         self._replicas_ready = replicas_ready
         self._replicas_desired = replicas_desired
+        self._image = image
+        self._phase = phase
+        self._message = message
+        self._share_token = share_token
+        self._share_url = share_url
+        self._public_metadata = public_metadata
+        self._distributed = distributed
 
     @property
     def name(self) -> str:
@@ -201,6 +224,18 @@ class Deployment:
     def friendly_name(self) -> str:
         """The user-supplied display name for the deployment."""
         return self._friendly_name
+
+    @property
+    def instance_name(self) -> str:
+        """
+        The deployment instance name (alias of `name`, matches the PyO3
+        binding's snake_case attribute).
+
+        Issues #453 / #454: `_coerce_to_dict` walks `obj.instance_name`
+        (the binding-side name) so the wrapper must expose it for the
+        camelCase `instanceName` key to survive the round-trip.
+        """
+        return self._name
 
     @property
     def url(self) -> str:
@@ -236,6 +271,59 @@ class Deployment:
         Note: This may be stale. Call status() for the latest state.
         """
         return self._state
+
+    @property
+    def updated_at(self) -> Optional[str]:
+        """Timestamp when the deployment was last updated (ISO 8601)."""
+        return self._updated_at
+
+    @property
+    def image(self) -> str:
+        """Container image reference for this deployment."""
+        return self._image
+
+    @property
+    def phase(self) -> Optional[str]:
+        """Granular deployment phase (scheduling, pulling, ready, etc.)."""
+        return self._phase
+
+    @property
+    def message(self) -> Optional[str]:
+        """Human-readable status / error message, if any."""
+        return self._message
+
+    @property
+    def share_token(self) -> Optional[str]:
+        """Share token for private deployments (only set on creation)."""
+        return self._share_token
+
+    @property
+    def share_url(self) -> Optional[str]:
+        """Shareable URL with token query parameter for private deployments."""
+        return self._share_url
+
+    @property
+    def public_metadata(self) -> bool:
+        """Whether deployment metadata is publicly readable."""
+        return self._public_metadata
+
+    @property
+    def distributed(self) -> Optional[Dict[str, Any]]:
+        """
+        Operator-emitted `status.distributed` block for distributed-training
+        UDs. `None` for single-replica deployments.
+
+        The dict shape is the operator's camelCase wire format
+        (`worldSize`, `ranks`, `bench`, `transport`). Researchers
+        normally consume it via the `DistributedTraining` facade
+        (`client.deploy_distributed(...)`) rather than reading this
+        directly.
+
+        Issues #453 / #454: this attribute was dropped by the
+        `Deployment` wrapper before this fix, even though PR #451
+        landed it on the PyO3 binding.
+        """
+        return self._distributed
 
     def _parse_status_response(self, response) -> DeploymentStatus:
         """Parse API response into DeploymentStatus and update cached state."""
@@ -587,14 +675,7 @@ class Deployment:
         response = await loop.run_in_executor(
             None, self._client.get_deployment, self._name
         )
-
-        self._url = response.url
-        self._state = response.state
-        self._replicas_ready = response.replicas.ready
-        self._replicas_desired = response.replicas.desired
-        if response.updated_at:
-            self._updated_at = response.updated_at
-
+        self._copy_from_response(response)
         return self
 
     async def delete_async(self) -> None:
@@ -667,15 +748,32 @@ class Deployment:
             >>> print(f"Current state: {deployment.state}")
         """
         response = self._client.get_deployment(self._name)
+        self._copy_from_response(response)
+        return self
 
+    def _copy_from_response(self, response) -> None:
+        """Copy mutable fields from a fresh PyO3 response onto this wrapper.
+
+        Shared between `refresh` and `refresh_async` so the two stay in lock
+        step. Keeps `image`, `phase`, `distributed`, etc. fresh -- those
+        fields drove issues #453 / #454 when the wrapper held stale (or
+        missing) copies.
+        """
         self._url = response.url
         self._state = response.state
         self._replicas_ready = response.replicas.ready
         self._replicas_desired = response.replicas.desired
         if response.updated_at:
             self._updated_at = response.updated_at
-
-        return self
+        self._image = getattr(response, "image", self._image) or self._image
+        self._phase = getattr(response, "phase", self._phase)
+        self._message = getattr(response, "message", self._message)
+        self._share_token = getattr(response, "share_token", self._share_token)
+        self._share_url = getattr(response, "share_url", self._share_url)
+        self._public_metadata = bool(
+            getattr(response, "public_metadata", self._public_metadata)
+        )
+        self._distributed = getattr(response, "distributed", self._distributed)
 
     def __repr__(self) -> str:
         return (
@@ -691,6 +789,17 @@ class Deployment:
         Create a Deployment from an API response.
 
         Internal method used by BasilicaClient.
+
+        Issues #453 / #454: this factory previously extracted only a
+        narrow subset of the PyO3 `DeploymentResponse` fields, so
+        downstream code paths -- notably `_coerce_to_dict` driving
+        `DistributedTraining.world` / `.ranks` / `.bench` -- saw the
+        wrapper as missing `image`, `phase`, and `distributed`
+        regardless of what the binding had populated. Every PyO3
+        attribute the user could plausibly want at runtime is now
+        copied onto the wrapper. `getattr` with a default keeps the
+        method robust to older binding builds that have not yet
+        rolled to the post-#451 attribute set.
         """
         return cls(
             client=client,
@@ -704,4 +813,11 @@ class Deployment:
             replicas_ready=response.replicas.ready,
             replicas_desired=response.replicas.desired,
             updated_at=response.updated_at,
+            image=getattr(response, "image", "") or "",
+            phase=getattr(response, "phase", None),
+            message=getattr(response, "message", None),
+            share_token=getattr(response, "share_token", None),
+            share_url=getattr(response, "share_url", None),
+            public_metadata=bool(getattr(response, "public_metadata", False)),
+            distributed=getattr(response, "distributed", None),
         )
