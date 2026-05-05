@@ -153,6 +153,7 @@ from .distributed import (
     DistributedMetrics,
     DistributedTraining,
     ProviderFilter,
+    RankExit,
     RankStatus,
     WorldSize,
     WorldStatus,
@@ -174,6 +175,7 @@ from .exceptions import (
     ResourceError,
     SourceError,
     StorageError,
+    UDTerminalState,
     ValidationError,
     WorldSizeOutOfBounds,
 )

@@ -1419,6 +1419,29 @@ pub struct DistributedBenchResult {
     pub probe_node_b: String,
 }
 
+/// Phase 5b (#445) per-rank exit diagnostics, populated when a distributed
+/// UD reaches a terminal state (`Succeeded` / `Failed` / `Cancelled`).
+/// Mirrors the K8s container `terminated` block so the SDK can surface
+/// per-rank exit codes after the operator scales the worker StatefulSet
+/// to `replicas: 0` (and the worker pods are no longer queryable). Source:
+/// `crd::user_deployment::RankExit`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DistributedRankExit {
+    pub rank: u32,
+    pub exit_code: i32,
+    /// `Completed` | `Error` | `OOMKilled` | ... or `None` when kubelet did
+    /// not record a reason (rare; usually means the container terminated
+    /// before kubelet could attribute a cause).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub termination_reason: Option<String>,
+    /// Container `restartCount` at the moment the operator observed the
+    /// terminated state. `0` for a clean first-iteration exit; non-zero
+    /// when kubelet's `restartPolicy=Always` already restarted the
+    /// container at least once before the operator caught it.
+    pub restart_count: u32,
+}
+
 /// Bench probe state. `result` is populated only after a successful run.
 /// `last_attempt_outcome` is one of `success | error | timeout` (stable
 /// wire tokens defined in the operator).
@@ -1585,6 +1608,13 @@ pub struct DistributedStatus {
     /// Phase 5a deprecation flag for the legacy preflight surface.
     #[serde(default, skip_serializing_if = "is_false_status")]
     pub preflight_deprecation_warned: bool,
+    /// Phase 5b (#445): per-rank exit diagnostics. Empty while the UD is
+    /// non-terminal. On transition to `Succeeded` / `Failed` the operator
+    /// snapshots each worker pod's container `terminated` state and
+    /// persists it here so the SDK can surface them after the worker
+    /// StatefulSet has been scaled to `replicas: 0`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rank_exits: Vec<DistributedRankExit>,
 }
 
 #[inline]

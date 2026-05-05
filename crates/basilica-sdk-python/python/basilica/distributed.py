@@ -29,8 +29,15 @@ from typing import (
 
 from .exceptions import (
     BelowMinimumWorld,
+    UDTerminalState,
     WorldSizeOutOfBounds,
 )
+
+# Phase 5b (#445): operator phases that pin the UD as terminal. See the
+# operator's `DeploymentPhase::is_terminal` for the source of truth. The
+# Python side reads `status.phase` as a snake_case string straight from
+# the JSON the API returns, so the comparison is string-based.
+TERMINAL_PHASES: frozenset = frozenset({"succeeded", "failed", "cancelled"})
 
 if TYPE_CHECKING:
     from . import BasilicaClient
@@ -128,6 +135,28 @@ class RankStatus:
     region: Optional[str]
     phase: str
     restarts: int
+
+
+@dataclass(frozen=True)
+class RankExit:
+    """
+    Phase 5b (#445) per-rank exit diagnostics.
+
+    Populated by the operator on `status.distributed.rankExits` when the
+    UD reaches a terminal state (or on the deferred reconcile that fires
+    when workers complete before bench is terminal). Empty while the UD
+    is non-terminal -- the SDK distinguishes "in flight" from "finished"
+    by absence-vs-presence of `rank_exits`.
+
+    Mirrors the K8s container `terminated` block so consumers can read
+    per-rank exit codes after the operator has scaled the worker
+    StatefulSet to `replicas: 0` and the pods are no longer queryable.
+    """
+
+    rank: int
+    exit_code: int
+    termination_reason: Optional[str]
+    restart_count: int
 
 
 @dataclass(frozen=True)
@@ -274,6 +303,62 @@ class DistributedTraining:
         ]
 
     @property
+    def phase(self) -> str:
+        """
+        Phase 5b (#445): operator-driven lifecycle phase.
+
+        One of `pending` | `scheduling` | `pulling` | `initializing` |
+        `storage_sync` | `starting` | `health_check` | `ready` |
+        `degraded` | `failed` | `suspended` | `terminating` |
+        `succeeded` | `cancelled`. The terminal triple
+        (`succeeded`, `failed`, `cancelled`) is sticky — once set the
+        operator does not regress to a non-terminal phase.
+
+        Empty string when the operator has not yet written a status
+        block (just-created UD before the first reconcile).
+        """
+        if self._cached_status is None:
+            self.refresh()
+        # `phase` is a top-level field on DeploymentResponse (snake_case
+        # on the PyO3 binding -> camelCase'd by `_coerce_to_dict`).
+        phase = (self._cached_status or {}).get("phase")
+        if phase is None:
+            return ""
+        return str(phase)
+
+    @property
+    def is_terminal(self) -> bool:
+        """
+        Phase 5b (#445): convenience for callers that just want to know
+        "is this UD done?" — `phase in {succeeded, failed, cancelled}`.
+        """
+        return self.phase in TERMINAL_PHASES
+
+    @property
+    def rank_exits(self) -> List[RankExit]:
+        """
+        Phase 5b (#445): per-rank exit diagnostics, populated when the
+        UD reaches a terminal state (or on the deferred reconcile when
+        workers complete before bench finishes). Empty while the UD is
+        running; absence vs. presence is the SDK's signal for
+        "training in flight" vs. "training finished".
+        """
+        if self._cached_status is None:
+            self.refresh()
+        exits_raw = (
+            (self._cached_status or {}).get("distributed", {}).get("rankExits") or []
+        )
+        return [
+            RankExit(
+                rank=int(e.get("rank", 0)),
+                exit_code=int(e.get("exitCode", 0)),
+                termination_reason=e.get("terminationReason"),
+                restart_count=int(e.get("restartCount", 0)),
+            )
+            for e in exits_raw
+        ]
+
+    @property
     def bench(self) -> Optional[BenchResult]:
         """
         Per-UD bench probe result, or `None` if `bench.mode != on-start`
@@ -367,6 +452,20 @@ class DistributedTraining:
         # min/max only at create-time, but a stale cache from before
         # creation would show min=max=0).
         self.refresh()
+        # Phase 5b (#445): refuse to scale a UD that has already reached
+        # a terminal state. The operator's defense in depth (renderer
+        # uses `effective_worker_replicas` and the reconciler emits a
+        # `UDTerminalState` Warning Event on attempted mutations) catches
+        # `kubectl edit` mutations that bypass the SDK; this guard is the
+        # primary user-facing rejection.
+        current_phase = self.phase
+        if current_phase in TERMINAL_PHASES:
+            raise UDTerminalState(
+                f"scale: UD '{self.name}' is in terminal phase "
+                f"'{current_phase}'; recreate the UD to scale",
+                phase=current_phase,
+                requested_target=target,
+            )
         ws = self.world
         # ws.min == 0 means we have not yet observed the operator's first
         # status write; in that case skip the bounds check and let the
@@ -442,11 +541,30 @@ class DistributedTraining:
             )
 
     def wait_until_target_world(self, timeout: int = 600) -> None:
-        """Block until `ready >= target`, or raise `BelowMinimumWorld` on timeout."""
+        """
+        Block until `ready >= target`, or raise `BelowMinimumWorld` on timeout.
+
+        Phase 5b (#445): returns cleanly when the UD has already reached
+        `succeeded` -- by definition the world was assembled (the
+        operator only transitions to `succeeded` after every rank exited
+        with `exit_code == 0`), so the contract `ready >= target` was
+        met at some point. `failed` / `cancelled` raise `BelowMinimumWorld`
+        because the contract was NOT met.
+        """
         deadline = time.monotonic() + max(timeout, 0)
         while time.monotonic() < deadline:
             self.refresh()
             ws = self.world
+            if self.phase == "succeeded":
+                return
+            if self.phase in ("failed", "cancelled"):
+                raise BelowMinimumWorld(
+                    f"wait_until_target_world: UD '{self.name}' reached "
+                    f"terminal phase '{self.phase}' before world reached target",
+                    ready=ws.ready,
+                    required_min=ws.target,
+                    timeout=timeout,
+                )
             if ws.ready >= ws.target and ws.target > 0:
                 return
             if timeout == 0:
@@ -454,6 +572,8 @@ class DistributedTraining:
             time.sleep(min(5, max(timeout // 10, 1)))
         self.refresh()
         ws = self.world
+        if self.phase == "succeeded":
+            return
         if ws.ready < ws.target or ws.target == 0:
             raise BelowMinimumWorld(
                 f"wait_until_target_world timed out after {timeout}s "
@@ -464,11 +584,21 @@ class DistributedTraining:
             )
 
     async def wait_until_target_world_async(self, timeout: int = 600) -> None:
-        """Async variant of `wait_until_target_world`."""
+        """Async variant of `wait_until_target_world`. Same Phase 5b semantics."""
         deadline = asyncio.get_event_loop().time() + max(timeout, 0)
         while asyncio.get_event_loop().time() < deadline:
             await self.refresh_async()
             ws = self.world
+            if self.phase == "succeeded":
+                return
+            if self.phase in ("failed", "cancelled"):
+                raise BelowMinimumWorld(
+                    f"wait_until_target_world_async: UD '{self.name}' reached "
+                    f"terminal phase '{self.phase}' before world reached target",
+                    ready=ws.ready,
+                    required_min=ws.target,
+                    timeout=timeout,
+                )
             if ws.ready >= ws.target and ws.target > 0:
                 return
             if timeout == 0:
@@ -476,6 +606,8 @@ class DistributedTraining:
             await asyncio.sleep(min(5, max(timeout // 10, 1)))
         await self.refresh_async()
         ws = self.world
+        if self.phase == "succeeded":
+            return
         if ws.ready < ws.target or ws.target == 0:
             raise BelowMinimumWorld(
                 f"wait_until_target_world_async timed out after {timeout}s "
@@ -484,6 +616,128 @@ class DistributedTraining:
                 required_min=ws.target,
                 timeout=timeout,
             )
+
+    def wait_until_complete(self, timeout: int = 1800) -> WorldStatus:
+        """
+        Phase 5b (#445): block until the UD reaches any terminal state.
+
+        Returns the final `WorldStatus` on `succeeded`. Raises
+        `BelowMinimumWorld` on `failed` (with the per-rank exit
+        diagnostics from `rank_exits` summarised in the message). Raises
+        `UDTerminalState` if the UD is ALREADY terminal at the time of
+        the call -- so the caller distinguishes "I waited and it
+        completed" from "I called this on an already-completed UD".
+
+        Polls every 10s. The default 30-minute timeout assumes a typical
+        bench Job (~5 min) plus reasonable training time; long-running
+        runs should pass an explicit timeout.
+
+        Raises:
+            UDTerminalState: UD was already terminal at entry.
+            BelowMinimumWorld: UD reached `failed` / `cancelled` mid-wait
+                or the timeout elapsed without a terminal transition.
+        """
+        # Refuse to block on something that already reached a terminal
+        # state. Caller can read `t.world` / `t.bench` / `t.rank_exits`
+        # directly instead.
+        self.refresh()
+        if self.is_terminal:
+            raise UDTerminalState(
+                f"wait_until_complete: UD '{self.name}' is already in "
+                f"terminal phase '{self.phase}'",
+                phase=self.phase,
+                requested_target=None,
+            )
+
+        deadline = time.monotonic() + max(timeout, 0)
+        while time.monotonic() < deadline:
+            self.refresh()
+            current_phase = self.phase
+            if current_phase == "succeeded":
+                return self.world
+            if current_phase in ("failed", "cancelled"):
+                ws = self.world
+                exits = self.rank_exits
+                # Summarise non-zero exits for the error message so the
+                # caller has actionable context without an extra fetch.
+                bad = [
+                    f"rank {e.rank}: exit_code={e.exit_code}"
+                    + (f" reason={e.termination_reason}" if e.termination_reason else "")
+                    for e in exits
+                    if e.exit_code != 0
+                ]
+                detail = "; ".join(bad) if bad else "no per-rank exits recorded"
+                raise BelowMinimumWorld(
+                    f"wait_until_complete: UD '{self.name}' reached "
+                    f"terminal phase '{current_phase}' ({detail})",
+                    ready=ws.ready,
+                    required_min=ws.min,
+                    timeout=timeout,
+                )
+            if timeout == 0:
+                break
+            time.sleep(min(10, max(timeout // 30, 1)))
+        # Timeout: surface as `BelowMinimumWorld` with the live shape.
+        self.refresh()
+        ws = self.world
+        if self.phase == "succeeded":
+            return ws
+        raise BelowMinimumWorld(
+            f"wait_until_complete: timed out after {timeout}s "
+            f"(phase={self.phase}, ready={ws.ready}, target={ws.target})",
+            ready=ws.ready,
+            required_min=ws.min,
+            timeout=timeout,
+        )
+
+    async def wait_until_complete_async(self, timeout: int = 1800) -> WorldStatus:
+        """Async variant of `wait_until_complete`. Same Phase 5b semantics."""
+        await self.refresh_async()
+        if self.is_terminal:
+            raise UDTerminalState(
+                f"wait_until_complete_async: UD '{self.name}' is already in "
+                f"terminal phase '{self.phase}'",
+                phase=self.phase,
+                requested_target=None,
+            )
+
+        deadline = asyncio.get_event_loop().time() + max(timeout, 0)
+        while asyncio.get_event_loop().time() < deadline:
+            await self.refresh_async()
+            current_phase = self.phase
+            if current_phase == "succeeded":
+                return self.world
+            if current_phase in ("failed", "cancelled"):
+                ws = self.world
+                exits = self.rank_exits
+                bad = [
+                    f"rank {e.rank}: exit_code={e.exit_code}"
+                    + (f" reason={e.termination_reason}" if e.termination_reason else "")
+                    for e in exits
+                    if e.exit_code != 0
+                ]
+                detail = "; ".join(bad) if bad else "no per-rank exits recorded"
+                raise BelowMinimumWorld(
+                    f"wait_until_complete_async: UD '{self.name}' reached "
+                    f"terminal phase '{current_phase}' ({detail})",
+                    ready=ws.ready,
+                    required_min=ws.min,
+                    timeout=timeout,
+                )
+            if timeout == 0:
+                break
+            await asyncio.sleep(min(10, max(timeout // 30, 1)))
+        await self.refresh_async()
+        ws = self.world
+        if self.phase == "succeeded":
+            return ws
+        raise BelowMinimumWorld(
+            f"wait_until_complete_async: timed out after {timeout}s "
+            f"(phase={self.phase}, ready={ws.ready}, target={ws.target})",
+            ready=ws.ready,
+            required_min=ws.min,
+            timeout=timeout,
+        )
 
     def delete(self) -> None:
         """

@@ -30,7 +30,9 @@ from basilica import (
     DistributedTraining,
     ProviderFilter,
     QuotaExceeded,
+    RankExit,
     RankStatus,
+    UDTerminalState,
     WorldSize,
     WorldSizeOutOfBounds,
     WorldStatus,
@@ -1238,3 +1240,368 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
         # `wait_until_min_world` must NOT raise BelowMinimumWorld here:
         # ready=2 >= min=2.
         training.wait_until_min_world(timeout=1)
+
+
+# =============================================================================
+# Phase 5b (#445) -- distributed UD completion semantics.
+# =============================================================================
+
+
+def _make_terminal_training(
+    name: str = "dlc-done",
+    namespace: str = "u-test",
+    phase: str = "succeeded",
+    rank_exits: list = None,
+) -> DistributedTraining:
+    """Build a `DistributedTraining` with a pre-populated terminal status.
+
+    The phase is at the top level of `_cached_status` (mirroring
+    `DeploymentResponse.phase`). `rank_exits` lives under
+    `distributed.rankExits` (camelCase JSON keys).
+    """
+    client = MagicMock()
+    client._client = MagicMock()
+    fake_response = MagicMock()
+    fake_response.namespace = namespace
+    fake_response.phase = phase
+    fake_response._distributed_status = {
+        "worldSize": {
+            "ready": 0,
+            "target": 2,
+            "min": 2,
+            "max": 2,
+            "belowMinimum": True,
+        },
+        "rankExits": rank_exits or [
+            {
+                "rank": 0,
+                "exitCode": 0,
+                "terminationReason": "Completed",
+                "restartCount": 1,
+            },
+            {
+                "rank": 1,
+                "exitCode": 0,
+                "terminationReason": "Completed",
+                "restartCount": 1,
+            },
+        ],
+    }
+    client.get.return_value = fake_response
+    training = DistributedTraining(client, name)
+    training._cached_status = {
+        "namespace": namespace,
+        "phase": phase,
+        "distributed": fake_response._distributed_status,
+    }
+    training.namespace = namespace
+    training.rendezvous_endpoint = (
+        f"{name}-rendezvous.{namespace}.svc.cluster.local:2379"
+    )
+    return training
+
+
+class TestPhase5bCompletionSemantics:
+    """Phase 5b (#445) SDK-side terminal-state contracts."""
+
+    def test_phase_property_reads_succeeded_from_cached_status(self) -> None:
+        training = _make_terminal_training(phase="succeeded")
+        assert training.phase == "succeeded"
+        assert training.is_terminal is True
+
+    def test_phase_property_reads_running_phase(self) -> None:
+        # Non-terminal phase: `is_terminal` False, scale path open.
+        client = MagicMock()
+        client._client = MagicMock()
+        client.get.return_value = MagicMock(
+            namespace="u-test",
+            phase="ready",
+            _distributed_status={
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                }
+            },
+        )
+        training = DistributedTraining(client, "dlc-running")
+        training._cached_status = {
+            "namespace": "u-test",
+            "phase": "ready",
+            "distributed": {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                }
+            },
+        }
+        training.namespace = "u-test"
+        assert training.phase == "ready"
+        assert training.is_terminal is False
+
+    def test_rank_exits_property_reads_camelcase_json(self) -> None:
+        training = _make_terminal_training(phase="succeeded")
+        exits = training.rank_exits
+        assert len(exits) == 2
+        assert all(isinstance(e, RankExit) for e in exits)
+        assert exits[0].rank == 0
+        assert exits[0].exit_code == 0
+        assert exits[0].termination_reason == "Completed"
+        assert exits[0].restart_count == 1
+        assert exits[1].rank == 1
+        assert exits[1].exit_code == 0
+
+    def test_rank_exits_empty_when_running(self) -> None:
+        # No `rankExits` key in distributed status -> empty list.
+        client = MagicMock()
+        client._client = MagicMock()
+        training = DistributedTraining(client, "dlc-running")
+        training._cached_status = {
+            "namespace": "u-test",
+            "phase": "ready",
+            "distributed": {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                }
+            },
+        }
+        training.namespace = "u-test"
+        assert training.rank_exits == []
+
+    def test_scale_on_succeeded_raises_ud_terminal_state(self) -> None:
+        """SDK-side rejection BEFORE the API call. The operator's
+        `UDTerminalState` Warning Event is the defense in depth for
+        kubectl-edit mutations that bypass the SDK."""
+        training = _make_terminal_training(phase="succeeded")
+        # Stub the refresh fetch so the scale path has the latest phase.
+        training._client.get = MagicMock(
+            return_value=MagicMock(
+                namespace="u-test",
+                phase="succeeded",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 0,
+                        "target": 2,
+                        "min": 2,
+                        "max": 2,
+                        "belowMinimum": True,
+                    }
+                },
+            )
+        )
+
+        with pytest.raises(UDTerminalState) as exc_info:
+            training.scale(target=4)
+        assert exc_info.value.phase == "succeeded"
+        assert exc_info.value.requested_target == 4
+        # The PyO3 patch MUST NOT have been issued -- the SDK rejection
+        # is local.
+        training._client._client.scale_distributed_deployment.assert_not_called()
+
+    def test_scale_on_failed_raises_ud_terminal_state(self) -> None:
+        """`failed` is also terminal; mirrors the operator's
+        `is_terminal` set."""
+        training = _make_terminal_training(phase="failed")
+        training._client.get = MagicMock(
+            return_value=MagicMock(
+                namespace="u-test",
+                phase="failed",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 1,
+                        "target": 2,
+                        "min": 2,
+                        "max": 2,
+                        "belowMinimum": True,
+                    }
+                },
+            )
+        )
+
+        with pytest.raises(UDTerminalState) as exc_info:
+            training.scale(target=4)
+        assert exc_info.value.phase == "failed"
+        training._client._client.scale_distributed_deployment.assert_not_called()
+
+    def test_wait_until_complete_returns_world_when_already_succeeded_at_entry_raises(
+        self,
+    ) -> None:
+        """`wait_until_complete` distinguishes 'I waited and it
+        completed' from 'I called this on an already-complete UD' --
+        the latter raises `UDTerminalState` so the caller switches to
+        reading `t.world` / `t.bench` / `t.rank_exits` directly."""
+        training = _make_terminal_training(phase="succeeded")
+        training._client.get = MagicMock(
+            return_value=MagicMock(
+                namespace="u-test",
+                phase="succeeded",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 0,
+                        "target": 2,
+                        "min": 2,
+                        "max": 2,
+                        "belowMinimum": True,
+                    }
+                },
+            )
+        )
+
+        with pytest.raises(UDTerminalState) as exc_info:
+            training.wait_until_complete(timeout=1)
+        assert exc_info.value.phase == "succeeded"
+        assert exc_info.value.requested_target is None
+
+    def test_wait_until_complete_returns_world_when_phase_flips_to_succeeded(
+        self,
+    ) -> None:
+        """Real waiting path: phase starts non-terminal, flips to
+        `succeeded` mid-wait, returns `WorldStatus`. We simulate two
+        polls: first sees `pending`, second sees `succeeded`."""
+        # Counter to mutate the response across refresh() calls.
+        call_count = {"n": 0}
+
+        def fake_get(name: str) -> MagicMock:
+            call_count["n"] += 1
+            phase = "pending" if call_count["n"] <= 1 else "succeeded"
+            return MagicMock(
+                namespace="u-test",
+                phase=phase,
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 0,
+                        "target": 2,
+                        "min": 2,
+                        "max": 2,
+                        "belowMinimum": True,
+                    },
+                    "rankExits": [],
+                },
+            )
+
+        client = MagicMock()
+        client._client = MagicMock()
+        client.get.side_effect = fake_get
+        training = DistributedTraining(client, "dlc-flip")
+        # Start the wait. timeout=1 so the test is fast; we expect the
+        # second poll to flip the phase, returning WorldStatus.
+        ws = training.wait_until_complete(timeout=1)
+        assert isinstance(ws, WorldStatus)
+
+    def test_wait_until_complete_raises_below_minimum_on_failed(self) -> None:
+        """`failed` mid-wait raises `BelowMinimumWorld` with per-rank
+        exit detail. The first refresh sees `pending` (so the entry
+        guard does not fire); the second sees `failed`."""
+        call_count = {"n": 0}
+
+        def fake_get(name: str) -> MagicMock:
+            call_count["n"] += 1
+            phase = "pending" if call_count["n"] <= 1 else "failed"
+            return MagicMock(
+                namespace="u-test",
+                phase=phase,
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 1,
+                        "target": 2,
+                        "min": 2,
+                        "max": 2,
+                        "belowMinimum": True,
+                    },
+                    "rankExits": [
+                        {
+                            "rank": 0,
+                            "exitCode": 0,
+                            "terminationReason": "Completed",
+                            "restartCount": 0,
+                        },
+                        {
+                            "rank": 1,
+                            "exitCode": 137,
+                            "terminationReason": "OOMKilled",
+                            "restartCount": 1,
+                        },
+                    ],
+                },
+            )
+
+        client = MagicMock()
+        client._client = MagicMock()
+        client.get.side_effect = fake_get
+        training = DistributedTraining(client, "dlc-fail")
+
+        with pytest.raises(BelowMinimumWorld) as exc_info:
+            training.wait_until_complete(timeout=1)
+        # The error message must mention the OOMKilled rank so the
+        # caller has actionable context (per CLAUDE.md
+        # `feedback_evidence_backed_issues`).
+        assert "rank 1" in str(exc_info.value)
+        assert "137" in str(exc_info.value)
+
+    def test_wait_until_target_world_returns_clean_on_succeeded(self) -> None:
+        """Phase 5b: `wait_until_target_world` returns cleanly when the
+        UD has reached `succeeded` (training is done by definition).
+        Was previously timing out on `ready=0` after the
+        StatefulSet scaled to 0."""
+        # First poll observes `succeeded`; with `ready=0` (workers
+        # scaled to 0), the legacy `ready >= target` check would have
+        # timed out.
+        client = MagicMock()
+        client._client = MagicMock()
+        client.get.return_value = MagicMock(
+            namespace="u-test",
+            phase="succeeded",
+            _distributed_status={
+                "worldSize": {
+                    "ready": 0,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": True,
+                },
+                "rankExits": [
+                    {
+                        "rank": 0,
+                        "exitCode": 0,
+                        "terminationReason": "Completed",
+                        "restartCount": 1,
+                    },
+                    {
+                        "rank": 1,
+                        "exitCode": 0,
+                        "terminationReason": "Completed",
+                        "restartCount": 1,
+                    },
+                ],
+            },
+        )
+        training = DistributedTraining(client, "dlc-finish")
+        # Pre-populate the cache so the wait sees `succeeded` on its
+        # first refresh.
+        training._cached_status = {
+            "namespace": "u-test",
+            "phase": "succeeded",
+            "distributed": client.get.return_value._distributed_status,
+        }
+        training.namespace = "u-test"
+
+        # Should return without raising; explicit None result.
+        result = training.wait_until_target_world(timeout=1)
+        assert result is None
+
+    def test_async_phase_5b_methods_exist(self) -> None:
+        """Phase 5b: `wait_until_complete_async` exists for parity with
+        the sync method (SDK arch § 9)."""
+        training = _make_terminal_training()
+        assert hasattr(training, "wait_until_complete")
+        assert hasattr(training, "wait_until_complete_async")
+        assert asyncio.iscoroutinefunction(training.wait_until_complete_async)

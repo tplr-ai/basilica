@@ -554,3 +554,55 @@ class WorldSizeOutOfBounds(DistributedError):
             code="DISTRIBUTED_WORLD_SIZE_OUT_OF_BOUNDS",
             retryable=False,
         )
+
+
+class UDTerminalState(DistributedError):
+    """
+    Phase 5b (#445): raised when the user attempts to mutate a
+    `DistributedTraining` UD that has already reached a terminal state
+    (`succeeded`, `failed`, or `cancelled`).
+
+    Two paths raise this:
+
+    1. `t.scale(target=N)` against a terminal UD. The operator's
+       defense in depth catches `kubectl edit` mutations that bypass the
+       SDK with a `UDTerminalState` Warning Event, but `t.scale` is the
+       primary user-facing rejection.
+    2. `t.wait_until_complete()` against a UD that is ALREADY terminal at
+       the time of the call. Distinguishes "I waited and it completed"
+       from "I called this on an already-completed UD" -- the caller
+       should read `t.world` / `t.bench` / `t.rank_exits` directly and
+       call `t.delete()` when done.
+
+    Attributes:
+        phase: The terminal phase observed (`succeeded` | `failed` |
+            `cancelled`).
+        requested_target: The `target` the caller passed to `scale()`,
+            or `None` for the `wait_until_complete()` path.
+
+    Example:
+        >>> training.refresh()
+        >>> training.phase
+        'succeeded'
+        >>> training.scale(target=4)
+        UDTerminalState: phase='succeeded', requested_target=4
+
+        >>> training.wait_until_complete()
+        UDTerminalState: phase='succeeded', requested_target=None
+
+    The user's only entry point for cleanup is `t.delete()`.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        phase: str,
+        requested_target: Optional[int] = None,
+    ):
+        self.phase = phase
+        self.requested_target = requested_target
+        super().__init__(
+            message=message,
+            code="DISTRIBUTED_UD_TERMINAL_STATE",
+            retryable=False,
+        )
