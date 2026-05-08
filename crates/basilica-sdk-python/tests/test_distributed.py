@@ -208,6 +208,240 @@ class TestDistributedTrainingScale:
         assert ws.target == 3
 
 
+class TestIssue495ScaleStaleTargetGate:
+    """
+    Issue #495: `scale(target=N)` patches `spec.distributed.worldSize.target`
+    only; the operator mirrors `spec → status` on its next reconcile. The
+    SDK's `wait_until_target_world` must NOT short-circuit while the
+    operator-observed `status.worldSize.target` still carries the
+    pre-patch value.
+    """
+
+    def test_issue_495_scale_returns_world_status_with_requested_target(
+        self,
+    ) -> None:
+        # Stub the API so refresh() after scale() still returns the OLD
+        # `status.worldSize.target` (operator hasn't reconciled yet). The
+        # SDK must NOT report the stale value back to the caller.
+        training = _make_mock_training(
+            world={
+                "ready": 2,
+                "target": 2,
+                "min": 2,
+                "max": 4,
+                "belowMinimum": False,
+            },
+        )
+        training._client._client.scale_distributed_deployment = MagicMock()
+        training._client.get = MagicMock(
+            return_value=MagicMock(
+                namespace="u-test",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 2,
+                        "target": 2,  # stale: operator hasn't observed scale yet
+                        "min": 2,
+                        "max": 4,
+                        "belowMinimum": False,
+                    }
+                },
+            )
+        )
+
+        ws = training.scale(target=3)
+
+        # Reported target must reflect the request, not the stale operator
+        # snapshot. Otherwise `Scaled to target=3; world now: ...target=2`
+        # is a lie that misleads operators reviewing example output.
+        assert ws.target == 3, (
+            "issue #495: scale() must report the REQUESTED target, not the "
+            "stale `status.worldSize.target` from before the operator's "
+            "next reconcile."
+        )
+
+    def test_issue_495_wait_until_target_world_does_not_shortcircuit_on_stale_target(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Reproduces the ex21-r2 silent-failure: scale(target=3) succeeds,
+        # but `status.worldSize.target` stays at 2 because the operator
+        # hasn't reconciled yet. wait_until_target_world MUST keep waiting.
+        training = _make_mock_training(
+            world={
+                "ready": 2,
+                "target": 2,
+                "min": 2,
+                "max": 4,
+                "belowMinimum": False,
+            },
+        )
+        training._client._client.scale_distributed_deployment = MagicMock()
+
+        # Three refresh ticks before status reflects the patch:
+        #   tick 0 (the refresh inside scale()): stale target=2 ready=2
+        #   tick 1 (first wait iteration): stale target=2 ready=2
+        #   tick 2 (second wait iteration): operator reconciled, target=3 ready=2
+        #   tick 3 (third wait iteration): rank joined, target=3 ready=3 -- DONE
+        responses = [
+            MagicMock(
+                namespace="u-test",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 2,
+                        "target": 2,
+                        "min": 2,
+                        "max": 4,
+                        "belowMinimum": False,
+                    }
+                },
+            ),
+            MagicMock(
+                namespace="u-test",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 2,
+                        "target": 2,
+                        "min": 2,
+                        "max": 4,
+                        "belowMinimum": False,
+                    }
+                },
+            ),
+            MagicMock(
+                namespace="u-test",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 2,
+                        "target": 3,
+                        "min": 2,
+                        "max": 4,
+                        "belowMinimum": False,
+                    }
+                },
+            ),
+            MagicMock(
+                namespace="u-test",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 3,
+                        "target": 3,
+                        "min": 2,
+                        "max": 4,
+                        "belowMinimum": False,
+                    }
+                },
+            ),
+        ]
+        training._client.get = MagicMock(side_effect=responses)
+        # Avoid real sleeps -- the loop's inter-poll delay is irrelevant.
+        sleeps: list = []
+        import sys
+
+        _dist_mod = sys.modules["basilica.distributed"]
+        monkeypatch.setattr(_dist_mod.time, "sleep", lambda s: sleeps.append(s))
+
+        training.scale(target=3)
+        # The pre-fix bug: this returned ~immediately because ws.target==2
+        # and ws.ready==2 (stale) satisfied `ready >= target`. Post-fix,
+        # the pending-scale gate forces the loop to wait until status
+        # reflects target=3 AND ready>=3.
+        training.wait_until_target_world(timeout=120)
+
+        ws_final = training.world
+        assert ws_final.ready == 3
+        assert ws_final.target == 3
+        # Loop must have iterated at least twice (i.e. slept at least once).
+        assert sleeps, (
+            "issue #495: wait_until_target_world short-circuited on the "
+            "stale `status.worldSize.target` instead of waiting for the "
+            "operator to reflect the requested target."
+        )
+        # Pending-scale flag must be cleared on success.
+        assert training._pending_scale_target is None
+
+    def test_issue_495_wait_until_target_world_calls_refresh_before_first_check(
+        self,
+    ) -> None:
+        # Lock the SDK invariant: even with no pending scale, the first
+        # comparison in `wait_until_target_world` sees a fresh refresh.
+        training = _make_mock_training(
+            world={
+                "ready": 2,
+                "target": 2,
+                "min": 2,
+                "max": 4,
+                "belowMinimum": False,
+            },
+        )
+        # Stub the API so the first refresh() call returns ready==target.
+        training._client.get = MagicMock(
+            return_value=MagicMock(
+                namespace="u-test",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 2,
+                        "target": 2,
+                        "min": 2,
+                        "max": 4,
+                        "belowMinimum": False,
+                    }
+                },
+            )
+        )
+        # Should return without raising.
+        training.wait_until_target_world(timeout=10)
+        # `client.get` is the underlying refresh path; it MUST have been
+        # called at least once before the success-predicate check.
+        assert training._client.get.call_count >= 1, (
+            "issue #495: wait_until_target_world must refresh from the API "
+            "before its first ready/target comparison."
+        )
+
+    def test_issue_495_wait_until_target_world_times_out_with_pending_required_min(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # If the operator never reflects the patch, the timeout error
+        # message must report the REQUESTED target as required_min, not
+        # the stale operator-observed target.
+        training = _make_mock_training(
+            world={
+                "ready": 2,
+                "target": 2,
+                "min": 2,
+                "max": 4,
+                "belowMinimum": False,
+            },
+        )
+        training._client._client.scale_distributed_deployment = MagicMock()
+        # Status never advances past the stale snapshot.
+        training._client.get = MagicMock(
+            return_value=MagicMock(
+                namespace="u-test",
+                _distributed_status={
+                    "worldSize": {
+                        "ready": 2,
+                        "target": 2,
+                        "min": 2,
+                        "max": 4,
+                        "belowMinimum": False,
+                    }
+                },
+            )
+        )
+        import sys
+
+        _dist_mod = sys.modules["basilica.distributed"]
+        monkeypatch.setattr(_dist_mod.time, "sleep", lambda s: None)
+
+        training.scale(target=4)
+        with pytest.raises(BelowMinimumWorld) as exc_info:
+            training.wait_until_target_world(timeout=0)
+        assert exc_info.value.ready == 2
+        assert exc_info.value.required_min == 4, (
+            "issue #495: timeout exception must surface the REQUESTED "
+            "target as required_min (not stale `status.worldSize.target`)."
+        )
+
+
 class TestWaitUntilMinWorld:
     def test_timeout_zero_raises_below_minimum_immediately(self) -> None:
         # World is below min (ready=0, min=2). With timeout=0, the call
