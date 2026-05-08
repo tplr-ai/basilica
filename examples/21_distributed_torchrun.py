@@ -59,7 +59,7 @@ def main() -> None:
         cpu="8",
         memory="32Gi",
         provider_filter=ProviderFilter(include=["verda"]),
-        topology_spread="provider-aware",
+        topology_spread="pack",
         nccl_env={"NCCL_DEBUG": "WARN"},
         ttl_seconds=600,
         timeout=900,
