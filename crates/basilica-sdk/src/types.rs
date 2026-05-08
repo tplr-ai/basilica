@@ -2778,6 +2778,7 @@ mod tests {
                     last_attempt_outcome: Some("success".to_string()),
                 }),
                 preflight_deprecation_warned: false,
+                rank_exits: vec![],
             }),
         }
     }
