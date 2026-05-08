@@ -1605,3 +1605,241 @@ class TestPhase5bCompletionSemantics:
         assert hasattr(training, "wait_until_complete")
         assert hasattr(training, "wait_until_complete_async")
         assert asyncio.iscoroutinefunction(training.wait_until_complete_async)
+
+
+# =============================================================================
+# Issue #486: deploy_distributed must clean up the UD on wait_until_min_world
+# failure so the documented `deploy -> use -> delete()` flow doesn't leak
+# cluster state on every distributed-UD failure path.
+# =============================================================================
+
+
+def _pyo3_response(
+    instance_name: str,
+    namespace: str,
+    distributed: Dict[str, Any],
+) -> MagicMock:
+    """A PyO3-shaped DeploymentResponse with a real `distributed` dict.
+
+    The `distributed` attribute is set to a real dict (not a MagicMock
+    auto-attr) so `Deployment._from_response` picks it up and
+    `_coerce_to_dict` later reads it via `isinstance(..., dict)`.
+    """
+    response = MagicMock()
+    response.instance_name = instance_name
+    response.friendly_name = ""
+    response.user_id = namespace
+    response.namespace = namespace
+    response.image = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime"
+    response.state = "creating"
+    response.url = ""
+    response.created_at = "2026-05-08T00:00:00Z"
+    response.updated_at = "2026-05-08T00:00:00Z"
+    response.phase = "running"
+    response.message = None
+    response.share_token = None
+    response.share_url = None
+    response.public_metadata = False
+    response.distributed = distributed
+    return response
+
+
+def _below_min_pyo3_response(
+    instance_name: str = "dlc-486-mock",
+    namespace: str = "u-test",
+) -> MagicMock:
+    """A response stuck below `world_size.min`. Makes
+    `wait_until_min_world(timeout=0)` raise BelowMinimumWorld
+    synchronously."""
+    return _pyo3_response(
+        instance_name,
+        namespace,
+        {
+            "worldSize": {
+                "ready": 0,
+                "target": 2,
+                "min": 2,
+                "max": 2,
+                "belowMinimum": True,
+            },
+        },
+    )
+
+
+def _build_minimal_client() -> BasilicaClient:
+    """Construct a real BasilicaClient with a mocked PyO3 inner client.
+
+    Bypasses real auth via `__new__` so tests don't need credentials.
+    """
+    client = BasilicaClient.__new__(BasilicaClient)
+    client._base_url = "https://api.test.invalid"
+    client._client = MagicMock()
+    return client
+
+
+class TestDeployDistributedCleanupOnFailure:
+    """Issue #486: any failure inside `deploy_distributed` must
+    best-effort `delete()` the UD before re-raising so the documented
+    `deploy -> use -> delete()` flow doesn't leak the UD on the failure
+    path."""
+
+    def _wire_below_min(self, client: BasilicaClient) -> MagicMock:
+        response = _below_min_pyo3_response()
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+        client._client.delete_deployment.return_value = MagicMock()
+        return response
+
+    def test_below_minimum_triggers_delete_and_reraises(self) -> None:
+        client = _build_minimal_client()
+        response = self._wire_below_min(client)
+
+        with pytest.raises(BelowMinimumWorld):
+            client.deploy_distributed(
+                name="dlc-486",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                timeout=0,
+            )
+
+        client._client.delete_deployment.assert_called_once_with(
+            response.instance_name
+        )
+
+    def test_delete_failure_does_not_swallow_original(self) -> None:
+        """If best-effort cleanup itself raises, the ORIGINAL exception
+        must still reach the caller. This is the contract that lets
+        users still observe (and act on) the deploy failure even when
+        cluster cleanup is broken."""
+        client = _build_minimal_client()
+        response = self._wire_below_min(client)
+        client._client.delete_deployment.side_effect = RuntimeError(
+            "API gateway 503 — cleanup attempt failed"
+        )
+
+        with pytest.raises(BelowMinimumWorld):
+            client.deploy_distributed(
+                name="dlc-486",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                timeout=0,
+            )
+
+        # Cleanup was attempted exactly once; the secondary failure was
+        # swallowed in favor of the original BelowMinimumWorld.
+        client._client.delete_deployment.assert_called_once_with(
+            response.instance_name
+        )
+
+    def test_arbitrary_exception_in_wait_triggers_cleanup(self) -> None:
+        """The wrapper must clean up on ANY exception from
+        `wait_until_min_world`, not just `BelowMinimumWorld` (issue #486
+        explicitly calls out timeout/server-error/network glitch paths
+        as also leaking the UD)."""
+        client = _build_minimal_client()
+        response = self._wire_below_min(client)
+        # Force the next get_deployment call (inside wait_until_min_world's
+        # final refresh) to blow up with a non-BelowMinimumWorld exception.
+        # The first call (during deploy_distributed's `training.refresh()`)
+        # succeeds; the second call (during the wait) raises.
+        first_response = response
+        client._client.get_deployment.side_effect = [
+            first_response,
+            ConnectionError("network glitch"),
+        ]
+
+        with pytest.raises(ConnectionError):
+            client.deploy_distributed(
+                name="dlc-486",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                timeout=0,
+            )
+
+        client._client.delete_deployment.assert_called_once_with(
+            response.instance_name
+        )
+
+    def test_success_path_does_not_call_delete(self) -> None:
+        """Regression guard: the cleanup wrapper must not fire when
+        `wait_until_min_world` returns cleanly. Issue #486 fix is
+        purely an exception-cleanup wrapper; the success path is
+        unchanged."""
+        client = _build_minimal_client()
+        response = _pyo3_response(
+            "dlc-486-ok",
+            "u-test",
+            {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                },
+            },
+        )
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        training = client.deploy_distributed(
+            name="dlc-486",
+            source="print('x')\n",
+            world_size=WorldSize(min=2, target=2, max=2),
+            timeout=10,
+        )
+
+        assert training.name == "dlc-486-ok"
+        client._client.delete_deployment.assert_not_called()
+
+
+class TestDeployDistributedAsyncCleanupOnFailure:
+    """Async parity for issue #486 (SDK arch § 9 — every facade method
+    has an _async counterpart, and the cleanup contract must hold for
+    both)."""
+
+    def test_async_below_minimum_triggers_delete_and_reraises(self) -> None:
+        client = _build_minimal_client()
+        response = _below_min_pyo3_response()
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+        client._client.delete_deployment.return_value = MagicMock()
+
+        async def run() -> None:
+            await client.deploy_distributed_async(
+                name="dlc-486",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                timeout=0,
+            )
+
+        with pytest.raises(BelowMinimumWorld):
+            asyncio.run(run())
+
+        client._client.delete_deployment.assert_called_once_with(
+            response.instance_name
+        )
+
+    def test_async_delete_failure_does_not_swallow_original(self) -> None:
+        client = _build_minimal_client()
+        response = _below_min_pyo3_response()
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+        client._client.delete_deployment.side_effect = RuntimeError(
+            "API gateway 503 during cleanup"
+        )
+
+        async def run() -> None:
+            await client.deploy_distributed_async(
+                name="dlc-486",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                timeout=0,
+            )
+
+        with pytest.raises(BelowMinimumWorld):
+            asyncio.run(run())
+
+        client._client.delete_deployment.assert_called_once_with(
+            response.instance_name
+        )

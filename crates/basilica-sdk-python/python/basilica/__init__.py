@@ -1216,12 +1216,16 @@ class BasilicaClient:
         training.refresh()
         # Block until min ranks are ready (per SDK arch § 4 "Behaviour around
         # wait_until_ready"); raises BelowMinimumWorld on timeout.
+        # Any exception here triggers best-effort cleanup so the caller's
+        # documented `deploy → use → delete()` flow doesn't leak the UD when
+        # the deploy step itself raises (issue #486).
         try:
             training.wait_until_min_world(timeout=timeout)
-        except BelowMinimumWorld:
-            # Re-raise with the deployment intact so the caller can inspect
-            # `training.world` / `training.events()` and decide whether to
-            # `delete()` or keep waiting.
+        except BaseException:
+            try:
+                training.delete()
+            except Exception:
+                pass
             raise
         return training
 
@@ -2178,9 +2182,15 @@ class BasilicaClient:
         )
         training = DistributedTraining(self, response.instance_name)
         await training.refresh_async()
+        # See sync deploy_distributed: best-effort cleanup on ANY exception
+        # so deploy failures don't leak the UD (issue #486).
         try:
             await training.wait_until_min_world_async(timeout=timeout)
-        except BelowMinimumWorld:
+        except BaseException:
+            try:
+                await training.delete_async()
+            except Exception:
+                pass
             raise
         return training
 
