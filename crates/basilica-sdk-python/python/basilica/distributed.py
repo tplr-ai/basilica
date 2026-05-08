@@ -253,6 +253,12 @@ class DistributedTraining:
         self._client = client
         self.name = name
         self._cached_status: Optional[Dict[str, Any]] = None
+        # Issue #495: target requested by the most recent `scale()` call,
+        # cleared once the operator's `status.worldSize.target` reflects it.
+        # `wait_until_target_world` consults this to avoid short-circuiting
+        # against a stale `status.worldSize.target` (the API patches `spec`
+        # only; the operator mirrors `spec → status` on its next reconcile).
+        self._pending_scale_target: Optional[int] = None
 
     # -------------------------------------------------------------------------
     # Status / observation
@@ -481,9 +487,25 @@ class DistributedTraining:
         # Issue the patch via the new POST /deployments/{name}/scale-distributed
         # endpoint shipped in the Phase 5b precursor (basilica-backend #421).
         self._client._client.scale_distributed_deployment(self.name, target)
-        # Refresh local cache so subsequent `world` reads reflect the new target.
+        # Issue #495: record the requested target before the refresh races
+        # the operator. `wait_until_target_world` keys off this to ignore a
+        # stale `status.worldSize.target` until the operator reconciles
+        # `spec → status` and reflects the new target.
+        self._pending_scale_target = target
         self.refresh()
-        return self.world
+        # Issue #495: return a snapshot reflecting the requested target so
+        # callers that print or inspect the return value see the truth.
+        # `status.worldSize.target` may still carry the pre-patch value
+        # because the API patches `spec` only; the operator mirrors to
+        # status on its next reconcile.
+        observed = self.world
+        return WorldStatus(
+            ready=observed.ready,
+            target=target,
+            min=observed.min,
+            max=observed.max,
+            below_minimum=observed.below_minimum,
+        )
 
     async def scale_async(self, target: int) -> WorldStatus:
         """Async variant of `scale`."""
@@ -550,22 +572,32 @@ class DistributedTraining:
         with `exit_code == 0`), so the contract `ready >= target` was
         met at some point. `failed` / `cancelled` raise `BelowMinimumWorld`
         because the contract was NOT met.
+
+        Issue #495: when called immediately after `scale(target=N)`, the
+        operator's `status.worldSize.target` may still carry the
+        pre-patch value (the API patches `spec` only; status mirroring
+        happens on the next reconcile). The success condition therefore
+        also requires `status.worldSize.target >= pending_scale_target`
+        when a scale is pending — otherwise the loop short-circuits
+        against the stale target.
         """
         deadline = time.monotonic() + max(timeout, 0)
         while time.monotonic() < deadline:
             self.refresh()
             ws = self.world
             if self.phase == "succeeded":
+                self._pending_scale_target = None
                 return
             if self.phase in ("failed", "cancelled"):
                 raise BelowMinimumWorld(
                     f"wait_until_target_world: UD '{self.name}' reached "
                     f"terminal phase '{self.phase}' before world reached target",
                     ready=ws.ready,
-                    required_min=ws.target,
+                    required_min=self._effective_required_target(ws),
                     timeout=timeout,
                 )
-            if ws.ready >= ws.target and ws.target > 0:
+            if self._target_world_reached(ws):
+                self._pending_scale_target = None
                 return
             if timeout == 0:
                 break
@@ -573,33 +605,58 @@ class DistributedTraining:
         self.refresh()
         ws = self.world
         if self.phase == "succeeded":
+            self._pending_scale_target = None
             return
-        if ws.ready < ws.target or ws.target == 0:
+        if not self._target_world_reached(ws):
+            required = self._effective_required_target(ws)
             raise BelowMinimumWorld(
                 f"wait_until_target_world timed out after {timeout}s "
-                f"(ready={ws.ready}, required_min={ws.target})",
+                f"(ready={ws.ready}, required_min={required})",
                 ready=ws.ready,
-                required_min=ws.target,
+                required_min=required,
                 timeout=timeout,
             )
+        self._pending_scale_target = None
+
+    def _target_world_reached(self, ws: WorldStatus) -> bool:
+        """
+        Issue #495: success predicate for `wait_until_target_world`. A
+        pending scale request gates the predicate so the caller does not
+        observe `ready >= stale_target` while the operator has not yet
+        mirrored the patched `spec.worldSize.target` into status.
+        """
+        pending = self._pending_scale_target
+        if pending is not None and pending > 0:
+            if ws.target < pending:
+                return False
+            return ws.ready >= pending
+        return ws.ready >= ws.target and ws.target > 0
+
+    def _effective_required_target(self, ws: WorldStatus) -> int:
+        """Required target reported by exception messages (max of pending vs. observed)."""
+        pending = self._pending_scale_target or 0
+        return max(pending, ws.target)
 
     async def wait_until_target_world_async(self, timeout: int = 600) -> None:
-        """Async variant of `wait_until_target_world`. Same Phase 5b semantics."""
+        """Async variant of `wait_until_target_world`. Same Phase 5b semantics
+        and the same #495 pending-scale gate."""
         deadline = asyncio.get_event_loop().time() + max(timeout, 0)
         while asyncio.get_event_loop().time() < deadline:
             await self.refresh_async()
             ws = self.world
             if self.phase == "succeeded":
+                self._pending_scale_target = None
                 return
             if self.phase in ("failed", "cancelled"):
                 raise BelowMinimumWorld(
                     f"wait_until_target_world_async: UD '{self.name}' reached "
                     f"terminal phase '{self.phase}' before world reached target",
                     ready=ws.ready,
-                    required_min=ws.target,
+                    required_min=self._effective_required_target(ws),
                     timeout=timeout,
                 )
-            if ws.ready >= ws.target and ws.target > 0:
+            if self._target_world_reached(ws):
+                self._pending_scale_target = None
                 return
             if timeout == 0:
                 break
@@ -607,15 +664,18 @@ class DistributedTraining:
         await self.refresh_async()
         ws = self.world
         if self.phase == "succeeded":
+            self._pending_scale_target = None
             return
-        if ws.ready < ws.target or ws.target == 0:
+        if not self._target_world_reached(ws):
+            required = self._effective_required_target(ws)
             raise BelowMinimumWorld(
                 f"wait_until_target_world_async timed out after {timeout}s "
-                f"(ready={ws.ready}, required_min={ws.target})",
+                f"(ready={ws.ready}, required_min={required})",
                 ready=ws.ready,
-                required_min=ws.target,
+                required_min=required,
                 timeout=timeout,
             )
+        self._pending_scale_target = None
 
     def wait_until_complete(self, timeout: int = 1800) -> WorldStatus:
         """
