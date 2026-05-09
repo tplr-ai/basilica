@@ -1449,6 +1449,16 @@ pub struct DistributedRankExit {
 #[serde(rename_all = "camelCase")]
 pub struct DistributedBenchStatus {
     pub mode: DistributedBenchMode,
+    /// PR #517 lifecycle phase: `Skipped | Pending | Running | Succeeded | Failed | TimedOut`.
+    /// Read by the SDK's `wait_until_bench_complete` opt-in waiter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<DistributedBenchResult>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2766,6 +2776,10 @@ mod tests {
                 preflight: None,
                 bench: Some(DistributedBenchStatus {
                     mode: DistributedBenchMode::OnStart,
+                    phase: None,
+                    started_at: None,
+                    completed_at: None,
+                    message: None,
                     result: Some(DistributedBenchResult {
                         measured_at: "2026-05-02T10:00:30Z".to_string(),
                         busbw_gbps_p50: Some(0.00897),
