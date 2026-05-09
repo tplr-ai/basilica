@@ -119,6 +119,26 @@ if __name__ == "__main__":
     print(f"Rendezvous: {training.rendezvous_endpoint}")
     print(f"World: {training.world}")
 
+    # Refs #506: bench probe wait is OPT-IN. The deploy returned as soon
+    # as workers were Ready; here we explicitly block on the bench probe
+    # so the example still demonstrates measuring NCCL bandwidth.
+    # A bench failure no longer makes the whole run look failed.
+    print("Waiting for bench probe (opt-in)...")
+    bench_status = training.wait_until_bench_complete(timeout=1200)
+    if bench_status is None:
+        print("Bench was not enabled on this UD.")
+    elif bench_status.phase == "Succeeded" and training.bench is not None:
+        r = training.bench
+        print(
+            f"Bench result: busbw_gbps_p50={r.busbw_gbps_p50} "
+            f"latency_us_at_1mib={r.latency_us_at_1mib}"
+        )
+    else:
+        print(
+            f"Bench did NOT complete with a measurement: "
+            f"phase={bench_status.phase} message={bench_status.message}"
+        )
+
     # Wait for the run to finish (heuristic: poll until ranks all exit
     # 'Running' state, or 30 minutes elapsed -- whichever first).
     deadline = time.time() + 1800

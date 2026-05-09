@@ -26,6 +26,7 @@ from basilica import (
     BasilicaClient,
     BelowMinimumWorld,
     BenchResult,
+    DistributedError,
     DistributedFunction,
     DistributedTraining,
     ProviderFilter,
@@ -33,6 +34,7 @@ from basilica import (
     RankExit,
     RankStatus,
     UDTerminalState,
+    ValidationError,
     WorldSize,
     WorldSizeOutOfBounds,
     WorldStatus,
@@ -2297,3 +2299,260 @@ class TestBenchPhaseDecoupling:
         assert r is not None
         assert r.busbw_gbps_p50 == 12.5
         assert r.probe_node_a == "n-a"
+
+
+# =============================================================================
+# Issue B/N (refs #506) follow-up: deploy_distributed default does NOT
+# wait for the bench probe; bench is opt-in via `wait_for_bench=` modes.
+#
+# Pre-this-change behaviour: deploy_distributed implicitly blocked on
+# bench (20-min budget). The chained #510-#515 bench init-container
+# regressions made `deploy_distributed` look failed even when workers
+# were Ready. New contract: deploy returns when workers Ready; bench
+# is observed via `training.wait_until_bench_complete()` or the
+# `wait_for_bench=` parameter.
+# =============================================================================
+
+
+def _ready_pyo3_response_with_bench(
+    bench_phase: str,
+    bench_result: bool = False,
+    bench_message: str = "",
+    instance_name: str = "dlc-bench-opt-in",
+    namespace: str = "u-test",
+) -> MagicMock:
+    """Workers Ready (2/2). Bench published with the supplied phase.
+
+    Built on the same PyO3-shape used by the issue #486 tests so the
+    BasilicaClient.deploy_distributed -> training.refresh path works
+    identically.
+    """
+    bench: Dict[str, Any] = {"mode": "on-start", "phase": bench_phase}
+    if bench_phase != "Pending":
+        bench["startedAt"] = "2026-05-08T12:00:00Z"
+    if bench_phase in {"Succeeded", "Failed", "TimedOut"}:
+        bench["completedAt"] = "2026-05-08T12:10:00Z"
+    if bench_message:
+        bench["message"] = bench_message
+    if bench_result and bench_phase == "Succeeded":
+        bench["result"] = {
+            "measuredAt": "2026-05-08T12:10:00Z",
+            "busbwGbpsP50": 42.0,
+            "sizeBytesSwept": [1048576],
+            "probeNodeA": "n-a",
+            "probeNodeB": "n-b",
+        }
+    return _pyo3_response(
+        instance_name,
+        namespace,
+        {
+            "worldSize": {
+                "ready": 2,
+                "target": 2,
+                "min": 2,
+                "max": 2,
+                "belowMinimum": False,
+            },
+            "ranks": [],
+            "bench": bench,
+        },
+    )
+
+
+class TestDeployDistributedDefaultDoesNotWaitForBench:
+    """Refs #506: `deploy_distributed` default `wait_for_bench='never'`
+    must return as soon as `wait_until_min_world` succeeds; it must NOT
+    block on bench probe completion."""
+
+    def test_default_returns_with_bench_pending(self) -> None:
+        """LOAD-BEARING: workers Ready + bench Pending -> default deploy
+        returns; `training.bench_status.phase == 'Pending'`."""
+        client = _build_minimal_client()
+        response = _ready_pyo3_response_with_bench("Pending")
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        training = client.deploy_distributed(
+            name="dlc-default-bench-pending",
+            source="print('x')\n",
+            world_size=WorldSize(min=2, target=2, max=2),
+            bench="on-start",
+            timeout=10,
+        )
+
+        # Deploy succeeded; bench is observably still Pending. The SDK
+        # did NOT block on bench (otherwise the default 20-min budget
+        # would have either succeeded or thrown TimeoutError -- with
+        # the mock, "Pending" never advances).
+        assert training.name == response.instance_name
+        bs = training.bench_status
+        assert bs is not None
+        assert bs.phase == "Pending"
+        assert not bs.is_terminal
+        client._client.delete_deployment.assert_not_called()
+
+    def test_default_returns_with_bench_failed(self) -> None:
+        """The whole point of the change: bench Failed must not make
+        the deploy look failed when workers are Ready."""
+        client = _build_minimal_client()
+        response = _ready_pyo3_response_with_bench("Failed")
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        training = client.deploy_distributed(
+            name="dlc-default-bench-failed",
+            source="print('x')\n",
+            world_size=WorldSize(min=2, target=2, max=2),
+            bench="on-start",
+            timeout=10,
+        )
+
+        assert training.name == response.instance_name
+        assert training.bench_status is not None
+        assert training.bench_status.phase == "Failed"
+        # The UD was NOT auto-deleted just because the bench failed.
+        client._client.delete_deployment.assert_not_called()
+
+    def test_default_invalid_wait_for_bench_value_rejected(self) -> None:
+        """Typo defense: only the three documented modes are accepted."""
+        client = _build_minimal_client()
+        with pytest.raises(ValidationError):
+            client.deploy_distributed(
+                name="dlc",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                wait_for_bench="best-effort",  # hyphen, not underscore
+                timeout=0,
+            )
+
+
+class TestDeployDistributedWaitForBenchBestEffort:
+    """`wait_for_bench='best_effort'`: also wait for bench, but never
+    raise on a non-Succeeded outcome."""
+
+    def test_best_effort_returns_on_bench_failed_without_raising(self) -> None:
+        client = _build_minimal_client()
+        response = _ready_pyo3_response_with_bench(
+            "Failed", bench_message="bench worker pod OOMKilled"
+        )
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        with pytest.warns(UserWarning, match="best_effort"):
+            training = client.deploy_distributed(
+                name="dlc-best-effort-failed",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                bench="on-start",
+                timeout=10,
+                wait_for_bench="best_effort",
+                bench_timeout=10,
+            )
+
+        assert training.name == response.instance_name
+        client._client.delete_deployment.assert_not_called()
+
+    def test_best_effort_returns_on_bench_succeeded(self) -> None:
+        client = _build_minimal_client()
+        response = _ready_pyo3_response_with_bench("Succeeded", bench_result=True)
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        training = client.deploy_distributed(
+            name="dlc-best-effort-success",
+            source="print('x')\n",
+            world_size=WorldSize(min=2, target=2, max=2),
+            bench="on-start",
+            timeout=10,
+            wait_for_bench="best_effort",
+            bench_timeout=10,
+        )
+
+        assert training.name == response.instance_name
+        assert training.bench is not None
+        assert training.bench.busbw_gbps_p50 == 42.0
+
+
+class TestDeployDistributedWaitForBenchRequired:
+    """`wait_for_bench='required'`: raise on a non-Succeeded outcome."""
+
+    def test_required_raises_on_bench_failed(self) -> None:
+        client = _build_minimal_client()
+        response = _ready_pyo3_response_with_bench(
+            "Failed", bench_message="OOMKilled"
+        )
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        with pytest.raises(DistributedError, match="phase=Failed"):
+            client.deploy_distributed(
+                name="dlc-required-failed",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                bench="on-start",
+                timeout=10,
+                wait_for_bench="required",
+                bench_timeout=10,
+            )
+        # The UD itself is still up: required mode does not auto-delete
+        # because the workers are healthy. The caller decides.
+        client._client.delete_deployment.assert_not_called()
+
+    def test_required_raises_on_bench_timed_out(self) -> None:
+        client = _build_minimal_client()
+        response = _ready_pyo3_response_with_bench("TimedOut")
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        with pytest.raises(DistributedError, match="phase=TimedOut"):
+            client.deploy_distributed(
+                name="dlc-required-timedout",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                bench="on-start",
+                timeout=10,
+                wait_for_bench="required",
+                bench_timeout=10,
+            )
+
+    def test_required_raises_on_wait_timeout(self) -> None:
+        """When bench never reaches a terminal phase within
+        `bench_timeout`, required mode wraps the inner TimeoutError
+        in DistributedError."""
+        client = _build_minimal_client()
+        # Bench stays Pending -> wait_until_bench_complete will hit
+        # its own TimeoutError, which the helper re-raises as
+        # DistributedError.
+        response = _ready_pyo3_response_with_bench("Pending")
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        with pytest.raises(DistributedError, match="terminal phase"):
+            client.deploy_distributed(
+                name="dlc-required-timeout",
+                source="print('x')\n",
+                world_size=WorldSize(min=2, target=2, max=2),
+                bench="on-start",
+                timeout=10,
+                wait_for_bench="required",
+                bench_timeout=0,
+            )
+
+    def test_required_succeeds_on_bench_succeeded(self) -> None:
+        client = _build_minimal_client()
+        response = _ready_pyo3_response_with_bench("Succeeded", bench_result=True)
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+
+        training = client.deploy_distributed(
+            name="dlc-required-success",
+            source="print('x')\n",
+            world_size=WorldSize(min=2, target=2, max=2),
+            bench="on-start",
+            timeout=10,
+            wait_for_bench="required",
+            bench_timeout=10,
+        )
+
+        assert training.name == response.instance_name
+        assert training.bench is not None
