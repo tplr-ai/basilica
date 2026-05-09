@@ -149,7 +149,14 @@ from .decorators import DeployedFunction, DistributedFunction, deployment, distr
 # Import new modules
 from ._deployment import Deployment, DeploymentStatus, ProgressInfo
 from .distributed import (
+    BENCH_PHASE_FAILED,
+    BENCH_PHASE_PENDING,
+    BENCH_PHASE_RUNNING,
+    BENCH_PHASE_SKIPPED,
+    BENCH_PHASE_SUCCEEDED,
+    BENCH_PHASE_TIMED_OUT,
     BenchResult,
+    BenchStatus,
     DistributedMetrics,
     DistributedTraining,
     ProviderFilter,

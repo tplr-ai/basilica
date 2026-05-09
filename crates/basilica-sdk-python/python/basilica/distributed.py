@@ -200,6 +200,71 @@ class BenchResult:
         )
 
 
+# Issue B/N (refs #506): bench probe lifecycle phase. Mirrors the
+# operator's `status.distributed.bench.phase`. INDEPENDENT of UD
+# readiness; `wait_until_min_world` polls `WorldStatus.ready >= min`
+# and is unaffected by this enum. Stable string wire tokens (PascalCase
+# matching the operator's `#[serde(rename_all = "PascalCase")]`).
+BENCH_PHASE_SKIPPED: str = "Skipped"
+BENCH_PHASE_PENDING: str = "Pending"
+BENCH_PHASE_RUNNING: str = "Running"
+BENCH_PHASE_SUCCEEDED: str = "Succeeded"
+BENCH_PHASE_FAILED: str = "Failed"
+BENCH_PHASE_TIMED_OUT: str = "TimedOut"
+
+_BENCH_TERMINAL_PHASES: frozenset = frozenset(
+    {BENCH_PHASE_SUCCEEDED, BENCH_PHASE_FAILED, BENCH_PHASE_TIMED_OUT}
+)
+
+
+@dataclass(frozen=True)
+class BenchStatus:
+    """
+    Issue B/N (refs #506): full bench probe surface.
+
+    Decoupling contract: this object is published asynchronously to
+    `status.distributed.bench` by the operator. `phase` reflects the
+    bench Job lifecycle (`Skipped` | `Pending` | `Running` |
+    `Succeeded` | `Failed` | `TimedOut`) and is INDEPENDENT of
+    `WorldStatus.ready` -- callers waiting on `wait_until_min_world`
+    will return when workers are Ready regardless of this state.
+
+    Use `wait_until_bench_complete` for the explicit opt-in to block
+    on the bench probe. Most callers should NOT need that; the bench
+    is a sanity probe per `basilica_bench.py:75-78`, not a gating
+    measurement.
+    """
+
+    mode: str
+    phase: str
+    result: Optional[BenchResult]
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    message: Optional[str]
+    last_attempt_at: Optional[datetime]
+    last_attempt_outcome: Optional[str]
+
+    @property
+    def is_terminal(self) -> bool:
+        """True iff phase is `Succeeded`, `Failed`, or `TimedOut`."""
+        return self.phase in _BENCH_TERMINAL_PHASES
+
+    @classmethod
+    def from_status_dict(cls, raw: Dict[str, Any]) -> "BenchStatus":
+        """Construct from the operator's `status.distributed.bench` JSON."""
+        result_raw = raw.get("result")
+        return cls(
+            mode=raw.get("mode", "off"),
+            phase=raw.get("phase", BENCH_PHASE_PENDING),
+            result=BenchResult.from_status_dict(result_raw) if result_raw else None,
+            started_at=_parse_rfc3339(raw["startedAt"]) if raw.get("startedAt") else None,
+            completed_at=_parse_rfc3339(raw["completedAt"]) if raw.get("completedAt") else None,
+            message=raw.get("message"),
+            last_attempt_at=_parse_rfc3339(raw["lastAttemptAt"]) if raw.get("lastAttemptAt") else None,
+            last_attempt_outcome=raw.get("lastAttemptOutcome"),
+        )
+
+
 @dataclass(frozen=True)
 class DistributedMetrics:
     """
@@ -372,6 +437,11 @@ class DistributedTraining:
 
         SDK arch § 7: never a cross-tenant aggregate; always measured
         on this UD's own nodes, billed against this user's GPU minutes.
+
+        Issue B/N (refs #506): backward compatible. Use
+        :pyattr:`bench_status` for the full lifecycle (phase / timing /
+        message); this accessor remains for callers that only want the
+        measurement payload.
         """
         if self._cached_status is None:
             self.refresh()
@@ -384,6 +454,29 @@ class DistributedTraining:
         if not result:
             return None
         return BenchResult.from_status_dict(result)
+
+    @property
+    def bench_status(self) -> Optional[BenchStatus]:
+        """
+        Issue B/N (refs #506): full bench probe state, including
+        explicit lifecycle [`phase`], `started_at` / `completed_at`
+        timing, and a human-readable `message`.
+
+        Returns `None` when bench is off (`mode != on-start`) or the
+        operator has not yet observed the Job at all. Otherwise the
+        returned [`BenchStatus`] reflects the operator's
+        `status.distributed.bench` exactly.
+
+        DECOUPLING CONTRACT: this surface is INDEPENDENT of
+        `WorldStatus.ready`. `wait_until_min_world` polls workers only;
+        bench has its own opt-in waiter, `wait_until_bench_complete`.
+        """
+        if self._cached_status is None:
+            self.refresh()
+        bench_raw = (self._cached_status or {}).get("distributed", {}).get("bench")
+        if not bench_raw:
+            return None
+        return BenchStatus.from_status_dict(bench_raw)
 
     def metrics(self) -> DistributedMetrics:
         """Platform-side metric snapshot for this UD (SDK arch § 6)."""
@@ -561,6 +654,66 @@ class DistributedTraining:
                 required_min=ws.min,
                 timeout=timeout,
             )
+
+    def wait_until_bench_complete(self, timeout: int = 1500) -> Optional[BenchStatus]:
+        """
+        Issue B/N (refs #506): OPT-IN waiter for the bench probe.
+
+        Most callers do NOT need this; bench is best-effort per
+        `basilica_bench.py:75-78` and the world is considered ready
+        when workers reach Ready (see :py:meth:`wait_until_min_world`).
+        This method exists for the small set of callers that DO want
+        the bench measurement before continuing (e.g. a research run
+        that records busbw metadata into checkpoint headers).
+
+        Returns the terminal :py:class:`BenchStatus` (`phase` is one
+        of `Succeeded` | `Failed` | `TimedOut`). If `bench.mode != on-start`
+        returns `None` immediately. Polls every 5s.
+
+        Default timeout matches the operator's `BENCH_ACTIVE_DEADLINE_SECONDS`
+        (1500s = 25 min). Raises `TimeoutError` past the deadline.
+        """
+        deadline = time.monotonic() + max(timeout, 0)
+        while time.monotonic() < deadline:
+            self.refresh()
+            bs = self.bench_status
+            if bs is None:
+                # bench is Off — nothing to wait for.
+                return None
+            if bs.is_terminal:
+                return bs
+            time.sleep(min(5, max(timeout // 10, 1)))
+        # One last refresh.
+        self.refresh()
+        bs = self.bench_status
+        if bs is not None and bs.is_terminal:
+            return bs
+        raise TimeoutError(
+            f"wait_until_bench_complete timed out after {timeout}s "
+            f"(phase={bs.phase if bs else 'absent'})"
+        )
+
+    async def wait_until_bench_complete_async(
+        self, timeout: int = 1500
+    ) -> Optional[BenchStatus]:
+        """Async variant of :py:meth:`wait_until_bench_complete`."""
+        deadline = asyncio.get_event_loop().time() + max(timeout, 0)
+        while asyncio.get_event_loop().time() < deadline:
+            await self.refresh_async()
+            bs = self.bench_status
+            if bs is None:
+                return None
+            if bs.is_terminal:
+                return bs
+            await asyncio.sleep(min(5, max(timeout // 10, 1)))
+        await self.refresh_async()
+        bs = self.bench_status
+        if bs is not None and bs.is_terminal:
+            return bs
+        raise TimeoutError(
+            f"wait_until_bench_complete_async timed out after {timeout}s "
+            f"(phase={bs.phase if bs else 'absent'})"
+        )
 
     def wait_until_target_world(self, timeout: int = 600) -> None:
         """
