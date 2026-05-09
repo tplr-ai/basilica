@@ -33,7 +33,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 from basilica._basilica import (
     DEFAULT_API_URL,
@@ -1122,6 +1122,8 @@ class BasilicaClient:
         ttl_seconds: Optional[int] = 86400,
         timeout: int = 600,
         enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
     ) -> DistributedTraining:
         """
         Deploy a distributed-training UserDeployment (SDK arch § 4).
@@ -1178,6 +1180,25 @@ class BasilicaClient:
             ttl_seconds: Auto-delete after N seconds.
             timeout: Seconds to wait for `min` ranks to be ready. Default 600.
             enable_billing: Whether to bill for this deployment. Default True.
+            wait_for_bench: How to handle the bench probe before returning.
+                Default `"never"`: return as soon as `wait_until_min_world`
+                succeeds; the bench probe runs in the background and the
+                caller can opt in via
+                :py:meth:`DistributedTraining.wait_until_bench_complete`.
+                `"best_effort"`: also call `wait_until_bench_complete`
+                after workers Ready, but never raise — log/print the
+                outcome and return. `"required"`: call
+                `wait_until_bench_complete` and re-raise on a non-Succeeded
+                terminal phase (`Failed` / `TimedOut`) or on timeout.
+                The default `"never"` is a BREAKING change from the prior
+                implicit "deploy waits on bench" behavior — chained bench
+                regressions made `deploy_distributed` look broken even
+                when workers were Ready. Bench remains best-effort per
+                `basilica_bench.py:75-78`.
+            bench_timeout: Seconds budget for `wait_for_bench` modes
+                `best_effort` / `required`. Default 1500 (matches the
+                operator's `BENCH_ACTIVE_DEADLINE_SECONDS`). Ignored when
+                `wait_for_bench="never"`.
 
         Returns:
             DistributedTraining: Facade with scale/wait/logs/bench/delete and
@@ -1189,9 +1210,19 @@ class BasilicaClient:
             QuotaExceeded: namespace rank budget exceeded.
             BelowMinimumWorld: `wait_until_min_world` timed out before `min`
                 ranks were ready.
+            DistributedError: `wait_for_bench="required"` and bench reached
+                `Failed` / `TimedOut` / `Skipped`, or the bench wait timed
+                out without a terminal phase.
         """
         if world_size is None:
             raise ValidationError("deploy_distributed requires world_size", field="world_size")
+        if wait_for_bench not in ("never", "best_effort", "required"):
+            raise ValidationError(
+                f"wait_for_bench must be 'never' | 'best_effort' | 'required', "
+                f"got {wait_for_bench!r}",
+                field="wait_for_bench",
+                value=wait_for_bench,
+            )
 
         request_dict = self._build_distributed_request(
             name=name,
@@ -1234,7 +1265,67 @@ class BasilicaClient:
             except Exception:
                 pass
             raise
+        # Issue B/N (refs #506): bench wait is OPT-IN. Default `"never"`
+        # returns as soon as workers are Ready; the bench probe is
+        # decoupled from UD readiness on the operator side, so blocking
+        # here would only re-couple it in the SDK. Callers that want the
+        # measurement use `wait_for_bench=` or
+        # `training.wait_until_bench_complete(...)` directly.
+        if wait_for_bench != "never":
+            self._handle_post_deploy_bench_wait(
+                training, mode=wait_for_bench, timeout=bench_timeout
+            )
         return training
+
+    @staticmethod
+    def _handle_post_deploy_bench_wait(
+        training: DistributedTraining,
+        mode: Literal["best_effort", "required"],
+        timeout: int,
+    ) -> None:
+        """
+        Issue B/N (refs #506): post-deploy bench-wait helper for
+        `wait_for_bench={best_effort, required}` modes.
+
+        - `best_effort`: call `wait_until_bench_complete` and swallow any
+          non-Succeeded outcome (including `TimeoutError`). Logs to stderr
+          via `warnings.warn` so users see the failure but the deploy
+          still returns the live `DistributedTraining`.
+        - `required`: call `wait_until_bench_complete`; raise
+          `DistributedError` on a non-Succeeded terminal phase or on
+          timeout. The UD is NOT auto-deleted — the workers are healthy
+          and the caller may still want to use them. Use `.delete()`
+          explicitly if the bench failure is grounds for tearing down.
+        """
+        try:
+            bs = training.wait_until_bench_complete(timeout=timeout)
+        except TimeoutError as e:
+            if mode == "required":
+                raise DistributedError(
+                    f"wait_for_bench='required' but bench did not "
+                    f"reach a terminal phase within {timeout}s: {e}"
+                ) from e
+            warnings.warn(
+                f"wait_for_bench='best_effort': bench did not "
+                f"reach a terminal phase within {timeout}s: {e}",
+                stacklevel=3,
+            )
+            return
+        # `bs is None` means bench.mode == off, i.e. caller passed
+        # `bench="off"` (or omitted it). Nothing to wait on.
+        if bs is None:
+            return
+        if bs.phase == BENCH_PHASE_SUCCEEDED:
+            return
+        msg = (
+            f"bench probe phase={bs.phase}"
+            f"{f' message={bs.message!r}' if bs.message else ''}"
+        )
+        if mode == "required":
+            raise DistributedError(
+                f"wait_for_bench='required' but {msg}"
+            )
+        warnings.warn(f"wait_for_bench='best_effort': {msg}", stacklevel=3)
 
     def _build_distributed_request(
         self,
@@ -2149,14 +2240,26 @@ class BasilicaClient:
         ttl_seconds: Optional[int] = 86400,
         timeout: int = 600,
         enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
     ) -> DistributedTraining:
         """
         Async variant of `deploy_distributed`. Same arguments and semantics
         per SDK arch § 9; uses `run_in_executor` over the underlying Rust
         client and `asyncio.sleep` for the wait loop.
+
+        See `deploy_distributed` for the `wait_for_bench` /
+        `bench_timeout` contract.
         """
         if world_size is None:
             raise ValidationError("deploy_distributed_async requires world_size", field="world_size")
+        if wait_for_bench not in ("never", "best_effort", "required"):
+            raise ValidationError(
+                f"wait_for_bench must be 'never' | 'best_effort' | 'required', "
+                f"got {wait_for_bench!r}",
+                field="wait_for_bench",
+                value=wait_for_bench,
+            )
 
         request_dict = self._build_distributed_request(
             name=name,
@@ -2199,7 +2302,46 @@ class BasilicaClient:
             except Exception:
                 pass
             raise
+        if wait_for_bench != "never":
+            await self._handle_post_deploy_bench_wait_async(
+                training, mode=wait_for_bench, timeout=bench_timeout
+            )
         return training
+
+    @staticmethod
+    async def _handle_post_deploy_bench_wait_async(
+        training: DistributedTraining,
+        mode: Literal["best_effort", "required"],
+        timeout: int,
+    ) -> None:
+        """Async variant of `_handle_post_deploy_bench_wait`."""
+        try:
+            bs = await training.wait_until_bench_complete_async(timeout=timeout)
+        except TimeoutError as e:
+            if mode == "required":
+                raise DistributedError(
+                    f"wait_for_bench='required' but bench did not "
+                    f"reach a terminal phase within {timeout}s: {e}"
+                ) from e
+            warnings.warn(
+                f"wait_for_bench='best_effort': bench did not "
+                f"reach a terminal phase within {timeout}s: {e}",
+                stacklevel=3,
+            )
+            return
+        if bs is None:
+            return
+        if bs.phase == BENCH_PHASE_SUCCEEDED:
+            return
+        msg = (
+            f"bench probe phase={bs.phase}"
+            f"{f' message={bs.message!r}' if bs.message else ''}"
+        )
+        if mode == "required":
+            raise DistributedError(
+                f"wait_for_bench='required' but {msg}"
+            )
+        warnings.warn(f"wait_for_bench='best_effort': {msg}", stacklevel=3)
 
     async def get_async(self, name: str) -> Deployment:
         """

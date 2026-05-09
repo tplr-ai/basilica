@@ -17,6 +17,13 @@ There is intentionally NO `client.preflight(...)` and NO
 `client.nccl_baseline(...)` standalone helper. That surface implied a
 shared cache. Use this per-UD pattern instead.
 
+Bench wait is OPT-IN (refs #506): `deploy_distributed` returns as soon
+as workers are Ready, regardless of bench probe state. This script
+demonstrates the opt-in pattern via
+`training.wait_until_bench_complete(...)`. A bench failure no longer
+makes the deploy look failed -- the workers are healthy and you can
+choose what to do with the measurement (or its absence).
+
 Prereqs:
 - BASILICA_API_TOKEN set.
 - Account with verda A100 access (or adjust the provider filter).
@@ -24,7 +31,6 @@ Prereqs:
 """
 
 import json
-import time
 
 from basilica import BasilicaClient, ProviderFilter, WorldSize
 
@@ -105,23 +111,43 @@ if __name__ == "__main__":
     print(f"Deployed: {training.name}")
     print("Bench probe scheduled (rank-budget cost: worker(2) + bench(2) = 4)")
 
-    # Poll for the probe to complete. The probe runs ~5 minutes
-    # (all_reduce_perf sweep) plus scheduling overhead. The bench Job
-    # has `activeDeadlineSeconds=900` (architecture doc § 11.1).
-    deadline = time.time() + 1200
-    while time.time() < deadline:
-        training.refresh()
-        if training.bench is not None:
-            break
-        time.sleep(20)
+    # Refs #506: deploy_distributed now returns when workers are Ready;
+    # the bench probe is decoupled. Use the opt-in waiter to block on it.
+    # `bench_timeout=1200` (20 min) matches the prior implicit budget.
+    print("Waiting for bench probe (opt-in via wait_until_bench_complete)...")
+    bench_status = training.wait_until_bench_complete(timeout=1200)
 
-    if training.bench is None:
-        print("Bench probe did not complete within 20 minutes.")
-        print("Check `kubectl get job -n <ns> -l basilica.ai/distributed-role=bench`.")
+    if bench_status is None:
+        # mode=off — caller did not request a bench probe. Not reachable
+        # in this example (we set bench="on-start" above), but kept for
+        # symmetry with the API contract.
+        print("Bench was not enabled on this UD.")
         training.delete()
         raise SystemExit(1)
 
+    if bench_status.phase != "Succeeded":
+        # Workers were Ready -- the deploy is fine -- but the bench
+        # didn't measure. Print the lifecycle detail; do NOT exit non-zero
+        # for a bench-only failure (the workload itself is healthy).
+        print("Bench probe did NOT complete with a measurement.")
+        print(f"  phase:              {bench_status.phase}")
+        print(f"  message:            {bench_status.message}")
+        print(f"  last_attempt_at:    {bench_status.last_attempt_at}")
+        print(f"  last_attempt:       {bench_status.last_attempt_outcome}")
+        print("Workers are still Ready; the UD itself is healthy.")
+        print("Inspect via `kubectl get job -n <ns> -l basilica.ai/distributed-role=bench`.")
+        training.delete()
+        return
+
+    # bench_status.phase == "Succeeded"; the result payload is on
+    # `training.bench` (or `bench_status.result`).
     result = training.bench
+    if result is None:
+        # Defensive: phase=Succeeded but no result payload -- this would
+        # be an operator-side invariant break. Surface it explicitly.
+        print("Bench phase=Succeeded but no result payload available.")
+        training.delete()
+        raise SystemExit(1)
     print("--- Bench result ---")
     print(f"  measured_at:        {result.measured_at}")
     print(f"  busbw_gbps_p10:     {result.busbw_gbps_p10}")

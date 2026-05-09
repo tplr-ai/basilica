@@ -357,6 +357,8 @@ def distributed(
     ttl_seconds: Optional[int] = 86400,
     timeout: int = 600,
     enable_billing: bool = True,
+    wait_for_bench: str = "never",
+    bench_timeout: int = 1500,
 ) -> Callable[[Callable], DistributedFunction]:
     """
     Decorator marking a function as the per-rank entrypoint for a
@@ -384,6 +386,11 @@ def distributed(
         ttl_seconds: Auto-delete after N seconds.
         timeout: Seconds to wait for `min` ranks to be ready. Default 600.
         enable_billing: Whether to bill for this deployment.
+        wait_for_bench: `"never"` (default) returns when workers Ready;
+            `"best_effort"` also waits for bench, swallowing failures;
+            `"required"` raises if bench is non-Succeeded. See
+            `BasilicaClient.deploy_distributed`.
+        bench_timeout: Seconds budget for the opt-in bench wait.
 
     Returns:
         DistributedFunction wrapper. Calling it deploys; `.local()` runs
@@ -440,6 +447,8 @@ def distributed(
         "ttl_seconds": ttl_seconds,
         "timeout": timeout,
         "enable_billing": enable_billing,
+        "wait_for_bench": wait_for_bench,
+        "bench_timeout": bench_timeout,
     }
 
     def decorator(func: Callable) -> DistributedFunction:
