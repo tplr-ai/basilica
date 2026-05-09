@@ -2077,3 +2077,223 @@ class TestDeployDistributedAsyncCleanupOnFailure:
         client._client.delete_deployment.assert_called_once_with(
             response.instance_name
         )
+
+
+# =============================================================================
+# Issue B/N (refs #506): bench-decoupling SDK tests.
+#
+# These codify that `wait_until_min_world` polls workers ONLY and is
+# unaffected by `status.distributed.bench.phase`. They also exercise
+# the new `bench_status` accessor and `wait_until_bench_complete`
+# opt-in waiter.
+# =============================================================================
+
+
+class TestBenchPhaseDecoupling:
+    """Bench probe lifecycle is published asynchronously; never gates `world.ready`."""
+
+    def _make_status_dict(
+        self, ready: int, min_: int, bench_phase: str, bench_result: bool = False
+    ) -> Any:
+        bench: Dict[str, Any] = {
+            "mode": "on-start",
+            "phase": bench_phase,
+        }
+        if bench_phase != "Pending":
+            bench["startedAt"] = "2026-05-08T12:00:00Z"
+        if bench_phase in {"Succeeded", "Failed", "TimedOut"}:
+            bench["completedAt"] = "2026-05-08T12:10:00Z"
+        if bench_phase == "Succeeded":
+            bench["lastAttemptOutcome"] = "success"
+        if bench_phase == "Failed":
+            bench["lastAttemptOutcome"] = "error"
+        if bench_phase == "TimedOut":
+            bench["lastAttemptOutcome"] = "timeout"
+        if bench_result:
+            bench["result"] = {
+                "measuredAt": "2026-05-08T12:00:00Z",
+                "busbwGbpsP50": 12.5,
+                "sizeBytesSwept": [1048576],
+                "probeNodeA": "n-a",
+                "probeNodeB": "n-b",
+            }
+
+        class FakeDeployment:
+            instance_name = "ud-bench-decouple"
+            user_id = "u-test"
+            namespace = "u-test"
+            image = "pytorch/pytorch"
+            state = "running"
+            url = "https://x"
+            created_at = "2026-05-08T12:00:00Z"
+            updated_at = "2026-05-08T12:00:00Z"
+            phase = "Running"
+            message = None
+            share_token = None
+            share_url = None
+            public_metadata = False
+            distributed = {
+                "worldSize": {
+                    "ready": ready,
+                    "target": min_,
+                    "min": min_,
+                    "max": min_,
+                    "belowMinimum": ready < min_,
+                },
+                "ranks": [],
+                "transport": "hub-relay",
+                "bench": bench,
+            }
+
+        return FakeDeployment()
+
+    def test_wait_until_min_world_returns_when_workers_ready_bench_pending(self) -> None:
+        """LOAD-BEARING: workers Ready -> world.ready >= min, even if bench is Pending."""
+        client = MagicMock()
+        client.get.return_value = self._make_status_dict(2, 2, "Pending")
+        training = DistributedTraining(client, "ud-bench-decouple")
+        # Should NOT raise even though bench is Pending.
+        training.wait_until_min_world(timeout=10)
+
+    def test_wait_until_min_world_returns_when_workers_ready_bench_failed(self) -> None:
+        """LOAD-BEARING: bench Failed does NOT propagate to world.ready."""
+        client = MagicMock()
+        client.get.return_value = self._make_status_dict(2, 2, "Failed")
+        training = DistributedTraining(client, "ud-bench-decouple")
+        training.wait_until_min_world(timeout=10)
+        # bench.phase is observable independently.
+        bs = training.bench_status
+        assert bs is not None
+        assert bs.phase == "Failed"
+        assert bs.is_terminal
+
+    def test_wait_until_min_world_returns_when_workers_ready_bench_timed_out(
+        self,
+    ) -> None:
+        """LOAD-BEARING: bench TimedOut does NOT propagate to world.ready."""
+        client = MagicMock()
+        client.get.return_value = self._make_status_dict(2, 2, "TimedOut")
+        training = DistributedTraining(client, "ud-bench-decouple")
+        training.wait_until_min_world(timeout=10)
+        bs = training.bench_status
+        assert bs is not None
+        assert bs.phase == "TimedOut"
+
+    def test_bench_status_reflects_each_lifecycle_state(self) -> None:
+        """Bench lifecycle is observable through `bench_status` independent of UD phase."""
+        for phase in ["Pending", "Running", "Succeeded", "Failed", "TimedOut"]:
+            client = MagicMock()
+            client.get.return_value = self._make_status_dict(
+                2, 2, phase, bench_result=(phase == "Succeeded")
+            )
+            training = DistributedTraining(client, "ud-bench-decouple")
+            bs = training.bench_status
+            assert bs is not None, f"bench_status absent for phase={phase}"
+            assert bs.phase == phase
+            assert bs.mode == "on-start"
+            if phase in {"Succeeded", "Failed", "TimedOut"}:
+                assert bs.is_terminal
+                assert bs.completed_at is not None
+            else:
+                assert not bs.is_terminal
+                assert bs.completed_at is None
+
+    def test_bench_status_returns_none_when_bench_off(self) -> None:
+        class FakeDeployment:
+            instance_name = "ud"
+            user_id = "u"
+            namespace = "u"
+            image = "x"
+            state = "running"
+            url = "https://x"
+            created_at = "t"
+            updated_at = "t"
+            phase = "Running"
+            message = None
+            share_token = None
+            share_url = None
+            public_metadata = False
+            distributed = {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                },
+                "ranks": [],
+                "transport": "hub-relay",
+            }
+
+        client = MagicMock()
+        client.get.return_value = FakeDeployment()
+        training = DistributedTraining(client, "ud")
+        assert training.bench_status is None
+        # Backward-compat `bench` accessor also returns None.
+        assert training.bench is None
+
+    def test_wait_until_bench_complete_returns_terminal_status(self) -> None:
+        """Opt-in waiter returns terminal `BenchStatus` with phase + timing."""
+        client = MagicMock()
+        client.get.return_value = self._make_status_dict(
+            2, 2, "Succeeded", bench_result=True
+        )
+        training = DistributedTraining(client, "ud-bench-decouple")
+        bs = training.wait_until_bench_complete(timeout=10)
+        assert bs is not None
+        assert bs.phase == "Succeeded"
+        assert bs.result is not None
+        assert bs.result.busbw_gbps_p50 == 12.5
+        assert bs.completed_at is not None
+
+    def test_wait_until_bench_complete_returns_none_when_bench_off(self) -> None:
+        class FakeDeployment:
+            instance_name = "ud"
+            user_id = "u"
+            namespace = "u"
+            image = "x"
+            state = "running"
+            url = "https://x"
+            created_at = "t"
+            updated_at = "t"
+            phase = "Running"
+            message = None
+            share_token = None
+            share_url = None
+            public_metadata = False
+            distributed = {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                },
+                "ranks": [],
+                "transport": "hub-relay",
+            }
+
+        client = MagicMock()
+        client.get.return_value = FakeDeployment()
+        training = DistributedTraining(client, "ud")
+        # bench.mode == off -> waiter returns None immediately.
+        assert training.wait_until_bench_complete(timeout=1) is None
+
+    def test_wait_until_bench_complete_raises_timeout_on_non_terminal(self) -> None:
+        client = MagicMock()
+        client.get.return_value = self._make_status_dict(2, 2, "Running")
+        training = DistributedTraining(client, "ud-bench-decouple")
+        with pytest.raises(TimeoutError):
+            training.wait_until_bench_complete(timeout=0)
+
+    def test_backward_compat_bench_accessor_still_returns_result_payload(self) -> None:
+        """Existing `training.bench -> Optional[BenchResult]` keeps working."""
+        client = MagicMock()
+        client.get.return_value = self._make_status_dict(
+            2, 2, "Succeeded", bench_result=True
+        )
+        training = DistributedTraining(client, "ud-bench-decouple")
+        r = training.bench
+        assert r is not None
+        assert r.busbw_gbps_p50 == 12.5
+        assert r.probe_node_a == "n-a"
