@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-05-09
+
+### Fixed
+- `DistributedTraining.bench` and `wait_until_bench_complete()` now
+  surface the four PR #517 lifecycle fields (`phase`, `startedAt`,
+  `completedAt`, `message`) end-to-end. The SDK's PyO3 binding
+  deserialises the API JSON into the strongly-typed
+  `DistributedBenchStatus` and re-serialises it back to a Python
+  dict via `pythonize`; the four new fields were absent from that
+  type and were silently dropped, so `wait_until_bench_complete()`
+  could never observe the operator's terminal `phase` and would
+  always fall through to `TimeoutError` even on a successful probe.
+  Closes #521. The companion basilica-backend fix
+  (one-covenant/basilica-backend#522) widens the wire mirror on the
+  basilica-api side; both releases are required for the fix to be
+  visible end-to-end.
+
 ## [0.29.0] - 2026-05-04
 
 ### Added
