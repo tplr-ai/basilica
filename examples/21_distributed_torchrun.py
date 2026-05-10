@@ -39,12 +39,23 @@ def main() -> None:
     # arch § 4 footnote on auto-torchrun wrapping. The basilica-
     # distributed-trainer image's `/workspace/all_reduce_smoke.py`
     # fixture is the smoke target.
+    # NOTE on `--rdzv-backend=etcd` (not `etcd-v2`): refs #368 / #490.
+    # The torchelastic `etcd-v2` backend (DynamicRendezvousHandler over
+    # etcd v3 gRPC) has an upstream regression in torch 2.5.0a0+nv24.10
+    # that returns RendezvousClosedError on the FIRST connect to a fresh
+    # etcd. The legacy `etcd` backend (EtcdRendezvousHandler over
+    # python-etcd / v2 KV API) works against the same etcd Pod with
+    # --enable-v2=true. The operator's "auto" command-build path
+    # (basilica-operator: distributed.rs::build_worker_command) maps the
+    # CRD value `etcd-v2` -> the working `etcd` torchrun arg until
+    # upstream resolves it; BYO commands (this example) need to do the
+    # same. When #368 closes, flip both back to `etcd-v2`.
     training = client.deploy_distributed(
         name="dlc-example-torchrun",
         image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
         command=[
             "torchrun",
-            "--rdzv-backend=etcd-v2",
+            "--rdzv-backend=etcd",
             "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
             "--rdzv-id=$BASILICA_RDZV_ID",
             "--nnodes=$BASILICA_WORLD_TARGET",
