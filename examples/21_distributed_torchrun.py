@@ -82,7 +82,17 @@ def main() -> None:
         min_gpu_memory_gb=40,
         cpu="8",
         memory="32Gi",
-        provider_filter=ProviderFilter(include=["verda"]),
+        # Broadened provider include-list (refs basilica-backend#544): pinning
+        # to a single provider exposed the example to provider-side
+        # rental-revoke transients (the autoscaler's `Rental disappeared from
+        # provider` failure mode). Including the four providers we onboard
+        # today lets the autoscaler fall back across them when one provider's
+        # rental API is misbehaving under burst load. The `topology_spread="pack"`
+        # below still keeps the workers on a single provider per UD; this list
+        # is a fallback set, not a spread directive.
+        provider_filter=ProviderFilter(
+            include=["verda", "hyperstack", "masscompute", "shadeform"]
+        ),
         topology_spread="pack",
         nccl_env={"NCCL_DEBUG": "WARN"},
         ttl_seconds=600,
