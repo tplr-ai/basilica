@@ -56,7 +56,13 @@ def main() -> None:
     # node first boot) rank-0 can raise RendezvousClosedError before
     # rank-N joins. The operator's "auto" command-build path injects
     # this same value; BYO commands need to mirror it.
-    training = client.deploy_distributed(
+    # `deploy_distributed_managed` is the defensive sibling of
+    # `deploy_distributed` (refs basilica-backend#538): on scope exit
+    # (success OR exception) it best-effort calls `training.delete()`
+    # so the UD does not leak when an intermediate wait such as
+    # `wait_until_target_world` after `scale()` raises before the
+    # explicit `delete()` line is reached.
+    with client.deploy_distributed_managed(
         name="dlc-example-torchrun",
         image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
         command=[
@@ -81,30 +87,30 @@ def main() -> None:
         nccl_env={"NCCL_DEBUG": "WARN"},
         ttl_seconds=600,
         timeout=900,
-    )
+    ) as training:
+        print(f"Deployed: {training.name}")
+        print(f"Namespace: {training.namespace}")
+        print(f"World: {training.world}")
 
-    print(f"Deployed: {training.name}")
-    print(f"Namespace: {training.namespace}")
-    print(f"World: {training.world}")
+        # Scale up by one rank, mid-run. Demonstrates Phase 2 elasticity:
+        # torchelastic re-rendezvouses workers when the StatefulSet replica count
+        # changes, and the new rank joins.
+        time.sleep(30)
+        new_world = training.scale(target=3)
+        print(f"Scaled to target=3; world now: {new_world}")
 
-    # Scale up by one rank, mid-run. Demonstrates Phase 2 elasticity:
-    # torchelastic re-rendezvouses workers when the StatefulSet replica count
-    # changes, and the new rank joins.
-    time.sleep(30)
-    new_world = training.scale(target=3)
-    print(f"Scaled to target=3; world now: {new_world}")
+        # Wait for the new rank to join. If this raises (e.g. operator
+        # leader transfer mid-rollout), the managed `with` block runs
+        # `delete()` on its way out so the UD does not leak.
+        training.wait_until_target_world(timeout=300)
+        print(f"All 3 ranks ready: {training.world}")
 
-    # Wait for the new rank to join.
-    training.wait_until_target_world(timeout=300)
-    print(f"All 3 ranks ready: {training.world}")
+        # Tail logs briefly so the example surfaces "is it actually running".
+        # Phase 5b: per-rank filtering not yet supported by the API; logs are
+        # returned merged across ranks.
+        print("--- merged logs ---")
+        print(training.logs(tail=30))
 
-    # Tail logs briefly so the example surfaces "is it actually running".
-    # Phase 5b: per-rank filtering not yet supported by the API; logs are
-    # returned merged across ranks.
-    print("--- merged logs ---")
-    print(training.logs(tail=30))
-
-    training.delete()
     print("Cleanup complete.")
 
 

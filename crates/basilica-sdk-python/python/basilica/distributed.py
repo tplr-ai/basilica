@@ -16,6 +16,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from types import TracebackType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -25,6 +26,7 @@ from typing import (
     List,
     Optional,
     Tuple,
+    Type,
 )
 
 from .exceptions import (
@@ -1058,6 +1060,120 @@ class DistributedTraining:
         """`<ud>-rendezvous.<ns>.svc.cluster.local:2379` -- in-cluster only."""
         ns = self.namespace or "u-unknown"
         return f"{self.name}-rendezvous.{ns}.svc.cluster.local:2379"
+
+
+class DistributedTrainingManaged:
+    """
+    Sync context-managed wrapper around a :class:`DistributedTraining`.
+
+    Returned by :meth:`BasilicaClient.deploy_distributed_managed`.
+
+    Defensive sibling of basilica-backend#486 (which fixed UD leak
+    inside ``deploy_distributed``'s own ``wait_until_min_world``
+    failure path). This class handles the *caller-side* leak: when an
+    intermediate wait such as ``wait_until_target_world`` after
+    ``scale()`` raises, the script aborts before reaching ``delete()``
+    and the UD leaks.
+
+    Refs: basilica-backend#538.
+
+    Usage::
+
+        with client.deploy_distributed_managed(...) as training:
+            training.scale(target=3)
+            training.wait_until_target_world(timeout=300)
+            ...
+        # `delete()` ran on scope exit, success or exception.
+    """
+
+    def __init__(self, training: "DistributedTraining") -> None:
+        self._training = training
+
+    @property
+    def training(self) -> "DistributedTraining":
+        """The wrapped :class:`DistributedTraining` handle."""
+        return self._training
+
+    def __enter__(self) -> "DistributedTraining":
+        return self._training
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        # Best-effort cleanup. Swallow any delete-time exception so we
+        # never mask the (possibly more important) exception that is
+        # already propagating out of the `with` block.
+        try:
+            self._training.delete()
+        except Exception:
+            pass
+
+
+class DistributedTrainingManagedAsync:
+    """
+    Async context-managed wrapper that defers the actual deploy to
+    ``__aenter__``.
+
+    Returned by
+    :meth:`BasilicaClient.deploy_distributed_managed_async` so the
+    caller can write::
+
+        async with client.deploy_distributed_managed_async(...) as training:
+            await training.scale_async(target=3)
+            await training.wait_until_target_world_async(timeout=300)
+            ...
+
+    The deploy itself runs in ``__aenter__``; on scope exit (success
+    OR exception) ``__aexit__`` best-effort calls
+    ``training.delete_async()`` so the UD does not leak.
+
+    Refs: basilica-backend#538.
+    """
+
+    def __init__(
+        self,
+        deploy_coro_factory: Any,
+    ) -> None:
+        # `deploy_coro_factory` is a zero-arg callable returning a
+        # coroutine that resolves to a `DistributedTraining`. Stored
+        # as a factory (not a coroutine) because coroutines can only
+        # be awaited once; constructing the manager and entering it
+        # in the same expression must not eagerly bind the awaitable.
+        self._deploy_coro_factory = deploy_coro_factory
+        self._training: Optional["DistributedTraining"] = None
+
+    @property
+    def training(self) -> "DistributedTraining":
+        """The wrapped handle. Only valid after ``__aenter__`` ran."""
+        if self._training is None:
+            raise RuntimeError(
+                "DistributedTrainingManagedAsync.training accessed before "
+                "the async context was entered. Use `async with ... as t:`."
+            )
+        return self._training
+
+    async def __aenter__(self) -> "DistributedTraining":
+        self._training = await self._deploy_coro_factory()
+        return self._training
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        # If `__aenter__` raised before assigning, there is nothing to
+        # clean up (the deploy itself handles its own teardown via
+        # basilica-backend#486 inside `deploy_distributed_async`).
+        if self._training is None:
+            return
+        try:
+            await self._training.delete_async()
+        except Exception:
+            pass
 
 
 def _coerce_to_dict(obj: Any) -> Dict[str, Any]:
