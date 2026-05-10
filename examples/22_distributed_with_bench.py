@@ -52,7 +52,13 @@ def main() -> None:
     # torchrun entirely; ranks would crash with `RANK env var missing`.
     # For users who want full control over the launcher, see example 21
     # (BYO torchrun via `command=[...]`).
-    training = client.deploy_distributed(
+    # `deploy_distributed_managed` (refs basilica-backend#538) auto-
+    # deletes the UD on scope exit, even when the script aborts via
+    # `raise SystemExit(1)` on a bench-Succeeded-but-no-result path.
+    # The exit propagates through the `with` block; `__exit__` cleans
+    # up; the script exits 1 as before -- no behavioral change beyond
+    # closing the leak window.
+    with client.deploy_distributed_managed(
         name="dlc-example-bench",
         image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
         source="""\
@@ -106,81 +112,80 @@ if __name__ == "__main__":
         nccl_env={"NCCL_DEBUG": "WARN"},
         ttl_seconds=900,
         timeout=900,
-    )
+    ) as training:
+        print(f"Deployed: {training.name}")
+        print("Bench probe scheduled (rank-budget cost: worker(2) + bench(2) = 4)")
 
-    print(f"Deployed: {training.name}")
-    print("Bench probe scheduled (rank-budget cost: worker(2) + bench(2) = 4)")
+        # Refs #506: deploy_distributed now returns when workers are Ready;
+        # the bench probe is decoupled. Use the opt-in waiter to block on it.
+        # `bench_timeout=1200` (20 min) matches the prior implicit budget.
+        print("Waiting for bench probe (opt-in via wait_until_bench_complete)...")
+        bench_status = training.wait_until_bench_complete(timeout=1200)
 
-    # Refs #506: deploy_distributed now returns when workers are Ready;
-    # the bench probe is decoupled. Use the opt-in waiter to block on it.
-    # `bench_timeout=1200` (20 min) matches the prior implicit budget.
-    print("Waiting for bench probe (opt-in via wait_until_bench_complete)...")
-    bench_status = training.wait_until_bench_complete(timeout=1200)
+        if bench_status is None:
+            # mode=off — caller did not request a bench probe. Not reachable
+            # in this example (we set bench="on-start" above), but kept for
+            # symmetry with the API contract. Managed `__exit__` deletes
+            # the UD as the SystemExit propagates.
+            print("Bench was not enabled on this UD.")
+            raise SystemExit(1)
 
-    if bench_status is None:
-        # mode=off — caller did not request a bench probe. Not reachable
-        # in this example (we set bench="on-start" above), but kept for
-        # symmetry with the API contract.
-        print("Bench was not enabled on this UD.")
-        training.delete()
-        raise SystemExit(1)
+        if bench_status.phase != "Succeeded":
+            # Workers were Ready -- the deploy is fine -- but the bench
+            # didn't measure. Print the lifecycle detail; do NOT exit non-zero
+            # for a bench-only failure (the workload itself is healthy).
+            # `return` falls through the managed exit which deletes the UD.
+            print("Bench probe did NOT complete with a measurement.")
+            print(f"  phase:              {bench_status.phase}")
+            print(f"  message:            {bench_status.message}")
+            print(f"  last_attempt_at:    {bench_status.last_attempt_at}")
+            print(f"  last_attempt:       {bench_status.last_attempt_outcome}")
+            print("Workers are still Ready; the UD itself is healthy.")
+            print("Inspect via `kubectl get job -n <ns> -l basilica.ai/distributed-role=bench`.")
+            return
 
-    if bench_status.phase != "Succeeded":
-        # Workers were Ready -- the deploy is fine -- but the bench
-        # didn't measure. Print the lifecycle detail; do NOT exit non-zero
-        # for a bench-only failure (the workload itself is healthy).
-        print("Bench probe did NOT complete with a measurement.")
-        print(f"  phase:              {bench_status.phase}")
-        print(f"  message:            {bench_status.message}")
-        print(f"  last_attempt_at:    {bench_status.last_attempt_at}")
-        print(f"  last_attempt:       {bench_status.last_attempt_outcome}")
-        print("Workers are still Ready; the UD itself is healthy.")
-        print("Inspect via `kubectl get job -n <ns> -l basilica.ai/distributed-role=bench`.")
-        training.delete()
-        return
+        # bench_status.phase == "Succeeded"; the result payload is on
+        # `training.bench` (or `bench_status.result`).
+        result = training.bench
+        if result is None:
+            # Defensive: phase=Succeeded but no result payload -- this would
+            # be an operator-side invariant break. Surface it explicitly;
+            # SystemExit propagates through the managed `with`, which
+            # deletes the UD on its way out.
+            print("Bench phase=Succeeded but no result payload available.")
+            raise SystemExit(1)
+        print("--- Bench result ---")
+        print(f"  measured_at:        {result.measured_at}")
+        print(f"  busbw_gbps_p10:     {result.busbw_gbps_p10}")
+        print(f"  busbw_gbps_p50:     {result.busbw_gbps_p50}")
+        print(f"  busbw_gbps_p90:     {result.busbw_gbps_p90}")
+        print(f"  algbw_gbps_p50:     {result.algbw_gbps_p50}")
+        print(f"  latency_us_at_1mib: {result.latency_us_at_1mib}")
+        print(f"  size_bytes_swept:   {result.size_bytes_swept}")
+        print(f"  probe_node_a:       {result.probe_node_a}")
+        print(f"  probe_node_b:       {result.probe_node_b}")
 
-    # bench_status.phase == "Succeeded"; the result payload is on
-    # `training.bench` (or `bench_status.result`).
-    result = training.bench
-    if result is None:
-        # Defensive: phase=Succeeded but no result payload -- this would
-        # be an operator-side invariant break. Surface it explicitly.
-        print("Bench phase=Succeeded but no result payload available.")
-        training.delete()
-        raise SystemExit(1)
-    print("--- Bench result ---")
-    print(f"  measured_at:        {result.measured_at}")
-    print(f"  busbw_gbps_p10:     {result.busbw_gbps_p10}")
-    print(f"  busbw_gbps_p50:     {result.busbw_gbps_p50}")
-    print(f"  busbw_gbps_p90:     {result.busbw_gbps_p90}")
-    print(f"  algbw_gbps_p50:     {result.algbw_gbps_p50}")
-    print(f"  latency_us_at_1mib: {result.latency_us_at_1mib}")
-    print(f"  size_bytes_swept:   {result.size_bytes_swept}")
-    print(f"  probe_node_a:       {result.probe_node_a}")
-    print(f"  probe_node_b:       {result.probe_node_b}")
+        # Researchers writing papers can serialize this to JSON and aggregate
+        # across many UDs offline -- each measurement is on their own nodes,
+        # billed against their own usage, with no cross-tenant shared cache.
+        out = {
+            "name": training.name,
+            "world_size": {
+                "min": training.world.min,
+                "target": training.world.target,
+                "max": training.world.max,
+            },
+            "bench": {
+                "busbw_gbps_p50": result.busbw_gbps_p50,
+                "latency_us_at_1mib": result.latency_us_at_1mib,
+                "probe_node_a": result.probe_node_a,
+                "probe_node_b": result.probe_node_b,
+            },
+        }
+        with open(f"/tmp/{training.name}-bench.json", "w") as f:
+            json.dump(out, f, indent=2, default=str)
+        print(f"Saved bench result: /tmp/{training.name}-bench.json")
 
-    # Researchers writing papers can serialize this to JSON and aggregate
-    # across many UDs offline -- each measurement is on their own nodes,
-    # billed against their own usage, with no cross-tenant shared cache.
-    out = {
-        "name": training.name,
-        "world_size": {
-            "min": training.world.min,
-            "target": training.world.target,
-            "max": training.world.max,
-        },
-        "bench": {
-            "busbw_gbps_p50": result.busbw_gbps_p50,
-            "latency_us_at_1mib": result.latency_us_at_1mib,
-            "probe_node_a": result.probe_node_a,
-            "probe_node_b": result.probe_node_b,
-        },
-    }
-    with open(f"/tmp/{training.name}-bench.json", "w") as f:
-        json.dump(out, f, indent=2, default=str)
-    print(f"Saved bench result: /tmp/{training.name}-bench.json")
-
-    training.delete()
     print("Cleanup complete.")
 
 

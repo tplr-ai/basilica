@@ -159,6 +159,8 @@ from .distributed import (
     BenchStatus,
     DistributedMetrics,
     DistributedTraining,
+    DistributedTrainingManaged,
+    DistributedTrainingManagedAsync,
     ProviderFilter,
     RankExit,
     RankStatus,
@@ -1277,6 +1279,94 @@ class BasilicaClient:
             )
         return training
 
+    def deploy_distributed_managed(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        bench_placement: str = "preferred",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = 86400,
+        timeout: int = 600,
+        enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
+    ) -> DistributedTrainingManaged:
+        """
+        Context-managed variant of :meth:`deploy_distributed`.
+
+        Defensive sibling of basilica-backend#486 (which fixed UD leak
+        inside ``deploy_distributed`` itself when the initial
+        ``wait_until_min_world`` raised). This variant fixes the
+        *caller-side* leak: when an intermediate wait such as
+        ``wait_until_target_world`` (after ``scale()``) raises, the
+        script aborts before reaching ``delete()``.
+
+        Returns a :class:`DistributedTrainingManaged` that, on scope
+        exit (normal OR exceptional), best-effort calls
+        ``training.delete()`` so the UD does not leak.
+
+        All keyword arguments match :meth:`deploy_distributed` exactly
+        and are forwarded verbatim. See that method for full semantics.
+
+        Recommended pattern for any ``deploy → use → delete`` flow::
+
+            with client.deploy_distributed_managed(
+                name="dlc-job",
+                image="...",
+                world_size=WorldSize(min=2, target=2, max=4),
+            ) as training:
+                training.scale(target=3)
+                training.wait_until_target_world(timeout=300)
+                ...
+            # `delete()` ran on scope exit, success or exception.
+
+        Refs: basilica-backend#538 (defensive sibling of #486).
+        """
+        training = self.deploy_distributed(
+            name=name,
+            source=source,
+            image=image,
+            port=port,
+            env=env,
+            cpu=cpu,
+            memory=memory,
+            gpu_count=gpu_count,
+            gpu_models=gpu_models,
+            min_gpu_memory_gb=min_gpu_memory_gb,
+            world_size=world_size,
+            provider_filter=provider_filter,
+            topology_spread=topology_spread,
+            nccl_env=nccl_env,
+            bench=bench,
+            bench_placement=bench_placement,
+            rendezvous_backend=rendezvous_backend,
+            command=command,
+            args=args,
+            pip_packages=pip_packages,
+            ttl_seconds=ttl_seconds,
+            timeout=timeout,
+            enable_billing=enable_billing,
+            wait_for_bench=wait_for_bench,
+            bench_timeout=bench_timeout,
+        )
+        return DistributedTrainingManaged(training)
+
     @staticmethod
     def _handle_post_deploy_bench_wait(
         training: DistributedTraining,
@@ -2307,6 +2397,94 @@ class BasilicaClient:
                 training, mode=wait_for_bench, timeout=bench_timeout
             )
         return training
+
+    def deploy_distributed_managed_async(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        bench_placement: str = "preferred",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = 86400,
+        timeout: int = 600,
+        enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
+    ) -> DistributedTrainingManagedAsync:
+        """
+        Async context-managed variant of :meth:`deploy_distributed_async`.
+
+        Returns a :class:`DistributedTrainingManagedAsync` for use
+        directly with ``async with``. The actual deploy runs in
+        ``__aenter__`` (lazy), so this method itself does NOT need to
+        be awaited. On scope exit (normal OR exceptional), best-effort
+        calls ``training.delete_async()`` so the UD does not leak.
+
+        All keyword arguments match :meth:`deploy_distributed_async`
+        exactly and are forwarded verbatim.
+
+        Recommended pattern::
+
+            async with client.deploy_distributed_managed_async(
+                name="dlc-job",
+                image="...",
+                world_size=WorldSize(min=2, target=2, max=4),
+            ) as training:
+                await training.scale_async(target=3)
+                await training.wait_until_target_world_async(timeout=300)
+                ...
+
+        Refs: basilica-backend#538 (defensive sibling of #486).
+        """
+        # Capture the deploy invocation as a zero-arg coroutine factory
+        # so the manager can defer the deploy until `__aenter__`. Using
+        # a factory (not a one-shot coroutine) keeps the manager
+        # idempotent under accidental re-entry.
+        def _factory() -> Any:
+            return self.deploy_distributed_async(
+                name=name,
+                source=source,
+                image=image,
+                port=port,
+                env=env,
+                cpu=cpu,
+                memory=memory,
+                gpu_count=gpu_count,
+                gpu_models=gpu_models,
+                min_gpu_memory_gb=min_gpu_memory_gb,
+                world_size=world_size,
+                provider_filter=provider_filter,
+                topology_spread=topology_spread,
+                nccl_env=nccl_env,
+                bench=bench,
+                bench_placement=bench_placement,
+                rendezvous_backend=rendezvous_backend,
+                command=command,
+                args=args,
+                pip_packages=pip_packages,
+                ttl_seconds=ttl_seconds,
+                timeout=timeout,
+                enable_billing=enable_billing,
+                wait_for_bench=wait_for_bench,
+                bench_timeout=bench_timeout,
+            )
+
+        return DistributedTrainingManagedAsync(_factory)
 
     @staticmethod
     async def _handle_post_deploy_bench_wait_async(
