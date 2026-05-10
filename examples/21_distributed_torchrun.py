@@ -50,6 +50,12 @@ def main() -> None:
     # CRD value `etcd-v2` -> the working `etcd` torchrun arg until
     # upstream resolves it; BYO commands (this example) need to do the
     # same. When #368 closes, flip both back to `etcd-v2`.
+    # NOTE on `--rdzv-conf=timeout=1500`: refs #490. torchelastic's
+    # rendezvous handlers default to a ~600 s join timeout; on slow
+    # cold-starts (image pull blip, transient registry slowness, GPU
+    # node first boot) rank-0 can raise RendezvousClosedError before
+    # rank-N joins. The operator's "auto" command-build path injects
+    # this same value; BYO commands need to mirror it.
     training = client.deploy_distributed(
         name="dlc-example-torchrun",
         image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
@@ -58,6 +64,7 @@ def main() -> None:
             "--rdzv-backend=etcd",
             "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
             "--rdzv-id=$BASILICA_RDZV_ID",
+            "--rdzv-conf=timeout=1500",
             "--nnodes=$BASILICA_WORLD_TARGET",
             "--nproc-per-node=$BASILICA_GPUS_PER_POD",
             "--max-restarts=10",
