@@ -21,7 +21,8 @@
 //! ## Usage
 //!
 //! The protocol crate provides generated gRPC service definitions and message types.
-//! See the generated code in `src/gen/` for the exact structure of all types.
+//! Generated code is emitted to `OUT_DIR` at build time and included here via
+//! `tonic::include_proto!`.
 //!
 //! ### Client Example
 //!
@@ -41,59 +42,38 @@
 //! let response = client.discover_nodes(request).await?;
 //! ```
 
-// Create proper module hierarchy for generated protobuf code
+// Create proper module hierarchy for generated protobuf code.
+// `tonic::include_proto!("foo.bar.v1")` expands to
+// `include!(concat!(env!("OUT_DIR"), "/foo.bar.v1.rs"))` so the generated
+// files live in the cargo OUT_DIR rather than the source tree.
 pub mod basilca {
     pub mod common {
         pub mod v1 {
-            include!("gen/basilca.common.v1.rs");
+            tonic::include_proto!("basilca.common.v1");
         }
     }
 
     pub mod rental {
         pub mod v1 {
-            include!("gen/basilica.rental.v1.rs");
+            tonic::include_proto!("basilica.rental.v1");
         }
     }
 
     pub mod miner {
         pub mod v1 {
-            include!("gen/basilca.miner.v1.rs");
+            tonic::include_proto!("basilca.miner.v1");
         }
     }
 
     pub mod validator {
         pub mod v1 {
-            include!("gen/basilca.validator.v1.rs");
-        }
-    }
-
-    pub mod gpu_pow {
-        pub mod v1 {
-            include!("gen/basilca.gpu_pow.v1.rs");
+            tonic::include_proto!("basilca.validator.v1");
         }
     }
 
     pub mod billing {
         pub mod v1 {
-            include!("gen/basilica.billing.v1.rs");
-        }
-    }
-
-    pub mod payments {
-        pub mod v1 {
-            include!("gen/basilica.payments.v1.rs");
-        }
-    }
-
-    pub mod incentive {
-        pub mod v1 {
-            include!("gen/basilica.incentive.v1.rs");
-        }
-    }
-
-    pub mod card_payments {
-        pub mod v1 {
-            include!("gen/basilica.card_payments.v1.rs");
+            tonic::include_proto!("basilica.billing.v1");
         }
     }
 }
@@ -137,32 +117,6 @@ pub mod billing {
     //! - Real-time telemetry ingestion and aggregation
     //! - Billing packages and rules engine
     pub use crate::basilca::billing::v1::*;
-}
-
-pub mod payments {
-    //! Payments service for deposit account management and TAO → USD credit conversion
-    //!
-    //! Provides payment processing functionality:
-    //! - Per-user deposit wallet generation
-    //! - Blockchain monitoring for TAO deposits
-    //! - Automatic credit conversion based on configured rates
-    //! - Integration with billing service for credit application
-    pub use crate::basilca::payments::v1::*;
-}
-
-pub mod incentive {
-    //! Incentive service for validator-facing CU/RU ledger access via backend services
-    pub use crate::basilca::incentive::v1::*;
-}
-
-pub mod card_payments {
-    //! Card purchase creation and status for credit purchases.
-    //!
-    //! The service is VPC-internal only — basilica-api authenticates callers
-    //! and forwards `caller_user_id`; the backing card payments service
-    //! enforces per-user scoping in SQL and returns NotFound for cross-tenant
-    //! lookups so purchase existence never leaks.
-    pub use crate::basilca::card_payments::v1::*;
 }
 
 // Re-export common types at crate root for convenience
@@ -274,7 +228,8 @@ pub const PROTOCOL_VERSION: &str = "1.0.0";
 
 // Implementation notes for generated types:
 // The protobuf-generated types may have different field names than expected.
-// Always check the generated code in src/gen/ for the actual structure.
+// Generated code lives in cargo's OUT_DIR; inspect with `cargo expand` or by
+// running `cargo build` and reading `target/.../build/.../out/*.rs`.
 // Key differences from common expectations:
 // - HealthCheckResponse uses 'status' as an i32 enum value, not a struct field
 // - SystemProfileResponse uses encrypted_profile instead of direct machine_info
@@ -282,7 +237,8 @@ pub const PROTOCOL_VERSION: &str = "1.0.0";
 
 // Implementation notes for generated types:
 // The protobuf-generated types may have different field names than expected.
-// Always check the generated code in src/gen/ for the actual structure.
+// Generated code lives in cargo's OUT_DIR; inspect with `cargo expand` or by
+// running `cargo build` and reading `target/.../build/.../out/*.rs`.
 // Key differences from common expectations:
 // - HealthCheckResponse uses 'status' as an i32 enum value, not a struct field
 // - SystemProfileResponse uses encrypted_profile instead of direct machine_info

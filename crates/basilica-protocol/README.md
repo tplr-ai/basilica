@@ -18,7 +18,7 @@ The protobuf files are automatically compiled during the build process:
 cargo build -p protocol
 ```
 
-Generated code is placed in `src/gen/` and included in the crate.
+Generated code is emitted to cargo's `OUT_DIR` at build time and pulled in via `tonic::include_proto!`. Nothing is written into the source tree, so generated files are never committed.
 
 ## Usage
 
