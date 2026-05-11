@@ -772,6 +772,8 @@ pub enum CloudProvider {
     MassCompute,
     /// Shadeform - multi-cloud GPU aggregator (routes to underlying clouds like hyperstack, tensordock)
     Shadeform,
+    /// Denvr Data - denvrdata.com - VM-based GPU cloud
+    Denvr,
     /// The Priory - VIP managed machines (not a real cloud provider, but uses Deployment model)
     Vip,
 }
@@ -785,6 +787,7 @@ impl CloudProvider {
             CloudProvider::Verda => "verda",
             CloudProvider::MassCompute => "masscompute",
             CloudProvider::Shadeform => "shadeform",
+            CloudProvider::Denvr => "denvr",
             CloudProvider::Vip => "vip",
         }
     }
@@ -808,6 +811,7 @@ impl FromStr for CloudProvider {
             "verda" => Ok(CloudProvider::Verda),
             "masscompute" | "mass_compute" | "mass-compute" => Ok(CloudProvider::MassCompute),
             "shadeform" | "shade_form" | "shade-form" => Ok(CloudProvider::Shadeform),
+            "denvr" | "denvr-data" | "denvrdata" => Ok(CloudProvider::Denvr),
             "vip" => Ok(CloudProvider::Vip),
             _ => Err(format!("Unknown provider: {}", s)),
         }
@@ -854,6 +858,7 @@ mod cloud_provider_tests {
         assert_eq!(CloudProvider::Verda.as_str(), "verda");
         assert_eq!(CloudProvider::MassCompute.as_str(), "masscompute");
         assert_eq!(CloudProvider::Shadeform.as_str(), "shadeform");
+        assert_eq!(CloudProvider::Denvr.as_str(), "denvr");
         assert_eq!(CloudProvider::Vip.as_str(), "vip");
     }
 
@@ -912,6 +917,30 @@ mod cloud_provider_tests {
     }
 
     #[test]
+    fn test_cloud_provider_from_str_denvr() {
+        assert_eq!(
+            "denvr".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Denvr
+        );
+        assert_eq!(
+            "denvr-data".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Denvr
+        );
+        assert_eq!(
+            "denvrdata".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Denvr
+        );
+        assert_eq!(
+            "Denvr".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Denvr
+        );
+        assert_eq!(
+            "DENVR".parse::<CloudProvider>().unwrap(),
+            CloudProvider::Denvr
+        );
+    }
+
+    #[test]
     fn test_cloud_provider_from_str_existing() {
         assert_eq!(
             "hyperstack".parse::<CloudProvider>().unwrap(),
@@ -961,6 +990,7 @@ mod cloud_provider_tests {
             (CloudProvider::Verda, "\"verda\""),
             (CloudProvider::MassCompute, "\"masscompute\""),
             (CloudProvider::Shadeform, "\"shadeform\""),
+            (CloudProvider::Denvr, "\"denvr\""),
             (CloudProvider::Vip, "\"vip\""),
         ];
 
@@ -1004,6 +1034,31 @@ mod cloud_provider_tests {
         assert_eq!(offering.gpu_type, GpuCategory::H100);
         assert_eq!(offering.gpu_count, 8);
         assert_eq!(offering.region, "canada-1");
+    }
+
+    #[test]
+    fn test_gpu_offering_with_denvr_provider() {
+        let json = r#"{
+            "id": "denvr-a100_80gb_sxm_1x-hou1",
+            "provider": "denvr",
+            "gpu_type": "A100",
+            "gpu_memory_gb_per_gpu": 80,
+            "gpu_count": 1,
+            "interconnect": "SXM4",
+            "system_memory_gb": 240,
+            "vcpu_count": 30,
+            "region": "Hou1",
+            "hourly_rate_per_gpu": "1.99",
+            "availability": true,
+            "is_spot": false,
+            "fetched_at": "2026-04-26T00:00:00Z"
+        }"#;
+
+        let offering: GpuOffering = serde_json::from_str(json).unwrap();
+        assert_eq!(offering.provider, CloudProvider::Denvr);
+        assert_eq!(offering.gpu_type, GpuCategory::A100);
+        assert_eq!(offering.gpu_count, 1);
+        assert_eq!(offering.region, "Hou1");
     }
 
     #[test]

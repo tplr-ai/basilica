@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-05-09
+
+### Fixed
+- `DistributedTraining.bench` and `wait_until_bench_complete()` now
+  surface the four PR #517 lifecycle fields (`phase`, `startedAt`,
+  `completedAt`, `message`) end-to-end. The SDK's PyO3 binding
+  deserialises the API JSON into the strongly-typed
+  `DistributedBenchStatus` and re-serialises it back to a Python
+  dict via `pythonize`; the four new fields were absent from that
+  type and were silently dropped, so `wait_until_bench_complete()`
+  could never observe the operator's terminal `phase` and would
+  always fall through to `TimeoutError` even on a successful probe.
+  Closes #521. The companion basilica-backend fix
+  (one-covenant/basilica-backend#522) widens the wire mirror on the
+  basilica-api side; both releases are required for the fix to be
+  visible end-to-end.
+
+## [0.29.0] - 2026-05-04
+
+### Added
+- Distributed training via `deploy_distributed()` and the
+  `@distributed` decorator, returning a `DistributedTraining` facade
+  with `scale()`, `wait_until_min_world()`, `logs()`, `events()`,
+  `metrics()`, and `bench()`, plus rank/world status reporting and
+  bench results. Full `_async` parity.
+- `BasilicaClient.get_by_name()` looks up a `Deployment` by the
+  user-supplied display name instead of the UUID `instance_name`.
+- `friendly_name` property on the `Deployment` wrapper and on
+  deployment response objects.
+
+### Fixed
+- `client.get()` and the `Deployment` wrapper now expose `image`,
+  `phase`, `message`, `share_token`, `share_url`, and
+  `public_metadata`, which the SDK had been silently dropping from
+  the API response.
+
+## [0.28.0] - 2026-04-27
+
+### Added
+- Denvr Data cloud provider support. Secure cloud GPU listings that
+  include Denvr offerings now deserialize successfully instead of
+  failing the entire response.
+
+### Fixed
+- `basilica.__version__` now reflects the installed package version.
+  Previously the module exposed a hardcoded literal that drifted from
+  `pyproject.toml` across releases (e.g. 0.27.0 wheels reported
+  `__version__ == "0.17.0"`). The attribute is now resolved at import
+  time via `importlib.metadata.version("basilica-sdk")` so it can no
+  longer drift.
+
+### Security
+- Bumped rustls-webpki to 0.103.13 in the bundled native extension to
+  address RUSTSEC-2026-0104 (reachable panic in CRL parsing).
+
 ## [0.27.0] - 2026-04-20
 
 ### Added

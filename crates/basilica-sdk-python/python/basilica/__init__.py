@@ -33,7 +33,7 @@ import re
 import time
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Union
 
 from basilica._basilica import (
     DEFAULT_API_URL,
@@ -144,24 +144,49 @@ except ImportError:
             self.infiniband = infiniband
 
 
-from .decorators import DeployedFunction, deployment
+from .decorators import DeployedFunction, DistributedFunction, deployment, distributed
 
 # Import new modules
 from ._deployment import Deployment, DeploymentStatus, ProgressInfo
+from .distributed import (
+    BENCH_PHASE_FAILED,
+    BENCH_PHASE_PENDING,
+    BENCH_PHASE_RUNNING,
+    BENCH_PHASE_SKIPPED,
+    BENCH_PHASE_SUCCEEDED,
+    BENCH_PHASE_TIMED_OUT,
+    BenchResult,
+    BenchStatus,
+    DistributedMetrics,
+    DistributedTraining,
+    DistributedTrainingManaged,
+    DistributedTrainingManagedAsync,
+    ProviderFilter,
+    RankExit,
+    RankStatus,
+    WorldSize,
+    WorldStatus,
+)
 from .exceptions import (
     AuthenticationError,
     AuthorizationError,
     BasilicaError,
+    BelowMinimumWorld,
     DeploymentError,
     DeploymentFailed,
     DeploymentNotFound,
     DeploymentTimeout,
+    DistributedError,
     NetworkError,
+    QuotaExceeded,
     RateLimitError,
+    RendezvousUnavailable,
     ResourceError,
     SourceError,
     StorageError,
+    UDTerminalState,
     ValidationError,
+    WorldSizeOutOfBounds,
 )
 from .source import SourcePackager
 from .spec import DeploymentSpec
@@ -172,6 +197,56 @@ DEFAULT_COMMAND = ["/bin/bash"]
 
 # Default Python image for source deployments
 DEFAULT_PYTHON_IMAGE = "python:3.11-slim"
+
+# Shell-safe alphabet for distributed-mode `command=` joining (issue #452).
+# Mirrors `shlex._find_unsafe`'s safe set `[\w@%+=:,./-]` PLUS `$`, so tokens
+# like `--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT` survive verbatim and get
+# the shell expansion the user intends when the operator wraps the whole
+# string in `["/bin/sh", "-c", ...]`. Tokens containing whitespace, quotes,
+# semicolons, backticks, parens, etc. still go through `shlex.quote`.
+_SHELL_DOLLAR_SAFE_RE = re.compile(r"^[\w@%+=:,./\-$]+$", re.ASCII)
+
+# Recognised shell-script wrapper shapes for `deploy_distributed(command=...)`.
+# When `command` matches `[<one-of-these>, "-c", <script>]`, the script is
+# emitted verbatim instead of being shlex-joined -- see issue #452.
+_SHELL_SCRIPT_LAUNCHERS = frozenset({"bash", "sh", "/bin/bash", "/bin/sh"})
+
+
+def _shell_join_preserving_vars(command: List[str]) -> str:
+    """
+    Join an argv list into a single shell command string for the operator's
+    `["/bin/sh", "-c", <cmd>]` wrapper, preserving `$VAR` expansion.
+
+    Issue #452: `shlex.join` single-quotes any token containing `$`,
+    so `["torchrun", "--nnodes=$BASILICA_WORLD_TARGET"]` became
+    `torchrun '--nnodes=$BASILICA_WORLD_TARGET'`, the operator handed
+    that to `sh -c`, and the user's training code received the literal
+    string `$BASILICA_WORLD_TARGET` (then crashed on `int(...)`).
+
+    Behaviour:
+    - `["bash"|"sh"|"/bin/bash"|"/bin/sh", "-c", <script>]` -> verbatim
+      `<script>`. This is the canonical "I am a shell script" shape.
+    - argv list -> per-token: verbatim if it matches the shell-safe
+      alphabet plus `$` (so `$VAR` survives); otherwise `shlex.quote`
+      (preserves argv structure for whitespace / metachars at the cost
+      of expansion -- a genuinely ambiguous case we err on the safe side).
+    """
+    import shlex as _shlex
+
+    if (
+        len(command) == 3
+        and command[0] in _SHELL_SCRIPT_LAUNCHERS
+        and command[1] == "-c"
+    ):
+        return command[2]
+
+    parts: List[str] = []
+    for token in command:
+        if token and _SHELL_DOLLAR_SAFE_RE.match(token):
+            parts.append(token)
+        else:
+            parts.append(_shlex.quote(token))
+    return " ".join(parts)
 
 
 def _build_inference_health_check(port: int) -> HealthCheckConfig:
@@ -210,7 +285,12 @@ def _build_inference_health_check(port: int) -> HealthCheckConfig:
     )
 
 
-__version__ = "0.17.0"
+try:
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    __version__ = _pkg_version("basilica-sdk")
+except PackageNotFoundError:
+    __version__ = "0.0.0+unknown"
 __all__ = [
     # Main client
     "BasilicaClient",
@@ -952,6 +1032,36 @@ class BasilicaClient:
                 raise DeploymentNotFound(name) from None
             raise
 
+    def get_by_name(self, friendly_name: str) -> Deployment:
+        """
+        Get an existing deployment by its user-supplied friendly name.
+
+        Looks the deployment up by the human-readable name the user chose
+        at creation time (e.g. "my-api"), rather than the UUID instance
+        name shown in `basilica deploy ls`. Internally lists the user's
+        deployments and matches client-side, so this is O(n) in the
+        number of active deployments.
+
+        Args:
+            friendly_name: The human-readable deployment name.
+
+        Returns:
+            Deployment: A deployment object.
+
+        Raises:
+            DeploymentNotFound: If no deployment with that friendly name exists.
+
+        Example:
+            >>> deployment = client.get_by_name("my-api")
+            >>> print(deployment.url)
+        """
+        listing = self.list_deployments()
+        for summary in listing.deployments:
+            if summary.friendly_name == friendly_name:
+                response = self.get_deployment(summary.instance_name)
+                return Deployment._from_response(self, response)
+        raise DeploymentNotFound(friendly_name)
+
     def list(self) -> List[Deployment]:
         """
         List all deployments.
@@ -978,6 +1088,521 @@ class BasilicaClient:
                     stacklevel=2,
                 )
         return deployments
+
+    # -------------------------------------------------------------------------
+    # Distributed Training (SDK arch § 4)
+    #
+    # NOTE: There is intentionally NO `client.preflight(...)` and NO
+    # `client.nccl_baseline(...)` standalone helper. Per SDK arch § 7,
+    # bench data is per-UD (read via `training.bench` after deploying
+    # with `bench="on-start"`). Cross-tenant aggregated bench queries
+    # would violate the platform's tenancy invariant.
+    # -------------------------------------------------------------------------
+
+    def deploy_distributed(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        bench_placement: str = "preferred",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = 86400,
+        timeout: int = 600,
+        enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
+    ) -> DistributedTraining:
+        """
+        Deploy a distributed-training UserDeployment (SDK arch § 4).
+
+        Switches the workload from a single-replica Deployment to a
+        per-UD StatefulSet + rendezvous Pod + per-rank pods. Use this
+        for NCCL-collective workloads (DiLoCo, SparseLoCo, etc.); for
+        single-replica or HTTP services, use `deploy(...)`.
+
+        Args:
+            name: Deployment name (DNS-safe).
+            source: Python source (file path, inline code, or callable). When
+                set, the operator's `command="auto"` builds a torchrun
+                invocation around the user's script. When None, set
+                `command` and `args` explicitly (BYO launcher).
+            image: Container image. Default is the canonical pytorch image.
+            port: Worker container port. Default 18789 (matches non-distributed
+                UD convention; honored by the operator's headless governance
+                Service).
+            env: Environment variables.
+            cpu, memory, gpu_count, gpu_models, min_gpu_memory_gb: Resource
+                requirements per rank pod. `gpu_count=1` means 1 GPU per rank;
+                set higher (e.g. 8) for NVLink ranks.
+            world_size: `WorldSize(min, target, max)` triple. Required.
+            provider_filter: Inclusive/exclusive provider filter. Defaults
+                to no filter (any provider).
+            topology_spread: One of `pack | provider-aware | region-aware
+                | none`. Default `provider-aware`. SDK arch § 4.
+            nccl_env: NCCL env vars merged on top of operator defaults.
+                User values win on collision.
+            bench: `"on-start"` to schedule a 2-rank NCCL bench probe in the
+                user's namespace alongside workers (counts against the
+                namespace rank budget; result lands on `training.bench`).
+                `"off"` (default) skips the probe. SDK arch § 7.
+            bench_placement: Placement policy for the bench Pod pair on
+                multi-tenant clusters. `"preferred"` (default) lets the
+                bench fall back off the worker pair when those nodes have
+                no spare GPU — bench always schedules but may measure a
+                different pair than the workers. `"strict"` keeps the
+                bench pinned to the worker pair's nodes — bench measures
+                the worker pair's link or stays Pending; never silently
+                mismeasures. Architecture doc § 11.1: silently-wrong
+                outranks no-number, so `strict` is the architecturally
+                honest mode for research papers / SLA evidence on multi-
+                GPU/node hardware. Default is `"preferred"` for
+                runnability on the current single-GPU/node fleet.
+                Ignored when `bench == "off"`.
+            rendezvous_backend: One of `etcd-v2 | c10d | static`. Default
+                `etcd-v2` (the only backend with full elasticity).
+            command: BYO-launcher escape hatch. When set, the operator does
+                NOT wrap with torchrun.
+            args: Args to pass to the entrypoint.
+            pip_packages: Additional pip packages.
+            ttl_seconds: Auto-delete after N seconds.
+            timeout: Seconds to wait for `min` ranks to be ready. Default 600.
+            enable_billing: Whether to bill for this deployment. Default True.
+            wait_for_bench: How to handle the bench probe before returning.
+                Default `"never"`: return as soon as `wait_until_min_world`
+                succeeds; the bench probe runs in the background and the
+                caller can opt in via
+                :py:meth:`DistributedTraining.wait_until_bench_complete`.
+                `"best_effort"`: also call `wait_until_bench_complete`
+                after workers Ready, but never raise — log/print the
+                outcome and return. `"required"`: call
+                `wait_until_bench_complete` and re-raise on a non-Succeeded
+                terminal phase (`Failed` / `TimedOut`) or on timeout.
+                The default `"never"` is a BREAKING change from the prior
+                implicit "deploy waits on bench" behavior — chained bench
+                regressions made `deploy_distributed` look broken even
+                when workers were Ready. Bench remains best-effort per
+                `basilica_bench.py:75-78`.
+            bench_timeout: Seconds budget for `wait_for_bench` modes
+                `best_effort` / `required`. Default 1500 (matches the
+                operator's `BENCH_ACTIVE_DEADLINE_SECONDS`). Ignored when
+                `wait_for_bench="never"`.
+
+        Returns:
+            DistributedTraining: Facade with scale/wait/logs/bench/delete and
+                all `_async` counterparts. SDK arch § 6.
+
+        Raises:
+            WorldSizeOutOfBounds: `world_size` triple violates `1 <= min <=
+                target <= max` (caught at dataclass construction).
+            QuotaExceeded: namespace rank budget exceeded.
+            BelowMinimumWorld: `wait_until_min_world` timed out before `min`
+                ranks were ready.
+            DistributedError: `wait_for_bench="required"` and bench reached
+                `Failed` / `TimedOut` / `Skipped`, or the bench wait timed
+                out without a terminal phase.
+        """
+        if world_size is None:
+            raise ValidationError("deploy_distributed requires world_size", field="world_size")
+        if wait_for_bench not in ("never", "best_effort", "required"):
+            raise ValidationError(
+                f"wait_for_bench must be 'never' | 'best_effort' | 'required', "
+                f"got {wait_for_bench!r}",
+                field="wait_for_bench",
+                value=wait_for_bench,
+            )
+
+        request_dict = self._build_distributed_request(
+            name=name,
+            source=source,
+            image=image,
+            port=port,
+            env=env,
+            cpu=cpu,
+            memory=memory,
+            gpu_count=gpu_count,
+            gpu_models=gpu_models,
+            min_gpu_memory_gb=min_gpu_memory_gb,
+            world_size=world_size,
+            provider_filter=provider_filter,
+            topology_spread=topology_spread,
+            nccl_env=nccl_env,
+            bench=bench,
+            bench_placement=bench_placement,
+            rendezvous_backend=rendezvous_backend,
+            command=command,
+            args=args,
+            pip_packages=pip_packages,
+            ttl_seconds=ttl_seconds,
+            enable_billing=enable_billing,
+        )
+
+        response = self._client.create_distributed_deployment(request_dict)
+        training = DistributedTraining(self, response.instance_name)
+        training.refresh()
+        # Block until min ranks are ready (per SDK arch § 4 "Behaviour around
+        # wait_until_ready"); raises BelowMinimumWorld on timeout.
+        # Any exception here triggers best-effort cleanup so the caller's
+        # documented `deploy → use → delete()` flow doesn't leak the UD when
+        # the deploy step itself raises (issue #486).
+        try:
+            training.wait_until_min_world(timeout=timeout)
+        except BaseException:
+            try:
+                training.delete()
+            except Exception:
+                pass
+            raise
+        # Issue B/N (refs #506): bench wait is OPT-IN. Default `"never"`
+        # returns as soon as workers are Ready; the bench probe is
+        # decoupled from UD readiness on the operator side, so blocking
+        # here would only re-couple it in the SDK. Callers that want the
+        # measurement use `wait_for_bench=` or
+        # `training.wait_until_bench_complete(...)` directly.
+        if wait_for_bench != "never":
+            self._handle_post_deploy_bench_wait(
+                training, mode=wait_for_bench, timeout=bench_timeout
+            )
+        return training
+
+    def deploy_distributed_managed(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        bench_placement: str = "preferred",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = 86400,
+        timeout: int = 600,
+        enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
+    ) -> DistributedTrainingManaged:
+        """
+        Context-managed variant of :meth:`deploy_distributed`.
+
+        Defensive sibling of basilica-backend#486 (which fixed UD leak
+        inside ``deploy_distributed`` itself when the initial
+        ``wait_until_min_world`` raised). This variant fixes the
+        *caller-side* leak: when an intermediate wait such as
+        ``wait_until_target_world`` (after ``scale()``) raises, the
+        script aborts before reaching ``delete()``.
+
+        Returns a :class:`DistributedTrainingManaged` that, on scope
+        exit (normal OR exceptional), best-effort calls
+        ``training.delete()`` so the UD does not leak.
+
+        All keyword arguments match :meth:`deploy_distributed` exactly
+        and are forwarded verbatim. See that method for full semantics.
+
+        Recommended pattern for any ``deploy → use → delete`` flow::
+
+            with client.deploy_distributed_managed(
+                name="dlc-job",
+                image="...",
+                world_size=WorldSize(min=2, target=2, max=4),
+            ) as training:
+                training.scale(target=3)
+                training.wait_until_target_world(timeout=300)
+                ...
+            # `delete()` ran on scope exit, success or exception.
+
+        Refs: basilica-backend#538 (defensive sibling of #486).
+        """
+        training = self.deploy_distributed(
+            name=name,
+            source=source,
+            image=image,
+            port=port,
+            env=env,
+            cpu=cpu,
+            memory=memory,
+            gpu_count=gpu_count,
+            gpu_models=gpu_models,
+            min_gpu_memory_gb=min_gpu_memory_gb,
+            world_size=world_size,
+            provider_filter=provider_filter,
+            topology_spread=topology_spread,
+            nccl_env=nccl_env,
+            bench=bench,
+            bench_placement=bench_placement,
+            rendezvous_backend=rendezvous_backend,
+            command=command,
+            args=args,
+            pip_packages=pip_packages,
+            ttl_seconds=ttl_seconds,
+            timeout=timeout,
+            enable_billing=enable_billing,
+            wait_for_bench=wait_for_bench,
+            bench_timeout=bench_timeout,
+        )
+        return DistributedTrainingManaged(training)
+
+    @staticmethod
+    def _handle_post_deploy_bench_wait(
+        training: DistributedTraining,
+        mode: Literal["best_effort", "required"],
+        timeout: int,
+    ) -> None:
+        """
+        Issue B/N (refs #506): post-deploy bench-wait helper for
+        `wait_for_bench={best_effort, required}` modes.
+
+        - `best_effort`: call `wait_until_bench_complete` and swallow any
+          non-Succeeded outcome (including `TimeoutError`). Logs to stderr
+          via `warnings.warn` so users see the failure but the deploy
+          still returns the live `DistributedTraining`.
+        - `required`: call `wait_until_bench_complete`; raise
+          `DistributedError` on a non-Succeeded terminal phase or on
+          timeout. The UD is NOT auto-deleted — the workers are healthy
+          and the caller may still want to use them. Use `.delete()`
+          explicitly if the bench failure is grounds for tearing down.
+        """
+        try:
+            bs = training.wait_until_bench_complete(timeout=timeout)
+        except TimeoutError as e:
+            if mode == "required":
+                raise DistributedError(
+                    f"wait_for_bench='required' but bench did not "
+                    f"reach a terminal phase within {timeout}s: {e}"
+                ) from e
+            warnings.warn(
+                f"wait_for_bench='best_effort': bench did not "
+                f"reach a terminal phase within {timeout}s: {e}",
+                stacklevel=3,
+            )
+            return
+        # `bs is None` means bench.mode == off, i.e. caller passed
+        # `bench="off"` (or omitted it). Nothing to wait on.
+        if bs is None:
+            return
+        if bs.phase == BENCH_PHASE_SUCCEEDED:
+            return
+        msg = (
+            f"bench probe phase={bs.phase}"
+            f"{f' message={bs.message!r}' if bs.message else ''}"
+        )
+        if mode == "required":
+            raise DistributedError(
+                f"wait_for_bench='required' but {msg}"
+            )
+        warnings.warn(f"wait_for_bench='best_effort': {msg}", stacklevel=3)
+
+    def _build_distributed_request(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]],
+        image: str,
+        port: int,
+        env: Optional[Dict[str, str]],
+        cpu: str,
+        memory: str,
+        gpu_count: int,
+        gpu_models: Optional[List[str]],
+        min_gpu_memory_gb: Optional[int],
+        world_size: WorldSize,
+        provider_filter: Optional[ProviderFilter],
+        topology_spread: str,
+        nccl_env: Optional[Dict[str, str]],
+        bench: str,
+        rendezvous_backend: str,
+        command: Optional[List[str]],
+        args: Optional[List[str]],
+        pip_packages: Optional[List[str]],
+        ttl_seconds: Optional[int],
+        enable_billing: bool,
+        bench_placement: str = "preferred",
+    ) -> Dict[str, Any]:
+        """
+        Build the camelCase JSON dict that PyO3's
+        `create_distributed_deployment` will depythonize into the Rust
+        SDK's `CreateDistributedDeploymentRequest`. Wire shape exactly
+        matches the operator's CRD `spec.distributed`.
+        """
+        # `spec.command` (top-level) is appended to the operator's BYO
+        # launcher as positional `$@`; for distributed-mode source-shipping
+        # we want the bash script in `spec.distributed.command` to be
+        # self-contained and ignore `$@`. So `spec.command` stays None
+        # for the request, while source-shipping happens via
+        # `spec.distributed.command` below (operator wraps in `sh -c`).
+        rendered_command: Optional[List[str]] = None
+
+        # Resources: distributed UDs always need GPU; default to 1 GPU per
+        # rank pod. The operator's `--nproc-per-node` consumes this.
+        resources: Dict[str, Any] = {
+            "cpu": cpu,
+            "memory": memory,
+            "gpus": {
+                "count": gpu_count,
+                "model": gpu_models or [],
+            },
+        }
+        if min_gpu_memory_gb is not None:
+            resources["gpus"]["minGpuMemoryGb"] = min_gpu_memory_gb
+
+        # `spec.distributed.command` policy:
+        #
+        # - `source` set -> read source text, ship via base64 in a bash
+        #   one-liner that writes `/tmp/__basilica_source.py` then
+        #   exec's torchrun on it. The operator wraps this with `sh -c`
+        #   in BYO mode (operator distributed.rs build_worker_command:
+        #   `command=["/bin/sh", "-c"], args=[<distributed.command>, "--",
+        #   ...user_command, ...user_args]`). Why not "auto"? The
+        #   operator's auto-torchrun renderer does NOT ship source --
+        #   it expects `/workspace/<script>` already in the image. Phase
+        #   5b ships source via this BYO heredoc-free path; Phase 6 may
+        #   move source-shipping into the operator via init container.
+        #
+        # - `command` set -> shell-safe join that preserves `$VAR`
+        #   expansion. The operator passes `distributed.command` to
+        #   `["/bin/sh", "-c", <cmd>]` (operator distributed.rs
+        #   build_worker_command), so user-supplied `$BASILICA_*` tokens
+        #   in `command` are intended to expand at sh-eval time. Plain
+        #   `shlex.join` single-quotes any token containing `$`, which
+        #   defeats expansion -- see issue #452 (literal
+        #   `'$BASILICA_WORLD_TARGET'` reached `int(...)` and crashed).
+        #   Two shapes are recognised here:
+        #   1. `["bash"|"sh"|"/bin/bash"|"/bin/sh", "-c", <script>]`
+        #      -> emit <script> verbatim (canonical "I am a shell script")
+        #   2. argv list -> per-token: leave verbatim if shlex-safe over
+        #      the alphabet `[\w@%+=:,./-]` plus `$` (i.e. only `$VAR`
+        #      makes it "unsafe" in plain shlex); otherwise shlex.quote.
+        #      A token mixing `$` with whitespace/metachars is genuinely
+        #      ambiguous -- we choose safety (quote, lose expansion) so
+        #      argv structure is preserved.
+        #
+        # - neither -> ValidationError. The operator's distributed-mode
+        #   renderer has no "use image ENTRYPOINT, just pass args" mode;
+        #   either source-shipping or explicit launcher is required.
+        if source is not None:
+            import base64 as _b64
+            import shlex as _shlex
+            if callable(source):
+                src_text = SourcePackager.from_function(source).code
+            else:
+                src_text = SourcePackager(source).code
+            src_b64 = _b64.b64encode(src_text.encode("utf-8")).decode("ascii")
+            pip_install = ""
+            if pip_packages:
+                pkg_args = " ".join(_shlex.quote(p) for p in pip_packages)
+                pip_install = f"pip install --quiet {pkg_args} && "
+            backend_token = (
+                "etcd-v2"
+                if rendezvous_backend == "etcd-v2"
+                else rendezvous_backend
+            )
+            # /tmp/ used because /workspace/ in pytorch base images is
+            # root-owned and pods run as uid=1000 (operator
+            # distributed.rs build_security_contexts: runAsUser=1000,
+            # no /workspace emptyDir mounted). /tmp/ is the standard
+            # tmpfs scratch location writable by any uid. See issue #448.
+            distributed_command = (
+                f"{pip_install}"
+                f"echo {src_b64} | base64 -d > /tmp/__basilica_source.py && "
+                f"exec torchrun "
+                f"--rdzv-backend={backend_token} "
+                f"--rdzv-endpoint=\"$BASILICA_RDZV_ENDPOINT\" "
+                f"--rdzv-id=\"$BASILICA_RDZV_ID\" "
+                f"--nnodes=\"$BASILICA_WORLD_MIN\":\"$BASILICA_WORLD_MAX\" "
+                f"--nproc-per-node=\"$BASILICA_GPUS_PER_POD\" "
+                f"--max-restarts=10 "
+                f"/tmp/__basilica_source.py"
+            )
+        elif command is not None:
+            distributed_command = _shell_join_preserving_vars(command)
+        else:
+            raise ValidationError(
+                "deploy_distributed requires either source= (Phase 5b "
+                "ships source via a base64-encoded bash launcher) or "
+                "command= (BYO launcher). Image-entrypoint-only mode is "
+                "not supported by the operator's distributed-mode "
+                "renderer.",
+                field="source",
+            )
+        distributed: Dict[str, Any] = {
+            "enabled": True,
+            "command": distributed_command,
+            "worldSize": {
+                "min": world_size.min,
+                "target": world_size.target,
+                "max": world_size.max,
+            },
+            "rendezvous": {"backend": rendezvous_backend},
+            "providerFilter": {
+                "include": list(provider_filter.include) if provider_filter else [],
+                "exclude": list(provider_filter.exclude) if provider_filter else [],
+            },
+            "topologySpread": {"strategy": topology_spread},
+            "nccl": {"env": dict(nccl_env) if nccl_env else {}},
+        }
+        if bench in ("on-start", "off"):
+            bench_dict: Dict[str, Any] = {"mode": bench}
+            # Architecture doc § 11.1 placement knob. Only emit the
+            # field when the user opts into a non-default; `None` on the
+            # wire is interpreted as Preferred operator-side, so
+            # omitting `placement` keeps backwards-compat with operators
+            # that don't yet know about the field.
+            if bench_placement not in ("preferred", "strict"):
+                raise ValidationError(
+                    f"bench_placement must be 'preferred' or 'strict', got {bench_placement!r}",
+                    field="bench_placement",
+                    value=bench_placement,
+                )
+            if bench == "on-start" and bench_placement == "strict":
+                bench_dict["placement"] = "strict"
+            distributed["bench"] = bench_dict
+        else:
+            raise ValidationError(
+                f"bench must be 'on-start' or 'off', got {bench!r}",
+                field="bench",
+                value=bench,
+            )
+
+        request: Dict[str, Any] = {
+            "instanceName": name,
+            "image": image,
+            "replicas": world_size.target,
+            "port": port,
+            "command": rendered_command,
+            "args": args,
+            "env": env,
+            "resources": resources,
+            "ttlSeconds": ttl_seconds,
+            "enableBilling": enable_billing,
+            "distributed": distributed,
+        }
+        # Strip None-valued top-level keys so JSON shape matches the
+        # operator's `#[serde(skip_serializing_if = "Option::is_none")]`.
+        return {k: v for k, v in request.items() if v is not None}
 
     # -------------------------------------------------------------------------
     # Low-Level API Methods (for advanced use cases)
@@ -1316,6 +1941,19 @@ class BasilicaClient:
     ) -> str:
         """Get deployment logs."""
         return self._client.get_deployment_logs(instance_name, follow, tail)
+
+    def get_deployment_events(
+        self, instance_name: str, limit: Optional[int] = None, **_ignored: Any
+    ) -> Dict[str, Any]:
+        """
+        Get K8s Events for a deployment, scoped to the user's namespace.
+
+        Returns a dict with `events: [{event_type, reason, message, count,
+        last_timestamp}, ...]`. Used by `DistributedTraining.events()`.
+        Tolerates an unused `since=` kwarg for forward-compat with the
+        Phase 6 server-side filter.
+        """
+        return self._client.get_deployment_events(instance_name, limit)
 
     def get_balance(self) -> Dict[str, Any]:
         """Get account balance."""
@@ -1667,6 +2305,222 @@ class BasilicaClient:
 
         return deployment
 
+    async def deploy_distributed_async(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        bench_placement: str = "preferred",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = 86400,
+        timeout: int = 600,
+        enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
+    ) -> DistributedTraining:
+        """
+        Async variant of `deploy_distributed`. Same arguments and semantics
+        per SDK arch § 9; uses `run_in_executor` over the underlying Rust
+        client and `asyncio.sleep` for the wait loop.
+
+        See `deploy_distributed` for the `wait_for_bench` /
+        `bench_timeout` contract.
+        """
+        if world_size is None:
+            raise ValidationError("deploy_distributed_async requires world_size", field="world_size")
+        if wait_for_bench not in ("never", "best_effort", "required"):
+            raise ValidationError(
+                f"wait_for_bench must be 'never' | 'best_effort' | 'required', "
+                f"got {wait_for_bench!r}",
+                field="wait_for_bench",
+                value=wait_for_bench,
+            )
+
+        request_dict = self._build_distributed_request(
+            name=name,
+            source=source,
+            image=image,
+            port=port,
+            env=env,
+            cpu=cpu,
+            memory=memory,
+            gpu_count=gpu_count,
+            gpu_models=gpu_models,
+            min_gpu_memory_gb=min_gpu_memory_gb,
+            world_size=world_size,
+            provider_filter=provider_filter,
+            topology_spread=topology_spread,
+            nccl_env=nccl_env,
+            bench=bench,
+            bench_placement=bench_placement,
+            rendezvous_backend=rendezvous_backend,
+            command=command,
+            args=args,
+            pip_packages=pip_packages,
+            ttl_seconds=ttl_seconds,
+            enable_billing=enable_billing,
+        )
+
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None, self._client.create_distributed_deployment, request_dict
+        )
+        training = DistributedTraining(self, response.instance_name)
+        await training.refresh_async()
+        # See sync deploy_distributed: best-effort cleanup on ANY exception
+        # so deploy failures don't leak the UD (issue #486).
+        try:
+            await training.wait_until_min_world_async(timeout=timeout)
+        except BaseException:
+            try:
+                await training.delete_async()
+            except Exception:
+                pass
+            raise
+        if wait_for_bench != "never":
+            await self._handle_post_deploy_bench_wait_async(
+                training, mode=wait_for_bench, timeout=bench_timeout
+            )
+        return training
+
+    def deploy_distributed_managed_async(
+        self,
+        name: str,
+        source: Optional[Union[str, Path, Callable]] = None,
+        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
+        port: int = 18789,
+        env: Optional[Dict[str, str]] = None,
+        cpu: str = "8",
+        memory: str = "32Gi",
+        gpu_count: int = 1,
+        gpu_models: Optional[List[str]] = None,
+        min_gpu_memory_gb: Optional[int] = None,
+        world_size: Optional[WorldSize] = None,
+        provider_filter: Optional[ProviderFilter] = None,
+        topology_spread: str = "provider-aware",
+        nccl_env: Optional[Dict[str, str]] = None,
+        bench: str = "off",
+        bench_placement: str = "preferred",
+        rendezvous_backend: str = "etcd-v2",
+        command: Optional[List[str]] = None,
+        args: Optional[List[str]] = None,
+        pip_packages: Optional[List[str]] = None,
+        ttl_seconds: Optional[int] = 86400,
+        timeout: int = 600,
+        enable_billing: bool = True,
+        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
+        bench_timeout: int = 1500,
+    ) -> DistributedTrainingManagedAsync:
+        """
+        Async context-managed variant of :meth:`deploy_distributed_async`.
+
+        Returns a :class:`DistributedTrainingManagedAsync` for use
+        directly with ``async with``. The actual deploy runs in
+        ``__aenter__`` (lazy), so this method itself does NOT need to
+        be awaited. On scope exit (normal OR exceptional), best-effort
+        calls ``training.delete_async()`` so the UD does not leak.
+
+        All keyword arguments match :meth:`deploy_distributed_async`
+        exactly and are forwarded verbatim.
+
+        Recommended pattern::
+
+            async with client.deploy_distributed_managed_async(
+                name="dlc-job",
+                image="...",
+                world_size=WorldSize(min=2, target=2, max=4),
+            ) as training:
+                await training.scale_async(target=3)
+                await training.wait_until_target_world_async(timeout=300)
+                ...
+
+        Refs: basilica-backend#538 (defensive sibling of #486).
+        """
+        # Capture the deploy invocation as a zero-arg coroutine factory
+        # so the manager can defer the deploy until `__aenter__`. Using
+        # a factory (not a one-shot coroutine) keeps the manager
+        # idempotent under accidental re-entry.
+        def _factory() -> Any:
+            return self.deploy_distributed_async(
+                name=name,
+                source=source,
+                image=image,
+                port=port,
+                env=env,
+                cpu=cpu,
+                memory=memory,
+                gpu_count=gpu_count,
+                gpu_models=gpu_models,
+                min_gpu_memory_gb=min_gpu_memory_gb,
+                world_size=world_size,
+                provider_filter=provider_filter,
+                topology_spread=topology_spread,
+                nccl_env=nccl_env,
+                bench=bench,
+                bench_placement=bench_placement,
+                rendezvous_backend=rendezvous_backend,
+                command=command,
+                args=args,
+                pip_packages=pip_packages,
+                ttl_seconds=ttl_seconds,
+                timeout=timeout,
+                enable_billing=enable_billing,
+                wait_for_bench=wait_for_bench,
+                bench_timeout=bench_timeout,
+            )
+
+        return DistributedTrainingManagedAsync(_factory)
+
+    @staticmethod
+    async def _handle_post_deploy_bench_wait_async(
+        training: DistributedTraining,
+        mode: Literal["best_effort", "required"],
+        timeout: int,
+    ) -> None:
+        """Async variant of `_handle_post_deploy_bench_wait`."""
+        try:
+            bs = await training.wait_until_bench_complete_async(timeout=timeout)
+        except TimeoutError as e:
+            if mode == "required":
+                raise DistributedError(
+                    f"wait_for_bench='required' but bench did not "
+                    f"reach a terminal phase within {timeout}s: {e}"
+                ) from e
+            warnings.warn(
+                f"wait_for_bench='best_effort': bench did not "
+                f"reach a terminal phase within {timeout}s: {e}",
+                stacklevel=3,
+            )
+            return
+        if bs is None:
+            return
+        if bs.phase == BENCH_PHASE_SUCCEEDED:
+            return
+        msg = (
+            f"bench probe phase={bs.phase}"
+            f"{f' message={bs.message!r}' if bs.message else ''}"
+        )
+        if mode == "required":
+            raise DistributedError(
+                f"wait_for_bench='required' but {msg}"
+            )
+        warnings.warn(f"wait_for_bench='best_effort': {msg}", stacklevel=3)
+
     async def get_async(self, name: str) -> Deployment:
         """
         Get an existing deployment by name asynchronously.
@@ -1692,6 +2546,34 @@ class BasilicaClient:
             if "not found" in error_msg.lower() or "Not found" in error_msg:
                 raise DeploymentNotFound(name) from None
             raise
+
+    async def get_by_name_async(self, friendly_name: str) -> Deployment:
+        """
+        Get an existing deployment by its user-supplied friendly name asynchronously.
+
+        See `get_by_name` for full semantics. Lists the user's deployments
+        and matches client-side, so this is O(n) in the number of active
+        deployments.
+
+        Args:
+            friendly_name: The human-readable deployment name.
+
+        Returns:
+            Deployment: A deployment object.
+
+        Raises:
+            DeploymentNotFound: If no deployment with that friendly name exists.
+
+        Example:
+            >>> deployment = await client.get_by_name_async("my-api")
+            >>> print(deployment.url)
+        """
+        listing = await self.list_deployments_async()
+        for summary in listing.deployments:
+            if summary.friendly_name == friendly_name:
+                response = await self.get_deployment_async(summary.instance_name)
+                return Deployment._from_response(self, response)
+        raise DeploymentNotFound(friendly_name)
 
     async def list_async(self) -> List[Deployment]:
         """

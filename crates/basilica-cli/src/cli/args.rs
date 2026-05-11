@@ -279,6 +279,11 @@ impl Args {
                 handlers::deploy::handle_deploy(*cmd.clone(), config).await?;
             }
 
+            // Distributed training (`basilica train ...`).
+            Commands::Train(cmd) => {
+                handlers::train::handle_train(*cmd.clone(), config).await?;
+            }
+
             // Volume management
             Commands::Volumes { action } => {
                 use crate::cli::commands::VolumeAction;

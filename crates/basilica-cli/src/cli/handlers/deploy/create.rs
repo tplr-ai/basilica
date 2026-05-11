@@ -111,8 +111,11 @@ pub async fn handle_create(
 
     complete_spinner_and_clear(spinner);
 
-    // Use the instance_name returned by API (may differ from user-provided name)
+    // The API returns the stable UUID instance_name (used for all subsequent SDK
+    // calls) plus the friendly_name we surface to the user.
     let actual_name = response.instance_name.clone();
+    let display =
+        super::helpers::display_name(&response.friendly_name, &response.instance_name).to_string();
 
     // 15. Wait for ready if not detached
     if !cmd.lifecycle.detach {
@@ -150,7 +153,7 @@ pub async fn handle_create(
                 // Fetch events to help diagnose the failure
                 fetch_and_print_events(client, &actual_name).await;
                 return Err(CliError::Deploy(DeployError::DeploymentFailed {
-                    name: actual_name,
+                    name: display,
                     reason,
                 }));
             }
@@ -158,7 +161,7 @@ pub async fn handle_create(
                 // Fetch events to help diagnose the timeout
                 fetch_and_print_events(client, &actual_name).await;
                 return Err(CliError::Deploy(DeployError::Timeout {
-                    name: actual_name,
+                    name: display,
                     timeout_secs: cmd.lifecycle.timeout,
                 }));
             }
@@ -166,11 +169,8 @@ pub async fn handle_create(
     } else if cmd.json {
         crate::output::json_output(&response)?;
     } else {
-        print_success(&format!(
-            "Summons '{}' created (detached mode)",
-            actual_name
-        ));
-        println!("  Check status: basilica summon status {}", actual_name);
+        print_success(&format!("Summons '{}' created (detached mode)", display));
+        println!("  Check status: basilica summon status {}", display);
     }
 
     Ok(())
