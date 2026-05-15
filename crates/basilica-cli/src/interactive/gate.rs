@@ -115,6 +115,24 @@ pub fn ask_select<T>(
     }
 }
 
+pub fn ask_confirm(field: &str, default: bool, hint: &str) -> Result<bool, CliError> {
+    match current() {
+        Interactivity::NonInteractive => Err(CliError::MissingInput {
+            field: field.to_string(),
+            hint: hint.to_string(),
+            choices: Choices::default(),
+        }),
+        Interactivity::Interactive => {
+            let theme = ColorfulTheme::default();
+            Confirm::with_theme(&theme)
+                .with_prompt(field)
+                .default(default)
+                .interact()
+                .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!(e)))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,24 +203,6 @@ mod tests {
                 assert!(hint.contains("--force"));
             }
             other => panic!("expected MissingInput, got {other:?}"),
-        }
-    }
-}
-
-pub fn ask_confirm(field: &str, default: bool, hint: &str) -> Result<bool, CliError> {
-    match current() {
-        Interactivity::NonInteractive => Err(CliError::MissingInput {
-            field: field.to_string(),
-            hint: hint.to_string(),
-            choices: Choices::default(),
-        }),
-        Interactivity::Interactive => {
-            let theme = ColorfulTheme::default();
-            Confirm::with_theme(&theme)
-                .with_prompt(field)
-                .default(default)
-                .interact()
-                .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!(e)))
         }
     }
 }
