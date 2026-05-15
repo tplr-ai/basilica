@@ -155,6 +155,16 @@ pub fn find_local_public_key_path(registered_public_key: &str) -> Option<PathBuf
     None
 }
 
+/// Compare two SSH public keys by key type and key data, ignoring any
+/// trailing comment (`user@host`) or whitespace differences. Returns false
+/// if either side is not a parseable public key.
+pub fn same_public_key(a: &str, b: &str) -> bool {
+    match (parse_public_key(a), parse_public_key(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
+}
+
 /// Parsed components of an SSH public key
 #[derive(Debug, PartialEq)]
 struct PublicKeyParts {

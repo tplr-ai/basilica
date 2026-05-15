@@ -1,9 +1,9 @@
 //! SSH key management handlers for the Basilica CLI
 
 use crate::error::CliError;
-use crate::interactive::gate::{ask_confirm, ask_select, ask_text, SelectItem};
-use crate::output::{compress_path, json_output, print_success};
-use crate::ssh::find_local_public_key_path;
+use crate::interactive::gate::{self, ask_confirm, ask_select, ask_text, Interactivity, SelectItem};
+use crate::output::{compress_path, json_output, print_success, print_warning};
+use crate::ssh::{find_local_public_key_path, same_public_key};
 use basilica_sdk::BasilicaClient;
 use console::style;
 use dialoguer::theme::ColorfulTheme;
@@ -233,7 +233,6 @@ pub async fn handle_add_ssh_key(
     client: &BasilicaClient,
     name: Option<String>,
     file: Option<PathBuf>,
-    force: bool,
 ) -> Result<(), CliError> {
     // Step 1: Get SSH public key file path
     let key_path = match file {
@@ -345,47 +344,45 @@ pub async fn handle_add_ssh_key(
         }
     };
 
-    // Step 4: Check if user already has an SSH key (warn about replacement)
-    match client.get_ssh_key().await {
-        Ok(Some(existing)) => {
-            println!(
-                "{}",
-                style(format!(
-                    "⚠️  You already have an SSH key registered: '{}'",
+    // Step 4: Handle an existing key (only one SSH key per user).
+    if let Some(existing) = client.get_ssh_key().await.map_err(CliError::Api)? {
+        if same_public_key(&existing.public_key, &public_key) {
+            print_success(&format!(
+                "SSH key '{}' is already registered (same public key). Nothing to do.",
+                existing.name
+            ));
+            return Ok(());
+        }
+
+        if matches!(gate::current(), Interactivity::NonInteractive) {
+            return Err(CliError::MissingPrerequisite {
+                field: "ssh_key_already_registered".into(),
+                hint: format!(
+                    "An SSH key '{}' is already registered. Only one SSH key is allowed per user. \
+                     Run `basilica ssh-keys delete -y` first, then re-run this command to register a new one.",
                     existing.name
-                ))
-                .yellow()
-            );
-            println!(
-                "{}",
-                style("Note: Only one SSH key is allowed per user.").yellow()
-            );
-
-            let confirmed = if force {
-                true
-            } else {
-                ask_confirm(
-                    "replace_existing",
-                    false,
-                    "An SSH key is already registered. Pass --force to replace it.",
-                )?
-            };
-
-            if !confirmed {
-                println!("Operation cancelled.");
-                return Ok(());
-            }
-
-            // Delete existing key first
-            client.delete_ssh_key().await.map_err(CliError::Api)?;
-            println!("{}", style("Existing SSH key deleted.").dim());
+                ),
+            });
         }
-        Ok(None) => {
-            // No existing key, proceed
+
+        print_warning(&format!(
+            "You already have an SSH key registered: '{}'",
+            existing.name
+        ));
+        print_warning("Note: Only one SSH key is allowed per user.");
+
+        let confirmed = ask_confirm(
+            "replace_existing",
+            false,
+            "Replace the existing SSH key with the new one?",
+        )?;
+        if !confirmed {
+            println!("Operation cancelled.");
+            return Ok(());
         }
-        Err(e) => {
-            return Err(CliError::Api(e));
-        }
+
+        client.delete_ssh_key().await.map_err(CliError::Api)?;
+        println!("{}", style("Existing SSH key deleted.").dim());
     }
 
     // Step 5: Register the new SSH key
