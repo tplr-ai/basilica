@@ -23,8 +23,8 @@ pub fn current() -> Interactivity {
 }
 
 fn detect() -> Interactivity {
-    let non_interactive = !std::io::stdin().is_terminal()
-        || std::env::var("BASILICA_NON_INTERACTIVE").is_ok();
+    let non_interactive =
+        !std::io::stdin().is_terminal() || std::env::var("BASILICA_NON_INTERACTIVE").is_ok();
     if non_interactive {
         Interactivity::NonInteractive
     } else {

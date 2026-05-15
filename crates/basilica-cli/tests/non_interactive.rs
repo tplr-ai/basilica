@@ -33,10 +33,7 @@ fn ssh_keys_add_without_file_in_non_interactive_returns_missing_input() {
     // pointing the agent at --file. Either way the field is the same.
     assert_eq!(v["error"], "missing_input");
     assert_eq!(v["field"], "ssh_public_key_path");
-    assert!(v["hint"]
-        .as_str()
-        .unwrap()
-        .contains("--file"));
+    assert!(v["hint"].as_str().unwrap().contains("--file"));
 }
 
 #[test]
