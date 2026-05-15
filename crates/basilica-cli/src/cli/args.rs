@@ -230,9 +230,14 @@ impl Args {
                 let client = create_client(config).await?;
 
                 match action {
-                    SshKeyAction::Add { name, file } => {
-                        handlers::ssh_keys::handle_add_ssh_key(&client, name.clone(), file.clone())
-                            .await?;
+                    SshKeyAction::Add { name, file, force } => {
+                        handlers::ssh_keys::handle_add_ssh_key(
+                            &client,
+                            name.clone(),
+                            file.clone(),
+                            *force,
+                        )
+                        .await?;
                     }
                     SshKeyAction::List => {
                         handlers::ssh_keys::handle_list_ssh_keys(&client, self.json).await?;

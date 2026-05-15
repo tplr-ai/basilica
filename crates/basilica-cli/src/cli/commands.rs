@@ -278,6 +278,10 @@ pub enum SshKeyAction {
         /// Path to SSH public key file (default: auto-detect from ~/.ssh/)
         #[arg(short, long, value_hint = ValueHint::FilePath)]
         file: Option<PathBuf>,
+
+        /// Overwrite an existing registered SSH key without confirmation
+        #[arg(long)]
+        force: bool,
     },
 
     /// List registered SSH keys

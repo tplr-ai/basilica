@@ -3,7 +3,6 @@
 
 use crate::error::CliError;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
-use std::fmt::Display;
 use std::io::IsTerminal;
 use std::sync::OnceLock;
 
@@ -83,7 +82,7 @@ pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String
     }
 }
 
-pub fn ask_select<T: Display>(
+pub fn ask_select<T>(
     field: &str,
     items: &[SelectItem<'_, T>],
     hint: &str,
@@ -104,7 +103,7 @@ pub fn ask_select<T: Display>(
             ),
         }),
         Interactivity::Interactive => {
-            let labels: Vec<String> = items.iter().map(|i| i.item.to_string()).collect();
+            let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
             let theme = ColorfulTheme::default();
             Select::with_theme(&theme)
                 .with_prompt(field)
@@ -149,12 +148,8 @@ mod tests {
     fn ask_select_non_interactive_returns_choices() {
         set_for_test(Interactivity::NonInteractive);
         struct Off {
+            #[allow(dead_code)]
             name: &'static str,
-        }
-        impl std::fmt::Display for Off {
-            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(f, "{}", self.name)
-            }
         }
         let a = Off { name: "alpha" };
         let b = Off { name: "beta" };
