@@ -1,5 +1,6 @@
 //! Progress indicators and user feedback utilities
 
+use crate::interactive::gate::{current, Interactivity};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -22,15 +23,21 @@ impl ProgressManager {
 
     /// Start a spinner operation with a given name and message
     pub fn start_spinner(&self, name: &str, message: &str) -> ProgressBar {
-        let spinner = ProgressBar::new_spinner();
-        spinner.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.cyan} {msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-        );
+        let spinner = match current() {
+            Interactivity::NonInteractive => ProgressBar::hidden(),
+            Interactivity::Interactive => {
+                let s = ProgressBar::new_spinner();
+                s.set_style(
+                    ProgressStyle::default_spinner()
+                        .template("{spinner:.cyan} {msg}")
+                        .unwrap()
+                        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                );
+                s.enable_steady_tick(Duration::from_millis(120));
+                s
+            }
+        };
         spinner.set_message(message.to_string());
-        spinner.enable_steady_tick(Duration::from_millis(120));
 
         let pb = self.multi.add(spinner);
 
@@ -96,15 +103,21 @@ impl Default for ProgressManager {
 
 /// Simple spinner for standalone operations
 pub fn create_spinner(message: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_style(
-        ProgressStyle::default_spinner()
-            .template("{spinner:.cyan} {msg}")
-            .unwrap()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-    );
+    let spinner = match current() {
+        Interactivity::NonInteractive => ProgressBar::hidden(),
+        Interactivity::Interactive => {
+            let s = ProgressBar::new_spinner();
+            s.set_style(
+                ProgressStyle::default_spinner()
+                    .template("{spinner:.cyan} {msg}")
+                    .unwrap()
+                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+            );
+            s.enable_steady_tick(Duration::from_millis(120));
+            s
+        }
+    };
     spinner.set_message(message.to_string());
-    spinner.enable_steady_tick(Duration::from_millis(120));
     spinner
 }
 
