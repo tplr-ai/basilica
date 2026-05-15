@@ -116,6 +116,84 @@ pub fn ask_select<T: Display>(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::CliError;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn ask_text_non_interactive_no_default_errors() {
+        set_for_test(Interactivity::NonInteractive);
+        let err = ask_text("name", None, "Pass --name").unwrap_err();
+        match err {
+            CliError::MissingInput { field, hint, .. } => {
+                assert_eq!(field, "name");
+                assert!(hint.contains("--name"));
+            }
+            other => panic!("expected MissingInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn ask_text_non_interactive_with_default_returns_default() {
+        set_for_test(Interactivity::NonInteractive);
+        let v = ask_text("name", Some("auto-name"), "irrelevant").unwrap();
+        assert_eq!(v, "auto-name");
+    }
+
+    #[test]
+    #[serial]
+    fn ask_select_non_interactive_returns_choices() {
+        set_for_test(Interactivity::NonInteractive);
+        struct Off {
+            name: &'static str,
+        }
+        impl std::fmt::Display for Off {
+            fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "{}", self.name)
+            }
+        }
+        let a = Off { name: "alpha" };
+        let b = Off { name: "beta" };
+        let items = vec![
+            SelectItem {
+                item: &a,
+                id: "1".into(),
+                label: "alpha".into(),
+                meta: Default::default(),
+            },
+            SelectItem {
+                item: &b,
+                id: "2".into(),
+                label: "beta".into(),
+                meta: Default::default(),
+            },
+        ];
+        let err = ask_select("offering", &items, "Pass --offering-id").unwrap_err();
+        match err {
+            CliError::MissingInput { choices, .. } => assert_eq!(choices.0.len(), 2),
+            other => panic!("expected MissingInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn ask_confirm_non_interactive_errors() {
+        set_for_test(Interactivity::NonInteractive);
+        let err = ask_confirm("replace", false, "Pass --force").unwrap_err();
+        match err {
+            CliError::MissingInput { field, hint, .. } => {
+                assert_eq!(field, "replace");
+                assert!(hint.contains("--force"));
+            }
+            other => panic!("expected MissingInput, got {other:?}"),
+        }
+    }
+}
+
 pub fn ask_confirm(field: &str, default: bool, hint: &str) -> Result<bool, CliError> {
     match current() {
         Interactivity::NonInteractive => Err(CliError::MissingInput {
