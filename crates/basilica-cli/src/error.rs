@@ -89,6 +89,24 @@ pub enum CliError {
     #[error("Invalid provider: {0}")]
     InvalidProvider(String),
 
+    /// A required input was not provided and we cannot prompt because we are
+    /// running non-interactively. `field` names the conceptual input, `hint`
+    /// tells the caller which flag or argument to supply, and `choices` may
+    /// surface the candidates that an interactive selector would have offered.
+    #[error("missing input: {field}")]
+    MissingInput {
+        field: String,
+        hint: String,
+        choices: crate::interactive::gate::Choices,
+    },
+
+    /// A piece of account state (e.g. a registered SSH key) that the
+    /// interactive flow would have set up implicitly is missing, and the CLI
+    /// refuses to set it up silently in non-interactive mode. `hint` names the
+    /// command the agent should run first.
+    #[error("missing prerequisite: {field}")]
+    MissingPrerequisite { field: String, hint: String },
+
     /// Everything else (using color-eyre's Report for rich errors)
     #[error(transparent)]
     Internal(#[from] Report),
