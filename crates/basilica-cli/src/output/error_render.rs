@@ -26,20 +26,17 @@ fn render_json(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
             hint,
             choices,
         } => serde_json::json!({
-            "schema_version": 1,
             "error": "missing_input",
             "field": field,
             "hint": hint,
             "choices": choices_to_json(choices),
         }),
         CliError::MissingPrerequisite { field, hint } => serde_json::json!({
-            "schema_version": 1,
             "error": "missing_prerequisite",
             "field": field,
             "hint": hint,
         }),
         other => serde_json::json!({
-            "schema_version": 1,
             "error": "cli_error",
             "message": other.to_string(),
         }),
@@ -115,7 +112,6 @@ mod tests {
         assert_eq!(v["error"], "missing_input");
         assert_eq!(v["field"], "offering_id");
         assert_eq!(v["choices"][0]["price_per_hr_usd"], 18.40);
-        assert_eq!(v["schema_version"], 1);
     }
 
     #[test]
@@ -129,7 +125,6 @@ mod tests {
         let v: serde_json::Value = serde_json::from_slice(&buf).unwrap();
         assert_eq!(v["error"], "missing_prerequisite");
         assert_eq!(v["field"], "ssh_key");
-        assert_eq!(v["schema_version"], 1);
     }
 
     #[test]

@@ -231,12 +231,8 @@ impl Args {
 
                 match action {
                     SshKeyAction::Add { name, file } => {
-                        handlers::ssh_keys::handle_add_ssh_key(
-                            &client,
-                            name.clone(),
-                            file.clone(),
-                        )
-                        .await?;
+                        handlers::ssh_keys::handle_add_ssh_key(&client, name.clone(), file.clone())
+                            .await?;
                     }
                     SshKeyAction::List => {
                         handlers::ssh_keys::handle_list_ssh_keys(&client, self.json).await?;

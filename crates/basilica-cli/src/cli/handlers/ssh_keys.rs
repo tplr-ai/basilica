@@ -1,7 +1,9 @@
 //! SSH key management handlers for the Basilica CLI
 
 use crate::error::CliError;
-use crate::interactive::gate::{self, ask_confirm, ask_select, ask_text, Interactivity, SelectItem};
+use crate::interactive::gate::{
+    self, ask_confirm, ask_select, ask_text, Interactivity, SelectItem,
+};
 use crate::output::{compress_path, json_output, print_success, print_warning};
 use crate::ssh::{find_local_public_key_path, same_public_key};
 use basilica_sdk::BasilicaClient;
@@ -330,9 +332,10 @@ pub async fn handle_add_ssh_key(
             n
         }
         None => {
+            let default_name = basilica_common::rental::generate_random_rental_name();
             let input = ask_text(
                 "name",
-                Some("default"),
+                Some(&default_name),
                 "Pass --name <label> to label the registered key",
             )?;
             if input.trim().is_empty() {

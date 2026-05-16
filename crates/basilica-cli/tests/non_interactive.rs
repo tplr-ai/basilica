@@ -27,7 +27,6 @@ fn ssh_keys_add_without_file_in_non_interactive_returns_missing_input() {
         .failure();
 
     let v = parse_stderr_json(&assert.get_output().stderr);
-    assert_eq!(v["schema_version"], 1);
     // When ~/.ssh has keys, the file-selector should produce MissingInput with
     // candidate paths. When it is empty, we get MissingInput on the same field
     // pointing the agent at --file. Either way the field is the same.
@@ -56,7 +55,6 @@ fn ssh_keys_add_with_invalid_file_in_non_interactive_emits_json_error() {
         .failure();
 
     let v = parse_stderr_json(&assert.get_output().stderr);
-    assert_eq!(v["schema_version"], 1);
     // Some error happened, and it was rendered as JSON. Either cli_error or
     // missing_input is acceptable here — the contract is "no hang, structured
     // stderr".
