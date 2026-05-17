@@ -68,6 +68,24 @@ def _train_no_module_imports() -> None:
     print("hello")
 
 
+@basilica.distributed(
+    name="test-dist-unused-filter",
+    image="ignored:latest",
+    world_size=WorldSize(min=1, target=1, max=1),
+    gpu_count=1,
+    gpu_models=["H100"],
+    provider_filter=ProviderFilter(include=["hyperstack"]),
+)
+def _train_uses_os_only() -> None:
+    """
+    Fixture: references only `os` from module scope. The decorator's
+    captured imports must NOT include `basilica`, `time`, `pytest`,
+    `Optional` etc. that are imported in this test module but unused
+    by the body.
+    """
+    print(os.environ.get("X", "fallback"))
+
+
 class TestDistributedSourceCapturesModuleImports:
     """
     Pin contract: `@basilica.distributed`'s extracted source must include
@@ -116,6 +134,42 @@ class TestDistributedSourceCapturesModuleImports:
         # the body.
         exec(compiled, ns)
         assert "_train_with_module_imports" in ns
+
+    def test_extracted_source_filters_unused_module_imports(self) -> None:
+        """
+        The extracted source must NOT include module-level imports that
+        the body never references. Specifically: a body that only uses
+        `os` should NOT carry `import basilica`, `import time`,
+        `import pytest`, `from typing import Optional`, etc. on its
+        head, because the worker container does not have those
+        installed and the import would fail at module-eval time.
+
+        Regression: pre-second-fix the decorator captured ALL
+        module-level imports (e.g. `import basilica`), which caused the
+        worker pod to raise `ModuleNotFoundError: No module named
+        'basilica'` on the runtime path. See task D2 (basilica-backend
+        #419 Stage 4 take-3) runtime trace.
+        """
+        source = _train_uses_os_only._extract_source()
+        head = source.split("def ")[0]
+        assert "import os" in head, (
+            f"Expected `import os` (the only referenced module-level "
+            f"import) in head; got:\n{head!r}"
+        )
+        # These are imported at module level in this test file but the
+        # function body does not reference them; they must be filtered.
+        assert "import basilica" not in head, (
+            f"Expected `import basilica` filtered out (unused by body); "
+            f"got:\n{head!r}"
+        )
+        assert "import pytest" not in head, (
+            f"Expected `import pytest` filtered out (unused by body); "
+            f"got:\n{head!r}"
+        )
+        assert "from typing" not in head, (
+            f"Expected `from typing import Optional` filtered out "
+            f"(unused by body); got:\n{head!r}"
+        )
 
 
 # =============================================================================

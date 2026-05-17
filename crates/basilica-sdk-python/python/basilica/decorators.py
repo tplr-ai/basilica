@@ -19,20 +19,48 @@ if TYPE_CHECKING:
     from basilica._basilica import HealthCheckConfig
 
 
-def _extract_module_level_imports(func: Callable) -> str:
+def _collect_referenced_names(func_source: str) -> set:
     """
-    Extract module-level `import` and `from ... import ...` statements
-    from the module that defines `func`.
+    Walk the AST of `func_source` and collect every free `Name` and the
+    leftmost identifier of every `Attribute` chain (e.g. `os.environ.get`
+    contributes `os`). Local assignments and inside-body imports are NOT
+    excluded — that's fine because the import-prepending logic just
+    short-circuits on names the body genuinely never mentions.
+    """
+    names: set = set()
+    try:
+        tree = ast.parse(func_source)
+    except SyntaxError:
+        return names
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            # Find leftmost Name in the Attribute chain (e.g. `os` in `os.environ.get`).
+            cursor: ast.AST = node
+            while isinstance(cursor, ast.Attribute):
+                cursor = cursor.value
+            if isinstance(cursor, ast.Name):
+                names.add(cursor.id)
+    return names
+
+
+def _extract_module_level_imports(func: Callable, func_source: str) -> str:
+    """
+    Extract the subset of module-level `import` / `from ... import ...`
+    statements from the module that defines `func` whose bound names
+    are referenced inside `func_source`.
 
     The decorator-based deploy path ships only the function source via
     `inspect.getsource(func)`; module-level imports the body references
-    would otherwise be missing on the worker. Walking the defining
-    module's AST keeps just the import statements (not arbitrary
-    top-level state), so the shipped source can be exec'd in a clean
-    namespace without `NameError`.
+    would otherwise be missing on the worker. Filtering by actual usage
+    keeps unrelated module-level imports (e.g. `import basilica` used
+    only by the decorator) OUT of the worker source, so the worker pod
+    does not have to install packages it never references.
 
     Returns an empty string if the module source is unavailable
-    (interactive sessions, exec/eval contexts, frozen modules).
+    (interactive sessions, exec/eval contexts, frozen modules) or if no
+    module-level import binding is referenced by the function body.
 
     Refs: one-covenant/basilica#477,
     one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
@@ -48,21 +76,59 @@ def _extract_module_level_imports(func: Callable) -> str:
         tree = ast.parse(module_source)
     except SyntaxError:
         return ""
+
+    referenced = _collect_referenced_names(func_source)
+    if not referenced:
+        return ""
+
     lines: List[str] = []
     for node in tree.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            try:
-                lines.append(ast.unparse(node))
-            except AttributeError:
-                # Python < 3.9 has no `ast.unparse`; SDK requires
-                # >= 3.10 per pyproject.toml so this branch is unreachable
-                # at runtime, but keep it defensive.
-                lines.append(
-                    inspect.getsource(module).splitlines()[node.lineno - 1]
+        if isinstance(node, ast.Import):
+            kept = [
+                alias for alias in node.names
+                if _import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                filtered = ast.Import(names=kept)
+                lines.append(ast.unparse(filtered))
+        elif isinstance(node, ast.ImportFrom):
+            kept = [
+                alias for alias in node.names
+                if _from_import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                filtered = ast.ImportFrom(
+                    module=node.module, names=kept, level=node.level
                 )
+                lines.append(ast.unparse(filtered))
     if not lines:
         return ""
     return "\n".join(lines) + "\n"
+
+
+def _import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    """
+    `import foo` binds `foo`. `import foo as bar` binds `bar`.
+    `import foo.bar` binds the top-level name `foo` (Python module
+    resolution).
+    """
+    if alias.asname is not None:
+        return alias.asname in referenced
+    # `import foo.bar` → binds `foo`.
+    return alias.name.split(".")[0] in referenced
+
+
+def _from_import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    """
+    `from x import foo` binds `foo`. `from x import foo as bar` binds `bar`.
+    `from x import *` is treated as referenced (we cannot know what names
+    it exposes without executing the import).
+    """
+    if alias.name == "*":
+        return True
+    if alias.asname is not None:
+        return alias.asname in referenced
+    return alias.name in referenced
 
 
 class DeployedFunction:
@@ -160,10 +226,12 @@ class DeployedFunction:
         func_source = '\n'.join(func_lines)
         func_source = textwrap.dedent(func_source)
 
-        # Prepend the defining module's top-level imports so names like
-        # `os`, `time`, `Optional` resolve when the body runs on the
-        # worker pod. Refs one-covenant/basilica#477.
-        imports = _extract_module_level_imports(self._func)
+        # Prepend the defining module's top-level imports whose bound
+        # names appear in the function body, so references like `os`,
+        # `time`, `Optional` resolve on the worker pod without dragging
+        # in unrelated imports (e.g. `import basilica` used only by the
+        # decorator). Refs one-covenant/basilica#477.
+        imports = _extract_module_level_imports(self._func, func_source)
 
         # Generate entry point that calls the function
         func_name = self._func.__name__
@@ -393,7 +461,7 @@ class DistributedFunction:
 
         func_lines = lines[def_idx:]
         func_source = textwrap.dedent("\n".join(func_lines))
-        imports = _extract_module_level_imports(self._func)
+        imports = _extract_module_level_imports(self._func, func_source)
         func_name = self._func.__name__
         return f"""{imports}{func_source}
 
