@@ -4,8 +4,10 @@ Decorator-based deployment API.
 Provides @deployment decorator for declarative function deployments and
 @distributed decorator for distributed-training (NCCL collective) jobs.
 """
+import ast
 import functools
 import inspect
+import sys
 import textwrap
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Union
 
@@ -15,6 +17,52 @@ from .volume import Volume
 
 if TYPE_CHECKING:
     from basilica._basilica import HealthCheckConfig
+
+
+def _extract_module_level_imports(func: Callable) -> str:
+    """
+    Extract module-level `import` and `from ... import ...` statements
+    from the module that defines `func`.
+
+    The decorator-based deploy path ships only the function source via
+    `inspect.getsource(func)`; module-level imports the body references
+    would otherwise be missing on the worker. Walking the defining
+    module's AST keeps just the import statements (not arbitrary
+    top-level state), so the shipped source can be exec'd in a clean
+    namespace without `NameError`.
+
+    Returns an empty string if the module source is unavailable
+    (interactive sessions, exec/eval contexts, frozen modules).
+
+    Refs: one-covenant/basilica#477,
+    one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
+    """
+    module = sys.modules.get(getattr(func, "__module__", "") or "")
+    if module is None:
+        return ""
+    try:
+        module_source = inspect.getsource(module)
+    except (OSError, TypeError):
+        return ""
+    try:
+        tree = ast.parse(module_source)
+    except SyntaxError:
+        return ""
+    lines: List[str] = []
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            try:
+                lines.append(ast.unparse(node))
+            except AttributeError:
+                # Python < 3.9 has no `ast.unparse`; SDK requires
+                # >= 3.10 per pyproject.toml so this branch is unreachable
+                # at runtime, but keep it defensive.
+                lines.append(
+                    inspect.getsource(module).splitlines()[node.lineno - 1]
+                )
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
 
 
 class DeployedFunction:
@@ -90,7 +138,12 @@ class DeployedFunction:
         return self._deployment
 
     def _extract_source(self) -> str:
-        """Extract function body as executable source code."""
+        """Extract function body as executable source code.
+
+        Captures the defining module's top-level `import` statements
+        (via :func:`_extract_module_level_imports`) so the body's
+        references to module-level names resolve on the worker.
+        """
         full_source = inspect.getsource(self._func)
         lines = full_source.split('\n')
 
@@ -107,9 +160,14 @@ class DeployedFunction:
         func_source = '\n'.join(func_lines)
         func_source = textwrap.dedent(func_source)
 
+        # Prepend the defining module's top-level imports so names like
+        # `os`, `time`, `Optional` resolve when the body runs on the
+        # worker pod. Refs one-covenant/basilica#477.
+        imports = _extract_module_level_imports(self._func)
+
         # Generate entry point that calls the function
         func_name = self._func.__name__
-        return f'''{func_source}
+        return f'''{imports}{func_source}
 
 {func_name}()
 '''
@@ -317,6 +375,12 @@ class DistributedFunction:
         but emits a torchrun-friendly shape: the body runs once per
         rank, each rank's torchrun invocation provides
         `BASILICA_RANK`/`BASILICA_WORLD_*` env vars.
+
+        Captures the defining module's top-level `import` statements
+        (via :func:`_extract_module_level_imports`) so the body's
+        references to module-level names resolve on the worker pod.
+        Refs one-covenant/basilica#477,
+        one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
         """
         full_source = inspect.getsource(self._func)
         lines = full_source.split("\n")
@@ -329,8 +393,9 @@ class DistributedFunction:
 
         func_lines = lines[def_idx:]
         func_source = textwrap.dedent("\n".join(func_lines))
+        imports = _extract_module_level_imports(self._func)
         func_name = self._func.__name__
-        return f"""{func_source}
+        return f"""{imports}{func_source}
 
 if __name__ == "__main__":
     {func_name}()

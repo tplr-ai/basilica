@@ -23,12 +23,51 @@ Example:
     >>> packager = SourcePackager.from_function(my_app)
 """
 
+import ast
 import inspect
 import os
+import sys
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 from .exceptions import SourceError
+
+
+def _extract_module_level_imports(func: Callable) -> str:
+    """
+    Extract module-level `import` / `from ... import ...` statements
+    from the module that defines `func`.
+
+    Walking the defining module's AST keeps just the import statements
+    (not arbitrary top-level state), so the shipped source can be exec'd
+    in a clean namespace without `NameError` on the worker pod.
+
+    Returns an empty string if the module source is unavailable
+    (interactive sessions, exec/eval contexts, frozen modules).
+
+    Refs one-covenant/basilica#477.
+    """
+    module = sys.modules.get(getattr(func, "__module__", "") or "")
+    if module is None:
+        return ""
+    try:
+        module_source = inspect.getsource(module)
+    except (OSError, TypeError):
+        return ""
+    try:
+        tree = ast.parse(module_source)
+    except SyntaxError:
+        return ""
+    lines: List[str] = []
+    for node in tree.body:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            try:
+                lines.append(ast.unparse(node))
+            except AttributeError:
+                lines.append(module_source.splitlines()[node.lineno - 1])
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
 
 
 class SourcePackager:
@@ -376,6 +415,13 @@ class SourcePackager:
         # Dedent the source in case it was defined inside another scope
         import textwrap
         source = textwrap.dedent(source)
+
+        # Prepend the defining module's top-level imports so names the
+        # body relies on resolve on the worker pod. Refs
+        # one-covenant/basilica#477.
+        imports = _extract_module_level_imports(func)
+        if imports:
+            source = imports + source
 
         # Append function call if requested
         if call:

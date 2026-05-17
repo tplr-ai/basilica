@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.2] - 2026-05-16
+
+### Fixed
+- `@basilica.distributed` and `@basilica.deployment` now capture the
+  defining module's top-level `import` and `from ... import ...`
+  statements and prepend them to the source shipped to the worker pod.
+  Before this fix, only the function body was shipped; module-level
+  names referenced inside the body (e.g. the `import os` in
+  `examples/20_distributed_diloco.py`) raised `NameError` at worker
+  runtime. Closes #477. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-3 Cell B. The same
+  capture is applied in `SourcePackager.from_function()` for the
+  lower-level packaging path.
+
 ## [0.29.1] - 2026-05-09
 
 ### Fixed
