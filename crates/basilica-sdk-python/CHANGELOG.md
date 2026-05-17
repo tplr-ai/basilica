@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.3] - 2026-05-17
+
+### Fixed
+- `@basilica.distributed` / `@basilica.deployment` / `SourcePackager.from_function`
+  now filter the captured module-level imports down to those whose
+  bound names are actually referenced by the function body. Without
+  this filter, the v0.29.2 fix shipped every module-level import to
+  the worker pod — including `import basilica` and
+  `from basilica import ...` that are only used by the decorator
+  itself — which caused the worker to fail with
+  `ModuleNotFoundError: No module named 'basilica'` at runtime
+  (`basilica-sdk` is not installed in the trainer image). The filter
+  uses AST walking of the function body to collect referenced `Name`
+  / leftmost `Attribute` identifiers and emits only the matching
+  imports. Refs #477 follow-up. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-3 Cell B runtime
+  trace.
+
 ## [0.29.2] - 2026-05-16
 
 ### Fixed

@@ -33,17 +33,55 @@ from typing import Callable, List, Optional, Union
 from .exceptions import SourceError
 
 
-def _extract_module_level_imports(func: Callable) -> str:
-    """
-    Extract module-level `import` / `from ... import ...` statements
-    from the module that defines `func`.
+def _collect_referenced_names(func_source: str) -> set:
+    """Walk the AST of `func_source` and collect free `Name` references and
+    the leftmost identifier of every `Attribute` chain (`os` in
+    `os.environ.get`)."""
+    names: set = set()
+    try:
+        tree = ast.parse(func_source)
+    except SyntaxError:
+        return names
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            cursor: ast.AST = node
+            while isinstance(cursor, ast.Attribute):
+                cursor = cursor.value
+            if isinstance(cursor, ast.Name):
+                names.add(cursor.id)
+    return names
 
-    Walking the defining module's AST keeps just the import statements
-    (not arbitrary top-level state), so the shipped source can be exec'd
-    in a clean namespace without `NameError` on the worker pod.
+
+def _import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    if alias.asname is not None:
+        return alias.asname in referenced
+    return alias.name.split(".")[0] in referenced
+
+
+def _from_import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    if alias.name == "*":
+        return True
+    if alias.asname is not None:
+        return alias.asname in referenced
+    return alias.name in referenced
+
+
+def _extract_module_level_imports(func: Callable, func_source: str) -> str:
+    """
+    Extract the subset of module-level `import` / `from ... import ...`
+    statements from the module that defines `func` whose bound names
+    are referenced inside `func_source`.
+
+    Filtering by actual usage keeps unrelated module-level imports
+    (e.g. `import basilica` used only by the decorator) OUT of the
+    worker source, so the worker pod does not have to install
+    packages it never references.
 
     Returns an empty string if the module source is unavailable
-    (interactive sessions, exec/eval contexts, frozen modules).
+    (interactive sessions, exec/eval contexts, frozen modules) or if no
+    module-level import binding is referenced by the function body.
 
     Refs one-covenant/basilica#477.
     """
@@ -58,13 +96,31 @@ def _extract_module_level_imports(func: Callable) -> str:
         tree = ast.parse(module_source)
     except SyntaxError:
         return ""
+
+    referenced = _collect_referenced_names(func_source)
+    if not referenced:
+        return ""
+
     lines: List[str] = []
     for node in tree.body:
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            try:
-                lines.append(ast.unparse(node))
-            except AttributeError:
-                lines.append(module_source.splitlines()[node.lineno - 1])
+        if isinstance(node, ast.Import):
+            kept = [
+                alias for alias in node.names
+                if _import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                lines.append(ast.unparse(ast.Import(names=kept)))
+        elif isinstance(node, ast.ImportFrom):
+            kept = [
+                alias for alias in node.names
+                if _from_import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                lines.append(
+                    ast.unparse(
+                        ast.ImportFrom(module=node.module, names=kept, level=node.level)
+                    )
+                )
     if not lines:
         return ""
     return "\n".join(lines) + "\n"
@@ -416,10 +472,11 @@ class SourcePackager:
         import textwrap
         source = textwrap.dedent(source)
 
-        # Prepend the defining module's top-level imports so names the
-        # body relies on resolve on the worker pod. Refs
-        # one-covenant/basilica#477.
-        imports = _extract_module_level_imports(func)
+        # Prepend the defining module's top-level imports whose bound
+        # names the body references, so names the body relies on resolve
+        # on the worker pod (without dragging in unrelated imports).
+        # Refs one-covenant/basilica#477.
+        imports = _extract_module_level_imports(func, source)
         if imports:
             source = imports + source
 
