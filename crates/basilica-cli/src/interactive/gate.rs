@@ -12,7 +12,10 @@ pub enum Interactivity {
 }
 
 pub fn current() -> Interactivity {
-    if !std::io::stdin().is_terminal() || std::env::var("BASILICA_NON_INTERACTIVE").is_ok() {
+    let env_forces_non_interactive = std::env::var("BASILICA_NON_INTERACTIVE")
+        .map(|v| !v.is_empty())
+        .unwrap_or(false);
+    if !std::io::stdin().is_terminal() || env_forces_non_interactive {
         Interactivity::NonInteractive
     } else {
         Interactivity::Interactive

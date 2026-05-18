@@ -369,7 +369,7 @@ pub async fn handle_add_ssh_key(
             "replace_existing",
             "Do you want to replace it with the new key?",
             false,
-            "Pass --force to replace the existing SSH key without prompting.",
+            "Run `basilica ssh-keys delete -y` first, then re-run this command to register a new key.",
         )?;
         if !confirmed {
             println!("Operation cancelled.");
