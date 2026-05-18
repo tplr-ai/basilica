@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.6] - 2026-05-18
+
+### Added
+- `basilica.distributed(command=[...], ...)` now works as a factory and
+  returns a `DistributedTraining` directly (no decorator wrapping). The
+  same `basilica.distributed` symbol handles both shapes: decorator on
+  a function (per-rank entrypoint) and factory with BYO launcher. The
+  factory short-circuits when `command` is set, deploys immediately
+  through `deploy_distributed(_emit_deprecation=False)`, and returns
+  the canonical context-manager handle. Pass `client=` to inject an
+  existing `BasilicaClient`; otherwise a default one is built lazily.
+
+Closes basilica-backend#662. Refs the SDK API simplification plan
+(`docs/plans/SDK-API-SIMPLIFICATION-PLAN.md` on basilica-backend main)
+ticket SDK-S3 ("command= parameter on @basilica.distributed for BYO
+launcher; drop the _managed suffix as the canonical entry point").
+
 ## [0.29.5] - 2026-05-18
 
 ### Added
