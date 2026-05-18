@@ -100,19 +100,25 @@ mod tests {
     use serial_test::serial;
 
     /// RAII guard: sets `BASILICA_NON_INTERACTIVE` for the duration of the test
-    /// and clears it on drop so neighboring tests aren't affected.
-    struct NonInteractiveEnv;
+    /// and restores the previous value on drop so neighboring tests aren't affected.
+    struct NonInteractiveEnv {
+        previous: Option<std::ffi::OsString>,
+    }
 
     impl NonInteractiveEnv {
         fn set() -> Self {
+            let previous = std::env::var_os("BASILICA_NON_INTERACTIVE");
             std::env::set_var("BASILICA_NON_INTERACTIVE", "1");
-            Self
+            Self { previous }
         }
     }
 
     impl Drop for NonInteractiveEnv {
         fn drop(&mut self) {
-            std::env::remove_var("BASILICA_NON_INTERACTIVE");
+            match &self.previous {
+                Some(v) => std::env::set_var("BASILICA_NON_INTERACTIVE", v),
+                None => std::env::remove_var("BASILICA_NON_INTERACTIVE"),
+            }
         }
     }
 
