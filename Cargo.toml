@@ -198,7 +198,7 @@ oci-client = { version = "0.13", default-features = false, features = [
 ] }
 
 # HTTP server (for validator API)
-axum = "0.7"
+axum = "0.8"
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 
