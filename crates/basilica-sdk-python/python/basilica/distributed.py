@@ -215,7 +215,12 @@ BENCH_PHASE_FAILED: str = "Failed"
 BENCH_PHASE_TIMED_OUT: str = "TimedOut"
 
 _BENCH_TERMINAL_PHASES: frozenset = frozenset(
-    {BENCH_PHASE_SUCCEEDED, BENCH_PHASE_FAILED, BENCH_PHASE_TIMED_OUT}
+    {
+        BENCH_PHASE_SUCCEEDED,
+        BENCH_PHASE_FAILED,
+        BENCH_PHASE_TIMED_OUT,
+        BENCH_PHASE_SKIPPED,
+    }
 )
 
 
@@ -235,6 +240,15 @@ class BenchStatus:
     on the bench probe. Most callers should NOT need that; the bench
     is a sanity probe per `basilica_bench.py:75-78`, not a gating
     measurement.
+
+    Terminal semantics (closes #480): four phases are terminal --
+    `Succeeded`, `Failed`, `TimedOut`, and `Skipped`. `Skipped` is the
+    operator's "the bench probe was not run because preconditions
+    weren't met" signal (e.g. workers exited before the bench-controller
+    observed them, see basilica-backend X2 fix). It is NOT a success
+    and NOT a failure; it means "wasn't run". Callers should treat the
+    workload's own exit codes as the source of truth for run success;
+    bench is a separate, opt-in measurement.
     """
 
     mode: str
@@ -248,8 +262,44 @@ class BenchStatus:
 
     @property
     def is_terminal(self) -> bool:
-        """True iff phase is `Succeeded`, `Failed`, or `TimedOut`."""
+        """
+        True iff phase is `Succeeded`, `Failed`, `TimedOut`, or `Skipped`.
+
+        Closes #480: `Skipped` is terminal -- the operator has decided
+        the bench probe will not run (workers exited before the
+        bench-controller observed them, or another precondition failed),
+        and there is nothing further to wait for.
+        """
         return self.phase in _BENCH_TERMINAL_PHASES
+
+    @property
+    def is_successful(self) -> bool:
+        """True iff the bench probe ran and produced a measurement (`phase == Succeeded`)."""
+        return self.phase == BENCH_PHASE_SUCCEEDED
+
+    @property
+    def is_failed(self) -> bool:
+        """
+        True iff the bench probe ran and errored (`phase in {Failed, TimedOut}`).
+
+        Closes #480: `Skipped` is NOT a failure. It means the probe was
+        not run at all; the workers may still be perfectly healthy.
+        Callers that branch on bench-side errors should use this; the
+        operator never sets `Failed` / `TimedOut` for a skipped probe.
+        """
+        return self.phase in (BENCH_PHASE_FAILED, BENCH_PHASE_TIMED_OUT)
+
+    @property
+    def is_skipped(self) -> bool:
+        """
+        True iff the operator decided not to run the bench probe
+        (`phase == Skipped`).
+
+        Closes #480: terminal, but neither success nor failure. See
+        `self.message` for the operator's reason (e.g. "workers exited
+        before bench-controller observed them").
+        """
+        return self.phase == BENCH_PHASE_SKIPPED
 
     @classmethod
     def from_status_dict(cls, raw: Dict[str, Any]) -> "BenchStatus":
@@ -668,12 +718,30 @@ class DistributedTraining:
         the bench measurement before continuing (e.g. a research run
         that records busbw metadata into checkpoint headers).
 
-        Returns the terminal :py:class:`BenchStatus` (`phase` is one
-        of `Succeeded` | `Failed` | `TimedOut`). If `bench.mode != on-start`
-        returns `None` immediately. Polls every 5s.
+        Returns the terminal :py:class:`BenchStatus` once `phase`
+        enters a terminal state. Closes #480: the four terminal phases
+        are:
+
+        - `Succeeded` -- bench probe produced a measurement; the result
+          payload is on `BenchStatus.result` (mirrored on
+          `DistributedTraining.bench` for backward compatibility).
+        - `Failed` -- bench probe ran but errored. See `message`.
+        - `TimedOut` -- bench probe's own deadline elapsed before
+          completion. See `message`.
+        - `Skipped` -- the operator decided not to run the bench probe
+          (e.g. workers exited before the bench-controller observed
+          them). See `message` for the reason. NOT a failure; the
+          workload itself may have completed cleanly.
+
+        If `bench.mode != on-start` returns `None` immediately (nothing
+        to wait on). Polls every 5s.
 
         Default timeout matches the operator's `BENCH_ACTIVE_DEADLINE_SECONDS`
-        (1500s = 25 min). Raises `TimeoutError` past the deadline.
+        (1500s = 25 min). Raises `TimeoutError` past the deadline if the
+        bench has not reached a terminal phase. Callers handling a
+        terminal `Skipped` should branch on `bs.is_skipped` (or
+        `bs.phase != "Succeeded"`); see `examples/20_distributed_diloco.py`
+        and `examples/22_distributed_with_bench.py`.
         """
         deadline = time.monotonic() + max(timeout, 0)
         while time.monotonic() < deadline:
@@ -698,7 +766,12 @@ class DistributedTraining:
     async def wait_until_bench_complete_async(
         self, timeout: int = 1500
     ) -> Optional[BenchStatus]:
-        """Async variant of :py:meth:`wait_until_bench_complete`."""
+        """
+        Async variant of :py:meth:`wait_until_bench_complete`.
+
+        Same terminal-phase set: `Succeeded` | `Failed` | `TimedOut` |
+        `Skipped` (closes #480). Same `None`-on-bench-off semantics.
+        """
         deadline = asyncio.get_event_loop().time() + max(timeout, 0)
         while asyncio.get_event_loop().time() < deadline:
             await self.refresh_async()

@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.4] - 2026-05-18
+
+### Fixed
+- `BenchStatus` recognises `phase=Skipped` as a terminal state.
+  `_BENCH_TERMINAL_PHASES` now contains all four operator-side terminal
+  phases (`Succeeded`, `Failed`, `TimedOut`, `Skipped`), so
+  `BenchStatus.is_terminal` returns `True` on `Skipped` and
+  `wait_until_bench_complete` / `wait_until_bench_complete_async` return
+  the terminal `BenchStatus` instead of polling until the user-supplied
+  timeout and raising `TimeoutError`. Pre-fix, the SDK had the data
+  (the operator wrote terminal `BenchStatus{phase=Skipped,
+  lastAttemptOutcome="skipped"}` to the UD CR) but did not act on it
+  -- the `TimeoutError` message literally contained `(phase=Skipped)`.
+  Closes #480. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-5 Cell B and the
+  basilica-backend operator X2 fix (`one-covenant/basilica-backend#650
+  / #653`).
+
+### Added
+- `BenchStatus.is_successful` / `is_failed` / `is_skipped` properties.
+  Pin the semantic that `Skipped` is terminal but neither success nor
+  failure -- the bench probe was not run (e.g. workers exited before
+  the bench-controller observed them). The workload's own exit codes
+  remain the source of truth for run success; bench is an opt-in,
+  best-effort measurement.
+
 ## [0.29.3] - 2026-05-17
 
 ### Fixed
