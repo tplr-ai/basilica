@@ -419,15 +419,23 @@ class DistributedFunction:
 
         Returns:
             DistributedTraining: facade with scale/wait/logs/bench/delete
-                and `_async` counterparts.
+                and `_async` counterparts. Is itself context-manager-able
+                (basilica-backend issue 660 / SDK-S1) -- use
+                ``with train() as training:`` for mid-run orchestration
+                with auto-cleanup.
         """
         from . import BasilicaClient
 
         client = client or BasilicaClient()
         source = self._extract_source()
 
+        # basilica-backend issue 660 / SDK-S1: the decorator IS the
+        # canonical surface, so the underlying `deploy_distributed`
+        # call must NOT emit its own DeprecationWarning -- the user
+        # opted into the canonical path by using the decorator.
         self._training = client.deploy_distributed(
             source=source,
+            _emit_deprecation=False,
             **self._kwargs,
         )
         return self._training

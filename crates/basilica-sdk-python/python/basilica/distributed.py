@@ -1044,6 +1044,58 @@ class DistributedTraining:
         await asyncio.get_event_loop().run_in_executor(None, self.delete)
 
     # -------------------------------------------------------------------------
+    # Context-manager protocol (basilica-backend issue 660 / SDK-S1).
+    #
+    # `DistributedTraining` is the ONE canonical handle for a distributed
+    # UD. Bare-call paths (`@basilica.distributed` decorator-call,
+    # `client.deploy_distributed(...)`) return this object directly; the
+    # `with training:` block triggers best-effort `.delete()` on scope
+    # exit so callers don't leak the UD when an intermediate operation
+    # (e.g. `wait_until_target_world` after `scale`) raises.
+    #
+    # Replaces the prior `DistributedTrainingManaged` ceremony wrapper.
+    # That wrapper remains as a back-compat shim for callers that already
+    # type-annotate against it; the `deploy_distributed_managed[_async]`
+    # factory emits a `DeprecationWarning` pointing at this surface.
+    # -------------------------------------------------------------------------
+
+    def __enter__(self) -> "DistributedTraining":
+        """Return self so `with training as t:` yields the handle."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        """
+        Best-effort cleanup on scope exit. Swallows any delete-time
+        exception so we never mask the (possibly more important) caller
+        exception that is already propagating out of the `with` block.
+        """
+        try:
+            self.delete()
+        except Exception:
+            pass
+
+    async def __aenter__(self) -> "DistributedTraining":
+        """Async variant of `__enter__`; returns self."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        """Async best-effort cleanup; same swallow contract as `__exit__`."""
+        try:
+            await self.delete_async()
+        except Exception:
+            pass
+
+    # -------------------------------------------------------------------------
     # Logs and debug
     # -------------------------------------------------------------------------
 
