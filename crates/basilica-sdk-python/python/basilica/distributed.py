@@ -1,15 +1,54 @@
 """
 Distributed-training SDK surface (SDK arch § 4 / § 6 / § 8 / § 9).
 
-User-facing types and the `DistributedTraining` facade returned by
-`client.deploy_distributed(...)` and `@basilica.distributed`. Researchers
-import these from `basilica` directly (re-exported in __init__.py).
+User-facing types and the ``DistributedTraining`` facade. Re-exported
+from ``basilica`` directly; researchers import via ``from basilica
+import ProviderFilter, WorldSize, BenchResult, DistributedTraining``.
+
+Canonical surface (post-S1/S2/S3/S4 simplification):
+
+- ``@basilica.distributed(...)`` on a function -- the function body is
+  the per-rank entrypoint. Calling the decorated function returns a
+  ``DistributedTraining`` context-manager. This is the canonical input
+  shape for "the code workers should run".
+- ``basilica.distributed(command=[...])`` factory -- BYO launcher
+  (torchrun / mpirun / accelerate). The same ``basilica.distributed``
+  symbol short-circuits the decorator path when ``command`` is set and
+  returns a ``DistributedTraining`` directly.
+- ``with training:`` / ``async with training:`` -- the
+  ``DistributedTraining`` is itself a context manager. ``__exit__``
+  best-effort calls ``.delete()`` on scope exit (success OR exception),
+  so the UD does not leak when a mid-run wait raises.
+- ``bench: bool`` -- ``True`` opts in to the per-UD NCCL probe;
+  ``False`` (default) skips it. Read back as ``training.bench``
+  (``BenchResult | None``). Use ``training.bench_diagnostics`` only when
+  you need debug detail for a ``None`` result.
+
+Legacy surface (deprecated, still functional for two minor versions):
+
+- ``client.deploy_distributed(...)`` and
+  ``client.deploy_distributed_managed(...)`` -- both emit
+  ``DeprecationWarning`` on direct calls. The decorator path itself
+  stays silent (it passes ``_emit_deprecation=False`` internally).
+- ``source: Union[str, Path]`` on the legacy ``deploy_distributed``
+  call -- ``Callable`` (via decorator) is canonical; ``str`` and
+  ``Path`` shapes emit ``DeprecationWarning``.
+- ``bench: str`` modes (``"on-start"`` / ``"off"``),
+  ``training.bench_status``, ``training.wait_until_bench_complete()`` --
+  all emit ``DeprecationWarning`` and are collapsed into ``bench: bool``
+  + ``training.bench`` + ``training.bench_diagnostics``.
+- ``DistributedTrainingManaged[Async]`` -- the wrapper that this
+  ``DistributedTraining`` class now subsumes. Kept as a back-compat
+  shim for callers with type annotations against it.
 
 Tenancy invariant (SDK arch § 7): bench data is per-UD. There is NO
-`client.preflight(...)` and NO `client.nccl_baseline(...)` standalone
+``client.preflight(...)`` and NO ``client.nccl_baseline(...)`` standalone
 helper -- those would imply a shared cluster-wide cache, which violates
 the platform's tenancy contract. Bench results live on
-`DistributedTraining.bench` and are owned by the user's namespace.
+``DistributedTraining.bench`` and are owned by the user's namespace.
+
+See the SDK README's "Distributed Training" section for the full
+canonical surface and the legacy-to-canonical migration table.
 """
 
 import asyncio

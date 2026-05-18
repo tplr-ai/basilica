@@ -548,50 +548,119 @@ def distributed(
        ``.deploy()`` semantics). See basilica-backend issue 662 / SDK-S3.
 
     Args:
-        name: Deployment name (DNS-safe).
-        image: Container image (default: pytorch + cuda runtime).
-        port: Worker container port.
-        cpu, memory, gpu_count, gpu_models, min_gpu_memory_gb: Resources
-            per rank pod.
-        world_size: WorldSize(min, target, max). REQUIRED.
-        provider_filter: ProviderFilter or `{"include": [...], "exclude": [...]}` dict.
-        topology_spread: One of `pack | provider-aware | region-aware | none`.
-        nccl_env: NCCL env vars merged on top of operator defaults.
-        bench: ``True`` to opt in to the per-UD NCCL bench probe; ``False``
-            (default) skips it. Reads back as ``training.bench``
-            (``BenchResult | None``) post-terminal. The legacy str modes
-            ``"on-start"`` / ``"off"`` remain accepted with
+        name: Deployment name. DNS-safe (lowercase, digits, hyphens). The
+            UD's K8s resources and the user-visible handle name both
+            derive from this; pick something that means something to you
+            later when you scan ``basilica deploy ls``.
+        image: Container image for every rank pod. Defaults to a pytorch
+            + CUDA runtime; for distributed NCCL workloads the
+            canonical base is
+            ``ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest``
+            because stock NGC pytorch images don't include
+            ``python-etcd`` (required by torchelastic's etcd-v2
+            rendezvous backend). See ``BRINGING-YOUR-OWN-TRAINER-IMAGE.md``
+            on basilica-backend for the BYO-image contract.
+        port: Worker container port. Default 18789 matches the operator's
+            headless governance Service; override only if your launcher
+            binds something else.
+        cpu, memory: Resource requests per rank pod. Sized for the
+            decorated function body's needs, not the training step's
+            compute (the GPU does the compute).
+        gpu_count: GPUs per rank pod (``1`` means 1 GPU per rank; set
+            higher for NVLink ranks). Aggregate fleet GPU count is
+            ``world_size.target * gpu_count``.
+        gpu_models: Acceptable GPU models. The autoscaler matches an
+            offering against this AND ``min_gpu_memory_gb``;
+            empty means "any model".
+        min_gpu_memory_gb: Minimum GPU VRAM in GB. Use this to fall back
+            across multiple GPU SKUs (e.g. accept A100-40GB OR H100-80GB
+            on a 30GB workload).
+        world_size: ``WorldSize(min, target, max)``. REQUIRED. ``min`` is
+            the floor below which the run pauses (torchelastic
+            MIN_NODES); ``target`` is the steady-state replica count;
+            ``max`` is the hard ceiling enforced by ``scale()``. The SDK
+            short-circuits on ``WorldSize(...)``-construction if the
+            triple violates ``1 <= min <= target <= max``.
+        provider_filter: ``ProviderFilter(include=[...], exclude=[...])``
+            or the dict equivalent. With ``topology_spread="pack"``, the
+            autoscaler picks ONE provider from ``include`` (cheapest
+            available with capacity, or via your platform's
+            ``secureCloud.preferredProvider``) and packs all workers on
+            it; the include-list is a fallback set, not a multi-provider
+            requirement. Mesh-enabled providers today: ``verda``,
+            ``hyperstack``.
+        topology_spread: One of ``pack | provider-aware | region-aware |
+            none``. ``"pack"`` is recommended for NCCL-collective
+            workloads -- it forces same-provider direct WireGuard mesh,
+            which is 5-10x faster than the hub-relay fallback. Default
+            ``"provider-aware"``.
+        nccl_env: NCCL environment variables merged on top of operator
+            defaults. User values win on collision. Common pattern:
+            ``{"NCCL_DEBUG": "WARN"}`` to surface NCCL diagnostics
+            without flooding logs.
+        bench: ``True`` opts in to the per-UD NCCL bench probe -- a
+            2-rank ``all_reduce_perf`` measurement on the same provider
+            mesh as your workers. Read back as ``training.bench``
+            (``BenchResult | None`` -- ``None`` means "no measurement",
+            regardless of why). Use ``training.bench_diagnostics`` for
+            the rare debug detail. Default ``False`` because the probe
+            costs 2 extra GPU ranks for its duration; users who don't
+            need the measurement shouldn't pay for it. The legacy str
+            modes ``"on-start"`` / ``"off"`` remain accepted with
             ``DeprecationWarning``; removed in the next major. See
-            ``basilica-backend#661`` / SDK-S2.
-        rendezvous_backend: `etcd-v2` (default) | `c10d` | `static`.
-        env: Environment variables passed to the worker pods.
-        pip_packages: Additional pip packages to install.
-        ttl_seconds: Auto-delete after N seconds.
-        timeout: Seconds to wait for `min` ranks to be ready. Default 600.
-        enable_billing: Whether to bill for this deployment.
-        wait_for_bench: `"never"` (default) returns when workers Ready;
-            `"best_effort"` also waits for bench, swallowing failures;
-            `"required"` raises if bench is non-Succeeded. See
-            `BasilicaClient.deploy_distributed`.
-        bench_timeout: Seconds budget for the opt-in bench wait.
-        command: BYO-launcher entry. When set, the call returns a
-            :class:`DistributedTraining` immediately (factory mode) and
-            the operator does NOT wrap with torchrun. Mutually exclusive
-            with the decorator shape -- supplying ``command`` AND
-            subsequently decorating a function is a usage error caught at
-            decoration time. See basilica-backend issue 662 / SDK-S3.
-        args: Args to pass to ``command`` when in factory mode. Ignored
-            unless ``command`` is set.
-        client: Optional :class:`BasilicaClient` used in factory mode.
-            Ignored in decorator mode (the decorator's ``.deploy(client=)``
-            takes precedence). When ``command`` is set and ``client`` is
-            None, a default ``BasilicaClient()`` is constructed lazily.
+            ``basilica-backend`` issue 661 / SDK-S2.
+        rendezvous_backend: ``etcd-v2`` (default) | ``c10d`` | ``static``.
+            Default ``etcd-v2`` is the only backend with full
+            elasticity (mid-run scale, rank join/drain). Pick a
+            non-default only if you know you need it.
+        env: Environment variables passed to the worker pods. The
+            operator wires ``RANK`` / ``WORLD_SIZE`` / ``LOCAL_RANK`` /
+            ``MASTER_*`` / ``BASILICA_*`` automatically -- this
+            parameter is for YOUR app's vars.
+        pip_packages: Additional pip packages to install. Ignored when
+            ``command`` is set (BYO image is expected to carry its own
+            dependencies).
+        ttl_seconds: Auto-delete after N seconds even if the workload is
+            still running. Platform-side ceiling; set this for runaway
+            protection.
+        timeout: Seconds to wait for ``world_size.min`` ranks to be
+            ready before returning from the deploy call. Default 600.
+        enable_billing: Whether to bill for this deployment. Default
+            ``True``.
+        wait_for_bench: ``"never"`` (default) returns when workers
+            Ready; the bench probe runs in the background and shows up
+            on ``training.bench`` once the UD reaches a terminal state.
+            ``"best_effort"`` waits for bench but swallows failures.
+            ``"required"`` raises on a non-Succeeded bench terminal
+            phase. Most users keep the default and read
+            ``training.bench`` after ``wait_until_complete``.
+        bench_timeout: Seconds budget for the
+            ``wait_for_bench != "never"`` paths. Default 1500 (matches
+            the operator's ``BENCH_ACTIVE_DEADLINE_SECONDS``).
+        command: BYO-launcher entry. Setting this short-circuits the
+            decorator path -- the call returns a
+            :class:`DistributedTraining` immediately (factory mode).
+            Mutually exclusive with the decorator shape. Inside the
+            launcher, expand ``$BASILICA_RDZV_ENDPOINT`` /
+            ``$BASILICA_WORLD_TARGET`` / ``$BASILICA_GPUS_PER_POD`` --
+            the operator injects these into the worker pod environment.
+            See basilica-backend issue 662 / SDK-S3.
+        args: Positional args to pass after ``command`` in factory mode.
+            Ignored unless ``command`` is set.
+        client: Optional :class:`BasilicaClient` for factory mode.
+            Ignored in decorator mode (the decorator's
+            ``.deploy(client=)`` takes precedence). When ``command`` is
+            set and ``client`` is None, a default ``BasilicaClient()``
+            is constructed lazily.
 
     Returns:
         - Decorator mode (``command`` is None): a decorator closure that
           wraps the decorated function in a :class:`DistributedFunction`.
-        - Factory mode (``command`` is set): a :class:`DistributedTraining`
-          ready to use under a ``with`` block.
+          Calling the wrapped function deploys and returns a
+          :class:`DistributedTraining` context-manager.
+        - Factory mode (``command`` is set): a
+          :class:`DistributedTraining` ready to use under a ``with``
+          block.
     """
     if world_size is None:
         raise ValueError("@distributed requires world_size")
