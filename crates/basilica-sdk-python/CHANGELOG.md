@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.7] - 2026-05-18
+
+### Deprecated
+- `BasilicaClient.deploy_distributed(source=...)` (and its async sibling)
+  emits a `DeprecationWarning` when `source` is a `str` or
+  `pathlib.Path`. The `Callable` shape -- what the
+  `@basilica.distributed` decorator already passes internally -- stays
+  silent. The canonical input shape is now "decorate a function", which
+  the SDK extracts via `inspect.getsource(...)`; the `str`/`Path`
+  variants add maintenance surface (file IO + base64 edge cases + AST
+  quirks) without product value. Users who need to ship an external
+  script wrap it via `runpy.run_path("/workspace/...")` inside a
+  decorated function. Both deprecated input shapes remain functional
+  for two minor versions; remove at the next major alongside
+  `deploy_distributed*` itself.
+- The decorator path stays silent because
+  `DistributedFunction.deploy(...)` passes `_emit_deprecation=False` to
+  the underlying call -- the same gate that already silenced the S1
+  `deploy_distributed`-itself deprecation now also silences the S4
+  source-shape deprecation.
+
+Closes basilica-backend#663. Refs the SDK API simplification plan
+(`docs/plans/SDK-API-SIMPLIFICATION-PLAN.md` on basilica-backend main)
+ticket SDK-S4 ("source parameter accepts Callable only; deprecate
+Union[str, Path]").
+
 ## [0.29.6] - 2026-05-18
 
 ### Added
