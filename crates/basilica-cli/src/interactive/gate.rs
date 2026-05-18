@@ -4,7 +4,6 @@
 use crate::error::CliError;
 use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 use std::io::IsTerminal;
-use std::sync::OnceLock;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Interactivity {
@@ -12,23 +11,12 @@ pub enum Interactivity {
     NonInteractive,
 }
 
-static CURRENT: OnceLock<Interactivity> = OnceLock::new();
-
 pub fn current() -> Interactivity {
-    *CURRENT.get_or_init(detect)
-}
-
-fn detect() -> Interactivity {
     if !std::io::stdin().is_terminal() || std::env::var("BASILICA_NON_INTERACTIVE").is_ok() {
         Interactivity::NonInteractive
     } else {
         Interactivity::Interactive
     }
-}
-
-#[cfg(test)]
-pub fn set_for_test(v: Interactivity) {
-    let _ = CURRENT.set(v);
 }
 
 pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String, CliError> {
@@ -96,10 +84,27 @@ mod tests {
     use crate::error::CliError;
     use serial_test::serial;
 
+    /// RAII guard: sets `BASILICA_NON_INTERACTIVE` for the duration of the test
+    /// and clears it on drop so neighboring tests aren't affected.
+    struct NonInteractiveEnv;
+
+    impl NonInteractiveEnv {
+        fn set() -> Self {
+            std::env::set_var("BASILICA_NON_INTERACTIVE", "1");
+            Self
+        }
+    }
+
+    impl Drop for NonInteractiveEnv {
+        fn drop(&mut self) {
+            std::env::remove_var("BASILICA_NON_INTERACTIVE");
+        }
+    }
+
     #[test]
     #[serial]
     fn ask_text_non_interactive_no_default_errors() {
-        set_for_test(Interactivity::NonInteractive);
+        let _env = NonInteractiveEnv::set();
         let err = ask_text("name", None, "Pass --name").unwrap_err();
         match err {
             CliError::MissingInput { field, hint } => {
@@ -113,7 +118,7 @@ mod tests {
     #[test]
     #[serial]
     fn ask_text_non_interactive_with_default_returns_default() {
-        set_for_test(Interactivity::NonInteractive);
+        let _env = NonInteractiveEnv::set();
         let v = ask_text("name", Some("auto-name"), "irrelevant").unwrap();
         assert_eq!(v, "auto-name");
     }
@@ -121,7 +126,7 @@ mod tests {
     #[test]
     #[serial]
     fn ask_select_non_interactive_errors() {
-        set_for_test(Interactivity::NonInteractive);
+        let _env = NonInteractiveEnv::set();
         let labels = ["alpha", "beta"];
         let err = ask_select("offering", &labels, "Pass --offering-id").unwrap_err();
         match err {
@@ -136,7 +141,7 @@ mod tests {
     #[test]
     #[serial]
     fn ask_confirm_non_interactive_errors() {
-        set_for_test(Interactivity::NonInteractive);
+        let _env = NonInteractiveEnv::set();
         let err = ask_confirm("replace", false, "Pass --force").unwrap_err();
         match err {
             CliError::MissingInput { field, hint } => {
