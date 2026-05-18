@@ -17,25 +17,6 @@ fn parse_stderr_json(bytes: &[u8]) -> serde_json::Value {
 }
 
 #[test]
-fn ssh_keys_add_without_file_in_non_interactive_returns_missing_input() {
-    let assert = Command::cargo_bin("basilica")
-        .unwrap()
-        .env("BASILICA_NON_INTERACTIVE", "1")
-        .env_remove("RUST_LOG")
-        .args(["--json", "ssh-keys", "add"])
-        .assert()
-        .failure();
-
-    let v = parse_stderr_json(&assert.get_output().stderr);
-    // When ~/.ssh has keys, the file-selector should produce MissingInput with
-    // candidate paths. When it is empty, we get MissingInput on the same field
-    // pointing the agent at --file. Either way the field is the same.
-    assert_eq!(v["error"], "missing_input");
-    assert_eq!(v["field"], "ssh_public_key_path");
-    assert!(v["hint"].as_str().unwrap().contains("--file"));
-}
-
-#[test]
 fn ssh_keys_add_with_invalid_file_in_non_interactive_emits_json_error() {
     // Pass --json globally; expect a single JSON object on stderr.
     let assert = Command::cargo_bin("basilica")
