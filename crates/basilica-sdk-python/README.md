@@ -596,22 +596,27 @@ def run_script() -> None:
 
 ### Migration from the legacy surface
 
-If you have code on the prior SDK surface, both paths still work but emit
-`DeprecationWarning`. Migration table:
+These surfaces emitted `DeprecationWarning` in 0.29.5-0.29.7 and were
+REMOVED in 0.30.0 (SDK-S7, basilica-backend issue 666). If you upgraded
+from 0.29.x and see `AttributeError` / `ImportError` / `ValidationError`
+on a name below, apply the canonical mapping in the right column.
 
-| Legacy | Canonical | SDK version | Plan ticket |
-|--------|-----------|-------------|-------------|
-| `client.deploy_distributed(...)` | `@basilica.distributed(...)` on a function, call it | 0.29.5+ | S1 |
-| `client.deploy_distributed_managed(...)` | `with train() as training:` on the decorated function | 0.29.5+ | S1 |
-| `bench="on-start"` / `bench="off"` (str) | `bench=True` / `bench=False` (bool) | 0.29.5+ | S2 |
-| `training.bench_status` (property) | `training.bench` for the result, `training.bench_diagnostics` for debug | 0.29.5+ | S2 |
-| `training.wait_until_bench_complete(...)` | `training.wait_until_complete(...)` + read `training.bench` | 0.29.5+ | S2 |
-| `client.deploy_distributed_managed(command=[...])` | `basilica.distributed(command=[...])` factory | 0.29.6+ | S3 |
-| `source=Path("./train.py")` / `source="<inline code>"` | decorate a function (Callable shape) | 0.29.7+ | S4 |
+| Removed in 0.30.0 | Canonical replacement | Removed in | Plan ticket |
+|-------------------|-----------------------|------------|-------------|
+| `client.deploy_distributed(...)` | `@basilica.distributed(...)` on a function, call it | 0.30.0 | S1+S7 |
+| `client.deploy_distributed_managed(...)` | `with train() as training:` on the decorated function | 0.30.0 | S1+S7 |
+| `bench="on-start"` / `bench="off"` (str) | `bench=True` / `bench=False` (bool) | 0.30.0 | S2+S7 |
+| `training.bench_status` (property) | `training.bench` (result) + `training.bench_diagnostics` (debug dict) | 0.30.0 | S2+S7 |
+| `training.wait_until_bench_complete(...)` | `with train() as training:` (auto-blocks) + read `training.bench` | 0.30.0 | S2+S7 |
+| `BenchStatus` re-export from `basilica` | `BenchResult` + `bench_diagnostics` dict | 0.30.0 | S2+S7 |
+| `client.deploy_distributed_managed(command=[...])` | `basilica.distributed(command=[...])` factory | 0.30.0 | S3+S7 |
+| `source=Path("./train.py")` / `source="<inline code>"` | decorate a function (Callable shape) | 0.30.0 | S4+S7 |
+| `DistributedTrainingManaged` / `DistributedTrainingManagedAsync` | `DistributedTraining` (itself context-manager-able) | 0.30.0 | S1+S7 |
 
-The decorator path silences the deprecation warnings — direct calls to
-`deploy_distributed*` warn, but the decorator passes `_emit_deprecation=False`
-internally so the canonical surface stays quiet.
+The decorator (`@basilica.distributed`) is the ONE canonical surface and
+routes through the private `BasilicaClient._deploy_distributed_impl` /
+`_deploy_distributed_impl_async` methods. There is no public
+`deploy_distributed*` method on `BasilicaClient` in 0.30.0+.
 
 ### Worked examples in this repo
 

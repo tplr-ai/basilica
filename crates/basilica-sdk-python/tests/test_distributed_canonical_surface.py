@@ -251,61 +251,44 @@ class TestDecoratorReturnsContextManagerableTraining:
 
 
 # =============================================================================
-# Target 3: deploy_distributed_managed emits DeprecationWarning.
-#
-# Per the issue acceptance criteria: "deploy_distributed_managed and
-# deploy_distributed emit DeprecationWarning when used".
-#
-# The wrapper class DistributedTrainingManaged stays for two minor versions
-# (back-compat for callers that already type-annotate their code), but the
-# factory method on BasilicaClient warns to steer new code to the canonical
-# `@basilica.distributed` / `with training:` path.
+# Post-S7 (0.30.0): the deprecated factories from S1 are REMOVED, not
+# just warn-and-still-callable. Per basilica-backend issue 666 / SDK-S7,
+# the public surfaces below are gone; users must use the
+# @basilica.distributed decorator (canonical) or the
+# basilica.distributed(command=[...]) factory.
 # =============================================================================
 
 
-class TestDeprecatedManagedSurfaceWarns:
-    def test_deploy_distributed_managed_emits_deprecation_warning(self) -> None:
+class TestRemovedManagedSurfaceIsAttributeError:
+    def test_deploy_distributed_managed_is_removed(self) -> None:
         client = _make_client_with_stub()
-        with pytest.warns(DeprecationWarning, match=r"@basilica\.distributed"):
-            with client.deploy_distributed_managed(**_deploy_kwargs()):
-                pass
+        assert not hasattr(client, "deploy_distributed_managed"), (
+            "deploy_distributed_managed must be removed in 0.30.0 "
+            "(SDK-S7); use @basilica.distributed instead."
+        )
 
-    @pytest.mark.asyncio
-    async def test_deploy_distributed_managed_async_emits_deprecation_warning(
-        self,
-    ) -> None:
+    def test_deploy_distributed_managed_async_is_removed(self) -> None:
         client = _make_client_with_stub()
-        with pytest.warns(DeprecationWarning, match=r"@basilica\.distributed"):
-            async with client.deploy_distributed_managed_async(
-                **_deploy_kwargs()
-            ):
-                pass
+        assert not hasattr(client, "deploy_distributed_managed_async"), (
+            "deploy_distributed_managed_async must be removed in 0.30.0 "
+            "(SDK-S7); use @basilica.distributed instead."
+        )
 
 
-# =============================================================================
-# Target 4: deploy_distributed emits DeprecationWarning.
-#
-# Same plan-target as above. The method stays callable (the decorator path
-# uses it internally), but a USER call must warn.
-# =============================================================================
-
-
-class TestDeprecatedExplicitDeploySurfaceWarns:
-    def test_deploy_distributed_emits_deprecation_warning(self) -> None:
+class TestRemovedExplicitDeploySurfaceIsAttributeError:
+    def test_deploy_distributed_is_removed(self) -> None:
         client = _make_client_with_stub()
-        with pytest.warns(DeprecationWarning, match=r"@basilica\.distributed"):
-            training = client.deploy_distributed(**_deploy_kwargs())
-            # Cleanup so the test does not leave the stubbed UD "alive".
-            training.delete()
+        assert not hasattr(client, "deploy_distributed"), (
+            "deploy_distributed must be removed in 0.30.0 (SDK-S7); use "
+            "@basilica.distributed instead."
+        )
 
-    @pytest.mark.asyncio
-    async def test_deploy_distributed_async_emits_deprecation_warning(
-        self,
-    ) -> None:
+    def test_deploy_distributed_async_is_removed(self) -> None:
         client = _make_client_with_stub()
-        with pytest.warns(DeprecationWarning, match=r"@basilica\.distributed"):
-            training = await client.deploy_distributed_async(**_deploy_kwargs())
-            await training.delete_async()
+        assert not hasattr(client, "deploy_distributed_async"), (
+            "deploy_distributed_async must be removed in 0.30.0 "
+            "(SDK-S7); use @basilica.distributed instead."
+        )
 
 
 # =============================================================================

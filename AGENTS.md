@@ -110,9 +110,11 @@ Rules:
   for the rare debug case.
 - DO NOT use `client.deploy_distributed_managed(...)`, `bench="on-start"`,
   `training.bench_status`, or `training.wait_until_bench_complete()` --
-  all four emit `DeprecationWarning` and are collapsed into the
-  canonical surface. See the SDK README's "Migration from the legacy
-  surface" table for the per-parameter mapping.
+  all four were REMOVED in 0.30.0 (SDK-S7) and now raise
+  `AttributeError` / `ImportError` / `ValidationError`. The
+  `@basilica.distributed` decorator is the ONE canonical surface; see
+  the SDK README's "Migration from the legacy surface" table for the
+  per-symbol mapping.
 - Worked examples: `examples/20_distributed_diloco.py` (decorator +
   bench + DiLoCo), `examples/21_distributed_torchrun.py` (BYO command +
   mid-run scale), `examples/22_distributed_with_bench.py` (bench-result

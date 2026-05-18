@@ -305,9 +305,10 @@ impl BasilicaClient {
     /// `request` is a Python dict conforming to the
     /// `CreateDistributedDeploymentRequest` JSON shape (camelCase keys,
     /// matches the operator CRD's `spec.distributed`). The Python facade
-    /// `BasilicaClient.deploy_distributed(...)` builds this dict from the
-    /// `WorldSize`, `ProviderFilter`, etc. dataclasses (SDK arch § 8) so
-    /// users do not interact with this layer directly.
+    /// `@basilica.distributed` (canonical) builds this dict via the
+    /// private `BasilicaClient._deploy_distributed_impl[_async]` helpers
+    /// from the `WorldSize`, `ProviderFilter`, etc. dataclasses (SDK
+    /// arch § 8); users do not interact with this layer directly.
     ///
     /// Done as a depythonize-passthrough rather than 8 nested PyO3 type
     /// mirrors because the distributed wire shape is deeply nested

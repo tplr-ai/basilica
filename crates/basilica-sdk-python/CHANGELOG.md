@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-05-18
+
+This is the major-equivalent (pre-1.0) bump that REMOVES every surface
+deprecated by SDK-S1 through SDK-S4. The canonical surface is
+``@basilica.distributed`` (decorator on a function) or
+``basilica.distributed(command=[...])`` (BYO-launcher factory); both
+return a ``DistributedTraining`` context manager. Read back bench data
+via ``training.bench`` (``BenchResult | None``) and
+``training.bench_diagnostics`` (``dict | None``).
+
+### Removed
+
+BREAKING CHANGE: the following public surfaces are removed; users still
+on 0.29.x must migrate to ``@basilica.distributed`` before upgrading.
+
+- ``BasilicaClient.deploy_distributed`` and
+  ``BasilicaClient.deploy_distributed_async`` -- use
+  ``@basilica.distributed`` on a function (the decorated function's
+  ``__call__`` deploys and returns a ``DistributedTraining``).
+- ``BasilicaClient.deploy_distributed_managed`` and
+  ``BasilicaClient.deploy_distributed_managed_async`` -- subsumed by
+  ``DistributedTraining``'s own ``__enter__`` / ``__aenter__``. Use
+  ``with train() as training:`` or ``async with`` directly on the
+  decorator-returned object.
+- ``DistributedTrainingManaged`` and ``DistributedTrainingManagedAsync``
+  classes (the wrappers the removed factories returned).
+- The ``source: Union[str, Path]`` shapes on the (now-private)
+  distributed deploy path. Only ``Callable`` is accepted, via the
+  decorator. Wrap external scripts via
+  ``runpy.run_path("/workspace/...")`` inside a decorated function.
+- The ``bench: str`` modes ``"on-start"`` and ``"off"`` -- use
+  ``bench=True`` / ``bench=False`` instead.
+- ``DistributedTraining.wait_until_bench_complete`` and
+  ``DistributedTraining.wait_until_bench_complete_async`` -- read
+  ``training.bench`` (``BenchResult | None``) after the UD reaches a
+  terminal state. The context manager's ``__exit__`` blocks until the
+  UD is gone; ``training.bench`` is the final answer at that point. For
+  the rare debug case where bench is ``None`` and you need to know why,
+  read ``training.bench_diagnostics`` (``dict | None``).
+- ``DistributedTraining.bench_status`` property and the public
+  ``BenchStatus`` re-export from the ``basilica`` package. Same
+  migration: ``training.bench`` for the result;
+  ``training.bench_diagnostics`` for the debug dict.
+- The internal ``_emit_deprecation`` kwarg on the (now-private) deploy
+  impl -- the deprecation-gating plumbing it controlled no longer has
+  any deprecation paths to suppress.
+
+### Migration matrix (legacy -> canonical)
+
+| Removed (0.29.x) | Replacement (0.30.0) |
+|------------------|----------------------|
+| ``client.deploy_distributed(source=fn, ...)`` | ``@basilica.distributed(...)\ndef fn(): ...\ntraining = fn()`` |
+| ``client.deploy_distributed(source="<inline>", ...)`` | wrap the inline as a function body; decorate it |
+| ``client.deploy_distributed(source=Path("./train.py"), ...)`` | ``runpy.run_path('/workspace/train.py')`` inside a decorated function |
+| ``client.deploy_distributed_managed(command=[...], ...)`` | ``basilica.distributed(command=[...], ...)`` |
+| ``client.deploy_distributed_managed(source=fn, ...)`` | ``with fn() as training:`` after ``@basilica.distributed`` on ``fn`` |
+| ``bench="on-start"`` | ``bench=True`` |
+| ``bench="off"`` | ``bench=False`` |
+| ``training.wait_until_bench_complete(timeout=t)`` | block via ``with training:`` then read ``training.bench`` |
+| ``training.bench_status.phase`` | ``training.bench_diagnostics["phase"]`` |
+| ``BenchStatus`` (typed enum) | ``BenchResult`` (result payload) or the ``dict`` from ``bench_diagnostics`` |
+
+### Internal
+
+- The deploy logic that previously lived behind ``deploy_distributed``
+  now lives on the private ``BasilicaClient._deploy_distributed_impl``
+  and ``_deploy_distributed_impl_async`` methods. The decorator
+  (``@basilica.distributed``) and the BYO-launcher factory
+  (``basilica.distributed(command=...)``) both route through these
+  private methods. There is no public API change beyond the removals
+  listed above.
+- ``BasilicaClient._handle_post_deploy_bench_wait[_async]`` now polls
+  ``training._bench_status_raw`` directly instead of routing through
+  the removed ``wait_until_bench_complete`` wrapper. The
+  ``wait_for_bench`` / ``bench_timeout`` kwargs on ``@basilica.distributed``
+  keep their existing semantics.
+- The ``BenchStatus`` dataclass remains in ``basilica.distributed`` as
+  an internal type backing ``_bench_status_raw`` (and therefore
+  ``bench_diagnostics``); it is no longer re-exported from the top-level
+  ``basilica`` package.
+
+Closes basilica-backend#666. Refs the SDK API simplification plan
+(``docs/plans/SDK-API-SIMPLIFICATION-PLAN.md`` on basilica-backend
+main) ticket SDK-S7 ("cut major version when deprecations are
+removed").
+
 ## [0.29.7] - 2026-05-18
 
 ### Deprecated

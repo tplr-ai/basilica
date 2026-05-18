@@ -27,6 +27,7 @@ import ast
 import inspect
 import os
 import sys
+import textwrap
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
@@ -490,3 +491,44 @@ class SourcePackager:
         packager.is_file = False
 
         return packager
+
+
+def _package_function_for_torchrun(func: Callable) -> str:
+    """
+    Build the per-rank entrypoint module for `@basilica.distributed`.
+
+    Extracts the function body (skipping decorator lines), dedents,
+    prepends the defining module's top-level imports that the body
+    references, and appends an ``if __name__ == "__main__":`` guard that
+    calls the function. The result is the Python module text that
+    torchrun runs once per rank inside the worker pod.
+
+    Used by:
+    - ``BasilicaClient._build_distributed_request`` (the deploy path)
+    - ``DistributedFunction._extract_source`` (the decorator-side
+      packager; kept as a thin shim so existing decorator-introspection
+      tests continue to exercise the same code path)
+
+    Args:
+        func: The decorated Python function (per-rank entrypoint).
+
+    Returns:
+        Python module text suitable for
+        ``echo <b64> | base64 -d > /tmp/__basilica_source.py && exec torchrun ...``.
+    """
+    full_source = inspect.getsource(func)
+    lines = full_source.split("\n")
+    def_idx = 0
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("def "):
+            def_idx = i
+            break
+    func_lines = lines[def_idx:]
+    func_source = textwrap.dedent("\n".join(func_lines))
+    imports = _extract_module_level_imports(func, func_source)
+    func_name = func.__name__
+    return (
+        f"{imports}{func_source}\n\n"
+        f'if __name__ == "__main__":\n'
+        f"    {func_name}()\n"
+    )

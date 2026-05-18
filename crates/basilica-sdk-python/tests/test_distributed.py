@@ -104,7 +104,7 @@ class TestNoStandaloneBenchHelpers:
         assert not hasattr(BasilicaClient, "nccl_baseline"), (
             "BasilicaClient.nccl_baseline was removed in Phase 5b for the "
             "same SDK arch § 7 reason as preflight. Per-UD bench probes "
-            "(bench='on-start' + training.bench) are the supported path."
+            "(bench=True + training.bench) are the supported path."
         )
 
     def test_basilica_client_has_no_preflight_async(self) -> None:
@@ -515,9 +515,18 @@ class TestAsyncParity:
                 f"requires every method to have an _async counterpart."
             )
 
-    def test_basilica_client_has_deploy_distributed_async(self) -> None:
-        assert hasattr(BasilicaClient, "deploy_distributed")
-        assert hasattr(BasilicaClient, "deploy_distributed_async")
+    def test_basilica_client_has_private_distributed_impl(self) -> None:
+        # Post-S7 (0.30.0): the public deploy_distributed* methods are
+        # removed; the decorator (`@basilica.distributed`) routes
+        # through the private `_deploy_distributed_impl[_async]` pair.
+        assert hasattr(BasilicaClient, "_deploy_distributed_impl")
+        assert hasattr(BasilicaClient, "_deploy_distributed_impl_async")
+        assert not hasattr(BasilicaClient, "deploy_distributed"), (
+            "deploy_distributed must be removed in 0.30.0 (SDK-S7)"
+        )
+        assert not hasattr(BasilicaClient, "deploy_distributed_async"), (
+            "deploy_distributed_async must be removed in 0.30.0 (SDK-S7)"
+        )
 
 
 # =============================================================================
@@ -646,15 +655,21 @@ class TestBuildDistributedRequest:
         msg = str(exc_info.value).lower()
         assert "source" in msg or "command" in msg
 
-    def test_source_string_ships_via_b64(self) -> None:
+    def test_source_callable_ships_via_b64(self) -> None:
         # Source-shipping path: writes /tmp/__basilica_source.py via
         # base64-decoded bash one-liner. Operator wraps in `sh -c`.
         # /tmp/ (not /workspace/) because the operator pod template
         # runs as uid=1000 with no writable /workspace mount. See #448.
+        # Post-S7 (0.30.0): source is Callable-only (the str/Path shapes
+        # were removed). The Callable IS the per-rank entrypoint.
         client = self._client()
+
+        def _train() -> None:
+            print("hello")
+
         req = client._build_distributed_request(
             name="dlc-source-test",
-            source="print('hello')\n",
+            source=_train,
             image="my-image",
             port=18789,
             env=None,
@@ -690,9 +705,13 @@ class TestBuildDistributedRequest:
         # NEGATIVE assertion locks the contract: a regression that
         # restores /workspace/ would fail this test loudly.
         client = self._client()
+
+        def _rank_up() -> None:
+            print("rank-up")
+
         req = client._build_distributed_request(
             name="dlc-issue-448",
-            source="print('rank-up')\n",
+            source=_rank_up,
             image="pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime",
             port=18789,
             env=None,
@@ -1902,6 +1921,11 @@ def _below_min_pyo3_response(
     )
 
 
+def _noop_train() -> None:
+    """Per-rank no-op for tests that exercise the deploy path."""
+    print("x")
+
+
 def _build_minimal_client() -> BasilicaClient:
     """Construct a real BasilicaClient with a mocked PyO3 inner client.
 
@@ -1931,9 +1955,9 @@ class TestDeployDistributedCleanupOnFailure:
         response = self._wire_below_min(client)
 
         with pytest.raises(BelowMinimumWorld):
-            client.deploy_distributed(
+            client._deploy_distributed_impl(
                 name="dlc-486",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
                 timeout=0,
             )
@@ -1954,9 +1978,9 @@ class TestDeployDistributedCleanupOnFailure:
         )
 
         with pytest.raises(BelowMinimumWorld):
-            client.deploy_distributed(
+            client._deploy_distributed_impl(
                 name="dlc-486",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
                 timeout=0,
             )
@@ -1985,9 +2009,9 @@ class TestDeployDistributedCleanupOnFailure:
         ]
 
         with pytest.raises(ConnectionError):
-            client.deploy_distributed(
+            client._deploy_distributed_impl(
                 name="dlc-486",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
                 timeout=0,
             )
@@ -2018,9 +2042,9 @@ class TestDeployDistributedCleanupOnFailure:
         client._client.create_distributed_deployment.return_value = response
         client._client.get_deployment.return_value = response
 
-        training = client.deploy_distributed(
+        training = client._deploy_distributed_impl(
             name="dlc-486",
-            source="print('x')\n",
+            source=_noop_train,
             world_size=WorldSize(min=2, target=2, max=2),
             timeout=10,
         )
@@ -2042,9 +2066,9 @@ class TestDeployDistributedAsyncCleanupOnFailure:
         client._client.delete_deployment.return_value = MagicMock()
 
         async def run() -> None:
-            await client.deploy_distributed_async(
+            await client._deploy_distributed_impl_async(
                 name="dlc-486",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
                 timeout=0,
             )
@@ -2066,9 +2090,9 @@ class TestDeployDistributedAsyncCleanupOnFailure:
         )
 
         async def run() -> None:
-            await client.deploy_distributed_async(
+            await client._deploy_distributed_impl_async(
                 name="dlc-486",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
                 timeout=0,
             )
@@ -2111,6 +2135,9 @@ class TestBenchPhaseDecoupling:
             bench["lastAttemptOutcome"] = "error"
         if bench_phase == "TimedOut":
             bench["lastAttemptOutcome"] = "timeout"
+        if bench_phase == "Skipped":
+            bench["lastAttemptOutcome"] = "skipped"
+            bench["lastAttemptAt"] = "2026-05-08T12:01:00Z"
         if bench_result:
             bench["result"] = {
                 "measuredAt": "2026-05-08T12:00:00Z",
@@ -2158,16 +2185,21 @@ class TestBenchPhaseDecoupling:
         training.wait_until_min_world(timeout=10)
 
     def test_wait_until_min_world_returns_when_workers_ready_bench_failed(self) -> None:
-        """LOAD-BEARING: bench Failed does NOT propagate to world.ready."""
+        """LOAD-BEARING: bench Failed does NOT propagate to world.ready.
+
+        Post-S7: ``bench_status`` public accessor is gone; verify via
+        ``training.bench`` (``None`` on Failed) + ``bench_diagnostics``
+        (dict carrying ``phase``).
+        """
         client = MagicMock()
         client.get.return_value = self._make_status_dict(2, 2, "Failed")
         training = DistributedTraining(client, "ud-bench-decouple")
         training.wait_until_min_world(timeout=10)
-        # bench.phase is observable independently.
-        bs = training.bench_status
-        assert bs is not None
-        assert bs.phase == "Failed"
-        assert bs.is_terminal
+        # bench=None on non-Succeeded outcomes (S7 simplification).
+        assert training.bench is None
+        diag = training.bench_diagnostics
+        assert diag is not None
+        assert diag["phase"] == "Failed"
 
     def test_wait_until_min_world_returns_when_workers_ready_bench_timed_out(
         self,
@@ -2177,30 +2209,27 @@ class TestBenchPhaseDecoupling:
         client.get.return_value = self._make_status_dict(2, 2, "TimedOut")
         training = DistributedTraining(client, "ud-bench-decouple")
         training.wait_until_min_world(timeout=10)
-        bs = training.bench_status
-        assert bs is not None
-        assert bs.phase == "TimedOut"
+        assert training.bench is None
+        diag = training.bench_diagnostics
+        assert diag is not None
+        assert diag["phase"] == "TimedOut"
 
-    def test_bench_status_reflects_each_lifecycle_state(self) -> None:
-        """Bench lifecycle is observable through `bench_status` independent of UD phase."""
+    def test_bench_diagnostics_reflects_each_lifecycle_state(self) -> None:
+        """Bench lifecycle is observable through ``bench_diagnostics``
+        (dict) independent of UD phase. ``training.bench`` collapses
+        non-success to ``None``."""
         for phase in ["Pending", "Running", "Succeeded", "Failed", "TimedOut"]:
             client = MagicMock()
             client.get.return_value = self._make_status_dict(
                 2, 2, phase, bench_result=(phase == "Succeeded")
             )
             training = DistributedTraining(client, "ud-bench-decouple")
-            bs = training.bench_status
-            assert bs is not None, f"bench_status absent for phase={phase}"
-            assert bs.phase == phase
-            assert bs.mode == "on-start"
-            if phase in {"Succeeded", "Failed", "TimedOut"}:
-                assert bs.is_terminal
-                assert bs.completed_at is not None
-            else:
-                assert not bs.is_terminal
-                assert bs.completed_at is None
+            diag = training.bench_diagnostics
+            assert diag is not None, f"bench_diagnostics absent for phase={phase}"
+            assert diag["phase"] == phase
+            assert diag["mode"] == "on-start"
 
-    def test_bench_status_returns_none_when_bench_off(self) -> None:
+    def test_bench_diagnostics_returns_none_when_bench_off(self) -> None:
         class FakeDeployment:
             instance_name = "ud"
             user_id = "u"
@@ -2230,66 +2259,11 @@ class TestBenchPhaseDecoupling:
         client = MagicMock()
         client.get.return_value = FakeDeployment()
         training = DistributedTraining(client, "ud")
-        assert training.bench_status is None
-        # Backward-compat `bench` accessor also returns None.
+        assert training.bench_diagnostics is None
         assert training.bench is None
 
-    def test_wait_until_bench_complete_returns_terminal_status(self) -> None:
-        """Opt-in waiter returns terminal `BenchStatus` with phase + timing."""
-        client = MagicMock()
-        client.get.return_value = self._make_status_dict(
-            2, 2, "Succeeded", bench_result=True
-        )
-        training = DistributedTraining(client, "ud-bench-decouple")
-        bs = training.wait_until_bench_complete(timeout=10)
-        assert bs is not None
-        assert bs.phase == "Succeeded"
-        assert bs.result is not None
-        assert bs.result.busbw_gbps_p50 == 12.5
-        assert bs.completed_at is not None
-
-    def test_wait_until_bench_complete_returns_none_when_bench_off(self) -> None:
-        class FakeDeployment:
-            instance_name = "ud"
-            user_id = "u"
-            namespace = "u"
-            image = "x"
-            state = "running"
-            url = "https://x"
-            created_at = "t"
-            updated_at = "t"
-            phase = "Running"
-            message = None
-            share_token = None
-            share_url = None
-            public_metadata = False
-            distributed = {
-                "worldSize": {
-                    "ready": 2,
-                    "target": 2,
-                    "min": 2,
-                    "max": 2,
-                    "belowMinimum": False,
-                },
-                "ranks": [],
-                "transport": "hub-relay",
-            }
-
-        client = MagicMock()
-        client.get.return_value = FakeDeployment()
-        training = DistributedTraining(client, "ud")
-        # bench.mode == off -> waiter returns None immediately.
-        assert training.wait_until_bench_complete(timeout=1) is None
-
-    def test_wait_until_bench_complete_raises_timeout_on_non_terminal(self) -> None:
-        client = MagicMock()
-        client.get.return_value = self._make_status_dict(2, 2, "Running")
-        training = DistributedTraining(client, "ud-bench-decouple")
-        with pytest.raises(TimeoutError):
-            training.wait_until_bench_complete(timeout=0)
-
-    def test_backward_compat_bench_accessor_still_returns_result_payload(self) -> None:
-        """Existing `training.bench -> Optional[BenchResult]` keeps working."""
+    def test_bench_accessor_returns_result_payload_on_succeeded(self) -> None:
+        """``training.bench -> Optional[BenchResult]`` (canonical surface)."""
         client = MagicMock()
         client.get.return_value = self._make_status_dict(
             2, 2, "Succeeded", bench_result=True
@@ -2299,6 +2273,16 @@ class TestBenchPhaseDecoupling:
         assert r is not None
         assert r.busbw_gbps_p50 == 12.5
         assert r.probe_node_a == "n-a"
+
+    def test_bench_returns_none_on_non_success_phases(self) -> None:
+        """Post-S7: ``training.bench`` collapses Skipped/Failed/TimedOut/Pending to None."""
+        for phase in ["Pending", "Running", "Skipped", "Failed", "TimedOut"]:
+            client = MagicMock()
+            client.get.return_value = self._make_status_dict(2, 2, phase)
+            training = DistributedTraining(client, f"ud-bench-{phase.lower()}")
+            assert training.bench is None, (
+                f"training.bench must be None for phase={phase}; got non-None"
+            )
 
 
 # =============================================================================
@@ -2366,17 +2350,17 @@ class TestDeployDistributedDefaultDoesNotWaitForBench:
 
     def test_default_returns_with_bench_pending(self) -> None:
         """LOAD-BEARING: workers Ready + bench Pending -> default deploy
-        returns; `training.bench_status.phase == 'Pending'`."""
+        returns; ``training.bench_diagnostics['phase'] == 'Pending'``."""
         client = _build_minimal_client()
         response = _ready_pyo3_response_with_bench("Pending")
         client._client.create_distributed_deployment.return_value = response
         client._client.get_deployment.return_value = response
 
-        training = client.deploy_distributed(
+        training = client._deploy_distributed_impl(
             name="dlc-default-bench-pending",
-            source="print('x')\n",
+            source=_noop_train,
             world_size=WorldSize(min=2, target=2, max=2),
-            bench="on-start",
+            bench=True,
             timeout=10,
         )
 
@@ -2385,10 +2369,11 @@ class TestDeployDistributedDefaultDoesNotWaitForBench:
         # would have either succeeded or thrown TimeoutError -- with
         # the mock, "Pending" never advances).
         assert training.name == response.instance_name
-        bs = training.bench_status
-        assert bs is not None
-        assert bs.phase == "Pending"
-        assert not bs.is_terminal
+        diag = training.bench_diagnostics
+        assert diag is not None
+        assert diag["phase"] == "Pending"
+        # Pending is not terminal; training.bench is None until terminal.
+        assert training.bench is None
         client._client.delete_deployment.assert_not_called()
 
     def test_default_returns_with_bench_failed(self) -> None:
@@ -2399,17 +2384,18 @@ class TestDeployDistributedDefaultDoesNotWaitForBench:
         client._client.create_distributed_deployment.return_value = response
         client._client.get_deployment.return_value = response
 
-        training = client.deploy_distributed(
+        training = client._deploy_distributed_impl(
             name="dlc-default-bench-failed",
-            source="print('x')\n",
+            source=_noop_train,
             world_size=WorldSize(min=2, target=2, max=2),
-            bench="on-start",
+            bench=True,
             timeout=10,
         )
 
         assert training.name == response.instance_name
-        assert training.bench_status is not None
-        assert training.bench_status.phase == "Failed"
+        diag = training.bench_diagnostics
+        assert diag is not None
+        assert diag["phase"] == "Failed"
         # The UD was NOT auto-deleted just because the bench failed.
         client._client.delete_deployment.assert_not_called()
 
@@ -2417,9 +2403,9 @@ class TestDeployDistributedDefaultDoesNotWaitForBench:
         """Typo defense: only the three documented modes are accepted."""
         client = _build_minimal_client()
         with pytest.raises(ValidationError):
-            client.deploy_distributed(
+            client._deploy_distributed_impl(
                 name="dlc",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
                 wait_for_bench="best-effort",  # hyphen, not underscore
                 timeout=0,
@@ -2439,11 +2425,11 @@ class TestDeployDistributedWaitForBenchBestEffort:
         client._client.get_deployment.return_value = response
 
         with pytest.warns(UserWarning, match="best_effort"):
-            training = client.deploy_distributed(
+            training = client._deploy_distributed_impl(
                 name="dlc-best-effort-failed",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
-                bench="on-start",
+                bench=True,
                 timeout=10,
                 wait_for_bench="best_effort",
                 bench_timeout=10,
@@ -2458,11 +2444,11 @@ class TestDeployDistributedWaitForBenchBestEffort:
         client._client.create_distributed_deployment.return_value = response
         client._client.get_deployment.return_value = response
 
-        training = client.deploy_distributed(
+        training = client._deploy_distributed_impl(
             name="dlc-best-effort-success",
-            source="print('x')\n",
+            source=_noop_train,
             world_size=WorldSize(min=2, target=2, max=2),
-            bench="on-start",
+            bench=True,
             timeout=10,
             wait_for_bench="best_effort",
             bench_timeout=10,
@@ -2485,11 +2471,11 @@ class TestDeployDistributedWaitForBenchRequired:
         client._client.get_deployment.return_value = response
 
         with pytest.raises(DistributedError, match="phase=Failed"):
-            client.deploy_distributed(
+            client._deploy_distributed_impl(
                 name="dlc-required-failed",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
-                bench="on-start",
+                bench=True,
                 timeout=10,
                 wait_for_bench="required",
                 bench_timeout=10,
@@ -2505,11 +2491,11 @@ class TestDeployDistributedWaitForBenchRequired:
         client._client.get_deployment.return_value = response
 
         with pytest.raises(DistributedError, match="phase=TimedOut"):
-            client.deploy_distributed(
+            client._deploy_distributed_impl(
                 name="dlc-required-timedout",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
-                bench="on-start",
+                bench=True,
                 timeout=10,
                 wait_for_bench="required",
                 bench_timeout=10,
@@ -2528,11 +2514,11 @@ class TestDeployDistributedWaitForBenchRequired:
         client._client.get_deployment.return_value = response
 
         with pytest.raises(DistributedError, match="terminal phase"):
-            client.deploy_distributed(
+            client._deploy_distributed_impl(
                 name="dlc-required-timeout",
-                source="print('x')\n",
+                source=_noop_train,
                 world_size=WorldSize(min=2, target=2, max=2),
-                bench="on-start",
+                bench=True,
                 timeout=10,
                 wait_for_bench="required",
                 bench_timeout=0,
@@ -2544,11 +2530,11 @@ class TestDeployDistributedWaitForBenchRequired:
         client._client.create_distributed_deployment.return_value = response
         client._client.get_deployment.return_value = response
 
-        training = client.deploy_distributed(
+        training = client._deploy_distributed_impl(
             name="dlc-required-success",
-            source="print('x')\n",
+            source=_noop_train,
             world_size=WorldSize(min=2, target=2, max=2),
-            bench="on-start",
+            bench=True,
             timeout=10,
             wait_for_bench="required",
             bench_timeout=10,
