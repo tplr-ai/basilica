@@ -276,6 +276,7 @@ pub async fn handle_add_ssh_key(
 
                 let idx = ask_select(
                     "ssh_public_key_path",
+                    "Select an SSH key to register",
                     &label_refs,
                     "Pass --file <path> to choose an SSH public key file (e.g. ~/.ssh/id_ed25519.pub)",
                 )?;
@@ -324,6 +325,7 @@ pub async fn handle_add_ssh_key(
             let default_name = basilica_common::rental::generate_random_rental_name();
             let input = ask_text(
                 "name",
+                "Enter a name for this SSH key",
                 Some(&default_name),
                 "Pass --name <label> to label the registered key",
             )?;
@@ -365,8 +367,9 @@ pub async fn handle_add_ssh_key(
 
         let confirmed = ask_confirm(
             "replace_existing",
+            "Do you want to replace it with the new key?",
             false,
-            "Replace the existing SSH key with the new one?",
+            "Pass --force to replace the existing SSH key without prompting.",
         )?;
         if !confirmed {
             println!("Operation cancelled.");
@@ -452,8 +455,13 @@ pub async fn handle_delete_ssh_key(
 
     // Confirm deletion if not skipped
     if !skip_confirm {
+        let prompt = format!(
+            "Are you sure you want to delete SSH key '{}'?",
+            existing.name
+        );
         let confirmed = ask_confirm(
             "confirm_delete_ssh_key",
+            &prompt,
             false,
             "Pass -y/--yes to skip the confirmation prompt and delete the registered key.",
         )?;

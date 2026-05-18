@@ -19,7 +19,17 @@ pub fn current() -> Interactivity {
     }
 }
 
-pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String, CliError> {
+// Helpers below take three concerns explicitly:
+// - `field`: stable machine identifier (shows up as `"field":` in JSON errors).
+// - `prompt`: human-readable question shown interactively via dialoguer.
+// - `hint`: how-to-skip guidance shown in non-interactive errors.
+
+pub fn ask_text(
+    field: &str,
+    prompt: &str,
+    default: Option<&str>,
+    hint: &str,
+) -> Result<String, CliError> {
     match current() {
         Interactivity::NonInteractive => {
             if let Some(d) = default {
@@ -32,7 +42,7 @@ pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String
         }
         Interactivity::Interactive => {
             let theme = ColorfulTheme::default();
-            let mut input = Input::<String>::with_theme(&theme).with_prompt(field);
+            let mut input = Input::<String>::with_theme(&theme).with_prompt(prompt);
             if let Some(d) = default {
                 input = input.default(d.to_string());
             }
@@ -43,7 +53,12 @@ pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String
     }
 }
 
-pub fn ask_select(field: &str, labels: &[&str], hint: &str) -> Result<usize, CliError> {
+pub fn ask_select(
+    field: &str,
+    prompt: &str,
+    labels: &[&str],
+    hint: &str,
+) -> Result<usize, CliError> {
     match current() {
         Interactivity::NonInteractive => Err(CliError::MissingInput {
             field: field.to_string(),
@@ -52,7 +67,7 @@ pub fn ask_select(field: &str, labels: &[&str], hint: &str) -> Result<usize, Cli
         Interactivity::Interactive => {
             let theme = ColorfulTheme::default();
             Select::with_theme(&theme)
-                .with_prompt(field)
+                .with_prompt(prompt)
                 .items(labels)
                 .default(0)
                 .interact()
@@ -61,7 +76,7 @@ pub fn ask_select(field: &str, labels: &[&str], hint: &str) -> Result<usize, Cli
     }
 }
 
-pub fn ask_confirm(field: &str, default: bool, hint: &str) -> Result<bool, CliError> {
+pub fn ask_confirm(field: &str, prompt: &str, default: bool, hint: &str) -> Result<bool, CliError> {
     match current() {
         Interactivity::NonInteractive => Err(CliError::MissingInput {
             field: field.to_string(),
@@ -70,7 +85,7 @@ pub fn ask_confirm(field: &str, default: bool, hint: &str) -> Result<bool, CliEr
         Interactivity::Interactive => {
             let theme = ColorfulTheme::default();
             Confirm::with_theme(&theme)
-                .with_prompt(field)
+                .with_prompt(prompt)
                 .default(default)
                 .interact()
                 .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!(e)))
@@ -105,7 +120,7 @@ mod tests {
     #[serial]
     fn ask_text_non_interactive_no_default_errors() {
         let _env = NonInteractiveEnv::set();
-        let err = ask_text("name", None, "Pass --name").unwrap_err();
+        let err = ask_text("name", "Name?", None, "Pass --name").unwrap_err();
         match err {
             CliError::MissingInput { field, hint } => {
                 assert_eq!(field, "name");
@@ -119,7 +134,7 @@ mod tests {
     #[serial]
     fn ask_text_non_interactive_with_default_returns_default() {
         let _env = NonInteractiveEnv::set();
-        let v = ask_text("name", Some("auto-name"), "irrelevant").unwrap();
+        let v = ask_text("name", "Name?", Some("auto-name"), "irrelevant").unwrap();
         assert_eq!(v, "auto-name");
     }
 
@@ -128,7 +143,13 @@ mod tests {
     fn ask_select_non_interactive_errors() {
         let _env = NonInteractiveEnv::set();
         let labels = ["alpha", "beta"];
-        let err = ask_select("offering", &labels, "Pass --offering-id").unwrap_err();
+        let err = ask_select(
+            "offering",
+            "Choose an offering",
+            &labels,
+            "Pass --offering-id",
+        )
+        .unwrap_err();
         match err {
             CliError::MissingInput { field, hint } => {
                 assert_eq!(field, "offering");
@@ -142,7 +163,7 @@ mod tests {
     #[serial]
     fn ask_confirm_non_interactive_errors() {
         let _env = NonInteractiveEnv::set();
-        let err = ask_confirm("replace", false, "Pass --force").unwrap_err();
+        let err = ask_confirm("replace", "Replace?", false, "Pass --force").unwrap_err();
         match err {
             CliError::MissingInput { field, hint } => {
                 assert_eq!(field, "replace");

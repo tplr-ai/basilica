@@ -42,11 +42,11 @@ fn render_human(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
     match err {
         CliError::MissingInput { field, hint } => {
             writeln!(w, "error: missing input for '{}'", field)?;
-            writeln!(w, "  hint: {}", hint)
+            writeln!(w, "hint: {}", hint)
         }
         CliError::MissingPrerequisite { field, hint } => {
             writeln!(w, "error: missing prerequisite for '{}'", field)?;
-            writeln!(w, "  hint: {}", hint)
+            writeln!(w, "hint: {}", hint)
         }
         CliError::Internal(report) => writeln!(w, "Error: {:?}", report),
         other => writeln!(w, "Error: {}", other),
