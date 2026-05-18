@@ -35,6 +35,21 @@ Using `@basilica.deployment` decorator:
 | `05_decorator_fastapi.py` | FastAPI + uvicorn | `python3 05_decorator_fastapi.py` |
 | `05_decorator_gpu.py` | GPU decorator | `python3 05_decorator_gpu.py` |
 
+## Distributed Training Examples (20-22)
+
+Multi-rank PyTorch with NCCL collectives via `@basilica.distributed`. The
+decorator wraps the per-rank entrypoint; calling it returns a
+`DistributedTraining` context manager. For BYO launchers (torchrun /
+mpirun / accelerate), pass `command=[...]` and the same
+`basilica.distributed` symbol becomes a factory that returns the
+`DistributedTraining` directly.
+
+| Example | Description | Run |
+|---------|-------------|-----|
+| `20_distributed_diloco.py` | DiLoCo training with `@basilica.distributed` + `bench=True` | `python3 20_distributed_diloco.py` |
+| `21_distributed_torchrun.py` | BYO `command=[torchrun ...]` factory + mid-run `scale()` | `python3 21_distributed_torchrun.py` |
+| `22_distributed_with_bench.py` | Bench-result inspection + JSON dump for offline aggregation | `python3 22_distributed_with_bench.py` |
+
 ## Advanced Examples (06-23)
 
 | Example | Description | Run |

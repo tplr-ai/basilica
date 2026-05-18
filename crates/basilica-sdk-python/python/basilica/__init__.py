@@ -3,7 +3,7 @@ Basilica SDK for Python
 
 Deploy and manage containerized applications on the Basilica GPU cloud.
 
-Quick Start:
+HTTP services and one-shot containers:
     >>> from basilica import BasilicaClient
     >>> client = BasilicaClient()
     >>>
@@ -16,6 +16,42 @@ Quick Start:
     ...     name="hello",
     ...     source="print('Hello, World!')",
     ... )
+
+Distributed training (NCCL collectives -- DDP, DiLoCo, FSDP):
+    The canonical surface is the ``@basilica.distributed`` decorator. The
+    decorated function is the per-rank entrypoint; calling it returns a
+    ``DistributedTraining`` context-manager. The legacy
+    ``client.deploy_distributed_managed(...)`` factory emits a
+    ``DeprecationWarning`` -- see the SDK README's "Migration from the
+    legacy surface" table for the per-parameter mapping.
+
+    >>> import basilica
+    >>> from basilica import ProviderFilter, WorldSize
+    >>>
+    >>> @basilica.distributed(
+    ...     name="dlc-hello",
+    ...     image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+    ...     world_size=WorldSize(min=2, target=2, max=2),
+    ...     gpu_count=1,
+    ...     gpu_models=["A100"],
+    ...     provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    ...     topology_spread="pack",
+    ...     bench=True,
+    ... )
+    ... def train():
+    ...     import os, torch
+    ...     import torch.distributed as dist
+    ...     dist.init_process_group(backend="nccl")
+    ...     # ... uses os.environ['RANK'] / ['WORLD_SIZE'] / ['LOCAL_RANK'] ...
+    ...     dist.destroy_process_group()
+    >>>
+    >>> with train() as training:                       # auto-cleanup on exit
+    ...     training.wait_until_complete(timeout=1800)
+    ...     print(training.bench)                       # BenchResult | None
+
+    For BYO launchers (torchrun / mpirun / accelerate), pass
+    ``command=[...]`` and ``basilica.distributed(...)`` short-circuits the
+    decorator path -- it returns a ``DistributedTraining`` directly.
 
 Authentication:
     Set the BASILICA_API_TOKEN environment variable:

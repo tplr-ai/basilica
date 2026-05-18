@@ -386,6 +386,241 @@ deployment = client.deploy(
 )
 ```
 
+## Distributed Training (NCCL collectives)
+
+For `torch.distributed` workloads (DDP, DiLoCo, FSDP, any NCCL-collective workload),
+use the `@basilica.distributed` decorator. The platform provisions GPU spokes,
+wires the WireGuard mesh, runs torchrun with the standard `RANK` / `WORLD_SIZE`
+/ `MASTER_*` env-var contract, and tears down on context exit.
+
+This is a separate surface from `@basilica.deployment` because the lifecycle
+shape is different: a single function body fans out to N rank pods under
+torchrun, the user reads `os.environ["RANK"]` instead of branching on rank in
+SDK code, and the handle exposes `scale()`, `wait_until_*`, `bench`, and
+`rank_exits` instead of `url` and `replicas`.
+
+### Canonical surface: `@basilica.distributed` decorator
+
+```python
+import basilica
+from basilica import ProviderFilter, WorldSize
+
+
+@basilica.distributed(
+    name="dlc-hello",
+    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+    world_size=WorldSize(min=2, target=2, max=2),
+    gpu_count=1,
+    gpu_models=["A100"],
+    min_gpu_memory_gb=40,
+    cpu="8",
+    memory="32Gi",
+    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    topology_spread="pack",
+    bench=True,
+    nccl_env={"NCCL_DEBUG": "WARN"},
+    ttl_seconds=900,
+)
+def train() -> None:
+    import os
+
+    import torch
+    import torch.distributed as dist
+
+    rank = int(os.environ["RANK"])
+    world_size = int(os.environ["WORLD_SIZE"])
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+
+    dist.init_process_group(backend="nccl")
+    device = torch.device(f"cuda:{local_rank}")
+
+    x = torch.ones(1024, device=device)
+    dist.all_reduce(x)
+    if rank == 0:
+        print(f"world={world_size} sum={x.sum().item():.0f}", flush=True)
+
+    dist.destroy_process_group()
+
+
+if __name__ == "__main__":
+    with train() as training:
+        print(f"Deployed: {training.name}")
+        training.wait_until_complete(timeout=1800)
+        if training.bench is not None:
+            print(f"Measured busbw: {training.bench.busbw_gbps_p50} Gbps")
+```
+
+Calling the decorated function returns a `DistributedTraining` context-manager.
+Use it bare (`train()`) for fire-and-forget with auto-cleanup; use `with
+train() as training:` for mid-run orchestration (`scale()`, `wait_until_*`,
+`logs()`, `bench`).
+
+### BYO launcher: `basilica.distributed(command=[...])` factory
+
+When you want to drive torchrun (or mpirun, or accelerate) yourself, pass
+`command=[...]` instead of decorating a function. The same `basilica.distributed`
+symbol becomes a factory and returns a `DistributedTraining` directly:
+
+```python
+import basilica
+from basilica import ProviderFilter, WorldSize
+
+training = basilica.distributed(
+    name="dlc-torchrun",
+    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+    command=[
+        "torchrun",
+        "--rdzv-backend=etcd",
+        "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+        "--rdzv-id=$BASILICA_RDZV_ID",
+        "--nnodes=$BASILICA_WORLD_TARGET",
+        "--nproc-per-node=$BASILICA_GPUS_PER_POD",
+        "/workspace/all_reduce_smoke.py",
+    ],
+    world_size=WorldSize(min=2, target=2, max=4),
+    gpu_count=1,
+    gpu_models=["A100"],
+    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    topology_spread="pack",
+    ttl_seconds=900,
+)
+
+with training:
+    training.scale(target=3)
+    training.wait_until_target_world(timeout=300)
+    print(training.logs(tail=30))
+```
+
+Same `DistributedTraining` handle as the decorator path. Same context-manager
+cleanup. The only difference is `command=[...]` replaces the decorated function
+body. Inside the launcher, expand `$BASILICA_RDZV_ENDPOINT` / `$BASILICA_RANK` /
+`$BASILICA_WORLD_TARGET` / `$BASILICA_GPUS_PER_POD` — the operator injects
+these into the worker pod environment.
+
+### Lifecycle on the `DistributedTraining` handle
+
+| Method | What it does |
+|--------|--------------|
+| `training.world` | `WorldStatus(ready, target, min, max, below_minimum)` snapshot |
+| `training.phase` | Operator-driven phase: `pending` / `ready` / `succeeded` / `failed` / `cancelled` |
+| `training.ranks` | Per-rank pod observations (`provider`, `region`, `phase`, `restarts`) |
+| `training.rank_exits` | Per-rank exit diagnostics, populated after the UD reaches a terminal state |
+| `training.bench` | `BenchResult \| None` — `None` means "no measurement", regardless of why |
+| `training.bench_diagnostics` | Debug detail when `training.bench` is `None`; rarely needed |
+| `training.scale(target=N)` | Patch `worldSize.target` mid-run; ranks join/drain asynchronously |
+| `training.wait_until_min_world(timeout=...)` | Block until `ready >= min` or raise `BelowMinimumWorld` |
+| `training.wait_until_target_world(timeout=...)` | Block until `ready >= target` |
+| `training.wait_until_complete(timeout=...)` | Block until terminal phase (`succeeded` / `failed` / `cancelled`) |
+| `training.logs(tail=..., follow=...)` | Stream merged-rank logs |
+| `training.delete()` | Explicit teardown; `__exit__` runs this on scope exit |
+
+Every method has an `_async` counterpart (`training.scale_async(...)`,
+`async with training: ...`).
+
+### `bench=True` — the diagnostic for "is my code slow or is the network slow?"
+
+NCCL collective bandwidth varies with provider, region, GPU model, and current
+mesh load. Without a measurement, the user has to guess whether slow training
+is their code or the network.
+
+`bench=True` opts in to a 2-rank `all_reduce_perf` probe that runs alongside
+your workers on the same provider mesh with the same WireGuard transport. The
+result lands on `training.bench` after the UD reaches a terminal state:
+
+```python
+import basilica
+from basilica import ProviderFilter, WorldSize
+
+
+@basilica.distributed(
+    name="dlc-with-bench",
+    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+    world_size=WorldSize(min=2, target=2, max=2),
+    gpu_count=1,
+    gpu_models=["A100"],
+    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    topology_spread="pack",
+    bench=True,
+)
+def train() -> None:
+    import torch.distributed as dist
+
+    dist.init_process_group(backend="nccl")
+    dist.destroy_process_group()
+
+
+with train() as training:
+    training.wait_until_complete(timeout=1800)
+    if training.bench is not None:
+        print(f"busbw_gbps_p50:      {training.bench.busbw_gbps_p50}")
+        print(f"latency_us_at_1mib:  {training.bench.latency_us_at_1mib}")
+        print(
+            f"probe pair:          {training.bench.probe_node_a} "
+            f"<-> {training.bench.probe_node_b}"
+        )
+    else:
+        # No measurement -- workers too short, probe couldn't co-schedule, etc.
+        print(training.bench_diagnostics)
+```
+
+`None` means "no measurement" regardless of reason. `training.bench_diagnostics`
+exists for the rare case where you want to know WHY the probe didn't land a
+result. Default `bench=False` because the probe costs 2 extra GPU ranks for its
+duration — users who don't need the measurement shouldn't pay for it.
+
+### Running an external script
+
+The canonical input is a Callable (what the decorator captures). For an
+external `.py` file shipped in the trainer image, wrap it in a decorated
+function:
+
+```python
+import basilica
+from basilica import ProviderFilter, WorldSize
+
+
+@basilica.distributed(
+    name="dlc-script",
+    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+    world_size=WorldSize(min=2, target=2, max=2),
+    gpu_count=1,
+    gpu_models=["A100"],
+    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    topology_spread="pack",
+)
+def run_script() -> None:
+    import runpy
+
+    runpy.run_path("/workspace/my_training.py", run_name="__main__")
+```
+
+### Migration from the legacy surface
+
+If you have code on the prior SDK surface, both paths still work but emit
+`DeprecationWarning`. Migration table:
+
+| Legacy | Canonical | SDK version | Plan ticket |
+|--------|-----------|-------------|-------------|
+| `client.deploy_distributed(...)` | `@basilica.distributed(...)` on a function, call it | 0.29.5+ | S1 |
+| `client.deploy_distributed_managed(...)` | `with train() as training:` on the decorated function | 0.29.5+ | S1 |
+| `bench="on-start"` / `bench="off"` (str) | `bench=True` / `bench=False` (bool) | 0.29.5+ | S2 |
+| `training.bench_status` (property) | `training.bench` for the result, `training.bench_diagnostics` for debug | 0.29.5+ | S2 |
+| `training.wait_until_bench_complete(...)` | `training.wait_until_complete(...)` + read `training.bench` | 0.29.5+ | S2 |
+| `client.deploy_distributed_managed(command=[...])` | `basilica.distributed(command=[...])` factory | 0.29.6+ | S3 |
+| `source=Path("./train.py")` / `source="<inline code>"` | decorate a function (Callable shape) | 0.29.7+ | S4 |
+
+The decorator path silences the deprecation warnings — direct calls to
+`deploy_distributed*` warn, but the decorator passes `_emit_deprecation=False`
+internally so the canonical surface stays quiet.
+
+### Worked examples in this repo
+
+| Example | Pattern |
+|---------|---------|
+| `examples/20_distributed_diloco.py` | `@basilica.distributed` decorator + `bench=True` + DiLoCo (NCCL all-reduce in the outer step) |
+| `examples/21_distributed_torchrun.py` | `basilica.distributed(command=[torchrun ...])` factory + mid-run `scale()` |
+| `examples/22_distributed_with_bench.py` | `@basilica.distributed` decorator + bench-result inspection + JSON dump |
+
 ## API Reference
 
 ### BasilicaClient
@@ -470,25 +705,119 @@ class DeploymentStatus:
     def is_pending(self) -> bool # Check if still starting
 ```
 
+### Distributed Training Types
+
+The distributed-training surface lives in `basilica` (re-exported from
+`basilica.distributed`). The canonical entry point is the
+`@basilica.distributed` decorator; `basilica.distributed(command=[...])` is
+the factory shape for BYO launchers.
+
+```python
+@dataclass(frozen=True)
+class WorldSize:
+    """Worker-rank triple. `1 <= min <= target <= max`."""
+    min: int     # below this the run pauses (torchelastic MIN_NODES)
+    target: int  # steady-state replica count
+    max: int     # hard ceiling for scale()
+
+
+@dataclass(frozen=True)
+class ProviderFilter:
+    """Inclusive/exclusive cloud-provider filter for worker scheduling.
+
+    Match is against the `basilica.ai/provider` node label
+    (`hyperstack`, `verda`, `masscompute`, `shadeform`). With
+    `topology_spread="pack"`, the autoscaler picks ONE provider from the
+    include-list and all workers pack on it.
+    """
+    include: List[str] = []
+    exclude: List[str] = []
+
+
+@dataclass(frozen=True)
+class BenchResult:
+    """Per-UD NCCL probe measurement. Read via `training.bench`.
+
+    Bandwidth fields are GB/s (1 GB = 10^9 bytes); latency is at the
+    smallest swept message size. `None`-valued fields mean the probe
+    could not measure them (partial sweep).
+    """
+    measured_at: datetime
+    busbw_gbps_p10: Optional[float]
+    busbw_gbps_p50: Optional[float]
+    busbw_gbps_p90: Optional[float]
+    algbw_gbps_p50: Optional[float]
+    latency_us_at_1mib: Optional[float]
+    size_bytes_swept: List[int]
+    probe_node_a: str
+    probe_node_b: str
+
+
+class DistributedTraining:
+    """Handle returned by `@basilica.distributed` and `basilica.distributed(command=...)`.
+
+    Itself a context manager: `with train() as training:` blocks on the
+    decorator call, yields the handle, and best-effort `delete()`s on
+    scope exit (success OR exception).
+    """
+    name: str
+    namespace: str
+    rendezvous_endpoint: str
+
+    # observation (lazy refresh on first access)
+    world: WorldStatus
+    phase: str            # operator-driven phase
+    is_terminal: bool
+    ranks: List[RankStatus]
+    rank_exits: List[RankExit]
+    bench: Optional[BenchResult]
+    bench_diagnostics: Optional[Dict[str, Any]]
+
+    # lifecycle
+    def scale(target: int) -> WorldStatus: ...
+    def wait_until_min_world(timeout: int = 300) -> None: ...
+    def wait_until_target_world(timeout: int = 600) -> None: ...
+    def wait_until_complete(timeout: int = 1800) -> WorldStatus: ...
+    def logs(tail=None, follow=False, rank=None) -> str: ...
+    def delete() -> None: ...
+
+    # context manager
+    def __enter__(self) -> "DistributedTraining": ...
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None: ...
+    # Every method has an `_async` counterpart.
+```
+
+`WorldStatus`, `RankStatus`, `RankExit`, `DistributedMetrics`, and the
+distributed-specific exceptions (`BelowMinimumWorld`, `WorldSizeOutOfBounds`,
+`RendezvousUnavailable`, `UDTerminalState`, `QuotaExceeded`, `DistributedError`)
+are exported from `basilica` directly.
+
 ## Exception Handling
 
 The SDK provides a comprehensive exception hierarchy:
 
 ```python
 from basilica import (
-    BasilicaError,        # Base exception
-    AuthenticationError,  # Invalid/missing token
-    AuthorizationError,   # Permission denied
-    ValidationError,      # Invalid parameters
-    DeploymentError,      # Base deployment error
-    DeploymentNotFound,   # Deployment doesn't exist
-    DeploymentTimeout,    # Timeout waiting for ready
-    DeploymentFailed,     # Deployment crashed
-    ResourceError,        # Resource unavailable
-    StorageError,         # Storage configuration error
-    NetworkError,         # API communication error
-    RateLimitError,       # Rate limit exceeded
-    SourceError,          # Source file error
+    BasilicaError,         # Base exception
+    AuthenticationError,   # Invalid/missing token
+    AuthorizationError,    # Permission denied
+    ValidationError,       # Invalid parameters
+    DeploymentError,       # Base deployment error
+    DeploymentNotFound,    # Deployment doesn't exist
+    DeploymentTimeout,     # Timeout waiting for ready
+    DeploymentFailed,      # Deployment crashed
+    ResourceError,         # Resource unavailable
+    StorageError,          # Storage configuration error
+    NetworkError,          # API communication error
+    RateLimitError,        # Rate limit exceeded
+    SourceError,           # Source file error
+    # Distributed-training specific:
+    DistributedError,      # Base distributed-training error
+    BelowMinimumWorld,     # `ready < min` (timeout or terminal failure)
+    WorldSizeOutOfBounds,  # WorldSize triple or scale() target invalid
+    RendezvousUnavailable, # etcd rendezvous service unreachable
+    UDTerminalState,       # UD is already terminal (e.g. scale on succeeded)
+    QuotaExceeded,         # Namespace rank budget exceeded
 )
 
 try:
@@ -603,6 +932,9 @@ For complete working examples, see the [examples directory](https://github.com/o
 | `12_lobe_chat.py` | Self-hosted chat UI |
 | `13_lobe_chat_vllm.py` | Full AI stack (LobeChat + vLLM) |
 | `14_streamlit.py` | Interactive Streamlit app |
+| `20_distributed_diloco.py` | `@basilica.distributed` + DiLoCo NCCL training |
+| `21_distributed_torchrun.py` | BYO `command=[torchrun ...]` factory + mid-run scale |
+| `22_distributed_with_bench.py` | `bench=True` + reading `training.bench` |
 | `34_gpu_flavour_preferences.py` | Query GPU offerings with flavour filters |
 | `35_deploy_with_flavour.py` | Deploy with interconnect, region, spot preferences |
 | `36_gpu_flavour_cli/` | CLI usage with flavour flags |
