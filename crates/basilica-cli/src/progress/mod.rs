@@ -1,4 +1,8 @@
-//! Progress indicators and user feedback utilities
+//! Progress indicators and user feedback utilities.
+//!
+//! `indicatif` already auto-hides progress bars/spinners when stderr is not a
+//! terminal (see `ProgressDrawTarget::stderr` and `is_hidden`), so we don't
+//! gate creation on our own interactivity detection here.
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
@@ -29,8 +33,8 @@ impl ProgressManager {
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        spinner.set_message(message.to_string());
         spinner.enable_steady_tick(Duration::from_millis(120));
+        spinner.set_message(message.to_string());
 
         let pb = self.multi.add(spinner);
 
@@ -103,8 +107,8 @@ pub fn create_spinner(message: &str) -> ProgressBar {
             .unwrap()
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
     );
-    spinner.set_message(message.to_string());
     spinner.enable_steady_tick(Duration::from_millis(120));
+    spinner.set_message(message.to_string());
     spinner
 }
 

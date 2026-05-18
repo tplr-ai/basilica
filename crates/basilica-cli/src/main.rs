@@ -71,20 +71,17 @@ async fn run_async(args: Args) -> Result<()> {
     )
     .map_err(|e| eyre!("Failed to initialize logging: {}", e))?;
 
+    // Capture render-affecting flags before `args` is moved into `run()`.
+    let json = args.json;
+
     // Run and handle errors explicitly to show suggestions
     if let Err(err) = args.run().await {
-        // Extract and format the inner error properly
-        match err {
-            basilica_cli::CliError::Internal(report) => {
-                // For Internal errors (which contain eyre Reports with suggestions),
-                // use Debug formatting to show the full error report
-                eprintln!("Error: {:?}", report);
-            }
-            other => {
-                // For other error types, use Display formatting
-                eprintln!("Error: {}", other);
-            }
-        }
+        let mode = if json {
+            basilica_cli::output::RenderMode::Json
+        } else {
+            basilica_cli::output::RenderMode::Human
+        };
+        let _ = basilica_cli::output::render_error(&err, mode, &mut std::io::stderr());
         std::process::exit(1);
     }
 

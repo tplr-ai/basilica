@@ -75,3 +75,5 @@ basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
 
 [dev-dependencies]
+serial_test = "3"
+assert_cmd = "2"

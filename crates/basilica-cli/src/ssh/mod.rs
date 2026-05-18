@@ -2,7 +2,9 @@
 
 mod key_matcher;
 
-pub use key_matcher::{find_local_public_key_path, find_private_key_for_public_key};
+pub use key_matcher::{
+    find_local_public_key_path, find_private_key_for_public_key, same_public_key,
+};
 
 use crate::config::SshConfig;
 use crate::error::{CliError, Result};

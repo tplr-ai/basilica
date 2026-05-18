@@ -1,11 +1,12 @@
 //! SSH key management handlers for the Basilica CLI
 
 use crate::error::CliError;
-use crate::output::{compress_path, json_output, print_success};
-use crate::ssh::find_local_public_key_path;
+use crate::interactive::gate::{self, ask_confirm, ask_select, ask_text, Interactivity};
+use crate::output::{compress_path, json_output, print_success, print_warning};
+use crate::ssh::{find_local_public_key_path, same_public_key};
 use basilica_sdk::BasilicaClient;
 use console::style;
-use dialoguer::{theme::ColorfulTheme, Confirm, Input};
+use dialoguer::theme::ColorfulTheme;
 use etcetera::{choose_base_strategy, BaseStrategy};
 use ssh_key::PublicKey;
 use std::fs;
@@ -249,41 +250,43 @@ pub async fn handle_add_ssh_key(
             let keys = find_ssh_public_keys();
 
             if keys.is_empty() {
-                // No keys found, generate one automatically
-                generate_ssh_key().await?
+                // No local keys to choose from. Generate one in interactive
+                // mode; in non-interactive mode refuse to mutate the user's
+                // ~/.ssh directory silently and tell them to pass --file.
+                match gate::current() {
+                    Interactivity::NonInteractive => {
+                        return Err(CliError::MissingInput {
+                            field: "ssh_public_key_path".into(),
+                            hint: "No SSH public keys found under ~/.ssh. Pass --file <path> to an existing SSH public key, e.g. ~/.ssh/id_ed25519.pub.".into(),
+                        });
+                    }
+                    Interactivity::Interactive => generate_ssh_key().await?,
+                }
             } else {
-                // Show interactive selection with existing keys
-                use dialoguer::Select;
-
-                let options: Vec<String> = keys
+                let labels: Vec<String> = keys
                     .iter()
-                    .map(|path| {
-                        path.file_name()
+                    .map(|p| {
+                        p.file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or("unknown")
                             .to_string()
                     })
                     .collect();
+                let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
 
-                // Run interactive selection in a blocking context
-                let selection = tokio::task::spawn_blocking(move || {
-                    let theme = ColorfulTheme::default();
-                    Select::with_theme(&theme)
-                        .with_prompt("Select an SSH key to register")
-                        .items(&options)
-                        .default(0)
-                        .interact()
-                })
-                .await
-                .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!("Task join error: {}", e)))?
-                .map_err(|e| CliError::Internal(e.into()))?;
+                let idx = ask_select(
+                    "ssh_public_key_path",
+                    "Select an SSH key to register",
+                    &label_refs,
+                    "Pass --file <path> to choose an SSH public key file (e.g. ~/.ssh/id_ed25519.pub)",
+                )?;
 
-                let path = &keys[selection];
+                let path = keys[idx].clone();
                 println!(
                     "{}",
                     style(format!("Selected SSH public key: {}", path.display())).cyan()
                 );
-                path.clone()
+                path
             }
         }
     };
@@ -303,7 +306,7 @@ pub async fn handle_add_ssh_key(
         )));
     }
 
-    // Step 3: Get name interactively if not provided
+    // Step 3: Get name (from flag, or via the gate)
     let name = match name {
         Some(n) => {
             if n.trim().is_empty() {
@@ -319,17 +322,13 @@ pub async fn handle_add_ssh_key(
             n
         }
         None => {
-            let input: String = tokio::task::spawn_blocking(move || {
-                let theme = ColorfulTheme::default();
-                Input::with_theme(&theme)
-                    .with_prompt("Enter a name for this SSH key")
-                    .default("default".to_string())
-                    .interact_text()
-            })
-            .await
-            .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!("Task join error: {}", e)))?
-            .map_err(|e| CliError::Internal(e.into()))?;
-
+            let default_name = basilica_common::rental::generate_random_rental_name();
+            let input = ask_text(
+                "name",
+                "Enter a name for this SSH key",
+                Some(&default_name),
+                "Pass --name <label> to label the registered key",
+            )?;
             if input.trim().is_empty() {
                 return Err(CliError::Internal(color_eyre::eyre::eyre!(
                     "SSH key name cannot be empty"
@@ -339,48 +338,46 @@ pub async fn handle_add_ssh_key(
         }
     };
 
-    // Step 4: Check if user already has an SSH key (warn about replacement)
-    match client.get_ssh_key().await {
-        Ok(Some(existing)) => {
-            println!(
-                "{}",
-                style(format!(
-                    "⚠️  You already have an SSH key registered: '{}'",
+    // Step 4: Handle an existing key (only one SSH key per user).
+    if let Some(existing) = client.get_ssh_key().await.map_err(CliError::Api)? {
+        if same_public_key(&existing.public_key, &public_key) {
+            print_success(&format!(
+                "SSH key '{}' is already registered (same public key). Nothing to do.",
+                existing.name
+            ));
+            return Ok(());
+        }
+
+        if matches!(gate::current(), Interactivity::NonInteractive) {
+            return Err(CliError::MissingPrerequisite {
+                field: "ssh_key_already_registered".into(),
+                hint: format!(
+                    "An SSH key '{}' is already registered. Only one SSH key is allowed per user. \
+                     Run `basilica ssh-keys delete -y` first, then re-run this command to register a new one.",
                     existing.name
-                ))
-                .yellow()
-            );
-            println!(
-                "{}",
-                style("Note: Only one SSH key is allowed per user.").yellow()
-            );
-
-            let confirmed = tokio::task::spawn_blocking(move || {
-                let theme = ColorfulTheme::default();
-                Confirm::with_theme(&theme)
-                    .with_prompt("Do you want to replace it with the new key?")
-                    .default(false)
-                    .interact()
-            })
-            .await
-            .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!("Task join error: {}", e)))?
-            .map_err(|e| CliError::Internal(e.into()))?;
-
-            if !confirmed {
-                println!("Operation cancelled.");
-                return Ok(());
-            }
-
-            // Delete existing key first
-            client.delete_ssh_key().await.map_err(CliError::Api)?;
-            println!("{}", style("Existing SSH key deleted.").dim());
+                ),
+            });
         }
-        Ok(None) => {
-            // No existing key, proceed
+
+        print_warning(&format!(
+            "You already have an SSH key registered: '{}'",
+            existing.name
+        ));
+        print_warning("Note: Only one SSH key is allowed per user.");
+
+        let confirmed = ask_confirm(
+            "replace_existing",
+            "Do you want to replace it with the new key?",
+            false,
+            "Run `basilica ssh-keys delete -y` first, then re-run this command to register a new key.",
+        )?;
+        if !confirmed {
+            println!("Operation cancelled.");
+            return Ok(());
         }
-        Err(e) => {
-            return Err(CliError::Api(e));
-        }
+
+        client.delete_ssh_key().await.map_err(CliError::Api)?;
+        println!("{}", style("Existing SSH key deleted.").dim());
     }
 
     // Step 5: Register the new SSH key
@@ -458,20 +455,16 @@ pub async fn handle_delete_ssh_key(
 
     // Confirm deletion if not skipped
     if !skip_confirm {
-        let key_name = existing.name.clone();
-        let confirmed = tokio::task::spawn_blocking(move || {
-            let theme = ColorfulTheme::default();
-            Confirm::with_theme(&theme)
-                .with_prompt(format!(
-                    "Are you sure you want to delete SSH key '{}'?",
-                    key_name
-                ))
-                .default(false)
-                .interact()
-        })
-        .await
-        .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!("Task join error: {}", e)))?
-        .map_err(|e| CliError::Internal(e.into()))?;
+        let prompt = format!(
+            "Are you sure you want to delete SSH key '{}'?",
+            existing.name
+        );
+        let confirmed = ask_confirm(
+            "confirm_delete_ssh_key",
+            &prompt,
+            false,
+            "Pass -y/--yes to skip the confirmation prompt and delete the registered key.",
+        )?;
 
         if !confirmed {
             println!("Deletion cancelled.");
