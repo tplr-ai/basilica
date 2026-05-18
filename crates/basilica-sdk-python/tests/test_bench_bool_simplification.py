@@ -205,13 +205,18 @@ class TestBenchBoolAcceptance:
             warnings.simplefilter("always")
             training = client.deploy_distributed(bench=True, **_deploy_kwargs())
         assert isinstance(training, DistributedTraining)
-        # No DeprecationWarning expected for the canonical bool form.
-        deprecations = [
-            w for w in recorded if issubclass(w.category, DeprecationWarning)
+        # No bench-related DeprecationWarning expected for the canonical
+        # bool form. Other warnings (e.g. the SDK-S1 deprecation of
+        # ``deploy_distributed`` itself in favor of the decorator) are
+        # filtered out here -- this test pins ONLY the bench surface.
+        bench_deprecations = [
+            w for w in recorded
+            if issubclass(w.category, DeprecationWarning)
+            and "bench" in str(w.message).lower()
         ]
-        assert deprecations == [], (
-            f"bench=True must NOT raise DeprecationWarning, got "
-            f"{[str(w.message) for w in deprecations]!r}"
+        assert bench_deprecations == [], (
+            f"bench=True must NOT raise a bench-related DeprecationWarning, "
+            f"got {[str(w.message) for w in bench_deprecations]!r}"
         )
 
     def test_bench_false_accepted_without_warning(self) -> None:
@@ -220,12 +225,14 @@ class TestBenchBoolAcceptance:
             warnings.simplefilter("always")
             training = client.deploy_distributed(bench=False, **_deploy_kwargs())
         assert isinstance(training, DistributedTraining)
-        deprecations = [
-            w for w in recorded if issubclass(w.category, DeprecationWarning)
+        bench_deprecations = [
+            w for w in recorded
+            if issubclass(w.category, DeprecationWarning)
+            and "bench" in str(w.message).lower()
         ]
-        assert deprecations == [], (
-            f"bench=False must NOT raise DeprecationWarning, got "
-            f"{[str(w.message) for w in deprecations]!r}"
+        assert bench_deprecations == [], (
+            f"bench=False must NOT raise a bench-related DeprecationWarning, "
+            f"got {[str(w.message) for w in bench_deprecations]!r}"
         )
 
     def test_bench_true_emits_on_start_on_the_wire(self) -> None:
