@@ -3,7 +3,7 @@ Basilica SDK for Python
 
 Deploy and manage containerized applications on the Basilica GPU cloud.
 
-Quick Start:
+HTTP services and one-shot containers:
     >>> from basilica import BasilicaClient
     >>> client = BasilicaClient()
     >>>
@@ -16,6 +16,38 @@ Quick Start:
     ...     name="hello",
     ...     source="print('Hello, World!')",
     ... )
+
+Distributed training (NCCL collectives -- DDP, DiLoCo, FSDP):
+    The canonical surface is the ``@basilica.distributed`` decorator. The
+    decorated function is the per-rank entrypoint; calling it returns a
+    ``DistributedTraining`` context-manager. For BYO launchers (torchrun /
+    mpirun / accelerate), pass ``command=[...]`` and
+    ``basilica.distributed(...)`` short-circuits the decorator path -- it
+    returns a ``DistributedTraining`` directly.
+
+    >>> import basilica
+    >>> from basilica import ProviderFilter, WorldSize
+    >>>
+    >>> @basilica.distributed(
+    ...     name="dlc-hello",
+    ...     image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+    ...     world_size=WorldSize(min=2, target=2, max=2),
+    ...     gpu_count=1,
+    ...     gpu_models=["A100"],
+    ...     provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    ...     topology_spread="pack",
+    ...     bench=True,
+    ... )
+    ... def train():
+    ...     import os, torch
+    ...     import torch.distributed as dist
+    ...     dist.init_process_group(backend="nccl")
+    ...     # ... uses os.environ['RANK'] / ['WORLD_SIZE'] / ['LOCAL_RANK'] ...
+    ...     dist.destroy_process_group()
+    >>>
+    >>> with train() as training:                       # auto-cleanup on exit
+    ...     training.wait_until_complete(timeout=1800)
+    ...     print(training.bench)                       # BenchResult | None
 
 Authentication:
     Set the BASILICA_API_TOKEN environment variable:
@@ -156,11 +188,8 @@ from .distributed import (
     BENCH_PHASE_SUCCEEDED,
     BENCH_PHASE_TIMED_OUT,
     BenchResult,
-    BenchStatus,
     DistributedMetrics,
     DistributedTraining,
-    DistributedTrainingManaged,
-    DistributedTrainingManagedAsync,
     ProviderFilter,
     RankExit,
     RankStatus,
@@ -1092,17 +1121,24 @@ class BasilicaClient:
     # -------------------------------------------------------------------------
     # Distributed Training (SDK arch § 4)
     #
-    # NOTE: There is intentionally NO `client.preflight(...)` and NO
-    # `client.nccl_baseline(...)` standalone helper. Per SDK arch § 7,
-    # bench data is per-UD (read via `training.bench` after deploying
-    # with `bench="on-start"`). Cross-tenant aggregated bench queries
-    # would violate the platform's tenancy invariant.
+    # The user-facing surface is the ``@basilica.distributed`` decorator
+    # in ``basilica/decorators.py``. The decorator (and its BYO-launcher
+    # factory shape) calls the private ``_deploy_distributed_impl[_async]``
+    # method below to do the actual deploy. The impl is intentionally
+    # private: there is ONE public way to launch a distributed UD --
+    # ``@basilica.distributed`` -- and the impl is plumbing.
+    #
+    # NOTE: There is intentionally NO ``client.preflight(...)`` and NO
+    # ``client.nccl_baseline(...)`` standalone helper. Per SDK arch § 7,
+    # bench data is per-UD (read via ``training.bench`` after deploying
+    # with ``bench=True``). Cross-tenant aggregated bench queries would
+    # violate the platform's tenancy invariant.
     # -------------------------------------------------------------------------
 
-    def deploy_distributed(
+    def _deploy_distributed_impl(
         self,
         name: str,
-        source: Optional[Union[str, Path, Callable]] = None,
+        source: Optional[Callable] = None,
         image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
         port: int = 18789,
         env: Optional[Dict[str, str]] = None,
@@ -1115,7 +1151,7 @@ class BasilicaClient:
         provider_filter: Optional[ProviderFilter] = None,
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
+        bench: bool = False,
         bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,
@@ -1128,96 +1164,57 @@ class BasilicaClient:
         bench_timeout: int = 1500,
     ) -> DistributedTraining:
         """
-        Deploy a distributed-training UserDeployment (SDK arch § 4).
+        Private deploy entrypoint for a distributed-training UserDeployment.
 
-        Switches the workload from a single-replica Deployment to a
-        per-UD StatefulSet + rendezvous Pod + per-rank pods. Use this
-        for NCCL-collective workloads (DiLoCo, SparseLoCo, etc.); for
-        single-replica or HTTP services, use `deploy(...)`.
+        Called by ``@basilica.distributed`` (both the decorator's
+        ``DistributedFunction.deploy(...)`` and the BYO-launcher factory).
+        Not intended for direct user use -- the canonical surface is the
+        decorator in ``basilica.decorators``.
 
         Args:
             name: Deployment name (DNS-safe).
-            source: Python source (file path, inline code, or callable). When
-                set, the operator's `command="auto"` builds a torchrun
-                invocation around the user's script. When None, set
-                `command` and `args` explicitly (BYO launcher).
-            image: Container image. Default is the canonical pytorch image.
-            port: Worker container port. Default 18789 (matches non-distributed
-                UD convention; honored by the operator's headless governance
-                Service).
-            env: Environment variables.
-            cpu, memory, gpu_count, gpu_models, min_gpu_memory_gb: Resource
-                requirements per rank pod. `gpu_count=1` means 1 GPU per rank;
-                set higher (e.g. 8) for NVLink ranks.
-            world_size: `WorldSize(min, target, max)` triple. Required.
-            provider_filter: Inclusive/exclusive provider filter. Defaults
-                to no filter (any provider).
-            topology_spread: One of `pack | provider-aware | region-aware
-                | none`. Default `provider-aware`. SDK arch § 4.
-            nccl_env: NCCL env vars merged on top of operator defaults.
-                User values win on collision.
-            bench: `"on-start"` to schedule a 2-rank NCCL bench probe in the
-                user's namespace alongside workers (counts against the
-                namespace rank budget; result lands on `training.bench`).
-                `"off"` (default) skips the probe. SDK arch § 7.
-            bench_placement: Placement policy for the bench Pod pair on
-                multi-tenant clusters. `"preferred"` (default) lets the
-                bench fall back off the worker pair when those nodes have
-                no spare GPU — bench always schedules but may measure a
-                different pair than the workers. `"strict"` keeps the
-                bench pinned to the worker pair's nodes — bench measures
-                the worker pair's link or stays Pending; never silently
-                mismeasures. Architecture doc § 11.1: silently-wrong
-                outranks no-number, so `strict` is the architecturally
-                honest mode for research papers / SLA evidence on multi-
-                GPU/node hardware. Default is `"preferred"` for
-                runnability on the current single-GPU/node fleet.
-                Ignored when `bench == "off"`.
-            rendezvous_backend: One of `etcd-v2 | c10d | static`. Default
-                `etcd-v2` (the only backend with full elasticity).
-            command: BYO-launcher escape hatch. When set, the operator does
-                NOT wrap with torchrun.
-            args: Args to pass to the entrypoint.
-            pip_packages: Additional pip packages.
-            ttl_seconds: Auto-delete after N seconds.
-            timeout: Seconds to wait for `min` ranks to be ready. Default 600.
-            enable_billing: Whether to bill for this deployment. Default True.
-            wait_for_bench: How to handle the bench probe before returning.
-                Default `"never"`: return as soon as `wait_until_min_world`
-                succeeds; the bench probe runs in the background and the
-                caller can opt in via
-                :py:meth:`DistributedTraining.wait_until_bench_complete`.
-                `"best_effort"`: also call `wait_until_bench_complete`
-                after workers Ready, but never raise — log/print the
-                outcome and return. `"required"`: call
-                `wait_until_bench_complete` and re-raise on a non-Succeeded
-                terminal phase (`Failed` / `TimedOut`) or on timeout.
-                The default `"never"` is a BREAKING change from the prior
-                implicit "deploy waits on bench" behavior — chained bench
-                regressions made `deploy_distributed` look broken even
-                when workers were Ready. Bench remains best-effort per
-                `basilica_bench.py:75-78`.
-            bench_timeout: Seconds budget for `wait_for_bench` modes
-                `best_effort` / `required`. Default 1500 (matches the
-                operator's `BENCH_ACTIVE_DEADLINE_SECONDS`). Ignored when
-                `wait_for_bench="never"`.
+            source: A Callable (the decorated function). Mutually exclusive
+                with ``command``. Decorator-only: there is no public way
+                to pass a Callable directly to this impl.
+            command: BYO-launcher entry. Mutually exclusive with ``source``.
+            bench: ``True`` to opt in to the per-UD NCCL bench probe;
+                ``False`` (default) skips the probe.
+            bench_placement, rendezvous_backend, wait_for_bench,
+            bench_timeout, world_size, gpu_*, etc.: See ``@basilica.distributed``
+            docstring in ``basilica/decorators.py`` for parameter semantics.
 
         Returns:
-            DistributedTraining: Facade with scale/wait/logs/bench/delete and
-                all `_async` counterparts. SDK arch § 6.
+            DistributedTraining: Facade with scale/wait/logs/bench/delete
+                and all ``_async`` counterparts. SDK arch § 6.
 
         Raises:
-            WorldSizeOutOfBounds: `world_size` triple violates `1 <= min <=
-                target <= max` (caught at dataclass construction).
+            ValidationError: ``source`` is not a Callable (decorator must
+                wrap a function) or ``world_size`` is missing.
+            WorldSizeOutOfBounds: ``world_size`` triple violates
+                ``1 <= min <= target <= max``.
             QuotaExceeded: namespace rank budget exceeded.
-            BelowMinimumWorld: `wait_until_min_world` timed out before `min`
-                ranks were ready.
-            DistributedError: `wait_for_bench="required"` and bench reached
-                `Failed` / `TimedOut` / `Skipped`, or the bench wait timed
-                out without a terminal phase.
+            BelowMinimumWorld: ``wait_until_min_world`` timed out.
+            DistributedError: ``wait_for_bench="required"`` and bench
+                reached a non-Succeeded terminal phase or timed out.
         """
+        if source is not None and not callable(source):
+            raise ValidationError(
+                "source must be a Callable (decorate a function with "
+                "@basilica.distributed). The str/Path/Union source shapes "
+                "were removed in 0.30.0 -- see "
+                "basilica-backend#663 / SDK-S4 for migration details "
+                "(use the @basilica.distributed decorator on the function, "
+                "or wrap an external script via "
+                "`runpy.run_path('/workspace/...')` inside a decorated "
+                "function).",
+                field="source",
+                value=type(source).__name__,
+            )
         if world_size is None:
-            raise ValidationError("deploy_distributed requires world_size", field="world_size")
+            raise ValidationError(
+                "_deploy_distributed_impl requires world_size",
+                field="world_size",
+            )
         if wait_for_bench not in ("never", "best_effort", "required"):
             raise ValidationError(
                 f"wait_for_bench must be 'never' | 'best_effort' | 'required', "
@@ -1225,6 +1222,16 @@ class BasilicaClient:
                 field="wait_for_bench",
                 value=wait_for_bench,
             )
+        if not isinstance(bench, bool):
+            raise ValidationError(
+                f"bench must be bool, got {type(bench).__name__!r}. The "
+                f"str modes 'on-start'/'off' were removed in 0.30.0 -- "
+                f"use bench=True / bench=False instead. See "
+                f"basilica-backend#661 / SDK-S2.",
+                field="bench",
+                value=bench,
+            )
+        bench_wire: str = "on-start" if bench else "off"
 
         request_dict = self._build_distributed_request(
             name=name,
@@ -1241,7 +1248,7 @@ class BasilicaClient:
             provider_filter=provider_filter,
             topology_spread=topology_spread,
             nccl_env=nccl_env,
-            bench=bench,
+            bench=bench_wire,
             bench_placement=bench_placement,
             rendezvous_backend=rendezvous_backend,
             command=command,
@@ -1254,11 +1261,10 @@ class BasilicaClient:
         response = self._client.create_distributed_deployment(request_dict)
         training = DistributedTraining(self, response.instance_name)
         training.refresh()
-        # Block until min ranks are ready (per SDK arch § 4 "Behaviour around
-        # wait_until_ready"); raises BelowMinimumWorld on timeout.
-        # Any exception here triggers best-effort cleanup so the caller's
-        # documented `deploy → use → delete()` flow doesn't leak the UD when
-        # the deploy step itself raises (issue #486).
+        # Block until min ranks are ready (SDK arch § 4 "Behaviour around
+        # wait_until_ready"); raises BelowMinimumWorld on timeout. Any
+        # exception here triggers best-effort cleanup so the deploy step
+        # never leaks the UD (issue #486).
         try:
             training.wait_until_min_world(timeout=timeout)
         except BaseException:
@@ -1267,105 +1273,15 @@ class BasilicaClient:
             except Exception:
                 pass
             raise
-        # Issue B/N (refs #506): bench wait is OPT-IN. Default `"never"`
+        # Issue B/N (refs #506): bench wait is OPT-IN. Default "never"
         # returns as soon as workers are Ready; the bench probe is
         # decoupled from UD readiness on the operator side, so blocking
-        # here would only re-couple it in the SDK. Callers that want the
-        # measurement use `wait_for_bench=` or
-        # `training.wait_until_bench_complete(...)` directly.
+        # here would only re-couple it in the SDK.
         if wait_for_bench != "never":
             self._handle_post_deploy_bench_wait(
                 training, mode=wait_for_bench, timeout=bench_timeout
             )
         return training
-
-    def deploy_distributed_managed(
-        self,
-        name: str,
-        source: Optional[Union[str, Path, Callable]] = None,
-        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
-        port: int = 18789,
-        env: Optional[Dict[str, str]] = None,
-        cpu: str = "8",
-        memory: str = "32Gi",
-        gpu_count: int = 1,
-        gpu_models: Optional[List[str]] = None,
-        min_gpu_memory_gb: Optional[int] = None,
-        world_size: Optional[WorldSize] = None,
-        provider_filter: Optional[ProviderFilter] = None,
-        topology_spread: str = "provider-aware",
-        nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
-        bench_placement: str = "preferred",
-        rendezvous_backend: str = "etcd-v2",
-        command: Optional[List[str]] = None,
-        args: Optional[List[str]] = None,
-        pip_packages: Optional[List[str]] = None,
-        ttl_seconds: Optional[int] = 86400,
-        timeout: int = 600,
-        enable_billing: bool = True,
-        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
-        bench_timeout: int = 1500,
-    ) -> DistributedTrainingManaged:
-        """
-        Context-managed variant of :meth:`deploy_distributed`.
-
-        Defensive sibling of basilica-backend#486 (which fixed UD leak
-        inside ``deploy_distributed`` itself when the initial
-        ``wait_until_min_world`` raised). This variant fixes the
-        *caller-side* leak: when an intermediate wait such as
-        ``wait_until_target_world`` (after ``scale()``) raises, the
-        script aborts before reaching ``delete()``.
-
-        Returns a :class:`DistributedTrainingManaged` that, on scope
-        exit (normal OR exceptional), best-effort calls
-        ``training.delete()`` so the UD does not leak.
-
-        All keyword arguments match :meth:`deploy_distributed` exactly
-        and are forwarded verbatim. See that method for full semantics.
-
-        Recommended pattern for any ``deploy → use → delete`` flow::
-
-            with client.deploy_distributed_managed(
-                name="dlc-job",
-                image="...",
-                world_size=WorldSize(min=2, target=2, max=4),
-            ) as training:
-                training.scale(target=3)
-                training.wait_until_target_world(timeout=300)
-                ...
-            # `delete()` ran on scope exit, success or exception.
-
-        Refs: basilica-backend#538 (defensive sibling of #486).
-        """
-        training = self.deploy_distributed(
-            name=name,
-            source=source,
-            image=image,
-            port=port,
-            env=env,
-            cpu=cpu,
-            memory=memory,
-            gpu_count=gpu_count,
-            gpu_models=gpu_models,
-            min_gpu_memory_gb=min_gpu_memory_gb,
-            world_size=world_size,
-            provider_filter=provider_filter,
-            topology_spread=topology_spread,
-            nccl_env=nccl_env,
-            bench=bench,
-            bench_placement=bench_placement,
-            rendezvous_backend=rendezvous_backend,
-            command=command,
-            args=args,
-            pip_packages=pip_packages,
-            ttl_seconds=ttl_seconds,
-            timeout=timeout,
-            enable_billing=enable_billing,
-            wait_for_bench=wait_for_bench,
-            bench_timeout=bench_timeout,
-        )
-        return DistributedTrainingManaged(training)
 
     @staticmethod
     def _handle_post_deploy_bench_wait(
@@ -1374,37 +1290,42 @@ class BasilicaClient:
         timeout: int,
     ) -> None:
         """
-        Issue B/N (refs #506): post-deploy bench-wait helper for
-        `wait_for_bench={best_effort, required}` modes.
+        Post-deploy bench-wait helper for ``wait_for_bench={best_effort,
+        required}`` modes. Polls the operator's bench status directly
+        (does not depend on the public ``wait_until_bench_complete``
+        wrapper, which was removed in 0.30.0).
 
-        - `best_effort`: call `wait_until_bench_complete` and swallow any
-          non-Succeeded outcome (including `TimeoutError`). Logs to stderr
-          via `warnings.warn` so users see the failure but the deploy
-          still returns the live `DistributedTraining`.
-        - `required`: call `wait_until_bench_complete`; raise
-          `DistributedError` on a non-Succeeded terminal phase or on
-          timeout. The UD is NOT auto-deleted — the workers are healthy
-          and the caller may still want to use them. Use `.delete()`
-          explicitly if the bench failure is grounds for tearing down.
+        - ``best_effort``: poll until terminal or timeout; warn on
+          non-Succeeded outcome but return cleanly.
+        - ``required``: poll until terminal or timeout; raise
+          ``DistributedError`` on non-Succeeded terminal phase or timeout.
         """
-        try:
-            bs = training.wait_until_bench_complete(timeout=timeout)
-        except TimeoutError as e:
-            if mode == "required":
-                raise DistributedError(
-                    f"wait_for_bench='required' but bench did not "
-                    f"reach a terminal phase within {timeout}s: {e}"
-                ) from e
-            warnings.warn(
-                f"wait_for_bench='best_effort': bench did not "
-                f"reach a terminal phase within {timeout}s: {e}",
-                stacklevel=3,
+        deadline = time.monotonic() + max(timeout, 0)
+        bs = None
+        while time.monotonic() < deadline:
+            training.refresh()
+            bs = training._bench_status_raw
+            if bs is None:
+                # mode=off; nothing to wait on.
+                return
+            if bs.is_terminal:
+                break
+            time.sleep(min(5, max(timeout // 10, 1)))
+        else:
+            training.refresh()
+            bs = training._bench_status_raw
+
+        if bs is None or not bs.is_terminal:
+            msg = (
+                f"wait_for_bench='{mode}': bench did not reach a terminal "
+                f"phase within {timeout}s (phase="
+                f"{bs.phase if bs else 'absent'})"
             )
+            if mode == "required":
+                raise DistributedError(msg)
+            warnings.warn(msg, stacklevel=3)
             return
-        # `bs is None` means bench.mode == off, i.e. caller passed
-        # `bench="off"` (or omitted it). Nothing to wait on.
-        if bs is None:
-            return
+
         if bs.phase == BENCH_PHASE_SUCCEEDED:
             return
         msg = (
@@ -1412,15 +1333,13 @@ class BasilicaClient:
             f"{f' message={bs.message!r}' if bs.message else ''}"
         )
         if mode == "required":
-            raise DistributedError(
-                f"wait_for_bench='required' but {msg}"
-            )
+            raise DistributedError(f"wait_for_bench='required' but {msg}")
         warnings.warn(f"wait_for_bench='best_effort': {msg}", stacklevel=3)
 
     def _build_distributed_request(
         self,
         name: str,
-        source: Optional[Union[str, Path, Callable]],
+        source: Optional[Callable],
         image: str,
         port: int,
         env: Optional[Dict[str, str]],
@@ -1506,10 +1425,15 @@ class BasilicaClient:
         if source is not None:
             import base64 as _b64
             import shlex as _shlex
-            if callable(source):
-                src_text = SourcePackager.from_function(source).code
-            else:
-                src_text = SourcePackager(source).code
+            from .source import _package_function_for_torchrun
+
+            # source is always a Callable post-S7 -- validated by the
+            # `_deploy_distributed_impl[_async]` entrypoints. Repackage
+            # the function body into a torchrun-friendly module via the
+            # shared helper (same module text the decorator's
+            # `_extract_source` produces, kept in `basilica.source` so
+            # decorator-introspection tests exercise the same code path).
+            src_text = _package_function_for_torchrun(source)
             src_b64 = _b64.b64encode(src_text.encode("utf-8")).decode("ascii")
             pip_install = ""
             if pip_packages:
@@ -1541,14 +1465,14 @@ class BasilicaClient:
             distributed_command = _shell_join_preserving_vars(command)
         else:
             raise ValidationError(
-                "deploy_distributed requires either source= (Phase 5b "
-                "ships source via a base64-encoded bash launcher) or "
-                "command= (BYO launcher). Image-entrypoint-only mode is "
-                "not supported by the operator's distributed-mode "
-                "renderer.",
+                "@basilica.distributed requires either a decorated "
+                "function (Callable source, shipped via a base64-encoded "
+                "bash launcher) or command= (BYO launcher). The operator's "
+                "distributed-mode renderer has no image-entrypoint-only "
+                "mode.",
                 field="source",
             )
-        distributed: Dict[str, Any] = {
+        distributed_spec: Dict[str, Any] = {
             "enabled": True,
             "command": distributed_command,
             "worldSize": {
@@ -1564,28 +1488,29 @@ class BasilicaClient:
             "topologySpread": {"strategy": topology_spread},
             "nccl": {"env": dict(nccl_env) if nccl_env else {}},
         }
-        if bench in ("on-start", "off"):
-            bench_dict: Dict[str, Any] = {"mode": bench}
-            # Architecture doc § 11.1 placement knob. Only emit the
-            # field when the user opts into a non-default; `None` on the
-            # wire is interpreted as Preferred operator-side, so
-            # omitting `placement` keeps backwards-compat with operators
-            # that don't yet know about the field.
-            if bench_placement not in ("preferred", "strict"):
-                raise ValidationError(
-                    f"bench_placement must be 'preferred' or 'strict', got {bench_placement!r}",
-                    field="bench_placement",
-                    value=bench_placement,
-                )
-            if bench == "on-start" and bench_placement == "strict":
-                bench_dict["placement"] = "strict"
-            distributed["bench"] = bench_dict
-        else:
+        # bench wire token: "on-start" | "off"; the upstream entrypoint
+        # already validated bool -> wire conversion.
+        if bench not in ("on-start", "off"):
             raise ValidationError(
-                f"bench must be 'on-start' or 'off', got {bench!r}",
+                f"bench wire token must be 'on-start' or 'off', got {bench!r}",
                 field="bench",
                 value=bench,
             )
+        bench_dict: Dict[str, Any] = {"mode": bench}
+        # Architecture doc § 11.1 placement knob. Only emit the field
+        # when the user opts into a non-default; `None` on the wire is
+        # interpreted as Preferred operator-side, so omitting `placement`
+        # keeps backwards-compat with operators that don't yet know
+        # about the field.
+        if bench_placement not in ("preferred", "strict"):
+            raise ValidationError(
+                f"bench_placement must be 'preferred' or 'strict', got {bench_placement!r}",
+                field="bench_placement",
+                value=bench_placement,
+            )
+        if bench == "on-start" and bench_placement == "strict":
+            bench_dict["placement"] = "strict"
+        distributed_spec["bench"] = bench_dict
 
         request: Dict[str, Any] = {
             "instanceName": name,
@@ -1598,7 +1523,7 @@ class BasilicaClient:
             "resources": resources,
             "ttlSeconds": ttl_seconds,
             "enableBilling": enable_billing,
-            "distributed": distributed,
+            "distributed": distributed_spec,
         }
         # Strip None-valued top-level keys so JSON shape matches the
         # operator's `#[serde(skip_serializing_if = "Option::is_none")]`.
@@ -2305,10 +2230,10 @@ class BasilicaClient:
 
         return deployment
 
-    async def deploy_distributed_async(
+    async def _deploy_distributed_impl_async(
         self,
         name: str,
-        source: Optional[Union[str, Path, Callable]] = None,
+        source: Optional[Callable] = None,
         image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
         port: int = 18789,
         env: Optional[Dict[str, str]] = None,
@@ -2321,7 +2246,7 @@ class BasilicaClient:
         provider_filter: Optional[ProviderFilter] = None,
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
+        bench: bool = False,
         bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,
@@ -2334,15 +2259,26 @@ class BasilicaClient:
         bench_timeout: int = 1500,
     ) -> DistributedTraining:
         """
-        Async variant of `deploy_distributed`. Same arguments and semantics
-        per SDK arch § 9; uses `run_in_executor` over the underlying Rust
-        client and `asyncio.sleep` for the wait loop.
+        Async variant of :py:meth:`_deploy_distributed_impl`. SDK arch § 9.
 
-        See `deploy_distributed` for the `wait_for_bench` /
-        `bench_timeout` contract.
+        Called by ``@basilica.distributed`` async decorator path. Not
+        intended for direct user use -- the canonical surface is the
+        decorator in ``basilica.decorators``.
         """
+        if source is not None and not callable(source):
+            raise ValidationError(
+                "source must be a Callable (decorate a function with "
+                "@basilica.distributed). The str/Path/Union source shapes "
+                "were removed in 0.30.0 -- see "
+                "basilica-backend#663 / SDK-S4 for migration details.",
+                field="source",
+                value=type(source).__name__,
+            )
         if world_size is None:
-            raise ValidationError("deploy_distributed_async requires world_size", field="world_size")
+            raise ValidationError(
+                "_deploy_distributed_impl_async requires world_size",
+                field="world_size",
+            )
         if wait_for_bench not in ("never", "best_effort", "required"):
             raise ValidationError(
                 f"wait_for_bench must be 'never' | 'best_effort' | 'required', "
@@ -2350,6 +2286,16 @@ class BasilicaClient:
                 field="wait_for_bench",
                 value=wait_for_bench,
             )
+        if not isinstance(bench, bool):
+            raise ValidationError(
+                f"bench must be bool, got {type(bench).__name__!r}. The "
+                f"str modes 'on-start'/'off' were removed in 0.30.0 -- "
+                f"use bench=True / bench=False instead. See "
+                f"basilica-backend#661 / SDK-S2.",
+                field="bench",
+                value=bench,
+            )
+        bench_wire: str = "on-start" if bench else "off"
 
         request_dict = self._build_distributed_request(
             name=name,
@@ -2366,7 +2312,7 @@ class BasilicaClient:
             provider_filter=provider_filter,
             topology_spread=topology_spread,
             nccl_env=nccl_env,
-            bench=bench,
+            bench=bench_wire,
             bench_placement=bench_placement,
             rendezvous_backend=rendezvous_backend,
             command=command,
@@ -2382,8 +2328,8 @@ class BasilicaClient:
         )
         training = DistributedTraining(self, response.instance_name)
         await training.refresh_async()
-        # See sync deploy_distributed: best-effort cleanup on ANY exception
-        # so deploy failures don't leak the UD (issue #486).
+        # See sync _deploy_distributed_impl: best-effort cleanup on any
+        # exception so deploy failures don't leak the UD (issue #486).
         try:
             await training.wait_until_min_world_async(timeout=timeout)
         except BaseException:
@@ -2398,117 +2344,44 @@ class BasilicaClient:
             )
         return training
 
-    def deploy_distributed_managed_async(
-        self,
-        name: str,
-        source: Optional[Union[str, Path, Callable]] = None,
-        image: str = "pytorch/pytorch:2.4.0-cuda12.4-cudnn9-runtime",
-        port: int = 18789,
-        env: Optional[Dict[str, str]] = None,
-        cpu: str = "8",
-        memory: str = "32Gi",
-        gpu_count: int = 1,
-        gpu_models: Optional[List[str]] = None,
-        min_gpu_memory_gb: Optional[int] = None,
-        world_size: Optional[WorldSize] = None,
-        provider_filter: Optional[ProviderFilter] = None,
-        topology_spread: str = "provider-aware",
-        nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
-        bench_placement: str = "preferred",
-        rendezvous_backend: str = "etcd-v2",
-        command: Optional[List[str]] = None,
-        args: Optional[List[str]] = None,
-        pip_packages: Optional[List[str]] = None,
-        ttl_seconds: Optional[int] = 86400,
-        timeout: int = 600,
-        enable_billing: bool = True,
-        wait_for_bench: Literal["never", "best_effort", "required"] = "never",
-        bench_timeout: int = 1500,
-    ) -> DistributedTrainingManagedAsync:
-        """
-        Async context-managed variant of :meth:`deploy_distributed_async`.
-
-        Returns a :class:`DistributedTrainingManagedAsync` for use
-        directly with ``async with``. The actual deploy runs in
-        ``__aenter__`` (lazy), so this method itself does NOT need to
-        be awaited. On scope exit (normal OR exceptional), best-effort
-        calls ``training.delete_async()`` so the UD does not leak.
-
-        All keyword arguments match :meth:`deploy_distributed_async`
-        exactly and are forwarded verbatim.
-
-        Recommended pattern::
-
-            async with client.deploy_distributed_managed_async(
-                name="dlc-job",
-                image="...",
-                world_size=WorldSize(min=2, target=2, max=4),
-            ) as training:
-                await training.scale_async(target=3)
-                await training.wait_until_target_world_async(timeout=300)
-                ...
-
-        Refs: basilica-backend#538 (defensive sibling of #486).
-        """
-        # Capture the deploy invocation as a zero-arg coroutine factory
-        # so the manager can defer the deploy until `__aenter__`. Using
-        # a factory (not a one-shot coroutine) keeps the manager
-        # idempotent under accidental re-entry.
-        def _factory() -> Any:
-            return self.deploy_distributed_async(
-                name=name,
-                source=source,
-                image=image,
-                port=port,
-                env=env,
-                cpu=cpu,
-                memory=memory,
-                gpu_count=gpu_count,
-                gpu_models=gpu_models,
-                min_gpu_memory_gb=min_gpu_memory_gb,
-                world_size=world_size,
-                provider_filter=provider_filter,
-                topology_spread=topology_spread,
-                nccl_env=nccl_env,
-                bench=bench,
-                bench_placement=bench_placement,
-                rendezvous_backend=rendezvous_backend,
-                command=command,
-                args=args,
-                pip_packages=pip_packages,
-                ttl_seconds=ttl_seconds,
-                timeout=timeout,
-                enable_billing=enable_billing,
-                wait_for_bench=wait_for_bench,
-                bench_timeout=bench_timeout,
-            )
-
-        return DistributedTrainingManagedAsync(_factory)
-
     @staticmethod
     async def _handle_post_deploy_bench_wait_async(
         training: DistributedTraining,
         mode: Literal["best_effort", "required"],
         timeout: int,
     ) -> None:
-        """Async variant of `_handle_post_deploy_bench_wait`."""
-        try:
-            bs = await training.wait_until_bench_complete_async(timeout=timeout)
-        except TimeoutError as e:
-            if mode == "required":
-                raise DistributedError(
-                    f"wait_for_bench='required' but bench did not "
-                    f"reach a terminal phase within {timeout}s: {e}"
-                ) from e
-            warnings.warn(
-                f"wait_for_bench='best_effort': bench did not "
-                f"reach a terminal phase within {timeout}s: {e}",
-                stacklevel=3,
+        """
+        Async variant of :py:meth:`_handle_post_deploy_bench_wait`. Polls
+        the operator's bench status directly (does not depend on the
+        public ``wait_until_bench_complete_async`` wrapper, which was
+        removed in 0.30.0).
+        """
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + max(timeout, 0)
+        bs = None
+        while loop.time() < deadline:
+            await training.refresh_async()
+            bs = training._bench_status_raw
+            if bs is None:
+                return
+            if bs.is_terminal:
+                break
+            await asyncio.sleep(min(5, max(timeout // 10, 1)))
+        else:
+            await training.refresh_async()
+            bs = training._bench_status_raw
+
+        if bs is None or not bs.is_terminal:
+            msg = (
+                f"wait_for_bench='{mode}': bench did not reach a terminal "
+                f"phase within {timeout}s (phase="
+                f"{bs.phase if bs else 'absent'})"
             )
+            if mode == "required":
+                raise DistributedError(msg)
+            warnings.warn(msg, stacklevel=3)
             return
-        if bs is None:
-            return
+
         if bs.phase == BENCH_PHASE_SUCCEEDED:
             return
         msg = (
@@ -2516,9 +2389,7 @@ class BasilicaClient:
             f"{f' message={bs.message!r}' if bs.message else ''}"
         )
         if mode == "required":
-            raise DistributedError(
-                f"wait_for_bench='required' but {msg}"
-            )
+            raise DistributedError(f"wait_for_bench='required' but {msg}")
         warnings.warn(f"wait_for_bench='best_effort': {msg}", stacklevel=3)
 
     async def get_async(self, name: str) -> Deployment:

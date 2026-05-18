@@ -101,6 +101,19 @@ impl Args {
             Err(err) => {
                 // Check if this is specifically a login_required error
                 if matches!(&err, CliError::Auth(_)) {
+                    // In non-interactive mode, never start an OAuth flow — the
+                    // callback server / device flow will block on user action
+                    // (300s timeout). Surface a structured error instead.
+                    if matches!(
+                        crate::interactive::gate::current(),
+                        crate::interactive::gate::Interactivity::NonInteractive
+                    ) {
+                        return Err(CliError::MissingPrerequisite {
+                            field: "authentication".into(),
+                            hint: "Not authenticated. Run `basilica login` (or `basilica login --device-code` on headless hosts), or set BASILICA_API_TOKEN.".into(),
+                        });
+                    }
+
                     // Inform user we need to authenticate
                     println!("You need to authenticate to continue.");
                     println!();

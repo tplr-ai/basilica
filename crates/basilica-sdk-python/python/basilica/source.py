@@ -23,12 +23,108 @@ Example:
     >>> packager = SourcePackager.from_function(my_app)
 """
 
+import ast
 import inspect
 import os
+import sys
+import textwrap
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
 from .exceptions import SourceError
+
+
+def _collect_referenced_names(func_source: str) -> set:
+    """Walk the AST of `func_source` and collect free `Name` references and
+    the leftmost identifier of every `Attribute` chain (`os` in
+    `os.environ.get`)."""
+    names: set = set()
+    try:
+        tree = ast.parse(func_source)
+    except SyntaxError:
+        return names
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            cursor: ast.AST = node
+            while isinstance(cursor, ast.Attribute):
+                cursor = cursor.value
+            if isinstance(cursor, ast.Name):
+                names.add(cursor.id)
+    return names
+
+
+def _import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    if alias.asname is not None:
+        return alias.asname in referenced
+    return alias.name.split(".")[0] in referenced
+
+
+def _from_import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    if alias.name == "*":
+        return True
+    if alias.asname is not None:
+        return alias.asname in referenced
+    return alias.name in referenced
+
+
+def _extract_module_level_imports(func: Callable, func_source: str) -> str:
+    """
+    Extract the subset of module-level `import` / `from ... import ...`
+    statements from the module that defines `func` whose bound names
+    are referenced inside `func_source`.
+
+    Filtering by actual usage keeps unrelated module-level imports
+    (e.g. `import basilica` used only by the decorator) OUT of the
+    worker source, so the worker pod does not have to install
+    packages it never references.
+
+    Returns an empty string if the module source is unavailable
+    (interactive sessions, exec/eval contexts, frozen modules) or if no
+    module-level import binding is referenced by the function body.
+
+    Refs one-covenant/basilica#477.
+    """
+    module = sys.modules.get(getattr(func, "__module__", "") or "")
+    if module is None:
+        return ""
+    try:
+        module_source = inspect.getsource(module)
+    except (OSError, TypeError):
+        return ""
+    try:
+        tree = ast.parse(module_source)
+    except SyntaxError:
+        return ""
+
+    referenced = _collect_referenced_names(func_source)
+    if not referenced:
+        return ""
+
+    lines: List[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            kept = [
+                alias for alias in node.names
+                if _import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                lines.append(ast.unparse(ast.Import(names=kept)))
+        elif isinstance(node, ast.ImportFrom):
+            kept = [
+                alias for alias in node.names
+                if _from_import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                lines.append(
+                    ast.unparse(
+                        ast.ImportFrom(module=node.module, names=kept, level=node.level)
+                    )
+                )
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
 
 
 class SourcePackager:
@@ -377,6 +473,14 @@ class SourcePackager:
         import textwrap
         source = textwrap.dedent(source)
 
+        # Prepend the defining module's top-level imports whose bound
+        # names the body references, so names the body relies on resolve
+        # on the worker pod (without dragging in unrelated imports).
+        # Refs one-covenant/basilica#477.
+        imports = _extract_module_level_imports(func, source)
+        if imports:
+            source = imports + source
+
         # Append function call if requested
         if call:
             source += f"\n\n{func.__name__}()"
@@ -387,3 +491,44 @@ class SourcePackager:
         packager.is_file = False
 
         return packager
+
+
+def _package_function_for_torchrun(func: Callable) -> str:
+    """
+    Build the per-rank entrypoint module for `@basilica.distributed`.
+
+    Extracts the function body (skipping decorator lines), dedents,
+    prepends the defining module's top-level imports that the body
+    references, and appends an ``if __name__ == "__main__":`` guard that
+    calls the function. The result is the Python module text that
+    torchrun runs once per rank inside the worker pod.
+
+    Used by:
+    - ``BasilicaClient._build_distributed_request`` (the deploy path)
+    - ``DistributedFunction._extract_source`` (the decorator-side
+      packager; kept as a thin shim so existing decorator-introspection
+      tests continue to exercise the same code path)
+
+    Args:
+        func: The decorated Python function (per-rank entrypoint).
+
+    Returns:
+        Python module text suitable for
+        ``echo <b64> | base64 -d > /tmp/__basilica_source.py && exec torchrun ...``.
+    """
+    full_source = inspect.getsource(func)
+    lines = full_source.split("\n")
+    def_idx = 0
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("def "):
+            def_idx = i
+            break
+    func_lines = lines[def_idx:]
+    func_source = textwrap.dedent("\n".join(func_lines))
+    imports = _extract_module_level_imports(func, func_source)
+    func_name = func.__name__
+    return (
+        f"{imports}{func_source}\n\n"
+        f'if __name__ == "__main__":\n'
+        f"    {func_name}()\n"
+    )

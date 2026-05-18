@@ -7,6 +7,220 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-05-18
+
+This is the major-equivalent (pre-1.0) bump that REMOVES every surface
+deprecated by SDK-S1 through SDK-S4. The canonical surface is
+``@basilica.distributed`` (decorator on a function) or
+``basilica.distributed(command=[...])`` (BYO-launcher factory); both
+return a ``DistributedTraining`` context manager. Read back bench data
+via ``training.bench`` (``BenchResult | None``) and
+``training.bench_diagnostics`` (``dict | None``).
+
+### Removed
+
+BREAKING CHANGE: the following public surfaces are removed; users still
+on 0.29.x must migrate to ``@basilica.distributed`` before upgrading.
+
+- ``BasilicaClient.deploy_distributed`` and
+  ``BasilicaClient.deploy_distributed_async`` -- use
+  ``@basilica.distributed`` on a function (the decorated function's
+  ``__call__`` deploys and returns a ``DistributedTraining``).
+- ``BasilicaClient.deploy_distributed_managed`` and
+  ``BasilicaClient.deploy_distributed_managed_async`` -- subsumed by
+  ``DistributedTraining``'s own ``__enter__`` / ``__aenter__``. Use
+  ``with train() as training:`` or ``async with`` directly on the
+  decorator-returned object.
+- ``DistributedTrainingManaged`` and ``DistributedTrainingManagedAsync``
+  classes (the wrappers the removed factories returned).
+- The ``source: Union[str, Path]`` shapes on the (now-private)
+  distributed deploy path. Only ``Callable`` is accepted, via the
+  decorator. Wrap external scripts via
+  ``runpy.run_path("/workspace/...")`` inside a decorated function.
+- The ``bench: str`` modes ``"on-start"`` and ``"off"`` -- use
+  ``bench=True`` / ``bench=False`` instead.
+- ``DistributedTraining.wait_until_bench_complete`` and
+  ``DistributedTraining.wait_until_bench_complete_async`` -- read
+  ``training.bench`` (``BenchResult | None``) after the UD reaches a
+  terminal state. The context manager's ``__exit__`` blocks until the
+  UD is gone; ``training.bench`` is the final answer at that point. For
+  the rare debug case where bench is ``None`` and you need to know why,
+  read ``training.bench_diagnostics`` (``dict | None``).
+- ``DistributedTraining.bench_status`` property and the public
+  ``BenchStatus`` re-export from the ``basilica`` package. Same
+  migration: ``training.bench`` for the result;
+  ``training.bench_diagnostics`` for the debug dict.
+- The internal ``_emit_deprecation`` kwarg on the (now-private) deploy
+  impl -- the deprecation-gating plumbing it controlled no longer has
+  any deprecation paths to suppress.
+
+### Migration matrix (legacy -> canonical)
+
+| Removed (0.29.x) | Replacement (0.30.0) |
+|------------------|----------------------|
+| ``client.deploy_distributed(source=fn, ...)`` | ``@basilica.distributed(...)\ndef fn(): ...\ntraining = fn()`` |
+| ``client.deploy_distributed(source="<inline>", ...)`` | wrap the inline as a function body; decorate it |
+| ``client.deploy_distributed(source=Path("./train.py"), ...)`` | ``runpy.run_path('/workspace/train.py')`` inside a decorated function |
+| ``client.deploy_distributed_managed(command=[...], ...)`` | ``basilica.distributed(command=[...], ...)`` |
+| ``client.deploy_distributed_managed(source=fn, ...)`` | ``with fn() as training:`` after ``@basilica.distributed`` on ``fn`` |
+| ``bench="on-start"`` | ``bench=True`` |
+| ``bench="off"`` | ``bench=False`` |
+| ``training.wait_until_bench_complete(timeout=t)`` | block via ``with training:`` then read ``training.bench`` |
+| ``training.bench_status.phase`` | ``training.bench_diagnostics["phase"]`` |
+| ``BenchStatus`` (typed enum) | ``BenchResult`` (result payload) or the ``dict`` from ``bench_diagnostics`` |
+
+### Internal
+
+- The deploy logic that previously lived behind ``deploy_distributed``
+  now lives on the private ``BasilicaClient._deploy_distributed_impl``
+  and ``_deploy_distributed_impl_async`` methods. The decorator
+  (``@basilica.distributed``) and the BYO-launcher factory
+  (``basilica.distributed(command=...)``) both route through these
+  private methods. There is no public API change beyond the removals
+  listed above.
+- ``BasilicaClient._handle_post_deploy_bench_wait[_async]`` now polls
+  ``training._bench_status_raw`` directly instead of routing through
+  the removed ``wait_until_bench_complete`` wrapper. The
+  ``wait_for_bench`` / ``bench_timeout`` kwargs on ``@basilica.distributed``
+  keep their existing semantics.
+- The ``BenchStatus`` dataclass remains in ``basilica.distributed`` as
+  an internal type backing ``_bench_status_raw`` (and therefore
+  ``bench_diagnostics``); it is no longer re-exported from the top-level
+  ``basilica`` package.
+
+Closes basilica-backend#666. Refs the SDK API simplification plan
+(``docs/plans/SDK-API-SIMPLIFICATION-PLAN.md`` on basilica-backend
+main) ticket SDK-S7 ("cut major version when deprecations are
+removed").
+
+## [0.29.7] - 2026-05-18
+
+### Deprecated
+- `BasilicaClient.deploy_distributed(source=...)` (and its async sibling)
+  emits a `DeprecationWarning` when `source` is a `str` or
+  `pathlib.Path`. The `Callable` shape -- what the
+  `@basilica.distributed` decorator already passes internally -- stays
+  silent. The canonical input shape is now "decorate a function", which
+  the SDK extracts via `inspect.getsource(...)`; the `str`/`Path`
+  variants add maintenance surface (file IO + base64 edge cases + AST
+  quirks) without product value. Users who need to ship an external
+  script wrap it via `runpy.run_path("/workspace/...")` inside a
+  decorated function. Both deprecated input shapes remain functional
+  for two minor versions; remove at the next major alongside
+  `deploy_distributed*` itself.
+- The decorator path stays silent because
+  `DistributedFunction.deploy(...)` passes `_emit_deprecation=False` to
+  the underlying call -- the same gate that already silenced the S1
+  `deploy_distributed`-itself deprecation now also silences the S4
+  source-shape deprecation.
+
+Closes basilica-backend#663. Refs the SDK API simplification plan
+(`docs/plans/SDK-API-SIMPLIFICATION-PLAN.md` on basilica-backend main)
+ticket SDK-S4 ("source parameter accepts Callable only; deprecate
+Union[str, Path]").
+
+## [0.29.6] - 2026-05-18
+
+### Added
+- `basilica.distributed(command=[...], ...)` now works as a factory and
+  returns a `DistributedTraining` directly (no decorator wrapping). The
+  same `basilica.distributed` symbol handles both shapes: decorator on
+  a function (per-rank entrypoint) and factory with BYO launcher. The
+  factory short-circuits when `command` is set, deploys immediately
+  through `deploy_distributed(_emit_deprecation=False)`, and returns
+  the canonical context-manager handle. Pass `client=` to inject an
+  existing `BasilicaClient`; otherwise a default one is built lazily.
+
+Closes basilica-backend#662. Refs the SDK API simplification plan
+(`docs/plans/SDK-API-SIMPLIFICATION-PLAN.md` on basilica-backend main)
+ticket SDK-S3 ("command= parameter on @basilica.distributed for BYO
+launcher; drop the _managed suffix as the canonical entry point").
+
+## [0.29.5] - 2026-05-18
+
+### Added
+- `DistributedTraining` is now itself a context manager (sync and async).
+  `__enter__` / `__exit__` return the handle and best-effort `delete()`
+  the UD on scope exit; `__aenter__` / `__aexit__` are the async
+  counterparts. Replaces the prior `DistributedTrainingManaged` ceremony
+  wrapper -- callers now write `with train() as training:` directly on
+  the decorator-returned object.
+
+### Deprecated
+- `BasilicaClient.deploy_distributed` and `deploy_distributed_async`
+  emit `DeprecationWarning` on direct calls. The decorator
+  `@basilica.distributed` remains the canonical surface; the decorator
+  itself does NOT trip the warning (it passes `_emit_deprecation=False`
+  to the underlying call).
+- `BasilicaClient.deploy_distributed_managed` and
+  `deploy_distributed_managed_async` emit `DeprecationWarning`. The
+  ceremony wrapper they returned is redundant now that
+  `DistributedTraining` is itself context-manager-able. Both methods
+  remain functional for two minor versions; remove at the next major
+  bump.
+
+Closes basilica-backend#660. Refs the SDK API simplification plan
+(`docs/plans/SDK-API-SIMPLIFICATION-PLAN.md` on basilica-backend main)
+ticket SDK-S1.
+
+## [0.29.4] - 2026-05-18
+
+### Fixed
+- `BenchStatus` recognises `phase=Skipped` as a terminal state.
+  `_BENCH_TERMINAL_PHASES` now contains all four operator-side terminal
+  phases (`Succeeded`, `Failed`, `TimedOut`, `Skipped`), so
+  `BenchStatus.is_terminal` returns `True` on `Skipped` and
+  `wait_until_bench_complete` / `wait_until_bench_complete_async` return
+  the terminal `BenchStatus` instead of polling until the user-supplied
+  timeout and raising `TimeoutError`. Pre-fix, the SDK had the data
+  (the operator wrote terminal `BenchStatus{phase=Skipped,
+  lastAttemptOutcome="skipped"}` to the UD CR) but did not act on it
+  -- the `TimeoutError` message literally contained `(phase=Skipped)`.
+  Closes #480. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-5 Cell B and the
+  basilica-backend operator X2 fix (`one-covenant/basilica-backend#650
+  / #653`).
+
+### Added
+- `BenchStatus.is_successful` / `is_failed` / `is_skipped` properties.
+  Pin the semantic that `Skipped` is terminal but neither success nor
+  failure -- the bench probe was not run (e.g. workers exited before
+  the bench-controller observed them). The workload's own exit codes
+  remain the source of truth for run success; bench is an opt-in,
+  best-effort measurement.
+
+## [0.29.3] - 2026-05-17
+
+### Fixed
+- `@basilica.distributed` / `@basilica.deployment` / `SourcePackager.from_function`
+  now filter the captured module-level imports down to those whose
+  bound names are actually referenced by the function body. Without
+  this filter, the v0.29.2 fix shipped every module-level import to
+  the worker pod — including `import basilica` and
+  `from basilica import ...` that are only used by the decorator
+  itself — which caused the worker to fail with
+  `ModuleNotFoundError: No module named 'basilica'` at runtime
+  (`basilica-sdk` is not installed in the trainer image). The filter
+  uses AST walking of the function body to collect referenced `Name`
+  / leftmost `Attribute` identifiers and emits only the matching
+  imports. Refs #477 follow-up. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-3 Cell B runtime
+  trace.
+
+## [0.29.2] - 2026-05-16
+
+### Fixed
+- `@basilica.distributed` and `@basilica.deployment` now capture the
+  defining module's top-level `import` and `from ... import ...`
+  statements and prepend them to the source shipped to the worker pod.
+  Before this fix, only the function body was shipped; module-level
+  names referenced inside the body (e.g. the `import os` in
+  `examples/20_distributed_diloco.py`) raised `NameError` at worker
+  runtime. Closes #477. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-3 Cell B. The same
+  capture is applied in `SourcePackager.from_function()` for the
+  lower-level packaging path.
+
 ## [0.29.1] - 2026-05-09
 
 ### Fixed

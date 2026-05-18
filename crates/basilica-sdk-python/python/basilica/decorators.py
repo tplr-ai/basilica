@@ -4,8 +4,10 @@ Decorator-based deployment API.
 Provides @deployment decorator for declarative function deployments and
 @distributed decorator for distributed-training (NCCL collective) jobs.
 """
+import ast
 import functools
 import inspect
+import sys
 import textwrap
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Union
 
@@ -15,6 +17,118 @@ from .volume import Volume
 
 if TYPE_CHECKING:
     from basilica._basilica import HealthCheckConfig
+
+
+def _collect_referenced_names(func_source: str) -> set:
+    """
+    Walk the AST of `func_source` and collect every free `Name` and the
+    leftmost identifier of every `Attribute` chain (e.g. `os.environ.get`
+    contributes `os`). Local assignments and inside-body imports are NOT
+    excluded — that's fine because the import-prepending logic just
+    short-circuits on names the body genuinely never mentions.
+    """
+    names: set = set()
+    try:
+        tree = ast.parse(func_source)
+    except SyntaxError:
+        return names
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            # Find leftmost Name in the Attribute chain (e.g. `os` in `os.environ.get`).
+            cursor: ast.AST = node
+            while isinstance(cursor, ast.Attribute):
+                cursor = cursor.value
+            if isinstance(cursor, ast.Name):
+                names.add(cursor.id)
+    return names
+
+
+def _extract_module_level_imports(func: Callable, func_source: str) -> str:
+    """
+    Extract the subset of module-level `import` / `from ... import ...`
+    statements from the module that defines `func` whose bound names
+    are referenced inside `func_source`.
+
+    The decorator-based deploy path ships only the function source via
+    `inspect.getsource(func)`; module-level imports the body references
+    would otherwise be missing on the worker. Filtering by actual usage
+    keeps unrelated module-level imports (e.g. `import basilica` used
+    only by the decorator) OUT of the worker source, so the worker pod
+    does not have to install packages it never references.
+
+    Returns an empty string if the module source is unavailable
+    (interactive sessions, exec/eval contexts, frozen modules) or if no
+    module-level import binding is referenced by the function body.
+
+    Refs: one-covenant/basilica#477,
+    one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
+    """
+    module = sys.modules.get(getattr(func, "__module__", "") or "")
+    if module is None:
+        return ""
+    try:
+        module_source = inspect.getsource(module)
+    except (OSError, TypeError):
+        return ""
+    try:
+        tree = ast.parse(module_source)
+    except SyntaxError:
+        return ""
+
+    referenced = _collect_referenced_names(func_source)
+    if not referenced:
+        return ""
+
+    lines: List[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            kept = [
+                alias for alias in node.names
+                if _import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                filtered = ast.Import(names=kept)
+                lines.append(ast.unparse(filtered))
+        elif isinstance(node, ast.ImportFrom):
+            kept = [
+                alias for alias in node.names
+                if _from_import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                filtered = ast.ImportFrom(
+                    module=node.module, names=kept, level=node.level
+                )
+                lines.append(ast.unparse(filtered))
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
+
+
+def _import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    """
+    `import foo` binds `foo`. `import foo as bar` binds `bar`.
+    `import foo.bar` binds the top-level name `foo` (Python module
+    resolution).
+    """
+    if alias.asname is not None:
+        return alias.asname in referenced
+    # `import foo.bar` → binds `foo`.
+    return alias.name.split(".")[0] in referenced
+
+
+def _from_import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    """
+    `from x import foo` binds `foo`. `from x import foo as bar` binds `bar`.
+    `from x import *` is treated as referenced (we cannot know what names
+    it exposes without executing the import).
+    """
+    if alias.name == "*":
+        return True
+    if alias.asname is not None:
+        return alias.asname in referenced
+    return alias.name in referenced
 
 
 class DeployedFunction:
@@ -90,7 +204,12 @@ class DeployedFunction:
         return self._deployment
 
     def _extract_source(self) -> str:
-        """Extract function body as executable source code."""
+        """Extract function body as executable source code.
+
+        Captures the defining module's top-level `import` statements
+        (via :func:`_extract_module_level_imports`) so the body's
+        references to module-level names resolve on the worker.
+        """
         full_source = inspect.getsource(self._func)
         lines = full_source.split('\n')
 
@@ -107,9 +226,16 @@ class DeployedFunction:
         func_source = '\n'.join(func_lines)
         func_source = textwrap.dedent(func_source)
 
+        # Prepend the defining module's top-level imports whose bound
+        # names appear in the function body, so references like `os`,
+        # `time`, `Optional` resolve on the worker pod without dragging
+        # in unrelated imports (e.g. `import basilica` used only by the
+        # decorator). Refs one-covenant/basilica#477.
+        imports = _extract_module_level_imports(self._func, func_source)
+
         # Generate entry point that calls the function
         func_name = self._func.__name__
-        return f'''{func_source}
+        return f'''{imports}{func_source}
 
 {func_name}()
 '''
@@ -293,15 +419,22 @@ class DistributedFunction:
 
         Returns:
             DistributedTraining: facade with scale/wait/logs/bench/delete
-                and `_async` counterparts.
+                and `_async` counterparts. Is itself context-manager-able
+                (basilica-backend issue 660 / SDK-S1) -- use
+                ``with train() as training:`` for mid-run orchestration
+                with auto-cleanup.
         """
         from . import BasilicaClient
 
         client = client or BasilicaClient()
-        source = self._extract_source()
-
-        self._training = client.deploy_distributed(
-            source=source,
+        # Pass the user's Callable directly to the private impl; the
+        # impl packages the body via
+        # `basilica.source._package_function_for_torchrun(...)`. The
+        # public `deploy_distributed*` methods were removed in 0.30.0
+        # (SDK-S7); the decorator is the canonical surface and routes
+        # through the private impl directly.
+        self._training = client._deploy_distributed_impl(
+            source=self._func,
             **self._kwargs,
         )
         return self._training
@@ -312,29 +445,24 @@ class DistributedFunction:
 
     def _extract_source(self) -> str:
         """
-        Extract function body as executable source code, packaged as the
-        per-rank entrypoint. Mirrors `DeployedFunction._extract_source`
-        but emits a torchrun-friendly shape: the body runs once per
-        rank, each rank's torchrun invocation provides
-        `BASILICA_RANK`/`BASILICA_WORLD_*` env vars.
+        Extract the per-rank entrypoint module text for this function.
+
+        Thin shim over
+        :func:`basilica.source._package_function_for_torchrun`. The
+        implementation lives there (DRY with the deploy path inside
+        ``BasilicaClient._build_distributed_request``); this method
+        exists so decorator-introspection tests can pin the same module
+        text the deploy path ships to the worker pod.
+
+        Captures the defining module's top-level ``import`` statements
+        (via :func:`_extract_module_level_imports`) so the body's
+        references to module-level names resolve on the worker pod.
+        Refs one-covenant/basilica#477,
+        one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
         """
-        full_source = inspect.getsource(self._func)
-        lines = full_source.split("\n")
+        from .source import _package_function_for_torchrun
 
-        def_idx = 0
-        for i, line in enumerate(lines):
-            if line.lstrip().startswith("def "):
-                def_idx = i
-                break
-
-        func_lines = lines[def_idx:]
-        func_source = textwrap.dedent("\n".join(func_lines))
-        func_name = self._func.__name__
-        return f"""{func_source}
-
-if __name__ == "__main__":
-    {func_name}()
-"""
+        return _package_function_for_torchrun(self._func)
 
 
 def distributed(
@@ -350,7 +478,7 @@ def distributed(
     provider_filter: Optional[Union[ProviderFilter, Dict[str, List[str]]]] = None,
     topology_spread: str = "provider-aware",
     nccl_env: Optional[Dict[str, str]] = None,
-    bench: str = "off",
+    bench: bool = False,
     rendezvous_backend: str = "etcd-v2",
     env: Optional[Dict[str, str]] = None,
     pip_packages: Optional[List[str]] = None,
@@ -359,63 +487,166 @@ def distributed(
     enable_billing: bool = True,
     wait_for_bench: str = "never",
     bench_timeout: int = 1500,
-) -> Callable[[Callable], DistributedFunction]:
+    command: Optional[List[str]] = None,
+    args: Optional[List[str]] = None,
+    client: Optional[Any] = None,
+) -> Union[Callable[[Callable], DistributedFunction], DistributedTraining]:
     """
-    Decorator marking a function as the per-rank entrypoint for a
+    Decorator-or-factory marking the per-rank entrypoint of a
     distributed-training UserDeployment. SDK arch § 5.
 
-    The decorated function body is what each rank executes. The standard
-    PyTorch idiom applies: `dist.init_process_group(backend="nccl")` then
-    your training loop. torchrun + the operator handle fan-out; you do
-    NOT branch on `rank == 0`.
+    Two shapes share the same call site:
+
+    1. Decorator (function body): the decorated function is the per-rank
+       entrypoint. The standard PyTorch idiom applies --
+       ``dist.init_process_group(backend="nccl")`` then your training
+       loop. torchrun + the operator handle fan-out; you do NOT branch
+       on ``rank == 0``::
+
+           @basilica.distributed(name="dlc-llama-7b", world_size=...,
+                                 gpu_count=1, gpu_models=["H100"])
+           def train():
+               import torch.distributed as dist
+               dist.init_process_group(backend="nccl")
+               ...
+
+           training = train()  # deploys, returns DistributedTraining
+
+    2. Factory (BYO launcher): passing ``command=[...]`` deploys
+       immediately (no function to decorate) and returns a
+       :class:`DistributedTraining` directly. Mirrors the prior
+       ``deploy_distributed_managed(command=...)`` call site without
+       the ``_managed`` suffix::
+
+           training = basilica.distributed(
+               name="dlc-torchrun",
+               command=["torchrun", "--rdzv-backend=etcd",
+                        "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT", ...],
+               world_size=WorldSize(min=2, target=4, max=8),
+               gpu_count=1, gpu_models=["A100", "H100"],
+           )
+           with training:
+               training.scale(target=4)
+
+       The factory short-circuits when ``command`` is set: the call
+       returns :class:`DistributedTraining`, NOT a decorator closure.
+       Use ``client=`` to inject an existing :class:`BasilicaClient`
+       (otherwise a fresh one is built lazily, matching the decorator's
+       ``.deploy()`` semantics). See basilica-backend issue 662 / SDK-S3.
 
     Args:
-        name: Deployment name (DNS-safe).
-        image: Container image (default: pytorch + cuda runtime).
-        port: Worker container port.
-        cpu, memory, gpu_count, gpu_models, min_gpu_memory_gb: Resources
-            per rank pod.
-        world_size: WorldSize(min, target, max). REQUIRED.
-        provider_filter: ProviderFilter or `{"include": [...], "exclude": [...]}` dict.
-        topology_spread: One of `pack | provider-aware | region-aware | none`.
-        nccl_env: NCCL env vars merged on top of operator defaults.
-        bench: `on-start` to schedule a 2-rank NCCL bench probe; `off` (default).
-        rendezvous_backend: `etcd-v2` (default) | `c10d` | `static`.
-        env: Environment variables passed to the worker pods.
-        pip_packages: Additional pip packages to install.
-        ttl_seconds: Auto-delete after N seconds.
-        timeout: Seconds to wait for `min` ranks to be ready. Default 600.
-        enable_billing: Whether to bill for this deployment.
-        wait_for_bench: `"never"` (default) returns when workers Ready;
-            `"best_effort"` also waits for bench, swallowing failures;
-            `"required"` raises if bench is non-Succeeded. See
-            `BasilicaClient.deploy_distributed`.
-        bench_timeout: Seconds budget for the opt-in bench wait.
+        name: Deployment name. DNS-safe (lowercase, digits, hyphens). The
+            UD's K8s resources and the user-visible handle name both
+            derive from this; pick something that means something to you
+            later when you scan ``basilica deploy ls``.
+        image: Container image for every rank pod. Defaults to a pytorch
+            + CUDA runtime; for distributed NCCL workloads the
+            canonical base is
+            ``ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest``
+            because stock NGC pytorch images don't include
+            ``python-etcd`` (required by torchelastic's etcd-v2
+            rendezvous backend). See ``BRINGING-YOUR-OWN-TRAINER-IMAGE.md``
+            on basilica-backend for the BYO-image contract.
+        port: Worker container port. Default 18789 matches the operator's
+            headless governance Service; override only if your launcher
+            binds something else.
+        cpu, memory: Resource requests per rank pod. Sized for the
+            decorated function body's needs, not the training step's
+            compute (the GPU does the compute).
+        gpu_count: GPUs per rank pod (``1`` means 1 GPU per rank; set
+            higher for NVLink ranks). Aggregate fleet GPU count is
+            ``world_size.target * gpu_count``.
+        gpu_models: Acceptable GPU models. The autoscaler matches an
+            offering against this AND ``min_gpu_memory_gb``;
+            empty means "any model".
+        min_gpu_memory_gb: Minimum GPU VRAM in GB. Use this to fall back
+            across multiple GPU SKUs (e.g. accept A100-40GB OR H100-80GB
+            on a 30GB workload).
+        world_size: ``WorldSize(min, target, max)``. REQUIRED. ``min`` is
+            the floor below which the run pauses (torchelastic
+            MIN_NODES); ``target`` is the steady-state replica count;
+            ``max`` is the hard ceiling enforced by ``scale()``. The SDK
+            short-circuits on ``WorldSize(...)``-construction if the
+            triple violates ``1 <= min <= target <= max``.
+        provider_filter: ``ProviderFilter(include=[...], exclude=[...])``
+            or the dict equivalent. With ``topology_spread="pack"``, the
+            autoscaler picks ONE provider from ``include`` (cheapest
+            available with capacity, or via your platform's
+            ``secureCloud.preferredProvider``) and packs all workers on
+            it; the include-list is a fallback set, not a multi-provider
+            requirement. Mesh-enabled providers today: ``verda``,
+            ``hyperstack``.
+        topology_spread: One of ``pack | provider-aware | region-aware |
+            none``. ``"pack"`` is recommended for NCCL-collective
+            workloads -- it forces same-provider direct WireGuard mesh,
+            which is 5-10x faster than the hub-relay fallback. Default
+            ``"provider-aware"``.
+        nccl_env: NCCL environment variables merged on top of operator
+            defaults. User values win on collision. Common pattern:
+            ``{"NCCL_DEBUG": "WARN"}`` to surface NCCL diagnostics
+            without flooding logs.
+        bench: ``True`` opts in to the per-UD NCCL bench probe -- a
+            2-rank ``all_reduce_perf`` measurement on the same provider
+            mesh as your workers. Read back as ``training.bench``
+            (``BenchResult | None`` -- ``None`` means "no measurement",
+            regardless of why). Use ``training.bench_diagnostics`` for
+            the rare debug detail. Default ``False`` because the probe
+            costs 2 extra GPU ranks for its duration; users who don't
+            need the measurement shouldn't pay for it. The legacy str
+            modes ``"on-start"`` / ``"off"`` were removed in 0.30.0; see
+            ``basilica-backend`` issue 661 / SDK-S2 for migration.
+        rendezvous_backend: ``etcd-v2`` (default) | ``c10d`` | ``static``.
+            Default ``etcd-v2`` is the only backend with full
+            elasticity (mid-run scale, rank join/drain). Pick a
+            non-default only if you know you need it.
+        env: Environment variables passed to the worker pods. The
+            operator wires ``RANK`` / ``WORLD_SIZE`` / ``LOCAL_RANK`` /
+            ``MASTER_*`` / ``BASILICA_*`` automatically -- this
+            parameter is for YOUR app's vars.
+        pip_packages: Additional pip packages to install. Ignored when
+            ``command`` is set (BYO image is expected to carry its own
+            dependencies).
+        ttl_seconds: Auto-delete after N seconds even if the workload is
+            still running. Platform-side ceiling; set this for runaway
+            protection.
+        timeout: Seconds to wait for ``world_size.min`` ranks to be
+            ready before returning from the deploy call. Default 600.
+        enable_billing: Whether to bill for this deployment. Default
+            ``True``.
+        wait_for_bench: ``"never"`` (default) returns when workers
+            Ready; the bench probe runs in the background and shows up
+            on ``training.bench`` once the UD reaches a terminal state.
+            ``"best_effort"`` waits for bench but swallows failures.
+            ``"required"`` raises on a non-Succeeded bench terminal
+            phase. Most users keep the default and read
+            ``training.bench`` after ``wait_until_complete``.
+        bench_timeout: Seconds budget for the
+            ``wait_for_bench != "never"`` paths. Default 1500 (matches
+            the operator's ``BENCH_ACTIVE_DEADLINE_SECONDS``).
+        command: BYO-launcher entry. Setting this short-circuits the
+            decorator path -- the call returns a
+            :class:`DistributedTraining` immediately (factory mode).
+            Mutually exclusive with the decorator shape. Inside the
+            launcher, expand ``$BASILICA_RDZV_ENDPOINT`` /
+            ``$BASILICA_WORLD_TARGET`` / ``$BASILICA_GPUS_PER_POD`` --
+            the operator injects these into the worker pod environment.
+            See basilica-backend issue 662 / SDK-S3.
+        args: Positional args to pass after ``command`` in factory mode.
+            Ignored unless ``command`` is set.
+        client: Optional :class:`BasilicaClient` for factory mode.
+            Ignored in decorator mode (the decorator's
+            ``.deploy(client=)`` takes precedence). When ``command`` is
+            set and ``client`` is None, a default ``BasilicaClient()``
+            is constructed lazily.
 
     Returns:
-        DistributedFunction wrapper. Calling it deploys; `.local()` runs
-        in-process for single-rank testing; `.deploy(client=...)` for
-        explicit-client usage.
-
-    Example:
-        >>> import basilica
-        >>> from basilica import WorldSize
-        >>>
-        >>> @basilica.distributed(
-        ...     name="dlc-llama-7b",
-        ...     world_size=WorldSize(min=4, target=8, max=16),
-        ...     gpu_count=1,
-        ...     gpu_models=["H100"],
-        ... )
-        ... def train():
-        ...     import os
-        ...     import torch.distributed as dist
-        ...     dist.init_process_group(backend="nccl")
-        ...     rank = dist.get_rank()
-        ...     # ... DiLoCo loop ...
-        >>>
-        >>> training = train()  # deploys, returns DistributedTraining
-        >>> training.scale(target=12)
+        - Decorator mode (``command`` is None): a decorator closure that
+          wraps the decorated function in a :class:`DistributedFunction`.
+          Calling the wrapped function deploys and returns a
+          :class:`DistributedTraining` context-manager.
+        - Factory mode (``command`` is set): a
+          :class:`DistributedTraining` ready to use under a ``with``
+          block.
     """
     if world_size is None:
         raise ValueError("@distributed requires world_size")
@@ -451,7 +682,48 @@ def distributed(
         "bench_timeout": bench_timeout,
     }
 
+    # basilica-backend issue 662 / SDK-S3: factory mode. When the caller
+    # supplies a BYO launcher (``command=[...]``), short-circuit the
+    # decorator path and deploy immediately. The decorator path bakes
+    # ``_emit_deprecation=False`` into the inner deploy call so the
+    # canonical surface stays quiet; the factory does the same.
+    if command is not None:
+        return _deploy_command_factory(
+            kwargs=kwargs,
+            command=command,
+            args=args,
+            client=client,
+        )
+
     def decorator(func: Callable) -> DistributedFunction:
         return DistributedFunction(func, kwargs)
 
     return decorator
+
+
+def _deploy_command_factory(
+    kwargs: Dict[str, Any],
+    command: List[str],
+    args: Optional[List[str]],
+    client: Optional[Any],
+) -> DistributedTraining:
+    """
+    basilica-backend issue 662 / SDK-S3: BYO-launcher factory path.
+
+    Invoked by :func:`distributed` when ``command`` is set. Materializes
+    a :class:`BasilicaClient` if none was supplied, forwards ``command``
+    / ``args`` plus the shared kwargs to the private
+    :py:meth:`BasilicaClient._deploy_distributed_impl`, and returns the
+    :class:`DistributedTraining` handle.
+
+    Kept separate from :func:`distributed` so the decorator path's hot
+    loop stays a closure constructor (no extra branch on every call).
+    """
+    from . import BasilicaClient  # local import to avoid circular dep
+
+    bound_client = client if client is not None else BasilicaClient()
+    return bound_client._deploy_distributed_impl(
+        command=command,
+        args=args,
+        **kwargs,
+    )

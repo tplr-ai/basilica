@@ -1,15 +1,60 @@
 """
 Distributed-training SDK surface (SDK arch § 4 / § 6 / § 8 / § 9).
 
-User-facing types and the `DistributedTraining` facade returned by
-`client.deploy_distributed(...)` and `@basilica.distributed`. Researchers
-import these from `basilica` directly (re-exported in __init__.py).
+User-facing types and the ``DistributedTraining`` facade. Re-exported
+from ``basilica`` directly; researchers import via ``from basilica
+import ProviderFilter, WorldSize, BenchResult, DistributedTraining``.
+
+Canonical surface (post-S7 / 0.30.0):
+
+- ``@basilica.distributed(...)`` on a function -- the function body is
+  the per-rank entrypoint. Calling the decorated function returns a
+  ``DistributedTraining`` context-manager. This is the ONE canonical
+  input shape for "the code workers should run".
+- ``basilica.distributed(command=[...])`` factory -- BYO launcher
+  (torchrun / mpirun / accelerate). The same ``basilica.distributed``
+  symbol short-circuits the decorator path when ``command`` is set and
+  returns a ``DistributedTraining`` directly.
+- ``with training:`` / ``async with training:`` -- the
+  ``DistributedTraining`` is itself a context manager. ``__exit__``
+  best-effort calls ``.delete()`` on scope exit (success OR exception),
+  so the UD does not leak when a mid-run wait raises.
+- ``bench: bool`` -- ``True`` opts in to the per-UD NCCL probe;
+  ``False`` (default) skips it. Read back as ``training.bench``
+  (``BenchResult | None``). Use ``training.bench_diagnostics`` only when
+  you need debug detail for a ``None`` result.
+
+Removed in 0.30.0 (SDK-S7) -- see ``basilica-backend`` issue 666 and
+CHANGELOG for migration:
+
+- ``client.deploy_distributed(...)`` /
+  ``client.deploy_distributed_async(...)`` /
+  ``client.deploy_distributed_managed(...)`` /
+  ``client.deploy_distributed_managed_async(...)`` -- use
+  ``@basilica.distributed`` on the function and call the decorated
+  function (returns a ``DistributedTraining`` context-manager). The
+  underlying impl lives on
+  ``BasilicaClient._deploy_distributed_impl[_async]`` (private).
+- ``source: Union[str, Path]`` -- only ``Callable`` (via the decorator)
+  is accepted. Wrap external scripts via
+  ``runpy.run_path('/workspace/...')`` inside a decorated function.
+- ``bench: str`` modes (``"on-start"`` / ``"off"``) -- use ``bench=True`` /
+  ``bench=False``.
+- ``training.bench_status`` (``BenchStatus`` enum) and
+  ``training.wait_until_bench_complete[_async]()`` -- use ``training.bench``
+  (``BenchResult | None``) and ``training.bench_diagnostics`` (``dict |
+  None``) instead.
+- ``DistributedTrainingManaged[Async]`` classes -- subsumed by
+  ``DistributedTraining`` itself (which is context-manager-able).
 
 Tenancy invariant (SDK arch § 7): bench data is per-UD. There is NO
-`client.preflight(...)` and NO `client.nccl_baseline(...)` standalone
+``client.preflight(...)`` and NO ``client.nccl_baseline(...)`` standalone
 helper -- those would imply a shared cluster-wide cache, which violates
 the platform's tenancy contract. Bench results live on
-`DistributedTraining.bench` and are owned by the user's namespace.
+``DistributedTraining.bench`` and are owned by the user's namespace.
+
+See the SDK README's "Distributed Training" section for the full
+canonical surface.
 """
 
 import asyncio
@@ -215,7 +260,12 @@ BENCH_PHASE_FAILED: str = "Failed"
 BENCH_PHASE_TIMED_OUT: str = "TimedOut"
 
 _BENCH_TERMINAL_PHASES: frozenset = frozenset(
-    {BENCH_PHASE_SUCCEEDED, BENCH_PHASE_FAILED, BENCH_PHASE_TIMED_OUT}
+    {
+        BENCH_PHASE_SUCCEEDED,
+        BENCH_PHASE_FAILED,
+        BENCH_PHASE_TIMED_OUT,
+        BENCH_PHASE_SKIPPED,
+    }
 )
 
 
@@ -235,6 +285,15 @@ class BenchStatus:
     on the bench probe. Most callers should NOT need that; the bench
     is a sanity probe per `basilica_bench.py:75-78`, not a gating
     measurement.
+
+    Terminal semantics (closes #480): four phases are terminal --
+    `Succeeded`, `Failed`, `TimedOut`, and `Skipped`. `Skipped` is the
+    operator's "the bench probe was not run because preconditions
+    weren't met" signal (e.g. workers exited before the bench-controller
+    observed them, see basilica-backend X2 fix). It is NOT a success
+    and NOT a failure; it means "wasn't run". Callers should treat the
+    workload's own exit codes as the source of truth for run success;
+    bench is a separate, opt-in measurement.
     """
 
     mode: str
@@ -248,8 +307,44 @@ class BenchStatus:
 
     @property
     def is_terminal(self) -> bool:
-        """True iff phase is `Succeeded`, `Failed`, or `TimedOut`."""
+        """
+        True iff phase is `Succeeded`, `Failed`, `TimedOut`, or `Skipped`.
+
+        Closes #480: `Skipped` is terminal -- the operator has decided
+        the bench probe will not run (workers exited before the
+        bench-controller observed them, or another precondition failed),
+        and there is nothing further to wait for.
+        """
         return self.phase in _BENCH_TERMINAL_PHASES
+
+    @property
+    def is_successful(self) -> bool:
+        """True iff the bench probe ran and produced a measurement (`phase == Succeeded`)."""
+        return self.phase == BENCH_PHASE_SUCCEEDED
+
+    @property
+    def is_failed(self) -> bool:
+        """
+        True iff the bench probe ran and errored (`phase in {Failed, TimedOut}`).
+
+        Closes #480: `Skipped` is NOT a failure. It means the probe was
+        not run at all; the workers may still be perfectly healthy.
+        Callers that branch on bench-side errors should use this; the
+        operator never sets `Failed` / `TimedOut` for a skipped probe.
+        """
+        return self.phase in (BENCH_PHASE_FAILED, BENCH_PHASE_TIMED_OUT)
+
+    @property
+    def is_skipped(self) -> bool:
+        """
+        True iff the operator decided not to run the bench probe
+        (`phase == Skipped`).
+
+        Closes #480: terminal, but neither success nor failure. See
+        `self.message` for the operator's reason (e.g. "workers exited
+        before bench-controller observed them").
+        """
+        return self.phase == BENCH_PHASE_SKIPPED
 
     @classmethod
     def from_status_dict(cls, raw: Dict[str, Any]) -> "BenchStatus":
@@ -434,16 +529,18 @@ class DistributedTraining:
     @property
     def bench(self) -> Optional[BenchResult]:
         """
-        Per-UD bench probe result, or `None` if `bench.mode != on-start`
-        or the probe has not yet completed its first attempt.
+        Per-UD bench probe result, or ``None`` if bench was not requested
+        (``mode != on-start``) or the probe has not yet completed its
+        first attempt.
 
         SDK arch § 7: never a cross-tenant aggregate; always measured
         on this UD's own nodes, billed against this user's GPU minutes.
 
-        Issue B/N (refs #506): backward compatible. Use
-        :pyattr:`bench_status` for the full lifecycle (phase / timing /
-        message); this accessor remains for callers that only want the
-        measurement payload.
+        Returns ``BenchResult | None``. ``None`` collapses all
+        non-success outcomes (bench off, probe skipped, probe failed,
+        probe timed out) into a single "no result" signal. Use
+        :pyattr:`bench_diagnostics` for the rare debug case where you
+        need to know WHY ``bench is None``.
         """
         if self._cached_status is None:
             self.refresh()
@@ -458,20 +555,14 @@ class DistributedTraining:
         return BenchResult.from_status_dict(result)
 
     @property
-    def bench_status(self) -> Optional[BenchStatus]:
-        """
-        Issue B/N (refs #506): full bench probe state, including
-        explicit lifecycle [`phase`], `started_at` / `completed_at`
-        timing, and a human-readable `message`.
+    def _bench_status_raw(self) -> Optional["BenchStatus"]:
+        """Internal: read the full bench status as a typed dataclass.
 
-        Returns `None` when bench is off (`mode != on-start`) or the
-        operator has not yet observed the Job at all. Otherwise the
-        returned [`BenchStatus`] reflects the operator's
-        `status.distributed.bench` exactly.
-
-        DECOUPLING CONTRACT: this surface is INDEPENDENT of
-        `WorldStatus.ready`. `wait_until_min_world` polls workers only;
-        bench has its own opt-in waiter, `wait_until_bench_complete`.
+        Used by :pyattr:`bench_diagnostics` and the post-deploy
+        wait_for_bench polling on ``BasilicaClient`` (private). Not part
+        of the public surface (the ``BenchStatus`` class is not
+        re-exported from ``basilica``; users get bench data via
+        :pyattr:`bench` and :pyattr:`bench_diagnostics`).
         """
         if self._cached_status is None:
             self.refresh()
@@ -479,6 +570,50 @@ class DistributedTraining:
         if not bench_raw:
             return None
         return BenchStatus.from_status_dict(bench_raw)
+
+    @property
+    def bench_diagnostics(self) -> Optional[Dict[str, Any]]:
+        """
+        Bench probe debug surface for the rare case where
+        :pyattr:`bench` is ``None`` and you need to know WHY.
+
+        Returns ``None`` when bench was not requested
+        (``mode != on-start``) OR when the operator has not yet published
+        a bench block. Otherwise returns a ``dict`` with the small set
+        of fields a researcher might inspect:
+
+        - ``mode``: ``"on-start"`` (the only non-off value the user can
+          set) or ``"off"``.
+        - ``phase``: operator's bench-Job lifecycle phase
+          (``"Pending"`` / ``"Running"`` / ``"Succeeded"`` /
+          ``"Failed"`` / ``"TimedOut"`` / ``"Skipped"``).
+        - ``message``: human-readable reason from the operator.
+        - ``started_at`` / ``completed_at``: timing.
+        - ``last_attempt_at`` / ``last_attempt_outcome``: most recent
+          attempt outcome (e.g. ``"skipped"`` when workers exited
+          before the bench-controller observed them).
+
+        Most users only ever read ``training.bench``; this attribute is
+        the escape hatch for the rare case where they need to debug a
+        ``None`` result.
+        """
+        bs = self._bench_status_raw
+        if bs is None:
+            return None
+        # Mode=off means "user didn't ask for a probe". Surfacing
+        # diagnostics in that case would be confusing -- there's nothing
+        # to debug. Collapse to None.
+        if bs.mode == "off":
+            return None
+        return {
+            "mode": bs.mode,
+            "phase": bs.phase,
+            "message": bs.message,
+            "started_at": bs.started_at,
+            "completed_at": bs.completed_at,
+            "last_attempt_at": bs.last_attempt_at,
+            "last_attempt_outcome": bs.last_attempt_outcome,
+        }
 
     def metrics(self) -> DistributedMetrics:
         """Platform-side metric snapshot for this UD (SDK arch § 6)."""
@@ -656,66 +791,6 @@ class DistributedTraining:
                 required_min=ws.min,
                 timeout=timeout,
             )
-
-    def wait_until_bench_complete(self, timeout: int = 1500) -> Optional[BenchStatus]:
-        """
-        Issue B/N (refs #506): OPT-IN waiter for the bench probe.
-
-        Most callers do NOT need this; bench is best-effort per
-        `basilica_bench.py:75-78` and the world is considered ready
-        when workers reach Ready (see :py:meth:`wait_until_min_world`).
-        This method exists for the small set of callers that DO want
-        the bench measurement before continuing (e.g. a research run
-        that records busbw metadata into checkpoint headers).
-
-        Returns the terminal :py:class:`BenchStatus` (`phase` is one
-        of `Succeeded` | `Failed` | `TimedOut`). If `bench.mode != on-start`
-        returns `None` immediately. Polls every 5s.
-
-        Default timeout matches the operator's `BENCH_ACTIVE_DEADLINE_SECONDS`
-        (1500s = 25 min). Raises `TimeoutError` past the deadline.
-        """
-        deadline = time.monotonic() + max(timeout, 0)
-        while time.monotonic() < deadline:
-            self.refresh()
-            bs = self.bench_status
-            if bs is None:
-                # bench is Off — nothing to wait for.
-                return None
-            if bs.is_terminal:
-                return bs
-            time.sleep(min(5, max(timeout // 10, 1)))
-        # One last refresh.
-        self.refresh()
-        bs = self.bench_status
-        if bs is not None and bs.is_terminal:
-            return bs
-        raise TimeoutError(
-            f"wait_until_bench_complete timed out after {timeout}s "
-            f"(phase={bs.phase if bs else 'absent'})"
-        )
-
-    async def wait_until_bench_complete_async(
-        self, timeout: int = 1500
-    ) -> Optional[BenchStatus]:
-        """Async variant of :py:meth:`wait_until_bench_complete`."""
-        deadline = asyncio.get_event_loop().time() + max(timeout, 0)
-        while asyncio.get_event_loop().time() < deadline:
-            await self.refresh_async()
-            bs = self.bench_status
-            if bs is None:
-                return None
-            if bs.is_terminal:
-                return bs
-            await asyncio.sleep(min(5, max(timeout // 10, 1)))
-        await self.refresh_async()
-        bs = self.bench_status
-        if bs is not None and bs.is_terminal:
-            return bs
-        raise TimeoutError(
-            f"wait_until_bench_complete_async timed out after {timeout}s "
-            f"(phase={bs.phase if bs else 'absent'})"
-        )
 
     def wait_until_target_world(self, timeout: int = 600) -> None:
         """
@@ -971,6 +1046,57 @@ class DistributedTraining:
         await asyncio.get_event_loop().run_in_executor(None, self.delete)
 
     # -------------------------------------------------------------------------
+    # Context-manager protocol (basilica-backend issue 660 / SDK-S1).
+    #
+    # `DistributedTraining` is the ONE canonical handle for a distributed
+    # UD. The `@basilica.distributed` decorator-call returns this object
+    # directly; the `with training:` block triggers best-effort
+    # `.delete()` on scope exit so callers don't leak the UD when an
+    # intermediate operation (e.g. `wait_until_target_world` after
+    # `scale`) raises.
+    #
+    # The prior `DistributedTrainingManaged[Async]` wrapper classes were
+    # removed in 0.30.0 (S7); their context-manager contract is now built
+    # into this class directly.
+    # -------------------------------------------------------------------------
+
+    def __enter__(self) -> "DistributedTraining":
+        """Return self so `with training as t:` yields the handle."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        """
+        Best-effort cleanup on scope exit. Swallows any delete-time
+        exception so we never mask the (possibly more important) caller
+        exception that is already propagating out of the `with` block.
+        """
+        try:
+            self.delete()
+        except Exception:
+            pass
+
+    async def __aenter__(self) -> "DistributedTraining":
+        """Async variant of `__enter__`; returns self."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
+        """Async best-effort cleanup; same swallow contract as `__exit__`."""
+        try:
+            await self.delete_async()
+        except Exception:
+            pass
+
+    # -------------------------------------------------------------------------
     # Logs and debug
     # -------------------------------------------------------------------------
 
@@ -1060,120 +1186,6 @@ class DistributedTraining:
         """`<ud>-rendezvous.<ns>.svc.cluster.local:2379` -- in-cluster only."""
         ns = self.namespace or "u-unknown"
         return f"{self.name}-rendezvous.{ns}.svc.cluster.local:2379"
-
-
-class DistributedTrainingManaged:
-    """
-    Sync context-managed wrapper around a :class:`DistributedTraining`.
-
-    Returned by :meth:`BasilicaClient.deploy_distributed_managed`.
-
-    Defensive sibling of basilica-backend#486 (which fixed UD leak
-    inside ``deploy_distributed``'s own ``wait_until_min_world``
-    failure path). This class handles the *caller-side* leak: when an
-    intermediate wait such as ``wait_until_target_world`` after
-    ``scale()`` raises, the script aborts before reaching ``delete()``
-    and the UD leaks.
-
-    Refs: basilica-backend#538.
-
-    Usage::
-
-        with client.deploy_distributed_managed(...) as training:
-            training.scale(target=3)
-            training.wait_until_target_world(timeout=300)
-            ...
-        # `delete()` ran on scope exit, success or exception.
-    """
-
-    def __init__(self, training: "DistributedTraining") -> None:
-        self._training = training
-
-    @property
-    def training(self) -> "DistributedTraining":
-        """The wrapped :class:`DistributedTraining` handle."""
-        return self._training
-
-    def __enter__(self) -> "DistributedTraining":
-        return self._training
-
-    def __exit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        # Best-effort cleanup. Swallow any delete-time exception so we
-        # never mask the (possibly more important) exception that is
-        # already propagating out of the `with` block.
-        try:
-            self._training.delete()
-        except Exception:
-            pass
-
-
-class DistributedTrainingManagedAsync:
-    """
-    Async context-managed wrapper that defers the actual deploy to
-    ``__aenter__``.
-
-    Returned by
-    :meth:`BasilicaClient.deploy_distributed_managed_async` so the
-    caller can write::
-
-        async with client.deploy_distributed_managed_async(...) as training:
-            await training.scale_async(target=3)
-            await training.wait_until_target_world_async(timeout=300)
-            ...
-
-    The deploy itself runs in ``__aenter__``; on scope exit (success
-    OR exception) ``__aexit__`` best-effort calls
-    ``training.delete_async()`` so the UD does not leak.
-
-    Refs: basilica-backend#538.
-    """
-
-    def __init__(
-        self,
-        deploy_coro_factory: Any,
-    ) -> None:
-        # `deploy_coro_factory` is a zero-arg callable returning a
-        # coroutine that resolves to a `DistributedTraining`. Stored
-        # as a factory (not a coroutine) because coroutines can only
-        # be awaited once; constructing the manager and entering it
-        # in the same expression must not eagerly bind the awaitable.
-        self._deploy_coro_factory = deploy_coro_factory
-        self._training: Optional["DistributedTraining"] = None
-
-    @property
-    def training(self) -> "DistributedTraining":
-        """The wrapped handle. Only valid after ``__aenter__`` ran."""
-        if self._training is None:
-            raise RuntimeError(
-                "DistributedTrainingManagedAsync.training accessed before "
-                "the async context was entered. Use `async with ... as t:`."
-            )
-        return self._training
-
-    async def __aenter__(self) -> "DistributedTraining":
-        self._training = await self._deploy_coro_factory()
-        return self._training
-
-    async def __aexit__(
-        self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
-    ) -> None:
-        # If `__aenter__` raised before assigning, there is nothing to
-        # clean up (the deploy itself handles its own teardown via
-        # basilica-backend#486 inside `deploy_distributed_async`).
-        if self._training is None:
-            return
-        try:
-            await self._training.delete_async()
-        except Exception:
-            pass
 
 
 def _coerce_to_dict(obj: Any) -> Dict[str, Any]:

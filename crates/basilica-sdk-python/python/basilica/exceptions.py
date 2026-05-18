@@ -405,9 +405,10 @@ class DistributedError(BasilicaError):
     """
     Base class for distributed-training-specific errors.
 
-    All exceptions raised by `client.deploy_distributed(...)` and methods
-    on the `DistributedTraining` facade derive from this class. Catch this
-    to handle any distributed-training failure mode generically.
+    All exceptions raised by `@basilica.distributed` (canonical surface)
+    and methods on the `DistributedTraining` facade derive from this
+    class. Catch this to handle any distributed-training failure mode
+    generically.
     """
 
     def __init__(
@@ -436,7 +437,9 @@ class QuotaExceeded(DistributedError):
 
     Example:
         >>> # Namespace already at 8/10, requesting 4-rank UD with bench
-        >>> client.deploy_distributed(...)
+        >>> @basilica.distributed(...)
+        ... def train(): ...
+        >>> training = train()
         QuotaExceeded: namespace rank budget exceeded:
             current=8, requested=worker(4)+bench(2)=6, limit=10
     """
@@ -473,7 +476,9 @@ class BelowMinimumWorld(DistributedError):
             the exception is raised outside a wait context.
 
     Example:
-        >>> training = client.deploy_distributed(..., timeout=300)
+        >>> @basilica.distributed(..., timeout=300)
+        ... def train(): ...
+        >>> training = train()
         BelowMinimumWorld: ready=2, required_min=4, timeout=300s
     """
 

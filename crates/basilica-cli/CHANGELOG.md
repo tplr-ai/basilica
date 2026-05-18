@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Non-interactive mode for agent and CI usage. Auto-detected when stdin
+  is not a TTY, or forced with `BASILICA_NON_INTERACTIVE=1`. In this
+  mode every interactive prompt surfaces a structured error instead of
+  blocking on stdin.
+  - Errors carry a `field` identifier and a `hint` naming the flag or
+    command to run. Rendered as single-line JSON on stderr when
+    `--json` is set, and as human-readable text otherwise.
+
+### Changed
+- OAuth auto-login is skipped in non-interactive mode: commands that
+  need authentication now exit with a `missing_prerequisite` error
+  pointing at `basilica login` (or `BASILICA_API_TOKEN`) instead of
+  starting a callback server that would block for 300s.
+- `basilica ssh-keys add` no longer silently generates a new key under
+  `~/.ssh` in non-interactive mode when no local public keys are
+  present; pass `--file <path>` to an existing public key instead.
+
 ## [0.29.0] - 2026-05-04
 
 ### Added
