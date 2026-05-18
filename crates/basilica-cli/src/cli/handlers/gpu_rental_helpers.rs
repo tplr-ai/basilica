@@ -690,7 +690,7 @@ pub async fn resolve_offering_unified(
             let total_price = price_per_gpu * (offering.gpu_count as f64);
 
             let memory_str = if let Some(mem_per_gpu) = offering.gpu_memory_gb_per_gpu {
-                format!("{}GB", mem_per_gpu * offering.gpu_count)
+                format!("{}GB VRAM", mem_per_gpu * offering.gpu_count)
             } else {
                 "N/A".to_string()
             };
@@ -825,7 +825,7 @@ pub async fn resolve_offering_unified(
                 format!("{} ({} available)", category, nodes.len())
             };
 
-            let memory_str = format!("{}GB", min_memory_gb);
+            let memory_str = format!("{}GB VRAM", min_memory_gb);
 
             let multiplier = *gpu_count as f64;
             let price_str = match (min_rate, max_rate) {
@@ -884,7 +884,7 @@ pub async fn resolve_offering_unified(
             };
 
             format!(
-                "{} │ {:<25} │ {:<15} │ {:<4} │ {:<8} │ {}",
+                "{} │ {:<25} │ {:<15} │ {:<4} │ {:<12} │ {}",
                 style(type_label).cyan(),
                 truncate(&item.display_gpu, 25),
                 truncate(&item.display_provider, 15),
@@ -899,7 +899,7 @@ pub async fn resolve_offering_unified(
     println!(
         "{}",
         style(
-            "  Type      │ GPU/CPU                   │ Provider        │ Loc  │ Memory   │ Price"
+            "  Type      │ GPU/CPU                   │ Provider        │ Loc  │ Memory       │ Price"
         )
         .dim()
     );

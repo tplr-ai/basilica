@@ -423,6 +423,8 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
         provider: String,
         #[tabled(rename = "GPU")]
         gpu_info: String,
+        #[tabled(rename = "VRAM")]
+        vram: String,
         #[tabled(rename = "vCPU")]
         vcpu: String,
         #[tabled(rename = "RAM")]
@@ -456,9 +458,14 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
             // Calculate total hourly cost (per-GPU rate × gpu_count)
             let total_hourly_cost =
                 offering.hourly_rate_per_gpu * Decimal::from(offering.gpu_count);
+            let vram = match offering.gpu_memory_gb_per_gpu {
+                Some(mem_per_gpu) => format!("{}GB", mem_per_gpu * offering.gpu_count),
+                None => "-".to_string(),
+            };
             OfferingRow {
                 provider: offering.provider.to_string(),
                 gpu_info,
+                vram,
                 vcpu: offering.vcpu_count.to_string(),
                 ram: format!("{}GB", offering.system_memory_gb),
                 storage: offering.storage.clone().unwrap_or_else(|| "-".to_string()),
