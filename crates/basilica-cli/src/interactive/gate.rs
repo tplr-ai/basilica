@@ -12,20 +12,14 @@ pub enum Interactivity {
     NonInteractive,
 }
 
-static OVERRIDE: OnceLock<Interactivity> = OnceLock::new();
-static DETECTED: OnceLock<Interactivity> = OnceLock::new();
+static CURRENT: OnceLock<Interactivity> = OnceLock::new();
 
 pub fn current() -> Interactivity {
-    if let Some(v) = OVERRIDE.get() {
-        return *v;
-    }
-    *DETECTED.get_or_init(detect)
+    *CURRENT.get_or_init(detect)
 }
 
 fn detect() -> Interactivity {
-    let non_interactive =
-        !std::io::stdin().is_terminal() || std::env::var("BASILICA_NON_INTERACTIVE").is_ok();
-    if non_interactive {
+    if !std::io::stdin().is_terminal() || std::env::var("BASILICA_NON_INTERACTIVE").is_ok() {
         Interactivity::NonInteractive
     } else {
         Interactivity::Interactive
@@ -34,7 +28,7 @@ fn detect() -> Interactivity {
 
 #[cfg(test)]
 pub fn set_for_test(v: Interactivity) {
-    let _ = OVERRIDE.set(v);
+    let _ = CURRENT.set(v);
 }
 
 pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String, CliError> {

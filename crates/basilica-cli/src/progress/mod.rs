@@ -1,6 +1,9 @@
-//! Progress indicators and user feedback utilities
+//! Progress indicators and user feedback utilities.
+//!
+//! `indicatif` already auto-hides progress bars/spinners when stderr is not a
+//! terminal (see `ProgressDrawTarget::stderr` and `is_hidden`), so we don't
+//! gate creation on our own interactivity detection here.
 
-use crate::interactive::gate::{current, Interactivity};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -23,20 +26,14 @@ impl ProgressManager {
 
     /// Start a spinner operation with a given name and message
     pub fn start_spinner(&self, name: &str, message: &str) -> ProgressBar {
-        let spinner = match current() {
-            Interactivity::NonInteractive => ProgressBar::hidden(),
-            Interactivity::Interactive => {
-                let s = ProgressBar::new_spinner();
-                s.set_style(
-                    ProgressStyle::default_spinner()
-                        .template("{spinner:.cyan} {msg}")
-                        .unwrap()
-                        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-                );
-                s.enable_steady_tick(Duration::from_millis(120));
-                s
-            }
-        };
+        let spinner = ProgressBar::new_spinner();
+        spinner.set_style(
+            ProgressStyle::default_spinner()
+                .template("{spinner:.cyan} {msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        spinner.enable_steady_tick(Duration::from_millis(120));
         spinner.set_message(message.to_string());
 
         let pb = self.multi.add(spinner);
@@ -103,20 +100,14 @@ impl Default for ProgressManager {
 
 /// Simple spinner for standalone operations
 pub fn create_spinner(message: &str) -> ProgressBar {
-    let spinner = match current() {
-        Interactivity::NonInteractive => ProgressBar::hidden(),
-        Interactivity::Interactive => {
-            let s = ProgressBar::new_spinner();
-            s.set_style(
-                ProgressStyle::default_spinner()
-                    .template("{spinner:.cyan} {msg}")
-                    .unwrap()
-                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-            );
-            s.enable_steady_tick(Duration::from_millis(120));
-            s
-        }
-    };
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+    );
+    spinner.enable_steady_tick(Duration::from_millis(120));
     spinner.set_message(message.to_string());
     spinner
 }
