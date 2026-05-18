@@ -1,75 +1,72 @@
 """
 Distributed training example: per-UD NCCL bench probe (SDK arch § 7).
 
-Demonstrates the per-UD bench surface. Launching a UD with
-`bench="on-start"` schedules a 2-rank NCCL `all_reduce_perf` Job in the
+Demonstrates the per-UD bench surface via the canonical decorator.
+``bench=True`` schedules a 2-rank NCCL ``all_reduce_perf`` Job in the
 user's namespace alongside the workers. The probe runs in parallel; the
-result lands on `training.bench` once the probe Job completes.
+result lands on ``training.bench`` once the UD reaches a terminal state.
 
 Why this matters: the platform-internal NCCL benchmark matrix
 (architecture doc § 12) does NOT serve user-facing queries -- a
 shared cluster-wide cache would violate the platform's tenancy
-invariant (SDK arch § 1). User-visible bench data is per-UD,
-measured on the user's actual nodes, billed against the user's
-GPU minutes, scoped to the user's namespace.
+invariant (SDK arch § 1). User-visible bench data is per-UD, measured
+on the user's actual nodes, billed against the user's GPU minutes,
+scoped to the user's namespace.
 
-There is intentionally NO `client.preflight(...)` and NO
-`client.nccl_baseline(...)` standalone helper. That surface implied a
-shared cache. Use this per-UD pattern instead.
+There is intentionally NO ``client.preflight(...)`` and NO
+``client.nccl_baseline(...)`` standalone helper. That surface implied
+a shared cache. Use this per-UD pattern instead.
 
-Bench wait is OPT-IN (refs #506): `deploy_distributed` returns as soon
-as workers are Ready, regardless of bench probe state. This script
-demonstrates the opt-in pattern via
-`training.wait_until_bench_complete(...)`. A bench failure no longer
-makes the deploy look failed -- the workers are healthy and you can
-choose what to do with the measurement (or its absence).
+Bench is OPT-IN. ``bench=True`` schedules the probe; ``bench=False``
+(default) skips it. The result reads back as ``training.bench``
+(``BenchResult | None``); ``None`` means "no measurement" regardless
+of why (workers too short, probe couldn't co-schedule, etc.). For
+debug detail on a ``None`` result, inspect ``training.bench_diagnostics``.
 
 Prereqs:
-- BASILICA_API_TOKEN set.
+- ``BASILICA_API_TOKEN`` set.
 - Account with verda A100 access (or adjust the provider filter).
 - Namespace rank budget >= 4 (worker(2) + bench(2)).
 """
 
 import json
 
-from basilica import BasilicaClient, ProviderFilter, WorldSize
+import basilica
+from basilica import ProviderFilter, WorldSize
 
 
-def main() -> None:
+@basilica.distributed(
+    name="dlc-example-bench",
+    image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
+    world_size=WorldSize(min=2, target=2, max=2),
+    gpu_count=1,
+    gpu_models=["A100"],
+    min_gpu_memory_gb=40,
+    cpu="8",
+    memory="32Gi",
+    provider_filter=ProviderFilter(include=["verda"]),
+    topology_spread="pack",  # Pack for the smallest measured pair.
+    bench=True,  # Schedule the 2-rank NCCL probe.
+    nccl_env={"NCCL_DEBUG": "WARN"},
+    ttl_seconds=900,
+    timeout=900,
+)
+def workload() -> None:
     """
-    Wrapped in main() so importing the module does NOT spin up a paid
-    distributed cluster. Per the coding guidelines, deploy/start_*_rental
-    calls are cost-bearing and must be tied to an explicit script run.
+    Per-rank entrypoint. Each rank runs this body under torchrun;
+    ``RANK`` / ``WORLD_SIZE`` / ``LOCAL_RANK`` / ``MASTER_*`` are wired
+    by torchrun. The body just reads them from ``os.environ``.
+
+    Contrast with example 21 (BYO ``command=`` for full launcher
+    control); here the decorator hands the body to the operator's
+    ``command="auto"`` torchrun wrapper.
     """
-    client = BasilicaClient()
+    import os
+    import time
 
-    # `source=` (string) is the recommended path for typical SDK users:
-    # the SDK ships the source via base64 to /tmp/__basilica_source.py and
-    # the operator's BYO renderer exec's torchrun on it. RANK / WORLD_SIZE
-    # / MASTER_* are set by torchrun -- the user code just reads them.
-    #
-    # Contrast with `command=["python3", "/workspace/foo.py"]` which skips
-    # torchrun entirely; ranks would crash with `RANK env var missing`.
-    # For users who want full control over the launcher, see example 21
-    # (BYO torchrun via `command=[...]`).
-    # `deploy_distributed_managed` (refs basilica-backend#538) auto-
-    # deletes the UD on scope exit, even when the script aborts via
-    # `raise SystemExit(1)` on a bench-Succeeded-but-no-result path.
-    # The exit propagates through the `with` block; `__exit__` cleans
-    # up; the script exits 1 as before -- no behavioral change beyond
-    # closing the leak window.
-    with client.deploy_distributed_managed(
-        name="dlc-example-bench",
-        image="ghcr.io/one-covenant/basilica/basilica-distributed-trainer:latest",
-        source="""\
-import os
-import time
+    import torch
+    import torch.distributed as dist
 
-import torch
-import torch.distributed as dist
-
-
-def main() -> None:
     rank = int(os.environ["RANK"])
     world_size = int(os.environ["WORLD_SIZE"])
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
@@ -80,8 +77,8 @@ def main() -> None:
 
     # Brief NCCL all_reduce loop -- proves the workers rendezvoused and
     # the collective fabric is up. Each step sums a 1024-float tensor
-    # across all ranks; expected sum at step k is world_size (because we
-    # start from ones and re-fill each step).
+    # across all ranks; expected sum at step k is world_size * 1024
+    # (because we start from ones and re-fill each step).
     for step in range(5):
         x = torch.ones(1024, device=device)
         dist.all_reduce(x)
@@ -97,63 +94,37 @@ def main() -> None:
     print(f"[rank {rank}] done", flush=True)
 
 
-if __name__ == "__main__":
-    main()
-""",
-        world_size=WorldSize(min=2, target=2, max=2),
-        gpu_count=1,
-        gpu_models=["A100"],
-        min_gpu_memory_gb=40,
-        cpu="8",
-        memory="32Gi",
-        provider_filter=ProviderFilter(include=["verda"]),
-        topology_spread="pack",  # Pack for the smallest measured pair.
-        bench="on-start",  # Schedule the 2-rank NCCL probe.
-        nccl_env={"NCCL_DEBUG": "WARN"},
-        ttl_seconds=900,
-        timeout=900,
-    ) as training:
+def main() -> None:
+    """
+    Deploy + collect the bench measurement. Wrapped in ``main()`` so
+    importing the module does NOT spin up a paid distributed cluster.
+    """
+    # ``workload()`` deploys; the ``with`` block calls
+    # ``training.delete()`` on scope exit (success OR exception), so
+    # the UD does not leak when a mid-run wait raises.
+    with workload() as training:
         print(f"Deployed: {training.name}")
         print("Bench probe scheduled (rank-budget cost: worker(2) + bench(2) = 4)")
 
-        # Refs #506: deploy_distributed now returns when workers are Ready;
-        # the bench probe is decoupled. Use the opt-in waiter to block on it.
-        # `bench_timeout=1200` (20 min) matches the prior implicit budget.
-        print("Waiting for bench probe (opt-in via wait_until_bench_complete)...")
-        bench_status = training.wait_until_bench_complete(timeout=1200)
+        # Block until workers reach a terminal phase. Raises
+        # ``BelowMinimumWorld`` on failure or timeout; the ``with``
+        # block's ``__exit__`` cleans up either way.
+        training.wait_until_complete(timeout=1800)
+        print(f"Workers done: {training.world}")
 
-        if bench_status is None:
-            # mode=off — caller did not request a bench probe. Not reachable
-            # in this example (we set bench="on-start" above), but kept for
-            # symmetry with the API contract. Managed `__exit__` deletes
-            # the UD as the SystemExit propagates.
-            print("Bench was not enabled on this UD.")
-            raise SystemExit(1)
-
-        if bench_status.phase != "Succeeded":
-            # Workers were Ready -- the deploy is fine -- but the bench
-            # didn't measure. Print the lifecycle detail; do NOT exit non-zero
-            # for a bench-only failure (the workload itself is healthy).
-            # `return` falls through the managed exit which deletes the UD.
-            print("Bench probe did NOT complete with a measurement.")
-            print(f"  phase:              {bench_status.phase}")
-            print(f"  message:            {bench_status.message}")
-            print(f"  last_attempt_at:    {bench_status.last_attempt_at}")
-            print(f"  last_attempt:       {bench_status.last_attempt_outcome}")
-            print("Workers are still Ready; the UD itself is healthy.")
-            print("Inspect via `kubectl get job -n <ns> -l basilica.ai/distributed-role=bench`.")
-            return
-
-        # bench_status.phase == "Succeeded"; the result payload is on
-        # `training.bench` (or `bench_status.result`).
+        # ``training.bench`` is the canonical surface for the bench
+        # measurement. ``None`` means "no measurement" regardless of
+        # why -- workers too short, probe couldn't co-schedule, etc.
+        # 99% of users only ever read this attribute.
         result = training.bench
         if result is None:
-            # Defensive: phase=Succeeded but no result payload -- this would
-            # be an operator-side invariant break. Surface it explicitly;
-            # SystemExit propagates through the managed `with`, which
-            # deletes the UD on its way out.
-            print("Bench phase=Succeeded but no result payload available.")
-            raise SystemExit(1)
+            print("Bench did not measure on this run.")
+            # The rare debug case: inspect ``bench_diagnostics`` for
+            # operator-side detail on why the probe didn't land a result.
+            if training.bench_diagnostics is not None:
+                print(f"Bench diagnostics: {training.bench_diagnostics}")
+            return
+
         print("--- Bench result ---")
         print(f"  measured_at:        {result.measured_at}")
         print(f"  busbw_gbps_p10:     {result.busbw_gbps_p10}")
@@ -165,9 +136,10 @@ if __name__ == "__main__":
         print(f"  probe_node_a:       {result.probe_node_a}")
         print(f"  probe_node_b:       {result.probe_node_b}")
 
-        # Researchers writing papers can serialize this to JSON and aggregate
-        # across many UDs offline -- each measurement is on their own nodes,
-        # billed against their own usage, with no cross-tenant shared cache.
+        # Researchers writing papers can serialize this to JSON and
+        # aggregate across many UDs offline -- each measurement is on
+        # their own nodes, billed against their own usage, with no
+        # cross-tenant shared cache.
         out = {
             "name": training.name,
             "world_size": {
@@ -185,8 +157,6 @@ if __name__ == "__main__":
         with open(f"/tmp/{training.name}-bench.json", "w") as f:
             json.dump(out, f, indent=2, default=str)
         print(f"Saved bench result: /tmp/{training.name}-bench.json")
-
-    print("Cleanup complete.")
 
 
 if __name__ == "__main__":
