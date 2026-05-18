@@ -500,15 +500,52 @@ def distributed(
     enable_billing: bool = True,
     wait_for_bench: str = "never",
     bench_timeout: int = 1500,
-) -> Callable[[Callable], DistributedFunction]:
+    command: Optional[List[str]] = None,
+    args: Optional[List[str]] = None,
+    client: Optional[Any] = None,
+) -> Union[Callable[[Callable], DistributedFunction], DistributedTraining]:
     """
-    Decorator marking a function as the per-rank entrypoint for a
+    Decorator-or-factory marking the per-rank entrypoint of a
     distributed-training UserDeployment. SDK arch § 5.
 
-    The decorated function body is what each rank executes. The standard
-    PyTorch idiom applies: `dist.init_process_group(backend="nccl")` then
-    your training loop. torchrun + the operator handle fan-out; you do
-    NOT branch on `rank == 0`.
+    Two shapes share the same call site:
+
+    1. Decorator (function body): the decorated function is the per-rank
+       entrypoint. The standard PyTorch idiom applies --
+       ``dist.init_process_group(backend="nccl")`` then your training
+       loop. torchrun + the operator handle fan-out; you do NOT branch
+       on ``rank == 0``::
+
+           @basilica.distributed(name="dlc-llama-7b", world_size=...,
+                                 gpu_count=1, gpu_models=["H100"])
+           def train():
+               import torch.distributed as dist
+               dist.init_process_group(backend="nccl")
+               ...
+
+           training = train()  # deploys, returns DistributedTraining
+
+    2. Factory (BYO launcher): passing ``command=[...]`` deploys
+       immediately (no function to decorate) and returns a
+       :class:`DistributedTraining` directly. Mirrors the prior
+       ``deploy_distributed_managed(command=...)`` call site without
+       the ``_managed`` suffix::
+
+           training = basilica.distributed(
+               name="dlc-torchrun",
+               command=["torchrun", "--rdzv-backend=etcd",
+                        "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT", ...],
+               world_size=WorldSize(min=2, target=4, max=8),
+               gpu_count=1, gpu_models=["A100", "H100"],
+           )
+           with training:
+               training.scale(target=4)
+
+       The factory short-circuits when ``command`` is set: the call
+       returns :class:`DistributedTraining`, NOT a decorator closure.
+       Use ``client=`` to inject an existing :class:`BasilicaClient`
+       (otherwise a fresh one is built lazily, matching the decorator's
+       ``.deploy()`` semantics). See basilica-backend issue 662 / SDK-S3.
 
     Args:
         name: Deployment name (DNS-safe).
@@ -537,31 +574,24 @@ def distributed(
             `"required"` raises if bench is non-Succeeded. See
             `BasilicaClient.deploy_distributed`.
         bench_timeout: Seconds budget for the opt-in bench wait.
+        command: BYO-launcher entry. When set, the call returns a
+            :class:`DistributedTraining` immediately (factory mode) and
+            the operator does NOT wrap with torchrun. Mutually exclusive
+            with the decorator shape -- supplying ``command`` AND
+            subsequently decorating a function is a usage error caught at
+            decoration time. See basilica-backend issue 662 / SDK-S3.
+        args: Args to pass to ``command`` when in factory mode. Ignored
+            unless ``command`` is set.
+        client: Optional :class:`BasilicaClient` used in factory mode.
+            Ignored in decorator mode (the decorator's ``.deploy(client=)``
+            takes precedence). When ``command`` is set and ``client`` is
+            None, a default ``BasilicaClient()`` is constructed lazily.
 
     Returns:
-        DistributedFunction wrapper. Calling it deploys; `.local()` runs
-        in-process for single-rank testing; `.deploy(client=...)` for
-        explicit-client usage.
-
-    Example:
-        >>> import basilica
-        >>> from basilica import WorldSize
-        >>>
-        >>> @basilica.distributed(
-        ...     name="dlc-llama-7b",
-        ...     world_size=WorldSize(min=4, target=8, max=16),
-        ...     gpu_count=1,
-        ...     gpu_models=["H100"],
-        ... )
-        ... def train():
-        ...     import os
-        ...     import torch.distributed as dist
-        ...     dist.init_process_group(backend="nccl")
-        ...     rank = dist.get_rank()
-        ...     # ... DiLoCo loop ...
-        >>>
-        >>> training = train()  # deploys, returns DistributedTraining
-        >>> training.scale(target=12)
+        - Decorator mode (``command`` is None): a decorator closure that
+          wraps the decorated function in a :class:`DistributedFunction`.
+        - Factory mode (``command`` is set): a :class:`DistributedTraining`
+          ready to use under a ``with`` block.
     """
     if world_size is None:
         raise ValueError("@distributed requires world_size")
@@ -597,7 +627,49 @@ def distributed(
         "bench_timeout": bench_timeout,
     }
 
+    # basilica-backend issue 662 / SDK-S3: factory mode. When the caller
+    # supplies a BYO launcher (``command=[...]``), short-circuit the
+    # decorator path and deploy immediately. The decorator path bakes
+    # ``_emit_deprecation=False`` into the inner deploy call so the
+    # canonical surface stays quiet; the factory does the same.
+    if command is not None:
+        return _deploy_command_factory(
+            kwargs=kwargs,
+            command=command,
+            args=args,
+            client=client,
+        )
+
     def decorator(func: Callable) -> DistributedFunction:
         return DistributedFunction(func, kwargs)
 
     return decorator
+
+
+def _deploy_command_factory(
+    kwargs: Dict[str, Any],
+    command: List[str],
+    args: Optional[List[str]],
+    client: Optional[Any],
+) -> DistributedTraining:
+    """
+    basilica-backend issue 662 / SDK-S3: BYO-launcher factory path.
+
+    Invoked by :func:`distributed` when ``command`` is set. Materializes
+    a :class:`BasilicaClient` if none was supplied, forwards ``command``
+    / ``args`` plus the shared kwargs to ``deploy_distributed`` with
+    ``_emit_deprecation=False`` (the canonical surface must not warn),
+    and returns the :class:`DistributedTraining` handle.
+
+    Kept separate from :func:`distributed` so the decorator path's hot
+    loop stays a closure constructor (no extra branch on every call).
+    """
+    from . import BasilicaClient  # local import to avoid circular dep
+
+    bound_client = client if client is not None else BasilicaClient()
+    return bound_client.deploy_distributed(
+        command=command,
+        args=args,
+        _emit_deprecation=False,
+        **kwargs,
+    )
