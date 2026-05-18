@@ -483,7 +483,7 @@ def distributed(
     provider_filter: Optional[Union[ProviderFilter, Dict[str, List[str]]]] = None,
     topology_spread: str = "provider-aware",
     nccl_env: Optional[Dict[str, str]] = None,
-    bench: str = "off",
+    bench: Union[bool, str] = False,
     rendezvous_backend: str = "etcd-v2",
     env: Optional[Dict[str, str]] = None,
     pip_packages: Optional[List[str]] = None,
@@ -512,7 +512,12 @@ def distributed(
         provider_filter: ProviderFilter or `{"include": [...], "exclude": [...]}` dict.
         topology_spread: One of `pack | provider-aware | region-aware | none`.
         nccl_env: NCCL env vars merged on top of operator defaults.
-        bench: `on-start` to schedule a 2-rank NCCL bench probe; `off` (default).
+        bench: ``True`` to opt in to the per-UD NCCL bench probe; ``False``
+            (default) skips it. Reads back as ``training.bench``
+            (``BenchResult | None``) post-terminal. The legacy str modes
+            ``"on-start"`` / ``"off"`` remain accepted with
+            ``DeprecationWarning``; removed in the next major. See
+            ``basilica-backend#661`` / SDK-S2.
         rendezvous_backend: `etcd-v2` (default) | `c10d` | `static`.
         env: Environment variables passed to the worker pods.
         pip_packages: Additional pip packages to install.
