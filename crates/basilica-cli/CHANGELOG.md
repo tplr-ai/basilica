@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Errors carry a `field` identifier and a `hint` naming the flag or
     command to run. Rendered as single-line JSON on stderr when
     `--json` is set, and as human-readable text otherwise.
+- Dedicated `VRAM` column in `basilica ls` secure-cloud offerings
+  table, separating GPU memory from the existing `RAM` (system
+  memory) column so totals are unambiguous at a glance.
 
 ### Changed
 - OAuth auto-login is skipped in non-interactive mode: commands that
@@ -24,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `basilica ssh-keys add` no longer silently generates a new key under
   `~/.ssh` in non-interactive mode when no local public keys are
   present; pass `--file <path>` to an existing public key instead.
+- `basilica up` interactive selector now labels the Memory column
+  value as `<N> GB (VRAM)` for GPU offerings and `<N> GB (RAM)` for
+  CPU-only offerings, making it explicit whether the figure is GPU
+  memory or system RAM.
+- Normalized size formatting across the CLI to put a space between
+  the number and the unit (`16 GB` instead of `16GB`) for VRAM, RAM,
+  storage, and volume size columns, matching SI/NIST style and the
+  existing storage column.
 
 ## [0.29.0] - 2026-05-04
 

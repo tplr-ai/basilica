@@ -244,7 +244,7 @@ fn validate_gpu_options(gpu: &GpuOptions) -> Result<(), DeployError> {
             if mem > reqs.max_gpu_memory_gb {
                 return Err(DeployError::Validation {
                     message: format!(
-                        "GPU memory {}GB exceeds {} maximum of {}GB",
+                        "GPU memory {} GB exceeds {} maximum of {} GB",
                         mem,
                         model.to_uppercase(),
                         reqs.max_gpu_memory_gb

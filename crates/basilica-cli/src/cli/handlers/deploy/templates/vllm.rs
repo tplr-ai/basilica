@@ -40,7 +40,7 @@ pub async fn handle_vllm_deploy(
     // Use user-specified GPU count or auto-detected
     let gpu_count = common.gpu.unwrap_or_else(|| {
         print_info(&format!(
-            "Auto-detected GPU requirements: {} GPU(s), ~{}GB VRAM ({})",
+            "Auto-detected GPU requirements: {} GPU(s), ~{} GB VRAM ({})",
             estimated.gpu_count, estimated.memory_gb, estimated.recommended_gpu
         ));
         estimated.gpu_count

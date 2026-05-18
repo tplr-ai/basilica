@@ -1810,7 +1810,7 @@ pub async fn handle_status(
                         println!("  vCPU: N/A");
                     }
                     if let Some(mem) = rental.system_memory_gb {
-                        println!("  Memory: {}GB", mem);
+                        println!("  Memory: {} GB", mem);
                     }
                     if let Some(ip) = &rental.ip_address {
                         println!("  IP Address: {}", ip);

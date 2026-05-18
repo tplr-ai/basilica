@@ -180,7 +180,7 @@ async fn select_volume(
 
     // Format items for selection
     // Header: Name | Size | Status | Provider | Region
-    let header = "  Name                 │   Size │     Status │   Provider │   Region";
+    let header = "  Name                 │    Size │     Status │   Provider │   Region";
     let full_prompt = format!("{}\n{}", prompt, style(header).dim());
 
     let items: Vec<String> = filtered_volumes
@@ -202,7 +202,7 @@ async fn select_volume(
             };
 
             format!(
-                "{:<20} │ {:>5}GB │ {:>10} │ {:>10} │ {:>8}",
+                "{:<20} │ {:>5} GB │ {:>10} │ {:>10} │ {:>8}",
                 truncate(&v.name, 20),
                 v.size_gb,
                 status_str,
@@ -315,7 +315,7 @@ async fn select_rental_for_volume(
             } else {
                 // CPU-only rental
                 match (r.vcpu_count, r.system_memory_gb) {
-                    (Some(vcpu), Some(mem)) => format!("{} vCPU / {}GB", vcpu, mem),
+                    (Some(vcpu), Some(mem)) => format!("{} vCPU / {} GB", vcpu, mem),
                     (Some(vcpu), None) => format!("{} vCPU", vcpu),
                     _ => "CPU-only".to_string(),
                 }
@@ -435,7 +435,7 @@ pub async fn handle_create_volume(
     // Compact summary before confirmation
     println!();
     println!(
-        "Volume: {} ({}GB) on {}/{}",
+        "Volume: {} ({} GB) on {}/{}",
         style(&name).cyan(),
         size,
         provider,
@@ -578,7 +578,7 @@ pub async fn handle_delete_volume(
         println!(
             "{}",
             style(format!(
-                "Warning: This will permanently delete volume \"{}\" ({}GB)",
+                "Warning: This will permanently delete volume \"{}\" ({} GB)",
                 volume_name, size_gb
             ))
             .yellow()
