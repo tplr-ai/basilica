@@ -245,6 +245,59 @@ def _normalize_bench_param(bench: Any) -> str:
     return bench  # type: ignore[return-value]
 
 
+def _normalize_source_param(
+    source: Optional[Union[str, Path, Callable]],
+    *,
+    emit_deprecation: bool = True,
+) -> Optional[Union[str, Path, Callable]]:
+    """
+    basilica-backend#663 / SDK-S4: collapse the ``source`` parameter to a
+    ``Callable``-only surface via the ``@basilica.distributed`` decorator.
+
+    The decorator is the canonical input shape for "the code workers
+    should run". Direct user calls to ``deploy_distributed`` (and its
+    async sibling) that pass ``source=<str>`` or ``source=<Path>`` get a
+    ``DeprecationWarning`` pointing at the decorator. The string and
+    path shapes remain functional for the next two minor versions, then
+    are removed (alongside ``deploy_distributed*`` itself in SDK-S7).
+
+    The ``Callable`` shape is silent because the decorator's
+    ``DistributedFunction.deploy(...)`` actually extracts the body into a
+    ``str`` and forwards it as ``source=<str>``; that internal call sets
+    ``_emit_deprecation=False``, which we honor here via the
+    ``emit_deprecation`` keyword to keep the canonical surface quiet.
+
+    Args:
+        source: User-supplied source value. ``Callable`` is the canonical
+            shape; ``str`` and ``Path`` are accepted with deprecation.
+        emit_deprecation: When ``False``, this normalizer is a no-op (the
+            caller is the canonical surface and the user did NOT opt into
+            the deprecated parameter directly). Mirrors the existing
+            ``_emit_deprecation`` plumbing on ``deploy_distributed``.
+
+    Returns:
+        ``source`` unchanged. The wire-shape decoding stays in
+        ``_build_distributed_request`` -- this helper only emits the
+        warning.
+    """
+    if not emit_deprecation:
+        return source
+    if source is None or callable(source):
+        return source
+    if isinstance(source, (str, Path)):
+        type_label = "Path" if isinstance(source, Path) else "str"
+        warnings.warn(
+            f"source={type_label!r}-typed value is deprecated and will be "
+            f"removed in the next major. Use the @basilica.distributed "
+            f"decorator on a Callable (the canonical surface), or wrap an "
+            f"external script via `runpy.run_path('/workspace/...')` inside "
+            f"a decorated function. See basilica-backend#663 / SDK-S4.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    return source
+
+
 def _shell_join_preserving_vars(command: List[str]) -> str:
     """
     Join an argv list into a single shell command string for the operator's
@@ -1284,6 +1337,12 @@ class BasilicaClient:
                 DeprecationWarning,
                 stacklevel=2,
             )
+        # basilica-backend#663 / SDK-S4: collapse the source parameter to
+        # a Callable-only surface (via the decorator). str/Path inputs
+        # remain accepted with DeprecationWarning; the decorator's
+        # internal source=<str> call sets _emit_deprecation=False, which
+        # this helper honors so the canonical surface stays silent.
+        source = _normalize_source_param(source, emit_deprecation=_emit_deprecation)
         if world_size is None:
             raise ValidationError("deploy_distributed requires world_size", field="world_size")
         if wait_for_bench not in ("never", "best_effort", "required"):
@@ -2440,6 +2499,10 @@ class BasilicaClient:
                 DeprecationWarning,
                 stacklevel=2,
             )
+        # basilica-backend#663 / SDK-S4: same Callable-only collapse as the
+        # sync path. _emit_deprecation gates both the S1 deprecation
+        # (above) and the S4 source-shape deprecation (below).
+        source = _normalize_source_param(source, emit_deprecation=_emit_deprecation)
         if world_size is None:
             raise ValidationError("deploy_distributed_async requires world_size", field="world_size")
         if wait_for_bench not in ("never", "best_effort", "required"):
