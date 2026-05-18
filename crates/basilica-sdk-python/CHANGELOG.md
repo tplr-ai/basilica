@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.4] - 2026-05-18
+
+### Fixed
+- `BenchStatus` recognises `phase=Skipped` as a terminal state.
+  `_BENCH_TERMINAL_PHASES` now contains all four operator-side terminal
+  phases (`Succeeded`, `Failed`, `TimedOut`, `Skipped`), so
+  `BenchStatus.is_terminal` returns `True` on `Skipped` and
+  `wait_until_bench_complete` / `wait_until_bench_complete_async` return
+  the terminal `BenchStatus` instead of polling until the user-supplied
+  timeout and raising `TimeoutError`. Pre-fix, the SDK had the data
+  (the operator wrote terminal `BenchStatus{phase=Skipped,
+  lastAttemptOutcome="skipped"}` to the UD CR) but did not act on it
+  -- the `TimeoutError` message literally contained `(phase=Skipped)`.
+  Closes #480. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-5 Cell B and the
+  basilica-backend operator X2 fix (`one-covenant/basilica-backend#650
+  / #653`).
+
+### Added
+- `BenchStatus.is_successful` / `is_failed` / `is_skipped` properties.
+  Pin the semantic that `Skipped` is terminal but neither success nor
+  failure -- the bench probe was not run (e.g. workers exited before
+  the bench-controller observed them). The workload's own exit codes
+  remain the source of truth for run success; bench is an opt-in,
+  best-effort measurement.
+
+## [0.29.3] - 2026-05-17
+
+### Fixed
+- `@basilica.distributed` / `@basilica.deployment` / `SourcePackager.from_function`
+  now filter the captured module-level imports down to those whose
+  bound names are actually referenced by the function body. Without
+  this filter, the v0.29.2 fix shipped every module-level import to
+  the worker pod — including `import basilica` and
+  `from basilica import ...` that are only used by the decorator
+  itself — which caused the worker to fail with
+  `ModuleNotFoundError: No module named 'basilica'` at runtime
+  (`basilica-sdk` is not installed in the trainer image). The filter
+  uses AST walking of the function body to collect referenced `Name`
+  / leftmost `Attribute` identifiers and emits only the matching
+  imports. Refs #477 follow-up. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-3 Cell B runtime
+  trace.
+
+## [0.29.2] - 2026-05-16
+
+### Fixed
+- `@basilica.distributed` and `@basilica.deployment` now capture the
+  defining module's top-level `import` and `from ... import ...`
+  statements and prepend them to the source shipped to the worker pod.
+  Before this fix, only the function body was shipped; module-level
+  names referenced inside the body (e.g. the `import os` in
+  `examples/20_distributed_diloco.py`) raised `NameError` at worker
+  runtime. Closes #477. Cross-repo reference:
+  `one-covenant/basilica-backend#419` Stage 4 take-3 Cell B. The same
+  capture is applied in `SourcePackager.from_function()` for the
+  lower-level packaging path.
+
 ## [0.29.1] - 2026-05-09
 
 ### Fixed

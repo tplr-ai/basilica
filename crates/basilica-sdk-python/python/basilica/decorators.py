@@ -4,8 +4,10 @@ Decorator-based deployment API.
 Provides @deployment decorator for declarative function deployments and
 @distributed decorator for distributed-training (NCCL collective) jobs.
 """
+import ast
 import functools
 import inspect
+import sys
 import textwrap
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Union
 
@@ -15,6 +17,118 @@ from .volume import Volume
 
 if TYPE_CHECKING:
     from basilica._basilica import HealthCheckConfig
+
+
+def _collect_referenced_names(func_source: str) -> set:
+    """
+    Walk the AST of `func_source` and collect every free `Name` and the
+    leftmost identifier of every `Attribute` chain (e.g. `os.environ.get`
+    contributes `os`). Local assignments and inside-body imports are NOT
+    excluded — that's fine because the import-prepending logic just
+    short-circuits on names the body genuinely never mentions.
+    """
+    names: set = set()
+    try:
+        tree = ast.parse(func_source)
+    except SyntaxError:
+        return names
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        elif isinstance(node, ast.Attribute):
+            # Find leftmost Name in the Attribute chain (e.g. `os` in `os.environ.get`).
+            cursor: ast.AST = node
+            while isinstance(cursor, ast.Attribute):
+                cursor = cursor.value
+            if isinstance(cursor, ast.Name):
+                names.add(cursor.id)
+    return names
+
+
+def _extract_module_level_imports(func: Callable, func_source: str) -> str:
+    """
+    Extract the subset of module-level `import` / `from ... import ...`
+    statements from the module that defines `func` whose bound names
+    are referenced inside `func_source`.
+
+    The decorator-based deploy path ships only the function source via
+    `inspect.getsource(func)`; module-level imports the body references
+    would otherwise be missing on the worker. Filtering by actual usage
+    keeps unrelated module-level imports (e.g. `import basilica` used
+    only by the decorator) OUT of the worker source, so the worker pod
+    does not have to install packages it never references.
+
+    Returns an empty string if the module source is unavailable
+    (interactive sessions, exec/eval contexts, frozen modules) or if no
+    module-level import binding is referenced by the function body.
+
+    Refs: one-covenant/basilica#477,
+    one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
+    """
+    module = sys.modules.get(getattr(func, "__module__", "") or "")
+    if module is None:
+        return ""
+    try:
+        module_source = inspect.getsource(module)
+    except (OSError, TypeError):
+        return ""
+    try:
+        tree = ast.parse(module_source)
+    except SyntaxError:
+        return ""
+
+    referenced = _collect_referenced_names(func_source)
+    if not referenced:
+        return ""
+
+    lines: List[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            kept = [
+                alias for alias in node.names
+                if _import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                filtered = ast.Import(names=kept)
+                lines.append(ast.unparse(filtered))
+        elif isinstance(node, ast.ImportFrom):
+            kept = [
+                alias for alias in node.names
+                if _from_import_binds_referenced_name(alias, referenced)
+            ]
+            if kept:
+                filtered = ast.ImportFrom(
+                    module=node.module, names=kept, level=node.level
+                )
+                lines.append(ast.unparse(filtered))
+    if not lines:
+        return ""
+    return "\n".join(lines) + "\n"
+
+
+def _import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    """
+    `import foo` binds `foo`. `import foo as bar` binds `bar`.
+    `import foo.bar` binds the top-level name `foo` (Python module
+    resolution).
+    """
+    if alias.asname is not None:
+        return alias.asname in referenced
+    # `import foo.bar` → binds `foo`.
+    return alias.name.split(".")[0] in referenced
+
+
+def _from_import_binds_referenced_name(alias: ast.alias, referenced: set) -> bool:
+    """
+    `from x import foo` binds `foo`. `from x import foo as bar` binds `bar`.
+    `from x import *` is treated as referenced (we cannot know what names
+    it exposes without executing the import).
+    """
+    if alias.name == "*":
+        return True
+    if alias.asname is not None:
+        return alias.asname in referenced
+    return alias.name in referenced
 
 
 class DeployedFunction:
@@ -90,7 +204,12 @@ class DeployedFunction:
         return self._deployment
 
     def _extract_source(self) -> str:
-        """Extract function body as executable source code."""
+        """Extract function body as executable source code.
+
+        Captures the defining module's top-level `import` statements
+        (via :func:`_extract_module_level_imports`) so the body's
+        references to module-level names resolve on the worker.
+        """
         full_source = inspect.getsource(self._func)
         lines = full_source.split('\n')
 
@@ -107,9 +226,16 @@ class DeployedFunction:
         func_source = '\n'.join(func_lines)
         func_source = textwrap.dedent(func_source)
 
+        # Prepend the defining module's top-level imports whose bound
+        # names appear in the function body, so references like `os`,
+        # `time`, `Optional` resolve on the worker pod without dragging
+        # in unrelated imports (e.g. `import basilica` used only by the
+        # decorator). Refs one-covenant/basilica#477.
+        imports = _extract_module_level_imports(self._func, func_source)
+
         # Generate entry point that calls the function
         func_name = self._func.__name__
-        return f'''{func_source}
+        return f'''{imports}{func_source}
 
 {func_name}()
 '''
@@ -317,6 +443,12 @@ class DistributedFunction:
         but emits a torchrun-friendly shape: the body runs once per
         rank, each rank's torchrun invocation provides
         `BASILICA_RANK`/`BASILICA_WORLD_*` env vars.
+
+        Captures the defining module's top-level `import` statements
+        (via :func:`_extract_module_level_imports`) so the body's
+        references to module-level names resolve on the worker pod.
+        Refs one-covenant/basilica#477,
+        one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
         """
         full_source = inspect.getsource(self._func)
         lines = full_source.split("\n")
@@ -329,8 +461,9 @@ class DistributedFunction:
 
         func_lines = lines[def_idx:]
         func_source = textwrap.dedent("\n".join(func_lines))
+        imports = _extract_module_level_imports(self._func, func_source)
         func_name = self._func.__name__
-        return f"""{func_source}
+        return f"""{imports}{func_source}
 
 if __name__ == "__main__":
     {func_name}()
