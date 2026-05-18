@@ -1159,9 +1159,29 @@ class BasilicaClient:
         enable_billing: bool = True,
         wait_for_bench: Literal["never", "best_effort", "required"] = "never",
         bench_timeout: int = 1500,
+        _emit_deprecation: bool = True,
     ) -> DistributedTraining:
         """
         Deploy a distributed-training UserDeployment (SDK arch § 4).
+
+        .. deprecated:: 0.29.5
+            basilica-backend issue 660 / SDK-S1: prefer the
+            ``@basilica.distributed`` decorator. Calling it returns a
+            :class:`DistributedTraining` that is itself context-manager-able::
+
+                @basilica.distributed(...)
+                def train(): ...
+
+                with train() as training:        # auto-cleanup on scope exit
+                    training.scale(target=3)
+                    training.wait_until_target_world(timeout=300)
+                    print(training.bench)
+
+            This method remains functional for the next two minor versions
+            and emits a :class:`DeprecationWarning` on direct calls. The
+            decorator path itself does NOT trip the warning (the decorator
+            calls this method with ``_emit_deprecation=False`` so the user
+            sees no warning when they use the canonical surface).
 
         Switches the workload from a single-replica Deployment to a
         per-UD StatefulSet + rendezvous Pod + per-rank pods. Use this
@@ -1253,6 +1273,17 @@ class BasilicaClient:
                 `Failed` / `TimedOut` / `Skipped`, or the bench wait timed
                 out without a terminal phase.
         """
+        if _emit_deprecation:
+            warnings.warn(
+                "BasilicaClient.deploy_distributed is deprecated; prefer the "
+                "@basilica.distributed decorator. The decorator returns a "
+                "DistributedTraining that is itself context-manager-able "
+                "(use `with train() as training:` for mid-run orchestration "
+                "or call `train()` bare for fire-and-forget). See "
+                "basilica-backend issue 660 / SDK-S1 for migration details.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if world_size is None:
             raise ValidationError("deploy_distributed requires world_size", field="world_size")
         if wait_for_bench not in ("never", "best_effort", "required"):
@@ -1352,34 +1383,43 @@ class BasilicaClient:
         """
         Context-managed variant of :meth:`deploy_distributed`.
 
-        Defensive sibling of basilica-backend#486 (which fixed UD leak
-        inside ``deploy_distributed`` itself when the initial
-        ``wait_until_min_world`` raised). This variant fixes the
-        *caller-side* leak: when an intermediate wait such as
-        ``wait_until_target_world`` (after ``scale()``) raises, the
-        script aborts before reaching ``delete()``.
+        .. deprecated:: 0.29.5
+            basilica-backend issue 660 / SDK-S1: collapsed into the
+            canonical surface. :class:`DistributedTraining` is itself
+            context-manager-able now, so the wrapper this method returns
+            is redundant. Prefer the ``@basilica.distributed`` decorator::
 
-        Returns a :class:`DistributedTrainingManaged` that, on scope
-        exit (normal OR exceptional), best-effort calls
-        ``training.delete()`` so the UD does not leak.
+                @basilica.distributed(...)
+                def train(): ...
+
+                with train() as training:        # auto-cleanup on scope exit
+                    training.scale(target=3)
+                    training.wait_until_target_world(timeout=300)
+
+            This method remains functional for the next two minor versions
+            and emits a :class:`DeprecationWarning` on direct calls.
 
         All keyword arguments match :meth:`deploy_distributed` exactly
         and are forwarded verbatim. See that method for full semantics.
 
-        Recommended pattern for any ``deploy → use → delete`` flow::
-
-            with client.deploy_distributed_managed(
-                name="dlc-job",
-                image="...",
-                world_size=WorldSize(min=2, target=2, max=4),
-            ) as training:
-                training.scale(target=3)
-                training.wait_until_target_world(timeout=300)
-                ...
-            # `delete()` ran on scope exit, success or exception.
-
-        Refs: basilica-backend#538 (defensive sibling of #486).
+        Refs: basilica-backend#538 (defensive sibling of #486) — the
+        leak-protection contract that this method originally introduced
+        is now built into :class:`DistributedTraining` directly via
+        :py:meth:`DistributedTraining.__exit__`.
         """
+        warnings.warn(
+            "BasilicaClient.deploy_distributed_managed is deprecated; "
+            "DistributedTraining is itself context-manager-able now. "
+            "Prefer the @basilica.distributed decorator and write "
+            "`with train() as training:` to get the same auto-cleanup "
+            "contract. See basilica-backend issue 660 / SDK-S1 for "
+            "migration details.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Pass `_emit_deprecation=False` to avoid a double-warning. The
+        # outer warning here is the one the user should see; the inner
+        # `deploy_distributed` call is plumbing.
         training = self.deploy_distributed(
             name=name,
             source=source,
@@ -1406,6 +1446,7 @@ class BasilicaClient:
             enable_billing=enable_billing,
             wait_for_bench=wait_for_bench,
             bench_timeout=bench_timeout,
+            _emit_deprecation=False,
         )
         return DistributedTrainingManaged(training)
 
@@ -2374,15 +2415,31 @@ class BasilicaClient:
         enable_billing: bool = True,
         wait_for_bench: Literal["never", "best_effort", "required"] = "never",
         bench_timeout: int = 1500,
+        _emit_deprecation: bool = True,
     ) -> DistributedTraining:
         """
         Async variant of `deploy_distributed`. Same arguments and semantics
         per SDK arch § 9; uses `run_in_executor` over the underlying Rust
         client and `asyncio.sleep` for the wait loop.
 
+        .. deprecated:: 0.29.5
+            See :py:meth:`deploy_distributed` -- same deprecation, same
+            replacement (``@basilica.distributed`` decorator + ``async with
+            training:`` block).
+
         See `deploy_distributed` for the `wait_for_bench` /
         `bench_timeout` contract.
         """
+        if _emit_deprecation:
+            warnings.warn(
+                "BasilicaClient.deploy_distributed_async is deprecated; "
+                "prefer the @basilica.distributed decorator. The decorator "
+                "returns a DistributedTraining that supports `async with "
+                "training:` directly. See basilica-backend issue 660 / "
+                "SDK-S1 for migration details.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if world_size is None:
             raise ValidationError("deploy_distributed_async requires world_size", field="world_size")
         if wait_for_bench not in ("never", "best_effort", "required"):
@@ -2473,32 +2530,38 @@ class BasilicaClient:
         """
         Async context-managed variant of :meth:`deploy_distributed_async`.
 
-        Returns a :class:`DistributedTrainingManagedAsync` for use
-        directly with ``async with``. The actual deploy runs in
-        ``__aenter__`` (lazy), so this method itself does NOT need to
-        be awaited. On scope exit (normal OR exceptional), best-effort
-        calls ``training.delete_async()`` so the UD does not leak.
+        .. deprecated:: 0.29.5
+            basilica-backend issue 660 / SDK-S1: collapsed into the
+            canonical surface. :class:`DistributedTraining` is itself
+            async-context-manager-able now. Prefer the
+            ``@basilica.distributed`` decorator and write ``async with
+            train() as training:`` -- same auto-cleanup contract,
+            shorter call site.
 
         All keyword arguments match :meth:`deploy_distributed_async`
         exactly and are forwarded verbatim.
 
-        Recommended pattern::
-
-            async with client.deploy_distributed_managed_async(
-                name="dlc-job",
-                image="...",
-                world_size=WorldSize(min=2, target=2, max=4),
-            ) as training:
-                await training.scale_async(target=3)
-                await training.wait_until_target_world_async(timeout=300)
-                ...
-
-        Refs: basilica-backend#538 (defensive sibling of #486).
+        Refs: basilica-backend#538 (defensive sibling of #486) — the
+        leak-protection contract that this method originally introduced
+        is now built into :class:`DistributedTraining` directly via
+        :py:meth:`DistributedTraining.__aexit__`.
         """
+        warnings.warn(
+            "BasilicaClient.deploy_distributed_managed_async is deprecated; "
+            "DistributedTraining is itself async-context-manager-able now. "
+            "Prefer the @basilica.distributed decorator and write "
+            "`async with train() as training:`. See basilica-backend "
+            "issue 660 / SDK-S1 for migration details.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
         # Capture the deploy invocation as a zero-arg coroutine factory
         # so the manager can defer the deploy until `__aenter__`. Using
         # a factory (not a one-shot coroutine) keeps the manager
-        # idempotent under accidental re-entry.
+        # idempotent under accidental re-entry. `_emit_deprecation=False`
+        # prevents double-warning -- the outer warning above is the one
+        # the user should see; the inner deploy call is plumbing.
         def _factory() -> Any:
             return self.deploy_distributed_async(
                 name=name,
@@ -2526,6 +2589,7 @@ class BasilicaClient:
                 enable_billing=enable_billing,
                 wait_for_bench=wait_for_bench,
                 bench_timeout=bench_timeout,
+                _emit_deprecation=False,
             )
 
         return DistributedTrainingManagedAsync(_factory)

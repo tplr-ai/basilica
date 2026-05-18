@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.5] - 2026-05-18
+
+### Added
+- `DistributedTraining` is now itself a context manager (sync and async).
+  `__enter__` / `__exit__` return the handle and best-effort `delete()`
+  the UD on scope exit; `__aenter__` / `__aexit__` are the async
+  counterparts. Replaces the prior `DistributedTrainingManaged` ceremony
+  wrapper -- callers now write `with train() as training:` directly on
+  the decorator-returned object.
+
+### Deprecated
+- `BasilicaClient.deploy_distributed` and `deploy_distributed_async`
+  emit `DeprecationWarning` on direct calls. The decorator
+  `@basilica.distributed` remains the canonical surface; the decorator
+  itself does NOT trip the warning (it passes `_emit_deprecation=False`
+  to the underlying call).
+- `BasilicaClient.deploy_distributed_managed` and
+  `deploy_distributed_managed_async` emit `DeprecationWarning`. The
+  ceremony wrapper they returned is redundant now that
+  `DistributedTraining` is itself context-manager-able. Both methods
+  remain functional for two minor versions; remove at the next major
+  bump.
+
+Closes basilica-backend#660. Refs the SDK API simplification plan
+(`docs/plans/SDK-API-SIMPLIFICATION-PLAN.md` on basilica-backend main)
+ticket SDK-S1.
+
 ## [0.29.4] - 2026-05-18
 
 ### Fixed
