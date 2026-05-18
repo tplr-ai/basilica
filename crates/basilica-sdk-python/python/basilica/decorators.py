@@ -427,15 +427,14 @@ class DistributedFunction:
         from . import BasilicaClient
 
         client = client or BasilicaClient()
-        source = self._extract_source()
-
-        # basilica-backend issue 660 / SDK-S1: the decorator IS the
-        # canonical surface, so the underlying `deploy_distributed`
-        # call must NOT emit its own DeprecationWarning -- the user
-        # opted into the canonical path by using the decorator.
-        self._training = client.deploy_distributed(
-            source=source,
-            _emit_deprecation=False,
+        # Pass the user's Callable directly to the private impl; the
+        # impl packages the body via
+        # `basilica.source._package_function_for_torchrun(...)`. The
+        # public `deploy_distributed*` methods were removed in 0.30.0
+        # (SDK-S7); the decorator is the canonical surface and routes
+        # through the private impl directly.
+        self._training = client._deploy_distributed_impl(
+            source=self._func,
             **self._kwargs,
         )
         return self._training
@@ -446,36 +445,24 @@ class DistributedFunction:
 
     def _extract_source(self) -> str:
         """
-        Extract function body as executable source code, packaged as the
-        per-rank entrypoint. Mirrors `DeployedFunction._extract_source`
-        but emits a torchrun-friendly shape: the body runs once per
-        rank, each rank's torchrun invocation provides
-        `BASILICA_RANK`/`BASILICA_WORLD_*` env vars.
+        Extract the per-rank entrypoint module text for this function.
 
-        Captures the defining module's top-level `import` statements
+        Thin shim over
+        :func:`basilica.source._package_function_for_torchrun`. The
+        implementation lives there (DRY with the deploy path inside
+        ``BasilicaClient._build_distributed_request``); this method
+        exists so decorator-introspection tests can pin the same module
+        text the deploy path ships to the worker pod.
+
+        Captures the defining module's top-level ``import`` statements
         (via :func:`_extract_module_level_imports`) so the body's
         references to module-level names resolve on the worker pod.
         Refs one-covenant/basilica#477,
         one-covenant/basilica-backend#419 (Stage 4 take-3 Cell B).
         """
-        full_source = inspect.getsource(self._func)
-        lines = full_source.split("\n")
+        from .source import _package_function_for_torchrun
 
-        def_idx = 0
-        for i, line in enumerate(lines):
-            if line.lstrip().startswith("def "):
-                def_idx = i
-                break
-
-        func_lines = lines[def_idx:]
-        func_source = textwrap.dedent("\n".join(func_lines))
-        imports = _extract_module_level_imports(self._func, func_source)
-        func_name = self._func.__name__
-        return f"""{imports}{func_source}
-
-if __name__ == "__main__":
-    {func_name}()
-"""
+        return _package_function_for_torchrun(self._func)
 
 
 def distributed(
@@ -491,7 +478,7 @@ def distributed(
     provider_filter: Optional[Union[ProviderFilter, Dict[str, List[str]]]] = None,
     topology_spread: str = "provider-aware",
     nccl_env: Optional[Dict[str, str]] = None,
-    bench: Union[bool, str] = False,
+    bench: bool = False,
     rendezvous_backend: str = "etcd-v2",
     env: Optional[Dict[str, str]] = None,
     pip_packages: Optional[List[str]] = None,
@@ -606,9 +593,8 @@ def distributed(
             the rare debug detail. Default ``False`` because the probe
             costs 2 extra GPU ranks for its duration; users who don't
             need the measurement shouldn't pay for it. The legacy str
-            modes ``"on-start"`` / ``"off"`` remain accepted with
-            ``DeprecationWarning``; removed in the next major. See
-            ``basilica-backend`` issue 661 / SDK-S2.
+            modes ``"on-start"`` / ``"off"`` were removed in 0.30.0; see
+            ``basilica-backend`` issue 661 / SDK-S2 for migration.
         rendezvous_backend: ``etcd-v2`` (default) | ``c10d`` | ``static``.
             Default ``etcd-v2`` is the only backend with full
             elasticity (mid-run scale, rank join/drain). Pick a
@@ -726,9 +712,9 @@ def _deploy_command_factory(
 
     Invoked by :func:`distributed` when ``command`` is set. Materializes
     a :class:`BasilicaClient` if none was supplied, forwards ``command``
-    / ``args`` plus the shared kwargs to ``deploy_distributed`` with
-    ``_emit_deprecation=False`` (the canonical surface must not warn),
-    and returns the :class:`DistributedTraining` handle.
+    / ``args`` plus the shared kwargs to the private
+    :py:meth:`BasilicaClient._deploy_distributed_impl`, and returns the
+    :class:`DistributedTraining` handle.
 
     Kept separate from :func:`distributed` so the decorator path's hot
     loop stays a closure constructor (no extra branch on every call).
@@ -736,9 +722,8 @@ def _deploy_command_factory(
     from . import BasilicaClient  # local import to avoid circular dep
 
     bound_client = client if client is not None else BasilicaClient()
-    return bound_client.deploy_distributed(
+    return bound_client._deploy_distributed_impl(
         command=command,
         args=args,
-        _emit_deprecation=False,
         **kwargs,
     )

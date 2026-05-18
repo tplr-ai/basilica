@@ -1366,8 +1366,8 @@ pub enum TrainAction {
     /// CLI-side launches are BYO-launcher only: the user provides
     /// `--command` (the bash one-liner the operator runs in `sh -c`).
     /// Source-shipping (read a local .py file and embed it) is a Python
-    /// SDK feature -- use `client.deploy_distributed(source=...)` or
-    /// `@basilica.distributed`. See SDK arch § 5 / § 10.
+    /// SDK feature -- use the `@basilica.distributed` decorator on the
+    /// function. See SDK arch § 5 / § 10.
     Up {
         /// Deployment name.
         name: String,

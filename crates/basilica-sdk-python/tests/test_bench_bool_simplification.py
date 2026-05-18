@@ -203,56 +203,44 @@ class TestBenchBoolAcceptance:
         client = _make_client_with_stub()
         with warnings.catch_warnings(record=True) as recorded:
             warnings.simplefilter("always")
-            training = client.deploy_distributed(bench=True, **_deploy_kwargs())
+            training = client._deploy_distributed_impl(bench=True, **_deploy_kwargs())
         assert isinstance(training, DistributedTraining)
-        # No bench-related DeprecationWarning expected for the canonical
-        # bool form. Other warnings (e.g. the SDK-S1 deprecation of
-        # ``deploy_distributed`` itself in favor of the decorator) are
-        # filtered out here -- this test pins ONLY the bench surface.
-        bench_deprecations = [
-            w for w in recorded
-            if issubclass(w.category, DeprecationWarning)
-            and "bench" in str(w.message).lower()
-        ]
-        assert bench_deprecations == [], (
-            f"bench=True must NOT raise a bench-related DeprecationWarning, "
-            f"got {[str(w.message) for w in bench_deprecations]!r}"
+        deprecations = [w for w in recorded if issubclass(w.category, DeprecationWarning)]
+        assert deprecations == [], (
+            f"bench=True (canonical) must NOT raise DeprecationWarning, "
+            f"got {[str(w.message) for w in deprecations]!r}"
         )
 
     def test_bench_false_accepted_without_warning(self) -> None:
         client = _make_client_with_stub()
         with warnings.catch_warnings(record=True) as recorded:
             warnings.simplefilter("always")
-            training = client.deploy_distributed(bench=False, **_deploy_kwargs())
+            training = client._deploy_distributed_impl(bench=False, **_deploy_kwargs())
         assert isinstance(training, DistributedTraining)
-        bench_deprecations = [
-            w for w in recorded
-            if issubclass(w.category, DeprecationWarning)
-            and "bench" in str(w.message).lower()
-        ]
-        assert bench_deprecations == [], (
-            f"bench=False must NOT raise a bench-related DeprecationWarning, "
-            f"got {[str(w.message) for w in bench_deprecations]!r}"
+        deprecations = [w for w in recorded if issubclass(w.category, DeprecationWarning)]
+        assert deprecations == [], (
+            f"bench=False (canonical) must NOT raise DeprecationWarning, "
+            f"got {[str(w.message) for w in deprecations]!r}"
         )
 
     def test_bench_true_emits_on_start_on_the_wire(self) -> None:
         """``bench=True`` -> request body has ``distributed.bench.mode='on-start'``."""
         client = _make_client_with_stub()
-        client.deploy_distributed(bench=True, **_deploy_kwargs())
+        client._deploy_distributed_impl(bench=True, **_deploy_kwargs())
         sent_payload = client._client.create_distributed_deployment.call_args.args[0]
         assert sent_payload["distributed"]["bench"]["mode"] == "on-start"
 
     def test_bench_false_emits_off_on_the_wire(self) -> None:
         """``bench=False`` -> request body has ``distributed.bench.mode='off'``."""
         client = _make_client_with_stub()
-        client.deploy_distributed(bench=False, **_deploy_kwargs())
+        client._deploy_distributed_impl(bench=False, **_deploy_kwargs())
         sent_payload = client._client.create_distributed_deployment.call_args.args[0]
         assert sent_payload["distributed"]["bench"]["mode"] == "off"
 
     def test_bench_default_is_off(self) -> None:
         """Omitting ``bench`` (default) emits ``mode=off`` -- no probe scheduled."""
         client = _make_client_with_stub()
-        client.deploy_distributed(**_deploy_kwargs())
+        client._deploy_distributed_impl(**_deploy_kwargs())
         sent_payload = client._client.create_distributed_deployment.call_args.args[0]
         assert sent_payload["distributed"]["bench"]["mode"] == "off"
 
@@ -286,28 +274,25 @@ class TestDecoratorAcceptsBenchBool:
 
 
 # =============================================================================
-# C. ``bench=str`` form is deprecated (still accepted).
+# C. ``bench=str`` form is REMOVED in 0.30.0 (S7).
 # =============================================================================
 
 
-class TestBenchStrDeprecation:
-    def test_bench_on_start_str_emits_deprecation_warning(self) -> None:
-        client = _make_client_with_stub()
-        with pytest.warns(DeprecationWarning, match=r"bench=True"):
-            client.deploy_distributed(bench="on-start", **_deploy_kwargs())
+class TestBenchStrRemoved:
+    """Post-S7: passing a string for bench raises ValidationError, not a
+    DeprecationWarning. Migration path: ``bench=True`` / ``bench=False``."""
 
-    def test_bench_off_str_emits_deprecation_warning(self) -> None:
+    def test_bench_on_start_str_raises_validation_error(self) -> None:
+        from basilica.exceptions import ValidationError
         client = _make_client_with_stub()
-        with pytest.warns(DeprecationWarning, match=r"bench=False"):
-            client.deploy_distributed(bench="off", **_deploy_kwargs())
+        with pytest.raises(ValidationError, match=r"bench must be bool"):
+            client._deploy_distributed_impl(bench="on-start", **_deploy_kwargs())
 
-    def test_bench_str_still_passed_through_to_wire(self) -> None:
-        """``bench='on-start'`` still works (back-compat): wire token is preserved."""
+    def test_bench_off_str_raises_validation_error(self) -> None:
+        from basilica.exceptions import ValidationError
         client = _make_client_with_stub()
-        with pytest.warns(DeprecationWarning):
-            client.deploy_distributed(bench="on-start", **_deploy_kwargs())
-        sent_payload = client._client.create_distributed_deployment.call_args.args[0]
-        assert sent_payload["distributed"]["bench"]["mode"] == "on-start"
+        with pytest.raises(ValidationError, match=r"bench must be bool"):
+            client._deploy_distributed_impl(bench="off", **_deploy_kwargs())
 
 
 # =============================================================================
@@ -447,61 +432,39 @@ class TestTrainingBenchLazyResult:
 
 
 # =============================================================================
-# F. ``wait_until_bench_complete`` is deprecated.
+# F. ``wait_until_bench_complete[_async]`` and ``bench_status`` are
+#    REMOVED in 0.30.0 (S7). Migration: read ``training.bench``
+#    (``BenchResult | None``) and ``training.bench_diagnostics``
+#    (``dict | None``).
 # =============================================================================
 
 
-class TestWaitUntilBenchCompleteDeprecated:
-    """Per SDK-S2: ``wait_until_bench_complete`` remains functional for
-    two minor versions but emits ``DeprecationWarning`` pointing at the
-    lazy ``training.bench`` accessor."""
-
-    def test_wait_until_bench_complete_emits_deprecation_warning(self) -> None:
-        client = MagicMock()
-        client.get.return_value = _stub_response_with_bench(
-            "ud-bench-deprecated",
-            "u-test",
-            bench_block=_stub_bench_block("Succeeded", with_result=True),
+class TestRemovedBenchAccessors:
+    def test_wait_until_bench_complete_is_removed(self) -> None:
+        assert not hasattr(DistributedTraining, "wait_until_bench_complete"), (
+            "wait_until_bench_complete must be removed in 0.30.0 (SDK-S7); "
+            "use training.bench / training.bench_diagnostics."
         )
-        training = DistributedTraining(client, "ud-bench-deprecated")
-        with pytest.warns(DeprecationWarning, match=r"training\.bench"):
-            bs = training.wait_until_bench_complete(timeout=5)
-        # Still functional: it returns the BenchStatus.
-        assert bs is not None
-        assert bs.phase == "Succeeded"
 
-    def test_wait_until_bench_complete_async_emits_deprecation_warning(self) -> None:
-        import asyncio
-        client = MagicMock()
-        client.get.return_value = _stub_response_with_bench(
-            "ud-bench-deprecated-async",
-            "u-test",
-            bench_block=_stub_bench_block("Succeeded", with_result=True),
+    def test_wait_until_bench_complete_async_is_removed(self) -> None:
+        assert not hasattr(
+            DistributedTraining, "wait_until_bench_complete_async"
+        ), (
+            "wait_until_bench_complete_async must be removed in 0.30.0 "
+            "(SDK-S7); use training.bench / training.bench_diagnostics."
         )
-        training = DistributedTraining(client, "ud-bench-deprecated-async")
-        with pytest.warns(DeprecationWarning, match=r"training\.bench"):
-            asyncio.run(training.wait_until_bench_complete_async(timeout=5))
 
-
-# =============================================================================
-# G. ``bench_status`` accessor remains BUT emits DeprecationWarning.
-# =============================================================================
-
-
-class TestBenchStatusAccessorDeprecated:
-    """``DistributedTraining.bench_status`` keeps working for back-compat
-    but emits DeprecationWarning pointing at ``training.bench`` /
-    ``training.bench_diagnostics``."""
-
-    def test_bench_status_emits_deprecation_warning(self) -> None:
-        client = MagicMock()
-        client.get.return_value = _stub_response_with_bench(
-            "ud-bench-status",
-            "u-test",
-            bench_block=_stub_bench_block("Succeeded", with_result=True),
+    def test_bench_status_property_is_removed(self) -> None:
+        assert not hasattr(DistributedTraining, "bench_status"), (
+            "bench_status must be removed in 0.30.0 (SDK-S7); use "
+            "training.bench (BenchResult | None) or "
+            "training.bench_diagnostics (dict | None)."
         )
-        training = DistributedTraining(client, "ud-bench-status")
-        with pytest.warns(DeprecationWarning, match=r"bench_diagnostics"):
-            bs = training.bench_status
-        assert bs is not None
-        assert bs.phase == "Succeeded"
+
+    def test_basilica_does_not_re_export_BenchStatus(self) -> None:
+        import basilica
+        assert not hasattr(basilica, "BenchStatus"), (
+            "BenchStatus must not be re-exported from basilica in 0.30.0 "
+            "(SDK-S7); use BenchResult plus the dict from "
+            "training.bench_diagnostics."
+        )

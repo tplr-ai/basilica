@@ -242,32 +242,24 @@ class TestDecoratorFormStillWorks:
 
 
 # =============================================================================
-# Target 3: ``deploy_distributed_managed`` continues to emit
-# DeprecationWarning (re-pin of S1's contract; the warning message must
-# steer callers at the canonical ``basilica.distributed`` surface for
-# BYO-launcher use cases too -- not just the decorator form).
+# Post-S7 (0.30.0): ``deploy_distributed_managed`` is REMOVED, not just
+# warn-and-still-callable. BYO-launcher callers MUST use
+# ``basilica.distributed(command=[...])``.
 # =============================================================================
 
 
-class TestManagedBYORedirection:
-    def test_managed_with_command_emits_deprecation_warning(self) -> None:
+class TestManagedBYOSurfaceRemoved:
+    def test_managed_with_command_is_removed(self) -> None:
         """
-        BYO launcher through ``deploy_distributed_managed(command=...)``
-        warns just like S1's decorator-replacement contract. The warning
-        text must mention ``basilica.distributed`` as the canonical
-        replacement (already covered by the S1 wording; this test pins
-        that BYO callers see the same redirection).
+        After SDK-S7 the ``deploy_distributed_managed`` factory is gone.
+        BYO callers go through ``basilica.distributed(command=[...])``
+        (validated by the canonical-surface tests above).
         """
         client = _make_client_with_stub(name="dlc-s3-managed-byo")
-        with pytest.warns(DeprecationWarning, match=r"@basilica\.distributed"):
-            with client.deploy_distributed_managed(
-                name="dlc-s3-managed-byo",
-                image="ghcr.io/example/trainer:latest",
-                world_size=WorldSize(min=2, target=2, max=4),
-                command=["torchrun", "/workspace/noop.py"],
-                timeout=0,
-            ):
-                pass
+        assert not hasattr(client, "deploy_distributed_managed"), (
+            "deploy_distributed_managed must be removed in 0.30.0 "
+            "(SDK-S7); use basilica.distributed(command=[...]) instead."
+        )
 
 
 # =============================================================================
