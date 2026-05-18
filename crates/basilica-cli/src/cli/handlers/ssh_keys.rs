@@ -1,9 +1,7 @@
 //! SSH key management handlers for the Basilica CLI
 
 use crate::error::CliError;
-use crate::interactive::gate::{
-    self, ask_confirm, ask_select, ask_text, Interactivity, SelectItem,
-};
+use crate::interactive::gate::{self, ask_confirm, ask_select, ask_text, Interactivity};
 use crate::output::{compress_path, json_output, print_success, print_warning};
 use crate::ssh::{find_local_public_key_path, same_public_key};
 use basilica_sdk::BasilicaClient;
@@ -255,39 +253,30 @@ pub async fn handle_add_ssh_key(
                 // No local keys to choose from. Generate one in interactive
                 // mode; in non-interactive mode refuse to mutate the user's
                 // ~/.ssh directory silently and tell them to pass --file.
-                match crate::interactive::gate::current() {
-                    crate::interactive::gate::Interactivity::NonInteractive => {
+                match gate::current() {
+                    Interactivity::NonInteractive => {
                         return Err(CliError::MissingInput {
                             field: "ssh_public_key_path".into(),
                             hint: "No SSH public keys found under ~/.ssh. Pass --file <path> to an existing SSH public key, e.g. ~/.ssh/id_ed25519.pub.".into(),
-                            choices: crate::interactive::gate::Choices::default(),
                         });
                     }
-                    crate::interactive::gate::Interactivity::Interactive => {
-                        generate_ssh_key().await?
-                    }
+                    Interactivity::Interactive => generate_ssh_key().await?,
                 }
             } else {
-                // Build SelectItems for the gate; in non-interactive mode the
-                // gate returns MissingInput with the candidate paths so an
-                // agent can pass one back as --file.
-                let items: Vec<SelectItem<'_, PathBuf>> = keys
+                let labels: Vec<String> = keys
                     .iter()
-                    .map(|p| SelectItem {
-                        item: p,
-                        id: p.display().to_string(),
-                        label: p
-                            .file_name()
+                    .map(|p| {
+                        p.file_name()
                             .and_then(|n| n.to_str())
                             .unwrap_or("unknown")
-                            .to_string(),
-                        meta: serde_json::Map::new(),
+                            .to_string()
                     })
                     .collect();
+                let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
 
                 let idx = ask_select(
                     "ssh_public_key_path",
-                    &items,
+                    &label_refs,
                     "Pass --file <path> to choose an SSH public key file (e.g. ~/.ssh/id_ed25519.pub)",
                 )?;
 

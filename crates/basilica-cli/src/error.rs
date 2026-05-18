@@ -90,15 +90,10 @@ pub enum CliError {
     InvalidProvider(String),
 
     /// A required input was not provided and we cannot prompt because we are
-    /// running non-interactively. `field` names the conceptual input, `hint`
-    /// tells the caller which flag or argument to supply, and `choices` may
-    /// surface the candidates that an interactive selector would have offered.
+    /// running non-interactively. `field` names the conceptual input and
+    /// `hint` tells the caller which flag or argument to supply.
     #[error("missing input: {field}")]
-    MissingInput {
-        field: String,
-        hint: String,
-        choices: crate::interactive::gate::Choices,
-    },
+    MissingInput { field: String, hint: String },
 
     /// A piece of account state (e.g. a registered SSH key) that the
     /// interactive flow would have set up implicitly is missing, and the CLI

@@ -37,26 +37,6 @@ pub fn set_for_test(v: Interactivity) {
     let _ = OVERRIDE.set(v);
 }
 
-/// A choice surfaced to the agent when a selector is skipped in non-interactive mode.
-#[derive(Debug, Default, Clone)]
-pub struct Choices(pub Vec<Choice>);
-
-#[derive(Debug, Clone)]
-pub struct Choice {
-    pub id: String,
-    pub label: String,
-    pub meta: serde_json::Map<String, serde_json::Value>,
-}
-
-/// Item passed to ask_select. Caller supplies identity + metadata explicitly
-/// so we don't have to bound T: Serialize.
-pub struct SelectItem<'a, T> {
-    pub item: &'a T,
-    pub id: String,
-    pub label: String,
-    pub meta: serde_json::Map<String, serde_json::Value>,
-}
-
 pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String, CliError> {
     match current() {
         Interactivity::NonInteractive => {
@@ -66,7 +46,6 @@ pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String
             Err(CliError::MissingInput {
                 field: field.to_string(),
                 hint: hint.to_string(),
-                choices: Choices::default(),
             })
         }
         Interactivity::Interactive => {
@@ -82,32 +61,17 @@ pub fn ask_text(field: &str, default: Option<&str>, hint: &str) -> Result<String
     }
 }
 
-pub fn ask_select<T>(
-    field: &str,
-    items: &[SelectItem<'_, T>],
-    hint: &str,
-) -> Result<usize, CliError> {
+pub fn ask_select(field: &str, labels: &[&str], hint: &str) -> Result<usize, CliError> {
     match current() {
         Interactivity::NonInteractive => Err(CliError::MissingInput {
             field: field.to_string(),
             hint: hint.to_string(),
-            choices: Choices(
-                items
-                    .iter()
-                    .map(|i| Choice {
-                        id: i.id.clone(),
-                        label: i.label.clone(),
-                        meta: i.meta.clone(),
-                    })
-                    .collect(),
-            ),
         }),
         Interactivity::Interactive => {
-            let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
             let theme = ColorfulTheme::default();
             Select::with_theme(&theme)
                 .with_prompt(field)
-                .items(&labels)
+                .items(labels)
                 .default(0)
                 .interact()
                 .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!(e)))
@@ -120,7 +84,6 @@ pub fn ask_confirm(field: &str, default: bool, hint: &str) -> Result<bool, CliEr
         Interactivity::NonInteractive => Err(CliError::MissingInput {
             field: field.to_string(),
             hint: hint.to_string(),
-            choices: Choices::default(),
         }),
         Interactivity::Interactive => {
             let theme = ColorfulTheme::default();
@@ -145,7 +108,7 @@ mod tests {
         set_for_test(Interactivity::NonInteractive);
         let err = ask_text("name", None, "Pass --name").unwrap_err();
         match err {
-            CliError::MissingInput { field, hint, .. } => {
+            CliError::MissingInput { field, hint } => {
                 assert_eq!(field, "name");
                 assert!(hint.contains("--name"));
             }
@@ -163,31 +126,15 @@ mod tests {
 
     #[test]
     #[serial]
-    fn ask_select_non_interactive_returns_choices() {
+    fn ask_select_non_interactive_errors() {
         set_for_test(Interactivity::NonInteractive);
-        struct Off {
-            #[allow(dead_code)]
-            name: &'static str,
-        }
-        let a = Off { name: "alpha" };
-        let b = Off { name: "beta" };
-        let items = vec![
-            SelectItem {
-                item: &a,
-                id: "1".into(),
-                label: "alpha".into(),
-                meta: Default::default(),
-            },
-            SelectItem {
-                item: &b,
-                id: "2".into(),
-                label: "beta".into(),
-                meta: Default::default(),
-            },
-        ];
-        let err = ask_select("offering", &items, "Pass --offering-id").unwrap_err();
+        let labels = ["alpha", "beta"];
+        let err = ask_select("offering", &labels, "Pass --offering-id").unwrap_err();
         match err {
-            CliError::MissingInput { choices, .. } => assert_eq!(choices.0.len(), 2),
+            CliError::MissingInput { field, hint } => {
+                assert_eq!(field, "offering");
+                assert!(hint.contains("--offering-id"));
+            }
             other => panic!("expected MissingInput, got {other:?}"),
         }
     }
@@ -198,7 +145,7 @@ mod tests {
         set_for_test(Interactivity::NonInteractive);
         let err = ask_confirm("replace", false, "Pass --force").unwrap_err();
         match err {
-            CliError::MissingInput { field, hint, .. } => {
+            CliError::MissingInput { field, hint } => {
                 assert_eq!(field, "replace");
                 assert!(hint.contains("--force"));
             }
