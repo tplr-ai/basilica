@@ -699,7 +699,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("exceeds RTX4090 maximum of 24GB"));
+            .contains("exceeds RTX4090 maximum of 24 GB"));
     }
 
     #[test]
