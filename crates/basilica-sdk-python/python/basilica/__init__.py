@@ -212,6 +212,39 @@ _SHELL_DOLLAR_SAFE_RE = re.compile(r"^[\w@%+=:,./\-$]+$", re.ASCII)
 _SHELL_SCRIPT_LAUNCHERS = frozenset({"bash", "sh", "/bin/bash", "/bin/sh"})
 
 
+def _normalize_bench_param(bench: Any) -> str:
+    """
+    basilica-backend#661 / SDK-S2: collapse the bench API surface to a
+    bool opt-in.
+
+    ``bench=True`` -> ``"on-start"`` wire token (probe scheduled).
+    ``bench=False`` -> ``"off"`` wire token (no probe; default).
+    ``bench="on-start" | "off"`` -> back-compat, emits DeprecationWarning
+    pointing at the bool form. Any other input raises ValidationError
+    via the downstream wire-shape check (preserves the existing
+    "invalid bench mode" error path).
+
+    The wire shape stays the operator's canonical ``"on-start" | "off"``
+    string. Only the user-facing parameter type narrows.
+    """
+    if isinstance(bench, bool):
+        return "on-start" if bench else "off"
+    if isinstance(bench, str):
+        if bench in ("on-start", "off"):
+            warnings.warn(
+                f"bench={bench!r} (str) is deprecated and will be removed "
+                f"in the next major. Use bench="
+                f"{'True' if bench == 'on-start' else 'False'} instead. "
+                f"See basilica-backend#661 / SDK-S2.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+        return bench
+    # Pass through to the downstream validator so the existing error
+    # path stays consistent (raises ValidationError with field="bench").
+    return bench  # type: ignore[return-value]
+
+
 def _shell_join_preserving_vars(command: List[str]) -> str:
     """
     Join an argv list into a single shell command string for the operator's
@@ -1115,7 +1148,7 @@ class BasilicaClient:
         provider_filter: Optional[ProviderFilter] = None,
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
+        bench: Union[bool, str] = False,
         bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,
@@ -1156,10 +1189,14 @@ class BasilicaClient:
                 | none`. Default `provider-aware`. SDK arch § 4.
             nccl_env: NCCL env vars merged on top of operator defaults.
                 User values win on collision.
-            bench: `"on-start"` to schedule a 2-rank NCCL bench probe in the
-                user's namespace alongside workers (counts against the
-                namespace rank budget; result lands on `training.bench`).
-                `"off"` (default) skips the probe. SDK arch § 7.
+            bench: ``True`` to opt in to the per-UD NCCL bench probe;
+                ``False`` (default) skips the probe. Reads back as
+                ``training.bench`` (``BenchResult | None``) after the UD
+                reaches a terminal state. Replaces the ``"on-start"`` /
+                ``"off"`` string modes (still accepted with
+                ``DeprecationWarning``; removed in the next major). See
+                ``basilica-backend#661`` / SDK-S2 for the rationale.
+                SDK arch § 7.
             bench_placement: Placement policy for the bench Pod pair on
                 multi-tenant clusters. `"preferred"` (default) lets the
                 bench fall back off the worker pair when those nodes have
@@ -1225,6 +1262,11 @@ class BasilicaClient:
                 field="wait_for_bench",
                 value=wait_for_bench,
             )
+        # basilica-backend#661 / SDK-S2: collapse bench API to bool.
+        # ``True`` -> "on-start"; ``False`` -> "off"; legacy str modes
+        # remain accepted with DeprecationWarning, normalized to the
+        # wire token here.
+        bench = _normalize_bench_param(bench)
 
         request_dict = self._build_distributed_request(
             name=name,
@@ -1295,7 +1337,7 @@ class BasilicaClient:
         provider_filter: Optional[ProviderFilter] = None,
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
+        bench: Union[bool, str] = False,
         bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,
@@ -2321,7 +2363,7 @@ class BasilicaClient:
         provider_filter: Optional[ProviderFilter] = None,
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
+        bench: Union[bool, str] = False,
         bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,
@@ -2350,6 +2392,8 @@ class BasilicaClient:
                 field="wait_for_bench",
                 value=wait_for_bench,
             )
+        # basilica-backend#661 / SDK-S2: collapse bench API to bool.
+        bench = _normalize_bench_param(bench)
 
         request_dict = self._build_distributed_request(
             name=name,
@@ -2414,7 +2458,7 @@ class BasilicaClient:
         provider_filter: Optional[ProviderFilter] = None,
         topology_spread: str = "provider-aware",
         nccl_env: Optional[Dict[str, str]] = None,
-        bench: str = "off",
+        bench: Union[bool, str] = False,
         bench_placement: str = "preferred",
         rendezvous_backend: str = "etcd-v2",
         command: Optional[List[str]] = None,

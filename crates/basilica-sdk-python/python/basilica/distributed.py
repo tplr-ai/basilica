@@ -14,6 +14,7 @@ the platform's tenancy contract. Bench results live on
 
 import asyncio
 import time
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import TracebackType
@@ -510,25 +511,89 @@ class DistributedTraining:
     @property
     def bench_status(self) -> Optional[BenchStatus]:
         """
-        Issue B/N (refs #506): full bench probe state, including
-        explicit lifecycle [`phase`], `started_at` / `completed_at`
-        timing, and a human-readable `message`.
+        DEPRECATED (basilica-backend#661, SDK-S2): full bench probe state.
 
-        Returns `None` when bench is off (`mode != on-start`) or the
+        Use ``training.bench`` (``BenchResult | None``) for the result
+        payload, and ``training.bench_diagnostics`` (``dict | None``)
+        for the rarely-needed debug detail (phase / message / timings).
+        This four-property enum surface (``is_terminal`` / ``is_successful``
+        / ``is_failed`` / ``is_skipped``) is being collapsed because the
+        diagnostic is OPT-IN: most callers want a yes/no answer, not a
+        four-phase ceremony.
+
+        Returns ``None`` when bench is off (``mode != on-start``) or the
         operator has not yet observed the Job at all. Otherwise the
-        returned [`BenchStatus`] reflects the operator's
-        `status.distributed.bench` exactly.
-
-        DECOUPLING CONTRACT: this surface is INDEPENDENT of
-        `WorldStatus.ready`. `wait_until_min_world` polls workers only;
-        bench has its own opt-in waiter, `wait_until_bench_complete`.
+        returned :class:`BenchStatus` reflects the operator's
+        ``status.distributed.bench`` exactly. Removed in the next major.
         """
+        warnings.warn(
+            "DistributedTraining.bench_status is deprecated and will be "
+            "removed in the next major. Use training.bench (BenchResult | "
+            "None) for the result and training.bench_diagnostics (dict | "
+            "None) for the rare debug detail. See "
+            "basilica-backend#661 / SDK-S2.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._bench_status_no_warn
+
+    @property
+    def _bench_status_no_warn(self) -> Optional[BenchStatus]:
+        """Internal: read the full BenchStatus without emitting the
+        deprecation warning. Used by ``bench_diagnostics`` and the
+        legacy ``wait_until_bench_complete`` waiter so they remain
+        callable without double-warning the user."""
         if self._cached_status is None:
             self.refresh()
         bench_raw = (self._cached_status or {}).get("distributed", {}).get("bench")
         if not bench_raw:
             return None
         return BenchStatus.from_status_dict(bench_raw)
+
+    @property
+    def bench_diagnostics(self) -> Optional[Dict[str, Any]]:
+        """
+        basilica-backend#661 / SDK-S2: simplified bench debug surface.
+
+        Returns ``None`` when bench was not requested (``mode != on-start``)
+        OR when the operator has not yet published a bench block.
+        Otherwise returns a ``dict`` with the small set of fields a
+        researcher might inspect when ``training.bench`` is ``None`` and
+        they want to know WHY the probe didn't measure:
+
+        - ``mode``: ``"on-start"`` (the only non-off value the user can
+          set) or ``"off"``.
+        - ``phase``: operator's bench-Job lifecycle phase
+          (``"Pending"`` / ``"Running"`` / ``"Succeeded"`` /
+          ``"Failed"`` / ``"TimedOut"`` / ``"Skipped"``).
+        - ``message``: human-readable reason from the operator.
+        - ``started_at`` / ``completed_at``: timing.
+        - ``last_attempt_at`` / ``last_attempt_outcome``: most recent
+          attempt outcome (e.g. ``"skipped"`` when workers exited
+          before the bench-controller observed them).
+
+        Most users only ever read ``training.bench``; this attribute is
+        the escape hatch for the rare case where they need to debug a
+        ``None`` result. Replaces the multi-property ``BenchStatus``
+        enum exposed via ``bench_status``.
+        """
+        bs = self._bench_status_no_warn
+        if bs is None:
+            return None
+        # Mode=off means "user didn't ask for a probe". Surfacing
+        # diagnostics in that case would be confusing -- there's nothing
+        # to debug. Collapse to None.
+        if bs.mode == "off":
+            return None
+        return {
+            "mode": bs.mode,
+            "phase": bs.phase,
+            "message": bs.message,
+            "started_at": bs.started_at,
+            "completed_at": bs.completed_at,
+            "last_attempt_at": bs.last_attempt_at,
+            "last_attempt_outcome": bs.last_attempt_outcome,
+        }
 
     def metrics(self) -> DistributedMetrics:
         """Platform-side metric snapshot for this UD (SDK arch § 6)."""
@@ -709,44 +774,36 @@ class DistributedTraining:
 
     def wait_until_bench_complete(self, timeout: int = 1500) -> Optional[BenchStatus]:
         """
-        Issue B/N (refs #506): OPT-IN waiter for the bench probe.
+        DEPRECATED (basilica-backend#661, SDK-S2): OPT-IN waiter for the bench probe.
 
-        Most callers do NOT need this; bench is best-effort per
-        `basilica_bench.py:75-78` and the world is considered ready
-        when workers reach Ready (see :py:meth:`wait_until_min_world`).
-        This method exists for the small set of callers that DO want
-        the bench measurement before continuing (e.g. a research run
-        that records busbw metadata into checkpoint headers).
+        Use ``training.bench`` (returns ``BenchResult | None``) after the
+        UD reaches a terminal state. The four-phase explicit-wait
+        ceremony is being collapsed: most callers want to know whether
+        the probe measured (``bench is not None``), not which of the
+        four terminal phases it landed in. For the rare debug path use
+        ``training.bench_diagnostics`` (dict with phase / message /
+        timings).
 
-        Returns the terminal :py:class:`BenchStatus` once `phase`
-        enters a terminal state. Closes #480: the four terminal phases
-        are:
-
-        - `Succeeded` -- bench probe produced a measurement; the result
-          payload is on `BenchStatus.result` (mirrored on
-          `DistributedTraining.bench` for backward compatibility).
-        - `Failed` -- bench probe ran but errored. See `message`.
-        - `TimedOut` -- bench probe's own deadline elapsed before
-          completion. See `message`.
-        - `Skipped` -- the operator decided not to run the bench probe
-          (e.g. workers exited before the bench-controller observed
-          them). See `message` for the reason. NOT a failure; the
-          workload itself may have completed cleanly.
-
-        If `bench.mode != on-start` returns `None` immediately (nothing
-        to wait on). Polls every 5s.
-
-        Default timeout matches the operator's `BENCH_ACTIVE_DEADLINE_SECONDS`
-        (1500s = 25 min). Raises `TimeoutError` past the deadline if the
-        bench has not reached a terminal phase. Callers handling a
-        terminal `Skipped` should branch on `bs.is_skipped` (or
-        `bs.phase != "Succeeded"`); see `examples/20_distributed_diloco.py`
-        and `examples/22_distributed_with_bench.py`.
+        Remains functional for two minor versions. Returns the terminal
+        :class:`BenchStatus` once ``phase`` enters a terminal state
+        (``Succeeded`` / ``Failed`` / ``TimedOut`` / ``Skipped``).
+        ``mode != on-start`` returns ``None`` immediately. Raises
+        ``TimeoutError`` if the bench has not reached a terminal phase
+        within ``timeout`` seconds. Polls every 5s.
         """
+        warnings.warn(
+            "DistributedTraining.wait_until_bench_complete is deprecated "
+            "and will be removed in the next major. Use training.bench "
+            "(BenchResult | None) after the UD reaches a terminal state, "
+            "and training.bench_diagnostics for debug detail. See "
+            "basilica-backend#661 / SDK-S2.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         deadline = time.monotonic() + max(timeout, 0)
         while time.monotonic() < deadline:
             self.refresh()
-            bs = self.bench_status
+            bs = self._bench_status_no_warn
             if bs is None:
                 # bench is Off — nothing to wait for.
                 return None
@@ -755,7 +812,7 @@ class DistributedTraining:
             time.sleep(min(5, max(timeout // 10, 1)))
         # One last refresh.
         self.refresh()
-        bs = self.bench_status
+        bs = self._bench_status_no_warn
         if bs is not None and bs.is_terminal:
             return bs
         raise TimeoutError(
@@ -767,22 +824,32 @@ class DistributedTraining:
         self, timeout: int = 1500
     ) -> Optional[BenchStatus]:
         """
-        Async variant of :py:meth:`wait_until_bench_complete`.
+        DEPRECATED (basilica-backend#661, SDK-S2): async variant of
+        :py:meth:`wait_until_bench_complete`.
 
-        Same terminal-phase set: `Succeeded` | `Failed` | `TimedOut` |
-        `Skipped` (closes #480). Same `None`-on-bench-off semantics.
+        Use ``training.bench`` post-terminal instead. Same
+        ``None``-on-bench-off semantics; removed in the next major.
         """
+        warnings.warn(
+            "DistributedTraining.wait_until_bench_complete_async is "
+            "deprecated and will be removed in the next major. Use "
+            "training.bench (BenchResult | None) after the UD reaches "
+            "a terminal state, and training.bench_diagnostics for debug "
+            "detail. See basilica-backend#661 / SDK-S2.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         deadline = asyncio.get_event_loop().time() + max(timeout, 0)
         while asyncio.get_event_loop().time() < deadline:
             await self.refresh_async()
-            bs = self.bench_status
+            bs = self._bench_status_no_warn
             if bs is None:
                 return None
             if bs.is_terminal:
                 return bs
             await asyncio.sleep(min(5, max(timeout // 10, 1)))
         await self.refresh_async()
-        bs = self.bench_status
+        bs = self._bench_status_no_warn
         if bs is not None and bs.is_terminal:
             return bs
         raise TimeoutError(
