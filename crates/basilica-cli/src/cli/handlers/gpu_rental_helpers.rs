@@ -825,7 +825,8 @@ pub async fn resolve_offering_unified(
                 format!("{} ({} available)", category, nodes.len())
             };
 
-            let memory_str = format!("{} GB (VRAM)", min_memory_gb);
+            let total_vram_gb = min_memory_gb * gpu_count;
+            let memory_str = format!("{} GB (VRAM)", total_vram_gb);
 
             let multiplier = *gpu_count as f64;
             let price_str = match (min_rate, max_rate) {
