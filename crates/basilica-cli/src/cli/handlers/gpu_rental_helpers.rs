@@ -375,9 +375,9 @@ pub async fn resolve_target_rental_unified(
             }
 
             let cpu_info = match (rental.vcpu_count, rental.system_memory_gb) {
-                (Some(vcpu), Some(mem)) => format!("{} vCPU / {}GB", vcpu, mem),
+                (Some(vcpu), Some(mem)) => format!("{} vCPU / {} GB", vcpu, mem),
                 (Some(vcpu), None) => format!("{} vCPU", vcpu),
-                (None, Some(mem)) => format!("{}GB RAM", mem),
+                (None, Some(mem)) => format!("{} GB (RAM)", mem),
                 (None, None) => "CPU-only".to_string(),
             };
 
@@ -690,7 +690,7 @@ pub async fn resolve_offering_unified(
             let total_price = price_per_gpu * (offering.gpu_count as f64);
 
             let memory_str = if let Some(mem_per_gpu) = offering.gpu_memory_gb_per_gpu {
-                format!("{}GB", mem_per_gpu * offering.gpu_count)
+                format!("{} GB (VRAM)", mem_per_gpu * offering.gpu_count)
             } else {
                 "N/A".to_string()
             };
@@ -769,7 +769,7 @@ pub async fn resolve_offering_unified(
                     display_country: extract_country_code(&offering.region)
                         .unwrap_or("--")
                         .to_string(),
-                    display_memory: format!("{}GB RAM", offering.system_memory_gb),
+                    display_memory: format!("{} GB (RAM)", offering.system_memory_gb),
                     display_price: format!("${:.2}/hr", hourly_rate),
                     secure_offering: None,
                     community_nodes: None,
@@ -825,7 +825,8 @@ pub async fn resolve_offering_unified(
                 format!("{} ({} available)", category, nodes.len())
             };
 
-            let memory_str = format!("{}GB", min_memory_gb);
+            let total_vram_gb = min_memory_gb * gpu_count;
+            let memory_str = format!("{} GB (VRAM)", total_vram_gb);
 
             let multiplier = *gpu_count as f64;
             let price_str = match (min_rate, max_rate) {
@@ -884,7 +885,7 @@ pub async fn resolve_offering_unified(
             };
 
             format!(
-                "{} │ {:<25} │ {:<15} │ {:<4} │ {:<8} │ {}",
+                "{} │ {:<25} │ {:<15} │ {:<4} │ {:<13} │ {}",
                 style(type_label).cyan(),
                 truncate(&item.display_gpu, 25),
                 truncate(&item.display_provider, 15),
@@ -899,7 +900,7 @@ pub async fn resolve_offering_unified(
     println!(
         "{}",
         style(
-            "  Type      │ GPU/CPU                   │ Provider        │ Loc  │ Memory   │ Price"
+            "  Type      │ GPU/CPU                   │ Provider        │ Loc  │ Memory        │ Price"
         )
         .dim()
     );

@@ -244,7 +244,7 @@ fn validate_gpu_options(gpu: &GpuOptions) -> Result<(), DeployError> {
             if mem > reqs.max_gpu_memory_gb {
                 return Err(DeployError::Validation {
                     message: format!(
-                        "GPU memory {}GB exceeds {} maximum of {}GB",
+                        "GPU memory {} GB exceeds {} maximum of {} GB",
                         mem,
                         model.to_uppercase(),
                         reqs.max_gpu_memory_gb
@@ -699,7 +699,7 @@ mod tests {
         assert!(result
             .unwrap_err()
             .to_string()
-            .contains("exceeds RTX4090 maximum of 24GB"));
+            .contains("exceeds RTX4090 maximum of 24 GB"));
     }
 
     #[test]

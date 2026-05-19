@@ -107,7 +107,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
             let ram = rental
                 .cpu_specs
                 .as_ref()
-                .map(|cpu| format!("{}GB", cpu.memory_gb))
+                .map(|cpu| format!("{} GB", cpu.memory_gb))
                 .unwrap_or_else(|| "Unknown".to_string());
 
             // Format location
@@ -334,7 +334,7 @@ pub fn display_available_nodes_detailed(
                 "{} ({} cores)",
                 node.node.cpu_specs.model, node.node.cpu_specs.cores
             ),
-            ram: format!("{}GB", node.node.cpu_specs.memory_gb),
+            ram: format!("{} GB", node.node.cpu_specs.memory_gb),
             location: format_node_location(&node.node.location),
             price: get_node_price(node),
         })
@@ -423,6 +423,8 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
         provider: String,
         #[tabled(rename = "GPU")]
         gpu_info: String,
+        #[tabled(rename = "VRAM")]
+        vram: String,
         #[tabled(rename = "vCPU")]
         vcpu: String,
         #[tabled(rename = "RAM")]
@@ -456,11 +458,16 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
             // Calculate total hourly cost (per-GPU rate × gpu_count)
             let total_hourly_cost =
                 offering.hourly_rate_per_gpu * Decimal::from(offering.gpu_count);
+            let vram = match offering.gpu_memory_gb_per_gpu {
+                Some(mem_per_gpu) => format!("{} GB", mem_per_gpu * offering.gpu_count),
+                None => "-".to_string(),
+            };
             OfferingRow {
                 provider: offering.provider.to_string(),
                 gpu_info,
+                vram,
                 vcpu: offering.vcpu_count.to_string(),
-                ram: format!("{}GB", offering.system_memory_gb),
+                ram: format!("{} GB", offering.system_memory_gb),
                 storage: offering.storage.clone().unwrap_or_else(|| "-".to_string()),
                 interconnect: offering
                     .interconnect
@@ -966,7 +973,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
 
             let ram = rental
                 .system_memory_gb
-                .map(|gb| format!("{}GB", gb))
+                .map(|gb| format!("{} GB", gb))
                 .unwrap_or_else(|| "-".to_string());
 
             CpuHistoryRow {
@@ -1071,7 +1078,7 @@ pub fn display_secure_cloud_rentals(
             // Format RAM
             let ram = rental
                 .system_memory_gb
-                .map(|gb| format!("{}GB", gb))
+                .map(|gb| format!("{} GB", gb))
                 .unwrap_or_else(|| "-".to_string());
 
             // Use accumulated cost from billing service - no fallback
@@ -1138,9 +1145,9 @@ pub fn display_cpu_offerings_detailed(
         .map(|offering| CpuOfferingRow {
             provider: offering.provider.clone(),
             vcpu: format!("{} cores", offering.vcpu_count),
-            ram: format!("{}GB", offering.system_memory_gb),
+            ram: format!("{} GB", offering.system_memory_gb),
             storage: if offering.storage_gb > 0 {
-                format!("{}GB", offering.storage_gb)
+                format!("{} GB", offering.storage_gb)
             } else {
                 "-".to_string()
             },
@@ -1214,7 +1221,7 @@ pub fn display_cpu_rentals(
             // Format RAM
             let ram = rental
                 .system_memory_gb
-                .map(|gb| format!("{}GB", gb))
+                .map(|gb| format!("{} GB", gb))
                 .unwrap_or_else(|| "-".to_string());
 
             // Use accumulated cost from billing service
@@ -1300,7 +1307,7 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
 
             VolumeRow {
                 name: volume.name.clone(),
-                size: format!("{}GB", volume.size_gb),
+                size: format!("{} GB", volume.size_gb),
                 status,
                 provider: volume.provider.clone(),
                 region: volume.region.clone(),
