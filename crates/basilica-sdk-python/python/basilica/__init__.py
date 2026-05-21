@@ -278,6 +278,61 @@ def _shell_join_preserving_vars(command: List[str]) -> str:
     return " ".join(parts)
 
 
+# refs basilica-backend#419: rendezvous timeout default (~600 s) is too short
+# for image-pull skew between a warm node and a freshly-provisioned node;
+# 1500 s (25 min) is the same knob the operator's auto-path injects.
+_RDZV_TIMEOUT_INJECT = "--rdzv-conf=timeout=1500"
+
+
+def _apply_rdzv_workarounds(command: str) -> str:
+    """
+    Post-process a BYO torchrun launcher string to mirror the operator's
+    auto-path rendezvous workarounds for distributed UDs.
+
+    Two transforms, both idempotent, both gated on the command actually
+    invoking torchrun (the ``--rdzv-*`` flags are torchrun-specific):
+
+    1. ``--rdzv-backend=etcd-v2`` -> ``--rdzv-backend=etcd`` (refs #368).
+       torch DynamicRendezvousHandler returns RendezvousClosedError on
+       fresh etcd in torch 2.5.0a0+nv24.10; the legacy `etcd` backend
+       works against the same etcd Pod. Operator-side equivalent:
+       ``RendezvousBackend::EtcdV2 -> "etcd"`` in operator distributed.rs.
+
+    2. inject ``--rdzv-conf=timeout=1500`` if no ``--rdzv-conf=`` is
+       already present (refs basilica-backend#419). The torchelastic
+       default ~600 s closes rendezvous before rank-N joins when one
+       node is warm and another is freshly provisioned (image pull
+       ~10-20 min). Same knob the operator injects on the auto-path.
+       Preserves a user-supplied ``--rdzv-conf=`` verbatim so users
+       can opt into a different timeout / extra knobs.
+
+    Non-torchrun commands pass through verbatim -- the workarounds are
+    only meaningful for the torchrun rendezvous handler.
+    """
+    # Gate on torchrun presence so non-torchrun commands (e.g. plain
+    # `python train.py`, a bare smoke binary) are not contaminated with
+    # torchrun-specific flags. Heuristic: the literal token `torchrun`
+    # anywhere in the command. Matches both `torchrun ...` and shell
+    # forms like `exec torchrun ...` / `python -m torch.distributed.run`
+    # is intentionally NOT matched (different launcher, different flags).
+    if "torchrun" not in command:
+        return command
+
+    # Backend rewrite: literal substring, only matches `--rdzv-backend=etcd-v2`
+    # exactly (not e.g. `--rdzv-backend=etcd-v2-foo`). The `etcd-v2` token
+    # ends at the next whitespace; we anchor on a flag-style boundary.
+    out = command.replace("--rdzv-backend=etcd-v2", "--rdzv-backend=etcd")
+
+    # Timeout inject: only if user did not already pass --rdzv-conf=.
+    # Both space and `=` separators count (`--rdzv-conf foo=bar` and
+    # `--rdzv-conf=foo=bar`), since torchrun accepts both.
+    if "--rdzv-conf=" not in out and "--rdzv-conf " not in out:
+        # Append at the end; torchrun's argparse does not care about
+        # flag order. Trailing whitespace handled by the join above.
+        out = f"{out} {_RDZV_TIMEOUT_INJECT}"
+    return out
+
+
 def _build_inference_health_check(port: int) -> HealthCheckConfig:
     """Build default health check config for inference servers (vLLM, SGLang).
 
@@ -1439,11 +1494,24 @@ class BasilicaClient:
             if pip_packages:
                 pkg_args = " ".join(_shlex.quote(p) for p in pip_packages)
                 pip_install = f"pip install --quiet {pkg_args} && "
+            # Mirror operator's auto-path workaround (basilica-private
+            # crates/basilica-operator/src/controllers/distributed.rs):
+            # the CRD value `etcd-v2` maps to torchrun's working `etcd`
+            # backend until upstream PyTorch resolves the
+            # DynamicRendezvousHandler regression. Tracking: issue #368.
             backend_token = (
-                "etcd-v2"
+                "etcd"
                 if rendezvous_backend == "etcd-v2"
                 else rendezvous_backend
             )
+            # refs basilica-backend#419: torchelastic's rendezvous handlers
+            # default to ~600 s join timeout. Image-pull skew between a
+            # warm node and a freshly-provisioned node easily exceeds that,
+            # closing rendezvous before rank-N joins (RendezvousClosedError
+            # on rank-0). Bump to 1500 s (25 min) so cold-start pulls
+            # finish before the rendezvous window closes. Same knob the
+            # operator's auto-path injects; SDK is on the BYO path so the
+            # operator workaround does not reach this command.
             # /tmp/ used because /workspace/ in pytorch base images is
             # root-owned and pods run as uid=1000 (operator
             # distributed.rs build_security_contexts: runAsUser=1000,
@@ -1456,6 +1524,7 @@ class BasilicaClient:
                 f"--rdzv-backend={backend_token} "
                 f"--rdzv-endpoint=\"$BASILICA_RDZV_ENDPOINT\" "
                 f"--rdzv-id=\"$BASILICA_RDZV_ID\" "
+                f"--rdzv-conf=timeout=1500 "
                 f"--nnodes=\"$BASILICA_WORLD_MIN\":\"$BASILICA_WORLD_MAX\" "
                 f"--nproc-per-node=\"$BASILICA_GPUS_PER_POD\" "
                 f"--max-restarts=10 "
@@ -1463,6 +1532,17 @@ class BasilicaClient:
             )
         elif command is not None:
             distributed_command = _shell_join_preserving_vars(command)
+            # refs basilica-backend#419 + #368: mirror the operator's
+            # auto-path workarounds for the BYO launcher path. The
+            # operator's wrapper (operator distributed.rs
+            # build_worker_command) only injects these on `command=auto`;
+            # BYO commands exec verbatim, so apply them here so any
+            # user-supplied torchrun invocation gets the same
+            # cold-start-safe defaults.
+            #   1. etcd-v2 -> etcd (torch DynamicRendezvousHandler bug, #368)
+            #   2. inject --rdzv-conf=timeout=1500 if absent (long-enough
+            #      window for warm/cold node image-pull skew, #419)
+            distributed_command = _apply_rdzv_workarounds(distributed_command)
         else:
             raise ValidationError(
                 "@basilica.distributed requires either a decorated "

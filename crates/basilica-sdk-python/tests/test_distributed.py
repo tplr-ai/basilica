@@ -984,9 +984,11 @@ class TestBuildDistributedRequest:
             f"regression: `shlex.join` quoting of $VAR token returned. "
             f"command: {cmd!r}"
         )
-        # Structure preserved.
+        # Structure preserved (mod the rdzv workaround injections: see
+        # `test_distributed_launcher_*` tests below). The script path
+        # still appears verbatim in the command.
         assert cmd.startswith("torchrun ")
-        assert cmd.endswith(" /workspace/all_reduce_smoke.py")
+        assert " /workspace/all_reduce_smoke.py" in cmd
 
     def test_command_with_whitespace_token_falls_back_to_quote(self) -> None:
         # Safety: a token with embedded whitespace MUST be quoted, otherwise
@@ -1009,6 +1011,164 @@ class TestBuildDistributedRequest:
         client = self._client()
         req = self._build_with_command(client, ["my-binary"])
         assert req["distributed"]["command"] == "my-binary"
+
+    # -------------------------------------------------------------------------
+    # refs basilica-backend#419: rank-arrival-order rendezvous closure.
+    #
+    # The operator's `auto`-path injects `--rdzv-conf=timeout=1500` and
+    # rewrites `etcd-v2` -> `etcd` (operator distributed.rs ~L2845-2885).
+    # The BYO path (this SDK) execs the command verbatim, so the
+    # workarounds must be mirrored here -- otherwise a distributed UD
+    # with one warm node + one freshly-provisioned node closes
+    # rendezvous after ~600 s (default) while rank-N is still pulling
+    # the trainer image (~10-20 min on a cold node).
+    # -------------------------------------------------------------------------
+
+    def test_distributed_launcher_injects_rdzv_timeout(self) -> None:
+        # Load-bearing: any BYO torchrun launcher without an explicit
+        # `--rdzv-conf=` MUST have `--rdzv-conf=timeout=1500` appended.
+        client = self._client()
+        req = self._build_with_command(
+            client,
+            [
+                "torchrun",
+                "--rdzv-backend=etcd",
+                "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+                "--rdzv-id=$BASILICA_RDZV_ID",
+                "--nnodes=$BASILICA_WORLD_MIN:$BASILICA_WORLD_MAX",
+                "--nproc-per-node=$BASILICA_GPUS_PER_POD",
+                "--max-restarts=10",
+                "/workspace/train.py",
+            ],
+        )
+        cmd = req["distributed"]["command"]
+        assert "--rdzv-conf=timeout=1500" in cmd, (
+            f"BYO launcher must have timeout=1500 injected to survive "
+            f"image-pull skew between warm and cold nodes "
+            f"(refs basilica-backend#419). command: {cmd!r}"
+        )
+
+    def test_distributed_launcher_rewrites_etcd_v2_to_etcd(self) -> None:
+        # `--rdzv-backend=etcd-v2` -> `--rdzv-backend=etcd` (refs #368).
+        # The CRD value `etcd-v2` (`spec.distributed.rendezvous.backend`)
+        # is preserved on the wire; only the launcher arg is rewritten.
+        client = self._client()
+        req = self._build_with_command(
+            client,
+            [
+                "torchrun",
+                "--rdzv-backend=etcd-v2",
+                "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+                "--rdzv-id=$BASILICA_RDZV_ID",
+                "--nnodes=$BASILICA_WORLD_MIN:$BASILICA_WORLD_MAX",
+                "--nproc-per-node=$BASILICA_GPUS_PER_POD",
+                "/workspace/train.py",
+            ],
+        )
+        cmd = req["distributed"]["command"]
+        # Positive: `etcd` (working) backend appears.
+        assert "--rdzv-backend=etcd" in cmd, (
+            f"launcher backend not rewritten to working `etcd` "
+            f"(refs #368). command: {cmd!r}"
+        )
+        # Negative: the broken `etcd-v2` literal must not survive into
+        # the launcher command. Locks the rewrite contract.
+        assert "--rdzv-backend=etcd-v2" not in cmd, (
+            f"launcher still uses broken `etcd-v2` backend "
+            f"(refs #368). command: {cmd!r}"
+        )
+        # CRD wire field still says `etcd-v2` (operator preserves
+        # original user intent for future when torch ships the fix).
+        assert req["distributed"]["rendezvous"]["backend"] == "etcd-v2"
+
+    def test_distributed_launcher_preserves_existing_rdzv_conf(self) -> None:
+        # If the user already passed `--rdzv-conf=...` (any value), the
+        # injection MUST NOT clobber it. Preserves user intent and lets
+        # advanced users tune the rendezvous (e.g. tighter timeout for
+        # known-warm fleets, extra knobs like `join_timeout`).
+        client = self._client()
+        req = self._build_with_command(
+            client,
+            [
+                "torchrun",
+                "--rdzv-backend=etcd",
+                "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+                "--rdzv-id=$BASILICA_RDZV_ID",
+                "--rdzv-conf=timeout=300,join_timeout=120",
+                "--nnodes=$BASILICA_WORLD_MIN:$BASILICA_WORLD_MAX",
+                "/workspace/train.py",
+            ],
+        )
+        cmd = req["distributed"]["command"]
+        # Positive: user-supplied value stays.
+        assert "--rdzv-conf=timeout=300,join_timeout=120" in cmd
+        # Negative: default 1500 was NOT additionally appended.
+        assert "--rdzv-conf=timeout=1500" not in cmd, (
+            f"user-supplied --rdzv-conf= must not be overwritten by "
+            f"the default 1500. command: {cmd!r}"
+        )
+
+    def test_distributed_source_path_injects_rdzv_workarounds(self) -> None:
+        # Source-shipping path (Callable `source`) also builds the
+        # torchrun command on the SDK side. Same rendezvous workarounds
+        # must apply there: timeout=1500 + etcd (not etcd-v2).
+        client = self._client()
+
+        def _train() -> None:
+            print("rank-up")
+
+        req = client._build_distributed_request(
+            name="dlc-419-source",
+            source=_train,
+            image="pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime",
+            port=18789,
+            env=None,
+            cpu="1",
+            memory="1Gi",
+            gpu_count=1,
+            gpu_models=None,
+            min_gpu_memory_gb=None,
+            world_size=WorldSize(min=2, target=2, max=2),
+            provider_filter=None,
+            topology_spread="provider-aware",
+            nccl_env=None,
+            bench="off",
+            rendezvous_backend="etcd-v2",
+            command=None,
+            args=None,
+            pip_packages=None,
+            ttl_seconds=None,
+            enable_billing=True,
+        )
+        cmd = req["distributed"]["command"]
+        # Both workarounds present in the source-shipping launcher too.
+        assert "--rdzv-backend=etcd " in cmd, (
+            f"source-path launcher must use `etcd` (not `etcd-v2`). "
+            f"command: {cmd!r}"
+        )
+        assert "--rdzv-backend=etcd-v2" not in cmd, (
+            f"source-path launcher must rewrite `etcd-v2` -> `etcd`. "
+            f"command: {cmd!r}"
+        )
+        assert "--rdzv-conf=timeout=1500" in cmd, (
+            f"source-path launcher must inject timeout=1500 "
+            f"(refs basilica-backend#419). command: {cmd!r}"
+        )
+
+    def test_distributed_launcher_non_torchrun_command_passthrough(self) -> None:
+        # Non-torchrun BYO commands (e.g. a custom launcher script,
+        # plain `python ...`) must not have torchrun-specific flags
+        # injected. The workaround is torchrun-specific.
+        client = self._client()
+        req = self._build_with_command(
+            client, ["python", "/workspace/custom_launcher.py"]
+        )
+        cmd = req["distributed"]["command"]
+        assert "--rdzv-conf" not in cmd, (
+            f"non-torchrun command must not get torchrun flags "
+            f"injected. command: {cmd!r}"
+        )
+        assert cmd == "python /workspace/custom_launcher.py"
 
 
 # =============================================================================
