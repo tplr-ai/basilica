@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-05-22
+
 ### Added
 - Non-interactive mode for agent and CI usage. Auto-detected when stdin
   is not a TTY, or forced with `BASILICA_NON_INTERACTIVE=1`. In this
