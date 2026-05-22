@@ -1155,6 +1155,187 @@ class TestBuildDistributedRequest:
             f"(refs basilica-backend#419). command: {cmd!r}"
         )
 
+    # -------------------------------------------------------------------------
+    # refs basilica-backend#419: last_call_timeout coverage for autoscaler
+    # provisioning windows.
+    #
+    # PR #492 set `--rdzv-conf=timeout=1500` (total rendezvous budget) but
+    # left `last_call_timeout` at the torchelastic default of 30 s
+    # (etcd_rendezvous._DEFAULT_LAST_CALL_TIMEOUT). ex20 take 6 surfaced
+    # the gap: ranks 0/1 came up on the warm verda node, formed
+    # rendezvous, and the 30 s last-call window expired while the
+    # autoscaler was still provisioning the second verda node for ranks
+    # 2/3. The rendezvous finalised with `participants=[0, 1]`, ranks 2/3
+    # raised RendezvousClosedError on arrival.
+    #
+    # Fix: pack both knobs into the single `--rdzv-conf=` value (torchrun
+    # parses it via `,`-split; multiple `--rdzv-conf=` flags do NOT stack,
+    # the last one wins).
+    # -------------------------------------------------------------------------
+
+    def test_distributed_launcher_injects_last_call_timeout(self) -> None:
+        # Load-bearing: any BYO torchrun launcher without an explicit
+        # `--rdzv-conf=` MUST have `last_call_timeout=900` injected
+        # alongside the existing `timeout=1500`. Without it, the default
+        # 30 s last-call window closes the rendezvous before late ranks
+        # arrive from the autoscaler.
+        client = self._client()
+        req = self._build_with_command(
+            client,
+            [
+                "torchrun",
+                "--rdzv-backend=etcd",
+                "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+                "--rdzv-id=$BASILICA_RDZV_ID",
+                "--nnodes=$BASILICA_WORLD_MIN:$BASILICA_WORLD_MAX",
+                "--nproc-per-node=$BASILICA_GPUS_PER_POD",
+                "--max-restarts=10",
+                "/workspace/train.py",
+            ],
+        )
+        cmd = req["distributed"]["command"]
+        assert "last_call_timeout=900" in cmd, (
+            f"BYO launcher must have last_call_timeout=900 injected to "
+            f"survive autoscaler scale-up windows. Without it, the "
+            f"torchelastic default 30 s closes the rendezvous as soon "
+            f"as MIN ranks join (refs basilica-backend#419). "
+            f"command: {cmd!r}"
+        )
+        # The two knobs must live in a SINGLE --rdzv-conf= flag because
+        # torchrun's argparse does not stack (--rdzv-conf is not
+        # action="append"; see torch/distributed/run.py:443-450). Lock
+        # this in: there must be exactly one --rdzv-conf= occurrence
+        # and it must contain both keys.
+        assert cmd.count("--rdzv-conf=") == 1, (
+            f"multiple --rdzv-conf= flags would cause torchrun to "
+            f"keep only the last one. command: {cmd!r}"
+        )
+        assert "--rdzv-conf=timeout=1500,last_call_timeout=900" in cmd, (
+            f"both knobs must live in one comma-separated --rdzv-conf= "
+            f"value. command: {cmd!r}"
+        )
+
+    def test_distributed_launcher_preserves_existing_last_call_timeout(
+        self,
+    ) -> None:
+        # If the user already passed `--rdzv-conf=...` (any value, with
+        # or without last_call_timeout), the injection MUST NOT clobber
+        # it. Same preservation contract as the `timeout=` knob.
+        client = self._client()
+        req = self._build_with_command(
+            client,
+            [
+                "torchrun",
+                "--rdzv-backend=etcd",
+                "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+                "--rdzv-id=$BASILICA_RDZV_ID",
+                "--rdzv-conf=timeout=600,last_call_timeout=120",
+                "--nnodes=$BASILICA_WORLD_MIN:$BASILICA_WORLD_MAX",
+                "/workspace/train.py",
+            ],
+        )
+        cmd = req["distributed"]["command"]
+        # Positive: user-supplied value stays.
+        assert "--rdzv-conf=timeout=600,last_call_timeout=120" in cmd
+        # Negative: default 900 was NOT additionally appended.
+        assert "last_call_timeout=900" not in cmd, (
+            f"user-supplied last_call_timeout must not be overwritten by "
+            f"the default 900. command: {cmd!r}"
+        )
+        # And no second --rdzv-conf= was appended either.
+        assert cmd.count("--rdzv-conf=") == 1, (
+            f"a second --rdzv-conf= flag was appended; torchrun would "
+            f"discard the user's value. command: {cmd!r}"
+        )
+
+    def test_rdzv_conf_combined_format_parses(self) -> None:
+        # The combined `--rdzv-conf=key1=v1,key2=v2` form must split
+        # back into the expected key/value map.
+        #
+        # Parsing semantics replicated from
+        # torch.distributed.elastic.rendezvous.utils._parse_rendezvous_config
+        # (`,`-separated, then `=`-split with key.strip()/value.strip()).
+        # Replicated inline instead of importing torch so this test
+        # works in the SDK's CI venv (torch is not a basilica-sdk dep).
+        # This guards against accidentally regressing to two
+        # `--rdzv-conf=` flags or a malformed combined value.
+        def _parse_rdzv_conf(value: str) -> Dict[str, str]:
+            out: Dict[str, str] = {}
+            for kv in value.split(","):
+                k, _, v = kv.partition("=")
+                out[k.strip()] = v.strip()
+            return out
+
+        client = self._client()
+        req = self._build_with_command(
+            client,
+            [
+                "torchrun",
+                "--rdzv-backend=etcd",
+                "--rdzv-endpoint=$BASILICA_RDZV_ENDPOINT",
+                "--rdzv-id=$BASILICA_RDZV_ID",
+                "--nnodes=$BASILICA_WORLD_MIN:$BASILICA_WORLD_MAX",
+                "/workspace/train.py",
+            ],
+        )
+        cmd = req["distributed"]["command"]
+        # Pull the value after `--rdzv-conf=` up to the next whitespace.
+        marker = "--rdzv-conf="
+        idx = cmd.index(marker) + len(marker)
+        end = cmd.find(" ", idx)
+        rdzv_conf_value = cmd[idx:] if end == -1 else cmd[idx:end]
+        parsed = _parse_rdzv_conf(rdzv_conf_value)
+        assert parsed == {"timeout": "1500", "last_call_timeout": "900"}, (
+            f"combined --rdzv-conf= value did not split to both keys. "
+            f"value={rdzv_conf_value!r} parsed={parsed!r}"
+        )
+
+    def test_distributed_source_path_injects_last_call_timeout(self) -> None:
+        # Source-shipping path must also inject `last_call_timeout=900`
+        # alongside `timeout=1500` -- ex20 take 6 reproduces on the
+        # decorated-function path too (the launcher is built in
+        # `_build_distributed_request` source branch, not via
+        # `_apply_rdzv_workarounds`).
+        client = self._client()
+
+        def _train() -> None:
+            print("rank-up")
+
+        req = client._build_distributed_request(
+            name="dlc-419-last-call",
+            source=_train,
+            image="pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime",
+            port=18789,
+            env=None,
+            cpu="1",
+            memory="1Gi",
+            gpu_count=1,
+            gpu_models=None,
+            min_gpu_memory_gb=None,
+            world_size=WorldSize(min=2, target=4, max=4),
+            provider_filter=None,
+            topology_spread="provider-aware",
+            nccl_env=None,
+            bench="off",
+            rendezvous_backend="etcd-v2",
+            command=None,
+            args=None,
+            pip_packages=None,
+            ttl_seconds=None,
+            enable_billing=True,
+        )
+        cmd = req["distributed"]["command"]
+        assert "--rdzv-conf=timeout=1500,last_call_timeout=900" in cmd, (
+            f"source-path launcher must pack both rdzv timeouts into "
+            f"one --rdzv-conf= value (refs basilica-backend#419). "
+            f"command: {cmd!r}"
+        )
+        # Single occurrence: source-shipping path emits the flag once.
+        assert cmd.count("--rdzv-conf=") == 1, (
+            f"source-path launcher emitted multiple --rdzv-conf= flags; "
+            f"torchrun would keep only the last one. command: {cmd!r}"
+        )
+
     def test_distributed_launcher_non_torchrun_command_passthrough(self) -> None:
         # Non-torchrun BYO commands (e.g. a custom launcher script,
         # plain `python ...`) must not have torchrun-specific flags
