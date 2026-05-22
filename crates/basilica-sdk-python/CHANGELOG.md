@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-05-22
+
+### Fixed
+
+- **Inject `--rdzv-conf=timeout=1500`** into the BYO launcher command for
+  distributed runs. Earlier versions relied on torchelastic's 600s default
+  rendezvous join timeout, which was too short for cold-start image-pull
+  windows on freshly provisioned nodes. Refs basilica-backend#419 (PR #492).
+- **Rewrite `--rdzv-backend=etcd-v2`→`etcd`** in the BYO launcher command.
+  The `etcd-v2` backend has a known regression in torch 2.5.0a0; the
+  operator's auto-path workaround did not cover BYO commands. Refs
+  basilica-backend#419 (PR #492).
+- **Inject `--rdzv-conf=last_call_timeout=900`** alongside the existing
+  `timeout=1500`. torchelastic's default `last_call_timeout=30s` was
+  insufficient for autoscaler-provisioned late ranks under capacity
+  pressure. Refs basilica-backend#419 (PR #493).
+
 ## [0.30.0] - 2026-05-18
 
 This is the major-equivalent (pre-1.0) bump that REMOVES every surface
