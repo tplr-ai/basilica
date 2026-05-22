@@ -278,10 +278,31 @@ def _shell_join_preserving_vars(command: List[str]) -> str:
     return " ".join(parts)
 
 
-# refs basilica-backend#419: rendezvous timeout default (~600 s) is too short
-# for image-pull skew between a warm node and a freshly-provisioned node;
-# 1500 s (25 min) is the same knob the operator's auto-path injects.
-_RDZV_TIMEOUT_INJECT = "--rdzv-conf=timeout=1500"
+# refs basilica-backend#419: torchelastic rendezvous defaults are too short
+# for autoscaler-driven distributed UDs.
+#
+# `timeout=1500` (25 min) — total `next_rendezvous()` budget. Default ~600 s
+# is consumed by image-pull skew between a warm node and a freshly-
+# provisioned node.
+#
+# `last_call_timeout=900` (15 min) — extra wait AFTER min-workers have
+# joined, before the rendezvous is finalised and `status` flips to
+# `closed`. Default is 30 s
+# (torch.distributed.elastic.rendezvous.etcd_rendezvous._DEFAULT_LAST_CALL_TIMEOUT).
+# ex20 take 6 surfaced the gap: workers 0/1 came up in ~30 s on the warm
+# verda node and triggered the 30 s last-call window. The autoscaler was
+# still provisioning the second verda node for workers 2/3 (minutes), so
+# the rendezvous transitioned to `status: closed` with `participants: [0, 1]`
+# before ranks 2/3 arrived. Late ranks then hit RendezvousClosedError.
+# 900 s leaves headroom over typical autoscaler scale-up windows (1-5 min
+# observed) while staying well under the 1500 s total budget.
+#
+# torchrun's `--rdzv-conf` is a SINGLE arg (not action="append" —
+# torch/distributed/run.py:443-450); the LAST `--rdzv-conf=` on the
+# command line wins. So both knobs must be packed into one
+# comma-separated value (parsed by
+# torch.distributed.elastic.rendezvous.utils._parse_rendezvous_config).
+_RDZV_TIMEOUT_INJECT = "--rdzv-conf=timeout=1500,last_call_timeout=900"
 
 
 def _apply_rdzv_workarounds(command: str) -> str:
@@ -298,13 +319,27 @@ def _apply_rdzv_workarounds(command: str) -> str:
        works against the same etcd Pod. Operator-side equivalent:
        ``RendezvousBackend::EtcdV2 -> "etcd"`` in operator distributed.rs.
 
-    2. inject ``--rdzv-conf=timeout=1500`` if no ``--rdzv-conf=`` is
-       already present (refs basilica-backend#419). The torchelastic
-       default ~600 s closes rendezvous before rank-N joins when one
-       node is warm and another is freshly provisioned (image pull
-       ~10-20 min). Same knob the operator injects on the auto-path.
+    2. inject ``--rdzv-conf=timeout=1500,last_call_timeout=900`` if no
+       ``--rdzv-conf=`` is already present (refs basilica-backend#419).
+       Two distinct knobs in one flag (torchrun's ``--rdzv-conf`` is a
+       single arg, comma-separated keys):
+
+       - ``timeout=1500``: total ``next_rendezvous()`` budget. Default
+         ~600 s is too short for image-pull skew between a warm node
+         and a freshly-provisioned node (~10-20 min).
+       - ``last_call_timeout=900``: extra wait after MIN workers have
+         joined, before rendezvous is finalised (status=closed). The
+         torchelastic default of 30 s
+         (etcd_rendezvous._DEFAULT_LAST_CALL_TIMEOUT) is shorter than
+         the autoscaler's node-provisioning window. ex20 take 6 caught
+         this: ranks 0/1 came up on a warm verda node, formed
+         rendezvous, and the 30 s window expired before the autoscaler
+         finished bringing up the second verda node for ranks 2/3.
+         Rendezvous closed with participants=[0, 1] and ranks 2/3 hit
+         RendezvousClosedError on arrival.
+
        Preserves a user-supplied ``--rdzv-conf=`` verbatim so users
-       can opt into a different timeout / extra knobs.
+       can opt into different timeouts / extra knobs.
 
     Non-torchrun commands pass through verbatim -- the workarounds are
     only meaningful for the torchrun rendezvous handler.
@@ -1504,14 +1539,21 @@ class BasilicaClient:
                 if rendezvous_backend == "etcd-v2"
                 else rendezvous_backend
             )
-            # refs basilica-backend#419: torchelastic's rendezvous handlers
-            # default to ~600 s join timeout. Image-pull skew between a
-            # warm node and a freshly-provisioned node easily exceeds that,
-            # closing rendezvous before rank-N joins (RendezvousClosedError
-            # on rank-0). Bump to 1500 s (25 min) so cold-start pulls
-            # finish before the rendezvous window closes. Same knob the
-            # operator's auto-path injects; SDK is on the BYO path so the
-            # operator workaround does not reach this command.
+            # refs basilica-backend#419: two rendezvous knobs, both too
+            # short by default for autoscaler-driven distributed UDs.
+            #   - `timeout=1500` (25 min) covers image-pull skew between
+            #     a warm node and a freshly-provisioned node (default
+            #     ~600 s closes rendezvous before rank-N joins).
+            #   - `last_call_timeout=900` (15 min) covers the autoscaler's
+            #     node-provisioning window. Default 30 s
+            #     (etcd_rendezvous._DEFAULT_LAST_CALL_TIMEOUT) finalises
+            #     the rendezvous as soon as MIN ranks join — ex20 take 6
+            #     surfaced this when ranks 0/1 came up on the warm verda
+            #     node and the autoscaler was still bringing up the
+            #     second verda node for ranks 2/3 (minutes).
+            # `--rdzv-conf` is a single torchrun arg (last one wins);
+            # both keys go in one comma-separated value (see
+            # _RDZV_TIMEOUT_INJECT).
             # /tmp/ used because /workspace/ in pytorch base images is
             # root-owned and pods run as uid=1000 (operator
             # distributed.rs build_security_contexts: runAsUser=1000,
@@ -1524,7 +1566,7 @@ class BasilicaClient:
                 f"--rdzv-backend={backend_token} "
                 f"--rdzv-endpoint=\"$BASILICA_RDZV_ENDPOINT\" "
                 f"--rdzv-id=\"$BASILICA_RDZV_ID\" "
-                f"--rdzv-conf=timeout=1500 "
+                f"--rdzv-conf=timeout=1500,last_call_timeout=900 "
                 f"--nnodes=\"$BASILICA_WORLD_MIN\":\"$BASILICA_WORLD_MAX\" "
                 f"--nproc-per-node=\"$BASILICA_GPUS_PER_POD\" "
                 f"--max-restarts=10 "
@@ -1540,8 +1582,11 @@ class BasilicaClient:
             # user-supplied torchrun invocation gets the same
             # cold-start-safe defaults.
             #   1. etcd-v2 -> etcd (torch DynamicRendezvousHandler bug, #368)
-            #   2. inject --rdzv-conf=timeout=1500 if absent (long-enough
-            #      window for warm/cold node image-pull skew, #419)
+            #   2. inject --rdzv-conf=timeout=1500,last_call_timeout=900
+            #      if absent: 1500 s total budget for warm/cold image-pull
+            #      skew + 900 s last-call so the rendezvous does not
+            #      finalise before late ranks arrive from the autoscaler
+            #      (default last_call_timeout=30 s, #419)
             distributed_command = _apply_rdzv_workarounds(distributed_command)
         else:
             raise ValidationError(
