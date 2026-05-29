@@ -27,6 +27,56 @@ class BasilicaClient:
     """
     ...
 
+class ContainerStatusSnapshot:
+    r"""
+    Per-pod per-container state snapshot (Phase 4, ADR §7.2).
+    
+    Mirrors the operator's `UserDeployment.status.containerStatuses[]` entry
+    and is exposed end-to-end (operator -> basilica-api -> SDK -> Python).
+    Surfaces real container state (CrashLoopBackOff, ImagePullBackOff, exit
+    code) so callers can tell apart infrastructure failures from
+    user-program failures instead of seeing only a blank "starting".
+    
+    Issue follow-up to basilica-backend#783 / #497 — the original PR
+    added these fields to the Rust SDK and CLI but missed the PyO3
+    binding (same regression class as #449).
+    """
+    @property
+    def pod_name(self) -> builtins.str:
+        r"""
+        Name of the pod owning the container.
+        """
+    @property
+    def container_name(self) -> builtins.str:
+        r"""
+        Container name within the pod.
+        """
+    @property
+    def state(self) -> builtins.str:
+        r"""
+        One of `"running"`, `"waiting"`, `"terminated"`. Empty string for
+        the unobserved-state edge case (a container whose kubelet has not
+        yet written any state). Consumers should treat empty the same as
+        waiting for display purposes.
+        """
+    @property
+    def reason(self) -> typing.Optional[builtins.str]:
+        r"""
+        K8s waiting / terminated reason verbatim
+        (e.g. `"CrashLoopBackOff"`, `"ImagePullBackOff"`, `"OOMKilled"`,
+        `"Completed"`). `None` for running containers.
+        """
+    @property
+    def message(self) -> typing.Optional[builtins.str]:
+        r"""
+        Kubelet human-readable detail. `None` when absent.
+        """
+    @property
+    def restart_count(self) -> builtins.int:
+        r"""
+        Kubelet monotonic restart count for this container.
+        """
+
 class CpuOffering:
     r"""
     CPU-only offering from secure cloud providers (no GPU)
@@ -54,6 +104,8 @@ class CpuRentalListItem:
     r"""
     CPU rental list item
     """
+    @property
+    def name(self) -> builtins.str: ...
     @property
     def rental_id(self) -> builtins.str: ...
     @property
@@ -95,6 +147,8 @@ class CpuRentalResponse:
     r"""
     Response from starting a CPU rental
     """
+    @property
+    def name(self) -> builtins.str: ...
     @property
     def rental_id(self) -> builtins.str: ...
     @property
@@ -233,7 +287,7 @@ class DeploymentProgress:
 class DeploymentResponse:
     r"""
     Deployment response
-
+    
     Issue #449: previously the PyO3 binding was missing `image` and
     `distributed`. The Python facade `_coerce_to_dict` consequently saw
     only 4 attributes (`namespace`, `state`, `url`, `userId`) so every
@@ -287,13 +341,33 @@ class DeploymentResponse:
     @property
     def public_metadata(self) -> builtins.bool: ...
     @property
-    def distributed(self) -> typing.Optional[typing.Dict[builtins.str, typing.Any]]:
+    def container_statuses(self) -> builtins.list[ContainerStatusSnapshot]:
         r"""
-        Read-only mirror of `status.distributed` from the operator. Returns
-        a Python dict with camelCase keys (`worldSize`, `ranks`, `bench`,
-        ...) or `None` for non-distributed UDs (issue #449). Consumed by
-        the `DistributedTraining` facade in
-        `crates/basilica-sdk-python/python/basilica/distributed.py`.
+        Phase 4 (ADR §7.2): per-pod per-container state snapshot exposing
+        real container state (e.g. `CrashLoopBackOff`, `ImagePullBackOff`,
+        exit code) instead of a blank `"starting"`. Empty when the
+        operator has not yet observed pods (first reconcile) or when the
+        workload is scaled to zero. Same regression class as #449 —
+        missed by the v0.31.0 release.
+        """
+    @property
+    def phase_progress(self) -> builtins.int:
+        r"""
+        Phase 4 (ADR §7.2): sum of container `restartCount` across every
+        pod. `0` when no restarts have occurred or no pods exist. Used by
+        the CLI's recovery-suffix renderer; available here for SDK
+        consumers to apply the same logic.
+        """
+    @property
+    def distributed(self) -> typing.Optional[typing.Any]:
+        r"""
+        Convert the cached `status.distributed` JSON into a Python dict
+        (or `None` for non-distributed UDs).
+        
+        `pythonize` is only available with a `Python<'_>` token, so this
+        must be a `#[pymethods]` getter rather than a `#[pyo3(get)]`
+        auto-getter on the field. Python access pattern is identical
+        (`response.distributed`).
         """
 
 class DeploymentSummary:
@@ -721,6 +795,8 @@ class RentalResponse:
     Response from starting a rental
     """
     @property
+    def name(self) -> typing.Optional[builtins.str]: ...
+    @property
     def rental_id(self) -> builtins.str: ...
     @property
     def ssh_credentials(self) -> typing.Optional[builtins.str]: ...
@@ -744,6 +820,8 @@ class RentalStatusWithSshResponse:
     r"""
     Full rental status response with SSH credentials (matches API response)
     """
+    @property
+    def name(self) -> builtins.str: ...
     @property
     def rental_id(self) -> builtins.str: ...
     @property
@@ -823,6 +901,8 @@ class SecureCloudRentalListItem:
     Secure cloud GPU rental list item
     """
     @property
+    def name(self) -> builtins.str: ...
+    @property
     def rental_id(self) -> builtins.str: ...
     @property
     def provider(self) -> builtins.str: ...
@@ -863,6 +943,8 @@ class SecureCloudRentalResponse:
     r"""
     Response from starting a secure cloud GPU rental
     """
+    @property
+    def name(self) -> builtins.str: ...
     @property
     def rental_id(self) -> builtins.str: ...
     @property
@@ -923,19 +1005,25 @@ class StartCpuRentalRequest:
     Request to start a CPU rental
     """
     @property
+    def name(self) -> typing.Optional[builtins.str]: ...
+    @property
     def offering_id(self) -> builtins.str: ...
     @property
     def ssh_public_key_id(self) -> builtins.str: ...
+    @name.setter
+    def name(self, value: typing.Optional[builtins.str]) -> None: ...
     @offering_id.setter
     def offering_id(self, value: builtins.str) -> None: ...
     @ssh_public_key_id.setter
     def ssh_public_key_id(self, value: builtins.str) -> None: ...
-    def __new__(cls, offering_id:builtins.str, ssh_public_key_id:builtins.str) -> StartCpuRentalRequest: ...
+    def __new__(cls, offering_id:builtins.str, ssh_public_key_id:builtins.str, name:typing.Optional[builtins.str]=None) -> StartCpuRentalRequest: ...
 
 class StartRentalApiRequest:
     r"""
     Start rental API request with GPU-based selection
     """
+    @property
+    def name(self) -> typing.Optional[builtins.str]: ...
     @property
     def gpu_category(self) -> builtins.str: ...
     @property
@@ -958,6 +1046,8 @@ class StartRentalApiRequest:
     def command(self) -> builtins.list[builtins.str]: ...
     @property
     def volumes(self) -> builtins.list[VolumeMountRequest]: ...
+    @name.setter
+    def name(self, value: typing.Optional[builtins.str]) -> None: ...
     @gpu_category.setter
     def gpu_category(self, value: builtins.str) -> None: ...
     @gpu_count.setter
@@ -980,26 +1070,32 @@ class StartRentalApiRequest:
     def command(self, value: builtins.list[builtins.str]) -> None: ...
     @volumes.setter
     def volumes(self, value: builtins.list[VolumeMountRequest]) -> None: ...
-    def __new__(cls, gpu_category:builtins.str, container_image:builtins.str, ssh_public_key:builtins.str, max_hourly_rate:builtins.float, gpu_count:builtins.int=1, min_memory_gb:typing.Optional[builtins.int]=None, environment:typing.Optional[typing.Mapping[builtins.str, builtins.str]]=None, ports:typing.Optional[typing.Sequence[PortMappingRequest]]=None, resources:typing.Optional[ResourceRequirementsRequest]=None, command:typing.Optional[typing.Sequence[builtins.str]]=None, volumes:typing.Optional[typing.Sequence[VolumeMountRequest]]=None) -> StartRentalApiRequest: ...
+    def __new__(cls, gpu_category:builtins.str, container_image:builtins.str, ssh_public_key:builtins.str, max_hourly_rate:builtins.float, gpu_count:builtins.int=1, min_memory_gb:typing.Optional[builtins.int]=None, environment:typing.Optional[typing.Mapping[builtins.str, builtins.str]]=None, ports:typing.Optional[typing.Sequence[PortMappingRequest]]=None, resources:typing.Optional[ResourceRequirementsRequest]=None, command:typing.Optional[typing.Sequence[builtins.str]]=None, volumes:typing.Optional[typing.Sequence[VolumeMountRequest]]=None, name:typing.Optional[builtins.str]=None) -> StartRentalApiRequest: ...
 
 class StartSecureCloudRentalRequest:
     r"""
     Request to start a secure cloud GPU rental
     """
     @property
+    def name(self) -> typing.Optional[builtins.str]: ...
+    @property
     def offering_id(self) -> builtins.str: ...
     @property
     def ssh_public_key_id(self) -> builtins.str: ...
+    @name.setter
+    def name(self, value: typing.Optional[builtins.str]) -> None: ...
     @offering_id.setter
     def offering_id(self, value: builtins.str) -> None: ...
     @ssh_public_key_id.setter
     def ssh_public_key_id(self, value: builtins.str) -> None: ...
-    def __new__(cls, offering_id:builtins.str, ssh_public_key_id:builtins.str) -> StartSecureCloudRentalRequest: ...
+    def __new__(cls, offering_id:builtins.str, ssh_public_key_id:builtins.str, name:typing.Optional[builtins.str]=None) -> StartSecureCloudRentalRequest: ...
 
 class StopCpuRentalResponse:
     r"""
     Response from stopping a CPU rental
     """
+    @property
+    def name(self) -> typing.Optional[builtins.str]: ...
     @property
     def rental_id(self) -> builtins.str: ...
     @property
@@ -1013,6 +1109,8 @@ class StopSecureCloudRentalResponse:
     r"""
     Response from stopping a secure cloud GPU rental
     """
+    @property
+    def name(self) -> typing.Optional[builtins.str]: ...
     @property
     def rental_id(self) -> builtins.str: ...
     @property

@@ -179,7 +179,7 @@ except ImportError:
 from .decorators import DeployedFunction, DistributedFunction, deployment, distributed
 
 # Import new modules
-from ._deployment import Deployment, DeploymentStatus, ProgressInfo
+from ._deployment import ContainerStatusInfo, Deployment, DeploymentStatus, ProgressInfo
 from .distributed import (
     BENCH_PHASE_FAILED,
     BENCH_PHASE_PENDING,
@@ -421,6 +421,7 @@ __all__ = [
     # High-level types
     "Deployment",
     "DeploymentStatus",
+    "ContainerStatusInfo",
     "ProgressInfo",
     "SourcePackager",
     # Exceptions

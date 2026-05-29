@@ -859,6 +859,7 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<types::ResourceRequirements>()?;
     m.add_class::<types::ReplicaStatus>()?;
     m.add_class::<types::PodInfo>()?;
+    m.add_class::<types::ContainerStatusSnapshot>()?;
     m.add_class::<types::SpreadMode>()?;
     m.add_class::<types::TopologySpreadConfig>()?;
     m.add_class::<types::StorageBackend>()?;
