@@ -134,9 +134,23 @@ pub async fn wait_for_ready(
                     let phase_trimmed = phase.trim();
                     let phase_msg = format_phase_message(phase_trimmed, service_name);
                     print_info(&phase_msg);
+                    // Phase 4 (ADR §7.2): append the worst-case container
+                    // state as a parenthetical suffix.
+                    let container_suffix =
+                        crate::cli::handlers::deploy::helpers::container_status_suffix(&status)
+                            .or_else(|| {
+                                crate::cli::handlers::deploy::helpers::failed_restart_suffix(
+                                    phase_trimmed,
+                                    status.phase_progress,
+                                )
+                            })
+                            .unwrap_or_default();
                     spinner = create_spinner(&format!(
-                        "Phase: {} ({}/{})",
-                        phase_trimmed, status.replicas.ready, status.replicas.desired
+                        "Phase: {} ({}/{}){}",
+                        phase_trimmed,
+                        status.replicas.ready,
+                        status.replicas.desired,
+                        container_suffix
                     ));
                     last_phase = Some(phase.clone());
                 }

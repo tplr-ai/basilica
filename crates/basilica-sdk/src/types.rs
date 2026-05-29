@@ -946,6 +946,37 @@ pub struct PodInfo {
     pub node: Option<String>,
 }
 
+/// Phase 4 (ADR-ISSUE-783-NVCT-CDI-ROBUSTNESS §7.2): per-pod per-container
+/// state snapshot mirroring kubelet's `Pod.status.containerStatuses[]`.
+/// Surfaces the underlying CrashLoopBackOff / ImagePullBackOff / Error
+/// state so the CLI / Python SDK can render an honest
+/// `Phase: starting (waiting: CrashLoopBackOff x3 restarts)` instead of
+/// the misleading `Phase: starting / Elapsed: 0s` while the underlying
+/// pods are unhealthy.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ContainerStatusSnapshot {
+    pub pod_name: String,
+    pub container_name: String,
+    /// One of `"running"`, `"waiting"`, `"terminated"`. Empty string for
+    /// the unobserved-state edge case (a container whose kubelet has not
+    /// yet written any state) -- consumers should treat empty the same as
+    /// waiting for display purposes.
+    #[serde(default)]
+    pub state: String,
+    /// K8s waiting / terminated reason verbatim
+    /// (e.g. `"CrashLoopBackOff"`, `"ImagePullBackOff"`,
+    /// `"OOMKilled"`, `"Completed"`). `None` for running containers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Kubelet human-readable detail. `None` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Kubelet monotonic restart count for this container.
+    #[serde(default)]
+    pub restart_count: i32,
+}
+
 /// Deployment response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -994,6 +1025,16 @@ pub struct DeploymentResponse {
     /// `crates/basilica-api/src/api/routes/deployments/distributed_status.rs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distributed: Option<DistributedStatus>,
+    /// Phase 4 (ADR §7.2): per-pod per-container state snapshot.
+    /// Empty when the operator has not yet observed pods (first
+    /// reconcile) and when the workload is scaled to zero. Omitted from
+    /// the wire when empty (additive, backwards-compatible).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub container_statuses: Vec<ContainerStatusSnapshot>,
+    /// Phase 4 (ADR §7.2): sum of container `restartCount` across every
+    /// pod. `0` when no restarts have occurred or no pods exist.
+    #[serde(default)]
+    pub phase_progress: i32,
 }
 
 /// Deployment summary for list responses
@@ -2794,6 +2835,8 @@ mod tests {
                 preflight_deprecation_warned: false,
                 rank_exits: vec![],
             }),
+            container_statuses: Vec::new(),
+            phase_progress: 0,
         }
     }
 

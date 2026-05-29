@@ -98,6 +98,84 @@ pub fn display_name<'a>(friendly: &'a str, instance: &'a str) -> &'a str {
     }
 }
 
+/// Phase 4 (ADR-ISSUE-783-NVCT-CDI-ROBUSTNESS §7.2): build a one-line
+/// parenthetical suffix describing the worst-case container state on a
+/// deployment, derived from the API's `container_statuses[]` snapshot.
+///
+/// Returns `None` when every container is in `running` state, when the
+/// snapshot is empty, or when the worst-case container has no
+/// machine-readable reason. Returns `Some(" (...)")` (note the leading
+/// space) when at least one container is waiting or terminated -- the
+/// caller appends it directly to the phase line.
+///
+/// Examples:
+/// - one container waiting CrashLoopBackOff, 3 restarts ->
+///   `" (waiting: CrashLoopBackOff x3 restarts)"`
+/// - one container waiting ImagePullBackOff, 0 restarts ->
+///   `" (waiting: ImagePullBackOff)"`
+/// - one container terminated OOMKilled, 5 restarts ->
+///   `" (terminated: OOMKilled x5 restarts)"`
+/// - phase=failed and >0 total restarts (no live snapshot) is rendered
+///   via `container_restart_suffix` separately.
+///
+/// The "worst-case" selection prefers `terminated` > `waiting` >
+/// `running` so the suffix surfaces the most user-actionable signal
+/// first. Restart count uses the deployment-wide `phase_progress`
+/// rollup so a multi-pod multi-container deployment shows the total
+/// restart count regardless of which container's reason was selected.
+pub fn container_status_suffix(response: &DeploymentResponse) -> Option<String> {
+    if response.container_statuses.is_empty() {
+        return None;
+    }
+
+    // Worst-case container: terminated outranks waiting outranks running.
+    // Ties broken by highest restart_count.
+    let worst = response.container_statuses.iter().max_by_key(|cs| {
+        let state_rank = match cs.state.as_str() {
+            "terminated" => 3,
+            "waiting" => 2,
+            "" => 1, // unobserved state, slightly above running
+            _ => 0,  // "running"
+        };
+        (state_rank, cs.restart_count)
+    })?;
+
+    // Only render a suffix when the worst-case is not running.
+    if worst.state == "running" {
+        return None;
+    }
+
+    let reason = worst.reason.as_deref()?;
+    let state_label = if worst.state.is_empty() {
+        "waiting"
+    } else {
+        worst.state.as_str()
+    };
+
+    let total_restarts = response.phase_progress.max(0);
+    let suffix = if total_restarts > 0 {
+        format!(
+            " ({}: {} x{} restarts)",
+            state_label, reason, total_restarts
+        )
+    } else {
+        format!(" ({}: {})", state_label, reason)
+    };
+    Some(suffix)
+}
+
+/// Phase 4 (ADR §7.2): for `phase=failed` deployments, surface the
+/// total restart count even when `container_statuses[]` is empty
+/// (e.g. operator has scaled the Deployment to 0 after the Failed TTL).
+/// Returns `None` when `phase_progress == 0` or the phase is not
+/// `failed`.
+pub fn failed_restart_suffix(phase: &str, phase_progress: i32) -> Option<String> {
+    if phase != "failed" || phase_progress <= 0 {
+        return None;
+    }
+    Some(format!(" (x{} restarts)", phase_progress))
+}
+
 /// Resolved deployment identifier pair returned by `resolve_deployment_name`.
 ///
 /// `instance_name` is the stable UUID the API expects in request paths.
@@ -120,7 +198,14 @@ pub fn print_deployment_success(deployment: &DeploymentResponse) {
     );
 
     if let Some(ref phase) = deployment.phase {
-        println!("  Phase:    {}", phase);
+        // Phase 4 (ADR §7.2): append the worst-case container state as a
+        // parenthetical suffix when the underlying pods are not all
+        // running; gives the user immediate insight instead of a bare
+        // "Phase: starting" while the kubelet is CrashLoopBackOff'ing.
+        let suffix = container_status_suffix(deployment)
+            .or_else(|| failed_restart_suffix(phase, deployment.phase_progress))
+            .unwrap_or_default();
+        println!("  Phase:    {}{}", phase, suffix);
     }
 
     println!();
@@ -226,7 +311,12 @@ pub fn print_deployment_details(deployment: &DeploymentResponse, verbose: bool) 
     }
 
     if let Some(ref phase) = deployment.phase {
-        println!("  Phase:      {}", phase);
+        // Phase 4 (ADR §7.2): same parenthetical-suffix treatment for the
+        // verbose details view.
+        let suffix = container_status_suffix(deployment)
+            .or_else(|| failed_restart_suffix(phase, deployment.phase_progress))
+            .unwrap_or_default();
+        println!("  Phase:      {}{}", phase, suffix);
     }
 
     if verbose {
@@ -595,5 +685,148 @@ mod tests {
         let input = "\x1b[31mRed\x1b[0m \x1b[2JCleared \x1b[32mGreen\x1b[0m";
         let output = sanitize_ansi(input);
         assert_eq!(output, "\x1b[31mRed\x1b[0m Cleared \x1b[32mGreen\x1b[0m");
+    }
+
+    fn dr_with_containers(
+        cs: Vec<basilica_sdk::types::ContainerStatusSnapshot>,
+        phase_progress: i32,
+    ) -> DeploymentResponse {
+        DeploymentResponse {
+            instance_name: "i".into(),
+            friendly_name: "f".into(),
+            user_id: "u".into(),
+            namespace: "ns".into(),
+            image: "img".into(),
+            state: "Pending".into(),
+            url: "".into(),
+            replicas: basilica_sdk::types::ReplicaStatus {
+                desired: 1,
+                ready: 0,
+            },
+            created_at: "".into(),
+            updated_at: None,
+            pods: None,
+            phase: Some("starting".into()),
+            message: None,
+            progress: None,
+            share_token: None,
+            share_url: None,
+            websocket: None,
+            public_metadata: false,
+            distributed: None,
+            container_statuses: cs,
+            phase_progress,
+        }
+    }
+
+    // Phase 4 (ADR §7.2): SDK suffix renderer must surface the parenthetical
+    // only when the worst-case container is not running. Healthy paths must
+    // return None so the existing "Phase: starting" output is unchanged.
+    #[test]
+    fn test_container_status_suffix_healthy_returns_none() {
+        let cs = vec![basilica_sdk::types::ContainerStatusSnapshot {
+            pod_name: "p1".into(),
+            container_name: "c1".into(),
+            state: "running".into(),
+            reason: None,
+            message: None,
+            restart_count: 0,
+        }];
+        let dr = dr_with_containers(cs, 0);
+        assert_eq!(container_status_suffix(&dr), None);
+    }
+
+    // Phase 4 (ADR §7.2): waiting + restarts -> include " x{} restarts".
+    #[test]
+    fn test_container_status_suffix_waiting_crashloop_with_restarts() {
+        let cs = vec![basilica_sdk::types::ContainerStatusSnapshot {
+            pod_name: "p1".into(),
+            container_name: "c1".into(),
+            state: "waiting".into(),
+            reason: Some("CrashLoopBackOff".into()),
+            message: None,
+            restart_count: 3,
+        }];
+        let dr = dr_with_containers(cs, 3);
+        assert_eq!(
+            container_status_suffix(&dr),
+            Some(" (waiting: CrashLoopBackOff x3 restarts)".to_string())
+        );
+    }
+
+    // Phase 4 (ADR §7.2): waiting + 0 restarts -> no restart-count suffix.
+    #[test]
+    fn test_container_status_suffix_waiting_imagepullbackoff_no_restarts() {
+        let cs = vec![basilica_sdk::types::ContainerStatusSnapshot {
+            pod_name: "p1".into(),
+            container_name: "c1".into(),
+            state: "waiting".into(),
+            reason: Some("ImagePullBackOff".into()),
+            message: None,
+            restart_count: 0,
+        }];
+        let dr = dr_with_containers(cs, 0);
+        assert_eq!(
+            container_status_suffix(&dr),
+            Some(" (waiting: ImagePullBackOff)".to_string())
+        );
+    }
+
+    // Phase 4 (ADR §7.2): terminated outranks waiting in the worst-case pick.
+    #[test]
+    fn test_container_status_suffix_terminated_outranks_waiting() {
+        let cs = vec![
+            basilica_sdk::types::ContainerStatusSnapshot {
+                pod_name: "p1".into(),
+                container_name: "c1".into(),
+                state: "waiting".into(),
+                reason: Some("ImagePullBackOff".into()),
+                message: None,
+                restart_count: 1,
+            },
+            basilica_sdk::types::ContainerStatusSnapshot {
+                pod_name: "p2".into(),
+                container_name: "c2".into(),
+                state: "terminated".into(),
+                reason: Some("OOMKilled".into()),
+                message: None,
+                restart_count: 5,
+            },
+        ];
+        let dr = dr_with_containers(cs, 6);
+        assert_eq!(
+            container_status_suffix(&dr),
+            Some(" (terminated: OOMKilled x6 restarts)".to_string())
+        );
+    }
+
+    // Phase 4: empty containerStatuses[] returns None (no second-roundtrip surface).
+    #[test]
+    fn test_container_status_suffix_empty_returns_none() {
+        let dr = dr_with_containers(vec![], 0);
+        assert_eq!(container_status_suffix(&dr), None);
+    }
+
+    // Phase 4: failed phase with positive restart count even when container
+    // snapshot is empty (operator scaled to 0).
+    #[test]
+    fn test_failed_restart_suffix_emits_when_failed_with_restarts() {
+        assert_eq!(
+            failed_restart_suffix("failed", 7),
+            Some(" (x7 restarts)".to_string())
+        );
+    }
+
+    // Phase 4: non-failed phases must NOT trigger the failed-restart suffix.
+    #[test]
+    fn test_failed_restart_suffix_omits_when_not_failed() {
+        assert_eq!(failed_restart_suffix("ready", 7), None);
+        assert_eq!(failed_restart_suffix("starting", 3), None);
+    }
+
+    // Phase 4: failed + zero restarts -> no suffix.
+    #[test]
+    fn test_failed_restart_suffix_omits_when_zero_restarts() {
+        assert_eq!(failed_restart_suffix("failed", 0), None);
     }
 }

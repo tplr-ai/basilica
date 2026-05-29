@@ -273,9 +273,17 @@ async fn wait_for_ready_with_phases(
                     print_info(&phase_msg);
                 }
 
+                // Phase 4 (ADR §7.2): append the container-state suffix to the
+                // spinner phase line so a stuck `starting` spinner immediately
+                // surfaces `(waiting: CrashLoopBackOff x3 restarts)` instead
+                // of misleading the operator into thinking the workload is
+                // progressing.
+                let container_suffix = super::helpers::container_status_suffix(&status)
+                    .or_else(|| super::helpers::failed_restart_suffix(phase, status.phase_progress))
+                    .unwrap_or_default();
                 spinner = create_spinner(&format!(
-                    "Phase: {} ({}/{})",
-                    phase, status.replicas.ready, status.replicas.desired
+                    "Phase: {} ({}/{}){}",
+                    phase, status.replicas.ready, status.replicas.desired, container_suffix
                 ));
 
                 last_phase = Some(phase.clone());
