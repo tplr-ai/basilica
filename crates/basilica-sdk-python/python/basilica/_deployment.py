@@ -23,8 +23,8 @@ import ssl
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
 from basilica.exceptions import DeploymentFailed, DeploymentTimeout
@@ -79,6 +79,28 @@ class ProgressInfo:
 
 
 @dataclass
+class ContainerStatusInfo:
+    """
+    Per-container runtime snapshot surfaced from the operator (Phase 4: UD Status Honesty).
+
+    Attributes:
+        pod_name: Pod hosting the container
+        container_name: Container name within the pod
+        state: Lifecycle state (waiting, running, terminated)
+        reason: Optional reason string from kubelet (e.g. ImagePullBackOff)
+        message: Optional human-readable diagnostic message
+        restart_count: Number of restarts observed for this container
+    """
+
+    pod_name: str
+    container_name: str
+    state: str
+    restart_count: int = 0
+    reason: Optional[str] = None
+    message: Optional[str] = None
+
+
+@dataclass
 class DeploymentStatus:
     """
     Represents the current status of a deployment.
@@ -90,6 +112,8 @@ class DeploymentStatus:
         message: Optional status message or error description
         phase: Granular deployment phase (scheduling, pulling, starting, ready, etc.)
         progress: Progress information for long-running operations like storage sync
+        container_statuses: Per-container snapshots from the operator (Phase 4)
+        phase_progress: Sum of container `restartCount` across every pod (Phase 4)
     """
 
     state: str
@@ -98,6 +122,8 @@ class DeploymentStatus:
     message: Optional[str] = None
     phase: Optional[str] = None
     progress: Optional[ProgressInfo] = None
+    container_statuses: List[ContainerStatusInfo] = field(default_factory=list)
+    phase_progress: int = 0
 
     @property
     def is_ready(self) -> bool:
@@ -342,6 +368,18 @@ class Deployment:
                 elapsed_seconds=getattr(response.progress, "elapsed_seconds", 0),
             )
 
+        container_statuses = [
+            ContainerStatusInfo(
+                pod_name=getattr(snap, "pod_name", ""),
+                container_name=getattr(snap, "container_name", ""),
+                state=getattr(snap, "state", ""),
+                restart_count=getattr(snap, "restart_count", 0),
+                reason=getattr(snap, "reason", None),
+                message=getattr(snap, "message", None),
+            )
+            for snap in getattr(response, "container_statuses", []) or []
+        ]
+
         return DeploymentStatus(
             state=response.state,
             replicas_ready=response.replicas.ready,
@@ -349,6 +387,8 @@ class Deployment:
             message=None,
             phase=getattr(response, "phase", None),
             progress=progress,
+            container_statuses=container_statuses,
+            phase_progress=getattr(response, "phase_progress", 0),
         )
 
     def status(self) -> DeploymentStatus:

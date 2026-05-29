@@ -680,6 +680,7 @@ impl From<ListRentalsQuery> for SdkListRentalsQuery {
 // Deployment types
 
 use basilica_sdk::types::{
+    ContainerStatusSnapshot as SdkContainerStatusSnapshot,
     CreateDeploymentRequest as SdkCreateDeploymentRequest,
     DeleteDeploymentResponse as SdkDeleteDeploymentResponse,
     DeploymentListResponse as SdkDeploymentListResponse,
@@ -915,6 +916,59 @@ impl From<SdkPodInfo> for PodInfo {
             name: pod.name,
             status: pod.status,
             node: pod.node,
+        }
+    }
+}
+
+/// Per-pod per-container state snapshot (Phase 4, ADR §7.2).
+///
+/// Mirrors the operator's `UserDeployment.status.containerStatuses[]` entry
+/// and is exposed end-to-end (operator -> basilica-api -> SDK -> Python).
+/// Surfaces real container state (CrashLoopBackOff, ImagePullBackOff, exit
+/// code) so callers can tell apart infrastructure failures from
+/// user-program failures instead of seeing only a blank "starting".
+///
+/// Issue follow-up to basilica-backend#783 / #497 — the original PR
+/// added these fields to the Rust SDK and CLI but missed the PyO3
+/// binding (same regression class as #449).
+#[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
+#[pyclass]
+#[derive(Clone)]
+pub struct ContainerStatusSnapshot {
+    /// Name of the pod owning the container.
+    #[pyo3(get)]
+    pub pod_name: String,
+    /// Container name within the pod.
+    #[pyo3(get)]
+    pub container_name: String,
+    /// One of `"running"`, `"waiting"`, `"terminated"`. Empty string for
+    /// the unobserved-state edge case (a container whose kubelet has not
+    /// yet written any state). Consumers should treat empty the same as
+    /// waiting for display purposes.
+    #[pyo3(get)]
+    pub state: String,
+    /// K8s waiting / terminated reason verbatim
+    /// (e.g. `"CrashLoopBackOff"`, `"ImagePullBackOff"`, `"OOMKilled"`,
+    /// `"Completed"`). `None` for running containers.
+    #[pyo3(get)]
+    pub reason: Option<String>,
+    /// Kubelet human-readable detail. `None` when absent.
+    #[pyo3(get)]
+    pub message: Option<String>,
+    /// Kubelet monotonic restart count for this container.
+    #[pyo3(get)]
+    pub restart_count: i32,
+}
+
+impl From<SdkContainerStatusSnapshot> for ContainerStatusSnapshot {
+    fn from(snap: SdkContainerStatusSnapshot) -> Self {
+        Self {
+            pod_name: snap.pod_name,
+            container_name: snap.container_name,
+            state: snap.state,
+            reason: snap.reason,
+            message: snap.message,
+            restart_count: snap.restart_count,
         }
     }
 }
@@ -1501,6 +1555,20 @@ pub struct DeploymentResponse {
     /// Not annotated `#[pyo3(get)]` because `serde_json::Value` is not
     /// `IntoPyObject`; see the `distributed` method on the impl block.
     pub distributed: Option<serde_json::Value>,
+    /// Phase 4 (ADR §7.2): per-pod per-container state snapshot exposing
+    /// real container state (e.g. `CrashLoopBackOff`, `ImagePullBackOff`,
+    /// exit code) instead of a blank `"starting"`. Empty when the
+    /// operator has not yet observed pods (first reconcile) or when the
+    /// workload is scaled to zero. Same regression class as #449 —
+    /// missed by the v0.31.0 release.
+    #[pyo3(get)]
+    pub container_statuses: Vec<ContainerStatusSnapshot>,
+    /// Phase 4 (ADR §7.2): sum of container `restartCount` across every
+    /// pod. `0` when no restarts have occurred or no pods exist. Used by
+    /// the CLI's recovery-suffix renderer; available here for SDK
+    /// consumers to apply the same logic.
+    #[pyo3(get)]
+    pub phase_progress: i32,
 }
 
 #[cfg_attr(feature = "stub-gen", gen_stub_pymethods)]
@@ -1558,6 +1626,12 @@ impl From<SdkDeploymentResponse> for DeploymentResponse {
             websocket: response.websocket.map(Into::into),
             public_metadata: response.public_metadata,
             distributed,
+            container_statuses: response
+                .container_statuses
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            phase_progress: response.phase_progress,
         }
     }
 }
