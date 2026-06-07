@@ -172,6 +172,15 @@ fn build_targets(tools: &[CodingTool]) -> Vec<InstallTarget> {
         .collect()
 }
 
+fn resolved_skill_dir(target: &InstallTarget, skill: &str) -> PathBuf {
+    let skill_dir = target.skills_dir.join(skill);
+    target
+        .skills_dir
+        .canonicalize()
+        .map(|skills_dir| skills_dir.join(skill))
+        .unwrap_or(skill_dir)
+}
+
 async fn download_tarball() -> Result<Vec<u8>, CliError> {
     let url = tarball_url();
     let response = reqwest::Client::new()
@@ -404,11 +413,26 @@ fn uninstall_skills(agent_filter: &[String], yes: bool) -> Result<(), CliError> 
     }
 
     let mut removed = 0;
+    let mut removed_paths = BTreeSet::new();
     for target in &targets {
         for skill in CURATED_SKILLS {
             let skill_dir = target.skills_dir.join(skill);
+            let resolved_skill_dir = resolved_skill_dir(target, skill);
+            if removed_paths.contains(&resolved_skill_dir) {
+                removed += 1;
+                println!(
+                    "{} Removed {} from {} -> {}",
+                    style("✓").green(),
+                    style(skill).red(),
+                    target.tool_name,
+                    skill_dir.display()
+                );
+                continue;
+            }
+
             match std::fs::remove_dir_all(&skill_dir) {
                 Ok(()) => {
+                    removed_paths.insert(resolved_skill_dir);
                     removed += 1;
                     println!(
                         "{} Removed {} from {} -> {}",
@@ -560,6 +584,36 @@ mod tests {
         assert_eq!(
             tools.iter().map(|tool| tool.slug).collect::<Vec<_>>(),
             vec!["universal"]
+        );
+    }
+
+    #[test]
+    fn symlinked_targets_keep_configured_paths_but_share_resolved_skill_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let shared = home.path().join("shared-skills");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::create_dir_all(home.path().join(".agents")).unwrap();
+        std::fs::create_dir_all(home.path().join(".claude")).unwrap();
+        std::os::unix::fs::symlink(&shared, home.path().join(".agents").join("skills")).unwrap();
+        std::os::unix::fs::symlink(&shared, home.path().join(".claude").join("skills")).unwrap();
+
+        let tools = resolve_tools(home.path(), &[]).unwrap();
+        let targets = build_targets(&tools);
+
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].tool_name, "Universal (.agents)");
+        assert_eq!(targets[1].tool_name, "Claude Code");
+        assert_eq!(
+            targets[0].skills_dir,
+            home.path().join(".agents").join("skills")
+        );
+        assert_eq!(
+            targets[1].skills_dir,
+            home.path().join(".claude").join("skills")
+        );
+        assert_eq!(
+            resolved_skill_dir(&targets[0], "basilica-cli"),
+            resolved_skill_dir(&targets[1], "basilica-cli")
         );
     }
 
