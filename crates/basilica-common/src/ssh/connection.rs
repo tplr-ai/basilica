@@ -132,24 +132,23 @@ impl StandardSshClient {
         &self.config
     }
 
-    fn host_key_options(&self) -> Vec<String> {
+    fn host_key_options(&self) -> Result<Vec<String>> {
         let mut options = Vec::new();
 
         if self.config.strict_host_key_checking {
             options.push("StrictHostKeyChecking=yes".to_string());
-            if let Some(ref known_hosts) = self.config.known_hosts_file {
-                options.push(format!("UserKnownHostsFile={}", known_hosts.display()));
-            }
+            let known_hosts = self.get_known_hosts_path()?;
+            options.push(format!("UserKnownHostsFile={}", known_hosts.display()));
         } else {
             options.push("StrictHostKeyChecking=no".to_string());
             options.push("UserKnownHostsFile=/dev/null".to_string());
         }
 
-        options
+        Ok(options)
     }
 
-    fn connection_options(&self, include_batch_mode: bool) -> Vec<String> {
-        let mut options = self.host_key_options();
+    fn connection_options(&self, include_batch_mode: bool) -> Result<Vec<String>> {
+        let mut options = self.host_key_options()?;
         options.push("LogLevel=ERROR".to_string());
         options.push("IdentitiesOnly=yes".to_string());
         if include_batch_mode {
@@ -159,7 +158,7 @@ impl StandardSshClient {
             "ConnectTimeout={}",
             self.config.connection_timeout.as_secs()
         ));
-        options
+        Ok(options)
     }
 
     /// Validate SSH connection details
@@ -558,7 +557,7 @@ impl StandardSshClient {
             .arg("-p")
             .arg(details.port.to_string());
 
-        for option in self.connection_options(true) {
+        for option in self.connection_options(true)? {
             cmd.arg("-o").arg(option);
         }
 
@@ -587,7 +586,7 @@ impl StandardSshClient {
             .arg("-p")
             .arg(details.port.to_string());
 
-        for option in self.connection_options(true) {
+        for option in self.connection_options(true)? {
             cmd.arg("-o").arg(option);
         }
 
@@ -754,7 +753,7 @@ impl SshFileTransferManager for StandardSshClient {
             .arg("-P")
             .arg(details.port.to_string());
 
-        for option in self.connection_options(false) {
+        for option in self.connection_options(false)? {
             cmd.arg("-o").arg(option);
         }
 
@@ -814,7 +813,7 @@ impl SshFileTransferManager for StandardSshClient {
             .arg("-P")
             .arg(details.port.to_string());
 
-        for option in self.connection_options(false) {
+        for option in self.connection_options(false)? {
             cmd.arg("-o").arg(option);
         }
 
@@ -894,6 +893,15 @@ mod tests {
         }
     }
 
+    fn default_known_hosts_path_for_test() -> std::path::PathBuf {
+        match std::env::var("HOME") {
+            Ok(home) => std::path::PathBuf::from(home)
+                .join(".ssh")
+                .join("known_hosts"),
+            Err(_) => std::path::PathBuf::from("/tmp/known_hosts"),
+        }
+    }
+
     #[test]
     fn test_host_spec_formatting_standard_port() {
         let details = create_test_ssh_details();
@@ -929,7 +937,7 @@ mod tests {
     fn test_connection_options_non_strict_include_log_level_error() {
         let client = StandardSshClient::new();
 
-        let options = client.connection_options(true);
+        let options = client.connection_options(true).unwrap();
 
         assert_eq!(
             options,
@@ -953,13 +961,37 @@ mod tests {
             ..SshConnectionConfig::default()
         });
 
-        let options = client.connection_options(false);
+        let options = client.connection_options(false).unwrap();
 
         assert_eq!(
             options,
             vec![
                 "StrictHostKeyChecking=yes".to_string(),
                 "UserKnownHostsFile=/tmp/basilica_known_hosts".to_string(),
+                "LogLevel=ERROR".to_string(),
+                "IdentitiesOnly=yes".to_string(),
+                "ConnectTimeout=7".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_connection_options_strict_use_default_known_hosts_path() {
+        let client = StandardSshClient::with_config(SshConnectionConfig {
+            strict_host_key_checking: true,
+            known_hosts_file: None,
+            connection_timeout: Duration::from_secs(7),
+            ..SshConnectionConfig::default()
+        });
+        let expected_known_hosts = default_known_hosts_path_for_test();
+
+        let options = client.connection_options(false).unwrap();
+
+        assert_eq!(
+            options,
+            vec![
+                "StrictHostKeyChecking=yes".to_string(),
+                format!("UserKnownHostsFile={}", expected_known_hosts.display()),
                 "LogLevel=ERROR".to_string(),
                 "IdentitiesOnly=yes".to_string(),
                 "ConnectTimeout=7".to_string(),
