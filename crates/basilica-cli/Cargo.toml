@@ -69,6 +69,10 @@ regex = { workspace = true }
 # URL encoding
 urlencoding = { workspace = true }
 
+# Agent skills archive extraction
+flate2 = "1"
+tar = "0.4"
+
 # Internal crate dependencies
 basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
@@ -77,3 +81,4 @@ basilica-validator = { path = "../basilica-validator", features = ["client", "cl
 [dev-dependencies]
 serial_test = "3"
 assert_cmd = "2"
+tempfile = { workspace = true }

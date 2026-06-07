@@ -1,6 +1,6 @@
 use basilica_common::types::GpuCategory;
 use basilica_sdk::types::RentalState;
-use clap::{Subcommand, ValueEnum, ValueHint};
+use clap::{Parser, Subcommand, ValueEnum, ValueHint};
 use std::path::PathBuf;
 
 use crate::handlers::gpu_rental::GpuTarget;
@@ -226,6 +226,39 @@ pub enum Commands {
         #[command(subcommand)]
         action: VolumeAction,
     },
+
+    /// Install Basilica agent skills for AI coding tools
+    Skills(SkillsCommand),
+}
+
+/// Agent skills command with shared target flags.
+#[derive(Parser, Debug, Clone)]
+pub struct SkillsCommand {
+    #[command(subcommand)]
+    pub action: Option<SkillsAction>,
+
+    /// Target specific agent(s) instead of auto-detected agents
+    #[arg(long, value_name = "AGENT", global = true)]
+    pub agent: Vec<String>,
+
+    /// Skip confirmation prompts
+    #[arg(short = 'y', long, global = true)]
+    pub yes: bool,
+}
+
+/// Agent skills actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum SkillsAction {
+    /// Install Basilica agent skills
+    #[command(alias = "add", alias = "update")]
+    Install,
+
+    /// Uninstall Basilica agent skills
+    #[command(alias = "remove")]
+    Uninstall,
+
+    /// List available skills and install targets
+    List,
 }
 
 /// Fund management actions
@@ -381,7 +414,10 @@ impl Commands {
             Commands::Train(_) => true,
 
             // Authentication commands don't require auth
-            Commands::Login { .. } | Commands::Logout | Commands::Upgrade { .. } => false,
+            Commands::Login { .. }
+            | Commands::Logout
+            | Commands::Upgrade { .. }
+            | Commands::Skills(_) => false,
 
             // Test auth command requires authentication
             #[cfg(debug_assertions)]

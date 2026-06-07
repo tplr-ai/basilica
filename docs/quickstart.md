@@ -14,6 +14,12 @@ Verify it's on your `$PATH`:
 basilica --version
 ```
 
+Optional: install Basilica agent skills for supported coding tools:
+
+```bash
+basilica skills install
+```
+
 ## 2. Log in
 
 ```bash

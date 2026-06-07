@@ -5,7 +5,7 @@ This file is for coding agents that need to operate Basilica as a cloud platform
 Install the local skills bundle:
 
 ```bash
-curl -fsSL https://basilica.ai/agents/install.sh | bash
+basilica skills install
 ```
 
 ## Routing
@@ -19,11 +19,7 @@ Choose the control plane first:
 
 Primary skill files:
 
-- `https://basilica.ai/agents/basilica-cloud-operator/SKILL.md`
-- `https://basilica.ai/agents/basilica-account-ops/SKILL.md`
-- `https://basilica.ai/agents/basilica-rentals-ops/SKILL.md`
-- `https://basilica.ai/agents/basilica-serverless-ops/SKILL.md`
-- `https://basilica.ai/agents/basilica-sdk-ops/SKILL.md`
+- `https://github.com/one-covenant/basilica-skills/tree/main/skills/use-basilica`
 
 Reference docs:
 

@@ -670,6 +670,7 @@ python3 ../../../examples/deploy_container.py
 - **SDK Reference**: `crates/basilica-sdk-python/README.md`
 - **Quickstart**: `docs/quickstart.md`
 - **Agent Cloud Ops**: `docs/agent-cloud-ops.md`
+- **Agent Skills**: `basilica skills install`
 
 ### Join the Community
 

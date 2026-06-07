@@ -357,6 +357,10 @@ impl Args {
                 }
             }
 
+            Commands::Skills(cmd) => {
+                handlers::skills::handle_skills(cmd.clone()).await?;
+            }
+
             // Upgrade command is handled in main.rs before entering async runtime
             Commands::Upgrade { .. } => {
                 unreachable!("Upgrade command should be handled in main.rs")
