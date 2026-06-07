@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Suppressed OpenSSH's known-host informational warning from `basilica exec`
   and `basilica cp` error output, so failed remote commands surface the
   actual remote stderr without the extra host-key noise.
+- Removed duplicate SSH command failure text from `basilica exec` output, so
+  remote command errors render once with the original stderr and CLI guidance.
 
 ## [0.30.1] - 2026-05-22
 

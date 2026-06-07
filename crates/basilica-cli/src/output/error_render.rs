@@ -56,6 +56,7 @@ fn render_human(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use color_eyre::eyre::eyre;
 
     #[test]
     fn json_render_missing_input() {
@@ -96,5 +97,20 @@ mod tests {
         assert!(s.contains("missing input"));
         assert!(s.contains("rental"));
         assert!(s.contains("<rental-name-or-id>"));
+    }
+
+    #[test]
+    fn human_render_internal_report_does_not_need_command_wrapper() {
+        let report =
+            eyre!("SSH command failed: ModuleNotFoundError: No module named 'definitely_missing'");
+        let err = CliError::Internal(report);
+        let mut buf = Vec::new();
+
+        render_error(&err, RenderMode::Human, &mut buf).unwrap();
+
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("SSH command failed"));
+        assert!(s.contains("ModuleNotFoundError"));
+        assert!(!s.contains("Command execution failed"));
     }
 }
