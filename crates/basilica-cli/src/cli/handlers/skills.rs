@@ -17,7 +17,7 @@ const DEFAULT_TARBALL_URL: &str =
     "https://github.com/itzlambda/basilica-skills/archive/refs/heads/main.tar.gz";
 const TARBALL_URL_ENV: &str = "BASILICA_SKILLS_TARBALL_URL";
 const SKILLS_DIR: &str = "skills";
-const CURATED_SKILLS: &[&str] = &["basilica-cli"];
+const CURATED_SKILLS: &[&str] = &["use-basilica"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CodingTool {
@@ -612,8 +612,8 @@ mod tests {
             home.path().join(".claude").join("skills")
         );
         assert_eq!(
-            resolved_skill_dir(&targets[0], "basilica-cli"),
-            resolved_skill_dir(&targets[1], "basilica-cli")
+            resolved_skill_dir(&targets[0], "use-basilica"),
+            resolved_skill_dir(&targets[1], "use-basilica")
         );
     }
 
@@ -629,11 +629,11 @@ mod tests {
         let tarball = archive(&[
             ("basilica-skills-main/README.md", b"root"),
             (
-                "basilica-skills-main/skills/basilica-cli/SKILL.md",
+                "basilica-skills-main/skills/use-basilica/SKILL.md",
                 b"skill",
             ),
             (
-                "basilica-skills-main/skills/basilica-cli/notes.md",
+                "basilica-skills-main/skills/use-basilica/notes.md",
                 b"notes",
             ),
             ("basilica-skills-main/not-a-skill/file.txt", b"ignored"),
@@ -641,16 +641,16 @@ mod tests {
         ]);
 
         let skills = extract_skill_files(&tarball).unwrap();
-        assert!(skills.contains_key("basilica-cli"));
+        assert!(skills.contains_key("use-basilica"));
         assert!(!skills.contains_key("not-a-skill"));
-        assert_eq!(skills["basilica-cli"].len(), 2);
+        assert_eq!(skills["use-basilica"].len(), 2);
     }
 
     #[test]
     fn curated_skills_ignore_unknown_archive_entries() {
         let mut skills = SkillFiles::new();
         skills.insert(
-            "basilica-cli".to_string(),
+            "use-basilica".to_string(),
             vec![(PathBuf::from("SKILL.md"), b"cli".to_vec())],
         );
         skills.insert(
@@ -659,7 +659,7 @@ mod tests {
         );
 
         let curated = curated_skill_files(skills);
-        assert_eq!(curated.keys().collect::<Vec<_>>(), vec!["basilica-cli"]);
+        assert_eq!(curated.keys().collect::<Vec<_>>(), vec!["use-basilica"]);
     }
 
     #[test]
@@ -671,28 +671,28 @@ mod tests {
         };
         std::fs::create_dir_all(target.skills_dir.join("other")).unwrap();
         std::fs::write(target.skills_dir.join("other").join("SKILL.md"), "other").unwrap();
-        std::fs::create_dir_all(target.skills_dir.join("basilica-cli")).unwrap();
+        std::fs::create_dir_all(target.skills_dir.join("use-basilica")).unwrap();
         std::fs::write(
-            target.skills_dir.join("basilica-cli").join("old.txt"),
+            target.skills_dir.join("use-basilica").join("old.txt"),
             "old",
         )
         .unwrap();
 
         let mut skills = SkillFiles::new();
         skills.insert(
-            "basilica-cli".to_string(),
+            "use-basilica".to_string(),
             vec![(PathBuf::from("SKILL.md"), b"new".to_vec())],
         );
 
         install_files(std::slice::from_ref(&target), &skills).unwrap();
         assert_eq!(
-            std::fs::read_to_string(target.skills_dir.join("basilica-cli").join("SKILL.md"))
+            std::fs::read_to_string(target.skills_dir.join("use-basilica").join("SKILL.md"))
                 .unwrap(),
             "new"
         );
         assert!(!target
             .skills_dir
-            .join("basilica-cli")
+            .join("use-basilica")
             .join("old.txt")
             .exists());
         assert!(target.skills_dir.join("other").join("SKILL.md").exists());

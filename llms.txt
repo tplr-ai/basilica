@@ -17,4 +17,4 @@ Primary resources:
 
 Skill files:
 
-- `https://github.com/one-covenant/basilica-skills/tree/main/skills/basilica-cli`
+- `https://github.com/one-covenant/basilica-skills/tree/main/skills/use-basilica`
