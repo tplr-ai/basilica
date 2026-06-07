@@ -2,7 +2,7 @@
 //! In non-interactive mode the helpers return structured errors instead of hanging.
 
 use crate::error::CliError;
-use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
+use dialoguer::{theme::ColorfulTheme, Confirm, Input, MultiSelect, Select};
 use std::io::IsTerminal;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -73,6 +73,30 @@ pub fn ask_select(
                 .with_prompt(prompt)
                 .items(labels)
                 .default(0)
+                .interact()
+                .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!(e)))
+        }
+    }
+}
+
+pub fn ask_multiselect(
+    field: &str,
+    prompt: &str,
+    labels: &[String],
+    defaults: &[bool],
+    hint: &str,
+) -> Result<Vec<usize>, CliError> {
+    match current() {
+        Interactivity::NonInteractive => Err(CliError::MissingInput {
+            field: field.to_string(),
+            hint: hint.to_string(),
+        }),
+        Interactivity::Interactive => {
+            let theme = ColorfulTheme::default();
+            MultiSelect::with_theme(&theme)
+                .with_prompt(prompt)
+                .items(labels)
+                .defaults(defaults)
                 .interact()
                 .map_err(|e| CliError::Internal(color_eyre::eyre::eyre!(e)))
         }
@@ -163,6 +187,29 @@ mod tests {
             CliError::MissingInput { field, hint } => {
                 assert_eq!(field, "offering");
                 assert!(hint.contains("--offering-id"));
+            }
+            other => panic!("expected MissingInput, got {other:?}"),
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn ask_multiselect_non_interactive_errors() {
+        let _env = NonInteractiveEnv::set();
+        let labels = vec!["alpha".to_string(), "beta".to_string()];
+        let defaults = [true, false];
+        let err = ask_multiselect(
+            "targets",
+            "Choose targets",
+            &labels,
+            &defaults,
+            "Pass --target",
+        )
+        .unwrap_err();
+        match err {
+            CliError::MissingInput { field, hint } => {
+                assert_eq!(field, "targets");
+                assert!(hint.contains("--target"));
             }
             other => panic!("expected MissingInput, got {other:?}"),
         }

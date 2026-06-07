@@ -2,7 +2,8 @@
 
 use crate::cli::commands::{SkillsAction, SkillsCommand};
 use crate::error::CliError;
-use crate::interactive::gate::{ask_confirm, current, Interactivity};
+use crate::interactive::gate::{ask_multiselect, current, Interactivity};
+use crate::progress::{complete_spinner_error, create_spinner};
 use clap::CommandFactory;
 use color_eyre::eyre::eyre;
 use console::style;
@@ -22,6 +23,8 @@ const CURATED_SKILLS: &[&str] = &["basilica-cli"];
 struct CodingTool {
     slug: &'static str,
     name: &'static str,
+    aliases: &'static [&'static str],
+    label_suffix: Option<&'static str>,
     parent: PathBuf,
     skills_dir_name: &'static str,
     always_default: bool,
@@ -65,6 +68,18 @@ fn coding_tools(home: &Path) -> Vec<CodingTool> {
         CodingTool {
             slug: "universal",
             name: "Universal (.agents)",
+            aliases: &[
+                "agents",
+                "codex",
+                "openai-codex",
+                "cursor",
+                "opencode",
+                "open-code",
+                "amp",
+                "gemini",
+                "gemini-cli",
+            ],
+            label_suffix: Some("Codex, Cursor, OpenCode, Amp, Gemini"),
             parent: home.join(".agents"),
             skills_dir_name: "skills",
             always_default: true,
@@ -72,32 +87,17 @@ fn coding_tools(home: &Path) -> Vec<CodingTool> {
         CodingTool {
             slug: "claude-code",
             name: "Claude Code",
+            aliases: &["claude"],
+            label_suffix: None,
             parent: home.join(".claude"),
             skills_dir_name: "skills",
             always_default: false,
         },
-        CodingTool {
-            slug: "cursor",
-            name: "Cursor",
-            parent: home.join(".cursor"),
-            skills_dir_name: "skills",
-            always_default: false,
-        },
-        CodingTool {
-            slug: "codex",
-            name: "OpenAI Codex",
-            parent: home.join(".codex"),
-            skills_dir_name: "skills",
-            always_default: false,
-        },
-        CodingTool {
-            slug: "opencode",
-            name: "OpenCode",
-            parent: home.join(".config").join("opencode"),
-            skills_dir_name: "skills",
-            always_default: false,
-        },
     ]
+}
+
+fn matches_agent(tool: &CodingTool, slug: &str) -> bool {
+    tool.slug == slug || tool.aliases.contains(&slug)
 }
 
 fn resolve_tools(home: &Path, agent_filter: &[String]) -> Result<Vec<CodingTool>, CliError> {
@@ -110,14 +110,17 @@ fn resolve_tools(home: &Path, agent_filter: &[String]) -> Result<Vec<CodingTool>
             .collect());
     }
 
-    let mut selected = Vec::new();
+    let mut selected: Vec<CodingTool> = Vec::new();
     for slug in agent_filter {
-        match all.iter().find(|tool| tool.slug == slug.as_str()) {
-            Some(tool) => selected.push(tool.clone()),
+        match all.iter().find(|tool| matches_agent(tool, slug.as_str())) {
+            Some(tool) if !selected.iter().any(|selected| selected.slug == tool.slug) => {
+                selected.push(tool.clone());
+            }
+            Some(_) => {}
             None => {
                 let valid = all
                     .iter()
-                    .map(|tool| tool.slug)
+                    .flat_map(|tool| std::iter::once(tool.slug).chain(tool.aliases.iter().copied()))
                     .collect::<Vec<_>>()
                     .join(", ");
                 return Err(CliError::Internal(eyre!(
@@ -129,6 +132,34 @@ fn resolve_tools(home: &Path, agent_filter: &[String]) -> Result<Vec<CodingTool>
         }
     }
     Ok(selected)
+}
+
+fn default_tool_selections(tools: &[CodingTool]) -> Vec<bool> {
+    tools
+        .iter()
+        .map(|tool| tool.always_default || tool.parent.is_dir())
+        .collect()
+}
+
+fn select_tools_interactively(
+    home: &Path,
+    prompt: &str,
+    hint: &str,
+) -> Result<Vec<CodingTool>, CliError> {
+    let tools = coding_tools(home);
+    let defaults = default_tool_selections(&tools);
+    let labels = tools
+        .iter()
+        .map(|tool| match tool.label_suffix {
+            Some(suffix) => format!("{} - {}", tool.name, suffix),
+            None => tool.name.to_string(),
+        })
+        .collect::<Vec<_>>();
+    let selections = ask_multiselect("agents", prompt, &labels, &defaults, hint)?;
+    Ok(selections
+        .into_iter()
+        .filter_map(|idx| tools.get(idx).cloned())
+        .collect())
 }
 
 fn build_targets(tools: &[CodingTool]) -> Vec<InstallTarget> {
@@ -286,10 +317,10 @@ fn install_files(targets: &[InstallTarget], skills: &SkillFiles) -> Result<usize
 
             installed += 1;
             println!(
-                "{} {}: installed {} -> {}",
+                "{} Installed {} to {} -> {}",
                 style("✓").green(),
-                target.tool_name,
                 style(skill_name).green(),
+                target.tool_name,
                 skill_dir.display()
             );
         }
@@ -299,36 +330,40 @@ fn install_files(targets: &[InstallTarget], skills: &SkillFiles) -> Result<usize
 
 async fn install_skills(agent_filter: &[String], yes: bool) -> Result<(), CliError> {
     let home = home_dir()?;
-    let tools = resolve_tools(&home, agent_filter)?;
+    let tools = if agent_filter.is_empty() && !yes {
+        if matches!(current(), Interactivity::NonInteractive) {
+            return Err(CliError::MissingInput {
+                field: "agents".to_string(),
+                hint: "Re-run with `basilica skills install -y` or pass one or more `--agent <agent>` values.".to_string(),
+            });
+        }
+        select_tools_interactively(
+            &home,
+            "Select agent targets for Basilica skills",
+            "Re-run with `basilica skills install -y` or pass one or more `--agent <agent>` values.",
+        )?
+    } else {
+        resolve_tools(&home, agent_filter)?
+    };
     let targets = build_targets(&tools);
     if targets.is_empty() {
-        println!("No agent targets detected. Use --agent to choose a target.");
+        println!("No agent targets selected. Use --agent to choose a target.");
         return Ok(());
     }
 
-    println!("\n{}\n", style("Basilica Skills").bold());
-    print_targets("Installing to", &targets);
-
-    if !yes && matches!(current(), Interactivity::NonInteractive) {
-        return Err(CliError::MissingInput {
-            field: "confirmation".to_string(),
-            hint: "Re-run with `basilica skills install -y` to install skills.".to_string(),
-        });
-    }
-    if !yes
-        && !ask_confirm(
-            "confirmation",
-            "Install or update Basilica skills in these targets?",
-            true,
-            "Re-run with `basilica skills install -y` to install skills.",
-        )?
-    {
-        println!("Cancelled.");
-        return Ok(());
-    }
-
-    println!("Downloading skills from {}...", tarball_url());
-    let skills = curated_skill_files(extract_skill_files(&download_tarball().await?)?);
+    let spinner = create_spinner("Downloading Basilica skills");
+    let tarball = match download_tarball().await {
+        Ok(tarball) => {
+            spinner.finish_and_clear();
+            println!("{} Downloaded Basilica skills", style("✓").green());
+            tarball
+        }
+        Err(err) => {
+            complete_spinner_error(spinner, "Failed to download Basilica skills");
+            return Err(err);
+        }
+    };
+    let skills = curated_skill_files(extract_skill_files(&tarball)?);
     if skills.is_empty() {
         return Err(CliError::Internal(eyre!(
             "No curated Basilica skills found in archive"
@@ -337,40 +372,34 @@ async fn install_skills(agent_filter: &[String], yes: bool) -> Result<(), CliErr
 
     let installed = install_files(&targets, &skills)?;
     println!(
-        "\n{} Installed {} skill target(s). Restart your agent tool to load new skills.",
+        "\n{} Installed {} target{}. Restart your agent tool to load new skills.",
         style("✓").green().bold(),
-        installed
+        installed,
+        plural_suffix(installed)
     );
     Ok(())
 }
 
 fn uninstall_skills(agent_filter: &[String], yes: bool) -> Result<(), CliError> {
     let home = home_dir()?;
-    let tools = resolve_tools(&home, agent_filter)?;
+    let tools = if agent_filter.is_empty() && !yes {
+        if matches!(current(), Interactivity::NonInteractive) {
+            return Err(CliError::MissingInput {
+                field: "agents".to_string(),
+                hint: "Re-run with `basilica skills uninstall -y` or pass one or more `--agent <agent>` values.".to_string(),
+            });
+        }
+        select_tools_interactively(
+            &home,
+            "Select agent targets to uninstall Basilica skills from",
+            "Re-run with `basilica skills uninstall -y` or pass one or more `--agent <agent>` values.",
+        )?
+    } else {
+        resolve_tools(&home, agent_filter)?
+    };
     let targets = build_targets(&tools);
     if targets.is_empty() {
-        println!("No agent targets detected. Use --agent to choose a target.");
-        return Ok(());
-    }
-
-    println!("\n{}\n", style("Basilica Skills").bold());
-    print_targets("Uninstalling from", &targets);
-
-    if !yes && matches!(current(), Interactivity::NonInteractive) {
-        return Err(CliError::MissingInput {
-            field: "confirmation".to_string(),
-            hint: "Re-run with `basilica skills uninstall -y` to uninstall skills.".to_string(),
-        });
-    }
-    if !yes
-        && !ask_confirm(
-            "confirmation",
-            "Uninstall Basilica skills from these targets?",
-            false,
-            "Re-run with `basilica skills uninstall -y` to uninstall skills.",
-        )?
-    {
-        println!("Cancelled.");
+        println!("No agent targets selected. Use --agent to choose a target.");
         return Ok(());
     }
 
@@ -382,18 +411,20 @@ fn uninstall_skills(agent_filter: &[String], yes: bool) -> Result<(), CliError> 
                 Ok(()) => {
                     removed += 1;
                     println!(
-                        "{} {}: removed {}",
+                        "{} Removed {} from {} -> {}",
                         style("✓").green(),
+                        style(skill).red(),
                         target.tool_name,
-                        style(skill).red()
+                        skill_dir.display()
                     );
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     println!(
-                        "{} {}: {} not installed",
+                        "{} {}: {} not installed -> {}",
                         style("-").dim(),
                         target.tool_name,
-                        skill
+                        skill,
+                        skill_dir.display()
                     );
                 }
                 Err(e) => {
@@ -407,9 +438,10 @@ fn uninstall_skills(agent_filter: &[String], yes: bool) -> Result<(), CliError> 
         }
     }
     println!(
-        "\n{} Removed {} skill target(s).",
+        "\n{} Removed {} target{}.",
         style("✓").green().bold(),
-        removed
+        removed,
+        plural_suffix(removed)
     );
     Ok(())
 }
@@ -419,7 +451,6 @@ fn list_skills(agent_filter: &[String]) -> Result<(), CliError> {
     let tools = resolve_tools(&home, agent_filter)?;
     let targets = build_targets(&tools);
 
-    println!("\n{}\n", style("Basilica Skills").bold());
     println!("Available skills:");
     for skill in CURATED_SKILLS {
         println!("  {}", style(skill).cyan());
@@ -452,12 +483,12 @@ fn list_skills(agent_filter: &[String]) -> Result<(), CliError> {
     Ok(())
 }
 
-fn print_targets(label: &str, targets: &[InstallTarget]) {
-    println!("{}:", label);
-    for target in targets {
-        println!("  {} -> {}", target.tool_name, target.skills_dir.display());
+fn plural_suffix(count: usize) -> &'static str {
+    if count == 1 {
+        ""
+    } else {
+        "s"
     }
-    println!();
 }
 
 #[cfg(test)]
@@ -490,7 +521,46 @@ mod tests {
 
         let tools = resolve_tools(home.path(), &[]).unwrap();
         let slugs = tools.iter().map(|tool| tool.slug).collect::<Vec<_>>();
-        assert_eq!(slugs, vec!["universal", "codex"]);
+        assert_eq!(slugs, vec!["universal"]);
+    }
+
+    #[test]
+    fn resolves_codex_agent_to_universal_target() {
+        let home = tempfile::tempdir().unwrap();
+
+        let tools = resolve_tools(home.path(), &[String::from("codex")]).unwrap();
+        let targets = build_targets(&tools);
+
+        assert_eq!(
+            tools.iter().map(|tool| tool.slug).collect::<Vec<_>>(),
+            vec!["universal"]
+        );
+        assert_eq!(targets.len(), 1);
+        assert_eq!(
+            targets[0].skills_dir,
+            home.path().join(".agents").join("skills")
+        );
+    }
+
+    #[test]
+    fn resolves_agent_skills_compatible_agents_to_universal_target() {
+        let home = tempfile::tempdir().unwrap();
+
+        let tools = resolve_tools(
+            home.path(),
+            &[
+                String::from("cursor"),
+                String::from("opencode"),
+                String::from("amp"),
+                String::from("gemini-cli"),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(
+            tools.iter().map(|tool| tool.slug).collect::<Vec<_>>(),
+            vec!["universal"]
+        );
     }
 
     #[test]
@@ -560,7 +630,7 @@ mod tests {
             vec![(PathBuf::from("SKILL.md"), b"new".to_vec())],
         );
 
-        install_files(&[target.clone()], &skills).unwrap();
+        install_files(std::slice::from_ref(&target), &skills).unwrap();
         assert_eq!(
             std::fs::read_to_string(target.skills_dir.join("basilica-cli").join("SKILL.md"))
                 .unwrap(),
