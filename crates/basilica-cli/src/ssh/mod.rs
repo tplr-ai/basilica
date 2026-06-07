@@ -112,7 +112,7 @@ impl SshClient {
             .execute_command(&details, command, true)
             .await
             .map_err(|e| {
-                eyre!("Command execution failed: {}", e)
+                eyre!(e)
                     .suggestion("Check if the rental is still active and SSH port is exposed")
                     .note("Run 'basilica status <rental-id>' to check rental status")
             })?;

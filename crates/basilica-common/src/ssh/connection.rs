@@ -9,7 +9,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// SSH connection configuration
 #[derive(Debug, Clone)]
@@ -609,7 +609,7 @@ impl StandardSshClient {
             Ok(stdout)
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            error!("SSH command failed: {}", stderr);
+            debug!("SSH command failed: {}", stderr);
             Err(anyhow::anyhow!("SSH command failed: {}", stderr))
         }
     }
@@ -647,11 +647,11 @@ impl SshConnectionManager for StandardSshClient {
                 }
             }
             Ok(Err(e)) => {
-                error!("SSH connection test failed: {}", e);
+                debug!("SSH connection test failed: {}", e);
                 Err(e)
             }
             Err(_) => {
-                error!("SSH connection test timed out");
+                debug!("SSH connection test timed out");
                 Err(anyhow::anyhow!("Connection test timed out"))
             }
         }
@@ -676,7 +676,7 @@ impl SshConnectionManager for StandardSshClient {
         match result {
             Ok(result) => result,
             Err(_) => {
-                error!("Command execution timed out");
+                debug!("Command execution timed out");
                 Err(anyhow::anyhow!("Command execution timed out"))
             }
         }
@@ -781,11 +781,11 @@ impl SshFileTransferManager for StandardSshClient {
                 Ok(())
             }
             Ok(Err(e)) => {
-                error!("File upload failed: {}", e);
+                debug!("File upload failed: {}", e);
                 Err(e)
             }
             Err(_) => {
-                error!("File upload timed out");
+                debug!("File upload timed out");
                 Err(anyhow::anyhow!("File upload timed out"))
             }
         }
@@ -842,11 +842,11 @@ impl SshFileTransferManager for StandardSshClient {
                 Ok(())
             }
             Ok(Err(e)) => {
-                error!("File download failed: {}", e);
+                debug!("File download failed: {}", e);
                 Err(e)
             }
             Err(_) => {
-                error!("File download timed out");
+                debug!("File download timed out");
                 Err(anyhow::anyhow!("File download timed out"))
             }
         }
