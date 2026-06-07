@@ -14,7 +14,7 @@ use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 const DEFAULT_TARBALL_URL: &str =
-    "https://github.com/itzlambda/basilica-skills/archive/refs/heads/main.tar.gz";
+    "https://github.com/one-covenant/basilica-skills/archive/refs/heads/main.tar.gz";
 const TARBALL_URL_ENV: &str = "BASILICA_SKILLS_TARBALL_URL";
 const SKILLS_DIR: &str = "skills";
 const CURATED_SKILLS: &[&str] = &["use-basilica"];
