@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `basilica skills` command group for installing, uninstalling, and listing
+  Basilica agent skills across supported coding tools, with `--agent` targeting
+  and `-y` automation support.
+
 ### Fixed
 - Suppressed OpenSSH's known-host informational warning from `basilica exec`
   and `basilica cp` error output, so failed remote commands surface the
