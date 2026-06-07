@@ -22,6 +22,12 @@ For headless shells or remote servers:
 basilica login --device-code
 ```
 
+For coding agents:
+
+```bash
+basilica skills install
+```
+
 ## What you can do
 
 - **Rent GPUs directly** — SSH-accessible machines (secure cloud or community cloud) for training, inference, and interactive work.
