@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `GpuOffering.provider` now accepts any provider/availability-zone value the
+  API emits (e.g. AZ-root codenames `cyan`, `plum`, `opal`), with the region in
+  the separate `region` field. It is still surfaced to Python as a string — no
+  Python API change — but the underlying decode no longer goes through a fixed
+  enum, so new providers/AZs work without an SDK release. Previously
+  `list_secure_cloud_gpus()` failed against a newer API with
+  `unknown variant ...`.
+
 ## [0.30.1] - 2026-05-22
 
 ### Fixed

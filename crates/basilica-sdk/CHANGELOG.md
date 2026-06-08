@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `GpuOffering.provider` is now a free-form `String` instead of the
+  `CloudProvider` enum, and the `CloudProvider` enum has been removed. The API
+  wire boundary emits availability-zone root codenames (e.g. `cyan`, `plum`,
+  `opal`) in `provider`, with the region in the separate `region` field. Keeping
+  this a `String` means new providers/AZs deserialize cleanly without an SDK
+  release; the previous enum rejected unknown values with `unknown variant ...`,
+  breaking every GPU listing call against a newer API.
+
 ## [0.29.0] - 2026-05-04
 
 ### Added

@@ -719,7 +719,7 @@ pub async fn resolve_offering_unified(
             unified_items.push(UnifiedOfferingItem {
                 offering_type: OfferingType::SecureGpu,
                 display_gpu,
-                display_provider: format!("{}", offering.provider),
+                display_provider: offering.provider.to_string(),
                 display_country: extract_country_code(&offering.region)
                     .unwrap_or("--")
                     .to_string(),
