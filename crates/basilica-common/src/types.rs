@@ -759,70 +759,15 @@ mod tests {
     }
 }
 
-/// Cloud provider identifier for GPU offerings
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CloudProvider {
-    Hyperstack,
-    Lambda,
-    HydraHost,
-    /// Verda cloud provider (replacement for DataCrunch)
-    Verda,
-    /// Mass Compute - VM-based GPU rental provider (polling-based, no webhooks)
-    MassCompute,
-    /// Shadeform - multi-cloud GPU aggregator (routes to underlying clouds like hyperstack, tensordock)
-    Shadeform,
-    /// Denvr Data - denvrdata.com - VM-based GPU cloud
-    Denvr,
-    /// The Priory - VIP managed machines (not a real cloud provider, but uses Deployment model)
-    Vip,
-}
-
-impl CloudProvider {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            CloudProvider::Hyperstack => "hyperstack",
-            CloudProvider::Lambda => "lambda",
-            CloudProvider::HydraHost => "hydrahost",
-            CloudProvider::Verda => "verda",
-            CloudProvider::MassCompute => "masscompute",
-            CloudProvider::Shadeform => "shadeform",
-            CloudProvider::Denvr => "denvr",
-            CloudProvider::Vip => "vip",
-        }
-    }
-}
-
-impl fmt::Display for CloudProvider {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl FromStr for CloudProvider {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "datacrunch" => Ok(CloudProvider::Verda), // DataCrunch replaced by Verda
-            "hyperstack" => Ok(CloudProvider::Hyperstack),
-            "lambda" => Ok(CloudProvider::Lambda),
-            "hydrahost" => Ok(CloudProvider::HydraHost),
-            "verda" => Ok(CloudProvider::Verda),
-            "masscompute" | "mass_compute" | "mass-compute" => Ok(CloudProvider::MassCompute),
-            "shadeform" | "shade_form" | "shade-form" => Ok(CloudProvider::Shadeform),
-            "denvr" | "denvr-data" | "denvrdata" => Ok(CloudProvider::Denvr),
-            "vip" => Ok(CloudProvider::Vip),
-            _ => Err(format!("Unknown provider: {}", s)),
-        }
-    }
-}
-
 /// Unified GPU offering structure for marketplace
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuOffering {
     pub id: String,
-    pub provider: CloudProvider,
+    /// Provider / availability-zone identifier (e.g. `cyan`, `plum`, `opal`).
+    ///
+    /// Free-form `String`, not an enum: the API adds providers/AZs without a
+    /// client release, and an enum would reject unknown values on deserialize.
+    pub provider: String,
     pub gpu_type: GpuCategory,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gpu_memory_gb_per_gpu: Option<u32>,
@@ -847,169 +792,8 @@ pub struct GpuOffering {
 }
 
 #[cfg(test)]
-mod cloud_provider_tests {
+mod gpu_offering_tests {
     use super::*;
-
-    #[test]
-    fn test_cloud_provider_as_str() {
-        assert_eq!(CloudProvider::Hyperstack.as_str(), "hyperstack");
-        assert_eq!(CloudProvider::Lambda.as_str(), "lambda");
-        assert_eq!(CloudProvider::HydraHost.as_str(), "hydrahost");
-        assert_eq!(CloudProvider::Verda.as_str(), "verda");
-        assert_eq!(CloudProvider::MassCompute.as_str(), "masscompute");
-        assert_eq!(CloudProvider::Shadeform.as_str(), "shadeform");
-        assert_eq!(CloudProvider::Denvr.as_str(), "denvr");
-        assert_eq!(CloudProvider::Vip.as_str(), "vip");
-    }
-
-    #[test]
-    fn test_cloud_provider_display() {
-        assert_eq!(CloudProvider::MassCompute.to_string(), "masscompute");
-        assert_eq!(CloudProvider::Hyperstack.to_string(), "hyperstack");
-    }
-
-    #[test]
-    fn test_cloud_provider_from_str() {
-        assert_eq!(
-            "masscompute".parse::<CloudProvider>().unwrap(),
-            CloudProvider::MassCompute
-        );
-        assert_eq!(
-            "mass_compute".parse::<CloudProvider>().unwrap(),
-            CloudProvider::MassCompute
-        );
-        assert_eq!(
-            "mass-compute".parse::<CloudProvider>().unwrap(),
-            CloudProvider::MassCompute
-        );
-        assert_eq!(
-            "MassCompute".parse::<CloudProvider>().unwrap(),
-            CloudProvider::MassCompute
-        );
-        assert_eq!(
-            "MASSCOMPUTE".parse::<CloudProvider>().unwrap(),
-            CloudProvider::MassCompute
-        );
-    }
-
-    #[test]
-    fn test_cloud_provider_from_str_shadeform() {
-        assert_eq!(
-            "shadeform".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Shadeform
-        );
-        assert_eq!(
-            "shade_form".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Shadeform
-        );
-        assert_eq!(
-            "shade-form".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Shadeform
-        );
-        assert_eq!(
-            "Shadeform".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Shadeform
-        );
-        assert_eq!(
-            "SHADEFORM".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Shadeform
-        );
-    }
-
-    #[test]
-    fn test_cloud_provider_from_str_denvr() {
-        assert_eq!(
-            "denvr".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Denvr
-        );
-        assert_eq!(
-            "denvr-data".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Denvr
-        );
-        assert_eq!(
-            "denvrdata".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Denvr
-        );
-        assert_eq!(
-            "Denvr".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Denvr
-        );
-        assert_eq!(
-            "DENVR".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Denvr
-        );
-    }
-
-    #[test]
-    fn test_cloud_provider_from_str_existing() {
-        assert_eq!(
-            "hyperstack".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Hyperstack
-        );
-        assert_eq!(
-            "lambda".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Lambda
-        );
-        assert_eq!(
-            "hydrahost".parse::<CloudProvider>().unwrap(),
-            CloudProvider::HydraHost
-        );
-        assert_eq!(
-            "verda".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Verda
-        );
-        assert_eq!(
-            "datacrunch".parse::<CloudProvider>().unwrap(),
-            CloudProvider::Verda
-        );
-        assert_eq!("vip".parse::<CloudProvider>().unwrap(), CloudProvider::Vip);
-    }
-
-    #[test]
-    fn test_cloud_provider_from_str_invalid() {
-        assert!("unknown".parse::<CloudProvider>().is_err());
-        assert!("".parse::<CloudProvider>().is_err());
-    }
-
-    #[test]
-    fn test_cloud_provider_serde_roundtrip() {
-        let provider = CloudProvider::MassCompute;
-        let json = serde_json::to_string(&provider).unwrap();
-        assert_eq!(json, "\"masscompute\"");
-
-        let deserialized: CloudProvider = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, CloudProvider::MassCompute);
-    }
-
-    #[test]
-    fn test_cloud_provider_serde_all_variants() {
-        let variants = vec![
-            (CloudProvider::Hyperstack, "\"hyperstack\""),
-            (CloudProvider::Lambda, "\"lambda\""),
-            (CloudProvider::HydraHost, "\"hydrahost\""),
-            (CloudProvider::Verda, "\"verda\""),
-            (CloudProvider::MassCompute, "\"masscompute\""),
-            (CloudProvider::Shadeform, "\"shadeform\""),
-            (CloudProvider::Denvr, "\"denvr\""),
-            (CloudProvider::Vip, "\"vip\""),
-        ];
-
-        for (variant, expected_json) in variants {
-            let json = serde_json::to_string(&variant).unwrap();
-            assert_eq!(
-                json, expected_json,
-                "Serialization failed for {:?}",
-                variant
-            );
-
-            let deserialized: CloudProvider = serde_json::from_str(&json).unwrap();
-            assert_eq!(
-                deserialized, variant,
-                "Deserialization failed for {}",
-                expected_json
-            );
-        }
-    }
 
     #[test]
     fn test_gpu_offering_with_shadeform_provider() {
@@ -1030,7 +814,7 @@ mod cloud_provider_tests {
         }"#;
 
         let offering: GpuOffering = serde_json::from_str(json).unwrap();
-        assert_eq!(offering.provider, CloudProvider::Shadeform);
+        assert_eq!(offering.provider, "shadeform");
         assert_eq!(offering.gpu_type, GpuCategory::H100);
         assert_eq!(offering.gpu_count, 8);
         assert_eq!(offering.region, "canada-1");
@@ -1055,7 +839,7 @@ mod cloud_provider_tests {
         }"#;
 
         let offering: GpuOffering = serde_json::from_str(json).unwrap();
-        assert_eq!(offering.provider, CloudProvider::Denvr);
+        assert_eq!(offering.provider, "denvr");
         assert_eq!(offering.gpu_type, GpuCategory::A100);
         assert_eq!(offering.gpu_count, 1);
         assert_eq!(offering.region, "Hou1");
@@ -1080,9 +864,47 @@ mod cloud_provider_tests {
         }"#;
 
         let offering: GpuOffering = serde_json::from_str(json).unwrap();
-        assert_eq!(offering.provider, CloudProvider::MassCompute);
+        assert_eq!(offering.provider, "masscompute");
         assert_eq!(offering.gpu_type, GpuCategory::H100);
         assert_eq!(offering.gpu_count, 8);
         assert_eq!(offering.region, "US-EAST");
+    }
+
+    /// Unknown/future AZ codenames must deserialize without an SDK release
+    /// (a fixed enum previously failed here with `unknown variant`).
+    #[test]
+    fn test_gpu_offering_accepts_any_codename_provider() {
+        for codename in [
+            "cyan",
+            "plum",
+            "opal",
+            "rust",
+            "ruby",
+            "bourse",
+            "some-future-az",
+        ] {
+            let json = format!(
+                r#"{{
+                    "id": "{codename}-h100-eu-north-1",
+                    "provider": "{codename}",
+                    "gpu_type": "H100",
+                    "gpu_memory_gb_per_gpu": 80,
+                    "gpu_count": 8,
+                    "system_memory_gb": 1800,
+                    "vcpu_count": 208,
+                    "region": "eu-north-1",
+                    "hourly_rate_per_gpu": "2.10",
+                    "availability": true,
+                    "is_spot": false,
+                    "fetched_at": "2026-06-01T00:00:00Z"
+                }}"#
+            );
+            let offering: GpuOffering = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("codename `{codename}` should deserialize: {e}"));
+            assert_eq!(offering.provider, codename);
+            assert_eq!(offering.region, "eu-north-1");
+            assert_eq!(offering.gpu_type, GpuCategory::H100);
+            assert_eq!(offering.gpu_count, 8);
+        }
     }
 }
