@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-06-09
+
 ### Changed
 - `GpuOffering.provider` is now a free-form `String` instead of the
   `CloudProvider` enum, and the `CloudProvider` enum has been removed. The API

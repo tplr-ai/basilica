@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-06-09
+
 ### Changed
 - `GpuOffering.provider` now accepts any provider/availability-zone value the
   API emits (e.g. AZ-root codenames `cyan`, `plum`, `opal`), with the region in

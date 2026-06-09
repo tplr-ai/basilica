@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.2] - 2026-06-09
+
 ### Added
+- Support for any provider/availability-zone value the API emits (e.g. AZ-root
+  codenames `cyan`, `plum`, `opal`) in `basilica ls` and other commands, with
+  the region shown in the separate `REGION` column. The provider value is no
+  longer constrained to a fixed client-side list, so new providers/AZs work
+  without a CLI release; previously `basilica ls` failed against a newer API
+  with `unknown variant ...`.
 - `basilica skills` command group for installing, uninstalling, and listing
   Basilica agent skills across supported coding tools, with `--agent` targeting
   and `-y` automation support.
@@ -22,12 +30,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.30.1] - 2026-05-22
 
 ### Added
-- Support for any provider/availability-zone value the API emits (e.g. AZ-root
-  codenames `cyan`, `plum`, `opal`) in `basilica ls` and other commands, with
-  the region shown in the separate `REGION` column. The provider value is no
-  longer constrained to a fixed client-side list, so new providers/AZs work
-  without a CLI release; previously `basilica ls` failed against a newer API
-  with `unknown variant ...`.
 - Non-interactive mode for agent and CI usage. Auto-detected when stdin
   is not a TTY, or forced with `BASILICA_NON_INTERACTIVE=1`. In this
   mode every interactive prompt surfaces a structured error instead of
