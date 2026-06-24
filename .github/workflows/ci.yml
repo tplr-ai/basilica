@@ -480,6 +480,10 @@ jobs:
           source .venv/bin/activate
           pip install maturin pytest pytest-asyncio
 
+      - name: Run Python SDK clippy
+        if: matrix.python-version == '3.12'
+        run: cargo clippy -p basilica-sdk-python --all-targets -- -D warnings
+
       - name: Build and install Python SDK
         run: |
           source .venv/bin/activate
