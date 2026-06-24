@@ -379,6 +379,35 @@ fn filter_secure_cloud_rentals<'a>(
         .collect()
 }
 
+fn bourse_total_hourly_cost(rentals: &[basilica_sdk::types::ApiRentalListItem]) -> f64 {
+    total_hourly_cost(rentals.iter().filter_map(|rental| rental.hourly_cost))
+}
+
+fn citadel_total_hourly_cost<'a>(
+    rentals: impl IntoIterator<Item = &'a basilica_sdk::types::SecureCloudRentalListItem>,
+) -> f64 {
+    total_hourly_cost(rentals.into_iter().map(|rental| rental.hourly_cost))
+}
+
+fn total_hourly_cost(hourly_costs: impl IntoIterator<Item = f64>) -> f64 {
+    hourly_costs.into_iter().sum()
+}
+
+fn format_total_hourly_cost(hourly_cost: f64) -> String {
+    // Normalize signed zero so Rust does not format it as "$-0.00/hr".
+    let display_cost = if hourly_cost == 0.0 { 0.0 } else { hourly_cost };
+    format!("${:.2}/hr", display_cost)
+}
+
+fn display_total_hourly_cost(hourly_cost: f64) {
+    println!();
+    println!(
+        "{}: {}",
+        style("Total hourly cost").cyan(),
+        style(format_total_hourly_cost(hourly_cost)).green().bold()
+    );
+}
+
 fn is_secure_cpu_history_item(rental: &HistoricalRentalItem) -> bool {
     rental.compute_type.eq_ignore_ascii_case("cpu")
 }
@@ -1274,6 +1303,7 @@ pub async fn handle_ps(
                     table_output::display_rental_items(&rentals_list.rentals[..])?;
 
                     println!("\nTotal: {} active rentals", rentals_list.rentals.len());
+                    display_total_hourly_cost(bourse_total_hourly_cost(&rentals_list.rentals));
 
                     display_ps_quick_start_commands();
                 }
@@ -1437,6 +1467,14 @@ pub async fn handle_ps(
                         "\nTotal: {} Citadel (CPU) rentals",
                         cpu_rentals_to_display.len()
                     );
+
+                    let total_hourly_cost = citadel_total_hourly_cost(
+                        gpu_rentals_to_display
+                            .iter()
+                            .chain(cpu_rentals_to_display.iter())
+                            .copied(),
+                    );
+                    display_total_hourly_cost(total_hourly_cost);
 
                     display_ps_quick_start_commands();
                 }
@@ -1685,6 +1723,16 @@ pub async fn handle_ps(
                         "\nTotal: {} Citadel (CPU) rentals",
                         cpu_rentals_to_display.len()
                     );
+
+                    let total_hourly_cost =
+                        bourse_total_hourly_cost(&community_rentals_list.rentals)
+                            + citadel_total_hourly_cost(
+                                secure_rentals_to_display
+                                    .iter()
+                                    .chain(cpu_rentals_to_display.iter())
+                                    .copied(),
+                            );
+                    display_total_hourly_cost(total_hourly_cost);
 
                     display_ps_quick_start_commands();
                 }
@@ -3035,4 +3083,30 @@ fn display_ps_quick_start_commands() {
         style("basilica down").yellow().bold(),
         style("- Stop a GPU rental").dim()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_total_hourly_cost, total_hourly_cost};
+
+    #[test]
+    fn format_total_hourly_cost_uses_two_decimal_places() {
+        assert_eq!(format_total_hourly_cost(12.345), "$12.35/hr");
+        assert_eq!(format_total_hourly_cost(0.0), "$0.00/hr");
+    }
+
+    #[test]
+    fn format_total_hourly_cost_does_not_show_negative_zero() {
+        assert_eq!(format_total_hourly_cost(-0.0), "$0.00/hr");
+    }
+
+    #[test]
+    fn total_hourly_cost_ignores_missing_bourse_rates() {
+        let bourse_rates = [Some(1.25), None, Some(2.5)];
+        let citadel_rates = [3.0, 0.75];
+
+        let total = total_hourly_cost(bourse_rates.into_iter().flatten().chain(citadel_rates));
+
+        assert_eq!(format_total_hourly_cost(total), "$7.50/hr");
+    }
 }
