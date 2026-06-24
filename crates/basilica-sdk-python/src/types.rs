@@ -31,7 +31,7 @@ use std::collections::HashMap;
 
 /// SSH access information for a rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct SshAccess {
     #[pyo3(get)]
@@ -54,7 +54,7 @@ impl From<SdkSshAccess> for SshAccess {
 
 /// GPU specification details
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct GpuSpec {
     #[pyo3(get)]
@@ -77,7 +77,7 @@ impl From<SdkGpuSpec> for GpuSpec {
 
 /// CPU specification details
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct CpuSpec {
     #[pyo3(get)]
@@ -100,7 +100,7 @@ impl From<SdkCpuSpec> for CpuSpec {
 
 /// Node details including GPU and CPU specifications
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct NodeDetails {
     #[pyo3(get)]
@@ -126,7 +126,7 @@ impl From<SdkNodeDetails> for NodeDetails {
 
 /// Rental status enumeration
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct RentalStatus {
     #[pyo3(get)]
@@ -153,7 +153,7 @@ impl From<SdkRentalStatus> for RentalStatus {
 
 /// Response from starting a rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct RentalResponse {
     #[pyo3(get)]
@@ -185,7 +185,7 @@ impl From<SdkRentalResponse> for RentalResponse {
 
 /// Full rental status response with SSH credentials (matches API response)
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct RentalStatusWithSshResponse {
     #[pyo3(get)]
@@ -220,7 +220,7 @@ impl From<SdkRentalStatusWithSshResponse> for RentalStatusWithSshResponse {
 
 /// Availability information for an node
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct AvailabilityInfo {
     #[pyo3(get)]
@@ -237,7 +237,7 @@ impl From<SdkAvailabilityInfo> for AvailabilityInfo {
 
 /// Available node with details and availability info
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct AvailableNode {
     #[pyo3(get)]
@@ -257,7 +257,7 @@ impl From<SdkAvailableNode> for AvailableNode {
 
 /// Health check response
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct HealthCheckResponse {
     #[pyo3(get)]
@@ -288,7 +288,7 @@ impl From<basilica_sdk::types::HealthCheckResponse> for HealthCheckResponse {
 
 /// GPU requirements for node selection
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct GpuRequirements {
     #[pyo3(get, set)]
@@ -325,7 +325,7 @@ impl From<GpuRequirements> for SdkGpuRequirements {
 
 /// Port mapping request
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PortMappingRequest {
     #[pyo3(get, set)]
@@ -362,7 +362,7 @@ impl From<PortMappingRequest> for SdkPortMappingRequest {
 
 /// Resource requirements request
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ResourceRequirementsRequest {
     #[pyo3(get, set)]
@@ -425,7 +425,7 @@ impl Default for ResourceRequirementsRequest {
 
 /// Volume mount request
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct VolumeMountRequest {
     #[pyo3(get, set)]
@@ -462,7 +462,7 @@ impl From<VolumeMountRequest> for SdkVolumeMountRequest {
 
 /// Start rental API request with GPU-based selection
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct StartRentalApiRequest {
     #[pyo3(get, set)]
@@ -586,7 +586,7 @@ mod conversion_tests {
 
 /// Query parameters for listing available nodes
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Default)]
 pub struct ListAvailableNodesQuery {
     #[pyo3(get, set)]
@@ -633,7 +633,7 @@ impl From<ListAvailableNodesQuery> for SdkListAvailableNodesQuery {
 
 /// Query parameters for listing rentals
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Default)]
 pub struct ListRentalsQuery {
     #[pyo3(get, set)]
@@ -696,7 +696,7 @@ use basilica_sdk::types::{
 
 /// Environment variable for container deployments
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct EnvVar {
     #[pyo3(get, set)]
@@ -734,7 +734,7 @@ impl From<SdkEnvVar> for EnvVar {
 
 /// GPU requirements specification for container deployments
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct GpuRequirementsSpec {
     #[pyo3(get, set)]
@@ -816,7 +816,7 @@ impl From<SdkGpuRequirementsSpec> for GpuRequirementsSpec {
 
 /// Resource requirements for container deployments
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ResourceRequirements {
     #[pyo3(get, set)]
@@ -879,7 +879,7 @@ impl From<SdkResourceRequirements> for ResourceRequirements {
 
 /// Replica status for deployments
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ReplicaStatus {
     #[pyo3(get)]
@@ -899,7 +899,7 @@ impl From<SdkReplicaStatus> for ReplicaStatus {
 
 /// Pod information
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PodInfo {
     #[pyo3(get)]
@@ -932,7 +932,7 @@ impl From<SdkPodInfo> for PodInfo {
 /// added these fields to the Rust SDK and CLI but missed the PyO3
 /// binding (same regression class as #449).
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ContainerStatusSnapshot {
     /// Name of the pod owning the container.
@@ -975,7 +975,7 @@ impl From<SdkContainerStatusSnapshot> for ContainerStatusSnapshot {
 
 /// Pod spreading mode for controlling how pods are distributed across topology domains
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass_enum)]
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Default)]
 pub enum SpreadMode {
     /// Best-effort spreading (ScheduleAnyway)
@@ -1009,7 +1009,7 @@ impl From<SdkSpreadMode> for SpreadMode {
 
 /// Configuration for pod topology spreading
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct TopologySpreadConfig {
     #[pyo3(get, set)]
@@ -1066,7 +1066,7 @@ impl From<SdkTopologySpreadConfig> for TopologySpreadConfig {
 
 /// WebSocket configuration for deployments
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct WebSocketConfig {
     #[pyo3(get, set)]
@@ -1108,7 +1108,7 @@ impl From<SdkWebSocketConfig> for WebSocketConfig {
 
 /// HTTP probe configuration for health checks
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ProbeConfig {
     #[pyo3(get, set)]
@@ -1177,7 +1177,7 @@ impl From<ProbeConfig> for SdkProbeConfig {
 
 /// Health check configuration for deployments
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct HealthCheckConfig {
     #[pyo3(get, set)]
@@ -1249,7 +1249,7 @@ impl From<HealthCheckConfig> for SdkHealthCheckConfig {
 
 /// Storage backend type
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass_enum)]
-#[pyclass(eq, eq_int)]
+#[pyclass(eq, eq_int, from_py_object)]
 #[derive(Clone, PartialEq)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum StorageBackend {
@@ -1270,7 +1270,7 @@ impl From<StorageBackend> for SdkStorageBackend {
 
 /// Persistent storage specification
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PersistentStorageSpec {
     #[pyo3(get, set)]
@@ -1342,7 +1342,7 @@ impl From<PersistentStorageSpec> for SdkPersistentStorageSpec {
 
 /// Storage specification
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct StorageSpec {
     #[pyo3(get, set)]
@@ -1369,7 +1369,7 @@ impl From<StorageSpec> for SdkStorageSpec {
 
 /// Create deployment request
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct CreateDeploymentRequest {
     #[pyo3(get, set)]
@@ -1475,7 +1475,7 @@ impl From<CreateDeploymentRequest> for SdkCreateDeploymentRequest {
 
 /// Deployment progress information
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct DeploymentProgress {
     #[pyo3(get)]
@@ -1504,7 +1504,7 @@ impl From<SdkDeploymentProgress> for DeploymentProgress {
 /// `DistributedTraining.world` / `.ranks` / `.bench` / `.metrics` read
 /// returned zeros. Both fields are now exposed end-to-end.
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct DeploymentResponse {
     #[pyo3(get)]
@@ -1638,7 +1638,7 @@ impl From<SdkDeploymentResponse> for DeploymentResponse {
 
 /// Deployment summary for list responses
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct DeploymentSummary {
     #[pyo3(get)]
@@ -1680,7 +1680,7 @@ impl From<SdkDeploymentSummary> for DeploymentSummary {
 
 /// List deployments response
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct DeploymentListResponse {
     #[pyo3(get)]
@@ -1700,7 +1700,7 @@ impl From<SdkDeploymentListResponse> for DeploymentListResponse {
 
 /// Delete deployment response
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct DeleteDeploymentResponse {
     #[pyo3(get)]
@@ -1727,7 +1727,7 @@ impl From<SdkDeleteDeploymentResponse> for DeleteDeploymentResponse {
 
 /// SSH key response from registering or getting user's SSH key
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct SshKeyResponse {
     #[pyo3(get)]
@@ -1763,7 +1763,7 @@ impl From<SdkSshKeyResponse> for SshKeyResponse {
 
 /// CPU-only offering from secure cloud providers (no GPU)
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct CpuOffering {
     #[pyo3(get)]
@@ -1804,7 +1804,7 @@ impl From<SdkCpuOffering> for CpuOffering {
 
 /// Request to start a CPU rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct StartCpuRentalRequest {
     #[pyo3(get, set)]
@@ -1841,7 +1841,7 @@ impl From<StartCpuRentalRequest> for SdkStartSecureCloudRentalRequest {
 
 /// Response from starting a CPU rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct CpuRentalResponse {
     #[pyo3(get)]
@@ -1882,7 +1882,7 @@ impl From<SdkSecureCloudRentalResponse> for CpuRentalResponse {
 
 /// Response from stopping a CPU rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct StopCpuRentalResponse {
     #[pyo3(get)]
@@ -1911,7 +1911,7 @@ impl From<SdkStopSecureCloudRentalResponse> for StopCpuRentalResponse {
 
 /// CPU rental list item
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct CpuRentalListItem {
     #[pyo3(get)]
@@ -1982,7 +1982,7 @@ impl From<SdkSecureCloudRentalListItem> for CpuRentalListItem {
 
 /// List CPU rentals response
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ListCpuRentalsResponse {
     #[pyo3(get)]
@@ -2006,7 +2006,7 @@ impl From<SdkListSecureCloudRentalsResponse> for ListCpuRentalsResponse {
 
 /// Query parameters for filtering GPU price listings
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone, Default)]
 pub struct GpuPriceQuery {
     #[pyo3(get, set)]
@@ -2052,7 +2052,7 @@ impl From<GpuPriceQuery> for SdkGpuPriceQuery {
 
 /// GPU offering from secure cloud providers
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct GpuOffering {
     #[pyo3(get)]
@@ -2108,7 +2108,7 @@ impl From<SdkGpuOffering> for GpuOffering {
 
 /// Request to start a secure cloud GPU rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct StartSecureCloudRentalRequest {
     #[pyo3(get, set)]
@@ -2145,7 +2145,7 @@ impl From<StartSecureCloudRentalRequest> for SdkStartSecureCloudRentalRequest {
 
 /// Response from starting a secure cloud GPU rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct SecureCloudRentalResponse {
     #[pyo3(get)]
@@ -2186,7 +2186,7 @@ impl From<SdkSecureCloudRentalResponse> for SecureCloudRentalResponse {
 
 /// Response from stopping a secure cloud GPU rental
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct StopSecureCloudRentalResponse {
     #[pyo3(get)]
@@ -2215,7 +2215,7 @@ impl From<SdkStopSecureCloudRentalResponse> for StopSecureCloudRentalResponse {
 
 /// Secure cloud GPU rental list item
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct SecureCloudRentalListItem {
     #[pyo3(get)]
@@ -2286,7 +2286,7 @@ impl From<SdkSecureCloudRentalListItem> for SecureCloudRentalListItem {
 
 /// List secure cloud GPU rentals response
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ListSecureCloudRentalsResponse {
     #[pyo3(get)]
@@ -2316,7 +2316,7 @@ use basilica_sdk::types::{
 
 /// Response from regenerating a share token for a private deployment
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct RegenerateShareTokenResponse {
     /// Raw token value. Only returned once, cannot be retrieved later.
@@ -2338,7 +2338,7 @@ impl From<SdkRegenerateShareTokenResponse> for RegenerateShareTokenResponse {
 
 /// Response for checking share token status
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct ShareTokenStatusResponse {
     /// Whether a share token exists for this deployment.
@@ -2356,7 +2356,7 @@ impl From<SdkShareTokenStatusResponse> for ShareTokenStatusResponse {
 
 /// Response from deleting/revoking a share token
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct DeleteShareTokenResponse {
     /// Whether a token was revoked.
@@ -2380,7 +2380,7 @@ use basilica_sdk::types::PublicDeploymentMetadataResponse as SdkPublicDeployment
 
 /// Response for metadata enrollment status
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct EnrollMetadataResponse {
     #[pyo3(get)]
@@ -2397,7 +2397,7 @@ impl From<SdkEnrollMetadataResponse> for EnrollMetadataResponse {
 
 /// Public deployment metadata visible without authentication
 #[cfg_attr(feature = "stub-gen", gen_stub_pyclass)]
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PublicDeploymentMetadataResponse {
     #[pyo3(get)]
