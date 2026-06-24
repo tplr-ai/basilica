@@ -1810,7 +1810,7 @@ pub struct VolumeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Cloud provider (e.g., "hyperstack")
+    /// Availability-zone root (e.g., "cyan")
     pub provider: String,
 
     /// Provider's internal volume ID
@@ -1823,7 +1823,7 @@ pub struct VolumeResponse {
     /// Volume type (e.g., "ssd")
     pub volume_type: String,
 
-    /// Region code (e.g., "US-1", "CANADA-1")
+    /// Basilica region segment (e.g., "us-texas-1", "ca-quebec-1")
     pub region: String,
 
     /// Current volume status
@@ -1868,10 +1868,10 @@ pub struct CreateVolumeRequest {
     /// Size in GB (1-10240)
     pub size_gb: u32,
 
-    /// Cloud provider (e.g., "hyperstack")
+    /// Availability-zone root (e.g., "cyan")
     pub provider: String,
 
-    /// Region code (e.g., "US-1", "CANADA-1")
+    /// Basilica region segment (e.g., "us-texas-1", "ca-quebec-1")
     pub region: String,
 }
 
@@ -1939,6 +1939,23 @@ mod tests {
             serde_json::from_str::<SpreadMode>("\"unique_nodes\"").unwrap(),
             SpreadMode::UniqueNodes
         );
+    }
+
+    #[test]
+    fn test_create_volume_request_uses_public_az_names() {
+        let request = CreateVolumeRequest {
+            name: "cache".to_string(),
+            description: None,
+            size_gb: 100,
+            provider: "cyan".to_string(),
+            region: "us-texas-1".to_string(),
+        };
+
+        let json = serde_json::to_value(&request).unwrap();
+        assert_eq!(json["provider"], "cyan");
+        assert_eq!(json["region"], "us-texas-1");
+        assert!(!json.to_string().contains("hyperstack"));
+        assert!(!json.to_string().contains("US-1"));
     }
 
     #[test]

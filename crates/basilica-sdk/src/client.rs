@@ -535,7 +535,7 @@ impl BasilicaClient {
     ///
     /// # Arguments
     ///
-    /// * `request` - Volume creation parameters including name, size, provider, and region
+    /// * `request` - Volume creation parameters including name, size, AZ root, and region
     pub async fn create_volume(
         &self,
         request: crate::types::CreateVolumeRequest,
@@ -563,7 +563,7 @@ impl BasilicaClient {
     /// Attach a volume to a rental
     ///
     /// Attaches a volume to a running secure cloud rental.
-    /// The volume and rental must be in the same provider and region.
+    /// The volume and rental must be in the same availability-zone root and region.
     ///
     /// # Arguments
     ///

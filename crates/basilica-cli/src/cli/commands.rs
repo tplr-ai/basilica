@@ -337,11 +337,11 @@ pub enum VolumeAction {
         #[arg(short, long)]
         size: Option<u32>,
 
-        /// Cloud provider (e.g., hyperstack, will prompt if not provided)
+        /// Availability-zone root (e.g., cyan, will prompt if not provided)
         #[arg(short, long)]
         provider: Option<String>,
 
-        /// Region (e.g., US-1, CANADA-1, NORWAY-1, will prompt if not provided)
+        /// Basilica region segment (e.g., us-texas-1, ca-quebec-1, will prompt if not provided)
         #[arg(short, long)]
         region: Option<String>,
 

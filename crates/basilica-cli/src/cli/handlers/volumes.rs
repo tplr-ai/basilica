@@ -11,8 +11,9 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 /// Pricing constant: $0.000096774 per GB per hour (~$0.07/GB/month)
 const VOLUME_PRICE_PER_GB_HOUR: f64 = 0.000096774;
 
-/// Volume providers and their available regions
-const VOLUME_PROVIDERS: &[(&str, &[&str])] = &[("hyperstack", &["US-1", "CANADA-1", "NORWAY-1"])];
+/// Volume-capable availability-zone roots and their public Basilica regions.
+const VOLUME_PROVIDERS: &[(&str, &[&str])] =
+    &[("cyan", &["us-texas-1", "ca-quebec-1", "no-vestland-1"])];
 
 /// Calculate hourly and monthly cost for a given size
 fn calculate_volume_cost(size_gb: u32) -> (f64, f64) {
@@ -115,8 +116,10 @@ fn prompt_region(provider: &str) -> Result<String, CliError> {
 
     println!(
         "{}",
-        style("Note: Volumes can only be attached to rentals in the same provider and region.")
-            .dim()
+        style(
+            "Note: Volumes can only be attached to rentals in the same availability-zone root and region.",
+        )
+        .dim()
     );
 
     let theme = ColorfulTheme::default();
@@ -128,6 +131,35 @@ fn prompt_region(provider: &str) -> Result<String, CliError> {
         .map_err(|e| CliError::Internal(e.into()))?;
 
     Ok(regions[selection].to_string())
+}
+
+fn validate_volume_provider(provider: &str) -> Result<String, CliError> {
+    let provider = provider.trim();
+    if VOLUME_PROVIDERS.iter().any(|(p, _)| *p == provider) {
+        Ok(provider.to_string())
+    } else {
+        Err(CliError::InvalidProvider(provider.to_string()))
+    }
+}
+
+fn validate_volume_region(provider: &str, region: &str) -> Result<String, CliError> {
+    let region = region.trim();
+    let regions = VOLUME_PROVIDERS
+        .iter()
+        .find(|(p, _)| *p == provider)
+        .map(|(_, r)| *r)
+        .ok_or_else(|| CliError::InvalidProvider(provider.to_string()))?;
+
+    if regions.contains(&region) {
+        Ok(region.to_string())
+    } else {
+        Err(CliError::Internal(color_eyre::eyre::eyre!(
+            "Invalid region '{}' for provider '{}'. Available regions: {}",
+            region,
+            provider,
+            regions.join(", ")
+        )))
+    }
 }
 
 /// Helper to truncate strings to fit column width (unicode-safe)
@@ -236,7 +268,7 @@ async fn select_volume(
     Ok(filtered_volumes[selection].clone())
 }
 
-/// Select a rental compatible with a volume (same provider and region)
+/// Select a rental compatible with a volume (same availability-zone root and region)
 ///
 /// # Arguments
 /// * `client` - Basilica client
@@ -259,7 +291,7 @@ async fn select_rental_for_volume(
         .chain(cpu_rentals.rentals.iter())
         .collect();
 
-    // Filter for active rentals in the same provider and region
+    // Filter for active rentals in the same availability-zone root and region
     let compatible_rentals: Vec<_> = all_rentals
         .into_iter()
         .filter(|r| {
@@ -290,8 +322,8 @@ async fn select_rental_for_volume(
     if compatible_rentals.is_empty() {
         return Err(CliError::Internal(color_eyre::eyre::eyre!(
             "No compatible rentals found.\n\n\
-             Volume '{}' is in provider '{}' region '{}'.\n\
-             You need an active rental in the same provider and region to attach this volume.\n\n\
+             Volume '{}' is in availability zone '{}/{}'.\n\
+             You need an active rental in the same availability-zone root and region to attach this volume.\n\n\
              Start a new rental with: basilica up --compute secure-cloud",
             volume.name,
             volume.provider,
@@ -399,13 +431,13 @@ pub async fn handle_create_volume(
 ) -> Result<(), CliError> {
     // Get provider first (needed for region selection)
     let provider = match provider {
-        Some(p) => p,
+        Some(p) => validate_volume_provider(&p)?,
         None => prompt_provider()?,
     };
 
     // Get region (depends on provider)
     let region = match region {
-        Some(r) => r,
+        Some(r) => validate_volume_region(&provider, &r)?,
         None => prompt_region(&provider)?,
     };
 
@@ -789,4 +821,35 @@ pub async fn handle_detach_volume(
     print_success(&format!("Volume \"{}\" detached", volume.name));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_public_volume_az_names() {
+        assert_eq!(validate_volume_provider("cyan").unwrap(), "cyan");
+        assert_eq!(
+            validate_volume_region("cyan", "us-texas-1").unwrap(),
+            "us-texas-1"
+        );
+        assert_eq!(
+            validate_volume_region("cyan", "ca-quebec-1").unwrap(),
+            "ca-quebec-1"
+        );
+        assert_eq!(
+            validate_volume_region("cyan", "no-vestland-1").unwrap(),
+            "no-vestland-1"
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_volume_provider_and_regions() {
+        assert!(validate_volume_provider("hyperstack").is_err());
+        assert!(validate_volume_region("cyan", "US-1").is_err());
+        assert!(validate_volume_region("cyan", "us-east-1").is_err());
+        assert!(validate_volume_region("cyan", "CANADA-2").is_err());
+        assert!(validate_volume_region("cyan", "ca-2").is_err());
+    }
 }
