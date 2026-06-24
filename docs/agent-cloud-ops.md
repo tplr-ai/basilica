@@ -114,7 +114,7 @@ basilica down --all
 Persistent volume flow for secure-cloud:
 
 ```bash
-basilica volumes create --name cache --size 100 --provider hyperstack --region US-1
+basilica volumes create --name cache --size 100 --provider cyan --region us-texas-1
 basilica volumes attach cache --rental <rental-id>
 basilica volumes list
 basilica volumes detach cache --yes
