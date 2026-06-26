@@ -636,7 +636,7 @@ pub struct SecureCloudRentalListItem {
     /// Rental ID
     pub rental_id: String,
 
-    /// Provider name (verda, hyperstack, lambda, hydrahost)
+    /// Provider name (verda, hyperstack, lambda, hydrahost, etc.)
     pub provider: String,
 
     /// Provider's instance ID
@@ -1257,6 +1257,15 @@ pub struct DistributedProviderFilter {
     pub include: Vec<String>,
     #[serde(default)]
     pub exclude: Vec<String>,
+}
+
+impl DistributedProviderFilter {
+    /// Print the temporary migration warning for legacy provider input.
+    pub fn warn_if_legacy_secure_cloud_providers(&self) {
+        for provider in self.include.iter().chain(self.exclude.iter()) {
+            warn_if_legacy_secure_cloud_provider(provider);
+        }
+    }
 }
 
 /// Topology spread strategy for ranks-to-nodes assignment. SDK arch § 4.
@@ -1897,7 +1906,7 @@ pub fn warn_if_legacy_secure_cloud_provider(provider: &str) {
         eprintln!(
             "Warning: '{}' is a legacy secure-cloud provider tag. Basilica secure-cloud \
              V2 uses public availability-zone names instead; update provider/region \
-             inputs to values such as provider='cyan' and region='us-texas-1'.",
+             inputs to public availability-zone values.",
             provider.trim()
         );
     }
@@ -2705,6 +2714,13 @@ mod tests {
         // matches the operator's CRD field defaults.
         assert_eq!(v["providerFilter"]["include"], serde_json::json!([]));
         assert_eq!(v["providerFilter"]["exclude"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn test_legacy_secure_cloud_provider_detection_covers_provider_filters() {
+        assert!(is_legacy_secure_cloud_provider("hyperstack"));
+        assert!(is_legacy_secure_cloud_provider(" MASSCOMPUTE "));
+        assert!(!is_legacy_secure_cloud_provider("cyan"));
     }
 
     #[test]

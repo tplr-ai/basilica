@@ -985,6 +985,10 @@ impl BasilicaClient {
         &self,
         request: CreateDistributedDeploymentRequest,
     ) -> Result<DeploymentResponse> {
+        request
+            .distributed
+            .provider_filter
+            .warn_if_legacy_secure_cloud_providers();
         self.post("/deployments", &request).await
     }
 

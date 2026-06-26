@@ -12,8 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/v2/secure-cloud/*`.
 - `create_volume()` prints a temporary stderr warning when callers pass a
   legacy secure-cloud provider tag such as `hyperstack` or `verda`; V2 volume
-  requests should use public availability-zone names such as `cyan` with
-  regions such as `us-texas-1`.
+  requests should use public availability-zone values.
+- `create_distributed_deployment()` prints the same temporary stderr warning
+  when `providerFilter.include` or `providerFilter.exclude` contains legacy
+  secure-cloud provider tags.
 
 ## [0.31.2] - 2026-06-09
 
