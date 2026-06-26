@@ -135,6 +135,7 @@ fn prompt_region(provider: &str) -> Result<String, CliError> {
 
 fn validate_volume_provider(provider: &str) -> Result<String, CliError> {
     let provider = provider.trim();
+    basilica_sdk::types::warn_if_legacy_secure_cloud_provider(provider);
     if VOLUME_PROVIDERS.iter().any(|(p, _)| *p == provider) {
         Ok(provider.to_string())
     } else {

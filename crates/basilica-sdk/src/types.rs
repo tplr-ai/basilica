@@ -1875,6 +1875,34 @@ pub struct CreateVolumeRequest {
     pub region: String,
 }
 
+/// Returns true when `provider` is a legacy secure-cloud provider tag that is
+/// no longer accepted by the V2 secure-cloud volume API.
+pub fn is_legacy_secure_cloud_provider(provider: &str) -> bool {
+    matches!(
+        provider.trim().to_ascii_lowercase().as_str(),
+        "datacrunch"
+            | "denvr"
+            | "hydrahost"
+            | "hyperstack"
+            | "lambda"
+            | "masscompute"
+            | "shadeform"
+            | "verda"
+    )
+}
+
+/// Print the temporary migration warning for explicit legacy provider input.
+pub fn warn_if_legacy_secure_cloud_provider(provider: &str) {
+    if is_legacy_secure_cloud_provider(provider) {
+        eprintln!(
+            "Warning: '{}' is a legacy secure-cloud provider tag. Basilica secure-cloud \
+             V2 uses public availability-zone names instead; update provider/region \
+             inputs to values such as provider='cyan' and region='us-texas-1'.",
+            provider.trim()
+        );
+    }
+}
+
 /// Attach volume request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AttachVolumeRequest {

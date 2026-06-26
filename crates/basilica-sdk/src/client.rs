@@ -540,6 +540,7 @@ impl BasilicaClient {
         &self,
         request: crate::types::CreateVolumeRequest,
     ) -> Result<crate::types::VolumeResponse> {
+        crate::types::warn_if_legacy_secure_cloud_provider(&request.provider);
         self.post("/v2/secure-cloud/volumes", &request).await
     }
 
