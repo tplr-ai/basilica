@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Secure-cloud GPU, CPU, and volume methods now call the V2 API paths under
+  `/v2/secure-cloud/*`.
+- `create_volume()` prints a temporary stderr warning when callers pass a
+  legacy secure-cloud provider tag such as `hyperstack` or `verda`; V2 volume
+  requests should use public availability-zone names such as `cyan` with
+  regions such as `us-texas-1`.
+
 ## [0.31.2] - 2026-06-09
 
 ### Changed
