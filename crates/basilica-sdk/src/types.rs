@@ -2717,7 +2717,7 @@ mod tests {
     }
 
     #[test]
-    fn test_legacy_secure_cloud_provider_detection_covers_provider_filters() {
+    fn test_legacy_secure_cloud_provider_detection() {
         assert!(is_legacy_secure_cloud_provider("hyperstack"));
         assert!(is_legacy_secure_cloud_provider(" MASSCOMPUTE "));
         assert!(!is_legacy_secure_cloud_provider("cyan"));
