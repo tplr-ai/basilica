@@ -519,12 +519,12 @@ Every method has an `_async` counterpart (`training.scale_async(...)`,
 
 ### `bench=True` — the diagnostic for "is my code slow or is the network slow?"
 
-NCCL collective bandwidth varies with AZ root, region, GPU model, and current
+NCCL collective bandwidth varies with availability zone root, region, GPU model, and current
 mesh load. Without a measurement, the user has to guess whether slow training
 is their code or the network.
 
 `bench=True` opts in to a 2-rank `all_reduce_perf` probe that runs alongside
-your workers on the same AZ-root mesh with the same WireGuard transport. The
+your workers on the same availability zone root mesh with the same WireGuard transport. The
 result lands on `training.bench` after the UD reaches a terminal state:
 
 ```python
@@ -728,11 +728,11 @@ class WorldSize:
 
 @dataclass(frozen=True)
 class ProviderFilter:
-    """Inclusive/exclusive public AZ-root filter for worker scheduling.
+    """Inclusive/exclusive public availability zone root filter for worker scheduling.
 
-    Match is against Basilica public AZ-root names (`cyan`, `plum`, `opal`).
-    With `topology_spread="pack"`, the autoscaler picks ONE AZ root from
-    the include-list and all workers pack on it.
+    Match is against Basilica public availability zone root names (`cyan`,
+    `plum`, `opal`). With `topology_spread="pack"`, the autoscaler picks ONE
+    availability zone root from the include-list and all workers pack on it.
     """
     include: List[str] = []
     exclude: List[str] = []

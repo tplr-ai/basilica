@@ -87,12 +87,13 @@ def main() -> None:
         min_gpu_memory_gb=40,
         cpu="8",
         memory="32Gi",
-        # Broadened AZ-root include-list: pinning to a single AZ root exposed
+        # Broadened availability zone root include-list: pinning to a single
+        # availability zone root exposed
         # the example to localized capacity or provider-side transients.
-        # Including several public AZ roots lets the autoscaler fall back when
-        # one root is unavailable. ``topology_spread="pack"`` below still keeps
-        # the workers on a single AZ root per UD; this list is a fallback set,
-        # not a spread directive.
+        # Including several public availability zone roots lets the autoscaler
+        # fall back when one root is unavailable. ``topology_spread="pack"``
+        # below still keeps the workers on a single availability zone root per
+        # UD; this list is a fallback set, not a spread directive.
         provider_filter=ProviderFilter(
             include=["cyan", "plum", "opal"]
         ),

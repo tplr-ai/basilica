@@ -1247,8 +1247,9 @@ pub struct DistributedRendezvousSpec {
     pub port: Option<u16>,
 }
 
-/// Availability-zone filter for worker scheduling. Empty `include` = any AZ.
-/// Match is on Basilica public AZ-root names (e.g. `cyan`, `plum`, `opal`).
+/// Availability-zone filter for worker scheduling. Empty `include` = any
+/// availability zone root. Match is on Basilica public availability zone root
+/// names (e.g. `cyan`, `plum`, `opal`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DistributedProviderFilter {
@@ -1419,7 +1420,7 @@ pub struct DistributedRankStatus {
     pub pod_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_name: Option<String>,
-    /// Basilica public AZ-root name.
+    /// Basilica public availability zone root name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     /// `basilica.ai/region` node label value.

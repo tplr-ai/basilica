@@ -138,10 +138,10 @@ class WorldSize:
 @dataclass(frozen=True)
 class ProviderFilter:
     """
-    Public AZ-root include/exclude lists for worker scheduling.
+    Public availability zone root include/exclude lists for worker scheduling.
 
-    Empty `include` = any AZ. Match is on Basilica public AZ-root names
-    (`cyan`, `plum`, `opal`).
+    Empty `include` = any availability zone root. Match is on Basilica public
+    availability zone root names (`cyan`, `plum`, `opal`).
     `exclude` is subtractive after `include`.
     """
 
@@ -171,9 +171,9 @@ class RankStatus:
     """
     Per-rank pod observation. Read-only.
 
-    `provider` is the Basilica public AZ-root name and `region` is the
-    public region segment; both are `None` when the pod has not scheduled
-    or the labels are absent.
+    `provider` is the Basilica public availability zone root name and
+    `region` is the public region segment; both are `None` when the pod has
+    not scheduled or the labels are absent.
     """
 
     rank: int

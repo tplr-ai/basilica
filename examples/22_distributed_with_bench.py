@@ -25,7 +25,7 @@ debug detail on a ``None`` result, inspect ``training.bench_diagnostics``.
 
 Prereqs:
 - ``BASILICA_API_TOKEN`` set.
-- Account with access to the selected public AZ root (or adjust the provider filter).
+- Account with access to the selected public availability zone root (or adjust the provider filter).
 - Namespace rank budget >= 4 (worker(2) + bench(2)).
 """
 
