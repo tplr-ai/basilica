@@ -17,6 +17,7 @@ DNS-1035 fix lands in basilica-api.
 """
 
 import asyncio
+import warnings
 from typing import Any, Dict
 from unittest.mock import MagicMock
 
@@ -2276,6 +2277,86 @@ def _build_minimal_client() -> BasilicaClient:
     client._base_url = "https://api.test.invalid"
     client._client = MagicMock()
     return client
+
+
+class TestDeployDistributedLegacyProviderWarnings:
+    def _wire_ready(self, client: BasilicaClient) -> MagicMock:
+        response = _pyo3_response(
+            "dlc-provider-warning",
+            "u-test",
+            {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                },
+                "ranks": [],
+            },
+        )
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+        return response
+
+    def test_warns_before_sync_pyo3_call_for_legacy_provider_filter(self) -> None:
+        client = _build_minimal_client()
+        self._wire_ready(client)
+
+        with pytest.warns(UserWarning, match="legacy secure-cloud provider"):
+            client._deploy_distributed_impl(
+                name="dlc-provider-warning",
+                source=_noop_train,
+                world_size=WorldSize(min=2, target=2, max=2),
+                provider_filter=ProviderFilter(
+                    include=["hyperstack"],
+                    exclude=["MASSCOMPUTE", "hyperstack"],
+                ),
+                timeout=10,
+            )
+
+        request = client._client.create_distributed_deployment.call_args.args[0]
+        assert request["distributed"]["providerFilter"]["include"] == ["hyperstack"]
+        assert request["distributed"]["providerFilter"]["exclude"] == [
+            "MASSCOMPUTE",
+            "hyperstack",
+        ]
+
+    def test_does_not_warn_for_public_availability_zone_filter(self) -> None:
+        client = _build_minimal_client()
+        self._wire_ready(client)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            client._deploy_distributed_impl(
+                name="dlc-az-filter",
+                source=_noop_train,
+                world_size=WorldSize(min=2, target=2, max=2),
+                provider_filter=ProviderFilter(include=["cyan"], exclude=["opal"]),
+                timeout=10,
+            )
+
+        assert not [
+            warning
+            for warning in caught
+            if "legacy secure-cloud provider" in str(warning.message)
+        ]
+
+    def test_warns_before_async_pyo3_call_for_legacy_provider_filter(self) -> None:
+        client = _build_minimal_client()
+        self._wire_ready(client)
+
+        async def run() -> None:
+            await client._deploy_distributed_impl_async(
+                name="dlc-provider-warning",
+                source=_noop_train,
+                world_size=WorldSize(min=2, target=2, max=2),
+                provider_filter=ProviderFilter(include=["shadeform"]),
+                timeout=10,
+            )
+
+        with pytest.warns(UserWarning, match="legacy secure-cloud provider"):
+            asyncio.run(run())
 
 
 class TestDeployDistributedCleanupOnFailure:

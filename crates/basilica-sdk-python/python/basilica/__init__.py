@@ -221,6 +221,48 @@ from .source import SourcePackager
 from .spec import DeploymentSpec
 from .volume import Volume
 
+_LEGACY_SECURE_CLOUD_PROVIDERS = {
+    "datacrunch",
+    "denvr",
+    "hydrahost",
+    "hyperstack",
+    "lambda",
+    "masscompute",
+    "shadeform",
+    "verda",
+}
+
+
+def _legacy_provider_filter_values(
+    provider_filter: Optional[ProviderFilter],
+) -> List[str]:
+    if provider_filter is None:
+        return []
+
+    legacy_values: List[str] = []
+    seen = set()
+    for value in list(provider_filter.include) + list(provider_filter.exclude):
+        normalized = value.strip().lower()
+        if normalized in _LEGACY_SECURE_CLOUD_PROVIDERS and normalized not in seen:
+            legacy_values.append(value.strip())
+            seen.add(normalized)
+    return legacy_values
+
+
+def _warn_legacy_provider_filter(provider_filter: Optional[ProviderFilter]) -> None:
+    legacy_values = _legacy_provider_filter_values(provider_filter)
+    if not legacy_values:
+        return
+
+    warnings.warn(
+        "ProviderFilter contains legacy secure-cloud provider tag(s): "
+        f"{', '.join(legacy_values)}. Basilica secure-cloud V2 uses public "
+        "availability zone root names instead; update provider_filter "
+        "include/exclude values to public availability zone root values.",
+        UserWarning,
+        stacklevel=3,
+    )
+
 # Default command is a list in Python
 DEFAULT_COMMAND = ["/bin/bash"]
 
@@ -1349,6 +1391,7 @@ class BasilicaClient:
             enable_billing=enable_billing,
         )
 
+        _warn_legacy_provider_filter(provider_filter)
         response = self._client.create_distributed_deployment(request_dict)
         training = DistributedTraining(self, response.instance_name)
         training.refresh()
@@ -2448,6 +2491,7 @@ class BasilicaClient:
             enable_billing=enable_billing,
         )
 
+        _warn_legacy_provider_filter(provider_filter)
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None, self._client.create_distributed_deployment, request_dict

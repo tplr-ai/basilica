@@ -45,7 +45,7 @@ from basilica import ProviderFilter, WorldSize
     cpu="8",
     memory="32Gi",
     # ``provider_filter`` is a fallback set of public availability zone roots,
-    # not a multi-availability-zone requirement; ``topology_spread="pack"``
+    # not a multi-availability zone root requirement; ``topology_spread="pack"``
     # keeps workers on a single availability zone root for direct WG mesh
     # throughput on NCCL collectives. See
     # ``docs/runbooks/USER-RUNBOOK-DISTRIBUTED-NCCL.md`` for the WHY.

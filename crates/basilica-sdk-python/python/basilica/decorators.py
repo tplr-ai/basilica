@@ -573,12 +573,12 @@ def distributed(
             zone root names such as ``cyan``, ``plum``, or ``opal``. With
             ``topology_spread="pack"``, the autoscaler picks ONE availability
             zone root from ``include`` and packs all workers on it; the
-            include-list is a fallback set, not a multi-availability-zone
+            include-list is a fallback set, not a multi-availability zone root
             requirement.
         topology_spread: One of ``pack | provider-aware | region-aware |
             none``. ``"pack"`` is recommended for NCCL-collective
-            workloads -- it forces same-availability-zone-root direct WireGuard mesh,
-            which is 5-10x faster than the hub-relay fallback. Default
+            workloads -- it forces same availability zone root direct WireGuard
+            mesh, which is 5-10x faster than the hub-relay fallback. Default
             ``"provider-aware"``.
         nccl_env: NCCL environment variables merged on top of operator
             defaults. User values win on collision. Common pattern:

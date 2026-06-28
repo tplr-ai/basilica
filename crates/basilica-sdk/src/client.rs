@@ -535,12 +535,12 @@ impl BasilicaClient {
     ///
     /// # Arguments
     ///
-    /// * `request` - Volume creation parameters including name, size, AZ root, and region
+    /// * `request` - Volume creation parameters including name, size,
+    ///   availability zone root, and region
     pub async fn create_volume(
         &self,
         request: crate::types::CreateVolumeRequest,
     ) -> Result<crate::types::VolumeResponse> {
-        crate::types::warn_if_legacy_secure_cloud_provider(&request.provider);
         self.post("/v2/secure-cloud/volumes", &request).await
     }
 
@@ -564,7 +564,7 @@ impl BasilicaClient {
     /// Attach a volume to a rental
     ///
     /// Attaches a volume to a running secure cloud rental.
-    /// The volume and rental must be in the same availability-zone root and region.
+    /// The volume and rental must be in the same availability zone root and region.
     ///
     /// # Arguments
     ///
@@ -985,10 +985,6 @@ impl BasilicaClient {
         &self,
         request: CreateDistributedDeploymentRequest,
     ) -> Result<DeploymentResponse> {
-        request
-            .distributed
-            .provider_filter
-            .warn_if_legacy_secure_cloud_providers();
         self.post("/deployments", &request).await
     }
 

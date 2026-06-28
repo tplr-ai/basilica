@@ -636,7 +636,7 @@ pub struct SecureCloudRentalListItem {
     /// Rental ID
     pub rental_id: String,
 
-    /// Public availability-zone root (e.g., "cyan", "plum", "opal")
+    /// Public availability zone root (e.g., "cyan", "plum", "opal")
     pub provider: String,
 
     /// Provider's instance ID
@@ -1259,15 +1259,6 @@ pub struct DistributedProviderFilter {
     pub exclude: Vec<String>,
 }
 
-impl DistributedProviderFilter {
-    /// Print the temporary migration warning for legacy provider input.
-    pub fn warn_if_legacy_secure_cloud_providers(&self) {
-        for provider in self.include.iter().chain(self.exclude.iter()) {
-            warn_if_legacy_secure_cloud_provider(provider);
-        }
-    }
-}
-
 /// Topology spread strategy for ranks-to-nodes assignment. SDK arch § 4.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -1744,7 +1735,7 @@ pub struct CpuOffering {
     /// Unique offering identifier
     pub id: String,
 
-    /// Public availability-zone root (e.g., "cyan")
+    /// Public availability zone root (e.g., "cyan")
     pub provider: String,
 
     /// Number of vCPU cores
@@ -1882,34 +1873,6 @@ pub struct CreateVolumeRequest {
 
     /// Basilica region segment (e.g., "us-texas-1", "ca-quebec-1")
     pub region: String,
-}
-
-/// Returns true when `provider` is a legacy secure-cloud provider tag that is
-/// no longer accepted by the V2 secure-cloud volume API.
-pub fn is_legacy_secure_cloud_provider(provider: &str) -> bool {
-    matches!(
-        provider.trim().to_ascii_lowercase().as_str(),
-        "datacrunch"
-            | "denvr"
-            | "hydrahost"
-            | "hyperstack"
-            | "lambda"
-            | "masscompute"
-            | "shadeform"
-            | "verda"
-    )
-}
-
-/// Print the temporary migration warning for explicit legacy provider input.
-pub fn warn_if_legacy_secure_cloud_provider(provider: &str) {
-    if is_legacy_secure_cloud_provider(provider) {
-        eprintln!(
-            "Warning: '{}' is a legacy secure-cloud provider tag. Basilica secure-cloud \
-             V2 uses public availability-zone names instead; update provider/region \
-             inputs to public availability-zone values.",
-            provider.trim()
-        );
-    }
 }
 
 /// Attach volume request
@@ -2714,13 +2677,6 @@ mod tests {
         // matches the operator's CRD field defaults.
         assert_eq!(v["providerFilter"]["include"], serde_json::json!([]));
         assert_eq!(v["providerFilter"]["exclude"], serde_json::json!([]));
-    }
-
-    #[test]
-    fn test_legacy_secure_cloud_provider_detection() {
-        assert!(is_legacy_secure_cloud_provider("hyperstack"));
-        assert!(is_legacy_secure_cloud_provider(" MASSCOMPUTE "));
-        assert!(!is_legacy_secure_cloud_provider("cyan"));
     }
 
     #[test]

@@ -9,24 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Secure-cloud GPU, CPU, and volume methods now call the V2 API paths under
-  `/v2/secure-cloud/*`.
-- `create_volume()` prints a temporary stderr warning when callers pass a
-  legacy secure-cloud provider tag such as `hyperstack` or `verda`; V2 volume
-  requests should use public availability-zone values.
-- `create_distributed_deployment()` prints the same temporary stderr warning
-  when `providerFilter.include` or `providerFilter.exclude` contains legacy
-  secure-cloud provider tags.
+  `/v2/secure-cloud/*`, where provider fields carry Basilica public
+  availability zone root names such as `cyan`, `plum`, or `opal`.
 
 ## [0.31.2] - 2026-06-09
 
 ### Changed
 - `GpuOffering.provider` is now a free-form `String` instead of the
   `CloudProvider` enum, and the `CloudProvider` enum has been removed. The API
-  wire boundary emits availability-zone root codenames (e.g. `cyan`, `plum`,
+  wire boundary emits availability zone root codenames (e.g. `cyan`, `plum`,
   `opal`) in `provider`, with the region in the separate `region` field. Keeping
-  this a `String` means new providers/AZs deserialize cleanly without an SDK
-  release; the previous enum rejected unknown values with `unknown variant ...`,
-  breaking every GPU listing call against a newer API.
+  this a `String` means new providers/availability zones deserialize cleanly
+  without an SDK release; the previous enum rejected unknown values with
+  `unknown variant ...`, breaking every GPU listing call against a newer API.
 
 ## [0.29.0] - 2026-05-04
 
