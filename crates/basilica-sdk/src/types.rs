@@ -636,7 +636,7 @@ pub struct SecureCloudRentalListItem {
     /// Rental ID
     pub rental_id: String,
 
-    /// Provider name (verda, hyperstack, lambda, hydrahost, etc.)
+    /// Public availability-zone root (e.g., "cyan", "plum", "opal")
     pub provider: String,
 
     /// Provider's instance ID
@@ -1247,9 +1247,8 @@ pub struct DistributedRendezvousSpec {
     pub port: Option<u16>,
 }
 
-/// Provider filter for worker scheduling. Empty `include` = any provider.
-/// Match is on the `basilica.ai/provider` node label (e.g. `hyperstack`,
-/// `verda`, `masscompute`, `shadeform`).
+/// Availability-zone filter for worker scheduling. Empty `include` = any AZ.
+/// Match is on Basilica public AZ-root names (e.g. `cyan`, `plum`, `opal`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DistributedProviderFilter {
@@ -1420,7 +1419,7 @@ pub struct DistributedRankStatus {
     pub pod_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node_name: Option<String>,
-    /// `basilica.ai/provider` node label value.
+    /// Basilica public AZ-root name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     /// `basilica.ai/region` node label value.
@@ -1744,7 +1743,7 @@ pub struct CpuOffering {
     /// Unique offering identifier
     pub id: String,
 
-    /// Provider name (e.g., "hyperstack")
+    /// Public availability-zone root (e.g., "cyan")
     pub provider: String,
 
     /// Number of vCPU cores
@@ -2535,7 +2534,7 @@ mod tests {
                 port: None,
             },
             provider_filter: DistributedProviderFilter {
-                include: vec!["hyperstack".to_string(), "verda".to_string()],
+                include: vec!["cyan".to_string(), "plum".to_string()],
                 exclude: vec![],
             },
             topology_spread: DistributedTopologySpread {
@@ -2571,7 +2570,7 @@ mod tests {
             v["rendezvous"].get("port").is_none(),
             "port omitted when None"
         );
-        assert_eq!(v["providerFilter"]["include"][0], "hyperstack");
+        assert_eq!(v["providerFilter"]["include"][0], "cyan");
         assert_eq!(v["topologySpread"]["strategy"], "provider-aware");
         assert_eq!(v["nccl"]["env"]["NCCL_DEBUG"], "INFO");
         assert_eq!(v["bench"]["mode"], "on-start");
@@ -2795,8 +2794,8 @@ mod tests {
                 rank: 0,
                 pod_name: "dlc-test-0".to_string(),
                 node_name: Some("basilica-verda-fin-03".to_string()),
-                provider: Some("verda".to_string()),
-                region: Some("FIN-03".to_string()),
+                provider: Some("cyan".to_string()),
+                region: Some("us-texas-1".to_string()),
                 phase: "Running".to_string(),
                 restarts: 0,
             }],
@@ -2852,8 +2851,8 @@ mod tests {
                         rank: 0,
                         pod_name: "dlc-449-0".to_string(),
                         node_name: Some("basilica-verda-fin-03".to_string()),
-                        provider: Some("verda".to_string()),
-                        region: Some("FIN-03".to_string()),
+                        provider: Some("cyan".to_string()),
+                        region: Some("us-texas-1".to_string()),
                         phase: "Running".to_string(),
                         restarts: 0,
                     },
@@ -2861,8 +2860,8 @@ mod tests {
                         rank: 1,
                         pod_name: "dlc-449-1".to_string(),
                         node_name: Some("basilica-verda-fin-04".to_string()),
-                        provider: Some("verda".to_string()),
-                        region: Some("FIN-04".to_string()),
+                        provider: Some("cyan".to_string()),
+                        region: Some("us-texas-1".to_string()),
                         phase: "Running".to_string(),
                         restarts: 0,
                     },
@@ -2918,7 +2917,7 @@ mod tests {
         assert!(!d.world_size.below_minimum);
         assert_eq!(d.ranks.len(), 2);
         assert_eq!(d.ranks[0].pod_name, "dlc-449-0");
-        assert_eq!(d.ranks[1].provider.as_deref(), Some("verda"));
+        assert_eq!(d.ranks[1].provider.as_deref(), Some("cyan"));
         assert_eq!(d.transport, "hub-relay");
         assert_eq!(d.original_max, Some(3));
         let bench = d.bench.expect("bench present");

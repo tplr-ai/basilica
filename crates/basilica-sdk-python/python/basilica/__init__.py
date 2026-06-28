@@ -34,7 +34,7 @@ Distributed training (NCCL collectives -- DDP, DiLoCo, FSDP):
     ...     world_size=WorldSize(min=2, target=2, max=2),
     ...     gpu_count=1,
     ...     gpu_models=["A100"],
-    ...     provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    ...     provider_filter=ProviderFilter(include=["cyan", "plum"]),
     ...     topology_spread="pack",
     ...     bench=True,
     ... )

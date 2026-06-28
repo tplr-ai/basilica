@@ -138,10 +138,10 @@ class WorldSize:
 @dataclass(frozen=True)
 class ProviderFilter:
     """
-    Provider include/exclude lists for worker scheduling.
+    Public AZ-root include/exclude lists for worker scheduling.
 
-    Empty `include` = any provider. Match is on the `basilica.ai/provider`
-    node label (`hyperstack`, `verda`, `masscompute`, `shadeform`).
+    Empty `include` = any AZ. Match is on Basilica public AZ-root names
+    (`cyan`, `plum`, `opal`).
     `exclude` is subtractive after `include`.
     """
 
@@ -171,8 +171,9 @@ class RankStatus:
     """
     Per-rank pod observation. Read-only.
 
-    `provider` and `region` come from node labels; `None` when the pod
-    has not been scheduled or the labels are absent.
+    `provider` is the Basilica public AZ-root name and `region` is the
+    public region segment; both are `None` when the pod has not scheduled
+    or the labels are absent.
     """
 
     rank: int

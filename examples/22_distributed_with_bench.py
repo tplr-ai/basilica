@@ -25,7 +25,7 @@ debug detail on a ``None`` result, inspect ``training.bench_diagnostics``.
 
 Prereqs:
 - ``BASILICA_API_TOKEN`` set.
-- Account with verda A100 access (or adjust the provider filter).
+- Account with access to the selected public AZ root (or adjust the provider filter).
 - Namespace rank budget >= 4 (worker(2) + bench(2)).
 """
 
@@ -44,7 +44,7 @@ from basilica import ProviderFilter, WorldSize
     min_gpu_memory_gb=40,
     cpu="8",
     memory="32Gi",
-    provider_filter=ProviderFilter(include=["verda"]),
+    provider_filter=ProviderFilter(include=["cyan"]),
     topology_spread="pack",  # Pack for the smallest measured pair.
     bench=True,  # Schedule the 2-rank NCCL probe.
     nccl_env={"NCCL_DEBUG": "WARN"},

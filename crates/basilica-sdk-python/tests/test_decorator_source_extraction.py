@@ -32,7 +32,7 @@ from basilica import ProviderFilter, WorldSize
     world_size=WorldSize(min=1, target=1, max=1),
     gpu_count=1,
     gpu_models=["H100"],
-    provider_filter=ProviderFilter(include=["hyperstack"]),
+    provider_filter=ProviderFilter(include=["cyan"]),
 )
 def _train_with_module_imports() -> None:
     """Fixture: references `os` and `time` from module-level scope."""
@@ -47,7 +47,7 @@ def _train_with_module_imports() -> None:
     world_size=WorldSize(min=1, target=1, max=1),
     gpu_count=1,
     gpu_models=["H100"],
-    provider_filter=ProviderFilter(include=["hyperstack"]),
+    provider_filter=ProviderFilter(include=["cyan"]),
 )
 def _train_with_aliased_import() -> None:
     """Fixture: references `Optional` from a `from typing import Optional`."""
@@ -61,7 +61,7 @@ def _train_with_aliased_import() -> None:
     world_size=WorldSize(min=1, target=1, max=1),
     gpu_count=1,
     gpu_models=["H100"],
-    provider_filter=ProviderFilter(include=["hyperstack"]),
+    provider_filter=ProviderFilter(include=["cyan"]),
 )
 def _train_no_module_imports() -> None:
     """Fixture: only references built-ins, no module-level imports."""
@@ -74,7 +74,7 @@ def _train_no_module_imports() -> None:
     world_size=WorldSize(min=1, target=1, max=1),
     gpu_count=1,
     gpu_models=["H100"],
-    provider_filter=ProviderFilter(include=["hyperstack"]),
+    provider_filter=ProviderFilter(include=["cyan"]),
 )
 def _train_uses_os_only() -> None:
     """
