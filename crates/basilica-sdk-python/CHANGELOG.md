@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Distributed provider filters now document and use Basilica public
-  availability zone root names such as `cyan`, `plum`, or `opal`.
+- Secure-cloud GPU, CPU, rental, and volume methods now call the V2 API paths
+  under `/v2/secure-cloud/*`.
 - Distributed deploy calls now emit a native Python `UserWarning` before
   calling into the Rust extension when `ProviderFilter.include` or
   `ProviderFilter.exclude` contains a legacy secure-cloud provider tag such as
@@ -19,12 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.31.2] - 2026-06-09
 
 ### Changed
-- `GpuOffering.provider` now accepts any provider/availability zone value the
-  API emits (e.g. availability zone root codenames `cyan`, `plum`, `opal`),
-  with the region in the separate `region` field. It is still surfaced to
-  Python as a string — no Python API change — but the underlying decode no
-  longer goes through a fixed enum, so new providers/availability zones work
-  without an SDK release. Previously
+- `GpuOffering.provider` now accepts any provider/availability-zone value the
+  API emits (e.g. AZ-root codenames `cyan`, `plum`, `opal`), with the region in
+  the separate `region` field. It is still surfaced to Python as a string — no
+  Python API change — but the underlying decode no longer goes through a fixed
+  enum, so new providers/AZs work without an SDK release. Previously
   `list_secure_cloud_gpus()` failed against a newer API with
   `unknown variant ...`.
 

@@ -8,9 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Secure-cloud GPU, CPU, and volume commands now use SDK calls backed by the
-  V2 API paths under `/v2/secure-cloud/*`, where provider fields carry Basilica
-  public availability zone root names such as `cyan`, `plum`, or `opal`.
+- Secure-cloud GPU, CPU, rental, and volume commands now use SDK calls backed
+  by the V2 API paths under `/v2/secure-cloud/*`.
 - In human output mode, `basilica volumes create --provider <legacy-provider>`
   prints a temporary stderr warning for legacy secure-cloud provider tags such
   as `hyperstack` or `verda`; V2 volume creation should use a public
@@ -19,12 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.31.2] - 2026-06-09
 
 ### Added
-- Support for any provider/availability zone value the API emits (e.g.
-  availability zone root codenames `cyan`, `plum`, `opal`) in `basilica ls`
-  and other commands, with the region shown in the separate `REGION` column.
-  The provider value is no longer constrained to a fixed client-side list, so
-  new providers/availability zones work without a CLI release; previously
-  `basilica ls` failed against a newer API with `unknown variant ...`.
+- Support for any provider/availability-zone value the API emits (e.g. AZ-root
+  codenames `cyan`, `plum`, `opal`) in `basilica ls` and other commands, with
+  the region shown in the separate `REGION` column. The provider value is no
+  longer constrained to a fixed client-side list, so new providers/AZs work
+  without a CLI release; previously `basilica ls` failed against a newer API
+  with `unknown variant ...`.
 - `basilica skills` command group for installing, uninstalling, and listing
   Basilica agent skills across supported coding tools, with `--agent` targeting
   and `-y` automation support.
