@@ -415,7 +415,7 @@ from basilica import ProviderFilter, WorldSize
     min_gpu_memory_gb=40,
     cpu="8",
     memory="32Gi",
-    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    provider_filter=ProviderFilter(include=["cyan", "plum"]),
     topology_spread="pack",
     bench=True,
     nccl_env={"NCCL_DEBUG": "WARN"},
@@ -480,7 +480,7 @@ training = basilica.distributed(
     world_size=WorldSize(min=2, target=2, max=4),
     gpu_count=1,
     gpu_models=["A100"],
-    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    provider_filter=ProviderFilter(include=["cyan", "plum"]),
     topology_spread="pack",
     ttl_seconds=900,
 )
@@ -519,12 +519,12 @@ Every method has an `_async` counterpart (`training.scale_async(...)`,
 
 ### `bench=True` — the diagnostic for "is my code slow or is the network slow?"
 
-NCCL collective bandwidth varies with provider, region, GPU model, and current
+NCCL collective bandwidth varies with availability zone root, region, GPU model, and current
 mesh load. Without a measurement, the user has to guess whether slow training
 is their code or the network.
 
 `bench=True` opts in to a 2-rank `all_reduce_perf` probe that runs alongside
-your workers on the same provider mesh with the same WireGuard transport. The
+your workers on the same availability zone root mesh with the same WireGuard transport. The
 result lands on `training.bench` after the UD reaches a terminal state:
 
 ```python
@@ -538,7 +538,7 @@ from basilica import ProviderFilter, WorldSize
     world_size=WorldSize(min=2, target=2, max=2),
     gpu_count=1,
     gpu_models=["A100"],
-    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    provider_filter=ProviderFilter(include=["cyan", "plum"]),
     topology_spread="pack",
     bench=True,
 )
@@ -585,7 +585,7 @@ from basilica import ProviderFilter, WorldSize
     world_size=WorldSize(min=2, target=2, max=2),
     gpu_count=1,
     gpu_models=["A100"],
-    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    provider_filter=ProviderFilter(include=["cyan", "plum"]),
     topology_spread="pack",
 )
 def run_script() -> None:
@@ -728,12 +728,11 @@ class WorldSize:
 
 @dataclass(frozen=True)
 class ProviderFilter:
-    """Inclusive/exclusive cloud-provider filter for worker scheduling.
+    """Inclusive/exclusive public availability zone root filter for worker scheduling.
 
-    Match is against the `basilica.ai/provider` node label
-    (`hyperstack`, `verda`, `masscompute`, `shadeform`). With
-    `topology_spread="pack"`, the autoscaler picks ONE provider from the
-    include-list and all workers pack on it.
+    Match is against Basilica public availability zone root names (`cyan`,
+    `plum`, `opal`). With `topology_spread="pack"`, the autoscaler picks ONE
+    availability zone root from the include-list and all workers pack on it.
     """
     include: List[str] = []
     exclude: List[str] = []

@@ -569,24 +569,23 @@ def distributed(
             short-circuits on ``WorldSize(...)``-construction if the
             triple violates ``1 <= min <= target <= max``.
         provider_filter: ``ProviderFilter(include=[...], exclude=[...])``
-            or the dict equivalent. With ``topology_spread="pack"``, the
-            autoscaler picks ONE provider from ``include`` (cheapest
-            available with capacity, or via your platform's
-            ``secureCloud.preferredProvider``) and packs all workers on
-            it; the include-list is a fallback set, not a multi-provider
-            requirement. Mesh-enabled providers today: ``verda``,
-            ``hyperstack``.
+            or the dict equivalent. Values are Basilica public availability
+            zone root names such as ``cyan``, ``plum``, or ``opal``. With
+            ``topology_spread="pack"``, the autoscaler picks ONE availability
+            zone root from ``include`` and packs all workers on it; the
+            include-list is a fallback set, not a multi-availability zone root
+            requirement.
         topology_spread: One of ``pack | provider-aware | region-aware |
             none``. ``"pack"`` is recommended for NCCL-collective
-            workloads -- it forces same-provider direct WireGuard mesh,
-            which is 5-10x faster than the hub-relay fallback. Default
+            workloads -- it forces same availability zone root direct WireGuard
+            mesh, which is 5-10x faster than the hub-relay fallback. Default
             ``"provider-aware"``.
         nccl_env: NCCL environment variables merged on top of operator
             defaults. User values win on collision. Common pattern:
             ``{"NCCL_DEBUG": "WARN"}`` to surface NCCL diagnostics
             without flooding logs.
         bench: ``True`` opts in to the per-UD NCCL bench probe -- a
-            2-rank ``all_reduce_perf`` measurement on the same provider
+            2-rank ``all_reduce_perf`` measurement on the same availability zone root
             mesh as your workers. Read back as ``training.bench``
             (``BenchResult | None`` -- ``None`` means "no measurement",
             regardless of why). Use ``training.bench_diagnostics`` for

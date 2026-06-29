@@ -17,7 +17,7 @@ train anything useful.
 
 Prereqs:
 - ``BASILICA_API_TOKEN`` set, account with A100/H100 access.
-- ~4 ranks available across the included providers.
+- ~4 ranks available across the included public availability zone roots.
 
 Cleanup:
 - The ``with`` block calls ``training.delete()`` on exit (success or
@@ -44,11 +44,12 @@ from basilica import ProviderFilter, WorldSize
     min_gpu_memory_gb=40,
     cpu="8",
     memory="32Gi",
-    # ``provider_filter`` is a fallback set, not a multi-provider
-    # requirement; ``topology_spread="pack"`` keeps workers on a single
-    # provider for direct WG mesh throughput on NCCL collectives. See
+    # ``provider_filter`` is a fallback set of public availability zone roots,
+    # not a multi-availability zone root requirement; ``topology_spread="pack"``
+    # keeps workers on a single availability zone root for direct WG mesh
+    # throughput on NCCL collectives. See
     # ``docs/runbooks/USER-RUNBOOK-DISTRIBUTED-NCCL.md`` for the WHY.
-    provider_filter=ProviderFilter(include=["hyperstack", "verda"]),
+    provider_filter=ProviderFilter(include=["cyan", "plum"]),
     topology_spread="pack",
     # Opt in to the per-UD NCCL bench probe. ``True`` -> the platform
     # schedules a 2-rank ``all_reduce_perf`` probe alongside the workers

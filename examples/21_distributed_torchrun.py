@@ -87,17 +87,15 @@ def main() -> None:
         min_gpu_memory_gb=40,
         cpu="8",
         memory="32Gi",
-        # Broadened provider include-list (refs basilica-backend#544):
-        # pinning to a single provider exposed the example to provider-
-        # side rental-revoke transients (the autoscaler's "Rental
-        # disappeared from provider" failure mode). Including the four
-        # providers we onboard today lets the autoscaler fall back across
-        # them when one provider's rental API is misbehaving under burst
-        # load. ``topology_spread="pack"`` below still keeps the workers
-        # on a single provider per UD; this list is a fallback set, not
-        # a spread directive.
+        # Broadened availability zone root include-list: pinning to a single
+        # availability zone root exposed
+        # the example to localized capacity or provider-side transients.
+        # Including several public availability zone roots lets the autoscaler
+        # fall back when one root is unavailable. ``topology_spread="pack"``
+        # below still keeps the workers on a single availability zone root per
+        # UD; this list is a fallback set, not a spread directive.
         provider_filter=ProviderFilter(
-            include=["verda", "hyperstack", "masscompute", "shadeform"]
+            include=["cyan", "plum", "opal"]
         ),
         topology_spread="pack",
         nccl_env={"NCCL_DEBUG": "WARN"},

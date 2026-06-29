@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Secure-cloud GPU, CPU, rental, and volume commands now use SDK calls backed
+  by the V2 API paths under `/v2/secure-cloud/*`.
+- In human output mode, `basilica volumes create --provider <legacy-provider>`
+  prints a temporary stderr warning for legacy secure-cloud provider tags such
+  as `hyperstack` or `verda`; V2 volume creation should use a public
+  availability zone root plus region, for example `cyan` and `us-texas-1`.
+
 ## [0.31.2] - 2026-06-09
 
 ### Added

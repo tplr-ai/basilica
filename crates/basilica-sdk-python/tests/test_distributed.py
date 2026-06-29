@@ -17,6 +17,7 @@ DNS-1035 fix lands in basilica-api.
 """
 
 import asyncio
+import warnings
 from typing import Any, Dict
 from unittest.mock import MagicMock
 
@@ -593,7 +594,7 @@ class TestBuildDistributedRequest:
             gpu_models=["A100"],
             min_gpu_memory_gb=40,
             world_size=WorldSize(min=2, target=4, max=8),
-            provider_filter=ProviderFilter(include=["verda"], exclude=[]),
+            provider_filter=ProviderFilter(include=["cyan"], exclude=[]),
             topology_spread="provider-aware",
             nccl_env={"NCCL_DEBUG": "WARN"},
             bench="on-start",
@@ -610,7 +611,7 @@ class TestBuildDistributedRequest:
         assert d["enabled"] is True
         assert d["worldSize"] == {"min": 2, "target": 4, "max": 8}
         assert d["rendezvous"]["backend"] == "etcd-v2"
-        assert d["providerFilter"]["include"] == ["verda"]
+        assert d["providerFilter"]["include"] == ["cyan"]
         assert d["providerFilter"]["exclude"] == []
         assert d["topologySpread"]["strategy"] == "provider-aware"
         assert d["bench"]["mode"] == "on-start"
@@ -1389,7 +1390,7 @@ class TestDistributedDecorator:
         @distributed(
             name="dlc-pf-dict",
             world_size=WorldSize(min=1, target=1, max=1),
-            provider_filter={"include": ["hyperstack"], "exclude": ["masscompute"]},
+            provider_filter={"include": ["cyan"], "exclude": ["opal"]},
             gpu_count=1,
         )
         def train_fn() -> None:
@@ -1397,8 +1398,8 @@ class TestDistributedDecorator:
 
         pf = train_fn._kwargs["provider_filter"]
         assert isinstance(pf, ProviderFilter)
-        assert pf.include == ["hyperstack"]
-        assert pf.exclude == ["masscompute"]
+        assert pf.include == ["cyan"]
+        assert pf.exclude == ["opal"]
 
     def test_decorator_requires_world_size(self) -> None:
         with pytest.raises(ValueError, match="world_size"):
@@ -1500,8 +1501,8 @@ class TestIssue449DeploymentResponseDistributed:
                         "rank": 0,
                         "podName": "dlc-449-mock-0",
                         "nodeName": "basilica-verda-fin-03",
-                        "provider": "verda",
-                        "region": "FIN-03",
+                        "provider": "cyan",
+                        "region": "us-texas-1",
                         "phase": "Running",
                         "restarts": 0,
                     },
@@ -1509,8 +1510,8 @@ class TestIssue449DeploymentResponseDistributed:
                         "rank": 1,
                         "podName": "dlc-449-mock-1",
                         "nodeName": "basilica-verda-fin-04",
-                        "provider": "verda",
-                        "region": "FIN-04",
+                        "provider": "cyan",
+                        "region": "us-texas-1",
                         "phase": "Running",
                         "restarts": 0,
                     },
@@ -1552,12 +1553,12 @@ class TestIssue449DeploymentResponseDistributed:
         assert ranks[0].rank == 0
         assert ranks[0].pod_name == "dlc-449-mock-0"
         assert ranks[0].node == "basilica-verda-fin-03"
-        assert ranks[0].provider == "verda"
-        assert ranks[0].region == "FIN-03"
+        assert ranks[0].provider == "cyan"
+        assert ranks[0].region == "us-texas-1"
         assert ranks[0].phase == "Running"
         assert ranks[1].rank == 1
         assert ranks[1].pod_name == "dlc-449-mock-1"
-        assert ranks[1].provider == "verda"
+        assert ranks[1].provider == "cyan"
 
     def test_bench_returns_populated_result(self) -> None:
         client = MagicMock()
@@ -1690,8 +1691,8 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
                         "rank": 0,
                         "podName": "dlc-454-mock-0",
                         "nodeName": "basilica-verda-fin-03",
-                        "provider": "verda",
-                        "region": "FIN-03",
+                        "provider": "cyan",
+                        "region": "us-texas-1",
                         "phase": "Running",
                         "restarts": 0,
                     },
@@ -1699,8 +1700,8 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
                         "rank": 1,
                         "podName": "dlc-454-mock-1",
                         "nodeName": "basilica-verda-fin-04",
-                        "provider": "verda",
-                        "region": "FIN-04",
+                        "provider": "cyan",
+                        "region": "us-texas-1",
                         "phase": "Running",
                         "restarts": 0,
                     },
@@ -2276,6 +2277,86 @@ def _build_minimal_client() -> BasilicaClient:
     client._base_url = "https://api.test.invalid"
     client._client = MagicMock()
     return client
+
+
+class TestDeployDistributedLegacyProviderWarnings:
+    def _wire_ready(self, client: BasilicaClient) -> MagicMock:
+        response = _pyo3_response(
+            "dlc-provider-warning",
+            "u-test",
+            {
+                "worldSize": {
+                    "ready": 2,
+                    "target": 2,
+                    "min": 2,
+                    "max": 2,
+                    "belowMinimum": False,
+                },
+                "ranks": [],
+            },
+        )
+        client._client.create_distributed_deployment.return_value = response
+        client._client.get_deployment.return_value = response
+        return response
+
+    def test_warns_before_sync_pyo3_call_for_legacy_provider_filter(self) -> None:
+        client = _build_minimal_client()
+        self._wire_ready(client)
+
+        with pytest.warns(UserWarning, match="legacy secure-cloud provider"):
+            client._deploy_distributed_impl(
+                name="dlc-provider-warning",
+                source=_noop_train,
+                world_size=WorldSize(min=2, target=2, max=2),
+                provider_filter=ProviderFilter(
+                    include=["hyperstack"],
+                    exclude=["MASSCOMPUTE", "hyperstack"],
+                ),
+                timeout=10,
+            )
+
+        request = client._client.create_distributed_deployment.call_args.args[0]
+        assert request["distributed"]["providerFilter"]["include"] == ["hyperstack"]
+        assert request["distributed"]["providerFilter"]["exclude"] == [
+            "MASSCOMPUTE",
+            "hyperstack",
+        ]
+
+    def test_does_not_warn_for_public_availability_zone_filter(self) -> None:
+        client = _build_minimal_client()
+        self._wire_ready(client)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            client._deploy_distributed_impl(
+                name="dlc-az-filter",
+                source=_noop_train,
+                world_size=WorldSize(min=2, target=2, max=2),
+                provider_filter=ProviderFilter(include=["cyan"], exclude=["opal"]),
+                timeout=10,
+            )
+
+        assert not [
+            warning
+            for warning in caught
+            if "legacy secure-cloud provider" in str(warning.message)
+        ]
+
+    def test_warns_before_async_pyo3_call_for_legacy_provider_filter(self) -> None:
+        client = _build_minimal_client()
+        self._wire_ready(client)
+
+        async def run() -> None:
+            await client._deploy_distributed_impl_async(
+                name="dlc-provider-warning",
+                source=_noop_train,
+                world_size=WorldSize(min=2, target=2, max=2),
+                provider_filter=ProviderFilter(include=["shadeform"]),
+                timeout=10,
+            )
+
+        with pytest.warns(UserWarning, match="legacy secure-cloud provider"):
+            asyncio.run(run())
 
 
 class TestDeployDistributedCleanupOnFailure:

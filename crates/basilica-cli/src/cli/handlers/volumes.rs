@@ -11,9 +11,33 @@ use dialoguer::{theme::ColorfulTheme, Confirm, Input, Select};
 /// Pricing constant: $0.000096774 per GB per hour (~$0.07/GB/month)
 const VOLUME_PRICE_PER_GB_HOUR: f64 = 0.000096774;
 
-/// Volume-capable availability-zone roots and their public Basilica regions.
+/// Volume-capable availability zone roots and their public Basilica regions.
 const VOLUME_PROVIDERS: &[(&str, &[&str])] =
     &[("cyan", &["us-texas-1", "ca-quebec-1", "no-vestland-1"])];
+
+fn is_legacy_volume_provider(provider: &str) -> bool {
+    matches!(
+        provider.trim().to_ascii_lowercase().as_str(),
+        "datacrunch"
+            | "denvr"
+            | "hydrahost"
+            | "hyperstack"
+            | "lambda"
+            | "masscompute"
+            | "shadeform"
+            | "verda"
+    )
+}
+
+fn warn_legacy_volume_provider(provider: &str) {
+    eprintln!(
+        "Warning: '{}' is a legacy secure-cloud provider tag. Basilica secure-cloud \
+         V2 uses public availability zone root names instead; update \
+         provider/region inputs to public availability zone root and region \
+         values.",
+        provider.trim()
+    );
+}
 
 /// Calculate hourly and monthly cost for a given size
 fn calculate_volume_cost(size_gb: u32) -> (f64, f64) {
@@ -117,7 +141,7 @@ fn prompt_region(provider: &str) -> Result<String, CliError> {
     println!(
         "{}",
         style(
-            "Note: Volumes can only be attached to rentals in the same availability-zone root and region.",
+            "Note: Volumes can only be attached to rentals in the same availability zone root and region.",
         )
         .dim()
     );
@@ -268,7 +292,7 @@ async fn select_volume(
     Ok(filtered_volumes[selection].clone())
 }
 
-/// Select a rental compatible with a volume (same availability-zone root and region)
+/// Select a rental compatible with a volume (same availability zone root and region)
 ///
 /// # Arguments
 /// * `client` - Basilica client
@@ -291,7 +315,7 @@ async fn select_rental_for_volume(
         .chain(cpu_rentals.rentals.iter())
         .collect();
 
-    // Filter for active rentals in the same availability-zone root and region
+    // Filter for active rentals in the same availability zone root and region
     let compatible_rentals: Vec<_> = all_rentals
         .into_iter()
         .filter(|r| {
@@ -323,7 +347,7 @@ async fn select_rental_for_volume(
         return Err(CliError::Internal(color_eyre::eyre::eyre!(
             "No compatible rentals found.\n\n\
              Volume '{}' is in availability zone '{}/{}'.\n\
-             You need an active rental in the same availability-zone root and region to attach this volume.\n\n\
+             You need an active rental in the same availability zone root and region to attach this volume.\n\n\
              Start a new rental with: basilica up --compute secure-cloud",
             volume.name,
             volume.provider,
@@ -431,7 +455,12 @@ pub async fn handle_create_volume(
 ) -> Result<(), CliError> {
     // Get provider first (needed for region selection)
     let provider = match provider {
-        Some(p) => validate_volume_provider(&p)?,
+        Some(p) => {
+            if !json && is_legacy_volume_provider(&p) {
+                warn_legacy_volume_provider(&p);
+            }
+            validate_volume_provider(&p)?
+        }
         None => prompt_provider()?,
     };
 
@@ -846,6 +875,9 @@ mod tests {
 
     #[test]
     fn rejects_legacy_volume_provider_and_regions() {
+        assert!(is_legacy_volume_provider("hyperstack"));
+        assert!(is_legacy_volume_provider(" MASSCOMPUTE "));
+        assert!(!is_legacy_volume_provider("cyan"));
         assert!(validate_volume_provider("hyperstack").is_err());
         assert!(validate_volume_region("cyan", "US-1").is_err());
         assert!(validate_volume_region("cyan", "us-east-1").is_err());

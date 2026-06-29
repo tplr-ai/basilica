@@ -3,7 +3,7 @@ Functional tests for GPU Flavour Preferences.
 
 Tests the full SDK path: type construction -> API call -> response parsing.
 
-Note: Tests that hit /secure-cloud/gpu-prices require a token with
+Note: Tests that hit /v2/secure-cloud/gpu-prices require a token with
 secure-cloud permissions. They are skipped when the token lacks access.
 """
 import pytest

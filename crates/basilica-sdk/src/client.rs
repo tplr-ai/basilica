@@ -470,7 +470,7 @@ impl BasilicaClient {
         &self,
         query: &crate::types::GpuPriceQuery,
     ) -> Result<Vec<crate::types::GpuOffering>> {
-        let mut url = String::from("/secure-cloud/gpu-prices?available_only=true");
+        let mut url = String::from("/v2/secure-cloud/gpu-prices?available_only=true");
         if let Some(ref interconnect) = query.interconnect {
             url.push_str(&format!("&interconnect={}", interconnect));
         }
@@ -494,7 +494,7 @@ impl BasilicaClient {
     pub async fn list_secure_cloud_rentals(
         &self,
     ) -> Result<crate::types::ListSecureCloudRentalsResponse> {
-        self.get("/secure-cloud/rentals").await
+        self.get("/v2/secure-cloud/rentals").await
     }
 
     /// Start a secure cloud rental
@@ -505,7 +505,7 @@ impl BasilicaClient {
         &self,
         request: crate::types::StartSecureCloudRentalRequest,
     ) -> Result<crate::types::SecureCloudRentalResponse> {
-        self.post("/secure-cloud/rentals/start", &request).await
+        self.post("/v2/secure-cloud/rentals/start", &request).await
     }
 
     /// Stop a secure cloud rental
@@ -515,7 +515,7 @@ impl BasilicaClient {
         &self,
         rental_id: &str,
     ) -> Result<crate::types::StopSecureCloudRentalResponse> {
-        let path = format!("/secure-cloud/rentals/{}/stop", rental_id);
+        let path = format!("/v2/secure-cloud/rentals/{}/stop", rental_id);
         self.post(&path, &serde_json::json!({})).await
     }
 
@@ -525,7 +525,7 @@ impl BasilicaClient {
     ///
     /// Returns all volumes including their status, size, and cost information.
     pub async fn list_volumes(&self) -> Result<crate::types::ListVolumesResponse> {
-        self.get("/secure-cloud/volumes").await
+        self.get("/v2/secure-cloud/volumes").await
     }
 
     /// Create a new volume
@@ -535,12 +535,13 @@ impl BasilicaClient {
     ///
     /// # Arguments
     ///
-    /// * `request` - Volume creation parameters including name, size, AZ root, and region
+    /// * `request` - Volume creation parameters including name, size,
+    ///   availability zone root, and region
     pub async fn create_volume(
         &self,
         request: crate::types::CreateVolumeRequest,
     ) -> Result<crate::types::VolumeResponse> {
-        self.post("/secure-cloud/volumes", &request).await
+        self.post("/v2/secure-cloud/volumes", &request).await
     }
 
     /// Delete a volume
@@ -551,7 +552,7 @@ impl BasilicaClient {
     ///
     /// * `volume_id` - The volume ID to delete
     pub async fn delete_volume(&self, volume_id: &str) -> Result<()> {
-        let path = format!("/secure-cloud/volumes/{}", volume_id);
+        let path = format!("/v2/secure-cloud/volumes/{}", volume_id);
         let response = self.delete_empty(&path).await?;
         if response.status().is_success() {
             Ok(())
@@ -563,7 +564,7 @@ impl BasilicaClient {
     /// Attach a volume to a rental
     ///
     /// Attaches a volume to a running secure cloud rental.
-    /// The volume and rental must be in the same availability-zone root and region.
+    /// The volume and rental must be in the same availability zone root and region.
     ///
     /// # Arguments
     ///
@@ -574,7 +575,7 @@ impl BasilicaClient {
         volume_id: &str,
         request: crate::types::AttachVolumeRequest,
     ) -> Result<crate::types::VolumeOperationResponse> {
-        let path = format!("/secure-cloud/volumes/{}/attach", volume_id);
+        let path = format!("/v2/secure-cloud/volumes/{}/attach", volume_id);
         self.post(&path, &request).await
     }
 
@@ -589,7 +590,7 @@ impl BasilicaClient {
         &self,
         volume_id: &str,
     ) -> Result<crate::types::VolumeOperationResponse> {
-        let path = format!("/secure-cloud/volumes/{}/detach", volume_id);
+        let path = format!("/v2/secure-cloud/volumes/{}/detach", volume_id);
         self.post(&path, &serde_json::json!({})).await
     }
 
@@ -601,7 +602,7 @@ impl BasilicaClient {
     /// These have flat hourly rates rather than per-GPU pricing.
     pub async fn list_cpu_offerings(&self) -> Result<Vec<crate::types::CpuOffering>> {
         let response: crate::types::ListCpuOfferingsResponse = self
-            .get("/secure-cloud/cpu-prices?available_only=true")
+            .get("/v2/secure-cloud/cpu-prices?available_only=true")
             .await?;
         Ok(response.nodes)
     }
@@ -611,7 +612,7 @@ impl BasilicaClient {
     /// Returns all CPU-only secure cloud rentals including their status,
     /// IP addresses, and cost information.
     pub async fn list_cpu_rentals(&self) -> Result<crate::types::ListSecureCloudRentalsResponse> {
-        self.get("/secure-cloud/cpu-rentals").await
+        self.get("/v2/secure-cloud/cpu-rentals").await
     }
 
     /// Start a CPU-only rental
@@ -622,7 +623,8 @@ impl BasilicaClient {
         &self,
         request: crate::types::StartSecureCloudRentalRequest,
     ) -> Result<crate::types::SecureCloudRentalResponse> {
-        self.post("/secure-cloud/cpu-rentals/start", &request).await
+        self.post("/v2/secure-cloud/cpu-rentals/start", &request)
+            .await
     }
 
     /// Stop a CPU-only rental
@@ -632,7 +634,7 @@ impl BasilicaClient {
         &self,
         rental_id: &str,
     ) -> Result<crate::types::StopSecureCloudRentalResponse> {
-        let path = format!("/secure-cloud/cpu-rentals/{}/stop", rental_id);
+        let path = format!("/v2/secure-cloud/cpu-rentals/{}/stop", rental_id);
         self.post(&path, &serde_json::json!({})).await
     }
 
