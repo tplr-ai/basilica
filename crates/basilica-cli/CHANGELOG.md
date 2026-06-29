@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-06-29
+
+### Added
+- `basilica ps` now shows the total hourly cost across active displayed
+  rentals.
+
 ### Changed
 - Secure-cloud GPU, CPU, rental, and volume commands now use SDK calls backed
   by the V2 API paths under `/v2/secure-cloud/*`.
