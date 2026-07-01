@@ -469,6 +469,30 @@ pub struct ListFilters {
 /// Options for provisioning instances
 #[derive(clap::Args, Debug, Clone)]
 pub struct UpOptions {
+    /// Citadel GPU or CPU offering ID from `basilica --json ls`
+    #[arg(
+        long,
+        conflicts_with_all = [
+            "target",
+            "compute",
+            "gpu_count",
+            "max_hourly_rate",
+            "image",
+            "env",
+            "ports",
+            "cpu_cores",
+            "memory_mb",
+            "storage_mb",
+            "command",
+            "country",
+            "interconnect",
+            "region",
+            "spot",
+            "exclude_spot"
+        ]
+    )]
+    pub offering_id: Option<String>,
+
     /// Exact GPU count required
     #[arg(long)]
     pub gpu_count: Option<u32>,
@@ -1542,6 +1566,9 @@ pub enum TrainAction {
 #[cfg(test)]
 mod train_command_tests {
     use super::*;
+    use crate::cli::args::Args;
+    use clap::error::ErrorKind;
+    use clap::Parser;
     use std::str::FromStr;
 
     // -----------------------------------------------------------------
@@ -1602,6 +1629,75 @@ mod train_command_tests {
     fn world_size_triple_rejects_non_numeric() {
         assert!(WorldSizeTriple::from_str("a:b:c").is_err());
         assert!(WorldSizeTriple::from_str("4:eight:16").is_err());
+    }
+
+    #[test]
+    fn up_offering_id_conflicts_with_compute() {
+        let err = Args::try_parse_from([
+            "basilica",
+            "up",
+            "--offering-id",
+            "off_123",
+            "--compute",
+            "bourse",
+            "--name",
+            "test",
+            "--detach",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn up_offering_id_conflicts_with_selection_filters() {
+        let err = Args::try_parse_from([
+            "basilica",
+            "up",
+            "a100",
+            "--offering-id",
+            "off_123",
+            "--gpu-count",
+            "1",
+            "--spot",
+            "--name",
+            "test",
+            "--detach",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn up_offering_id_conflicts_with_bourse_options() {
+        let err = Args::try_parse_from([
+            "basilica",
+            "up",
+            "--offering-id",
+            "off_123",
+            "--image",
+            "ubuntu:22.04",
+            "--ports",
+            "8080:80",
+            "--name",
+            "test",
+            "--detach",
+        ])
+        .unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn up_offering_id_allows_name_and_detach() {
+        Args::try_parse_from([
+            "basilica",
+            "up",
+            "--offering-id",
+            "off_123",
+            "--name",
+            "test",
+            "--detach",
+        ])
+        .unwrap();
     }
 
     // -----------------------------------------------------------------
