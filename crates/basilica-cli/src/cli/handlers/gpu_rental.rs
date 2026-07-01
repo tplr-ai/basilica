@@ -12,6 +12,7 @@ use crate::cli::handlers::region_mapping::region_matches_country;
 use crate::cli::handlers::ssh_keys::select_and_read_ssh_key;
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
+use crate::interactive::gate::{self, Interactivity};
 use crate::output::{
     compress_path, format_usd, json_output, print_error, print_info, print_success, table_output,
 };
@@ -41,6 +42,13 @@ use tracing::{debug, warn};
 const RENTAL_READY_TIMEOUT: Duration = Duration::from_secs(300);
 
 fn prompt_rental_name() -> Result<String, CliError> {
+    if matches!(gate::current(), Interactivity::NonInteractive) {
+        return Err(CliError::MissingInput {
+            field: "name".to_string(),
+            hint: "Pass --name when running `basilica up` non-interactively.".to_string(),
+        });
+    }
+
     let default_name = basilica_common::rental::generate_random_rental_name();
     let theme = dialoguer::theme::ColorfulTheme::default();
     let name: String = Input::with_theme(&theme)
@@ -1132,6 +1140,87 @@ fn validate_no_community_cloud_options(options: &UpOptions) -> Result<(), CliErr
     Ok(())
 }
 
+fn resolve_rental_name(options: &mut UpOptions) -> Result<String, CliError> {
+    match options.name.take() {
+        Some(n) => {
+            RentalName::new(n.trim()).map_err(|e| CliError::Internal(eyre!(e.to_string())))?;
+            Ok(n.trim().to_string())
+        }
+        None => prompt_rental_name(),
+    }
+}
+
+async fn resolve_citadel_offering_by_id(
+    api_client: &basilica_sdk::BasilicaClient,
+    offering_id: &str,
+) -> Result<RentalOffering, CliError> {
+    let gpu_result = api_client.list_secure_cloud_gpus().await;
+    let cpu_result = api_client.list_cpu_offerings().await;
+
+    match &gpu_result {
+        Ok(gpu_offerings) => {
+            if let Some(offering) = gpu_offerings
+                .iter()
+                .find(|offering| offering.id == offering_id)
+                .cloned()
+            {
+                return Ok(RentalOffering::SecureCloud(offering));
+            }
+        }
+        Err(e) => warn!("Failed to list Citadel GPU offerings: {}", e),
+    }
+
+    match &cpu_result {
+        Ok(cpu_offerings) => {
+            if let Some(offering) = cpu_offerings
+                .iter()
+                .find(|offering| offering.id == offering_id)
+                .cloned()
+            {
+                return Ok(RentalOffering::CpuOnly(offering));
+            }
+        }
+        Err(e) => warn!("Failed to list Citadel CPU offerings: {}", e),
+    }
+
+    if let (Err(gpu_err), Err(cpu_err)) = (&gpu_result, &cpu_result) {
+        return Err(CliError::Internal(eyre!(
+            "Failed to resolve Citadel offering ID '{}': GPU catalog request failed: {}; CPU catalog request failed: {}",
+            offering_id,
+            gpu_err,
+            cpu_err
+        )));
+    }
+
+    if let Err(err) = &gpu_result {
+        return Err(CliError::Internal(eyre!(
+            "Citadel offering ID '{}' was not found in CPU offerings, and the GPU catalog request failed: {}",
+            offering_id,
+            err
+        )
+        .suggestion(
+            "Run `basilica --json ls --compute citadel` and pass an ID from `gpu_offerings[].id` or `cpu_offerings[].id`.",
+        )));
+    }
+
+    if let Err(err) = &cpu_result {
+        return Err(CliError::Internal(eyre!(
+            "Citadel offering ID '{}' was not found in GPU offerings, and the CPU catalog request failed: {}",
+            offering_id,
+            err
+        )
+        .suggestion(
+            "Run `basilica --json ls --compute citadel` and pass an ID from `gpu_offerings[].id` or `cpu_offerings[].id`.",
+        )));
+    }
+
+    Err(CliError::Internal(
+        eyre!("Citadel offering ID '{}' was not found", offering_id).suggestion(
+            "Run `basilica --json ls --compute citadel` and pass an ID from `gpu_offerings[].id` or `cpu_offerings[].id`.",
+        ),
+    ))
+}
+
 /// Handle the `up` command - provision GPU instances
 ///
 /// All paths use the unified offering resolver which presents a consistent
@@ -1146,6 +1235,12 @@ pub async fn handle_up(
 
     // Ensure SSH key is registered before proceeding (needed for both clouds)
     ensure_ssh_key_registered(&api_client).await?;
+
+    if let Some(offering_id) = options.offering_id.take() {
+        let name = resolve_rental_name(&mut options)?;
+        let offering = resolve_citadel_offering_by_id(&api_client, &offering_id).await?;
+        return handle_rental_with_offering(api_client, offering, name, options, config).await;
+    }
 
     // Extract GPU filter from target
     let gpu_filter_owned = target.as_ref().map(|t| t.0.as_str());
@@ -1174,18 +1269,10 @@ pub async fn handle_up(
         cloud_filter,
         &flavour,
     )
-    .await
-    .map_err(CliError::Internal)?;
+    .await?;
 
     // Resolve rental name: use --name arg if provided, otherwise prompt interactively
-    let name = match options.name.take() {
-        Some(n) => {
-            // Validate the name provided via --name
-            RentalName::new(n.trim()).map_err(|e| CliError::Internal(eyre!(e.to_string())))?;
-            n.trim().to_string()
-        }
-        None => prompt_rental_name()?,
-    };
+    let name = resolve_rental_name(&mut options)?;
 
     match selected {
         SelectedOffering::SecureCloud(offering) => {

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `basilica up --offering-id <ID>` can now start a specific Citadel GPU or CPU
+  offering without opening the interactive offering selector, and non-interactive
+  ambiguous `up` commands now point agents to inspect `basilica --json ls` and
+  pass `--offering-id`.
+
 ## [0.32.0] - 2026-06-29
 
 ### Added

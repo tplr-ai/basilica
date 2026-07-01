@@ -2,6 +2,7 @@
 
 use crate::cli::handlers::region_mapping::{extract_country_code, region_matches_country};
 use crate::error::CliError;
+use crate::interactive::gate::{self, Interactivity};
 use crate::progress::{complete_spinner_and_clear, complete_spinner_error, create_spinner};
 use basilica_common::types::ComputeCategory;
 use basilica_common::types::{GpuCategory, GpuOffering};
@@ -581,7 +582,7 @@ pub async fn resolve_offering_unified(
     min_gpu_memory_filter: Option<u32>,
     cloud_filter: Option<ComputeCategory>,
     flavour: &FlavourFilters,
-) -> Result<SelectedOffering> {
+) -> std::result::Result<SelectedOffering, CliError> {
     let spinner_msg = match cloud_filter {
         Some(ComputeCategory::SecureCloud) => "Fetching available GPUs from The Citadel...",
         Some(ComputeCategory::CommunityCloud) => "Fetching available GPUs from The Bourse...",
@@ -858,9 +859,17 @@ pub async fn resolve_offering_unified(
     }
 
     if unified_items.is_empty() {
-        return Err(eyre!(
+        return Err(CliError::Internal(eyre!(
             "No offerings available. Try different filters or check back later."
-        ));
+        )));
+    }
+
+    if matches!(gate::current(), Interactivity::NonInteractive) {
+        return Err(CliError::MissingInput {
+            field: "offering_id".to_string(),
+            hint: "Run `basilica --json ls --compute citadel` with your filters, pick `gpu_offerings[].id` or `cpu_offerings[].id`, then run `basilica up --offering-id <ID> --name <name> --detach`."
+                .to_string(),
+        });
     }
 
     // Helper to truncate strings to fit column width (unicode-safe)
@@ -912,11 +921,11 @@ pub async fn resolve_offering_unified(
         .items(&items)
         .default(0)
         .interact_opt()
-        .map_err(|e| eyre!("Selection failed: {}", e))?;
+        .map_err(|e| CliError::Internal(eyre!("Selection failed: {}", e)))?;
 
     let selection = match selection {
         Some(s) => s,
-        None => return Err(eyre!("Selection cancelled")),
+        None => return Err(CliError::Internal(eyre!("Selection cancelled"))),
     };
 
     // Clear the header and selection prompt lines
@@ -928,28 +937,25 @@ pub async fn resolve_offering_unified(
     // Return appropriate offering type
     match selected.offering_type {
         OfferingType::SecureGpu => {
-            let offering = selected
-                .secure_offering
-                .clone()
-                .ok_or_else(|| eyre!("Internal error: secure cloud offering data missing"))?;
+            let offering = selected.secure_offering.clone().ok_or_else(|| {
+                CliError::Internal(eyre!("Internal error: secure cloud offering data missing"))
+            })?;
             Ok(SelectedOffering::SecureCloud(offering))
         }
         OfferingType::SecureCpu => {
-            let offering = selected
-                .cpu_offering
-                .clone()
-                .ok_or_else(|| eyre!("Internal error: CPU offering data missing"))?;
+            let offering = selected.cpu_offering.clone().ok_or_else(|| {
+                CliError::Internal(eyre!("Internal error: CPU offering data missing"))
+            })?;
             Ok(SelectedOffering::CpuOnly(offering))
         }
         OfferingType::Community => {
-            let nodes = selected
-                .community_nodes
-                .clone()
-                .ok_or_else(|| eyre!("Internal error: community cloud node data missing"))?;
+            let nodes = selected.community_nodes.clone().ok_or_else(|| {
+                CliError::Internal(eyre!("Internal error: community cloud node data missing"))
+            })?;
 
-            let first_node = nodes
-                .first()
-                .ok_or_else(|| eyre!("Internal error: community cloud group is empty"))?;
+            let first_node = nodes.first().ok_or_else(|| {
+                CliError::Internal(eyre!("Internal error: community cloud group is empty"))
+            })?;
 
             // Extract GPU category and count from the group
             let gpu_category = first_node
@@ -961,7 +967,7 @@ pub async fn resolve_offering_unified(
                         .map(|c| c.to_string())
                         .unwrap_or_else(|_| gpu.name.clone())
                 })
-                .ok_or_else(|| eyre!("Selected group has no GPU specs"))?;
+                .ok_or_else(|| CliError::Internal(eyre!("Selected group has no GPU specs")))?;
 
             let gpu_count = first_node.node.gpu_specs.len() as u32;
             let min_memory_gb = nodes
