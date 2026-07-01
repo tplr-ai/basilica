@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ambiguous `up` commands now point agents to inspect `basilica --json ls` and
   pass `--offering-id`.
 
+### Changed
+- Removed the hidden `add` alias from `basilica skills install`.
+
+### Fixed
+- `basilica skills --help` now shows `update` as an alias for `install`, making
+  the installed-skills update path discoverable.
+
 ## [0.32.0] - 2026-06-29
 
 ### Added

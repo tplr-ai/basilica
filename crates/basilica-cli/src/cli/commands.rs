@@ -250,7 +250,7 @@ pub struct SkillsCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum SkillsAction {
     /// Install Basilica agent skills
-    #[command(alias = "add", alias = "update")]
+    #[command(visible_alias = "update")]
     Install,
 
     /// Uninstall Basilica agent skills
