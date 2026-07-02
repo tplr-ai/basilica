@@ -79,7 +79,7 @@ prost-types = "0.12"
 # Crypto and security
 blake3 = "1.5"
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.9"
 base64 = "0.21"
 
 # Utilities
