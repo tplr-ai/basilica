@@ -41,7 +41,7 @@ serde_with = "3.4"
 toml = "0.8"
 hex = "0.4"
 md5 = "0.7"
-bigdecimal = "0.3"
+bigdecimal = "0.4"
 # Logging and metrics
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
