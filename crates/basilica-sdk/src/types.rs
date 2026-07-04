@@ -277,6 +277,23 @@ impl RentalStatusWithSshResponse {
 
 // API Key Management Types
 
+/// Request to revoke all sessions for the authenticated user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevokeAllSessionsRequest {
+    /// Whether to also revoke the user's Basilica API keys.
+    pub delete_api_keys: bool,
+}
+
+/// Response after revoking all sessions for the authenticated user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RevokeAllSessionsResponse {
+    /// Timestamp after which existing tokens are no longer valid.
+    pub cutoff: chrono::DateTime<chrono::Utc>,
+
+    /// Number of Basilica API keys revoked.
+    pub api_keys_revoked: u64,
+}
+
 /// Request to create a new API key
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateApiKeyRequest {

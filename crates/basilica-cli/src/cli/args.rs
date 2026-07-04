@@ -147,7 +147,18 @@ impl Args {
             Commands::Login { device_code } => {
                 handlers::auth::handle_login(*device_code, config).await?;
             }
-            Commands::Logout => handlers::auth::handle_logout(config).await?,
+            Commands::Logout {
+                all_sessions,
+                delete_api_keys,
+                yes,
+            } => {
+                if *all_sessions {
+                    handlers::auth::handle_logout_all_sessions(config, *delete_api_keys, *yes)
+                        .await?;
+                } else {
+                    handlers::auth::handle_logout(config).await?;
+                }
+            }
             #[cfg(debug_assertions)]
             Commands::TestAuth { api } => {
                 if *api {

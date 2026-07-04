@@ -171,3 +171,93 @@ pub async fn handle_logout(_config: &CliConfig) -> Result<(), CliError> {
     print_success("⛪ Logout successful!");
     Ok(())
 }
+
+/// Handle logout from all sessions for the authenticated user.
+pub async fn handle_logout_all_sessions(
+    config: &CliConfig,
+    mut delete_api_keys: bool,
+    yes: bool,
+) -> Result<(), CliError> {
+    if !yes {
+        let confirmed = crate::interactive::gate::ask_confirm(
+            "confirm_logout_all_sessions",
+            "Log out from all sessions for this Basilica user?",
+            false,
+            "Pass --yes to confirm logout from all sessions.",
+        )?;
+
+        if !confirmed {
+            println!("Logout cancelled.");
+            return Ok(());
+        }
+
+        if delete_api_keys {
+            delete_api_keys = crate::interactive::gate::ask_confirm(
+                "confirm_revoke_api_keys",
+                "Also revoke all Basilica API keys?",
+                false,
+                "Pass --yes to confirm logout from all sessions and API key revocation.",
+            )?;
+        }
+    }
+
+    let spinner = create_spinner("Revoking all sessions...");
+    let client = match crate::client::create_authenticated_client(config).await {
+        Ok(client) => client,
+        Err(e) => {
+            complete_spinner_error(spinner, "Failed to authenticate");
+            return Err(e);
+        }
+    };
+
+    let response = match client.revoke_all_sessions(delete_api_keys).await {
+        Ok(response) => {
+            complete_spinner_and_clear(spinner);
+            response
+        }
+        Err(e) => {
+            complete_spinner_error(spinner, "Failed to revoke all sessions");
+            return Err(CliError::Api(e));
+        }
+    };
+
+    let data_dir = CliConfig::data_dir().wrap_err("Failed to get data directory")?;
+    let token_store = TokenStore::new(data_dir)
+        .await
+        .wrap_err("Failed to initialize token store")?;
+
+    match token_store.retrieve_tokens().await {
+        Ok(Some(token_set)) => {
+            let spinner = create_spinner("Revoking OAuth refresh token...");
+            let auth_config = crate::config::create_auth_config_with_port(0);
+            let oauth_flow = OAuthFlow::new(auth_config);
+
+            match oauth_flow.revoke_token(&token_set).await {
+                Ok(()) => complete_spinner_and_clear(spinner),
+                Err(e) => {
+                    warn!("Failed to revoke OAuth refresh token: {}", e);
+                    complete_spinner_error(spinner, "Token revocation failed, continuing cleanup");
+                }
+            }
+        }
+        Ok(None) => {}
+        Err(e) => warn!("Failed to load local tokens for OAuth revocation: {}", e),
+    }
+
+    let spinner = create_spinner("Clearing local authentication data...");
+
+    if let Err(e) = token_store.delete_tokens().await {
+        complete_spinner_error(spinner, "Failed to clear tokens");
+        return Err(eyre!("Failed to clear authentication data: {}", e)
+            .note("The auth file is located at: ~/.local/share/basilica/auth.json. Ensure you have write permissions to delete the file.")
+            .into());
+    }
+
+    complete_spinner_and_clear(spinner);
+    print_success("Logged out from all sessions.");
+    if delete_api_keys || response.api_keys_revoked > 0 {
+        print_success(&format!("Revoked {} API keys", response.api_keys_revoked));
+    }
+
+    Ok(())
+}

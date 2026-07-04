@@ -37,7 +37,7 @@
 
 use crate::{
     auth::TokenManager,
-    error::{ApiError, ErrorResponse, Result},
+    error::{ApiError, AuthenticationErrorKind, ErrorResponse, Result},
     jobs::{
         CreateJobRequest, CreateJobResponse, DeleteJobResponse, JobLogsResponse, JobStatusResponse,
         ReadFileRequest, ReadFileResponse, ResumeJobResponse, SuspendJobResponse,
@@ -52,9 +52,9 @@ use crate::{
         ListAvailableNodesQuery, ListCardPurchasesResponse, ListDepositsQuery,
         ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
         RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalResponse,
-        RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
-        ScaleDistributedRequest, ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse,
-        WaitOptions, WaitResult,
+        RentalStatusWithSshResponse, RentalUsageResponse, RevokeAllSessionsRequest,
+        RevokeAllSessionsResponse, ScaleDeploymentRequest, ScaleDistributedRequest,
+        ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse, WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
 };
@@ -212,6 +212,17 @@ impl BasilicaClient {
     }
 
     // ===== API Key Management =====
+
+    /// Revoke all sessions for the authenticated user.
+    ///
+    /// This requires JWT authentication. API-key authentication is rejected by the API.
+    pub async fn revoke_all_sessions(
+        &self,
+        delete_api_keys: bool,
+    ) -> Result<RevokeAllSessionsResponse> {
+        let request = RevokeAllSessionsRequest { delete_api_keys };
+        self.post("/auth/sessions/revoke-all", &request).await
+    }
 
     /// Create a new API key (requires JWT authentication)
     /// The API key will inherit scopes from the current JWT token
@@ -1441,9 +1452,11 @@ impl BasilicaClient {
                         "BASILICA_API_AUTH_MISSING" => Err(ApiError::MissingAuthentication {
                             message: error_response.error.message,
                         }),
-                        _ => Err(ApiError::Authentication {
-                            message: error_response.error.message,
-                        }),
+                        code => {
+                            let message = error_response.error.message;
+                            let kind = AuthenticationErrorKind::from_api_error(code, &message);
+                            Err(ApiError::Authentication { message, kind })
+                        }
                     }
                 }
                 StatusCode::FORBIDDEN => Err(ApiError::Authorization {
@@ -1468,6 +1481,7 @@ impl BasilicaClient {
             match status {
                 StatusCode::UNAUTHORIZED => Err(ApiError::Authentication {
                     message: "Authentication failed".into(),
+                    kind: AuthenticationErrorKind::Other,
                 }),
                 StatusCode::FORBIDDEN => Err(ApiError::Authorization {
                     message: "Access forbidden".into(),
@@ -1686,6 +1700,64 @@ mod tests {
 
         let result = client.health_check().await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_revoke_all_sessions_preserves_api_keys_by_default() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/auth/sessions/revoke-all"))
+            .and(header("Authorization", "Bearer test-token"))
+            .and(body_json(json!({
+                "delete_api_keys": false,
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "cutoff": "2026-07-04T00:00:00Z",
+                "api_keys_revoked": 0,
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.revoke_all_sessions(false).await.unwrap();
+
+        assert_eq!(response.cutoff.to_rfc3339(), "2026-07-04T00:00:00+00:00");
+        assert_eq!(response.api_keys_revoked, 0);
+    }
+
+    #[tokio::test]
+    async fn test_revoke_all_sessions_deletes_api_keys_when_requested() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/auth/sessions/revoke-all"))
+            .and(header("Authorization", "Bearer test-token"))
+            .and(body_json(json!({
+                "delete_api_keys": true,
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "cutoff": "2026-07-04T00:00:00Z",
+                "api_keys_revoked": 3,
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let response = client.revoke_all_sessions(true).await.unwrap();
+
+        assert_eq!(response.cutoff.to_rfc3339(), "2026-07-04T00:00:00+00:00");
+        assert_eq!(response.api_keys_revoked, 3);
     }
 
     #[tokio::test]

@@ -4,7 +4,7 @@ pub mod banner;
 pub mod error_render;
 pub mod table_output;
 
-pub use error_render::{render_error, RenderMode};
+pub use error_render::{into_report, render_error, RenderMode};
 
 use color_eyre::eyre::{eyre, Result};
 use console::style;

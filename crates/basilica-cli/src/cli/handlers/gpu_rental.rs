@@ -41,6 +41,21 @@ use tracing::{debug, warn};
 /// Maximum time to wait for rental to become active and SSH to be ready
 const RENTAL_READY_TIMEOUT: Duration = Duration::from_secs(300);
 
+fn map_gpu_listing_error(error: ApiError, resource_name: &'static str) -> CliError {
+    match error {
+        ApiError::MissingAuthentication { .. }
+        | ApiError::Authentication { .. }
+        | ApiError::Authorization { .. } => CliError::Api(error),
+        other => CliError::Internal(
+            eyre!(other)
+                .suggestion("Check your internet connection and try again")
+                .note(format!(
+                    "If this persists, {resource_name} may be temporarily unavailable"
+                )),
+        ),
+    }
+}
+
 fn prompt_rental_name() -> Result<String, CliError> {
     if matches!(gate::current(), Interactivity::NonInteractive) {
         return Err(CliError::MissingInput {
@@ -175,13 +190,7 @@ async fn fetch_and_filter_secure_cloud(
     let gpus = api_client
         .list_secure_cloud_gpus_filtered(&query)
         .await
-        .map_err(|e| -> CliError {
-            CliError::Internal(
-                eyre!(e)
-                    .suggestion("Check your internet connection and try again")
-                    .note("If this persists, GPUs may be temporarily unavailable"),
-            )
-        })?;
+        .map_err(|e| map_gpu_listing_error(e, "GPUs"))?;
 
     // Apply filters
     let mut filtered_gpus: Vec<_> = gpus
@@ -274,13 +283,7 @@ async fn fetch_and_filter_community_cloud(
     let response = api_client
         .list_available_nodes(Some(query))
         .await
-        .map_err(|e| -> CliError {
-            CliError::Internal(
-                eyre!(e)
-                    .suggestion("Check your internet connection and try again")
-                    .note("If this persists, nodes may be temporarily unavailable"),
-            )
-        })?;
+        .map_err(|e| map_gpu_listing_error(e, "nodes"))?;
 
     // Apply client-side max price filter if specified
     let filtered_nodes: Vec<_> = if let Some(max_price) = filters.price_max {
