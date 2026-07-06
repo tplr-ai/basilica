@@ -23,10 +23,16 @@ curl https://your-deployment.deployments.basilica.ai/v1/chat/completions \
 basilica deploy vllm Qwen/Qwen2.5-0.5B-Instruct --name my-llm
 ```
 
-For Basilica-managed pipeline-parallel inference with signed receipts:
+## Hosted Models
+
+Basilica-hosted models are served directly through the deployment gateway. Use
+the OpenAI client with the model host as `base_url` and a `basilica_` API key:
 
 ```bash
-basilica deploy sharded sshleifer/tiny-gpt2 --stages 2 --name my-sharded-llm
+export BASILICA_INFERENCE_BASE_URL="https://tiny-gpt2.deployments.basilica.ai/v1"
+export BASILICA_API_KEY="basilica_..."
+export BASILICA_MODEL="tiny-gpt2"
+python3 openai_client.py
 ```
 
 ## Configuration
@@ -73,13 +79,6 @@ def serve():
 def serve():
     subprocess.Popen(["python3", "-m", "sglang.launch_server", "--model-path", "MODEL", "--port", "30000"]).wait()
 ```
-
-### Sharded Inference
-
-Use `basilica deploy sharded` when the model should be split across multiple
-pipeline stages and each request needs a signed receipt chain. The current v0
-runtime supports GPT-2-style HuggingFace models; see `sharded_tiny_gpt2.py` for
-a minimal CLI-driven example.
 
 ## Management
 

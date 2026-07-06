@@ -1093,19 +1093,6 @@ pub enum DeployAction {
         sglang: SglangOptions,
     },
 
-    /// Deploy Basilica sharded pipeline-parallel inference
-    #[command(name = "sharded")]
-    Sharded {
-        /// HuggingFace model ID (default: sshleifer/tiny-gpt2; v0 runtime supports GPT-2-style models)
-        model: Option<String>,
-
-        #[command(flatten)]
-        common: TemplateCommonOptions,
-
-        #[command(flatten)]
-        sharded: ShardedOptions,
-    },
-
     /// Deploy OpenClaw gateway
     #[command(name = "openclaw")]
     Openclaw {
@@ -1262,32 +1249,6 @@ pub struct SglangOptions {
     /// Trust remote code from HuggingFace
     #[arg(long)]
     pub trust_remote_code: bool,
-}
-
-/// Sharded inference deployment options
-#[derive(clap::Args, Debug, Clone)]
-pub struct ShardedOptions {
-    /// Number of pipeline stages.
-    #[arg(long, default_value = "2")]
-    pub stages: u32,
-
-    /// Optional draft model for speculative decoding.
-    #[arg(long)]
-    pub draft_model: Option<String>,
-
-    /// Trust remote code from HuggingFace.
-    #[arg(long)]
-    pub trust_remote_code: bool,
-}
-
-impl Default for ShardedOptions {
-    fn default() -> Self {
-        Self {
-            stages: 2,
-            draft_model: None,
-            trust_remote_code: false,
-        }
-    }
 }
 
 /// OpenClaw-specific deployment options

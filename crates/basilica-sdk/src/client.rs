@@ -46,13 +46,13 @@ use crate::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
         CardPurchaseSummary, CreateApiKeyRequest, CreateCardPurchaseRequest,
         CreateDeploymentRequest, CreateDepositAccountResponse, CreateDistributedDeploymentRequest,
-        CreateInferencePipelineRequest, DeleteDeploymentResponse, DeleteShareTokenResponse,
-        DeploymentEventsResponse, DeploymentListResponse, DeploymentResponse,
-        DepositAccountResponse, EnrollMetadataRequest, EnrollMetadataResponse, HealthCheckResponse,
-        HistoricalRentalsResponse, InferencePipelineResponse, ListAvailableNodesQuery,
-        ListCardPurchasesResponse, ListDepositsQuery, ListDepositsResponse, ListRentalsQuery,
-        PublicDeploymentMetadataResponse, RegenerateShareTokenResponse, RegisterSshKeyRequest,
-        RentalResponse, RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
+        DeleteDeploymentResponse, DeleteShareTokenResponse, DeploymentEventsResponse,
+        DeploymentListResponse, DeploymentResponse, DepositAccountResponse, EnrollMetadataRequest,
+        EnrollMetadataResponse, HealthCheckResponse, HistoricalRentalsResponse,
+        ListAvailableNodesQuery, ListCardPurchasesResponse, ListDepositsQuery,
+        ListDepositsResponse, ListRentalsQuery, PublicDeploymentMetadataResponse,
+        RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalResponse,
+        RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
         ScaleDistributedRequest, ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse,
         VerifyReceiptResponse, WaitOptions, WaitResult,
     },
@@ -718,31 +718,6 @@ impl BasilicaClient {
         request: CreateDeploymentRequest,
     ) -> Result<DeploymentResponse> {
         self.post("/deployments", &request).await
-    }
-
-    pub async fn create_inference_pipeline(
-        &self,
-        request: CreateInferencePipelineRequest,
-    ) -> Result<InferencePipelineResponse> {
-        self.post("/inference/pipelines", &request).await
-    }
-
-    pub async fn get_inference_pipeline(
-        &self,
-        instance_name: &str,
-    ) -> Result<InferencePipelineResponse> {
-        self.get(&format!("/inference/pipelines/{instance_name}"))
-            .await
-    }
-
-    pub async fn list_inference_pipelines(&self) -> Result<Vec<InferencePipelineResponse>> {
-        self.get("/inference/pipelines").await
-    }
-
-    pub async fn delete_inference_pipeline(&self, instance_name: &str) -> Result<()> {
-        self.delete_empty(&format!("/inference/pipelines/{instance_name}"))
-            .await?;
-        Ok(())
     }
 
     pub async fn verify_inference_receipt(
