@@ -88,7 +88,7 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
         .show_download_progress(true)
         .show_output(false)
         .no_confirm(true)
-        .target_version_tag(&target_tag);
+        .release_tag(&target_tag);
 
     // Change CWD to the binary's directory so that self_replace's
     // read_link() → relative path resolves correctly
@@ -110,7 +110,7 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
                      Try running: sudo -E basilica upgrade",
                     e
                 ))
-            } else if error_msg.contains("not found") || error_msg.contains("404") {
+            } else if e.http_status() == Some(404) {
                 CliError::Internal(eyre!(
                     "Release not found. Please check that the version exists.\n\
                      View available releases: https://github.com/{}/{}/releases",
@@ -131,11 +131,11 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
 
     // Display results
     match status {
-        self_update::Status::UpToDate(v) => {
+        self_update::VersionStatus::UpToDate(v) => {
             println!("{}", style("Already up to date!").green());
             println!("Current version: {}", style(v).cyan());
         }
-        self_update::Status::Updated(v) => {
+        self_update::VersionStatus::Updated(v) => {
             println!(
                 "\n{} Updated to version {}",
                 style("✓").green().bold(),
@@ -147,6 +147,11 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
                 style("basilica --version").cyan(),
                 style("bs --version").cyan()
             );
+        }
+        _ => {
+            return Err(CliError::Internal(eyre!(
+                "Updater returned an unsupported status"
+            )));
         }
     }
 

@@ -171,11 +171,15 @@ pyo3-stub-gen = { version = "0.23" }
 pyo3-stub-gen-derive = { version = "0.23" }
 pythonize = "0.29"
 
-# Self-update (MUSL compatible - use rustls instead of native-tls)
-self_update = { version = "0.41", default-features = false, features = [
+# Self-update (MUSL compatible - use rustls instead of native-tls).
+# Use the 1.0 migration-line RC until crates.io publishes a stable 1.0.
+self_update = { version = "1.0.0-rc.2", default-features = false, features = [
+  "github",
+  "progress-bar",
+  "reqwest",
   "rustls",
   "archive-tar",
-  "compression-flate2",
+  "compression-tar-gz",
 ] }
 
 # Subxt (must match bittensor-rs version)
