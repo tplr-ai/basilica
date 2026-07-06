@@ -57,7 +57,7 @@ metrics-exporter-prometheus = { version = "0.13", default-features = false, feat
 figment = { version = "0.10", features = ["toml", "env", "json"] }
 
 # Database
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.8", features = [
   "runtime-tokio-rustls",
   "sqlite",
   "postgres",
@@ -155,7 +155,7 @@ wiremock = "0.6"
 dialoguer = "0.11"
 indicatif = "0.18"
 console = "0.15"
-tabled = { version = "0.15", default-features = true, features = ["ansi"] }
+tabled = { version = "0.21", default-features = true, features = ["ansi"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 shellexpand = "3.1"
 etcetera = "0.8"

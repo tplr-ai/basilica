@@ -34,11 +34,9 @@ ignore = [
     "RUSTSEC-2026-0104",  # CRL parsing reachable panic; 0.101.x has no upstream patch (added 2026-04-23)
 
     # Other transitives through the subnet stack
-    "RUSTSEC-2024-0363",  # sqlx binary protocol misinterpretation
 
     # Unmaintained transitives through the subnet stack. Treated as advisories
     # because cargo-deny surfaces them; functional risk is low.
-    "RUSTSEC-2024-0370",  # proc-macro-error unmaintained
     "RUSTSEC-2024-0436",  # paste unmaintained
     "RUSTSEC-2025-0134",  # rustls-pemfile unmaintained
     "RUSTSEC-2025-0161",  # libsecp256k1 unmaintained
