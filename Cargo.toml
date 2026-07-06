@@ -132,7 +132,7 @@ tonic-health = "0.10.2"
 governor = "0.6"
 jsonwebtoken = "9.2"
 async-stream = "0.3"
-lru = "0.12"
+lru = "0.16"
 eventsource-stream = "0.2"
 fastrand = "2.0"
 aws-config = { version = "1.0", features = ["behavior-version-latest"] }
@@ -153,7 +153,7 @@ wiremock = "0.6"
 
 # CLI-specific dependencies
 dialoguer = "0.11"
-indicatif = "0.17"
+indicatif = "0.18"
 console = "0.15"
 tabled = { version = "0.15", default-features = true, features = ["ansi"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
