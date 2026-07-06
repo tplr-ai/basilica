@@ -23,12 +23,18 @@ curl https://your-deployment.deployments.basilica.ai/v1/chat/completions \
 basilica deploy vllm Qwen/Qwen2.5-0.5B-Instruct --name my-llm
 ```
 
+For Basilica-managed pipeline-parallel inference with signed receipts:
+
+```bash
+basilica deploy sharded sshleifer/tiny-gpt2 --stages 2 --name my-sharded-llm
+```
+
 ## Configuration
 
 The `@deployment` decorator accepts these parameters:
 
 | Parameter | Description | Default |
-|-----------|-------------|---------|
+| --------- | ----------- | ------- |
 | `name` | Deployment name | Required |
 | `image` | Container image | Required |
 | `gpu` | GPU model (A100, H100) | A100 |
@@ -43,7 +49,7 @@ The `@deployment` decorator accepts these parameters:
 Models are specified by their HuggingFace ID. GPU requirements depend on model size:
 
 | Model Size | Example | GPUs | Memory |
-|------------|---------|------|--------|
+| ---------- | ------- | ---- | ------ |
 | < 1B | Qwen2.5-0.5B | 1 | 8GB |
 | 7B | Llama-2-7B | 1 | 24GB |
 | 13B | Llama-2-13B | 1 | 40GB |
@@ -53,6 +59,7 @@ Models are specified by their HuggingFace ID. GPU requirements depend on model s
 ## Inference Frameworks
 
 ### vLLM (Recommended)
+
 ```python
 @deployment(image="vllm/vllm-openai:latest", port=8000)
 def serve():
@@ -60,11 +67,19 @@ def serve():
 ```
 
 ### SGLang
+
 ```python
 @deployment(image="lmsysorg/sglang:latest", port=30000)
 def serve():
     subprocess.Popen(["python3", "-m", "sglang.launch_server", "--model-path", "MODEL", "--port", "30000"]).wait()
 ```
+
+### Sharded Inference
+
+Use `basilica deploy sharded` when the model should be split across multiple
+pipeline stages and each request needs a signed receipt chain. The current v0
+runtime supports GPT-2-style HuggingFace models; see `sharded_tiny_gpt2.py` for
+a minimal CLI-driven example.
 
 ## Management
 
