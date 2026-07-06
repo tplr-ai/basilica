@@ -15,10 +15,13 @@ use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+use std::time::Duration;
 
 /// Short alias name for the CLI binary
 const CLI_ALIAS: &str = "bs";
 const BINARY_NAME: &str = "basilica";
+const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Resolve the actual binary path by following symlinks.
 ///
@@ -54,8 +57,16 @@ fn expected_asset_name(version: &str, target: &str) -> String {
     format!("{BINARY_NAME}-{version}-{target}.tar.gz")
 }
 
+fn release_download_client() -> EyreResult<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
+        .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
+        .timeout(DOWNLOAD_TIMEOUT)
+        .build()
+        .map_err(|e| eyre!("Failed to configure release download client: {}", e))
+}
+
 fn download_url_to_path(url: &str, path: &Path, show_progress: bool) -> EyreResult<()> {
-    let client = reqwest::blocking::Client::new();
+    let client = release_download_client()?;
     let mut response = client
         .get(url)
         .header("Accept", "application/octet-stream")
@@ -109,7 +120,8 @@ fn download_url_to_path(url: &str, path: &Path, show_progress: bool) -> EyreResu
 }
 
 fn download_url_to_string(url: &str) -> EyreResult<String> {
-    let response = reqwest::blocking::Client::new()
+    let client = release_download_client()?;
+    let response = client
         .get(url)
         .header("Accept", "application/octet-stream")
         .header("User-Agent", "basilica-cli")
