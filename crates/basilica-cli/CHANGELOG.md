@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- `basilica upgrade` now verifies the downloaded release archive against the
+  published `.sha256` asset before replacing the running binary.
+
 ## [0.32.1] - 2026-07-02
 
 ### Added
