@@ -23,12 +23,24 @@ curl https://your-deployment.deployments.basilica.ai/v1/chat/completions \
 basilica deploy vllm Qwen/Qwen2.5-0.5B-Instruct --name my-llm
 ```
 
+## Hosted Models
+
+Basilica-hosted models are served directly through the deployment gateway. Use
+the OpenAI client with the model host as `base_url` and a `basilica_` API key:
+
+```bash
+export BASILICA_INFERENCE_BASE_URL="https://tiny-gpt2.deployments.basilica.ai/v1"
+export BASILICA_API_KEY="basilica_..."
+export BASILICA_MODEL="tiny-gpt2"
+python3 openai_client.py
+```
+
 ## Configuration
 
 The `@deployment` decorator accepts these parameters:
 
 | Parameter | Description | Default |
-|-----------|-------------|---------|
+| --------- | ----------- | ------- |
 | `name` | Deployment name | Required |
 | `image` | Container image | Required |
 | `gpu` | GPU model (A100, H100) | A100 |
@@ -43,7 +55,7 @@ The `@deployment` decorator accepts these parameters:
 Models are specified by their HuggingFace ID. GPU requirements depend on model size:
 
 | Model Size | Example | GPUs | Memory |
-|------------|---------|------|--------|
+| ---------- | ------- | ---- | ------ |
 | < 1B | Qwen2.5-0.5B | 1 | 8GB |
 | 7B | Llama-2-7B | 1 | 24GB |
 | 13B | Llama-2-13B | 1 | 40GB |
@@ -53,6 +65,7 @@ Models are specified by their HuggingFace ID. GPU requirements depend on model s
 ## Inference Frameworks
 
 ### vLLM (Recommended)
+
 ```python
 @deployment(image="vllm/vllm-openai:latest", port=8000)
 def serve():
@@ -60,6 +73,7 @@ def serve():
 ```
 
 ### SGLang
+
 ```python
 @deployment(image="lmsysorg/sglang:latest", port=30000)
 def serve():

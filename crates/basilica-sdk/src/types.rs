@@ -901,6 +901,14 @@ pub struct CreateDeploymentRequest {
     pub public_metadata: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyReceiptResponse {
+    pub valid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 fn default_enable_billing() -> bool {
     true
 }

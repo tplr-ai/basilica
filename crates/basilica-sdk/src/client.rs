@@ -54,7 +54,7 @@ use crate::{
         RegenerateShareTokenResponse, RegisterSshKeyRequest, RentalResponse,
         RentalStatusWithSshResponse, RentalUsageResponse, ScaleDeploymentRequest,
         ScaleDistributedRequest, ShareTokenStatusResponse, SshKeyResponse, UsageHistoryResponse,
-        WaitOptions, WaitResult,
+        VerifyReceiptResponse, WaitOptions, WaitResult,
     },
     StartRentalApiRequest,
 };
@@ -718,6 +718,13 @@ impl BasilicaClient {
         request: CreateDeploymentRequest,
     ) -> Result<DeploymentResponse> {
         self.post("/deployments", &request).await
+    }
+
+    pub async fn verify_inference_receipt(
+        &self,
+        receipt: &serde_json::Value,
+    ) -> Result<VerifyReceiptResponse> {
+        self.post("/inference/receipts/verify", receipt).await
     }
 
     /// Get deployment status by instance name
