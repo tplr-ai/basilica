@@ -704,6 +704,7 @@ mod tests {
                 ready: 0,
             },
             created_at: "".into(),
+            public: true,
             updated_at: None,
             pods: None,
             phase: Some("starting".into()),

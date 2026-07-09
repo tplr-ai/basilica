@@ -994,6 +994,9 @@ pub struct DeploymentResponse {
     pub url: String,
     pub replicas: ReplicaStatus,
     pub created_at: String,
+    /// Whether deployment is publicly accessible (no token required).
+    #[serde(default = "default_public")]
+    pub public: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2214,6 +2217,37 @@ mod tests {
     }
 
     #[test]
+    fn test_deployment_response_public_field_defaults_for_old_backends() {
+        let json = r#"{
+            "instanceName": "my-app",
+            "userId": "user123",
+            "namespace": "u-user123",
+            "state": "Running",
+            "url": "https://example.com",
+            "replicas": {"desired": 1, "ready": 1},
+            "createdAt": "2024-01-01T00:00:00Z"
+        }"#;
+        let response: DeploymentResponse = serde_json::from_str(json).unwrap();
+        assert!(response.public);
+    }
+
+    #[test]
+    fn test_deployment_response_public_field_explicit_private() {
+        let json = r#"{
+            "instanceName": "my-app",
+            "userId": "user123",
+            "namespace": "u-user123",
+            "state": "Running",
+            "url": "https://example.com",
+            "replicas": {"desired": 1, "ready": 1},
+            "createdAt": "2024-01-01T00:00:00Z",
+            "public": false
+        }"#;
+        let response: DeploymentResponse = serde_json::from_str(json).unwrap();
+        assert!(!response.public);
+    }
+
+    #[test]
     fn test_deployment_response_share_token_fields_optional() {
         let json = r#"{
             "instanceName": "my-app",
@@ -2786,6 +2820,7 @@ mod tests {
                 ready: 2,
             },
             created_at: "2026-05-02T10:00:00Z".to_string(),
+            public: true,
             updated_at: Some("2026-05-02T10:05:00Z".to_string()),
             pods: None,
             phase: Some("Running".to_string()),

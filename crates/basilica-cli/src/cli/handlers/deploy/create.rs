@@ -635,6 +635,7 @@ mod tests {
                 ready: 1,
             },
             created_at: "2026-07-09T00:00:00Z".to_string(),
+            public: false,
             updated_at: None,
             pods: None,
             phase: Some("ready".to_string()),
