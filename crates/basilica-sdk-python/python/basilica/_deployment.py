@@ -815,8 +815,12 @@ class Deployment:
         self._image = getattr(response, "image", self._image) or self._image
         self._phase = getattr(response, "phase", self._phase)
         self._message = getattr(response, "message", self._message)
-        self._share_token = getattr(response, "share_token", self._share_token)
-        self._share_url = getattr(response, "share_url", self._share_url)
+        share_token = getattr(response, "share_token", None)
+        if share_token is not None:
+            self._share_token = share_token
+        share_url = getattr(response, "share_url", None)
+        if share_url is not None:
+            self._share_url = share_url
         self._public = bool(getattr(response, "public", self._public))
         self._public_metadata = bool(
             getattr(response, "public_metadata", self._public_metadata)

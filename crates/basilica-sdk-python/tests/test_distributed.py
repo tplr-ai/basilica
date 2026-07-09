@@ -1778,6 +1778,28 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
         assert deployment.created_at == "2026-05-02T10:00:00Z"
         assert deployment.updated_at == "2026-05-02T10:05:00Z"
 
+    def test_refresh_preserves_create_time_share_token_when_status_omits_it(
+        self,
+    ) -> None:
+        """Private deployment share tokens are one-time create response fields.
+
+        A later status refresh may return explicit None values, but the wrapper
+        must keep the token captured from the create response.
+        """
+        client = self._build_client()
+        deployment = client.get("dlc-454-mock")
+        deployment._share_token = "share-token-from-create"
+        deployment._share_url = (
+            "https://dlc-454-mock.deployments.basilica.ai?token=share-token-from-create"
+        )
+
+        deployment._copy_from_response(self._fake_pyo3_response())
+
+        assert deployment.share_token == "share-token-from-create"
+        assert deployment.share_url == (
+            "https://dlc-454-mock.deployments.basilica.ai?token=share-token-from-create"
+        )
+
     def test_NEGATIVE_coerce_to_dict_after_wrapper_carries_distributed(self) -> None:
         """The test PR #451 should have had.
 
