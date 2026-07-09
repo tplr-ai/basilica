@@ -204,6 +204,7 @@ class Deployment:
         message: Optional[str] = None,
         share_token: Optional[str] = None,
         share_url: Optional[str] = None,
+        public: bool = True,
         public_metadata: bool = False,
         distributed: Optional[Dict[str, Any]] = None,
     ):
@@ -238,6 +239,7 @@ class Deployment:
         self._message = message
         self._share_token = share_token
         self._share_url = share_url
+        self._public = public
         self._public_metadata = public_metadata
         self._distributed = distributed
 
@@ -327,6 +329,11 @@ class Deployment:
     def share_url(self) -> Optional[str]:
         """Shareable URL with token query parameter for private deployments."""
         return self._share_url
+
+    @property
+    def public(self) -> bool:
+        """Whether this deployment is publicly accessible without a share token."""
+        return self._public
 
     @property
     def public_metadata(self) -> bool:
@@ -810,6 +817,7 @@ class Deployment:
         self._message = getattr(response, "message", self._message)
         self._share_token = getattr(response, "share_token", self._share_token)
         self._share_url = getattr(response, "share_url", self._share_url)
+        self._public = bool(getattr(response, "public", self._public))
         self._public_metadata = bool(
             getattr(response, "public_metadata", self._public_metadata)
         )
@@ -858,6 +866,7 @@ class Deployment:
             message=getattr(response, "message", None),
             share_token=getattr(response, "share_token", None),
             share_url=getattr(response, "share_url", None),
+            public=bool(getattr(response, "public", True)),
             public_metadata=bool(getattr(response, "public_metadata", False)),
             distributed=getattr(response, "distributed", None),
         )
