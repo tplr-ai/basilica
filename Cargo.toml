@@ -180,6 +180,7 @@ self_update = { version = "1.0.0-rc.2", default-features = false, features = [
   "rustls",
   "archive-tar",
   "compression-tar-gz",
+  "checksums",
 ] }
 
 # Subxt (must match bittensor-rs version)
