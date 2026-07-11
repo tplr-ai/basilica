@@ -57,7 +57,7 @@ metrics-exporter-prometheus = { version = "0.13", default-features = false, feat
 figment = { version = "0.10", features = ["toml", "env", "json"] }
 
 # Database
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.8", features = [
   "runtime-tokio-rustls",
   "sqlite",
   "postgres",
@@ -132,7 +132,7 @@ tonic-health = "0.10.2"
 governor = "0.6"
 jsonwebtoken = "9.2"
 async-stream = "0.3"
-lru = "0.12"
+lru = "0.16"
 eventsource-stream = "0.2"
 fastrand = "2.0"
 aws-config = { version = "1.0", features = ["behavior-version-latest"] }
@@ -153,9 +153,9 @@ wiremock = "0.6"
 
 # CLI-specific dependencies
 dialoguer = "0.11"
-indicatif = "0.17"
+indicatif = "0.18"
 console = "0.15"
-tabled = { version = "0.15", default-features = true, features = ["ansi"] }
+tabled = { version = "0.21", default-features = true, features = ["ansi"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 shellexpand = "3.1"
 etcetera = "0.8"
@@ -171,11 +171,15 @@ pyo3-stub-gen = { version = "0.23" }
 pyo3-stub-gen-derive = { version = "0.23" }
 pythonize = "0.29"
 
-# Self-update (MUSL compatible - use rustls instead of native-tls)
-self_update = { version = "0.41", default-features = false, features = [
+# Self-update (MUSL compatible - use rustls instead of native-tls).
+# Use the 1.0 migration-line RC until crates.io publishes a stable 1.0.
+self_update = { version = "1.0.0-rc.2", default-features = false, features = [
+  "github",
+  "progress-bar",
+  "reqwest",
   "rustls",
   "archive-tar",
-  "compression-flate2",
+  "compression-tar-gz",
 ] }
 
 # Subxt (must match bittensor-rs version)
