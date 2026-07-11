@@ -2,13 +2,12 @@
 
 use crate::error::CliError;
 use crate::github_releases::{
-    extract_version_from_tag, find_latest_cli_release, format_cli_tag, is_version_supported,
-    GitHubConfig, MIN_SUPPORTED_VERSION,
+    find_latest_cli_release, format_cli_tag, is_version_supported, GitHubConfig,
+    MIN_SUPPORTED_VERSION,
 };
 use color_eyre::eyre::{eyre, Result as EyreResult};
 use console::style;
 use self_update::cargo_crate_version;
-use self_update::update::{Release, ReleaseAsset};
 use self_update::Checksum;
 use semver::Version;
 use std::time::Duration;
@@ -39,10 +38,6 @@ fn parse_sha256_file(contents: &str) -> Option<String> {
     }
 }
 
-fn expected_asset_name(version: &str, target: &str) -> String {
-    format!("{BINARY_NAME}-{version}-{target}.tar.gz")
-}
-
 fn release_download_client() -> EyreResult<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
@@ -70,15 +65,6 @@ fn download_url_to_string(url: &str) -> EyreResult<String> {
     response
         .text()
         .map_err(|e| eyre!("Failed to read checksum file: {}", e))
-}
-
-fn find_exact_asset(release: &Release, asset_name: &str) -> EyreResult<ReleaseAsset> {
-    release
-        .assets()
-        .iter()
-        .find(|asset| asset.name() == asset_name)
-        .cloned()
-        .ok_or_else(|| eyre!("No release asset found named `{}`", asset_name))
 }
 
 fn map_update_error(error: self_update::errors::Error, config: &GitHubConfig) -> CliError {
@@ -166,10 +152,6 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
         .ok_or_else(|| CliError::Internal(eyre!("Failed to determine binary directory")))?
         .to_path_buf();
     let target = self_update::get_target();
-    let target_version = extract_version_from_tag(&target_tag)
-        .ok_or_else(|| CliError::Internal(eyre!("Invalid release tag '{}'", target_tag)))?
-        .to_string();
-    let checksum_name = format!("{}.sha256", expected_asset_name(&target_version, target));
 
     let mut update_builder = self_update::backends::github::Update::configure();
     update_builder
@@ -194,7 +176,12 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
         .get_release_version(&target_tag)
         .map_err(|e| map_update_error(e, &config))?;
 
-    let checksum_asset = find_exact_asset(&release, &checksum_name).map_err(CliError::Internal)?;
+    let checksum_asset = release.asset_for(target, Some(".sha256")).ok_or_else(|| {
+        CliError::Internal(eyre!(
+            "No `.sha256` checksum asset found for target `{}`",
+            target
+        ))
+    })?;
     let checksum_contents =
         download_url_to_string(checksum_asset.download_url()).map_err(CliError::Internal)?;
     let expected_checksum = parse_sha256_file(&checksum_contents).ok_or_else(|| {
@@ -347,14 +334,6 @@ mod tests {
                 "zz7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad archive"
             ),
             None
-        );
-    }
-
-    #[test]
-    fn expected_asset_name_matches_release_workflow_pattern() {
-        assert_eq!(
-            expected_asset_name("0.5.5", "aarch64-apple-darwin"),
-            "basilica-0.5.5-aarch64-apple-darwin.tar.gz"
         );
     }
 }
