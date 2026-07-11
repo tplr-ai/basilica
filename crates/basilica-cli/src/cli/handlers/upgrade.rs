@@ -7,14 +7,10 @@ use crate::github_releases::{
 };
 use color_eyre::eyre::{eyre, Result as EyreResult};
 use console::style;
-use indicatif::{ProgressBar, ProgressStyle};
 use self_update::cargo_crate_version;
 use self_update::update::{Release, ReleaseAsset};
+use self_update::Checksum;
 use semver::Version;
-use sha2::{Digest, Sha256};
-use std::fs::File;
-use std::io::{Read, Write};
-use std::path::Path;
 use std::time::Duration;
 
 /// Short alias name for the CLI binary
@@ -43,16 +39,6 @@ fn parse_sha256_file(contents: &str) -> Option<String> {
     }
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn sha256_file_hex(path: &Path) -> EyreResult<String> {
-    let bytes = std::fs::read(path)?;
-    Ok(sha256_hex(&bytes))
-}
-
 fn expected_asset_name(version: &str, target: &str) -> String {
     format!("{BINARY_NAME}-{version}-{target}.tar.gz")
 }
@@ -63,60 +49,6 @@ fn release_download_client() -> EyreResult<reqwest::blocking::Client> {
         .timeout(DOWNLOAD_TIMEOUT)
         .build()
         .map_err(|e| eyre!("Failed to configure release download client: {}", e))
-}
-
-fn download_url_to_path(url: &str, path: &Path, show_progress: bool) -> EyreResult<()> {
-    let client = release_download_client()?;
-    let mut response = client
-        .get(url)
-        .header("Accept", "application/octet-stream")
-        .header("User-Agent", "basilica-cli")
-        .send()
-        .map_err(|e| eyre!("Failed to download release archive: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(eyre!(
-            "Download request failed with status: {}",
-            response.status()
-        ));
-    }
-
-    let content_length = response.content_length();
-    let mut progress = if show_progress {
-        content_length.map(|len| {
-            let progress = ProgressBar::new(len);
-            if let Ok(style) = ProgressStyle::with_template(
-                "[{elapsed_precise}] [{bar:40}] {bytes}/{total_bytes} ({eta}) {msg}",
-            ) {
-                progress.set_style(style.progress_chars("=>-"));
-            }
-            progress
-        })
-    } else {
-        None
-    };
-
-    let mut output = File::create(path)?;
-    let mut buffer = [0; 8192];
-
-    loop {
-        let bytes_read = response.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        output.write_all(&buffer[..bytes_read])?;
-
-        if let Some(progress) = &mut progress {
-            progress.inc(bytes_read as u64);
-        }
-    }
-
-    if let Some(progress) = progress {
-        progress.finish_with_message("Done");
-    }
-
-    Ok(())
 }
 
 fn download_url_to_string(url: &str) -> EyreResult<String> {
@@ -142,50 +74,14 @@ fn download_url_to_string(url: &str) -> EyreResult<String> {
 
 fn find_exact_asset(release: &Release, asset_name: &str) -> EyreResult<ReleaseAsset> {
     release
-        .assets
+        .assets()
         .iter()
-        .find(|asset| asset.name == asset_name)
+        .find(|asset| asset.name() == asset_name)
         .cloned()
         .ok_or_else(|| eyre!("No release asset found named `{}`", asset_name))
 }
 
-fn fetch_release(
-    config: &GitHubConfig,
-    current_version: &str,
-    target_tag: &str,
-) -> EyreResult<Release> {
-    let updater = self_update::backends::github::Update::configure()
-        .repo_owner(config.owner)
-        .repo_name(config.repo)
-        .bin_name(BINARY_NAME)
-        .current_version(current_version)
-        .no_confirm(true)
-        .target_version_tag(target_tag)
-        .build()
-        .map_err(|e| eyre!("Failed to configure updater: {}", e))?;
-
-    updater
-        .get_release_version(target_tag)
-        .map_err(|e| eyre!("{}", e))
-}
-
-fn verify_archive_checksum(archive_path: &Path, checksum_contents: &str) -> EyreResult<()> {
-    let expected = parse_sha256_file(checksum_contents)
-        .ok_or_else(|| eyre!("Release checksum file did not contain a valid SHA-256 digest"))?;
-    let actual = sha256_file_hex(archive_path)?;
-
-    if actual.eq_ignore_ascii_case(&expected) {
-        Ok(())
-    } else {
-        Err(eyre!(
-            "Checksum verification failed: expected {}, got {}. The downloaded archive was discarded and no files were changed.",
-            expected,
-            actual
-        ))
-    }
-}
-
-fn map_update_error(error: impl std::fmt::Display, config: &GitHubConfig) -> CliError {
+fn map_update_error(error: self_update::errors::Error, config: &GitHubConfig) -> CliError {
     let error_msg = format!("{}", error);
     if error_msg.contains("permission") || error_msg.contains("Permission") {
         CliError::Internal(eyre!(
@@ -193,7 +89,7 @@ fn map_update_error(error: impl std::fmt::Display, config: &GitHubConfig) -> Cli
              Try running: sudo -E basilica upgrade",
             error
         ))
-    } else if error_msg.contains("not found") || error_msg.contains("404") {
+    } else if error.http_status() == Some(404) {
         CliError::Internal(eyre!(
             "Release not found. Please check that the version exists.\n\
              View available releases: https://github.com/{}/{}/releases",
@@ -271,40 +167,43 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
         .to_path_buf();
     let target = self_update::get_target();
     let target_version = extract_version_from_tag(&target_tag)
-        .ok_or_else(|| CliError::Internal(eyre!("Invalid release tag '{}'", target_tag)))?;
-    let target_version = target_version.to_string();
-    let archive_name = expected_asset_name(&target_version, target);
-    let checksum_name = format!("{archive_name}.sha256");
+        .ok_or_else(|| CliError::Internal(eyre!("Invalid release tag '{}'", target_tag)))?
+        .to_string();
+    let checksum_name = format!("{}.sha256", expected_asset_name(&target_version, target));
+
+    let mut update_builder = self_update::backends::github::Update::configure();
+    update_builder
+        .repo_owner(config.owner)
+        .repo_name(config.repo)
+        .bin_name(BINARY_NAME)
+        .bin_install_path(&bin_dir)
+        .current_version(current_version)
+        .show_download_progress(true)
+        .show_output(false)
+        .no_confirm(true)
+        .release_tag(&target_tag)
+        .timeout(DOWNLOAD_TIMEOUT);
 
     println!("Downloading release assets for {}", style(target).cyan());
 
-    let release = fetch_release(&config, current_version, &target_tag)
-        .map_err(|e| map_update_error(e, &config))?;
-    let archive_asset =
-        find_exact_asset(&release, &archive_name).map_err(|e| map_update_error(e, &config))?;
-    let checksum_asset =
-        find_exact_asset(&release, &checksum_name).map_err(|e| map_update_error(e, &config))?;
-
-    let temp_dir = self_update::TempDir::new()
-        .map_err(|e| CliError::Internal(eyre!("Failed to create temporary directory: {}", e)))?;
-    let archive_path = temp_dir.path().join(&archive_name);
-
-    download_url_to_path(&archive_asset.download_url, &archive_path, true)
-        .map_err(|e| map_update_error(e, &config))?;
-    let checksum_contents = download_url_to_string(&checksum_asset.download_url)
+    // Fetch release metadata up front to locate and verify the published checksum
+    // asset before any bytes of the running binary are touched.
+    let release = update_builder
+        .build()
+        .map_err(|e| CliError::Internal(eyre!("Failed to configure updater: {}", e)))?
+        .get_release_version(&target_tag)
         .map_err(|e| map_update_error(e, &config))?;
 
-    verify_archive_checksum(&archive_path, &checksum_contents).map_err(CliError::Internal)?;
+    let checksum_asset = find_exact_asset(&release, &checksum_name).map_err(CliError::Internal)?;
+    let checksum_contents =
+        download_url_to_string(checksum_asset.download_url()).map_err(CliError::Internal)?;
+    let expected_checksum = parse_sha256_file(&checksum_contents).ok_or_else(|| {
+        CliError::Internal(eyre!(
+            "Release checksum file did not contain a valid SHA-256 digest"
+        ))
+    })?;
 
-    println!("Extracting archive...");
-    self_update::Extract::from_source(&archive_path)
-        .archive(self_update::ArchiveKind::Tar(Some(
-            self_update::Compression::Gz,
-        )))
-        .extract_file(temp_dir.path(), BINARY_NAME)
-        .map_err(|e| map_update_error(e, &config))?;
-
-    let new_exe = temp_dir.path().join(BINARY_NAME);
+    update_builder.verify_checksum(Checksum::Sha256(expected_checksum));
 
     // Change CWD to the binary's directory so that self_replace's
     // read_link() → relative path resolves correctly
@@ -315,18 +214,21 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
         ))
     })?;
 
-    // The running binary is not touched until every fallible preparation step
-    // above has completed: download, checksum verification, and extraction.
-    self_update::self_replace::self_replace(&new_exe).map_err(|e| map_update_error(e, &config))?;
-    let status = self_update::Status::Updated(target_version);
+    // The running binary is not touched until the archive is downloaded and its
+    // checksum verified against the published `.sha256` asset configured above.
+    let status = update_builder
+        .build()
+        .map_err(|e| CliError::Internal(eyre!("Failed to configure updater: {}", e)))?
+        .update()
+        .map_err(|e| map_update_error(e, &config))?;
 
     // Display results
     match status {
-        self_update::Status::UpToDate(v) => {
+        self_update::VersionStatus::UpToDate(v) => {
             println!("{}", style("Already up to date!").green());
             println!("Current version: {}", style(v).cyan());
         }
-        self_update::Status::Updated(v) => {
+        self_update::VersionStatus::Updated(v) => {
             println!(
                 "\n{} Updated to version {}",
                 style("✓").green().bold(),
@@ -338,6 +240,11 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
                 style("basilica --version").cyan(),
                 style("bs --version").cyan()
             );
+        }
+        _ => {
+            return Err(CliError::Internal(eyre!(
+                "Updater returned an unsupported status"
+            )));
         }
     }
 
@@ -440,14 +347,6 @@ mod tests {
                 "zz7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad archive"
             ),
             None
-        );
-    }
-
-    #[test]
-    fn sha256_hex_hashes_known_bytes() {
-        assert_eq!(
-            sha256_hex(b"abc"),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }
 
