@@ -158,7 +158,7 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
         .repo_owner(config.owner)
         .repo_name(config.repo)
         .bin_name(BINARY_NAME)
-        .bin_install_path(&bin_dir)
+        .bin_install_path(&resolved_exe)
         .current_version(current_version)
         .show_download_progress(true)
         .show_output(false)
