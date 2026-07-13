@@ -143,6 +143,21 @@ fn compact_image_name(image: &str) -> String {
     }
 }
 
+fn middle_ellipsis(value: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    if chars.len() <= max_chars {
+        return value.to_string();
+    }
+    let available = max_chars.saturating_sub(1);
+    let prefix_len = available / 2;
+    let suffix_len = available - prefix_len;
+    format!(
+        "{}…{}",
+        chars[..prefix_len].iter().collect::<String>(),
+        chars[chars.len() - suffix_len..].iter().collect::<String>()
+    )
+}
+
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
 pub fn format_timestamp(timestamp: &str) -> String {
     DateTime::parse_from_rfc3339(timestamp)
@@ -165,7 +180,11 @@ fn format_duration(seconds: i64) -> String {
 }
 
 /// Display rental items in table format
-pub fn display_rental_items(rentals: &[ApiRentalListItem], output: ResolvedOutput) -> Result<()> {
+pub fn display_rental_items(
+    rentals: &[ApiRentalListItem],
+    access_hosts: &HashMap<String, String>,
+    output: ResolvedOutput,
+) -> Result<()> {
     if rentals.is_empty() {
         println!("{}", style("No Bourse rentals found").yellow());
         return Ok(());
@@ -238,7 +257,10 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], output: ResolvedOutpu
                 name: rental.name.clone(),
                 gpu,
                 state: rental.state.to_string(),
-                ip: "—".to_string(),
+                ip: access_hosts
+                    .get(&rental.rental_id)
+                    .cloned()
+                    .unwrap_or_else(|| "—".to_string()),
                 ports,
                 image: compact_image_name(&rental.container_image),
                 cpu_ram,
@@ -273,8 +295,10 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem], output: ResolvedOutpu
             name: rental.name.clone(),
             gpu: format_gpu_info(&rental.gpu_specs),
             state: rental.state.to_string(),
-            // The Bourse list response currently exposes only `has_ssh`, not the host.
-            ip: "—".to_string(),
+            ip: access_hosts
+                .get(&rental.rental_id)
+                .map(|host| middle_ellipsis(host, 22))
+                .unwrap_or_else(|| "—".to_string()),
             rate: rental
                 .hourly_cost
                 .map(|rate| format!("${rate:.2}/h"))
@@ -1699,6 +1723,15 @@ mod tests {
         );
         assert_eq!(compact_image_name("nvidia/cuda:12.4"), "nvidia/cuda");
         assert_eq!(compact_image_name("ubuntu@sha256:abc"), "ubuntu");
+    }
+
+    #[test]
+    fn access_hosts_use_middle_ellipsis() {
+        assert_eq!(middle_ellipsis("short.example", 22), "short.example");
+        let shortened = middle_ellipsis("ssh-a8f31234567890.basilica.ai", 22);
+        assert_eq!(shortened.chars().count(), 22);
+        assert!(shortened.starts_with("ssh-a8f312"));
+        assert!(shortened.ends_with("basilica.ai"));
     }
 
     #[test]

@@ -33,6 +33,7 @@ use color_eyre::eyre::eyre;
 use color_eyre::Section;
 use console::style;
 use dialoguer::Input;
+use futures::{stream, StreamExt};
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::io::IsTerminal;
@@ -403,6 +404,35 @@ fn citadel_total_hourly_cost<'a>(
 
 fn total_hourly_cost(hourly_costs: impl IntoIterator<Item = f64>) -> f64 {
     hourly_costs.into_iter().sum()
+}
+
+async fn bourse_access_hosts(
+    client: &basilica_sdk::BasilicaClient,
+    rentals: &[basilica_sdk::types::ApiRentalListItem],
+) -> HashMap<String, String> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    stream::iter(
+        rentals
+            .iter()
+            .filter(|rental| rental.has_ssh)
+            .map(|rental| {
+                let rental_id = rental.rental_id.clone();
+                async move {
+                    let status =
+                        tokio::time::timeout_at(deadline, client.get_rental_status(&rental_id))
+                            .await
+                            .ok()?
+                            .ok()?;
+                    let credentials = status.ssh_credentials?;
+                    let (host, _, _) = parse_ssh_credentials(&credentials).ok()?;
+                    Some((rental_id, host))
+                }
+            }),
+    )
+    .buffer_unordered(8)
+    .filter_map(|entry| async move { entry })
+    .collect()
+    .await
 }
 
 fn format_total_hourly_cost(hourly_cost: f64) -> String {
@@ -1402,12 +1432,22 @@ pub async fn handle_ps(
                     complete_spinner_error(spinner.clone(), "Failed to load rentals")
                 })?;
 
+                let access_hosts = if output.is_json() {
+                    HashMap::new()
+                } else {
+                    bourse_access_hosts(&api_client, &rentals_list.rentals).await
+                };
+
                 complete_spinner_and_clear(spinner);
 
                 if output.is_json() {
                     json_output(&rentals_list)?;
                 } else {
-                    table_output::display_rental_items(&rentals_list.rentals[..], output)?;
+                    table_output::display_rental_items(
+                        &rentals_list.rentals,
+                        &access_hosts,
+                        output,
+                    )?;
                     display_ps_footer(
                         rentals_list.rentals.len(),
                         bourse_total_hourly_cost(&rentals_list.rentals),
@@ -1782,6 +1822,12 @@ pub async fn handle_ps(
                     }
                 });
 
+                let access_hosts = if output.is_json() {
+                    HashMap::new()
+                } else {
+                    bourse_access_hosts(&api_client, &community_rentals_list.rentals).await
+                };
+
                 complete_spinner_and_clear(spinner);
 
                 if output.is_json() {
@@ -1797,7 +1843,8 @@ pub async fn handle_ps(
                     print_cloud_section_header("The Bourse", true);
 
                     table_output::display_rental_items(
-                        &community_rentals_list.rentals[..],
+                        &community_rentals_list.rentals,
+                        &access_hosts,
                         output,
                     )?;
 
