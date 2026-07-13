@@ -25,6 +25,7 @@ use tabled::{
 };
 
 pub(crate) const MIN_NAME_WIDTH: usize = 8;
+const MIN_GPU_WIDTH: usize = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RenderContext {
@@ -91,6 +92,13 @@ pub(crate) fn render_table_with_context(
 struct AdaptiveColumn {
     header: &'static str,
     drop_order: Option<usize>,
+    truncation: Option<ColumnTruncation>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ColumnTruncation {
+    order: usize,
+    min_width: usize,
 }
 
 impl AdaptiveColumn {
@@ -98,6 +106,15 @@ impl AdaptiveColumn {
         Self {
             header,
             drop_order: None,
+            truncation: None,
+        }
+    }
+
+    const fn required_truncatable(header: &'static str, order: usize, min_width: usize) -> Self {
+        Self {
+            header,
+            drop_order: None,
+            truncation: Some(ColumnTruncation { order, min_width }),
         }
     }
 
@@ -105,19 +122,20 @@ impl AdaptiveColumn {
         Self {
             header,
             drop_order: Some(drop_order),
+            truncation: None,
         }
     }
 }
 
 const LS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
-    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::required_truncatable("GPU", 1, MIN_GPU_WIDTH),
     AdaptiveColumn::required("Available"),
     AdaptiveColumn::required("Price/hr"),
 ];
 
 const LS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::optional("PROVIDER", 4),
-    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::required_truncatable("GPU", 1, MIN_GPU_WIDTH),
     AdaptiveColumn::required("VRAM"),
     AdaptiveColumn::optional("CPU/RAM", 1),
     AdaptiveColumn::optional("STORAGE", 2),
@@ -135,8 +153,8 @@ const LS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
 ];
 
 const PS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
-    AdaptiveColumn::required("Name"),
-    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::required_truncatable("GPU", 2, MIN_GPU_WIDTH),
     AdaptiveColumn::optional("State", 7),
     AdaptiveColumn::required("IP"),
     AdaptiveColumn::optional("Ports (Host → Container)", 5),
@@ -149,9 +167,9 @@ const PS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
 ];
 
 const PS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
-    AdaptiveColumn::required("Name"),
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
     AdaptiveColumn::optional("Provider", 4),
-    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::required_truncatable("GPU", 2, MIN_GPU_WIDTH),
     AdaptiveColumn::optional("State", 6),
     AdaptiveColumn::required("IP"),
     AdaptiveColumn::optional("CPU/RAM", 2),
@@ -162,7 +180,7 @@ const PS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
 ];
 
 const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
-    AdaptiveColumn::required("Name"),
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
     AdaptiveColumn::optional("Provider", 3),
     AdaptiveColumn::required("Size"),
     AdaptiveColumn::optional("State", 5),
@@ -176,20 +194,11 @@ const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
 struct AdaptiveTable {
     columns: Vec<AdaptiveColumn>,
     rows: Vec<Vec<String>>,
-    flexible_column: Option<usize>,
 }
 
 impl AdaptiveTable {
-    fn new(
-        columns: Vec<AdaptiveColumn>,
-        rows: Vec<Vec<String>>,
-        flexible_column: Option<usize>,
-    ) -> Self {
-        Self {
-            columns,
-            rows,
-            flexible_column,
-        }
+    fn new(columns: Vec<AdaptiveColumn>, rows: Vec<Vec<String>>) -> Self {
+        Self { columns, rows }
     }
 
     fn all_columns(&self) -> Vec<usize> {
@@ -242,13 +251,38 @@ impl AdaptiveTable {
         table
     }
 
-    fn flexible_width(&self) -> Option<usize> {
-        let index = self.flexible_column?;
-        self.rows
+    fn column_width(&self, index: usize) -> Option<usize> {
+        let header_width = self
+            .columns
+            .get(index)
+            .map(|column| get_text_width(column.header))?;
+        Some(
+            self.rows
+                .iter()
+                .filter_map(|row| row.get(index))
+                .map(|value| get_text_width(value))
+                .max()
+                .unwrap_or_default()
+                .max(header_width),
+        )
+    }
+
+    fn truncatable_columns(
+        &self,
+        active_columns: &[usize],
+    ) -> Vec<(usize, usize, ColumnTruncation)> {
+        let mut columns: Vec<_> = active_columns
             .iter()
-            .filter_map(|row| row.get(index))
-            .map(|value| get_text_width(value))
-            .max()
+            .enumerate()
+            .filter_map(|(position, &source_index)| {
+                self.columns
+                    .get(source_index)?
+                    .truncation
+                    .map(|truncation| (position, source_index, truncation))
+            })
+            .collect();
+        columns.sort_by_key(|(_, _, truncation)| truncation.order);
+        columns
     }
 }
 
@@ -258,25 +292,26 @@ fn fit_required_table(
     active_columns: &[usize],
     width: usize,
 ) -> String {
-    let overflow = table.total_width().saturating_sub(width);
-    if overflow == 0 {
-        return table.to_string();
-    }
-
-    if let (Some(source_index), Some(natural_width)) =
-        (adaptive.flexible_column, adaptive.flexible_width())
-    {
-        if let Some(position) = active_columns
-            .iter()
-            .position(|&index| index == source_index)
-        {
-            let target = natural_width.saturating_sub(overflow).max(MIN_NAME_WIDTH);
-            if target < natural_width {
-                table.with(
-                    Modify::new(Columns::new(position..position + 1))
-                        .with(Width::truncate(target).suffix("…")),
-                );
-            }
+    for (position, source_index, truncation) in adaptive.truncatable_columns(active_columns) {
+        let overflow = table.total_width().saturating_sub(width);
+        if overflow == 0 {
+            break;
+        }
+        let Some(natural_width) = adaptive.column_width(source_index) else {
+            continue;
+        };
+        let header_width = adaptive
+            .columns
+            .get(source_index)
+            .map(|column| get_text_width(column.header))
+            .unwrap_or_default();
+        let floor = truncation.min_width.max(header_width);
+        let target = natural_width.saturating_sub(overflow).max(floor);
+        if target < natural_width {
+            table.with(
+                Modify::new(Columns::new(position..position + 1))
+                    .with(Width::truncate(target).suffix("…")),
+            );
         }
     }
 
@@ -387,6 +422,24 @@ fn compact_image_name(image: &str) -> String {
     }
 }
 
+fn strip_ascii_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    let candidate = value.get(..prefix.len())?;
+    candidate
+        .eq_ignore_ascii_case(prefix)
+        .then(|| value.get(prefix.len()..))
+        .flatten()
+}
+
+fn compact_gpu_model_name(model: &str) -> String {
+    let without_vendor = strip_ascii_prefix(model.trim(), "NVIDIA ")
+        .unwrap_or(model.trim())
+        .trim_start();
+    strip_ascii_prefix(without_vendor, "BLACKWELL ")
+        .unwrap_or(without_vendor)
+        .trim_start()
+        .to_string()
+}
+
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
 pub fn format_timestamp(timestamp: &str) -> String {
     DateTime::parse_from_rfc3339(timestamp)
@@ -408,6 +461,10 @@ fn format_duration(seconds: i64) -> String {
     }
 }
 
+fn format_hourly_price(rate: impl std::fmt::Display) -> String {
+    format!("${rate:.2}")
+}
+
 /// Display rental items in table format
 pub fn display_rental_items(
     rentals: &[ApiRentalListItem],
@@ -423,7 +480,7 @@ pub fn display_rental_items(
     let get_rental_pricing = |rental: &ApiRentalListItem| -> (String, String) {
         let rate = rental
             .hourly_cost
-            .map(|r| format!("${:.2}/hr", r))
+            .map(format_hourly_price)
             .unwrap_or_else(|| "-".to_string());
 
         let cost = rental
@@ -523,7 +580,6 @@ pub fn display_rental_items(
                 ]
             })
             .collect(),
-        Some(0),
     );
     let rendered =
         render_adaptive_table_with_context(Table::new(wide_rows), adaptive, output, context);
@@ -566,21 +622,22 @@ fn format_gpu_info(gpu_specs: &[GpuSpec]) -> String {
 
     // Check if all GPUs are the same
     let first_gpu = &gpu_specs[0];
+    let first_gpu_name = compact_gpu_model_name(&first_gpu.name);
     let all_same = gpu_specs
         .iter()
         .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
 
     if all_same {
         if gpu_specs.len() > 1 {
-            format!("{}x {}", gpu_specs.len(), first_gpu.name)
+            format!("{}x {}", gpu_specs.len(), first_gpu_name)
         } else {
-            format!("1x {}", first_gpu.name)
+            format!("1x {first_gpu_name}")
         }
     } else {
         // List each GPU
         gpu_specs
             .iter()
-            .map(|g| g.name.clone())
+            .map(|g| compact_gpu_model_name(&g.name))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -752,10 +809,11 @@ pub fn display_community_cloud_categories(
     let rows: Vec<CategoryRow> = aggregations
         .iter()
         .map(|agg| {
+            let gpu_category = compact_gpu_model_name(&agg.gpu_category);
             let gpu = if agg.gpu_count > 1 {
-                format!("{}x {}", agg.gpu_count, agg.gpu_category)
+                format!("{}x {gpu_category}", agg.gpu_count)
             } else {
-                agg.gpu_category.clone()
+                gpu_category
             };
 
             let multiplier = agg.gpu_count as f64;
@@ -786,7 +844,6 @@ pub fn display_community_cloud_categories(
         rows.iter()
             .map(|row| vec![row.gpu.clone(), row.available.clone(), row.price.clone()])
             .collect(),
-        None,
     );
     let rendered = render_adaptive_table_with_context(
         Table::new(rows),
@@ -836,10 +893,11 @@ pub fn display_secure_cloud_offerings_detailed(
         .iter()
         .map(|offering| {
             let gpu_info = {
+                let gpu_type = compact_gpu_model_name(&offering.gpu_type.to_string());
                 let base = if offering.gpu_count == 1 {
-                    offering.gpu_type.to_string()
+                    gpu_type
                 } else {
-                    format!("{}x {}", offering.gpu_count, offering.gpu_type)
+                    format!("{}x {gpu_type}", offering.gpu_count)
                 };
                 if offering.is_spot {
                     format!("{} (Spot)", base)
@@ -869,7 +927,7 @@ pub fn display_secure_cloud_offerings_detailed(
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
                 region: offering.region.clone(),
-                price: format!("${:.2}/hr", total_hourly_cost),
+                price: format_hourly_price(total_hourly_cost),
             }
         })
         .collect();
@@ -890,7 +948,6 @@ pub fn display_secure_cloud_offerings_detailed(
                 ]
             })
             .collect(),
-        None,
     );
     let rendered = render_adaptive_table_with_context(
         Table::new(rows),
@@ -1453,10 +1510,11 @@ pub fn display_secure_cloud_rentals(
         .iter()
         .map(|rental| {
             let gpu_str = {
+                let gpu_type = compact_gpu_model_name(&rental.gpu_type.to_uppercase());
                 let base = if rental.gpu_count > 1 {
-                    format!("{}x {}", rental.gpu_count, rental.gpu_type.to_uppercase())
+                    format!("{}x {gpu_type}", rental.gpu_count)
                 } else {
-                    rental.gpu_type.to_uppercase()
+                    gpu_type
                 };
                 if rental.is_spot {
                     format!("{} (Spot)", base)
@@ -1488,7 +1546,7 @@ pub fn display_secure_cloud_rentals(
                     .location_code
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
-                hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
+                hourly_cost: format_hourly_price(rental.hourly_cost),
                 total_cost,
                 created: format_created(rental.created_at),
             }
@@ -1515,7 +1573,6 @@ pub fn display_secure_cloud_rentals(
                 ]
             })
             .collect(),
-        Some(0),
     );
     let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
     println!("{rendered}");
@@ -1561,10 +1618,7 @@ pub fn display_cpu_offerings_detailed(
                 "-".to_string()
             },
             region: offering.region.clone(),
-            price: format!(
-                "${:.2}/hr",
-                offering.hourly_rate.parse::<f64>().unwrap_or(0.0)
-            ),
+            price: format_hourly_price(offering.hourly_rate.parse::<f64>().unwrap_or(0.0)),
         })
         .collect();
 
@@ -1581,7 +1635,6 @@ pub fn display_cpu_offerings_detailed(
                 ]
             })
             .collect(),
-        None,
     );
     let rendered = render_adaptive_table_with_context(
         Table::new(rows),
@@ -1653,7 +1706,7 @@ pub fn display_cpu_rentals(
                     .location_code
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
-                hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
+                hourly_cost: format_hourly_price(rental.hourly_cost),
                 total_cost,
                 created: format_created(rental.created_at),
             }
@@ -1679,7 +1732,6 @@ pub fn display_cpu_rentals(
                 ]
             })
             .collect(),
-        Some(0),
     );
     let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
     println!("{rendered}");
@@ -1802,7 +1854,7 @@ mod tests {
         }]);
         let adaptive = AdaptiveTable::new(
             vec![
-                AdaptiveColumn::required("Name"),
+                AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
                 AdaptiveColumn::optional("Low", 1),
                 AdaptiveColumn::optional("High", 2),
                 AdaptiveColumn::required("Age"),
@@ -1813,7 +1865,6 @@ mod tests {
                 "high-value".to_string(),
                 "2h".to_string(),
             ]],
-            Some(0),
         );
         (wide, adaptive)
     }
@@ -1980,16 +2031,55 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_required_table_truncates_each_eligible_column_in_order() {
+        let name = "training-rental-with-a-very-long-name";
+        let gpu = "gpu-model-with-a-very-long-name";
+        let adaptive = AdaptiveTable::new(
+            vec![
+                AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+                AdaptiveColumn::required_truncatable("GPU", 2, MIN_GPU_WIDTH),
+                AdaptiveColumn::required("Region"),
+            ],
+            vec![vec![
+                name.to_string(),
+                gpu.to_string(),
+                "us-silicon-valley-1".to_string(),
+            ]],
+        );
+        let required_width = adaptive.build(&[0, 1, 2]).total_width();
+        let width = required_width - (get_text_width(name) - MIN_NAME_WIDTH) - 5;
+        let rendered = render_adaptive_table_with_context(
+            Table::new([AdaptiveWideTestRow {
+                name: name.to_string(),
+                low: gpu.to_string(),
+                high: "us-silicon-valley-1".to_string(),
+                created: "2026-07-13 12:00:00 UTC".to_string(),
+            }]),
+            adaptive,
+            ResolvedOutput::Compact,
+            RenderContext {
+                is_tty: true,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        assert!(rendered.contains("trainin…"));
+        assert!(!rendered.contains(gpu));
+        assert!(rendered.contains("us-silicon-valley-1"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= width));
+    }
+
+    #[test]
     fn adaptive_name_truncation_uses_tabled_width_for_osc8_links() {
         let label = "training-rental-with-a-very-long-name";
         let linked_name = format!("\x1b]8;;https://example.com\x1b\\{label}\x1b]8;;\x1b\\");
         let adaptive = AdaptiveTable::new(
             vec![
-                AdaptiveColumn::required("Name"),
+                AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
                 AdaptiveColumn::required("Age"),
             ],
             vec![vec![linked_name, "2h".to_string()]],
-            Some(0),
         );
         let required_width = adaptive.build(&[0, 1]).total_width();
         let width = required_width - (get_text_width(label) - MIN_NAME_WIDTH);
@@ -2026,6 +2116,17 @@ mod tests {
         columns
             .iter()
             .map(|column| (column.header, column.drop_order))
+            .collect()
+    }
+
+    fn truncation_schema(columns: &[AdaptiveColumn]) -> Vec<(&'static str, usize, usize)> {
+        columns
+            .iter()
+            .filter_map(|column| {
+                column
+                    .truncation
+                    .map(|rule| (column.header, rule.order, rule.min_width))
+            })
             .collect()
     }
 
@@ -2110,6 +2211,31 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_truncation_rules_preserve_non_truncatable_required_columns() {
+        assert_eq!(
+            truncation_schema(LS_BOURSE_COLUMNS),
+            vec![("GPU", 1, MIN_GPU_WIDTH)]
+        );
+        assert_eq!(
+            truncation_schema(LS_CITADEL_GPU_COLUMNS),
+            vec![("GPU", 1, MIN_GPU_WIDTH)]
+        );
+        assert!(truncation_schema(LS_CITADEL_CPU_COLUMNS).is_empty());
+        assert_eq!(
+            truncation_schema(PS_BOURSE_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH), ("GPU", 2, MIN_GPU_WIDTH),]
+        );
+        assert_eq!(
+            truncation_schema(PS_CITADEL_GPU_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH), ("GPU", 2, MIN_GPU_WIDTH),]
+        );
+        assert_eq!(
+            truncation_schema(PS_CITADEL_CPU_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH)]
+        );
+    }
+
+    #[test]
     fn relative_age_uses_injected_clock() {
         let now = DateTime::parse_from_rfc3339("2026-07-13T12:00:00Z")
             .unwrap()
@@ -2128,6 +2254,22 @@ mod tests {
         );
         assert_eq!(compact_image_name("nvidia/cuda:12.4"), "nvidia/cuda");
         assert_eq!(compact_image_name("ubuntu@sha256:abc"), "ubuntu");
+    }
+
+    #[test]
+    fn gpu_names_drop_redundant_vendor_and_architecture_prefixes() {
+        assert_eq!(
+            compact_gpu_model_name("NVIDIA BLACKWELL RTX PRO 6000"),
+            "RTX PRO 6000"
+        );
+        assert_eq!(compact_gpu_model_name("blackwell b200"), "b200");
+        assert_eq!(compact_gpu_model_name("RTX A6000"), "RTX A6000");
+    }
+
+    #[test]
+    fn hourly_prices_do_not_repeat_the_header_unit() {
+        assert_eq!(format_hourly_price(0.23), "$0.23");
+        assert_eq!(format_hourly_price(Decimal::new(55, 2)), "$0.55");
     }
 
     #[test]
