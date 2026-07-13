@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `ls`, `ps`, `tokens list`, `fund list`, `volumes list`, and `deploy ls` now
+  support `--output auto|compact|wide|json`. The default `auto` mode adapts
+  columns to interactive terminal width while non-interactive output remains
+  wide and stable for scripts.
+
+### Changed
+- CLI tables now prioritize useful columns on narrow terminals, keep long
+  deployment URLs actionable, and use consistent headers and hourly pricing.
+- Interactive `basilica ps` output now summarizes the total rentals, combined
+  hourly price, and accrued cost.
+
 ### Fixed
+- `basilica ps` now resolves Bourse SSH hosts for human-readable output, so
+  access addresses are available alongside Citadel rental addresses.
 - `basilica deploy` with `--private` now prints the one-time share token after
   waiting for the deployment to become ready. The token is only returned by
   the create call, so the ready-wait status response dropped it and the CLI
