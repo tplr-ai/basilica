@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `basilica deploy` with `--private` now prints the one-time share token after
+  waiting for the deployment to become ready. The token is only returned by
+  the create call, so the ready-wait status response dropped it and the CLI
+  always warned `Share token was not generated` even when a token existed.
+- `basilica deploy --private --detach` now prints the share token before
+  exiting; previously detached mode never displayed it, and the token cannot
+  be retrieved later.
+
 ### Security
 - `basilica upgrade` now verifies the downloaded release archive against the
   published `.sha256` asset before replacing the running binary.
