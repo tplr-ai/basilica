@@ -1,6 +1,8 @@
 //! GPU rental command handlers
 
-use crate::cli::commands::{ComputeCategoryArg, ListFilters, LogsOptions, PsFilters, UpOptions};
+use crate::cli::commands::{
+    ComputeCategoryArg, ListFilters, LogsOptions, PsFilters, ResolvedOutput, UpOptions,
+};
 use crate::cli::handlers::deploy::helpers::stream_logs_to_stdout;
 use crate::cli::handlers::gpu_rental_helpers::{
     active_rentals_query, get_ssh_private_key_path, print_cloud_section_header,
@@ -31,8 +33,10 @@ use color_eyre::eyre::eyre;
 use color_eyre::Section;
 use console::style;
 use dialoguer::Input;
+use futures::{stream, StreamExt};
 use reqwest::StatusCode;
 use std::collections::HashMap;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
@@ -328,19 +332,23 @@ async fn fetch_and_filter_community_cloud(
 /// Helper function to display secure cloud GPUs
 fn display_secure_cloud_table(
     gpus: &[basilica_common::types::GpuOffering],
+    output: ResolvedOutput,
 ) -> Result<(), CliError> {
     if gpus.is_empty() {
         print_info("No GPUs available matching your criteria");
         return Ok(());
     }
 
-    table_output::display_secure_cloud_offerings_detailed(gpus)?;
+    table_output::display_secure_cloud_offerings_detailed(gpus, output)?;
 
     Ok(())
 }
 
 /// Helper function to display community cloud nodes (aggregated by GPU category)
-fn display_community_cloud_table(nodes: &[basilica_sdk::AvailableNode]) -> Result<(), CliError> {
+fn display_community_cloud_table(
+    nodes: &[basilica_sdk::AvailableNode],
+    output: ResolvedOutput,
+) -> Result<(), CliError> {
     if nodes.is_empty() {
         print_info("No GPUs available matching your criteria");
         return Ok(());
@@ -348,7 +356,7 @@ fn display_community_cloud_table(nodes: &[basilica_sdk::AvailableNode]) -> Resul
 
     use crate::cli::handlers::gpu_rental_helpers::aggregate_nodes_by_gpu_category;
     let aggregations = aggregate_nodes_by_gpu_category(nodes);
-    table_output::display_community_cloud_categories(&aggregations)?;
+    table_output::display_community_cloud_categories(&aggregations, output)?;
 
     Ok(())
 }
@@ -401,19 +409,63 @@ fn total_hourly_cost(hourly_costs: impl IntoIterator<Item = f64>) -> f64 {
     hourly_costs.into_iter().sum()
 }
 
-fn format_total_hourly_cost(hourly_cost: f64) -> String {
-    // Normalize signed zero so Rust does not format it as "$-0.00/hr".
-    let display_cost = if hourly_cost == 0.0 { 0.0 } else { hourly_cost };
-    format!("${:.2}/hr", display_cost)
+async fn bourse_access_hosts(
+    client: &basilica_sdk::BasilicaClient,
+    rentals: &[basilica_sdk::types::ApiRentalListItem],
+) -> HashMap<String, String> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    stream::iter(
+        rentals
+            .iter()
+            .filter(|rental| rental.has_ssh)
+            .map(|rental| {
+                let rental_id = rental.rental_id.clone();
+                async move {
+                    let status =
+                        tokio::time::timeout_at(deadline, client.get_rental_status(&rental_id))
+                            .await
+                            .ok()?
+                            .ok()?;
+                    let credentials = status.ssh_credentials?;
+                    let (host, _, _) = parse_ssh_credentials(&credentials).ok()?;
+                    Some((rental_id, host))
+                }
+            }),
+    )
+    .buffer_unordered(8)
+    .filter_map(|entry| async move { entry })
+    .collect()
+    .await
 }
 
-fn display_total_hourly_cost(hourly_cost: f64) {
-    println!();
-    println!(
-        "{}: {}",
-        style("Total hourly cost").cyan(),
-        style(format_total_hourly_cost(hourly_cost)).green().bold()
-    );
+fn format_total_hourly_cost(hourly_cost: f64) -> String {
+    // Normalize signed zero so Rust does not format it as "$-0.00/h".
+    let display_cost = if hourly_cost == 0.0 { 0.0 } else { hourly_cost };
+    format!("${:.2}/h", display_cost)
+}
+
+fn accrued_cost<'a>(costs: impl IntoIterator<Item = Option<&'a str>>) -> rust_decimal::Decimal {
+    costs
+        .into_iter()
+        .flatten()
+        .filter_map(|cost| cost.parse::<rust_decimal::Decimal>().ok())
+        .sum()
+}
+
+fn format_ps_footer(count: usize, hourly_cost: f64, accrued: rust_decimal::Decimal) -> String {
+    format!(
+        "Total rentals: {}\nCombined hourly price: {}\nAccrued cost: {}",
+        count,
+        format_total_hourly_cost(hourly_cost),
+        format_usd(&accrued.to_string())
+    )
+}
+
+fn display_ps_footer(count: usize, hourly_cost: f64, accrued: rust_decimal::Decimal) {
+    if std::io::stdout().is_terminal() {
+        println!();
+        println!("{}", format_ps_footer(count, hourly_cost, accrued));
+    }
 }
 
 fn is_secure_cpu_history_item(rental: &HistoricalRentalItem) -> bool {
@@ -467,7 +519,7 @@ pub async fn handle_ls(
     gpu_category: Option<GpuCategory>,
     filters: ListFilters,
     compute: Option<ComputeCategoryArg>,
-    json: bool,
+    output: ResolvedOutput,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     let api_client = create_authenticated_client(config).await?;
@@ -505,7 +557,7 @@ pub async fn handle_ls(
                 vec![]
             };
 
-            if json {
+            if output.is_json() {
                 #[derive(serde::Serialize)]
                 struct CombinedSecureCloudOfferings<'a> {
                     gpu_offerings: &'a [basilica_common::types::GpuOffering],
@@ -520,13 +572,13 @@ pub async fn handle_ls(
             } else {
                 // Display GPU offerings section
                 println!("{}", style("GPU Offerings").bold().cyan());
-                display_secure_cloud_table(&filtered_gpus)?;
+                display_secure_cloud_table(&filtered_gpus, output)?;
 
                 // Only display CPU offerings section if no GPU type filter
                 if show_cpu {
                     println!();
                     println!("{}", style("The Citadel (CPU)").bold().cyan());
-                    table_output::display_cpu_offerings_detailed(&filtered_cpu)?;
+                    table_output::display_cpu_offerings_detailed(&filtered_cpu, output)?;
                 }
             }
         }
@@ -538,7 +590,7 @@ pub async fn handle_ls(
             complete_spinner_and_clear(spinner);
             let (nodes, _pricing_map) = result?;
 
-            if json {
+            if output.is_json() {
                 // Create a simple response structure for JSON output
                 #[derive(serde::Serialize)]
                 struct NodesResponse<'a> {
@@ -549,7 +601,7 @@ pub async fn handle_ls(
                 };
                 json_output(&response)?;
             } else {
-                display_community_cloud_table(&nodes)?;
+                display_community_cloud_table(&nodes, output)?;
             }
         }
         None => {
@@ -618,7 +670,7 @@ pub async fn handle_ls(
                 vec![]
             };
 
-            if json {
+            if output.is_json() {
                 #[derive(serde::Serialize)]
                 struct CombinedResponse<'a> {
                     secure_cloud: &'a [basilica_common::types::GpuOffering],
@@ -634,19 +686,19 @@ pub async fn handle_ls(
                 json_output(&response)?;
             } else {
                 print_cloud_section_header("The Bourse (GPU)", true);
-                display_community_cloud_table(&community_nodes)?;
+                display_community_cloud_table(&community_nodes, output)?;
 
                 println!();
 
                 print_cloud_section_header("The Citadel (GPU)", false);
-                display_secure_cloud_table(&secure_gpus)?;
+                display_secure_cloud_table(&secure_gpus, output)?;
 
                 // Only display CPU offerings section if no GPU type filter
                 if show_cpu {
                     println!();
 
                     print_cloud_section_header("The Citadel (CPU)", false);
-                    table_output::display_cpu_offerings_detailed(&filtered_cpu)?;
+                    table_output::display_cpu_offerings_detailed(&filtered_cpu, output)?;
                 }
             }
         }
@@ -1310,7 +1362,7 @@ pub async fn handle_up(
 pub async fn handle_ps(
     filters: PsFilters,
     compute: Option<ComputeCategoryArg>,
-    json: bool,
+    output: ResolvedOutput,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     use basilica_common::types::ComputeCategory;
@@ -1335,7 +1387,7 @@ pub async fn handle_ps(
 
                 complete_spinner_and_clear(spinner);
 
-                if json {
+                if output.is_json() {
                     json_output(&history)?;
                 } else {
                     // Filter to only community cloud rentals and sort by start time (most recent first)
@@ -1346,7 +1398,7 @@ pub async fn handle_ps(
                         .collect();
                     community_history.sort_by_key(|r| std::cmp::Reverse(r.started_at));
 
-                    table_output::display_rental_history(&community_history)?;
+                    table_output::display_rental_history(&community_history, output)?;
 
                     // Calculate total cost for community cloud only
                     let total_cost: rust_decimal::Decimal = community_history
@@ -1382,15 +1434,32 @@ pub async fn handle_ps(
                     complete_spinner_error(spinner.clone(), "Failed to load rentals")
                 })?;
 
+                let access_hosts = if output.is_json() {
+                    HashMap::new()
+                } else {
+                    bourse_access_hosts(&api_client, &rentals_list.rentals).await
+                };
+
                 complete_spinner_and_clear(spinner);
 
-                if json {
+                if output.is_json() {
                     json_output(&rentals_list)?;
                 } else {
-                    table_output::display_rental_items(&rentals_list.rentals[..])?;
-
-                    println!("\nTotal: {} active rentals", rentals_list.rentals.len());
-                    display_total_hourly_cost(bourse_total_hourly_cost(&rentals_list.rentals));
+                    table_output::display_rental_items(
+                        &rentals_list.rentals,
+                        &access_hosts,
+                        output,
+                    )?;
+                    display_ps_footer(
+                        rentals_list.rentals.len(),
+                        bourse_total_hourly_cost(&rentals_list.rentals),
+                        accrued_cost(
+                            rentals_list
+                                .rentals
+                                .iter()
+                                .map(|rental| rental.accumulated_cost.as_deref()),
+                        ),
+                    );
 
                     display_ps_quick_start_commands();
                 }
@@ -1409,7 +1478,7 @@ pub async fn handle_ps(
 
                 complete_spinner_and_clear(spinner);
 
-                if json {
+                if output.is_json() {
                     use serde_json::json;
                     let mut secure_gpu_history: Vec<_> = history
                         .rentals
@@ -1449,7 +1518,7 @@ pub async fn handle_ps(
                     secure_cpu_history.sort_by_key(|r| std::cmp::Reverse(r.started_at));
 
                     print_cloud_section_header("The Citadel (GPU) Rental History", true);
-                    table_output::display_rental_history(&secure_gpu_history)?;
+                    table_output::display_rental_history(&secure_gpu_history, output)?;
 
                     let secure_gpu_total_cost: rust_decimal::Decimal = secure_gpu_history
                         .iter()
@@ -1472,7 +1541,7 @@ pub async fn handle_ps(
                     println!();
 
                     print_cloud_section_header("The Citadel (CPU) History", false);
-                    table_output::display_cpu_rental_history(&secure_cpu_history)?;
+                    table_output::display_cpu_rental_history(&secure_cpu_history, output)?;
 
                     let secure_cpu_total_cost: rust_decimal::Decimal = secure_cpu_history
                         .iter()
@@ -1516,7 +1585,7 @@ pub async fn handle_ps(
 
                 complete_spinner_and_clear(spinner);
 
-                if json {
+                if output.is_json() {
                     use serde_json::json;
                     let output = json!({
                         "gpu_rentals": gpu_rentals_list,
@@ -1531,12 +1600,7 @@ pub async fn handle_ps(
                             .collect();
 
                     println!("{}", style("The Citadel (GPU)").bold().cyan());
-                    table_output::display_secure_cloud_rentals(&gpu_rentals_to_display)?;
-
-                    println!(
-                        "\nTotal: {} Citadel (GPU) rentals",
-                        gpu_rentals_to_display.len()
-                    );
+                    table_output::display_secure_cloud_rentals(&gpu_rentals_to_display, output)?;
 
                     println!();
 
@@ -1548,12 +1612,7 @@ pub async fn handle_ps(
                         .collect();
 
                     println!("{}", style("The Citadel (CPU)").bold().cyan());
-                    table_output::display_cpu_rentals(&cpu_rentals_to_display)?;
-
-                    println!(
-                        "\nTotal: {} Citadel (CPU) rentals",
-                        cpu_rentals_to_display.len()
-                    );
+                    table_output::display_cpu_rentals(&cpu_rentals_to_display, output)?;
 
                     let total_hourly_cost = citadel_total_hourly_cost(
                         gpu_rentals_to_display
@@ -1561,7 +1620,17 @@ pub async fn handle_ps(
                             .chain(cpu_rentals_to_display.iter())
                             .copied(),
                     );
-                    display_total_hourly_cost(total_hourly_cost);
+                    let accrued = accrued_cost(
+                        gpu_rentals_to_display
+                            .iter()
+                            .chain(cpu_rentals_to_display.iter())
+                            .map(|rental| rental.accumulated_cost.as_deref()),
+                    );
+                    display_ps_footer(
+                        gpu_rentals_to_display.len() + cpu_rentals_to_display.len(),
+                        total_hourly_cost,
+                        accrued,
+                    );
 
                     display_ps_quick_start_commands();
                 }
@@ -1594,7 +1663,7 @@ pub async fn handle_ps(
 
                 complete_spinner_and_clear(spinner);
 
-                if json {
+                if output.is_json() {
                     use serde_json::json;
                     // Split history by cloud type and sort by start time (most recent first)
                     let mut community_history: Vec<_> = history
@@ -1649,7 +1718,7 @@ pub async fn handle_ps(
 
                     // Display community cloud history
                     print_cloud_section_header("The Bourse History", true);
-                    table_output::display_rental_history(&community_history)?;
+                    table_output::display_rental_history(&community_history, output)?;
 
                     let community_total_cost: rust_decimal::Decimal = community_history
                         .iter()
@@ -1673,7 +1742,7 @@ pub async fn handle_ps(
 
                     // Display secure cloud GPU history
                     print_cloud_section_header("The Citadel (GPU) History", false);
-                    table_output::display_rental_history(&secure_gpu_history)?;
+                    table_output::display_rental_history(&secure_gpu_history, output)?;
 
                     let secure_gpu_total_cost: rust_decimal::Decimal = secure_gpu_history
                         .iter()
@@ -1697,7 +1766,7 @@ pub async fn handle_ps(
 
                     // Display secure cloud CPU history
                     print_cloud_section_header("The Citadel (CPU) History", false);
-                    table_output::display_cpu_rental_history(&secure_cpu_history)?;
+                    table_output::display_cpu_rental_history(&secure_cpu_history, output)?;
 
                     let secure_cpu_total_cost: rust_decimal::Decimal = secure_cpu_history
                         .iter()
@@ -1755,9 +1824,15 @@ pub async fn handle_ps(
                     }
                 });
 
+                let access_hosts = if output.is_json() {
+                    HashMap::new()
+                } else {
+                    bourse_access_hosts(&api_client, &community_rentals_list.rentals).await
+                };
+
                 complete_spinner_and_clear(spinner);
 
-                if json {
+                if output.is_json() {
                     use serde_json::json;
                     let output = json!({
                         "community_cloud": community_rentals_list,
@@ -1769,12 +1844,11 @@ pub async fn handle_ps(
                     // Section 1: Community Cloud
                     print_cloud_section_header("The Bourse", true);
 
-                    table_output::display_rental_items(&community_rentals_list.rentals[..])?;
-
-                    println!(
-                        "\nTotal: {} Bourse rentals",
-                        community_rentals_list.rentals.len()
-                    );
+                    table_output::display_rental_items(
+                        &community_rentals_list.rentals,
+                        &access_hosts,
+                        output,
+                    )?;
 
                     println!();
 
@@ -1786,12 +1860,7 @@ pub async fn handle_ps(
                             .into_iter()
                             .collect();
 
-                    table_output::display_secure_cloud_rentals(&secure_rentals_to_display)?;
-
-                    println!(
-                        "\nTotal: {} Citadel (GPU) rentals",
-                        secure_rentals_to_display.len()
-                    );
+                    table_output::display_secure_cloud_rentals(&secure_rentals_to_display, output)?;
 
                     println!();
 
@@ -1804,12 +1873,7 @@ pub async fn handle_ps(
                         .filter(|r| r.stopped_at.is_none() && r.gpu_count == 0)
                         .collect();
 
-                    table_output::display_cpu_rentals(&cpu_rentals_to_display)?;
-
-                    println!(
-                        "\nTotal: {} Citadel (CPU) rentals",
-                        cpu_rentals_to_display.len()
-                    );
+                    table_output::display_cpu_rentals(&cpu_rentals_to_display, output)?;
 
                     let total_hourly_cost =
                         bourse_total_hourly_cost(&community_rentals_list.rentals)
@@ -1819,7 +1883,25 @@ pub async fn handle_ps(
                                     .chain(cpu_rentals_to_display.iter())
                                     .copied(),
                             );
-                    display_total_hourly_cost(total_hourly_cost);
+                    let accrued = accrued_cost(
+                        community_rentals_list
+                            .rentals
+                            .iter()
+                            .map(|rental| rental.accumulated_cost.as_deref())
+                            .chain(
+                                secure_rentals_to_display
+                                    .iter()
+                                    .chain(cpu_rentals_to_display.iter())
+                                    .map(|rental| rental.accumulated_cost.as_deref()),
+                            ),
+                    );
+                    display_ps_footer(
+                        community_rentals_list.rentals.len()
+                            + secure_rentals_to_display.len()
+                            + cpu_rentals_to_display.len(),
+                        total_hourly_cost,
+                        accrued,
+                    );
 
                     display_ps_quick_start_commands();
                 }
@@ -3228,9 +3310,12 @@ fn display_ps_quick_start_commands() {
 
 #[cfg(test)]
 mod tests {
-    use super::{exec_status_result, format_total_hourly_cost, total_hourly_cost};
+    use super::{
+        exec_status_result, format_ps_footer, format_total_hourly_cost, total_hourly_cost,
+    };
     use crate::CliError;
     use basilica_common::ssh::SshCommandStatus;
+    use rust_decimal::Decimal;
 
     fn shell_status(code: i32) -> std::process::ExitStatus {
         std::process::Command::new("sh")
@@ -3305,13 +3390,13 @@ mod tests {
 
     #[test]
     fn format_total_hourly_cost_uses_two_decimal_places() {
-        assert_eq!(format_total_hourly_cost(12.345), "$12.35/hr");
-        assert_eq!(format_total_hourly_cost(0.0), "$0.00/hr");
+        assert_eq!(format_total_hourly_cost(12.345), "$12.35/h");
+        assert_eq!(format_total_hourly_cost(0.0), "$0.00/h");
     }
 
     #[test]
     fn format_total_hourly_cost_does_not_show_negative_zero() {
-        assert_eq!(format_total_hourly_cost(-0.0), "$0.00/hr");
+        assert_eq!(format_total_hourly_cost(-0.0), "$0.00/h");
     }
 
     #[test]
@@ -3321,6 +3406,14 @@ mod tests {
 
         let total = total_hourly_cost(bourse_rates.into_iter().flatten().chain(citadel_rates));
 
-        assert_eq!(format_total_hourly_cost(total), "$7.50/hr");
+        assert_eq!(format_total_hourly_cost(total), "$7.50/h");
+    }
+
+    #[test]
+    fn ps_footer_matches_the_human_output_contract() {
+        assert_eq!(
+            format_ps_footer(3, 4.05, Decimal::new(2310, 2)),
+            "Total rentals: 3\nCombined hourly price: $4.05/h\nAccrued cost: $23.10"
+        );
     }
 }

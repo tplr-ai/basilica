@@ -1,6 +1,7 @@
 //! Table formatting for CLI output
 
 use super::{format_cents, format_usd};
+use crate::cli::commands::ResolvedOutput;
 use crate::error::Result;
 use basilica_common::types::GpuOffering;
 use basilica_common::{types::GpuCategory, LocationProfile};
@@ -13,10 +14,490 @@ use basilica_sdk::{
     AvailableNode,
 };
 use chrono::{DateTime, Local, Utc};
-use console::style;
+use console::{style, Term};
 use rust_decimal::Decimal;
-use std::{collections::HashMap, str::FromStr};
-use tabled::{builder::Builder, settings::Style, Table, Tabled};
+use std::{collections::HashMap, io::IsTerminal, str::FromStr};
+use tabled::{
+    builder::Builder,
+    grid::util::string::get_text_width,
+    settings::{object::Columns, Modify, Style, Width},
+    Table, Tabled,
+};
+
+pub(crate) const MIN_NAME_WIDTH: usize = 8;
+const MIN_GPU_WIDTH: usize = 8;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RenderContext {
+    pub is_tty: bool,
+    pub width: Option<usize>,
+    pub now: DateTime<Utc>,
+}
+
+impl RenderContext {
+    pub(crate) fn stdout() -> Self {
+        let is_tty = std::io::stdout().is_terminal();
+        let width = is_tty
+            .then(|| {
+                Term::stdout()
+                    .size_checked()
+                    .map(|(_, columns)| columns as usize)
+            })
+            .flatten();
+        Self {
+            is_tty,
+            width,
+            now: Utc::now(),
+        }
+    }
+}
+
+pub(crate) fn render_table_with_context(
+    mut wide: Table,
+    compact: Option<Table>,
+    output: ResolvedOutput,
+    context: RenderContext,
+    natural_name_width: Option<usize>,
+) -> String {
+    wide.with(Style::modern());
+
+    let use_compact = match output {
+        ResolvedOutput::Compact => true,
+        ResolvedOutput::Wide | ResolvedOutput::Json => false,
+        ResolvedOutput::Auto => {
+            context.is_tty
+                && context
+                    .width
+                    .is_some_and(|width| wide.total_width() > width)
+        }
+    };
+
+    let Some(mut table) = use_compact.then_some(compact).flatten() else {
+        return wide.to_string();
+    };
+    table.with(Style::modern());
+
+    if let (Some(width), Some(name_width)) = (context.width, natural_name_width) {
+        let overflow = table.total_width().saturating_sub(width);
+        if overflow > 0 && name_width > MIN_NAME_WIDTH {
+            let target = name_width.saturating_sub(overflow).max(MIN_NAME_WIDTH);
+            table.with(Modify::new(Columns::new(0..1)).with(Width::truncate(target).suffix("…")));
+        }
+    }
+
+    table.to_string()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AdaptiveColumn {
+    header: &'static str,
+    drop_order: Option<usize>,
+    truncation: Option<ColumnTruncation>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ColumnTruncation {
+    order: usize,
+    min_width: usize,
+}
+
+impl AdaptiveColumn {
+    const fn required(header: &'static str) -> Self {
+        Self {
+            header,
+            drop_order: None,
+            truncation: None,
+        }
+    }
+
+    const fn required_truncatable(header: &'static str, order: usize, min_width: usize) -> Self {
+        Self {
+            header,
+            drop_order: None,
+            truncation: Some(ColumnTruncation { order, min_width }),
+        }
+    }
+
+    const fn optional(header: &'static str, drop_order: usize) -> Self {
+        Self {
+            header,
+            drop_order: Some(drop_order),
+            truncation: None,
+        }
+    }
+}
+
+const LS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("GPU", 1, MIN_GPU_WIDTH),
+    AdaptiveColumn::required("Available"),
+    AdaptiveColumn::required("Price/Hr"),
+];
+
+const LS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::optional("Provider", 4),
+    AdaptiveColumn::required_truncatable("GPU", 1, MIN_GPU_WIDTH),
+    AdaptiveColumn::required("VRAM"),
+    AdaptiveColumn::optional("CPU/RAM", 1),
+    AdaptiveColumn::optional("Storage", 2),
+    AdaptiveColumn::optional("Interconnect", 3),
+    AdaptiveColumn::required("Region"),
+    AdaptiveColumn::required("Price/Hr"),
+];
+
+const LS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("Provider"),
+    AdaptiveColumn::required("Size"),
+    AdaptiveColumn::optional("Storage", 1),
+    AdaptiveColumn::required("Region"),
+    AdaptiveColumn::required("Price/Hr"),
+];
+
+const PS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::required_truncatable("GPU", 2, MIN_GPU_WIDTH),
+    AdaptiveColumn::optional("State", 7),
+    AdaptiveColumn::required("IP"),
+    AdaptiveColumn::optional("Ports (Host → Container)", 5),
+    AdaptiveColumn::optional("Image", 3),
+    AdaptiveColumn::optional("CPU/RAM", 2),
+    AdaptiveColumn::optional("Location", 4),
+    AdaptiveColumn::optional("Price/Hr", 6),
+    AdaptiveColumn::optional("Total Cost", 1),
+    AdaptiveColumn::required("Age"),
+];
+
+const PS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::optional("Provider", 4),
+    AdaptiveColumn::required_truncatable("GPU", 2, MIN_GPU_WIDTH),
+    AdaptiveColumn::optional("State", 6),
+    AdaptiveColumn::required("IP"),
+    AdaptiveColumn::optional("CPU/RAM", 2),
+    AdaptiveColumn::optional("Region", 3),
+    AdaptiveColumn::optional("Price/Hr", 5),
+    AdaptiveColumn::optional("Total Cost", 1),
+    AdaptiveColumn::required("Age"),
+];
+
+const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::optional("Provider", 3),
+    AdaptiveColumn::required("Size"),
+    AdaptiveColumn::optional("State", 5),
+    AdaptiveColumn::required("IP"),
+    AdaptiveColumn::optional("Region", 2),
+    AdaptiveColumn::optional("Price/Hr", 4),
+    AdaptiveColumn::optional("Total Cost", 1),
+    AdaptiveColumn::required("Age"),
+];
+
+const PS_GPU_HISTORY_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::optional("GPUs", 4),
+    AdaptiveColumn::optional("Status", 1),
+    AdaptiveColumn::required("Total Cost"),
+    AdaptiveColumn::optional("Started", 3),
+    AdaptiveColumn::optional("Stopped", 2),
+    AdaptiveColumn::optional("Duration", 5),
+];
+
+const PS_CPU_HISTORY_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::optional("Provider", 6),
+    AdaptiveColumn::optional("vCPU", 7),
+    AdaptiveColumn::optional("RAM", 8),
+    AdaptiveColumn::optional("Status", 1),
+    AdaptiveColumn::optional("Price/Hr", 5),
+    AdaptiveColumn::required("Total Cost"),
+    AdaptiveColumn::optional("Started", 3),
+    AdaptiveColumn::optional("Stopped", 2),
+    AdaptiveColumn::optional("Duration", 4),
+];
+
+const FUND_DEPOSIT_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("Date"),
+    AdaptiveColumn::required("TAO"),
+    AdaptiveColumn::required("Tx Hash"),
+    AdaptiveColumn::optional("Conf", 2),
+    AdaptiveColumn::optional("Block", 1),
+    AdaptiveColumn::required("Status"),
+];
+
+const FUND_CARD_PAYMENT_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("Date"),
+    AdaptiveColumn::required("Amount"),
+    AdaptiveColumn::required("Status"),
+    AdaptiveColumn::required_truncatable("Invoice/Receipt", 1, 15),
+];
+
+const TOKEN_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::required("Created"),
+    AdaptiveColumn::required("Last Used"),
+];
+
+const VOLUME_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::required("Size"),
+    AdaptiveColumn::required("Status"),
+    AdaptiveColumn::optional("Provider", 2),
+    AdaptiveColumn::required("Region"),
+    AdaptiveColumn::optional("Rental", 5),
+    AdaptiveColumn::optional("Price/Hr", 4),
+    AdaptiveColumn::optional("Total Cost", 3),
+    AdaptiveColumn::optional("Created", 1),
+];
+
+struct AdaptiveTable {
+    columns: Vec<AdaptiveColumn>,
+    rows: Vec<Vec<String>>,
+}
+
+impl AdaptiveTable {
+    fn new(columns: Vec<AdaptiveColumn>, rows: Vec<Vec<String>>) -> Self {
+        Self { columns, rows }
+    }
+
+    fn all_columns(&self) -> Vec<usize> {
+        (0..self.columns.len()).collect()
+    }
+
+    fn required_columns(&self) -> Vec<usize> {
+        self.columns
+            .iter()
+            .enumerate()
+            .filter_map(|(index, column)| column.drop_order.is_none().then_some(index))
+            .collect()
+    }
+
+    fn remove_lowest_priority(&self, active_columns: &mut Vec<usize>) -> bool {
+        let candidate = active_columns
+            .iter()
+            .filter_map(|&index| {
+                self.columns
+                    .get(index)?
+                    .drop_order
+                    .map(|drop_order| (drop_order, index))
+            })
+            .min_by_key(|&(drop_order, _)| drop_order);
+
+        let Some((_, index)) = candidate else {
+            return false;
+        };
+        active_columns.retain(|&active| active != index);
+        true
+    }
+
+    fn build(&self, active_columns: &[usize]) -> Table {
+        let mut builder = Builder::default();
+        builder.push_record(
+            active_columns
+                .iter()
+                .map(|&index| self.columns.get(index).map_or("", |column| column.header)),
+        );
+        for row in &self.rows {
+            builder.push_record(
+                active_columns
+                    .iter()
+                    .map(|&index| row.get(index).map(String::as_str).unwrap_or_default()),
+            );
+        }
+
+        let mut table = builder.build();
+        table.with(Style::modern());
+        table
+    }
+
+    fn column_width(&self, index: usize) -> Option<usize> {
+        let header_width = self
+            .columns
+            .get(index)
+            .map(|column| get_text_width(column.header))?;
+        Some(
+            self.rows
+                .iter()
+                .filter_map(|row| row.get(index))
+                .map(|value| get_text_width(value))
+                .max()
+                .unwrap_or_default()
+                .max(header_width),
+        )
+    }
+
+    fn truncatable_columns(
+        &self,
+        active_columns: &[usize],
+    ) -> Vec<(usize, usize, ColumnTruncation)> {
+        let mut columns: Vec<_> = active_columns
+            .iter()
+            .enumerate()
+            .filter_map(|(position, &source_index)| {
+                self.columns
+                    .get(source_index)?
+                    .truncation
+                    .map(|truncation| (position, source_index, truncation))
+            })
+            .collect();
+        columns.sort_by_key(|(_, _, truncation)| truncation.order);
+        columns
+    }
+}
+
+fn fit_required_table(
+    mut table: Table,
+    adaptive: &AdaptiveTable,
+    active_columns: &[usize],
+    width: usize,
+) -> String {
+    for (position, source_index, truncation) in adaptive.truncatable_columns(active_columns) {
+        let overflow = table.total_width().saturating_sub(width);
+        if overflow == 0 {
+            break;
+        }
+        let Some(natural_width) = adaptive.column_width(source_index) else {
+            continue;
+        };
+        let header_width = adaptive
+            .columns
+            .get(source_index)
+            .map(|column| get_text_width(column.header))
+            .unwrap_or_default();
+        let floor = truncation.min_width.max(header_width);
+        let target = natural_width.saturating_sub(overflow).max(floor);
+        if target < natural_width {
+            table.with(
+                Modify::new(Columns::new(position..position + 1))
+                    .with(Width::truncate(target).suffix("…")),
+            );
+        }
+    }
+
+    table.to_string()
+}
+
+fn render_adaptive_table_with_context(
+    mut wide: Table,
+    adaptive: AdaptiveTable,
+    output: ResolvedOutput,
+    context: RenderContext,
+) -> String {
+    wide.with(Style::modern());
+
+    match output {
+        ResolvedOutput::Wide | ResolvedOutput::Json => return wide.to_string(),
+        ResolvedOutput::Auto if !context.is_tty || context.width.is_none() => {
+            return wide.to_string();
+        }
+        ResolvedOutput::Auto
+            if context
+                .width
+                .is_some_and(|width| wide.total_width() <= width) =>
+        {
+            return wide.to_string();
+        }
+        ResolvedOutput::Auto | ResolvedOutput::Compact => {}
+    }
+
+    let mut active_columns = if matches!(output, ResolvedOutput::Compact) {
+        adaptive.required_columns()
+    } else {
+        adaptive.all_columns()
+    };
+    let width = context.width;
+
+    loop {
+        let table = adaptive.build(&active_columns);
+        let Some(width) = width else {
+            return table.to_string();
+        };
+        if table.total_width() <= width {
+            return table.to_string();
+        }
+        if matches!(output, ResolvedOutput::Auto)
+            && adaptive.remove_lowest_priority(&mut active_columns)
+        {
+            continue;
+        }
+        return fit_required_table(table, &adaptive, &active_columns, width);
+    }
+}
+
+fn print_standard_table(table: Table) {
+    let rendered = render_table_with_context(
+        table,
+        None,
+        ResolvedOutput::Auto,
+        RenderContext::stdout(),
+        None,
+    );
+    println!("{rendered}");
+}
+
+fn format_created(timestamp: DateTime<Utc>) -> String {
+    timestamp
+        .with_timezone(&Local)
+        .format("%y-%m-%d %H:%M")
+        .to_string()
+}
+
+pub(crate) fn format_created_str(timestamp: &str) -> String {
+    DateTime::parse_from_rfc3339(timestamp)
+        .map(|timestamp| format_created(timestamp.with_timezone(&Utc)))
+        .unwrap_or_else(|_| timestamp.to_string())
+}
+
+fn format_age(created: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let elapsed = now.signed_duration_since(created).num_minutes().max(0);
+    if elapsed >= 24 * 60 {
+        format!("{}d", elapsed / (24 * 60))
+    } else if elapsed >= 60 {
+        format!("{}h", elapsed / 60)
+    } else {
+        format!("{}m", elapsed)
+    }
+}
+
+pub(crate) fn format_age_str(created: &str, now: DateTime<Utc>) -> String {
+    DateTime::parse_from_rfc3339(created)
+        .map(|created| format_age(created.with_timezone(&Utc), now))
+        .unwrap_or_else(|_| "—".to_string())
+}
+
+fn compact_image_name(image: &str) -> String {
+    let without_digest = image.split('@').next().unwrap_or(image);
+    let last_slash = without_digest.rfind('/');
+    let without_tag = match without_digest.rfind(':') {
+        Some(colon) if !matches!(last_slash, Some(slash) if colon <= slash) => {
+            &without_digest[..colon]
+        }
+        _ => without_digest,
+    };
+    let mut parts = without_tag.split('/');
+    let first = parts.next().unwrap_or(without_tag);
+    if first.contains('.') || first.contains(':') || first == "localhost" {
+        parts.collect::<Vec<_>>().join("/")
+    } else {
+        without_tag.to_string()
+    }
+}
+
+fn strip_ascii_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    let candidate = value.get(..prefix.len())?;
+    candidate
+        .eq_ignore_ascii_case(prefix)
+        .then(|| value.get(prefix.len()..))
+        .flatten()
+}
+
+fn compact_gpu_model_name(model: &str) -> String {
+    let without_vendor = strip_ascii_prefix(model.trim(), "NVIDIA ")
+        .unwrap_or(model.trim())
+        .trim_start();
+    strip_ascii_prefix(without_vendor, "BLACKWELL ")
+        .unwrap_or(without_vendor)
+        .trim_start()
+        .to_string()
+}
 
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
 pub fn format_timestamp(timestamp: &str) -> String {
@@ -29,6 +510,42 @@ pub fn format_timestamp(timestamp: &str) -> String {
         .unwrap_or_else(|| timestamp.to_string())
 }
 
+fn format_utc_date(timestamp: &DateTime<Utc>) -> String {
+    timestamp.format("%Y-%m-%d").to_string()
+}
+
+fn compact_tx_hash(hash: &str) -> String {
+    const PREFIX_LENGTH: usize = 6;
+    const SUFFIX_LENGTH: usize = 3;
+    const COMPACT_LENGTH: usize = PREFIX_LENGTH + 1 + SUFFIX_LENGTH;
+
+    let length = hash.chars().count();
+    if length <= COMPACT_LENGTH {
+        return hash.to_string();
+    }
+
+    let prefix: String = hash.chars().take(PREFIX_LENGTH).collect();
+    let suffix: String = hash.chars().skip(length - SUFFIX_LENGTH).collect();
+    format!("{prefix}…{suffix}")
+}
+
+fn taostats_extrinsic_url(hash: &str) -> Option<String> {
+    let mut url = url::Url::parse("https://taostats.io").ok()?;
+    url.path_segments_mut().ok()?.extend(["extrinsic", hash]);
+    Some(url.to_string())
+}
+
+fn deposit_tx_hash_cell(hash: &str, is_tty: bool) -> String {
+    let label = compact_tx_hash(hash);
+    if !is_tty {
+        return label;
+    }
+
+    taostats_extrinsic_url(hash)
+        .map(|url| link_cell(&label, &url))
+        .unwrap_or(label)
+}
+
 fn format_duration(seconds: i64) -> String {
     let hours = seconds / 3600;
     let minutes = (seconds % 3600) / 60;
@@ -39,8 +556,16 @@ fn format_duration(seconds: i64) -> String {
     }
 }
 
+fn format_hourly_price(rate: impl std::fmt::Display) -> String {
+    format!("${rate:.2}")
+}
+
 /// Display rental items in table format
-pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
+pub fn display_rental_items(
+    rentals: &[ApiRentalListItem],
+    access_hosts: &HashMap<String, String>,
+    output: ResolvedOutput,
+) -> Result<()> {
     if rentals.is_empty() {
         println!("{}", style("No Bourse rentals found").yellow());
         return Ok(());
@@ -50,7 +575,7 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
     let get_rental_pricing = |rental: &ApiRentalListItem| -> (String, String) {
         let rate = rental
             .hourly_cost
-            .map(|r| format!("${:.2}/hr", r))
+            .map(format_hourly_price)
             .unwrap_or_else(|| "-".to_string());
 
         let cost = rental
@@ -62,27 +587,25 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
         (rate, cost)
     };
 
-    #[derive(Tabled)]
-    struct RentalRow {
+    #[derive(Clone, Tabled)]
+    struct WideRow {
         #[tabled(rename = "Name")]
         name: String,
         #[tabled(rename = "GPU")]
         gpu: String,
         #[tabled(rename = "State")]
         state: String,
-        #[tabled(rename = "SSH")]
-        ssh: String,
+        #[tabled(rename = "IP")]
+        ip: String,
         #[tabled(rename = "Ports (Host → Container)")]
         ports: String,
         #[tabled(rename = "Image")]
         image: String,
-        #[tabled(rename = "CPU")]
-        cpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "CPU/RAM")]
+        cpu_ram: String,
         #[tabled(rename = "Location")]
         location: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Price/Hr")]
         rate_per_hour: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -90,31 +613,20 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
         created: String,
     }
 
-    let rows: Vec<RentalRow> = rentals
+    let wide_rows: Vec<WideRow> = rentals
         .iter()
         .map(|rental| {
             // Format GPU info from specs
             let gpu = format_gpu_info(&rental.gpu_specs);
 
-            // Format CPU info
-            let cpu = rental
+            let cpu_ram = rental
                 .cpu_specs
                 .as_ref()
-                .map(|cpu| format!("{} ({} cores)", cpu.model, cpu.cores))
-                .unwrap_or_else(|| "Unknown".to_string());
-
-            // Format RAM info
-            let ram = rental
-                .cpu_specs
-                .as_ref()
-                .map(|cpu| format!("{} GB", cpu.memory_gb))
-                .unwrap_or_else(|| "Unknown".to_string());
+                .map(|cpu| format!("{} cores / {}GB", cpu.cores, cpu.memory_gb))
+                .unwrap_or_else(|| "—".to_string());
 
             // Format location
             let location = format_node_location(&rental.location);
-
-            // Format SSH availability
-            let ssh = if rental.has_ssh { "✓" } else { "✗" };
 
             // Format port mappings (show up to 2-3 ports)
             let ports = format_port_mappings(&rental.port_mappings, Some(2));
@@ -122,26 +634,51 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
             // Get pricing data for this rental
             let (rate_per_hour, total_cost) = get_rental_pricing(rental);
 
-            RentalRow {
+            WideRow {
                 name: rental.name.clone(),
                 gpu,
                 state: rental.state.to_string(),
-                ssh: ssh.to_string(),
+                ip: access_hosts
+                    .get(&rental.rental_id)
+                    .cloned()
+                    .unwrap_or_else(|| "—".to_string()),
                 ports,
-                image: rental.container_image.clone(),
-                cpu,
-                ram,
+                image: compact_image_name(&rental.container_image),
+                cpu_ram,
                 location,
                 rate_per_hour,
                 total_cost,
-                created: format_timestamp(&rental.created_at),
+                created: format_created_str(&rental.created_at),
             }
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    let context = RenderContext::stdout();
+    let adaptive = AdaptiveTable::new(
+        PS_BOURSE_COLUMNS.to_vec(),
+        wide_rows
+            .iter()
+            .zip(rentals)
+            .map(|(row, rental)| {
+                vec![
+                    row.name.clone(),
+                    row.gpu.clone(),
+                    row.state.clone(),
+                    row.ip.clone(),
+                    row.ports.clone(),
+                    row.image.clone(),
+                    row.cpu_ram.clone(),
+                    row.location.clone(),
+                    row.rate_per_hour.clone(),
+                    row.total_cost.clone(),
+                    format_age_str(&rental.created_at, context.now),
+                ]
+            })
+            .collect(),
+    );
+    let rendered =
+        render_adaptive_table_with_context(Table::new(wide_rows), adaptive, output, context);
+    println!("{rendered}");
 
     Ok(())
 }
@@ -180,21 +717,22 @@ fn format_gpu_info(gpu_specs: &[GpuSpec]) -> String {
 
     // Check if all GPUs are the same
     let first_gpu = &gpu_specs[0];
+    let first_gpu_name = compact_gpu_model_name(&first_gpu.name);
     let all_same = gpu_specs
         .iter()
         .all(|g| g.name == first_gpu.name && g.memory_gb == first_gpu.memory_gb);
 
     if all_same {
         if gpu_specs.len() > 1 {
-            format!("{}x {}", gpu_specs.len(), first_gpu.name)
+            format!("{}x {}", gpu_specs.len(), first_gpu_name)
         } else {
-            format!("1x {}", first_gpu.name)
+            format!("1x {first_gpu_name}")
         }
     } else {
         // List each GPU
         gpu_specs
             .iter()
-            .map(|g| g.name.clone())
+            .map(|g| compact_gpu_model_name(&g.name))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -220,16 +758,14 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
 
     rows.sort_by_key(|r| r.key.clone());
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    print_standard_table(Table::new(rows));
 
     Ok(())
 }
 
 /// Display API keys in table format
-pub fn display_api_keys(keys: &[ApiKeyInfo]) -> Result<()> {
-    #[derive(Tabled)]
+pub fn display_api_keys(keys: &[ApiKeyInfo], output: ResolvedOutput) -> Result<()> {
+    #[derive(Clone, Tabled)]
     struct ApiKeyRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -251,9 +787,19 @@ pub fn display_api_keys(keys: &[ApiKeyInfo]) -> Result<()> {
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    let adaptive = AdaptiveTable::new(
+        TOKEN_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| vec![row.name.clone(), row.created.clone(), row.last_used.clone()])
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     Ok(())
 }
@@ -340,9 +886,7 @@ pub fn display_available_nodes_detailed(
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(Table::new(rows));
 
     println!("\nTotal available nodes: {}", nodes.len());
 
@@ -352,29 +896,31 @@ pub fn display_available_nodes_detailed(
 /// Display community cloud GPU categories in aggregated format
 pub fn display_community_cloud_categories(
     aggregations: &[crate::cli::handlers::gpu_rental_helpers::GpuCategoryAggregation],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if aggregations.is_empty() {
         println!("No available GPUs found matching the specified criteria.");
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct CategoryRow {
         #[tabled(rename = "GPU")]
         gpu: String,
         #[tabled(rename = "Available")]
         available: String,
-        #[tabled(rename = "Price/hr")]
+        #[tabled(rename = "Price/Hr")]
         price: String,
     }
 
     let rows: Vec<CategoryRow> = aggregations
         .iter()
         .map(|agg| {
+            let gpu_category = compact_gpu_model_name(&agg.gpu_category);
             let gpu = if agg.gpu_count > 1 {
-                format!("{}x {}", agg.gpu_count, agg.gpu_category)
+                format!("{}x {gpu_category}", agg.gpu_count)
             } else {
-                agg.gpu_category.clone()
+                gpu_category
             };
 
             let multiplier = agg.gpu_count as f64;
@@ -400,9 +946,19 @@ pub fn display_community_cloud_categories(
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    let adaptive = AdaptiveTable::new(
+        LS_BOURSE_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| vec![row.gpu.clone(), row.available.clone(), row.price.clone()])
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     let total_nodes: usize = aggregations.iter().map(|a| a.node_count).sum();
     println!("\nTotal available nodes: {}", total_nodes);
@@ -411,31 +967,32 @@ pub fn display_community_cloud_categories(
 }
 
 /// Display secure cloud GPU offerings in detailed format (individual offerings)
-pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Result<()> {
+pub fn display_secure_cloud_offerings_detailed(
+    offerings: &[GpuOffering],
+    output: ResolvedOutput,
+) -> Result<()> {
     if offerings.is_empty() {
         println!("No GPUs available matching your criteria.");
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct OfferingRow {
-        #[tabled(rename = "PROVIDER")]
+        #[tabled(rename = "Provider")]
         provider: String,
         #[tabled(rename = "GPU")]
         gpu_info: String,
         #[tabled(rename = "VRAM")]
         vram: String,
-        #[tabled(rename = "vCPU")]
-        vcpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
-        #[tabled(rename = "STORAGE")]
+        #[tabled(rename = "CPU/RAM")]
+        cpu_ram: String,
+        #[tabled(rename = "Storage")]
         storage: String,
-        #[tabled(rename = "INTERCONNECT")]
+        #[tabled(rename = "Interconnect")]
         interconnect: String,
-        #[tabled(rename = "REGION")]
+        #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "PRICE/HR")]
+        #[tabled(rename = "Price/Hr")]
         price: String,
     }
 
@@ -443,10 +1000,11 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
         .iter()
         .map(|offering| {
             let gpu_info = {
+                let gpu_type = compact_gpu_model_name(&offering.gpu_type.to_string());
                 let base = if offering.gpu_count == 1 {
-                    offering.gpu_type.to_string()
+                    gpu_type
                 } else {
-                    format!("{}x {}", offering.gpu_count, offering.gpu_type)
+                    format!("{}x {gpu_type}", offering.gpu_count)
                 };
                 if offering.is_spot {
                     format!("{} (Spot)", base)
@@ -466,22 +1024,45 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
                 provider: offering.provider.to_string(),
                 gpu_info,
                 vram,
-                vcpu: offering.vcpu_count.to_string(),
-                ram: format!("{} GB", offering.system_memory_gb),
+                cpu_ram: format!(
+                    "{} cores / {}GB",
+                    offering.vcpu_count, offering.system_memory_gb
+                ),
                 storage: offering.storage.clone().unwrap_or_else(|| "-".to_string()),
                 interconnect: offering
                     .interconnect
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
                 region: offering.region.clone(),
-                price: format!("${:.2}/hr", total_hourly_cost),
+                price: format_hourly_price(total_hourly_cost),
             }
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    let adaptive = AdaptiveTable::new(
+        LS_CITADEL_GPU_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.provider.clone(),
+                    row.gpu_info.clone(),
+                    row.vram.clone(),
+                    row.cpu_ram.clone(),
+                    row.storage.clone(),
+                    row.interconnect.clone(),
+                    row.region.clone(),
+                    row.price.clone(),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     println!("\nTotal offerings: {}", offerings.len());
 
@@ -489,65 +1070,74 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
 }
 
 /// Display deposits history in table format
-pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
+pub fn display_deposits(response: &ListDepositsResponse, output: ResolvedOutput) -> Result<()> {
     println!();
     println!("{}", style("Deposit History").bold());
     println!();
 
-    let mut builder = Builder::default();
-
-    // Add header
-    builder.push_record(["Date (UTC)", "TAO", "Tx Hash", "Conf", "Block", "Status"]);
-
-    let mut total_tao = 0.0;
-
-    for deposit in &response.deposits {
-        let amount_tao: f64 = deposit.amount_tao.parse().unwrap_or(0.0);
-        total_tao += amount_tao;
-
-        // Format date
-        let date = deposit.observed_at.format("%Y-%m-%d %H:%M:%S").to_string();
-
-        // Format tx hash (truncate to first 8 and last 3 chars)
-        let tx_hash = if deposit.tx_hash.len() > 11 {
-            format!(
-                "{}...{}",
-                &deposit.tx_hash[..8],
-                &deposit.tx_hash[deposit.tx_hash.len() - 3..]
-            )
-        } else {
-            deposit.tx_hash.clone()
-        };
-
-        // Format confirmations (12+ means finalized)
-        let confirmations = if deposit.finalized_at.is_some() {
-            "12+".to_string()
-        } else {
-            "-".to_string()
-        };
-
-        // Format status
-        let status = if deposit.credited_at.is_some() {
-            "Credited"
-        } else if deposit.finalized_at.is_some() {
-            "Finalized"
-        } else {
-            "Pending"
-        };
-
-        builder.push_record([
-            date.as_str(),
-            &format!("{:.3}", amount_tao),
-            tx_hash.as_str(),
-            confirmations.as_str(),
-            &deposit.block_number.to_string(),
-            status,
-        ]);
+    #[derive(Clone, Tabled)]
+    struct DepositRow {
+        #[tabled(rename = "Date")]
+        date: String,
+        #[tabled(rename = "TAO")]
+        amount: String,
+        #[tabled(rename = "Tx Hash")]
+        tx_hash: String,
+        #[tabled(rename = "Conf")]
+        confirmations: String,
+        #[tabled(rename = "Block")]
+        block: String,
+        #[tabled(rename = "Status")]
+        status: String,
     }
 
-    let mut table = builder.build();
-    table.with(Style::modern());
-    println!("{}", table);
+    let mut total_tao = 0.0;
+    let context = RenderContext::stdout();
+    let rows: Vec<DepositRow> = response
+        .deposits
+        .iter()
+        .map(|deposit| {
+            let amount_tao: f64 = deposit.amount_tao.parse().unwrap_or(0.0);
+            total_tao += amount_tao;
+
+            DepositRow {
+                date: format_utc_date(&deposit.observed_at),
+                amount: format!("{amount_tao:.3}"),
+                tx_hash: deposit_tx_hash_cell(&deposit.tx_hash, context.is_tty),
+                confirmations: if deposit.finalized_at.is_some() {
+                    "12+".to_string()
+                } else {
+                    "-".to_string()
+                },
+                block: deposit.block_number.to_string(),
+                status: if deposit.credited_at.is_some() {
+                    "Credited".to_string()
+                } else if deposit.finalized_at.is_some() {
+                    "Finalized".to_string()
+                } else {
+                    "Pending".to_string()
+                },
+            }
+        })
+        .collect();
+
+    let adaptive = AdaptiveTable::new(
+        FUND_DEPOSIT_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.date.clone(),
+                    row.amount.clone(),
+                    row.tx_hash.clone(),
+                    row.confirmations.clone(),
+                    row.block.clone(),
+                    row.status.clone(),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
+    println!("{rendered}");
 
     // Display totals
     println!();
@@ -558,70 +1148,72 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
 }
 
 /// Display card payment history in table format.
-pub fn display_card_purchases(response: &ListCardPurchasesResponse) -> Result<()> {
+pub fn display_card_purchases(
+    response: &ListCardPurchasesResponse,
+    output: ResolvedOutput,
+) -> Result<()> {
     println!();
     println!("{}", style("Card Payment History").bold());
     println!();
 
-    let mut builder = Builder::default();
-    builder.push_record(["Date (UTC)", "Amount", "Status", "Invoice/Receipt"]);
-
     let mut total_paid_cents: u64 = 0;
+    let rows: Vec<Vec<String>> = response
+        .purchases
+        .iter()
+        .map(|purchase| {
+            let date = purchase
+                .created_at
+                .map(|dt| format_utc_date(&dt))
+                .unwrap_or_else(|| "-".to_string());
+            let amount = format_cents(purchase.requested_amount_cents);
+            let status = match purchase.status {
+                CardPurchaseStatus::Completed => "Completed",
+                CardPurchaseStatus::Pending => "Pending",
+                CardPurchaseStatus::Expired => "Expired",
+                CardPurchaseStatus::Unspecified => "Unspecified",
+            };
 
-    for purchase in &response.purchases {
-        let date = purchase
-            .created_at
-            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
-            .unwrap_or_else(|| "-".to_string());
+            // Invoice/Receipt doubles as the per-session link. Prefer the
+            // hosted invoice because it already includes receipt-style
+            // payment detail and a PDF download.
+            let invoice_cell = match purchase_primary_link(purchase) {
+                Some((PrimaryLinkKind::Invoice, url)) => {
+                    let label = purchase.invoice_number.as_deref().unwrap_or("Invoice");
+                    link_cell(label, url)
+                }
+                Some((PrimaryLinkKind::Receipt, url)) => link_cell("Receipt", url),
+                Some((PrimaryLinkKind::Resume, url)) => link_cell("Resume", url),
+                None => "-".to_string(),
+            };
 
-        let amount = format_cents(purchase.requested_amount_cents);
-
-        let status = match purchase.status {
-            CardPurchaseStatus::Completed => "Completed",
-            CardPurchaseStatus::Pending => "Pending",
-            CardPurchaseStatus::Expired => "Expired",
-            CardPurchaseStatus::Unspecified => "Unspecified",
-        };
-
-        // Invoice/Receipt cell doubles as the per-session link. Modern
-        // terminals (iTerm2, Terminal.app, wezterm, Ghostty, VSCode,
-        // kitty, GNOME Terminal) render the OSC 8 escape as clickable;
-        // unsupported terminals show only the styled label and users can
-        // drop to --json for the raw URL. Styling the label blue +
-        // underlined (web-browser link convention) signals clickability
-        // visually even before hovering. Prefer the hosted invoice page
-        // when present — it bundles receipt-style payment detail already,
-        // so a separate receipt link would be redundant. `invoice_pdf`
-        // stays on the SDK type but isn't surfaced here because the
-        // hosted invoice page has a "Download PDF" button.
-        let invoice_cell = match purchase_primary_link(purchase) {
-            Some((PrimaryLinkKind::Invoice, url)) => {
-                let label = purchase.invoice_number.as_deref().unwrap_or("Invoice");
-                link_cell(label, url)
+            if matches!(purchase.status, CardPurchaseStatus::Completed) {
+                total_paid_cents += purchase
+                    .paid_amount_cents
+                    .unwrap_or(purchase.requested_amount_cents);
             }
-            Some((PrimaryLinkKind::Receipt, url)) => link_cell("Receipt", url),
-            Some((PrimaryLinkKind::Resume, url)) => link_cell("Resume", url),
-            None => "-".to_string(),
-        };
 
-        builder.push_record([date.as_str(), amount.as_str(), status, &invoice_cell]);
+            vec![date, amount, status.to_string(), invoice_cell]
+        })
+        .collect();
 
-        if matches!(purchase.status, CardPurchaseStatus::Completed) {
-            total_paid_cents += purchase
-                .paid_amount_cents
-                .unwrap_or(purchase.requested_amount_cents);
-        }
-    }
-
-    let mut table = builder.build();
-    table.with(Style::modern());
-    println!("{}", table);
+    let rendered = render_card_purchase_rows(rows, output, RenderContext::stdout());
+    println!("{rendered}");
 
     println!();
     println!("{}:", style("Total Card Payments").bold());
     println!("  {}", style(format_cents(total_paid_cents)).green());
 
     Ok(())
+}
+
+fn render_card_purchase_rows(
+    rows: Vec<Vec<String>>,
+    output: ResolvedOutput,
+    context: RenderContext,
+) -> String {
+    let adaptive = AdaptiveTable::new(FUND_CARD_PAYMENT_COLUMNS.to_vec(), rows);
+    let wide = adaptive.build(&adaptive.all_columns());
+    render_adaptive_table_with_context(wide, adaptive, output, context)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -663,7 +1255,7 @@ fn purchase_primary_link(
 /// Width is calculated correctly because `tabled` is compiled with the
 /// `ansi` feature, which strips both ANSI CSI (color/underline) and OSC
 /// 8 escape bytes before measuring.
-fn link_cell(label: &str, url: &str) -> String {
+pub(crate) fn link_cell(label: &str, url: &str) -> String {
     let styled = style(label).blue().underlined().to_string();
     format!("\x1b]8;;{url}\x1b\\{styled}\x1b]8;;\x1b\\")
 }
@@ -750,9 +1342,7 @@ pub fn display_rental_usage_detail(usage: &RentalUsageResponse) -> Result<()> {
 
         println!("{}", style("Usage Data Points").bold());
         println!();
-        let mut table = Table::new(&rows);
-        table.with(Style::modern());
-        println!("{}", table);
+        print_standard_table(Table::new(&rows));
         if total_points > MAX_POINTS {
             println!(
                 "{}",
@@ -837,9 +1427,7 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
         style(history.total_count).cyan()
     );
     println!();
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(Table::new(&rows));
     println!();
 
     let total_cost: Decimal = history
@@ -864,14 +1452,23 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
     Ok(())
 }
 
-/// Display historical rental data from billing service
-pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
+fn historical_rental_name(rental: &HistoricalRentalItem) -> String {
+    rental
+        .name
+        .clone()
+        .unwrap_or_else(|| rental.rental_id.clone())
+}
+
+fn render_rental_history_with_context(
+    rentals: &[&HistoricalRentalItem],
+    output: ResolvedOutput,
+    context: RenderContext,
+) -> String {
     if rentals.is_empty() {
-        println!("{}", style("No rental history found").yellow());
-        return Ok(());
+        return style("No rental history found").yellow().to_string();
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct HistoryRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -895,9 +1492,7 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
             let total_cost = format_usd(&rental.total_cost);
 
             HistoryRow {
-                name: rental.name.clone().unwrap_or_else(|| {
-                    format!("id:{}", &rental.rental_id[..8.min(rental.rental_id.len())])
-                }),
+                name: historical_rental_name(rental),
                 gpu_count: format!("{}x GPU", rental.gpu_count),
                 status: rental.status.clone(),
                 total_cost,
@@ -918,21 +1513,48 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
 
     rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{table}");
+    let adaptive = AdaptiveTable::new(
+        PS_GPU_HISTORY_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.name.clone(),
+                    row.gpu_count.clone(),
+                    row.status.clone(),
+                    row.total_cost.clone(),
+                    row.started.clone(),
+                    row.stopped.clone(),
+                    row.duration.clone(),
+                ]
+            })
+            .collect(),
+    );
+    render_adaptive_table_with_context(Table::new(rows), adaptive, output, context)
+}
+
+/// Display historical rental data from billing service
+pub fn display_rental_history(
+    rentals: &[&HistoricalRentalItem],
+    output: ResolvedOutput,
+) -> Result<()> {
+    println!(
+        "{}",
+        render_rental_history_with_context(rentals, output, RenderContext::stdout())
+    );
 
     Ok(())
 }
 
-/// Display historical CPU rental data from billing service
-pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
+fn render_cpu_rental_history_with_context(
+    rentals: &[&HistoricalRentalItem],
+    output: ResolvedOutput,
+    context: RenderContext,
+) -> String {
     if rentals.is_empty() {
-        println!("{}", style("No CPU rental history found").yellow());
-        return Ok(());
+        return style("No CPU rental history found").yellow().to_string();
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct CpuHistoryRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -944,7 +1566,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
         ram: String,
         #[tabled(rename = "Status")]
         status: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Price/Hr")]
         rate: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -963,7 +1585,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
 
             let rate = rental
                 .hourly_rate
-                .map(|r| format!("${:.2}/hr", r))
+                .map(format_hourly_price)
                 .unwrap_or_else(|| "-".to_string());
 
             let vcpu = rental
@@ -977,9 +1599,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
                 .unwrap_or_else(|| "-".to_string());
 
             CpuHistoryRow {
-                name: rental.name.clone().unwrap_or_else(|| {
-                    format!("id:{}", &rental.rental_id[..8.min(rental.rental_id.len())])
-                }),
+                name: historical_rental_name(rental),
                 provider: rental.provider.clone().unwrap_or_else(|| "-".to_string()),
                 vcpu,
                 ram,
@@ -1003,9 +1623,37 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
 
     rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{table}");
+    let adaptive = AdaptiveTable::new(
+        PS_CPU_HISTORY_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.name.clone(),
+                    row.provider.clone(),
+                    row.vcpu.clone(),
+                    row.ram.clone(),
+                    row.status.clone(),
+                    row.rate.clone(),
+                    row.total_cost.clone(),
+                    row.started.clone(),
+                    row.stopped.clone(),
+                    row.duration.clone(),
+                ]
+            })
+            .collect(),
+    );
+    render_adaptive_table_with_context(Table::new(rows), adaptive, output, context)
+}
+
+/// Display historical CPU rental data from billing service
+pub fn display_cpu_rental_history(
+    rentals: &[&HistoricalRentalItem],
+    output: ResolvedOutput,
+) -> Result<()> {
+    println!(
+        "{}",
+        render_cpu_rental_history_with_context(rentals, output, RenderContext::stdout())
+    );
 
     Ok(())
 }
@@ -1013,13 +1661,14 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
 /// Display secure cloud rentals in table format
 pub fn display_secure_cloud_rentals(
     rentals: &[&basilica_sdk::types::SecureCloudRentalListItem],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if rentals.is_empty() {
         println!("{}", style("No Citadel rentals found").yellow());
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct SecureCloudRentalRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -1031,15 +1680,11 @@ pub fn display_secure_cloud_rentals(
         status: String,
         #[tabled(rename = "IP")]
         ip: String,
-        #[tabled(rename = "SSH")]
-        ssh: String,
-        #[tabled(rename = "CPU")]
-        cpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "CPU/RAM")]
+        cpu_ram: String,
         #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Price/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -1051,10 +1696,11 @@ pub fn display_secure_cloud_rentals(
         .iter()
         .map(|rental| {
             let gpu_str = {
+                let gpu_type = compact_gpu_model_name(&rental.gpu_type.to_uppercase());
                 let base = if rental.gpu_count > 1 {
-                    format!("{}x {}", rental.gpu_count, rental.gpu_type.to_uppercase())
+                    format!("{}x {gpu_type}", rental.gpu_count)
                 } else {
-                    rental.gpu_type.to_uppercase()
+                    gpu_type
                 };
                 if rental.is_spot {
                     format!("{} (Spot)", base)
@@ -1063,23 +1709,10 @@ pub fn display_secure_cloud_rentals(
                 }
             };
 
-            let ssh = if rental.ssh_command.is_some() {
-                "✓"
-            } else {
-                "✗"
+            let cpu_ram = match (rental.vcpu_count, rental.system_memory_gb) {
+                (Some(cores), Some(memory_gb)) => format!("{cores} cores / {memory_gb}GB"),
+                _ => "—".to_string(),
             };
-
-            // Format CPU
-            let cpu = rental
-                .vcpu_count
-                .map(|cores| format!("{} cores", cores))
-                .unwrap_or_else(|| "-".to_string());
-
-            // Format RAM
-            let ram = rental
-                .system_memory_gb
-                .map(|gb| format!("{} GB", gb))
-                .unwrap_or_else(|| "-".to_string());
 
             // Use accumulated cost from billing service - no fallback
             let total_cost = rental
@@ -1094,23 +1727,41 @@ pub fn display_secure_cloud_rentals(
                 gpu: gpu_str,
                 status: rental.status.clone(),
                 ip: rental.ip_address.clone().unwrap_or_else(|| "-".to_string()),
-                ssh: ssh.to_string(),
-                cpu,
-                ram,
+                cpu_ram,
                 region: rental
                     .location_code
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
-                hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
+                hourly_cost: format_hourly_price(rental.hourly_cost),
                 total_cost,
-                created: format_timestamp(&rental.created_at.to_rfc3339()),
+                created: format_created(rental.created_at),
             }
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    let context = RenderContext::stdout();
+    let adaptive = AdaptiveTable::new(
+        PS_CITADEL_GPU_COLUMNS.to_vec(),
+        rows.iter()
+            .zip(rentals)
+            .map(|(row, rental)| {
+                vec![
+                    row.name.clone(),
+                    row.provider.clone(),
+                    row.gpu.clone(),
+                    row.status.clone(),
+                    row.ip.clone(),
+                    row.cpu_ram.clone(),
+                    row.region.clone(),
+                    row.hourly_cost.clone(),
+                    row.total_cost.clone(),
+                    format_age(rental.created_at, context.now),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
+    println!("{rendered}");
 
     Ok(())
 }
@@ -1118,25 +1769,24 @@ pub fn display_secure_cloud_rentals(
 /// Display CPU-only offerings in detailed table format
 pub fn display_cpu_offerings_detailed(
     offerings: &[basilica_sdk::types::CpuOffering],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if offerings.is_empty() {
         println!("{}", style("No CPU instances available").yellow());
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct CpuOfferingRow {
-        #[tabled(rename = "PROVIDER")]
+        #[tabled(rename = "Provider")]
         provider: String,
-        #[tabled(rename = "vCPU")]
-        vcpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
-        #[tabled(rename = "STORAGE")]
+        #[tabled(rename = "Size")]
+        size: String,
+        #[tabled(rename = "Storage")]
         storage: String,
-        #[tabled(rename = "REGION")]
+        #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "PRICE/HR")]
+        #[tabled(rename = "Price/Hr")]
         price: String,
     }
 
@@ -1144,24 +1794,41 @@ pub fn display_cpu_offerings_detailed(
         .iter()
         .map(|offering| CpuOfferingRow {
             provider: offering.provider.clone(),
-            vcpu: format!("{} cores", offering.vcpu_count),
-            ram: format!("{} GB", offering.system_memory_gb),
+            size: format!(
+                "{} cores / {}GB",
+                offering.vcpu_count, offering.system_memory_gb
+            ),
             storage: if offering.storage_gb > 0 {
                 format!("{} GB", offering.storage_gb)
             } else {
                 "-".to_string()
             },
             region: offering.region.clone(),
-            price: format!(
-                "${:.2}/hr",
-                offering.hourly_rate.parse::<f64>().unwrap_or(0.0)
-            ),
+            price: format_hourly_price(offering.hourly_rate.parse::<f64>().unwrap_or(0.0)),
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    let adaptive = AdaptiveTable::new(
+        LS_CITADEL_CPU_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.provider.clone(),
+                    row.size.clone(),
+                    row.storage.clone(),
+                    row.region.clone(),
+                    row.price.clone(),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     println!("\nTotal Citadel (CPU) offerings: {}", offerings.len());
 
@@ -1171,31 +1838,28 @@ pub fn display_cpu_offerings_detailed(
 /// Display CPU-only rentals in table format (no GPU column)
 pub fn display_cpu_rentals(
     rentals: &[&basilica_sdk::types::SecureCloudRentalListItem],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if rentals.is_empty() {
         println!("{}", style("No CPU-only rentals found").yellow());
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct CpuRentalRow {
         #[tabled(rename = "Name")]
         name: String,
         #[tabled(rename = "Provider")]
         provider: String,
-        #[tabled(rename = "vCPU")]
-        vcpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "Size")]
+        size: String,
         #[tabled(rename = "State")]
         status: String,
         #[tabled(rename = "IP")]
         ip: String,
-        #[tabled(rename = "SSH")]
-        ssh: String,
         #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Price/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -1206,23 +1870,10 @@ pub fn display_cpu_rentals(
     let rows: Vec<CpuRentalRow> = rentals
         .iter()
         .map(|rental| {
-            let ssh = if rental.ssh_command.is_some() {
-                "✓"
-            } else {
-                "✗"
+            let size = match (rental.vcpu_count, rental.system_memory_gb) {
+                (Some(cores), Some(memory_gb)) => format!("{cores} cores / {memory_gb}GB"),
+                _ => "—".to_string(),
             };
-
-            // Format vCPU
-            let vcpu = rental
-                .vcpu_count
-                .map(|cores| format!("{} cores", cores))
-                .unwrap_or_else(|| "-".to_string());
-
-            // Format RAM
-            let ram = rental
-                .system_memory_gb
-                .map(|gb| format!("{} GB", gb))
-                .unwrap_or_else(|| "-".to_string());
 
             // Use accumulated cost from billing service
             let total_cost = rental
@@ -1234,37 +1885,54 @@ pub fn display_cpu_rentals(
             CpuRentalRow {
                 name: rental.name.clone(),
                 provider: rental.provider.clone(),
-                vcpu,
-                ram,
+                size,
                 status: rental.status.clone(),
                 ip: rental.ip_address.clone().unwrap_or_else(|| "-".to_string()),
-                ssh: ssh.to_string(),
                 region: rental
                     .location_code
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
-                hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
+                hourly_cost: format_hourly_price(rental.hourly_cost),
                 total_cost,
-                created: format_timestamp(&rental.created_at.to_rfc3339()),
+                created: format_created(rental.created_at),
             }
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    let context = RenderContext::stdout();
+    let adaptive = AdaptiveTable::new(
+        PS_CITADEL_CPU_COLUMNS.to_vec(),
+        rows.iter()
+            .zip(rentals)
+            .map(|(row, rental)| {
+                vec![
+                    row.name.clone(),
+                    row.provider.clone(),
+                    row.size.clone(),
+                    row.status.clone(),
+                    row.ip.clone(),
+                    row.region.clone(),
+                    row.hourly_cost.clone(),
+                    row.total_cost.clone(),
+                    format_age(rental.created_at, context.now),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
+    println!("{rendered}");
 
     Ok(())
 }
 
 /// Display volumes in table format
-pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
+pub fn display_volumes(volumes: &[VolumeResponse], output: ResolvedOutput) -> Result<()> {
     if volumes.is_empty() {
         println!("{}", style("No volumes found").yellow());
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct VolumeRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -1278,7 +1946,7 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
         region: String,
         #[tabled(rename = "Rental")]
         rental: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Price/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -1314,7 +1982,7 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
                 rental: volume.rental_id.clone().unwrap_or_else(|| "-".to_string()),
                 hourly_cost: volume
                     .estimated_hourly_cost
-                    .map(|c| format!("${:.2}/hr", c))
+                    .map(format_hourly_price)
                     .unwrap_or_else(|| "-".to_string()),
                 total_cost,
                 created: format_timestamp(&volume.created_at.to_rfc3339()),
@@ -1322,9 +1990,31 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    let adaptive = AdaptiveTable::new(
+        VOLUME_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.name.clone(),
+                    row.size.clone(),
+                    row.status.clone(),
+                    row.provider.clone(),
+                    row.region.clone(),
+                    row.rental.clone(),
+                    row.hourly_cost.clone(),
+                    row.total_cost.clone(),
+                    row.created.clone(),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     Ok(())
 }
@@ -1333,6 +2023,1074 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
 mod tests {
     use super::*;
     use basilica_sdk::types::{CardPurchaseStatus, CardPurchaseSummary};
+
+    #[derive(Tabled)]
+    struct WideTestRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Provider")]
+        provider: String,
+        #[tabled(rename = "State")]
+        state: String,
+    }
+
+    #[derive(Tabled)]
+    struct CompactTestRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "State")]
+        state: String,
+    }
+
+    #[derive(Tabled)]
+    struct AdaptiveWideTestRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Low")]
+        low: String,
+        #[tabled(rename = "High")]
+        high: String,
+        #[tabled(rename = "Created")]
+        created: String,
+    }
+
+    fn adaptive_fixture() -> (Table, AdaptiveTable) {
+        let name = "training-rental-with-a-very-long-name".to_string();
+        let wide = Table::new([AdaptiveWideTestRow {
+            name: name.clone(),
+            low: "low-value".to_string(),
+            high: "high-value".to_string(),
+            created: "2026-07-13 12:00:00 UTC".to_string(),
+        }]);
+        let adaptive = AdaptiveTable::new(
+            vec![
+                AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+                AdaptiveColumn::optional("Low", 1),
+                AdaptiveColumn::optional("High", 2),
+                AdaptiveColumn::required("Age"),
+            ],
+            vec![vec![
+                name,
+                "low-value".to_string(),
+                "high-value".to_string(),
+                "2h".to_string(),
+            ]],
+        );
+        (wide, adaptive)
+    }
+
+    fn historical_rental_fixture() -> HistoricalRentalItem {
+        HistoricalRentalItem {
+            name: Some("training-1".to_string()),
+            rental_id: "rental-c1234567890".to_string(),
+            node_id: Some("node-1".to_string()),
+            status: "Stopped".to_string(),
+            total_cost: "27.66".to_string(),
+            hourly_rate: Some(0.55),
+            started_at: DateTime::parse_from_rfc3339("2026-04-07T00:53:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            stopped_at: DateTime::parse_from_rfc3339("2026-04-08T02:13:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            duration_seconds: 91_140,
+            gpu_count: 1,
+            cloud_type: "community".to_string(),
+            compute_type: "gpu".to_string(),
+            vcpu_count: Some(192),
+            system_memory_gb: Some(1536),
+            provider: Some("hyperstack".to_string()),
+        }
+    }
+
+    fn adaptive_render(output: ResolvedOutput, is_tty: bool, width: usize) -> String {
+        let (wide, adaptive) = adaptive_fixture();
+        render_adaptive_table_with_context(
+            wide,
+            adaptive,
+            output,
+            RenderContext {
+                is_tty,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        )
+    }
+
+    fn adaptive_width(active_columns: &[usize]) -> usize {
+        let (_, adaptive) = adaptive_fixture();
+        adaptive.build(active_columns).total_width()
+    }
+
+    fn render_adaptive_schema_at_width(
+        columns: &[AdaptiveColumn],
+        values: &[&str],
+        width: usize,
+    ) -> String {
+        let adaptive = AdaptiveTable::new(
+            columns.to_vec(),
+            vec![values.iter().map(|value| (*value).to_string()).collect()],
+        );
+        let all_columns = adaptive.all_columns();
+        let wide = adaptive.build(&all_columns);
+
+        render_adaptive_table_with_context(
+            wide,
+            adaptive,
+            ResolvedOutput::Auto,
+            RenderContext {
+                is_tty: true,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        )
+    }
+
+    fn assert_rendered_width(rendered: &str, width: usize) {
+        assert!(
+            rendered.lines().all(|line| get_text_width(line) <= width),
+            "table exceeded {width} columns:\n{rendered}"
+        );
+    }
+
+    fn render_test_table(output: ResolvedOutput, is_tty: bool, width: usize) -> String {
+        let name = "training-rental-with-a-very-long-name".to_string();
+        render_table_with_context(
+            Table::new([WideTestRow {
+                name: name.clone(),
+                provider: "hyperstack".to_string(),
+                state: "provisioning".to_string(),
+            }]),
+            Some(Table::new([CompactTestRow {
+                name: name.clone(),
+                state: "provisioning".to_string(),
+            }])),
+            output,
+            RenderContext {
+                is_tty,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+            Some(console::measure_text_width(&name)),
+        )
+    }
+
+    #[test]
+    fn wide_layout_golden() {
+        let rendered = render_test_table(ResolvedOutput::Wide, true, 40);
+        assert_eq!(
+            rendered,
+            "┌───────────────────────────────────────┬────────────┬──────────────┐\n\
+             │ Name                                  │ Provider   │ State        │\n\
+             ├───────────────────────────────────────┼────────────┼──────────────┤\n\
+             │ training-rental-with-a-very-long-name │ hyperstack │ provisioning │\n\
+             └───────────────────────────────────────┴────────────┴──────────────┘"
+        );
+    }
+
+    #[test]
+    fn compact_layout_golden() {
+        let rendered = render_test_table(ResolvedOutput::Compact, true, 100);
+        assert_eq!(
+            rendered,
+            "┌───────────────────────────────────────┬──────────────┐\n\
+             │ Name                                  │ State        │\n\
+             ├───────────────────────────────────────┼──────────────┤\n\
+             │ training-rental-with-a-very-long-name │ provisioning │\n\
+             └───────────────────────────────────────┴──────────────┘"
+        );
+    }
+
+    #[test]
+    fn auto_layout_selects_compact_at_injected_width() {
+        let rendered = render_test_table(ResolvedOutput::Auto, true, 55);
+        assert!(!rendered.contains("Provider"));
+        assert!(rendered.contains("State"));
+        assert!(rendered
+            .lines()
+            .all(|line| console::measure_text_width(line) <= 55));
+    }
+
+    #[test]
+    fn compact_layout_truncates_only_name_to_floor() {
+        let rendered = render_test_table(ResolvedOutput::Compact, true, 20);
+        assert_eq!(
+            rendered,
+            "┌──────────┬──────────────┐\n\
+             │ Name     │ State        │\n\
+             ├──────────┼──────────────┤\n\
+             │ trainin… │ provisioning │\n\
+             └──────────┴──────────────┘"
+        );
+    }
+
+    #[test]
+    fn non_tty_auto_output_is_always_wide() {
+        let rendered = render_test_table(ResolvedOutput::Auto, false, 20);
+        assert!(rendered.contains("Provider"));
+        assert!(rendered.contains("training-rental-with-a-very-long-name"));
+    }
+
+    #[test]
+    fn adaptive_auto_keeps_wide_table_when_it_fits() {
+        let (mut wide, _) = adaptive_fixture();
+        wide.with(Style::modern());
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, wide.total_width());
+        assert!(rendered.contains("Created"));
+        assert!(!rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_auto_uses_all_adaptive_columns_before_dropping_any() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 1, 2, 3]));
+        assert!(rendered.contains("Low"));
+        assert!(rendered.contains("High"));
+        assert!(rendered.contains("Age"));
+        assert!(!rendered.contains("Created"));
+    }
+
+    #[test]
+    fn adaptive_auto_drops_optional_columns_in_priority_order() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 2, 3]));
+        assert!(!rendered.contains("Low"));
+        assert!(rendered.contains("High"));
+        assert!(rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_auto_reaches_required_columns_only() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 3]));
+        assert!(!rendered.contains("Low"));
+        assert!(!rendered.contains("High"));
+        assert!(rendered.contains("Name"));
+        assert!(rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_compact_always_uses_required_columns_only() {
+        let rendered = adaptive_render(ResolvedOutput::Compact, true, usize::MAX);
+        assert!(!rendered.contains("Low"));
+        assert!(!rendered.contains("High"));
+        assert!(rendered.contains("Name"));
+        assert!(rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_non_tty_auto_remains_wide() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, false, 1);
+        assert!(rendered.contains("Created"));
+        assert!(rendered.contains("Low"));
+        assert!(rendered.contains("High"));
+    }
+
+    #[test]
+    fn adaptive_required_table_truncates_name_to_eight_character_floor() {
+        let name_width = get_text_width("training-rental-with-a-very-long-name");
+        let required_width = adaptive_width(&[0, 3]);
+        let minimum_width = required_width.saturating_sub(name_width - MIN_NAME_WIDTH);
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, minimum_width);
+        assert!(rendered.contains("trainin…"));
+        assert!(rendered
+            .lines()
+            .all(|line| console::measure_text_width(line) <= minimum_width));
+    }
+
+    #[test]
+    fn adaptive_required_table_truncates_each_eligible_column_in_order() {
+        let name = "training-rental-with-a-very-long-name";
+        let gpu = "gpu-model-with-a-very-long-name";
+        let adaptive = AdaptiveTable::new(
+            vec![
+                AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+                AdaptiveColumn::required_truncatable("GPU", 2, MIN_GPU_WIDTH),
+                AdaptiveColumn::required("Region"),
+            ],
+            vec![vec![
+                name.to_string(),
+                gpu.to_string(),
+                "us-silicon-valley-1".to_string(),
+            ]],
+        );
+        let required_width = adaptive.build(&[0, 1, 2]).total_width();
+        let width = required_width - (get_text_width(name) - MIN_NAME_WIDTH) - 5;
+        let rendered = render_adaptive_table_with_context(
+            Table::new([AdaptiveWideTestRow {
+                name: name.to_string(),
+                low: gpu.to_string(),
+                high: "us-silicon-valley-1".to_string(),
+                created: "2026-07-13 12:00:00 UTC".to_string(),
+            }]),
+            adaptive,
+            ResolvedOutput::Compact,
+            RenderContext {
+                is_tty: true,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        assert!(rendered.contains("trainin…"));
+        assert!(!rendered.contains(gpu));
+        assert!(rendered.contains("us-silicon-valley-1"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= width));
+    }
+
+    #[test]
+    fn adaptive_name_truncation_uses_tabled_width_for_osc8_links() {
+        let label = "training-rental-with-a-very-long-name";
+        let linked_name = format!("\x1b]8;;https://example.com\x1b\\{label}\x1b]8;;\x1b\\");
+        let adaptive = AdaptiveTable::new(
+            vec![
+                AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+                AdaptiveColumn::required("Age"),
+            ],
+            vec![vec![linked_name, "2h".to_string()]],
+        );
+        let required_width = adaptive.build(&[0, 1]).total_width();
+        let width = required_width - (get_text_width(label) - MIN_NAME_WIDTH);
+        let rendered = render_adaptive_table_with_context(
+            Table::new([AdaptiveWideTestRow {
+                name: label.to_string(),
+                low: "low-value".to_string(),
+                high: "high-value".to_string(),
+                created: "2026-07-13 12:00:00 UTC".to_string(),
+            }]),
+            adaptive,
+            ResolvedOutput::Compact,
+            RenderContext {
+                is_tty: true,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        assert!(rendered.contains('…'));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= width));
+    }
+
+    #[test]
+    fn adaptive_columns_keep_their_declared_order() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 1, 2, 3]));
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.find("Name") < header.find("Low"));
+        assert!(header.find("Low") < header.find("High"));
+        assert!(header.find("High") < header.find("Age"));
+    }
+
+    fn schema(columns: &[AdaptiveColumn]) -> Vec<(&'static str, Option<usize>)> {
+        columns
+            .iter()
+            .map(|column| (column.header, column.drop_order))
+            .collect()
+    }
+
+    fn truncation_schema(columns: &[AdaptiveColumn]) -> Vec<(&'static str, usize, usize)> {
+        columns
+            .iter()
+            .filter_map(|column| {
+                column
+                    .truncation
+                    .map(|rule| (column.header, rule.order, rule.min_width))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ls_adaptive_column_priorities_match_the_cli_contract() {
+        assert_eq!(
+            schema(LS_BOURSE_COLUMNS),
+            vec![("GPU", None), ("Available", None), ("Price/Hr", None)]
+        );
+        assert_eq!(
+            schema(LS_CITADEL_GPU_COLUMNS),
+            vec![
+                ("Provider", Some(4)),
+                ("GPU", None),
+                ("VRAM", None),
+                ("CPU/RAM", Some(1)),
+                ("Storage", Some(2)),
+                ("Interconnect", Some(3)),
+                ("Region", None),
+                ("Price/Hr", None),
+            ]
+        );
+        assert_eq!(
+            schema(LS_CITADEL_CPU_COLUMNS),
+            vec![
+                ("Provider", None),
+                ("Size", None),
+                ("Storage", Some(1)),
+                ("Region", None),
+                ("Price/Hr", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn ps_adaptive_column_priorities_match_the_cli_contract() {
+        assert_eq!(
+            schema(PS_BOURSE_COLUMNS),
+            vec![
+                ("Name", None),
+                ("GPU", None),
+                ("State", Some(7)),
+                ("IP", None),
+                ("Ports (Host → Container)", Some(5)),
+                ("Image", Some(3)),
+                ("CPU/RAM", Some(2)),
+                ("Location", Some(4)),
+                ("Price/Hr", Some(6)),
+                ("Total Cost", Some(1)),
+                ("Age", None),
+            ]
+        );
+        assert_eq!(
+            schema(PS_CITADEL_GPU_COLUMNS),
+            vec![
+                ("Name", None),
+                ("Provider", Some(4)),
+                ("GPU", None),
+                ("State", Some(6)),
+                ("IP", None),
+                ("CPU/RAM", Some(2)),
+                ("Region", Some(3)),
+                ("Price/Hr", Some(5)),
+                ("Total Cost", Some(1)),
+                ("Age", None),
+            ]
+        );
+        assert_eq!(
+            schema(PS_CITADEL_CPU_COLUMNS),
+            vec![
+                ("Name", None),
+                ("Provider", Some(3)),
+                ("Size", None),
+                ("State", Some(5)),
+                ("IP", None),
+                ("Region", Some(2)),
+                ("Price/Hr", Some(4)),
+                ("Total Cost", Some(1)),
+                ("Age", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn ps_history_priorities_require_only_name_and_total_cost() {
+        assert_eq!(
+            schema(PS_GPU_HISTORY_COLUMNS),
+            vec![
+                ("Name", None),
+                ("GPUs", Some(4)),
+                ("Status", Some(1)),
+                ("Total Cost", None),
+                ("Started", Some(3)),
+                ("Stopped", Some(2)),
+                ("Duration", Some(5)),
+            ]
+        );
+        assert_eq!(
+            schema(PS_CPU_HISTORY_COLUMNS),
+            vec![
+                ("Name", None),
+                ("Provider", Some(6)),
+                ("vCPU", Some(7)),
+                ("RAM", Some(8)),
+                ("Status", Some(1)),
+                ("Price/Hr", Some(5)),
+                ("Total Cost", None),
+                ("Started", Some(3)),
+                ("Stopped", Some(2)),
+                ("Duration", Some(4)),
+            ]
+        );
+    }
+
+    #[test]
+    fn gpu_history_auto_fits_within_seventy_columns() {
+        let rental = historical_rental_fixture();
+        let rendered = render_rental_history_with_context(
+            &[&rental],
+            ResolvedOutput::Auto,
+            RenderContext {
+                is_tty: true,
+                width: Some(70),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.contains("Name"));
+        assert!(header.contains("GPUs"));
+        assert!(header.contains("Total Cost"));
+        assert!(header.contains("Started"));
+        assert!(header.contains("Duration"));
+        assert!(!header.contains("Status"));
+        assert!(!header.contains("Stopped"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 70));
+    }
+
+    #[test]
+    fn cpu_history_auto_fits_within_seventy_columns() {
+        let rental = historical_rental_fixture();
+        let rendered = render_cpu_rental_history_with_context(
+            &[&rental],
+            ResolvedOutput::Auto,
+            RenderContext {
+                is_tty: true,
+                width: Some(70),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.contains("Name"));
+        assert!(header.contains("Provider"));
+        assert!(header.contains("vCPU"));
+        assert!(header.contains("RAM"));
+        assert!(header.contains("Total Cost"));
+        assert!(!header.contains("Status"));
+        assert!(!header.contains("Price/Hr"));
+        assert!(!header.contains("Started"));
+        assert!(!header.contains("Stopped"));
+        assert!(!header.contains("Duration"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 70));
+    }
+
+    #[test]
+    fn history_compact_contains_only_name_and_total_cost() {
+        let rental = historical_rental_fixture();
+        let context = RenderContext {
+            is_tty: true,
+            width: Some(70),
+            now: DateTime::UNIX_EPOCH,
+        };
+        let gpu = render_rental_history_with_context(&[&rental], ResolvedOutput::Compact, context);
+        let cpu =
+            render_cpu_rental_history_with_context(&[&rental], ResolvedOutput::Compact, context);
+
+        for rendered in [gpu, cpu] {
+            let header = rendered.lines().nth(1).expect("header row");
+            assert!(header.contains("Name"));
+            assert!(header.contains("Total Cost"));
+            assert_eq!(header.matches('│').count(), 3);
+            assert!(rendered.lines().all(|line| get_text_width(line) <= 70));
+        }
+    }
+
+    #[test]
+    fn cpu_history_price_does_not_repeat_the_header_unit() {
+        let rental = historical_rental_fixture();
+        let rendered = render_cpu_rental_history_with_context(
+            &[&rental],
+            ResolvedOutput::Wide,
+            RenderContext {
+                is_tty: true,
+                width: Some(70),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        assert!(rendered.contains("$0.55"));
+        assert!(!rendered.contains("$0.55/hr"));
+    }
+
+    #[test]
+    fn history_name_falls_back_to_full_api_rental_id() {
+        let mut rental = historical_rental_fixture();
+        rental.name = None;
+
+        assert_eq!(historical_rental_name(&rental), "rental-c1234567890");
+
+        let context = RenderContext {
+            is_tty: true,
+            width: Some(25),
+            now: DateTime::UNIX_EPOCH,
+        };
+        let wide = render_rental_history_with_context(&[&rental], ResolvedOutput::Wide, context);
+        let compact =
+            render_rental_history_with_context(&[&rental], ResolvedOutput::Compact, context);
+
+        assert!(wide.contains("rental-c1234567890"));
+        assert!(!compact.contains("rental-c1234567890"));
+        assert!(compact.contains("rental-…"));
+        assert!(compact.lines().all(|line| get_text_width(line) <= 25));
+    }
+
+    #[test]
+    fn ls_tables_fit_representative_rows_within_seventy_columns() {
+        let bourse = render_adaptive_schema_at_width(
+            LS_BOURSE_COLUMNS,
+            &["RTX PRO 6000", "128 nodes", "$0.55 - $0.71"],
+            70,
+        );
+        assert_rendered_width(&bourse, 70);
+
+        let citadel_gpu = render_adaptive_schema_at_width(
+            LS_CITADEL_GPU_COLUMNS,
+            &[
+                "hyperstack",
+                "RTX PRO 6000",
+                "96 GB",
+                "32 cores / 256GB",
+                "2048 GB",
+                "InfiniBand",
+                "us-silicon-valley-1",
+                "$12.34",
+            ],
+            70,
+        );
+        let gpu_header = citadel_gpu.lines().nth(1).expect("GPU ls header");
+        assert!(gpu_header.contains("Provider"));
+        assert!(!gpu_header.contains("CPU/RAM"));
+        assert!(!gpu_header.contains("Storage"));
+        assert!(!gpu_header.contains("Interconnect"));
+        assert_rendered_width(&citadel_gpu, 70);
+
+        let citadel_cpu = render_adaptive_schema_at_width(
+            LS_CITADEL_CPU_COLUMNS,
+            &[
+                "hyperstack",
+                "192 cores / 1536GB",
+                "2048 GB",
+                "us-silicon-valley-1",
+                "$12.34",
+            ],
+            70,
+        );
+        let cpu_header = citadel_cpu.lines().nth(1).expect("CPU ls header");
+        assert!(cpu_header.contains("Provider"));
+        assert!(cpu_header.contains("Size"));
+        assert!(cpu_header.contains("Region"));
+        assert!(cpu_header.contains("Price/Hr"));
+        assert!(!cpu_header.contains("Storage"));
+        assert_rendered_width(&citadel_cpu, 70);
+    }
+
+    #[test]
+    fn ps_tables_fit_representative_ipv4_rows_within_seventy_columns() {
+        let bourse = render_adaptive_schema_at_width(
+            PS_BOURSE_COLUMNS,
+            &[
+                "training-rental-with-a-very-long-name",
+                "8x RTX PRO 6000",
+                "running",
+                "255.255.255.255",
+                "32000→22, 32001→8000",
+                "one-covenant/trainer",
+                "32 cores / 256GB",
+                "us-silicon-valley-1",
+                "$12.34",
+                "$123.45",
+                "25h 19m",
+            ],
+            70,
+        );
+        let bourse_header = bourse.lines().nth(1).expect("Bourse ps header");
+        assert!(bourse_header.contains("Name"));
+        assert!(bourse_header.contains("GPU"));
+        assert!(bourse_header.contains("IP"));
+        assert!(bourse_header.contains("Age"));
+        assert!(bourse.contains('…'));
+        assert_rendered_width(&bourse, 70);
+
+        let citadel_gpu = render_adaptive_schema_at_width(
+            PS_CITADEL_GPU_COLUMNS,
+            &[
+                "training-rental-with-a-very-long-name",
+                "hyperstack",
+                "8x RTX PRO 6000",
+                "running",
+                "255.255.255.255",
+                "32 cores / 256GB",
+                "us-silicon-valley-1",
+                "$12.34",
+                "$123.45",
+                "25h 19m",
+            ],
+            70,
+        );
+        let gpu_header = citadel_gpu.lines().nth(1).expect("Citadel GPU ps header");
+        assert!(gpu_header.contains("Name"));
+        assert!(gpu_header.contains("GPU"));
+        assert!(gpu_header.contains("IP"));
+        assert!(gpu_header.contains("Age"));
+        assert!(citadel_gpu.contains('…'));
+        assert_rendered_width(&citadel_gpu, 70);
+
+        let citadel_cpu = render_adaptive_schema_at_width(
+            PS_CITADEL_CPU_COLUMNS,
+            &[
+                "training-rental-with-a-very-long-name",
+                "hyperstack",
+                "192 cores / 1536GB",
+                "running",
+                "255.255.255.255",
+                "us-silicon-valley-1",
+                "$12.34",
+                "$123.45",
+                "25h 19m",
+            ],
+            70,
+        );
+        let cpu_header = citadel_cpu.lines().nth(1).expect("Citadel CPU ps header");
+        assert!(cpu_header.contains("Name"));
+        assert!(cpu_header.contains("Size"));
+        assert!(cpu_header.contains("IP"));
+        assert!(cpu_header.contains("Age"));
+        assert!(citadel_cpu.contains('…'));
+        assert_rendered_width(&citadel_cpu, 70);
+    }
+
+    #[test]
+    fn volume_adaptive_column_priorities_match_the_cli_contract() {
+        assert_eq!(
+            schema(VOLUME_COLUMNS),
+            vec![
+                ("Name", None),
+                ("Size", None),
+                ("Status", None),
+                ("Provider", Some(2)),
+                ("Region", None),
+                ("Rental", Some(5)),
+                ("Price/Hr", Some(4)),
+                ("Total Cost", Some(3)),
+                ("Created", Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn token_columns_keep_dates_and_truncate_only_name() {
+        assert_eq!(
+            schema(TOKEN_COLUMNS),
+            vec![("Name", None), ("Created", None), ("Last Used", None)]
+        );
+        assert_eq!(
+            truncation_schema(TOKEN_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH)]
+        );
+    }
+
+    #[test]
+    fn token_auto_truncates_long_names_to_fit_sixty_columns() {
+        #[derive(Tabled)]
+        struct TokenTestRow {
+            name: String,
+            created: String,
+            last_used: String,
+        }
+
+        let values = vec![
+            "automation-token-with-a-very-long-name".to_string(),
+            "26-07-13 12:00:00".to_string(),
+            "26-07-13 13:00:00".to_string(),
+        ];
+        let rendered = render_adaptive_table_with_context(
+            Table::new([TokenTestRow {
+                name: values[0].clone(),
+                created: values[1].clone(),
+                last_used: values[2].clone(),
+            }]),
+            AdaptiveTable::new(TOKEN_COLUMNS.to_vec(), vec![values]),
+            ResolvedOutput::Auto,
+            RenderContext {
+                is_tty: true,
+                width: Some(60),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        assert!(rendered.contains('…'));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 60));
+    }
+
+    #[test]
+    fn volume_auto_fits_required_columns_within_sixty_columns() {
+        #[derive(Tabled)]
+        struct VolumeTestRow {
+            name: String,
+            size: String,
+            status: String,
+            provider: String,
+            region: String,
+            rental: String,
+            price: String,
+            total_cost: String,
+            created: String,
+        }
+
+        let values = vec![
+            "training-checkpoints-with-a-long-name".to_string(),
+            "10240 GB".to_string(),
+            "Available".to_string(),
+            "cyan".to_string(),
+            "us-silicon-valley-1".to_string(),
+            "rental-with-a-long-name".to_string(),
+            "$0.12".to_string(),
+            "$18.42".to_string(),
+            "26-07-13 12:00:00".to_string(),
+        ];
+        let rendered = render_adaptive_table_with_context(
+            Table::new([VolumeTestRow {
+                name: values[0].clone(),
+                size: values[1].clone(),
+                status: values[2].clone(),
+                provider: values[3].clone(),
+                region: values[4].clone(),
+                rental: values[5].clone(),
+                price: values[6].clone(),
+                total_cost: values[7].clone(),
+                created: values[8].clone(),
+            }]),
+            AdaptiveTable::new(VOLUME_COLUMNS.to_vec(), vec![values]),
+            ResolvedOutput::Auto,
+            RenderContext {
+                is_tty: true,
+                width: Some(60),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.contains("Name"));
+        assert!(header.contains("Size"));
+        assert!(header.contains("Status"));
+        assert!(header.contains("Region"));
+        assert!(!header.contains("Provider"));
+        assert!(!header.contains("Rental"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 60));
+    }
+
+    #[test]
+    fn adaptive_truncation_rules_preserve_non_truncatable_required_columns() {
+        assert_eq!(
+            truncation_schema(LS_BOURSE_COLUMNS),
+            vec![("GPU", 1, MIN_GPU_WIDTH)]
+        );
+        assert_eq!(
+            truncation_schema(LS_CITADEL_GPU_COLUMNS),
+            vec![("GPU", 1, MIN_GPU_WIDTH)]
+        );
+        assert!(truncation_schema(LS_CITADEL_CPU_COLUMNS).is_empty());
+        assert_eq!(
+            truncation_schema(PS_BOURSE_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH), ("GPU", 2, MIN_GPU_WIDTH),]
+        );
+        assert_eq!(
+            truncation_schema(PS_CITADEL_GPU_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH), ("GPU", 2, MIN_GPU_WIDTH),]
+        );
+        assert_eq!(
+            truncation_schema(PS_CITADEL_CPU_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH)]
+        );
+        assert_eq!(
+            truncation_schema(VOLUME_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH)]
+        );
+    }
+
+    #[test]
+    fn funding_history_dates_do_not_include_times() {
+        assert_eq!(format_utc_date(&DateTime::UNIX_EPOCH), "1970-01-01");
+    }
+
+    #[test]
+    fn deposit_columns_drop_block_then_confirmations() {
+        assert_eq!(
+            schema(FUND_DEPOSIT_COLUMNS),
+            vec![
+                ("Date", None),
+                ("TAO", None),
+                ("Tx Hash", None),
+                ("Conf", Some(2)),
+                ("Block", Some(1)),
+                ("Status", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn deposit_hash_uses_short_link_to_taostats() {
+        let hash = "0x1234567890abcdef1234567890abcdef";
+        let cell = deposit_tx_hash_cell(hash, true);
+
+        assert_eq!(get_text_width(&cell), 10);
+        assert!(cell.contains("0x1234…def"));
+        assert!(cell.contains(&format!(
+            "\x1b]8;;https://taostats.io/extrinsic/{hash}\x1b\\"
+        )));
+        assert!(cell.ends_with("\x1b]8;;\x1b\\"));
+    }
+
+    #[test]
+    fn deposit_hash_stays_plain_outside_a_terminal() {
+        let hash = "0x1234567890abcdef1234567890abcdef";
+        assert_eq!(deposit_tx_hash_cell(hash, false), "0x1234…def");
+    }
+
+    #[test]
+    fn deposit_compact_omits_block_and_confirmations() {
+        #[derive(Tabled)]
+        struct DepositTestRow {
+            date: String,
+            amount: String,
+            tx_hash: String,
+            confirmations: String,
+            block: String,
+            status: String,
+        }
+
+        let values = vec![
+            "2026-07-13".to_string(),
+            "1.250".to_string(),
+            deposit_tx_hash_cell("0x1234567890abcdef1234567890abcdef", true),
+            "12+".to_string(),
+            "123456".to_string(),
+            "Credited".to_string(),
+        ];
+        let rendered = render_adaptive_table_with_context(
+            Table::new([DepositTestRow {
+                date: values[0].clone(),
+                amount: values[1].clone(),
+                tx_hash: values[2].clone(),
+                confirmations: values[3].clone(),
+                block: values[4].clone(),
+                status: values[5].clone(),
+            }]),
+            AdaptiveTable::new(FUND_DEPOSIT_COLUMNS.to_vec(), vec![values]),
+            ResolvedOutput::Compact,
+            RenderContext {
+                is_tty: true,
+                width: Some(60),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.contains("Date"));
+        assert!(header.contains("TAO"));
+        assert!(header.contains("Tx Hash"));
+        assert!(header.contains("Status"));
+        assert!(!header.contains("Conf"));
+        assert!(!header.contains("Block"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 60));
+    }
+
+    #[test]
+    fn relative_age_uses_injected_clock() {
+        let now = DateTime::parse_from_rfc3339("2026-07-13T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(format_age_str("2026-07-13T11:13:00Z", now), "47m");
+        assert_eq!(format_age_str("2026-07-13T10:00:00Z", now), "2h");
+        assert_eq!(format_age_str("2026-07-10T12:00:00Z", now), "3d");
+        assert_eq!(format_age_str("2026-07-14T12:00:00Z", now), "0m");
+    }
+
+    #[test]
+    fn image_names_drop_registry_tag_and_digest() {
+        assert_eq!(
+            compact_image_name("ghcr.io/one-covenant/trainer:latest"),
+            "one-covenant/trainer"
+        );
+        assert_eq!(compact_image_name("nvidia/cuda:12.4"), "nvidia/cuda");
+        assert_eq!(compact_image_name("ubuntu@sha256:abc"), "ubuntu");
+    }
+
+    #[test]
+    fn gpu_names_drop_redundant_vendor_and_architecture_prefixes() {
+        assert_eq!(
+            compact_gpu_model_name("NVIDIA BLACKWELL RTX PRO 6000"),
+            "RTX PRO 6000"
+        );
+        assert_eq!(compact_gpu_model_name("blackwell b200"), "b200");
+        assert_eq!(compact_gpu_model_name("RTX A6000"), "RTX A6000");
+    }
+
+    #[test]
+    fn hourly_prices_do_not_repeat_the_header_unit() {
+        assert_eq!(format_hourly_price(0.23), "$0.23");
+        assert_eq!(format_hourly_price(Decimal::new(55, 2)), "$0.55");
+    }
+
+    #[test]
+    fn ansi_and_osc8_cells_use_visible_width() {
+        #[derive(Tabled)]
+        struct Row {
+            label: String,
+        }
+        let label =
+            "\x1b]8;;https://example.test/invoice\x1b\\\x1b[34;4mINV-1\x1b[0m\x1b]8;;\x1b\\";
+        let mut table = Table::new([Row {
+            label: label.to_string(),
+        }]);
+        table.with(Style::modern());
+        assert_eq!(table.total_width(), 9);
+        assert!(table
+            .to_string()
+            .lines()
+            .all(|line| tabled::grid::util::string::get_line_width(line) == 9));
+    }
+
+    fn card_payment_rows_with_long_invoice() -> Vec<Vec<String>> {
+        vec![vec![
+            "2026-07-13".to_string(),
+            "$1,234.56".to_string(),
+            "Completed".to_string(),
+            link_cell(
+                "INV-2026-EXTREMELY-LONG-INVOICE-NUMBER-00000001",
+                "https://invoice.stripe.test/i/in_123",
+            ),
+        ]]
+    }
+
+    fn render_card_payment_fixture(output: ResolvedOutput, width: usize) -> String {
+        render_card_purchase_rows(
+            card_payment_rows_with_long_invoice(),
+            output,
+            RenderContext {
+                is_tty: true,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        )
+    }
+
+    #[test]
+    fn card_payment_auto_fits_long_invoice_link_at_seventy_columns() {
+        let rendered = render_card_payment_fixture(ResolvedOutput::Auto, 70);
+
+        assert!(rendered.contains("Date"));
+        assert!(rendered.contains("Amount"));
+        assert!(rendered.contains("Status"));
+        assert!(rendered.contains("Invoice/Receipt"));
+        assert!(rendered.contains("\x1b]8;;https://invoice.stripe.test/i/in_123\x1b\\"));
+        assert!(rendered.contains("\x1b]8;;\x1b\\"));
+        assert!(rendered.contains('…'));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 70));
+    }
+
+    #[test]
+    fn card_payment_compact_fits_long_invoice_link_at_seventy_columns() {
+        let rendered = render_card_payment_fixture(ResolvedOutput::Compact, 70);
+
+        assert!(rendered.contains("Date"));
+        assert!(rendered.contains("Amount"));
+        assert!(rendered.contains("Status"));
+        assert!(rendered.contains("Invoice/Receipt"));
+        assert!(rendered.contains('…'));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 70));
+    }
+
+    #[test]
+    fn card_payment_wide_preserves_the_full_invoice_label() {
+        let rendered = render_card_payment_fixture(ResolvedOutput::Wide, 70);
+
+        assert!(rendered.contains("INV-2026-EXTREMELY-LONG-INVOICE-NUMBER-00000001"));
+        assert!(rendered.lines().any(|line| get_text_width(line) > 70));
+    }
 
     fn purchase(
         hosted_invoice_url: Option<&str>,
