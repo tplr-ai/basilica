@@ -815,7 +815,7 @@ async fn handle_rental_with_offering(
                 .await
                 .map_err(CliError::Internal)?;
 
-            let ssh_client = SshClient::new(&config.ssh)?;
+            let ssh_client = SshClient::new(&config.ssh, None)?;
             match retry_ssh_connection(
                 &ssh_client,
                 &ssh_access,
@@ -1057,7 +1057,7 @@ async fn handle_community_cloud_rental_with_selection(
                 .await
                 .map_err(CliError::Internal)?;
 
-            let ssh_client = SshClient::new(&config.ssh)?;
+            let ssh_client = SshClient::new(&config.ssh, None)?;
             match retry_ssh_connection(
                 &ssh_client,
                 &ssh_access,
@@ -2475,9 +2475,39 @@ pub async fn handle_restart(target: Option<String>, config: &CliConfig) -> Resul
 }
 
 /// Handle the `exec` command - execute commands via SSH
+fn exec_status_result(
+    status: basilica_common::ssh::SshCommandStatus,
+    timeout: Option<u64>,
+) -> Result<(), CliError> {
+    match status {
+        basilica_common::ssh::SshCommandStatus::Exited(status) if status.success() => Ok(()),
+        basilica_common::ssh::SshCommandStatus::Exited(status) => {
+            let code = status.code().unwrap_or(1);
+            let message = (code == 255).then(|| {
+                "SSH transport failed (exit 255); the client cannot determine whether the remote command started or stopped\nCheck if the rental is still active and SSH port is exposed\nRun 'basilica status <rental-id>' to check rental status".to_string()
+            });
+            Err(CliError::CommandExit { code, message })
+        }
+        basilica_common::ssh::SshCommandStatus::TimedOut => {
+            let timeout = timeout.ok_or_else(|| {
+                CliError::Internal(eyre!(
+                    "SSH command timed out without a configured execution timeout"
+                ))
+            })?;
+            Err(CliError::CommandExit {
+                code: 124,
+                message: Some(format!(
+                    "command timed out after {timeout}s; it may still be running on the remote host"
+                )),
+            })
+        }
+    }
+}
+
 pub async fn handle_exec(
     target: Option<String>,
     command: String,
+    timeout: Option<u64>,
     config: &CliConfig,
 ) -> Result<(), CliError> {
     // Create API client to verify rental status
@@ -2526,11 +2556,12 @@ pub async fn handle_exec(
     debug!("Using private key for exec: {}", private_key_path.display());
 
     // Use SSH client to execute command
-    let ssh_client = SshClient::new(&config.ssh)?;
-    ssh_client
+    let ssh_client = SshClient::new(&config.ssh, timeout.map(Duration::from_secs))?;
+    let status = ssh_client
         .execute_command(&ssh_access, &command, private_key_path)
         .await?;
-    Ok(())
+
+    exec_status_result(status, timeout)
 }
 
 /// Handle the `ssh` command - SSH into instances
@@ -2590,7 +2621,7 @@ pub async fn handle_ssh(
     debug!("Using private key: {}", private_key_path.display());
 
     // Use SSH client to handle connection with options
-    let ssh_client = SshClient::new(&config.ssh)?;
+    let ssh_client = SshClient::new(&config.ssh, None)?;
 
     // Open interactive session with port forwarding options
     ssh_client
@@ -2678,7 +2709,7 @@ pub async fn handle_cp(
     );
 
     // Use SSH client for file transfer
-    let ssh_client = SshClient::new(&config.ssh).map_err(|e| eyre!(e))?;
+    let ssh_client = SshClient::new(&config.ssh, None).map_err(|e| eyre!(e))?;
 
     if is_upload {
         ssh_client
@@ -3174,7 +3205,61 @@ fn display_ps_quick_start_commands() {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_total_hourly_cost, total_hourly_cost};
+    use super::{exec_status_result, format_total_hourly_cost, total_hourly_cost};
+    use crate::CliError;
+    use basilica_common::ssh::SshCommandStatus;
+
+    fn shell_status(code: i32) -> std::process::ExitStatus {
+        std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("exit {code}"))
+            .status()
+            .unwrap()
+    }
+
+    #[test]
+    fn exec_status_preserves_remote_exit_code_without_message() {
+        let error =
+            exec_status_result(SshCommandStatus::Exited(shell_status(3)), None).unwrap_err();
+
+        assert!(matches!(
+            error,
+            CliError::CommandExit {
+                code: 3,
+                message: None
+            }
+        ));
+    }
+
+    #[test]
+    fn exec_status_adds_rental_guidance_only_for_transport_failure() {
+        let error =
+            exec_status_result(SshCommandStatus::Exited(shell_status(255)), None).unwrap_err();
+
+        match error {
+            CliError::CommandExit {
+                code: 255,
+                message: Some(message),
+            } => {
+                assert!(message.contains("cannot determine whether the remote command started"));
+                assert!(message.contains("basilica status <rental-id>"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn exec_timeout_uses_exit_124_and_reports_remote_ambiguity() {
+        let error = exec_status_result(SshCommandStatus::TimedOut, Some(7)).unwrap_err();
+
+        assert!(matches!(
+            error,
+            CliError::CommandExit {
+                code: 124,
+                message: Some(message)
+            } if message == "command timed out after 7s; it may still be running on the remote host"
+        ));
+    }
 
     #[test]
     fn format_total_hourly_cost_uses_two_decimal_places() {

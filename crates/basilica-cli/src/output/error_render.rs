@@ -12,6 +12,13 @@ pub enum RenderMode {
 }
 
 pub fn render_error(err: &CliError, mode: RenderMode, w: &mut dyn Write) -> std::io::Result<()> {
+    if let CliError::CommandExit { message, .. } = err {
+        return match message {
+            Some(message) => writeln!(w, "{}", message),
+            None => Ok(()),
+        };
+    }
+
     match mode {
         RenderMode::Json => render_json(err, w),
         RenderMode::Human => render_human(err, w),
@@ -112,5 +119,33 @@ mod tests {
         assert!(s.contains("SSH command failed"));
         assert!(s.contains("ModuleNotFoundError"));
         assert!(!s.contains("Command execution failed"));
+    }
+
+    #[test]
+    fn command_exit_without_message_renders_nothing() {
+        let err = CliError::CommandExit {
+            code: 3,
+            message: None,
+        };
+        let mut buf = Vec::new();
+
+        render_error(&err, RenderMode::Human, &mut buf).unwrap();
+
+        assert!(buf.is_empty());
+        assert_eq!(err.exit_code(), 3);
+    }
+
+    #[test]
+    fn command_exit_with_message_renders_exact_message() {
+        let err = CliError::CommandExit {
+            code: 124,
+            message: Some("command timed out after 2s".into()),
+        };
+        let mut buf = Vec::new();
+
+        render_error(&err, RenderMode::Json, &mut buf).unwrap();
+
+        assert_eq!(buf, b"command timed out after 2s\n");
+        assert_eq!(err.exit_code(), 124);
     }
 }

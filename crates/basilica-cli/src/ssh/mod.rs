@@ -9,7 +9,7 @@ pub use key_matcher::{
 use crate::config::SshConfig;
 use crate::error::{CliError, Result};
 use basilica_common::ssh::{
-    SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
+    SshCommandStatus, SshConnectionConfig, SshConnectionDetails, SshFileTransferManager,
     StandardSshClient,
 };
 use basilica_sdk::types::{RentalStatusResponse, SshAccess};
@@ -37,7 +37,7 @@ pub enum SshProbeStatus {
 
 impl SshClient {
     /// Create new SSH client
-    pub fn new(config: &SshConfig) -> Result<Self> {
+    pub fn new(config: &SshConfig, execution_timeout: Option<Duration>) -> Result<Self> {
         // Create SSH connection config using configured timeout
         let connection_timeout = if config.connection_timeout > 0 {
             Duration::from_secs(config.connection_timeout)
@@ -47,7 +47,7 @@ impl SshClient {
 
         let ssh_config = SshConnectionConfig {
             connection_timeout,
-            execution_timeout: Duration::from_secs(3600),
+            execution_timeout,
             retry_attempts: 3,
             max_transfer_size: 1000 * 1024 * 1024, // 1000MB
             cleanup_remote_files: false,
@@ -95,7 +95,7 @@ impl SshClient {
         ssh_access: &SshAccess,
         command: &str,
         private_key_path: std::path::PathBuf,
-    ) -> Result<()> {
+    ) -> Result<SshCommandStatus> {
         let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
 
         debug!(
@@ -107,18 +107,10 @@ impl SshClient {
             command
         );
 
-        let output = self
-            .client
-            .execute_command(&details, command, true)
+        self.client
+            .execute_command_passthrough(&details, command)
             .await
-            .map_err(|e| {
-                eyre!(e)
-                    .suggestion("Check if the rental is still active and SSH port is exposed")
-                    .note("Run 'basilica status <rental-id>' to check rental status")
-            })?;
-
-        println!("{}", output);
-        Ok(())
+            .map_err(|e| eyre!(e).into())
     }
 
     /// Execute a command with rental status (for backward compatibility)
