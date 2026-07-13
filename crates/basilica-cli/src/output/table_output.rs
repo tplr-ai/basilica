@@ -1453,12 +1453,10 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
 }
 
 fn historical_rental_name(rental: &HistoricalRentalItem) -> String {
-    rental.name.clone().unwrap_or_else(|| {
-        format!(
-            "id:{}",
-            rental.rental_id.chars().take(8).collect::<String>()
-        )
-    })
+    rental
+        .name
+        .clone()
+        .unwrap_or_else(|| rental.rental_id.clone())
 }
 
 fn render_rental_history_with_context(
@@ -2598,11 +2596,25 @@ mod tests {
     }
 
     #[test]
-    fn history_name_falls_back_to_locally_shortened_api_rental_id() {
+    fn history_name_falls_back_to_full_api_rental_id() {
         let mut rental = historical_rental_fixture();
         rental.name = None;
 
-        assert_eq!(historical_rental_name(&rental), "id:rental-c");
+        assert_eq!(historical_rental_name(&rental), "rental-c1234567890");
+
+        let context = RenderContext {
+            is_tty: true,
+            width: Some(25),
+            now: DateTime::UNIX_EPOCH,
+        };
+        let wide = render_rental_history_with_context(&[&rental], ResolvedOutput::Wide, context);
+        let compact =
+            render_rental_history_with_context(&[&rental], ResolvedOutput::Compact, context);
+
+        assert!(wide.contains("rental-c1234567890"));
+        assert!(!compact.contains("rental-c1234567890"));
+        assert!(compact.contains("rental-…"));
+        assert!(compact.lines().all(|line| get_text_width(line) <= 25));
     }
 
     #[test]
