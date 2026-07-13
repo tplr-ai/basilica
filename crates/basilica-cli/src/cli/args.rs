@@ -226,13 +226,11 @@ impl Args {
                 use crate::cli::commands::TokenAction;
                 use crate::client::create_client;
 
-                let list_json = match action {
+                let list_output = match action {
                     TokenAction::List { output } => Some(
-                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
-                            .map_err(|message| {
-                                CliError::Internal(color_eyre::eyre::eyre!(message))
-                            })?
-                            .is_json(),
+                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output).map_err(
+                            |message| CliError::Internal(color_eyre::eyre::eyre!(message)),
+                        )?,
                     ),
                     _ => None,
                 };
@@ -245,8 +243,11 @@ impl Args {
                         handlers::tokens::handle_create_token(&client, name.clone()).await?;
                     }
                     TokenAction::List { .. } => {
-                        handlers::tokens::handle_list_tokens(&client, list_json.unwrap_or(false))
-                            .await?;
+                        handlers::tokens::handle_list_tokens(
+                            &client,
+                            list_output.unwrap_or(crate::cli::commands::ResolvedOutput::Auto),
+                        )
+                        .await?;
                     }
                     TokenAction::Revoke { name, yes } => {
                         handlers::tokens::handle_revoke_token(&client, name.clone(), *yes).await?;

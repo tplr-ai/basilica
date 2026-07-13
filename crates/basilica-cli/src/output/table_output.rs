@@ -191,6 +191,12 @@ const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required("Age"),
 ];
 
+const TOKEN_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::required("Created"),
+    AdaptiveColumn::required("Last Used"),
+];
+
 const VOLUME_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
     AdaptiveColumn::required("Size"),
@@ -685,8 +691,8 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
 }
 
 /// Display API keys in table format
-pub fn display_api_keys(keys: &[ApiKeyInfo]) -> Result<()> {
-    #[derive(Tabled)]
+pub fn display_api_keys(keys: &[ApiKeyInfo], output: ResolvedOutput) -> Result<()> {
+    #[derive(Clone, Tabled)]
     struct ApiKeyRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -708,7 +714,19 @@ pub fn display_api_keys(keys: &[ApiKeyInfo]) -> Result<()> {
         })
         .collect();
 
-    print_standard_table(Table::new(rows));
+    let adaptive = AdaptiveTable::new(
+        TOKEN_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| vec![row.name.clone(), row.created.clone(), row.last_used.clone()])
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     Ok(())
 }
@@ -2266,6 +2284,51 @@ mod tests {
                 ("Created", Some(1)),
             ]
         );
+    }
+
+    #[test]
+    fn token_columns_keep_dates_and_truncate_only_name() {
+        assert_eq!(
+            schema(TOKEN_COLUMNS),
+            vec![("Name", None), ("Created", None), ("Last Used", None)]
+        );
+        assert_eq!(
+            truncation_schema(TOKEN_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH)]
+        );
+    }
+
+    #[test]
+    fn token_auto_truncates_long_names_to_fit_sixty_columns() {
+        #[derive(Tabled)]
+        struct TokenTestRow {
+            name: String,
+            created: String,
+            last_used: String,
+        }
+
+        let values = vec![
+            "automation-token-with-a-very-long-name".to_string(),
+            "26-07-13 12:00:00".to_string(),
+            "26-07-13 13:00:00".to_string(),
+        ];
+        let rendered = render_adaptive_table_with_context(
+            Table::new([TokenTestRow {
+                name: values[0].clone(),
+                created: values[1].clone(),
+                last_used: values[2].clone(),
+            }]),
+            AdaptiveTable::new(TOKEN_COLUMNS.to_vec(), vec![values]),
+            ResolvedOutput::Auto,
+            RenderContext {
+                is_tty: true,
+                width: Some(60),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        assert!(rendered.contains('…'));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 60));
     }
 
     #[test]
