@@ -123,7 +123,8 @@ pub enum Commands {
         #[arg(long)]
         target: Option<String>,
 
-        /// Maximum command duration in seconds (unbounded by default)
+        /// Maximum total SSH execution duration in seconds, including connection setup
+        /// (unbounded by default)
         #[arg(long, value_name = "SECS")]
         timeout: Option<u64>,
     },
@@ -1572,7 +1573,7 @@ mod train_command_tests {
     use super::*;
     use crate::cli::args::Args;
     use clap::error::ErrorKind;
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
     use std::str::FromStr;
 
     #[test]
@@ -1610,6 +1611,15 @@ mod train_command_tests {
             Commands::Exec { timeout, .. } => assert_eq!(timeout, None),
             other => panic!("expected exec command, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn exec_timeout_help_includes_connection_setup() {
+        let mut command = Args::command();
+        let exec = command.find_subcommand_mut("exec").unwrap();
+        let help = exec.render_long_help().to_string();
+
+        assert!(help.contains("including connection setup"));
     }
 
     // -----------------------------------------------------------------

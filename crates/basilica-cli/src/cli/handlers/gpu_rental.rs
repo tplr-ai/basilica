@@ -2481,13 +2481,7 @@ fn exec_status_result(
 ) -> Result<(), CliError> {
     match status {
         basilica_common::ssh::SshCommandStatus::Exited(status) if status.success() => Ok(()),
-        basilica_common::ssh::SshCommandStatus::Exited(status) => {
-            let code = status.code().unwrap_or(1);
-            let message = (code == 255).then(|| {
-                "SSH transport failed (exit 255); the client cannot determine whether the remote command started or stopped\nCheck if the rental is still active and SSH port is exposed\nRun 'basilica status <rental-id>' to check rental status".to_string()
-            });
-            Err(CliError::CommandExit { code, message })
-        }
+        basilica_common::ssh::SshCommandStatus::Exited(status) => Err(exec_exit_error(status)),
         basilica_common::ssh::SshCommandStatus::TimedOut => {
             let timeout = timeout.ok_or_else(|| {
                 CliError::Internal(eyre!(
@@ -2501,6 +2495,37 @@ fn exec_status_result(
                 )),
             })
         }
+    }
+}
+
+fn exec_exit_error(status: std::process::ExitStatus) -> CliError {
+    if let Some(code) = status.code() {
+        let message = (code == 255).then(|| {
+            "SSH transport failed (exit 255); the client cannot determine whether the remote command started or stopped\nCheck if the rental is still active and SSH port is exposed\nRun 'basilica status <rental-id>' to check rental status".to_string()
+        });
+        return CliError::CommandExit { code, message };
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+
+        if let Some(signal) = status.signal() {
+            return CliError::CommandExit {
+                code: 128 + signal,
+                message: Some(format!(
+                    "SSH process terminated by signal {signal}; the client cannot determine whether the remote command started or stopped"
+                )),
+            };
+        }
+    }
+
+    CliError::CommandExit {
+        code: 1,
+        message: Some(
+            "SSH process terminated without an exit status; the client cannot determine whether the remote command started or stopped"
+                .to_string(),
+        ),
     }
 }
 
@@ -2552,8 +2577,6 @@ pub async fn handle_exec(
 
         crate::ssh::find_private_key_for_public_key(&public_key).map_err(CliError::Internal)?
     };
-
-    debug!("Using private key for exec: {}", private_key_path.display());
 
     // Use SSH client to execute command
     let ssh_client = SshClient::new(&config.ssh, timeout.map(Duration::from_secs))?;
@@ -3246,6 +3269,25 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exec_status_reports_local_ssh_signal() {
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("kill -TERM $$")
+            .status()
+            .unwrap();
+        let error = exec_status_result(SshCommandStatus::Exited(status), None).unwrap_err();
+
+        assert!(matches!(
+            error,
+            CliError::CommandExit {
+                code: 143,
+                message: Some(message)
+            } if message == "SSH process terminated by signal 15; the client cannot determine whether the remote command started or stopped"
+        ));
     }
 
     #[test]

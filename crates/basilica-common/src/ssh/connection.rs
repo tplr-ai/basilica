@@ -743,10 +743,6 @@ impl StandardSshClient {
         cmd.arg(format!("{}@{}", details.username, details.host))
             .arg(command);
 
-        if !capture_output {
-            cmd.stdout(Stdio::null()).stderr(Stdio::null());
-        }
-
         debug!("Executing SSH command");
 
         let output = self
@@ -902,7 +898,7 @@ impl SshFileTransferManager for StandardSshClient {
             details.username, details.host, remote_path
         ));
 
-        debug!("Executing SCP command: {:?}", cmd);
+        debug!("Executing SCP upload command");
 
         let output = self.execute_process(&mut cmd, true).await?;
 
@@ -955,7 +951,7 @@ impl SshFileTransferManager for StandardSshClient {
         ))
         .arg(local_path);
 
-        debug!("Executing SCP download command: {:?}", cmd);
+        debug!("Executing SCP download command");
 
         let output = self.execute_process(&mut cmd, true).await?;
 

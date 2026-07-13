@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code, and leaves command duration unbounded by default.
 
 ### Fixed
-- SSH commands and file transfers now use async subprocesses with server-alive
-  probes, and configured execution timeouts kill and reap the subprocess.
+- SSH commands and file transfers now detect unresponsive sessions with
+  server-alive probes, and configured execution timeouts stop and reap the
+  local subprocess.
 - `basilica deploy` with `--private` now prints the one-time share token after
   waiting for the deployment to become ready. The token is only returned by
   the create call, so the ready-wait status response dropped it and the CLI
