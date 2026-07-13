@@ -98,14 +98,7 @@ impl SshClient {
     ) -> Result<SshCommandStatus> {
         let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
 
-        debug!(
-            "Executing command via SSH: ssh -i {} -p {} {}@{} '{}'",
-            details.private_key_path.display(),
-            details.port,
-            details.username,
-            details.host,
-            command
-        );
+        debug!("Executing command via SSH");
 
         self.client
             .execute_command_passthrough(&details, command)

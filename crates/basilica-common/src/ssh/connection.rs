@@ -587,7 +587,7 @@ impl StandardSshClient {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        debug!("Spawning SSH streaming command: {:?}", cmd);
+        debug!("Spawning SSH streaming command");
 
         cmd.spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn SSH streaming command: {}", e))
@@ -605,7 +605,7 @@ impl StandardSshClient {
         match timeout(execution_timeout, child.wait()).await {
             Ok(status) => Ok(SshCommandStatus::Exited(status?)),
             Err(_) => {
-                child.kill().await.map_err(|error| {
+                child.start_kill().map_err(|error| {
                     anyhow::anyhow!("Failed to kill timed-out subprocess: {}", error)
                 })?;
                 child.wait().await.map_err(|error| {
@@ -627,6 +627,7 @@ impl StandardSshClient {
         } else {
             command.stdout(Stdio::null()).stderr(Stdio::null());
         }
+        command.kill_on_drop(true);
 
         let mut child = command.spawn()?;
         let stdout_task = child.stdout.take().map(|mut stdout| {
@@ -713,8 +714,9 @@ impl StandardSshClient {
             .stdout(stdout)
             .stderr(stderr);
 
-        debug!("Executing SSH command with pass-through output: {:?}", cmd);
+        debug!("Executing SSH command with pass-through output");
 
+        cmd.kill_on_drop(true);
         let mut child = cmd
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn SSH command: {}", e))?;
@@ -745,7 +747,7 @@ impl StandardSshClient {
             cmd.stdout(Stdio::null()).stderr(Stdio::null());
         }
 
-        debug!("Executing SSH command: {:?}", cmd);
+        debug!("Executing SSH command");
 
         let output = self
             .execute_process(&mut cmd, capture_output)
@@ -1091,13 +1093,13 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn passthrough_uses_ssh_status_and_reaps_timed_out_fake_ssh() {
+    async fn passthrough_preserves_streams_status_timeout_and_cancellation() {
         use std::os::unix::fs::PermissionsExt;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let fake_ssh = temp_dir.path().join("fake-ssh");
         let private_key = temp_dir.path().join("key");
-        let pid_file = temp_dir.path().join("pid");
+        let cancellation_pid_file = temp_dir.path().join("cancel-pid");
         let stdout_file = temp_dir.path().join("stdout");
         let stderr_file = temp_dir.path().join("stderr");
         std::fs::write(
@@ -1107,7 +1109,8 @@ for last_arg do :; done
 case "$last_arg" in
   success) printf 'stdout-bytes'; printf 'stderr-bytes' >&2; exit 0 ;;
   exit-3) exit 3 ;;
-  timeout:*) printf '%s' "$$" > "${last_arg#timeout:}"; exec sleep 30 ;;
+  hang) exec sleep 30 ;;
+  cancel:*) printf '%s' "$$" > "${last_arg#cancel:}"; exec sleep 30 ;;
 esac
 exit 255
 "#,
@@ -1161,17 +1164,51 @@ exit 255
             ..SshConnectionConfig::default()
         });
         let timeout_status = timeout_client
-            .execute_command_passthrough_with_program(
-                &details,
-                &format!("timeout:{}", pid_file.display()),
-                &fake_ssh,
-            )
+            .execute_command_passthrough_with_program(&details, "hang", &fake_ssh)
             .await
             .unwrap();
-        let pid: i32 = std::fs::read_to_string(&pid_file).unwrap().parse().unwrap();
 
         assert!(matches!(timeout_status, SshCommandStatus::TimedOut));
-        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+
+        {
+            let cancellation_command = format!("cancel:{}", cancellation_pid_file.display());
+            let cancellation = client.execute_command_with_program_and_stdio(
+                &details,
+                &cancellation_command,
+                &fake_ssh,
+                Stdio::null(),
+                Stdio::null(),
+            );
+            tokio::pin!(cancellation);
+            let wait_until_started = async {
+                while !cancellation_pid_file.exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            };
+
+            tokio::time::timeout(Duration::from_secs(5), async {
+                tokio::select! {
+                    result = &mut cancellation => {
+                        panic!("fake SSH exited before cancellation: {result:?}")
+                    }
+                    () = wait_until_started => {}
+                }
+            })
+            .await
+            .unwrap();
+        }
+
+        let cancelled_pid: i32 = std::fs::read_to_string(&cancellation_pid_file)
+            .unwrap()
+            .parse()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while unsafe { libc::kill(cancelled_pid, 0) } == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
     }
 
     #[test]
