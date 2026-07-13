@@ -23,7 +23,7 @@ use tabled::{
     Table, Tabled,
 };
 
-pub(crate) const MIN_NAME_WIDTH: usize = 12;
+pub(crate) const MIN_NAME_WIDTH: usize = 8;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RenderContext {
@@ -1689,11 +1689,11 @@ mod tests {
         let rendered = render_test_table(ResolvedOutput::Compact, true, 20);
         assert_eq!(
             rendered,
-            "┌──────────────┬──────────────┐\n\
-             │ Name         │ State        │\n\
-             ├──────────────┼──────────────┤\n\
-             │ training-re… │ provisioning │\n\
-             └──────────────┴──────────────┘"
+            "┌──────────┬──────────────┐\n\
+             │ Name     │ State        │\n\
+             ├──────────┼──────────────┤\n\
+             │ trainin… │ provisioning │\n\
+             └──────────┴──────────────┘"
         );
     }
 

@@ -867,7 +867,7 @@ mod tests {
             width: Some(80),
             now: chrono::DateTime::UNIX_EPOCH,
         };
-        assert_eq!(compact_url_budget(context, 120, Some(40), 60), Some(48));
+        assert_eq!(compact_url_budget(context, 120, Some(40), 60), Some(52));
     }
 
     #[test]
