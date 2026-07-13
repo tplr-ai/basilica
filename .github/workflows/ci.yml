@@ -113,7 +113,7 @@ jobs:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Check formatting
@@ -159,7 +159,7 @@ jobs:
           # of `--all-features` would otherwise override it.
           arguments: ""
       - name: Install cargo-audit
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: cargo-audit
       - name: cargo audit (advisory only)
@@ -207,7 +207,7 @@ jobs:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Run clippy on complex packages
@@ -261,7 +261,7 @@ jobs:
           packages: pkg-config libssl-dev xxd mold clang
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Setup Blacksmith Builder
@@ -337,7 +337,7 @@ jobs:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Setup Blacksmith Builder
@@ -413,7 +413,7 @@ jobs:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Build and test basilica-cli
