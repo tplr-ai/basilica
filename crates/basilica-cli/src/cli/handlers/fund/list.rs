@@ -20,7 +20,7 @@ pub async fn handle_list_payments(
     client: &BasilicaClient,
     limit: u32,
     offset: u32,
-    json: bool,
+    output: crate::cli::commands::ResolvedOutput,
 ) -> EyreResult<(), CliError> {
     let spinner = create_spinner("Loading payment history...");
 
@@ -36,16 +36,17 @@ pub async fn handle_list_payments(
     let tao = tao_result.map_err(|e| e.to_string());
     let card = card_result.map_err(|e| e.to_string());
 
-    if json {
+    if output.is_json() {
         render_json(&tao, &card)
     } else {
-        render_text(&tao, &card)
+        render_text(&tao, &card, output)
     }
 }
 
 fn render_text(
     tao: &SourceResult<ListDepositsResponse>,
     card: &SourceResult<ListCardPurchasesResponse>,
+    output: crate::cli::commands::ResolvedOutput,
 ) -> EyreResult<(), CliError> {
     if let (Err(tao_err), Err(card_err)) = (tao, card) {
         return Err(CliError::Internal(
@@ -60,7 +61,7 @@ fn render_text(
     let card_empty = matches!(card, Ok(r) if r.purchases.is_empty());
 
     match tao {
-        Ok(resp) if !resp.deposits.is_empty() => table_output::display_deposits(resp)?,
+        Ok(resp) if !resp.deposits.is_empty() => table_output::display_deposits(resp, output)?,
         Ok(_) => {
             if card.is_err() {
                 print_info("No TAO deposits found yet");

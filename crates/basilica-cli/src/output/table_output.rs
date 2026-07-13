@@ -191,6 +191,15 @@ const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required("Age"),
 ];
 
+const FUND_DEPOSIT_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("Date"),
+    AdaptiveColumn::required("TAO"),
+    AdaptiveColumn::required("Tx Hash"),
+    AdaptiveColumn::optional("Conf", 2),
+    AdaptiveColumn::optional("Block", 1),
+    AdaptiveColumn::required("Status"),
+];
+
 const TOKEN_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
     AdaptiveColumn::required("Created"),
@@ -471,6 +480,38 @@ pub fn format_timestamp(timestamp: &str) -> String {
 
 fn format_utc_date(timestamp: &DateTime<Utc>) -> String {
     timestamp.format("%Y-%m-%d").to_string()
+}
+
+fn compact_tx_hash(hash: &str) -> String {
+    const PREFIX_LENGTH: usize = 6;
+    const SUFFIX_LENGTH: usize = 3;
+    const COMPACT_LENGTH: usize = PREFIX_LENGTH + 1 + SUFFIX_LENGTH;
+
+    let length = hash.chars().count();
+    if length <= COMPACT_LENGTH {
+        return hash.to_string();
+    }
+
+    let prefix: String = hash.chars().take(PREFIX_LENGTH).collect();
+    let suffix: String = hash.chars().skip(length - SUFFIX_LENGTH).collect();
+    format!("{prefix}…{suffix}")
+}
+
+fn taostats_extrinsic_url(hash: &str) -> Option<String> {
+    let mut url = url::Url::parse("https://taostats.io").ok()?;
+    url.path_segments_mut().ok()?.extend(["extrinsic", hash]);
+    Some(url.to_string())
+}
+
+fn deposit_tx_hash_cell(hash: &str, is_tty: bool) -> String {
+    let label = compact_tx_hash(hash);
+    if !is_tty {
+        return label;
+    }
+
+    taostats_extrinsic_url(hash)
+        .map(|url| link_cell(&label, &url))
+        .unwrap_or(label)
 }
 
 fn format_duration(seconds: i64) -> String {
@@ -997,63 +1038,74 @@ pub fn display_secure_cloud_offerings_detailed(
 }
 
 /// Display deposits history in table format
-pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
+pub fn display_deposits(response: &ListDepositsResponse, output: ResolvedOutput) -> Result<()> {
     println!();
     println!("{}", style("Deposit History").bold());
     println!();
 
-    let mut builder = Builder::default();
-
-    // Add header
-    builder.push_record(["Date", "TAO", "Tx Hash", "Conf", "Block", "Status"]);
-
-    let mut total_tao = 0.0;
-
-    for deposit in &response.deposits {
-        let amount_tao: f64 = deposit.amount_tao.parse().unwrap_or(0.0);
-        total_tao += amount_tao;
-
-        // Format date
-        let date = format_utc_date(&deposit.observed_at);
-
-        // Format tx hash (truncate to first 8 and last 3 chars)
-        let tx_hash = if deposit.tx_hash.len() > 11 {
-            format!(
-                "{}...{}",
-                &deposit.tx_hash[..8],
-                &deposit.tx_hash[deposit.tx_hash.len() - 3..]
-            )
-        } else {
-            deposit.tx_hash.clone()
-        };
-
-        // Format confirmations (12+ means finalized)
-        let confirmations = if deposit.finalized_at.is_some() {
-            "12+".to_string()
-        } else {
-            "-".to_string()
-        };
-
-        // Format status
-        let status = if deposit.credited_at.is_some() {
-            "Credited"
-        } else if deposit.finalized_at.is_some() {
-            "Finalized"
-        } else {
-            "Pending"
-        };
-
-        builder.push_record([
-            date.as_str(),
-            &format!("{:.3}", amount_tao),
-            tx_hash.as_str(),
-            confirmations.as_str(),
-            &deposit.block_number.to_string(),
-            status,
-        ]);
+    #[derive(Clone, Tabled)]
+    struct DepositRow {
+        #[tabled(rename = "Date")]
+        date: String,
+        #[tabled(rename = "TAO")]
+        amount: String,
+        #[tabled(rename = "Tx Hash")]
+        tx_hash: String,
+        #[tabled(rename = "Conf")]
+        confirmations: String,
+        #[tabled(rename = "Block")]
+        block: String,
+        #[tabled(rename = "Status")]
+        status: String,
     }
 
-    print_standard_table(builder.build());
+    let mut total_tao = 0.0;
+    let context = RenderContext::stdout();
+    let rows: Vec<DepositRow> = response
+        .deposits
+        .iter()
+        .map(|deposit| {
+            let amount_tao: f64 = deposit.amount_tao.parse().unwrap_or(0.0);
+            total_tao += amount_tao;
+
+            DepositRow {
+                date: format_utc_date(&deposit.observed_at),
+                amount: format!("{amount_tao:.3}"),
+                tx_hash: deposit_tx_hash_cell(&deposit.tx_hash, context.is_tty),
+                confirmations: if deposit.finalized_at.is_some() {
+                    "12+".to_string()
+                } else {
+                    "-".to_string()
+                },
+                block: deposit.block_number.to_string(),
+                status: if deposit.credited_at.is_some() {
+                    "Credited".to_string()
+                } else if deposit.finalized_at.is_some() {
+                    "Finalized".to_string()
+                } else {
+                    "Pending".to_string()
+                },
+            }
+        })
+        .collect();
+
+    let adaptive = AdaptiveTable::new(
+        FUND_DEPOSIT_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.date.clone(),
+                    row.amount.clone(),
+                    row.tx_hash.clone(),
+                    row.confirmations.clone(),
+                    row.block.clone(),
+                    row.status.clone(),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
+    println!("{rendered}");
 
     // Display totals
     println!();
@@ -2420,6 +2472,88 @@ mod tests {
     #[test]
     fn funding_history_dates_do_not_include_times() {
         assert_eq!(format_utc_date(&DateTime::UNIX_EPOCH), "1970-01-01");
+    }
+
+    #[test]
+    fn deposit_columns_drop_block_then_confirmations() {
+        assert_eq!(
+            schema(FUND_DEPOSIT_COLUMNS),
+            vec![
+                ("Date", None),
+                ("TAO", None),
+                ("Tx Hash", None),
+                ("Conf", Some(2)),
+                ("Block", Some(1)),
+                ("Status", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn deposit_hash_uses_short_link_to_taostats() {
+        let hash = "0x1234567890abcdef1234567890abcdef";
+        let cell = deposit_tx_hash_cell(hash, true);
+
+        assert_eq!(get_text_width(&cell), 10);
+        assert!(cell.contains("0x1234…def"));
+        assert!(cell.contains(&format!(
+            "\x1b]8;;https://taostats.io/extrinsic/{hash}\x1b\\"
+        )));
+        assert!(cell.ends_with("\x1b]8;;\x1b\\"));
+    }
+
+    #[test]
+    fn deposit_hash_stays_plain_outside_a_terminal() {
+        let hash = "0x1234567890abcdef1234567890abcdef";
+        assert_eq!(deposit_tx_hash_cell(hash, false), "0x1234…def");
+    }
+
+    #[test]
+    fn deposit_compact_omits_block_and_confirmations() {
+        #[derive(Tabled)]
+        struct DepositTestRow {
+            date: String,
+            amount: String,
+            tx_hash: String,
+            confirmations: String,
+            block: String,
+            status: String,
+        }
+
+        let values = vec![
+            "2026-07-13".to_string(),
+            "1.250".to_string(),
+            deposit_tx_hash_cell("0x1234567890abcdef1234567890abcdef", true),
+            "12+".to_string(),
+            "123456".to_string(),
+            "Credited".to_string(),
+        ];
+        let rendered = render_adaptive_table_with_context(
+            Table::new([DepositTestRow {
+                date: values[0].clone(),
+                amount: values[1].clone(),
+                tx_hash: values[2].clone(),
+                confirmations: values[3].clone(),
+                block: values[4].clone(),
+                status: values[5].clone(),
+            }]),
+            AdaptiveTable::new(FUND_DEPOSIT_COLUMNS.to_vec(), vec![values]),
+            ResolvedOutput::Compact,
+            RenderContext {
+                is_tty: true,
+                width: Some(60),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.contains("Date"));
+        assert!(header.contains("TAO"));
+        assert!(header.contains("Tx Hash"));
+        assert!(header.contains("Status"));
+        assert!(!header.contains("Conf"));
+        assert!(!header.contains("Block"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 60));
     }
 
     #[test]

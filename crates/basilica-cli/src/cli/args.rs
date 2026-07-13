@@ -282,13 +282,11 @@ impl Args {
                 use crate::cli::commands::FundAction;
                 use crate::client::create_authenticated_client;
 
-                let list_json = match action {
+                let list_output = match action {
                     Some(FundAction::List { output, .. }) => Some(
-                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
-                            .map_err(|message| {
-                                CliError::Internal(color_eyre::eyre::eyre!(message))
-                            })?
-                            .is_json(),
+                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output).map_err(
+                            |message| CliError::Internal(color_eyre::eyre::eyre!(message)),
+                        )?,
                     ),
                     None => None,
                 };
@@ -309,7 +307,7 @@ impl Args {
                             &client,
                             *limit,
                             *offset,
-                            list_json.unwrap_or(false),
+                            list_output.unwrap_or(crate::cli::commands::ResolvedOutput::Auto),
                         )
                         .await?;
                     }
