@@ -1398,7 +1398,7 @@ pub async fn handle_ps(
                         .collect();
                     community_history.sort_by_key(|r| std::cmp::Reverse(r.started_at));
 
-                    table_output::display_rental_history(&community_history)?;
+                    table_output::display_rental_history(&community_history, output)?;
 
                     // Calculate total cost for community cloud only
                     let total_cost: rust_decimal::Decimal = community_history
@@ -1518,7 +1518,7 @@ pub async fn handle_ps(
                     secure_cpu_history.sort_by_key(|r| std::cmp::Reverse(r.started_at));
 
                     print_cloud_section_header("The Citadel (GPU) Rental History", true);
-                    table_output::display_rental_history(&secure_gpu_history)?;
+                    table_output::display_rental_history(&secure_gpu_history, output)?;
 
                     let secure_gpu_total_cost: rust_decimal::Decimal = secure_gpu_history
                         .iter()
@@ -1541,7 +1541,7 @@ pub async fn handle_ps(
                     println!();
 
                     print_cloud_section_header("The Citadel (CPU) History", false);
-                    table_output::display_cpu_rental_history(&secure_cpu_history)?;
+                    table_output::display_cpu_rental_history(&secure_cpu_history, output)?;
 
                     let secure_cpu_total_cost: rust_decimal::Decimal = secure_cpu_history
                         .iter()
@@ -1718,7 +1718,7 @@ pub async fn handle_ps(
 
                     // Display community cloud history
                     print_cloud_section_header("The Bourse History", true);
-                    table_output::display_rental_history(&community_history)?;
+                    table_output::display_rental_history(&community_history, output)?;
 
                     let community_total_cost: rust_decimal::Decimal = community_history
                         .iter()
@@ -1742,7 +1742,7 @@ pub async fn handle_ps(
 
                     // Display secure cloud GPU history
                     print_cloud_section_header("The Citadel (GPU) History", false);
-                    table_output::display_rental_history(&secure_gpu_history)?;
+                    table_output::display_rental_history(&secure_gpu_history, output)?;
 
                     let secure_gpu_total_cost: rust_decimal::Decimal = secure_gpu_history
                         .iter()
@@ -1766,7 +1766,7 @@ pub async fn handle_ps(
 
                     // Display secure cloud CPU history
                     print_cloud_section_header("The Citadel (CPU) History", false);
-                    table_output::display_cpu_rental_history(&secure_cpu_history)?;
+                    table_output::display_cpu_rental_history(&secure_cpu_history, output)?;
 
                     let secure_cpu_total_cost: rust_decimal::Decimal = secure_cpu_history
                         .iter()

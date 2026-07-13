@@ -71,7 +71,9 @@ fn render_text(
     }
 
     match card {
-        Ok(resp) if !resp.purchases.is_empty() => table_output::display_card_purchases(resp)?,
+        Ok(resp) if !resp.purchases.is_empty() => {
+            table_output::display_card_purchases(resp, output)?
+        }
         Ok(_) => {
             if tao.is_err() {
                 print_info("No card payments found yet");
