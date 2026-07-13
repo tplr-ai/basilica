@@ -345,7 +345,10 @@ fn display_secure_cloud_table(
 }
 
 /// Helper function to display community cloud nodes (aggregated by GPU category)
-fn display_community_cloud_table(nodes: &[basilica_sdk::AvailableNode]) -> Result<(), CliError> {
+fn display_community_cloud_table(
+    nodes: &[basilica_sdk::AvailableNode],
+    output: ResolvedOutput,
+) -> Result<(), CliError> {
     if nodes.is_empty() {
         print_info("No GPUs available matching your criteria");
         return Ok(());
@@ -353,7 +356,7 @@ fn display_community_cloud_table(nodes: &[basilica_sdk::AvailableNode]) -> Resul
 
     use crate::cli::handlers::gpu_rental_helpers::aggregate_nodes_by_gpu_category;
     let aggregations = aggregate_nodes_by_gpu_category(nodes);
-    table_output::display_community_cloud_categories(&aggregations)?;
+    table_output::display_community_cloud_categories(&aggregations, output)?;
 
     Ok(())
 }
@@ -599,7 +602,7 @@ pub async fn handle_ls(
                 };
                 json_output(&response)?;
             } else {
-                display_community_cloud_table(&nodes)?;
+                display_community_cloud_table(&nodes, output)?;
             }
         }
         None => {
@@ -684,7 +687,7 @@ pub async fn handle_ls(
                 json_output(&response)?;
             } else {
                 print_cloud_section_header("The Bourse (GPU)", true);
-                display_community_cloud_table(&community_nodes)?;
+                display_community_cloud_table(&community_nodes, output)?;
 
                 println!();
 

@@ -90,7 +90,7 @@ pub enum Commands {
         #[command(flatten)]
         filters: ListFilters,
 
-        /// Output format (auto-selects compact or wide when omitted)
+        /// Output format (automatically adapts columns to terminal width when omitted)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },
@@ -118,7 +118,7 @@ pub enum Commands {
         #[command(flatten)]
         filters: PsFilters,
 
-        /// Output format (auto-selects compact or wide when omitted)
+        /// Output format (automatically adapts columns to terminal width when omitted)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },

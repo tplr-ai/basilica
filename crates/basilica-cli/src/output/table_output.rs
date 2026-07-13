@@ -19,6 +19,7 @@ use rust_decimal::Decimal;
 use std::{collections::HashMap, io::IsTerminal, str::FromStr};
 use tabled::{
     builder::Builder,
+    grid::util::string::get_text_width,
     settings::{object::Columns, Modify, Style, Width},
     Table, Tabled,
 };
@@ -86,6 +87,249 @@ pub(crate) fn render_table_with_context(
     table.to_string()
 }
 
+#[derive(Debug, Clone, Copy)]
+struct AdaptiveColumn {
+    header: &'static str,
+    drop_order: Option<usize>,
+}
+
+impl AdaptiveColumn {
+    const fn required(header: &'static str) -> Self {
+        Self {
+            header,
+            drop_order: None,
+        }
+    }
+
+    const fn optional(header: &'static str, drop_order: usize) -> Self {
+        Self {
+            header,
+            drop_order: Some(drop_order),
+        }
+    }
+}
+
+const LS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::required("Available"),
+    AdaptiveColumn::required("Price/hr"),
+];
+
+const LS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::optional("PROVIDER", 4),
+    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::required("VRAM"),
+    AdaptiveColumn::optional("CPU/RAM", 1),
+    AdaptiveColumn::optional("STORAGE", 2),
+    AdaptiveColumn::optional("INTERCONNECT", 3),
+    AdaptiveColumn::required("REGION"),
+    AdaptiveColumn::required("PRICE/HR"),
+];
+
+const LS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("PROVIDER"),
+    AdaptiveColumn::required("SIZE"),
+    AdaptiveColumn::optional("STORAGE", 1),
+    AdaptiveColumn::required("REGION"),
+    AdaptiveColumn::required("PRICE/HR"),
+];
+
+const PS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("Name"),
+    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::optional("State", 7),
+    AdaptiveColumn::required("IP"),
+    AdaptiveColumn::optional("Ports (Host → Container)", 5),
+    AdaptiveColumn::optional("Image", 3),
+    AdaptiveColumn::optional("CPU/RAM", 2),
+    AdaptiveColumn::optional("Location", 4),
+    AdaptiveColumn::optional("Rate/hr", 6),
+    AdaptiveColumn::optional("Total Cost", 1),
+    AdaptiveColumn::required("Age"),
+];
+
+const PS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("Name"),
+    AdaptiveColumn::optional("Provider", 4),
+    AdaptiveColumn::required("GPU"),
+    AdaptiveColumn::optional("State", 6),
+    AdaptiveColumn::required("IP"),
+    AdaptiveColumn::optional("CPU/RAM", 2),
+    AdaptiveColumn::optional("Region", 3),
+    AdaptiveColumn::optional("Rate/hr", 5),
+    AdaptiveColumn::optional("Total Cost", 1),
+    AdaptiveColumn::required("Age"),
+];
+
+const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required("Name"),
+    AdaptiveColumn::optional("Provider", 3),
+    AdaptiveColumn::required("Size"),
+    AdaptiveColumn::optional("State", 5),
+    AdaptiveColumn::required("IP"),
+    AdaptiveColumn::optional("Region", 2),
+    AdaptiveColumn::optional("Rate/hr", 4),
+    AdaptiveColumn::optional("Total Cost", 1),
+    AdaptiveColumn::required("Age"),
+];
+
+struct AdaptiveTable {
+    columns: Vec<AdaptiveColumn>,
+    rows: Vec<Vec<String>>,
+    flexible_column: Option<usize>,
+}
+
+impl AdaptiveTable {
+    fn new(
+        columns: Vec<AdaptiveColumn>,
+        rows: Vec<Vec<String>>,
+        flexible_column: Option<usize>,
+    ) -> Self {
+        Self {
+            columns,
+            rows,
+            flexible_column,
+        }
+    }
+
+    fn all_columns(&self) -> Vec<usize> {
+        (0..self.columns.len()).collect()
+    }
+
+    fn required_columns(&self) -> Vec<usize> {
+        self.columns
+            .iter()
+            .enumerate()
+            .filter_map(|(index, column)| column.drop_order.is_none().then_some(index))
+            .collect()
+    }
+
+    fn remove_lowest_priority(&self, active_columns: &mut Vec<usize>) -> bool {
+        let candidate = active_columns
+            .iter()
+            .filter_map(|&index| {
+                self.columns
+                    .get(index)?
+                    .drop_order
+                    .map(|drop_order| (drop_order, index))
+            })
+            .min_by_key(|&(drop_order, _)| drop_order);
+
+        let Some((_, index)) = candidate else {
+            return false;
+        };
+        active_columns.retain(|&active| active != index);
+        true
+    }
+
+    fn build(&self, active_columns: &[usize]) -> Table {
+        let mut builder = Builder::default();
+        builder.push_record(
+            active_columns
+                .iter()
+                .map(|&index| self.columns.get(index).map_or("", |column| column.header)),
+        );
+        for row in &self.rows {
+            builder.push_record(
+                active_columns
+                    .iter()
+                    .map(|&index| row.get(index).map(String::as_str).unwrap_or_default()),
+            );
+        }
+
+        let mut table = builder.build();
+        table.with(Style::modern());
+        table
+    }
+
+    fn flexible_width(&self) -> Option<usize> {
+        let index = self.flexible_column?;
+        self.rows
+            .iter()
+            .filter_map(|row| row.get(index))
+            .map(|value| get_text_width(value))
+            .max()
+    }
+}
+
+fn fit_required_table(
+    mut table: Table,
+    adaptive: &AdaptiveTable,
+    active_columns: &[usize],
+    width: usize,
+) -> String {
+    let overflow = table.total_width().saturating_sub(width);
+    if overflow == 0 {
+        return table.to_string();
+    }
+
+    if let (Some(source_index), Some(natural_width)) =
+        (adaptive.flexible_column, adaptive.flexible_width())
+    {
+        if let Some(position) = active_columns
+            .iter()
+            .position(|&index| index == source_index)
+        {
+            let target = natural_width.saturating_sub(overflow).max(MIN_NAME_WIDTH);
+            if target < natural_width {
+                table.with(
+                    Modify::new(Columns::new(position..position + 1))
+                        .with(Width::truncate(target).suffix("…")),
+                );
+            }
+        }
+    }
+
+    table.to_string()
+}
+
+fn render_adaptive_table_with_context(
+    mut wide: Table,
+    adaptive: AdaptiveTable,
+    output: ResolvedOutput,
+    context: RenderContext,
+) -> String {
+    wide.with(Style::modern());
+
+    match output {
+        ResolvedOutput::Wide | ResolvedOutput::Json => return wide.to_string(),
+        ResolvedOutput::Auto if !context.is_tty || context.width.is_none() => {
+            return wide.to_string();
+        }
+        ResolvedOutput::Auto
+            if context
+                .width
+                .is_some_and(|width| wide.total_width() <= width) =>
+        {
+            return wide.to_string();
+        }
+        ResolvedOutput::Auto | ResolvedOutput::Compact => {}
+    }
+
+    let mut active_columns = if matches!(output, ResolvedOutput::Compact) {
+        adaptive.required_columns()
+    } else {
+        adaptive.all_columns()
+    };
+    let width = context.width;
+
+    loop {
+        let table = adaptive.build(&active_columns);
+        let Some(width) = width else {
+            return table.to_string();
+        };
+        if table.total_width() <= width {
+            return table.to_string();
+        }
+        if matches!(output, ResolvedOutput::Auto)
+            && adaptive.remove_lowest_priority(&mut active_columns)
+        {
+            continue;
+        }
+        return fit_required_table(table, &adaptive, &active_columns, width);
+    }
+}
+
 fn print_standard_table(table: Table) {
     let rendered = render_table_with_context(
         table,
@@ -143,21 +387,6 @@ fn compact_image_name(image: &str) -> String {
     }
 }
 
-fn middle_ellipsis(value: &str, max_chars: usize) -> String {
-    let chars: Vec<char> = value.chars().collect();
-    if chars.len() <= max_chars {
-        return value.to_string();
-    }
-    let available = max_chars.saturating_sub(1);
-    let prefix_len = available / 2;
-    let suffix_len = available - prefix_len;
-    format!(
-        "{}…{}",
-        chars[..prefix_len].iter().collect::<String>(),
-        chars[chars.len() - suffix_len..].iter().collect::<String>()
-    )
-}
-
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
 pub fn format_timestamp(timestamp: &str) -> String {
     DateTime::parse_from_rfc3339(timestamp)
@@ -206,7 +435,7 @@ pub fn display_rental_items(
         (rate, cost)
     };
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct WideRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -272,42 +501,32 @@ pub fn display_rental_items(
         })
         .collect();
 
-    #[derive(Tabled)]
-    struct CompactRow {
-        #[tabled(rename = "Name")]
-        name: String,
-        #[tabled(rename = "GPU")]
-        gpu: String,
-        #[tabled(rename = "IP")]
-        ip: String,
-        #[tabled(rename = "Age")]
-        age: String,
-    }
-
     let context = RenderContext::stdout();
-    let compact_rows: Vec<CompactRow> = rentals
-        .iter()
-        .map(|rental| CompactRow {
-            name: rental.name.clone(),
-            gpu: format_gpu_info(&rental.gpu_specs),
-            ip: access_hosts
-                .get(&rental.rental_id)
-                .map(|host| middle_ellipsis(host, 22))
-                .unwrap_or_else(|| "—".to_string()),
-            age: format_age_str(&rental.created_at, context.now),
-        })
-        .collect();
-    let name_width = rentals
-        .iter()
-        .map(|rental| console::measure_text_width(&rental.name))
-        .max();
-    let rendered = render_table_with_context(
-        Table::new(wide_rows),
-        Some(Table::new(compact_rows)),
-        output,
-        context,
-        name_width,
+    let adaptive = AdaptiveTable::new(
+        PS_BOURSE_COLUMNS.to_vec(),
+        wide_rows
+            .iter()
+            .zip(rentals)
+            .map(|(row, rental)| {
+                vec![
+                    row.name.clone(),
+                    row.gpu.clone(),
+                    row.state.clone(),
+                    row.ip.clone(),
+                    row.ports.clone(),
+                    row.image.clone(),
+                    row.cpu_ram.clone(),
+                    row.location.clone(),
+                    row.rate_per_hour.clone(),
+                    row.total_cost.clone(),
+                    format_age_str(&rental.created_at, context.now),
+                ]
+            })
+            .collect(),
+        Some(0),
     );
+    let rendered =
+        render_adaptive_table_with_context(Table::new(wide_rows), adaptive, output, context);
     println!("{rendered}");
 
     Ok(())
@@ -513,13 +732,14 @@ pub fn display_available_nodes_detailed(
 /// Display community cloud GPU categories in aggregated format
 pub fn display_community_cloud_categories(
     aggregations: &[crate::cli::handlers::gpu_rental_helpers::GpuCategoryAggregation],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if aggregations.is_empty() {
         println!("No available GPUs found matching the specified criteria.");
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct CategoryRow {
         #[tabled(rename = "GPU")]
         gpu: String,
@@ -561,7 +781,20 @@ pub fn display_community_cloud_categories(
         })
         .collect();
 
-    print_standard_table(Table::new(rows));
+    let adaptive = AdaptiveTable::new(
+        LS_BOURSE_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| vec![row.gpu.clone(), row.available.clone(), row.price.clone()])
+            .collect(),
+        None,
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     let total_nodes: usize = aggregations.iter().map(|a| a.node_count).sum();
     println!("\nTotal available nodes: {}", total_nodes);
@@ -579,7 +812,7 @@ pub fn display_secure_cloud_offerings_detailed(
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct OfferingRow {
         #[tabled(rename = "PROVIDER")]
         provider: String,
@@ -641,51 +874,29 @@ pub fn display_secure_cloud_offerings_detailed(
         })
         .collect();
 
-    #[derive(Tabled)]
-    struct CompactOfferingRow {
-        #[tabled(rename = "PROVIDER")]
-        provider: String,
-        #[tabled(rename = "GPU")]
-        gpu: String,
-        #[tabled(rename = "VRAM")]
-        vram: String,
-        #[tabled(rename = "REGION")]
-        region: String,
-        #[tabled(rename = "RATE")]
-        rate: String,
-    }
-
-    let compact_rows = offerings.iter().map(|offering| {
-        let gpu = if offering.gpu_count == 1 {
-            offering.gpu_type.to_string()
-        } else {
-            format!("{}x {}", offering.gpu_count, offering.gpu_type)
-        };
-        CompactOfferingRow {
-            provider: offering.provider.to_string(),
-            gpu: if offering.is_spot {
-                format!("{gpu} (Spot)")
-            } else {
-                gpu
-            },
-            vram: offering
-                .gpu_memory_gb_per_gpu
-                .map(|memory| format!("{} GB", memory * offering.gpu_count))
-                .unwrap_or_else(|| "—".to_string()),
-            region: offering.region.clone(),
-            rate: format!(
-                "${:.2}/h",
-                offering.hourly_rate_per_gpu * Decimal::from(offering.gpu_count)
-            ),
-        }
-    });
-    let context = RenderContext::stdout();
-    let rendered = render_table_with_context(
-        Table::new(rows),
-        Some(Table::new(compact_rows)),
-        output,
-        context,
+    let adaptive = AdaptiveTable::new(
+        LS_CITADEL_GPU_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.provider.clone(),
+                    row.gpu_info.clone(),
+                    row.vram.clone(),
+                    row.cpu_ram.clone(),
+                    row.storage.clone(),
+                    row.interconnect.clone(),
+                    row.region.clone(),
+                    row.price.clone(),
+                ]
+            })
+            .collect(),
         None,
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
     );
     println!("{rendered}");
 
@@ -1214,7 +1425,7 @@ pub fn display_secure_cloud_rentals(
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct SecureCloudRentalRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -1284,46 +1495,29 @@ pub fn display_secure_cloud_rentals(
         })
         .collect();
 
-    #[derive(Tabled)]
-    struct CompactRow {
-        #[tabled(rename = "Name")]
-        name: String,
-        #[tabled(rename = "GPU")]
-        gpu: String,
-        #[tabled(rename = "IP")]
-        ip: String,
-        #[tabled(rename = "Age")]
-        age: String,
-    }
     let context = RenderContext::stdout();
-    let compact_rows = rentals.iter().map(|rental| {
-        let gpu = if rental.gpu_count > 1 {
-            format!("{}x {}", rental.gpu_count, rental.gpu_type.to_uppercase())
-        } else {
-            rental.gpu_type.to_uppercase()
-        };
-        CompactRow {
-            name: rental.name.clone(),
-            gpu: if rental.is_spot {
-                format!("{gpu} (Spot)")
-            } else {
-                gpu
-            },
-            ip: rental.ip_address.clone().unwrap_or_else(|| "—".to_string()),
-            age: format_age(rental.created_at, context.now),
-        }
-    });
-    let name_width = rentals
-        .iter()
-        .map(|rental| console::measure_text_width(&rental.name))
-        .max();
-    let rendered = render_table_with_context(
-        Table::new(&rows),
-        Some(Table::new(compact_rows)),
-        output,
-        context,
-        name_width,
+    let adaptive = AdaptiveTable::new(
+        PS_CITADEL_GPU_COLUMNS.to_vec(),
+        rows.iter()
+            .zip(rentals)
+            .map(|(row, rental)| {
+                vec![
+                    row.name.clone(),
+                    row.provider.clone(),
+                    row.gpu.clone(),
+                    row.status.clone(),
+                    row.ip.clone(),
+                    row.cpu_ram.clone(),
+                    row.region.clone(),
+                    row.hourly_cost.clone(),
+                    row.total_cost.clone(),
+                    format_age(rental.created_at, context.now),
+                ]
+            })
+            .collect(),
+        Some(0),
     );
+    let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
     println!("{rendered}");
 
     Ok(())
@@ -1339,7 +1533,7 @@ pub fn display_cpu_offerings_detailed(
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct CpuOfferingRow {
         #[tabled(rename = "PROVIDER")]
         provider: String,
@@ -1374,35 +1568,26 @@ pub fn display_cpu_offerings_detailed(
         })
         .collect();
 
-    #[derive(Tabled)]
-    struct CompactCpuOfferingRow {
-        #[tabled(rename = "PROVIDER")]
-        provider: String,
-        #[tabled(rename = "SIZE")]
-        size: String,
-        #[tabled(rename = "REGION")]
-        region: String,
-        #[tabled(rename = "RATE")]
-        rate: String,
-    }
-    let compact_rows = offerings.iter().map(|offering| CompactCpuOfferingRow {
-        provider: offering.provider.clone(),
-        size: format!(
-            "{} cores / {}GB",
-            offering.vcpu_count, offering.system_memory_gb
-        ),
-        region: offering.region.clone(),
-        rate: format!(
-            "${:.2}/h",
-            offering.hourly_rate.parse::<f64>().unwrap_or(0.0)
-        ),
-    });
-    let rendered = render_table_with_context(
-        Table::new(&rows),
-        Some(Table::new(compact_rows)),
+    let adaptive = AdaptiveTable::new(
+        LS_CITADEL_CPU_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.provider.clone(),
+                    row.size.clone(),
+                    row.storage.clone(),
+                    row.region.clone(),
+                    row.price.clone(),
+                ]
+            })
+            .collect(),
+        None,
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
         output,
         RenderContext::stdout(),
-        None,
     );
     println!("{rendered}");
 
@@ -1421,7 +1606,7 @@ pub fn display_cpu_rentals(
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct CpuRentalRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -1475,38 +1660,28 @@ pub fn display_cpu_rentals(
         })
         .collect();
 
-    #[derive(Tabled)]
-    struct CompactRow {
-        #[tabled(rename = "Name")]
-        name: String,
-        #[tabled(rename = "Size")]
-        size: String,
-        #[tabled(rename = "IP")]
-        ip: String,
-        #[tabled(rename = "Age")]
-        age: String,
-    }
     let context = RenderContext::stdout();
-    let compact_rows = rentals.iter().map(|rental| CompactRow {
-        name: rental.name.clone(),
-        size: match (rental.vcpu_count, rental.system_memory_gb) {
-            (Some(cores), Some(memory_gb)) => format!("{cores} cores / {memory_gb}GB"),
-            _ => "—".to_string(),
-        },
-        ip: rental.ip_address.clone().unwrap_or_else(|| "—".to_string()),
-        age: format_age(rental.created_at, context.now),
-    });
-    let name_width = rentals
-        .iter()
-        .map(|rental| console::measure_text_width(&rental.name))
-        .max();
-    let rendered = render_table_with_context(
-        Table::new(&rows),
-        Some(Table::new(compact_rows)),
-        output,
-        context,
-        name_width,
+    let adaptive = AdaptiveTable::new(
+        PS_CITADEL_CPU_COLUMNS.to_vec(),
+        rows.iter()
+            .zip(rentals)
+            .map(|(row, rental)| {
+                vec![
+                    row.name.clone(),
+                    row.provider.clone(),
+                    row.size.clone(),
+                    row.status.clone(),
+                    row.ip.clone(),
+                    row.region.clone(),
+                    row.hourly_cost.clone(),
+                    row.total_cost.clone(),
+                    format_age(rental.created_at, context.now),
+                ]
+            })
+            .collect(),
+        Some(0),
     );
+    let rendered = render_adaptive_table_with_context(Table::new(rows), adaptive, output, context);
     println!("{rendered}");
 
     Ok(())
@@ -1605,6 +1780,63 @@ mod tests {
         state: String,
     }
 
+    #[derive(Tabled)]
+    struct AdaptiveWideTestRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Low")]
+        low: String,
+        #[tabled(rename = "High")]
+        high: String,
+        #[tabled(rename = "Created")]
+        created: String,
+    }
+
+    fn adaptive_fixture() -> (Table, AdaptiveTable) {
+        let name = "training-rental-with-a-very-long-name".to_string();
+        let wide = Table::new([AdaptiveWideTestRow {
+            name: name.clone(),
+            low: "low-value".to_string(),
+            high: "high-value".to_string(),
+            created: "2026-07-13 12:00:00 UTC".to_string(),
+        }]);
+        let adaptive = AdaptiveTable::new(
+            vec![
+                AdaptiveColumn::required("Name"),
+                AdaptiveColumn::optional("Low", 1),
+                AdaptiveColumn::optional("High", 2),
+                AdaptiveColumn::required("Age"),
+            ],
+            vec![vec![
+                name,
+                "low-value".to_string(),
+                "high-value".to_string(),
+                "2h".to_string(),
+            ]],
+            Some(0),
+        );
+        (wide, adaptive)
+    }
+
+    fn adaptive_render(output: ResolvedOutput, is_tty: bool, width: usize) -> String {
+        let (wide, adaptive) = adaptive_fixture();
+        render_adaptive_table_with_context(
+            wide,
+            adaptive,
+            output,
+            RenderContext {
+                is_tty,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        )
+    }
+
+    fn adaptive_width(active_columns: &[usize]) -> usize {
+        let (_, adaptive) = adaptive_fixture();
+        adaptive.build(active_columns).total_width()
+    }
+
     fn render_test_table(output: ResolvedOutput, is_tty: bool, width: usize) -> String {
         let name = "training-rental-with-a-very-long-name".to_string();
         render_table_with_context(
@@ -1684,6 +1916,200 @@ mod tests {
     }
 
     #[test]
+    fn adaptive_auto_keeps_wide_table_when_it_fits() {
+        let (mut wide, _) = adaptive_fixture();
+        wide.with(Style::modern());
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, wide.total_width());
+        assert!(rendered.contains("Created"));
+        assert!(!rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_auto_uses_all_adaptive_columns_before_dropping_any() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 1, 2, 3]));
+        assert!(rendered.contains("Low"));
+        assert!(rendered.contains("High"));
+        assert!(rendered.contains("Age"));
+        assert!(!rendered.contains("Created"));
+    }
+
+    #[test]
+    fn adaptive_auto_drops_optional_columns_in_priority_order() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 2, 3]));
+        assert!(!rendered.contains("Low"));
+        assert!(rendered.contains("High"));
+        assert!(rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_auto_reaches_required_columns_only() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 3]));
+        assert!(!rendered.contains("Low"));
+        assert!(!rendered.contains("High"));
+        assert!(rendered.contains("Name"));
+        assert!(rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_compact_always_uses_required_columns_only() {
+        let rendered = adaptive_render(ResolvedOutput::Compact, true, usize::MAX);
+        assert!(!rendered.contains("Low"));
+        assert!(!rendered.contains("High"));
+        assert!(rendered.contains("Name"));
+        assert!(rendered.contains("Age"));
+    }
+
+    #[test]
+    fn adaptive_non_tty_auto_remains_wide() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, false, 1);
+        assert!(rendered.contains("Created"));
+        assert!(rendered.contains("Low"));
+        assert!(rendered.contains("High"));
+    }
+
+    #[test]
+    fn adaptive_required_table_truncates_name_to_eight_character_floor() {
+        let name_width = get_text_width("training-rental-with-a-very-long-name");
+        let required_width = adaptive_width(&[0, 3]);
+        let minimum_width = required_width.saturating_sub(name_width - MIN_NAME_WIDTH);
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, minimum_width);
+        assert!(rendered.contains("trainin…"));
+        assert!(rendered
+            .lines()
+            .all(|line| console::measure_text_width(line) <= minimum_width));
+    }
+
+    #[test]
+    fn adaptive_name_truncation_uses_tabled_width_for_osc8_links() {
+        let label = "training-rental-with-a-very-long-name";
+        let linked_name = format!("\x1b]8;;https://example.com\x1b\\{label}\x1b]8;;\x1b\\");
+        let adaptive = AdaptiveTable::new(
+            vec![
+                AdaptiveColumn::required("Name"),
+                AdaptiveColumn::required("Age"),
+            ],
+            vec![vec![linked_name, "2h".to_string()]],
+            Some(0),
+        );
+        let required_width = adaptive.build(&[0, 1]).total_width();
+        let width = required_width - (get_text_width(label) - MIN_NAME_WIDTH);
+        let rendered = render_adaptive_table_with_context(
+            Table::new([AdaptiveWideTestRow {
+                name: label.to_string(),
+                low: "low-value".to_string(),
+                high: "high-value".to_string(),
+                created: "2026-07-13 12:00:00 UTC".to_string(),
+            }]),
+            adaptive,
+            ResolvedOutput::Compact,
+            RenderContext {
+                is_tty: true,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        assert!(rendered.contains('…'));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= width));
+    }
+
+    #[test]
+    fn adaptive_columns_keep_their_declared_order() {
+        let rendered = adaptive_render(ResolvedOutput::Auto, true, adaptive_width(&[0, 1, 2, 3]));
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.find("Name") < header.find("Low"));
+        assert!(header.find("Low") < header.find("High"));
+        assert!(header.find("High") < header.find("Age"));
+    }
+
+    fn schema(columns: &[AdaptiveColumn]) -> Vec<(&'static str, Option<usize>)> {
+        columns
+            .iter()
+            .map(|column| (column.header, column.drop_order))
+            .collect()
+    }
+
+    #[test]
+    fn ls_adaptive_column_priorities_match_the_cli_contract() {
+        assert_eq!(
+            schema(LS_BOURSE_COLUMNS),
+            vec![("GPU", None), ("Available", None), ("Price/hr", None)]
+        );
+        assert_eq!(
+            schema(LS_CITADEL_GPU_COLUMNS),
+            vec![
+                ("PROVIDER", Some(4)),
+                ("GPU", None),
+                ("VRAM", None),
+                ("CPU/RAM", Some(1)),
+                ("STORAGE", Some(2)),
+                ("INTERCONNECT", Some(3)),
+                ("REGION", None),
+                ("PRICE/HR", None),
+            ]
+        );
+        assert_eq!(
+            schema(LS_CITADEL_CPU_COLUMNS),
+            vec![
+                ("PROVIDER", None),
+                ("SIZE", None),
+                ("STORAGE", Some(1)),
+                ("REGION", None),
+                ("PRICE/HR", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn ps_adaptive_column_priorities_match_the_cli_contract() {
+        assert_eq!(
+            schema(PS_BOURSE_COLUMNS),
+            vec![
+                ("Name", None),
+                ("GPU", None),
+                ("State", Some(7)),
+                ("IP", None),
+                ("Ports (Host → Container)", Some(5)),
+                ("Image", Some(3)),
+                ("CPU/RAM", Some(2)),
+                ("Location", Some(4)),
+                ("Rate/hr", Some(6)),
+                ("Total Cost", Some(1)),
+                ("Age", None),
+            ]
+        );
+        assert_eq!(
+            schema(PS_CITADEL_GPU_COLUMNS),
+            vec![
+                ("Name", None),
+                ("Provider", Some(4)),
+                ("GPU", None),
+                ("State", Some(6)),
+                ("IP", None),
+                ("CPU/RAM", Some(2)),
+                ("Region", Some(3)),
+                ("Rate/hr", Some(5)),
+                ("Total Cost", Some(1)),
+                ("Age", None),
+            ]
+        );
+        assert_eq!(
+            schema(PS_CITADEL_CPU_COLUMNS),
+            vec![
+                ("Name", None),
+                ("Provider", Some(3)),
+                ("Size", None),
+                ("State", Some(5)),
+                ("IP", None),
+                ("Region", Some(2)),
+                ("Rate/hr", Some(4)),
+                ("Total Cost", Some(1)),
+                ("Age", None),
+            ]
+        );
+    }
+
+    #[test]
     fn relative_age_uses_injected_clock() {
         let now = DateTime::parse_from_rfc3339("2026-07-13T12:00:00Z")
             .unwrap()
@@ -1702,15 +2128,6 @@ mod tests {
         );
         assert_eq!(compact_image_name("nvidia/cuda:12.4"), "nvidia/cuda");
         assert_eq!(compact_image_name("ubuntu@sha256:abc"), "ubuntu");
-    }
-
-    #[test]
-    fn access_hosts_use_middle_ellipsis() {
-        assert_eq!(middle_ellipsis("short.example", 22), "short.example");
-        let shortened = middle_ellipsis("ssh-a8f31234567890.basilica.ai", 22);
-        assert_eq!(shortened.chars().count(), 22);
-        assert!(shortened.starts_with("ssh-a8f312"));
-        assert!(shortened.ends_with("basilica.ai"));
     }
 
     #[test]
