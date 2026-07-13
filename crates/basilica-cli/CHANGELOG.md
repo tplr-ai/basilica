@@ -11,14 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ls`, `ps`, `tokens list`, `fund list`, `volumes list`, and `deploy ls` now
   support `--output auto|compact|wide|json`. The default `auto` mode adapts
   columns to interactive terminal width while non-interactive output remains
-  wide and stable for scripts.
+  wide and terminal-width-independent.
 
 ### Changed
 - CLI tables now prioritize useful columns on narrow terminals, keep truncated
   deployment URLs and funding transaction hashes actionable, and use consistent
   headers and hourly pricing.
+- Human-readable tables now group related hardware details, shorten long GPU and
+  container-image labels, and display active-resource timestamps to the minute.
 - Interactive `basilica ps` output now summarizes the total rentals, combined
   hourly price, and accrued cost.
+- Global `--json` now applies consistently to all `deploy` subcommands.
 
 ### Fixed
 - `basilica ps` now resolves Bourse SSH hosts for human-readable output, so
