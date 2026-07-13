@@ -454,9 +454,8 @@ fn accrued_cost<'a>(costs: impl IntoIterator<Item = Option<&'a str>>) -> rust_de
 
 fn format_ps_footer(count: usize, hourly_cost: f64, accrued: rust_decimal::Decimal) -> String {
     format!(
-        "{} rental{} · {} · {} accrued",
+        "Rentals shown: {}\nCombined hourly price: {}\nAccrued cost: {}",
         count,
-        if count == 1 { "" } else { "s" },
         format_total_hourly_cost(hourly_cost),
         format_usd(&accrued.to_string())
     )
@@ -3285,7 +3284,7 @@ mod tests {
     fn ps_footer_matches_the_human_output_contract() {
         assert_eq!(
             format_ps_footer(3, 4.05, Decimal::new(2310, 2)),
-            "3 rentals · $4.05/h · $23.10 accrued"
+            "Rentals shown: 3\nCombined hourly price: $4.05/h\nAccrued cost: $23.10"
         );
     }
 }
