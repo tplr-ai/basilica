@@ -550,10 +550,13 @@ pub async fn handle_create_volume(
 }
 
 /// Handle listing volumes
-pub async fn handle_list_volumes(client: &BasilicaClient, json: bool) -> Result<(), CliError> {
+pub async fn handle_list_volumes(
+    client: &BasilicaClient,
+    output: crate::cli::commands::ResolvedOutput,
+) -> Result<(), CliError> {
     let response = client.list_volumes().await.map_err(CliError::Api)?;
 
-    if json {
+    if output.is_json() {
         json_output(&response)?;
         return Ok(());
     }
@@ -568,7 +571,7 @@ pub async fn handle_list_volumes(client: &BasilicaClient, json: bool) -> Result<
         return Ok(());
     }
 
-    table_output::display_volumes(&response.volumes)?;
+    table_output::display_volumes(&response.volumes, output)?;
 
     println!();
     println!("Total volumes: {}", response.total_count);

@@ -342,13 +342,11 @@ impl Args {
                 use crate::cli::commands::VolumeAction;
                 use crate::client::create_client;
 
-                let list_json = match action {
+                let list_output = match action {
                     VolumeAction::List { output } => Some(
-                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
-                            .map_err(|message| {
-                                CliError::Internal(color_eyre::eyre::eyre!(message))
-                            })?
-                            .is_json(),
+                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output).map_err(
+                            |message| CliError::Internal(color_eyre::eyre::eyre!(message)),
+                        )?,
                     ),
                     _ => None,
                 };
@@ -376,8 +374,11 @@ impl Args {
                         .await?;
                     }
                     VolumeAction::List { .. } => {
-                        handlers::volumes::handle_list_volumes(&client, list_json.unwrap_or(false))
-                            .await?;
+                        handlers::volumes::handle_list_volumes(
+                            &client,
+                            list_output.unwrap_or(crate::cli::commands::ResolvedOutput::Auto),
+                        )
+                        .await?;
                     }
                     VolumeAction::Delete { volume, yes } => {
                         handlers::volumes::handle_delete_volume(

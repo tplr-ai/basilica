@@ -191,6 +191,18 @@ const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required("Age"),
 ];
 
+const VOLUME_COLUMNS: &[AdaptiveColumn] = &[
+    AdaptiveColumn::required_truncatable("Name", 1, MIN_NAME_WIDTH),
+    AdaptiveColumn::required("Size"),
+    AdaptiveColumn::required("Status"),
+    AdaptiveColumn::optional("Provider", 2),
+    AdaptiveColumn::required("Region"),
+    AdaptiveColumn::optional("Rental", 5),
+    AdaptiveColumn::optional("Price/Hr", 4),
+    AdaptiveColumn::optional("Total Cost", 3),
+    AdaptiveColumn::optional("Created", 1),
+];
+
 struct AdaptiveTable {
     columns: Vec<AdaptiveColumn>,
     rows: Vec<Vec<String>>,
@@ -449,6 +461,10 @@ pub fn format_timestamp(timestamp: &str) -> String {
             local_dt.format("%y-%m-%d %H:%M:%S").to_string()
         })
         .unwrap_or_else(|| timestamp.to_string())
+}
+
+fn format_utc_date(timestamp: &DateTime<Utc>) -> String {
+    timestamp.format("%Y-%m-%d").to_string()
 }
 
 fn format_duration(seconds: i64) -> String {
@@ -971,7 +987,7 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
     let mut builder = Builder::default();
 
     // Add header
-    builder.push_record(["Date (UTC)", "TAO", "Tx Hash", "Conf", "Block", "Status"]);
+    builder.push_record(["Date", "TAO", "Tx Hash", "Conf", "Block", "Status"]);
 
     let mut total_tao = 0.0;
 
@@ -980,7 +996,7 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
         total_tao += amount_tao;
 
         // Format date
-        let date = deposit.observed_at.format("%Y-%m-%d %H:%M:%S").to_string();
+        let date = format_utc_date(&deposit.observed_at);
 
         // Format tx hash (truncate to first 8 and last 3 chars)
         let tx_hash = if deposit.tx_hash.len() > 11 {
@@ -1036,14 +1052,14 @@ pub fn display_card_purchases(response: &ListCardPurchasesResponse) -> Result<()
     println!();
 
     let mut builder = Builder::default();
-    builder.push_record(["Date (UTC)", "Amount", "Status", "Invoice/Receipt"]);
+    builder.push_record(["Date", "Amount", "Status", "Invoice/Receipt"]);
 
     let mut total_paid_cents: u64 = 0;
 
     for purchase in &response.purchases {
         let date = purchase
             .created_at
-            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .map(|dt| format_utc_date(&dt))
             .unwrap_or_else(|| "-".to_string());
 
         let amount = format_cents(purchase.requested_amount_cents);
@@ -1740,13 +1756,13 @@ pub fn display_cpu_rentals(
 }
 
 /// Display volumes in table format
-pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
+pub fn display_volumes(volumes: &[VolumeResponse], output: ResolvedOutput) -> Result<()> {
     if volumes.is_empty() {
         println!("{}", style("No volumes found").yellow());
         return Ok(());
     }
 
-    #[derive(Tabled)]
+    #[derive(Clone, Tabled)]
     struct VolumeRow {
         #[tabled(rename = "Name")]
         name: String,
@@ -1760,7 +1776,7 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
         region: String,
         #[tabled(rename = "Rental")]
         rental: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Price/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -1796,7 +1812,7 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
                 rental: volume.rental_id.clone().unwrap_or_else(|| "-".to_string()),
                 hourly_cost: volume
                     .estimated_hourly_cost
-                    .map(|c| format!("${:.2}/hr", c))
+                    .map(format_hourly_price)
                     .unwrap_or_else(|| "-".to_string()),
                 total_cost,
                 created: format_timestamp(&volume.created_at.to_rfc3339()),
@@ -1804,7 +1820,31 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
         })
         .collect();
 
-    print_standard_table(Table::new(&rows));
+    let adaptive = AdaptiveTable::new(
+        VOLUME_COLUMNS.to_vec(),
+        rows.iter()
+            .map(|row| {
+                vec![
+                    row.name.clone(),
+                    row.size.clone(),
+                    row.status.clone(),
+                    row.provider.clone(),
+                    row.region.clone(),
+                    row.rental.clone(),
+                    row.hourly_cost.clone(),
+                    row.total_cost.clone(),
+                    row.created.clone(),
+                ]
+            })
+            .collect(),
+    );
+    let rendered = render_adaptive_table_with_context(
+        Table::new(rows),
+        adaptive,
+        output,
+        RenderContext::stdout(),
+    );
+    println!("{rendered}");
 
     Ok(())
 }
@@ -2211,6 +2251,81 @@ mod tests {
     }
 
     #[test]
+    fn volume_adaptive_column_priorities_match_the_cli_contract() {
+        assert_eq!(
+            schema(VOLUME_COLUMNS),
+            vec![
+                ("Name", None),
+                ("Size", None),
+                ("Status", None),
+                ("Provider", Some(2)),
+                ("Region", None),
+                ("Rental", Some(5)),
+                ("Price/Hr", Some(4)),
+                ("Total Cost", Some(3)),
+                ("Created", Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn volume_auto_fits_required_columns_within_sixty_columns() {
+        #[derive(Tabled)]
+        struct VolumeTestRow {
+            name: String,
+            size: String,
+            status: String,
+            provider: String,
+            region: String,
+            rental: String,
+            price: String,
+            total_cost: String,
+            created: String,
+        }
+
+        let values = vec![
+            "training-checkpoints-with-a-long-name".to_string(),
+            "10240 GB".to_string(),
+            "Available".to_string(),
+            "cyan".to_string(),
+            "us-silicon-valley-1".to_string(),
+            "rental-with-a-long-name".to_string(),
+            "$0.12".to_string(),
+            "$18.42".to_string(),
+            "26-07-13 12:00:00".to_string(),
+        ];
+        let rendered = render_adaptive_table_with_context(
+            Table::new([VolumeTestRow {
+                name: values[0].clone(),
+                size: values[1].clone(),
+                status: values[2].clone(),
+                provider: values[3].clone(),
+                region: values[4].clone(),
+                rental: values[5].clone(),
+                price: values[6].clone(),
+                total_cost: values[7].clone(),
+                created: values[8].clone(),
+            }]),
+            AdaptiveTable::new(VOLUME_COLUMNS.to_vec(), vec![values]),
+            ResolvedOutput::Auto,
+            RenderContext {
+                is_tty: true,
+                width: Some(60),
+                now: DateTime::UNIX_EPOCH,
+            },
+        );
+
+        let header = rendered.lines().nth(1).expect("header row");
+        assert!(header.contains("Name"));
+        assert!(header.contains("Size"));
+        assert!(header.contains("Status"));
+        assert!(header.contains("Region"));
+        assert!(!header.contains("Provider"));
+        assert!(!header.contains("Rental"));
+        assert!(rendered.lines().all(|line| get_text_width(line) <= 60));
+    }
+
+    #[test]
     fn adaptive_truncation_rules_preserve_non_truncatable_required_columns() {
         assert_eq!(
             truncation_schema(LS_BOURSE_COLUMNS),
@@ -2233,6 +2348,15 @@ mod tests {
             truncation_schema(PS_CITADEL_CPU_COLUMNS),
             vec![("Name", 1, MIN_NAME_WIDTH)]
         );
+        assert_eq!(
+            truncation_schema(VOLUME_COLUMNS),
+            vec![("Name", 1, MIN_NAME_WIDTH)]
+        );
+    }
+
+    #[test]
+    fn funding_history_dates_do_not_include_times() {
+        assert_eq!(format_utc_date(&DateTime::UNIX_EPOCH), "1970-01-01");
     }
 
     #[test]
