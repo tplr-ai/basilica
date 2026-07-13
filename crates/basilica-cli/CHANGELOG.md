@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wide and stable for scripts.
 
 ### Changed
-- CLI tables now prioritize useful columns on narrow terminals, keep long
-  deployment URLs actionable, and use consistent headers and hourly pricing.
+- CLI tables now prioritize useful columns on narrow terminals, keep truncated
+  deployment URLs and funding transaction hashes actionable, and use consistent
+  headers and hourly pricing.
 - Interactive `basilica ps` output now summarizes the total rentals, combined
   hourly price, and accrued cost.
 

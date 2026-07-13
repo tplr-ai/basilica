@@ -437,7 +437,9 @@ fn compact_image_name(image: &str) -> String {
     let without_digest = image.split('@').next().unwrap_or(image);
     let last_slash = without_digest.rfind('/');
     let without_tag = match without_digest.rfind(':') {
-        Some(colon) if last_slash.is_none_or(|slash| colon > slash) => &without_digest[..colon],
+        Some(colon) if !matches!(last_slash, Some(slash) if colon <= slash) => {
+            &without_digest[..colon]
+        }
         _ => without_digest,
     };
     let mut parts = without_tag.split('/');
