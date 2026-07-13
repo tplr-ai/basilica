@@ -278,12 +278,8 @@ pub fn display_rental_items(
         name: String,
         #[tabled(rename = "GPU")]
         gpu: String,
-        #[tabled(rename = "State")]
-        state: String,
         #[tabled(rename = "IP")]
         ip: String,
-        #[tabled(rename = "Rate")]
-        rate: String,
         #[tabled(rename = "Age")]
         age: String,
     }
@@ -294,14 +290,9 @@ pub fn display_rental_items(
         .map(|rental| CompactRow {
             name: rental.name.clone(),
             gpu: format_gpu_info(&rental.gpu_specs),
-            state: rental.state.to_string(),
             ip: access_hosts
                 .get(&rental.rental_id)
                 .map(|host| middle_ellipsis(host, 22))
-                .unwrap_or_else(|| "—".to_string()),
-            rate: rental
-                .hourly_cost
-                .map(|rate| format!("${rate:.2}/h"))
                 .unwrap_or_else(|| "—".to_string()),
             age: format_age_str(&rental.created_at, context.now),
         })
@@ -1299,12 +1290,8 @@ pub fn display_secure_cloud_rentals(
         name: String,
         #[tabled(rename = "GPU")]
         gpu: String,
-        #[tabled(rename = "State")]
-        state: String,
         #[tabled(rename = "IP")]
         ip: String,
-        #[tabled(rename = "Rate")]
-        rate: String,
         #[tabled(rename = "Age")]
         age: String,
     }
@@ -1322,9 +1309,7 @@ pub fn display_secure_cloud_rentals(
             } else {
                 gpu
             },
-            state: rental.status.clone(),
             ip: rental.ip_address.clone().unwrap_or_else(|| "—".to_string()),
-            rate: format!("${:.2}/h", rental.hourly_cost),
             age: format_age(rental.created_at, context.now),
         }
     });
@@ -1496,12 +1481,8 @@ pub fn display_cpu_rentals(
         name: String,
         #[tabled(rename = "Size")]
         size: String,
-        #[tabled(rename = "State")]
-        state: String,
         #[tabled(rename = "IP")]
         ip: String,
-        #[tabled(rename = "Rate")]
-        rate: String,
         #[tabled(rename = "Age")]
         age: String,
     }
@@ -1512,9 +1493,7 @@ pub fn display_cpu_rentals(
             (Some(cores), Some(memory_gb)) => format!("{cores} cores / {memory_gb}GB"),
             _ => "—".to_string(),
         },
-        state: rental.status.clone(),
         ip: rental.ip_address.clone().unwrap_or_else(|| "—".to_string()),
-        rate: format!("${:.2}/h", rental.hourly_cost),
         age: format_age(rental.created_at, context.now),
     });
     let name_width = rentals
