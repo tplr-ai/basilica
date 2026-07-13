@@ -23,7 +23,7 @@ use tabled::{
     Table, Tabled,
 };
 
-const MIN_NAME_WIDTH: usize = 12;
+pub(crate) const MIN_NAME_WIDTH: usize = 12;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RenderContext {
@@ -874,7 +874,7 @@ fn purchase_primary_link(
 /// Width is calculated correctly because `tabled` is compiled with the
 /// `ansi` feature, which strips both ANSI CSI (color/underline) and OSC
 /// 8 escape bytes before measuring.
-fn link_cell(label: &str, url: &str) -> String {
+pub(crate) fn link_cell(label: &str, url: &str) -> String {
     let styled = style(label).blue().underlined().to_string();
     format!("\x1b]8;;{url}\x1b\\{styled}\x1b]8;;\x1b\\")
 }
