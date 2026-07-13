@@ -233,16 +233,19 @@ pub fn print_share_token_info(token: &str, share_url: &str) {
 }
 
 /// Print summons table
-pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
+pub fn print_deployments_table(
+    deployments: &[DeploymentSummary],
+    output: crate::cli::commands::ResolvedOutput,
+) {
     if deployments.is_empty() {
         print_info("No summons found");
         return;
     }
 
-    use tabled::{settings::Style, Table, Tabled};
+    use tabled::{Table, Tabled};
 
     #[derive(Tabled)]
-    struct Row {
+    struct WideRow {
         #[tabled(rename = "Name")]
         name: String,
         #[tabled(rename = "State")]
@@ -259,9 +262,9 @@ pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
         created: String,
     }
 
-    let rows: Vec<Row> = deployments
+    let wide_rows: Vec<WideRow> = deployments
         .iter()
-        .map(|d| Row {
+        .map(|d| WideRow {
             name: display_name(&d.friendly_name, &d.instance_name).to_string(),
             state: d.state.clone(),
             access: if d.public {
@@ -276,13 +279,73 @@ pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
             },
             replicas: format!("{}/{}", d.replicas.ready, d.replicas.desired),
             url: d.url.clone(),
-            created: crate::output::table_output::format_timestamp(&d.created_at),
+            created: crate::output::table_output::format_created_str(&d.created_at),
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    #[derive(Tabled)]
+    struct CompactRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "State")]
+        state: String,
+        #[tabled(rename = "URL")]
+        url: String,
+        #[tabled(rename = "Replicas")]
+        replicas: String,
+        #[tabled(rename = "Age")]
+        age: String,
+    }
+
+    let context = crate::output::table_output::RenderContext::stdout();
+    let compact_rows = deployments.iter().map(|deployment| CompactRow {
+        name: display_name(&deployment.friendly_name, &deployment.instance_name).to_string(),
+        state: deployment.state.clone(),
+        url: compact_deployment_url(&deployment.url),
+        replicas: format!(
+            "{}/{}",
+            deployment.replicas.ready, deployment.replicas.desired
+        ),
+        age: crate::output::table_output::format_age_str(&deployment.created_at, context.now),
+    });
+    let name_width = deployments
+        .iter()
+        .map(|deployment| {
+            console::measure_text_width(display_name(
+                &deployment.friendly_name,
+                &deployment.instance_name,
+            ))
+        })
+        .max();
+    let rendered = crate::output::table_output::render_table_with_context(
+        Table::new(wide_rows),
+        Some(Table::new(compact_rows)),
+        output,
+        context,
+        name_width,
+    );
+    println!("{rendered}");
+}
+
+fn compact_deployment_url(value: &str) -> String {
+    const MAX_VISIBLE: usize = 36;
+    let compact = url::Url::parse(value)
+        .ok()
+        .and_then(|url| {
+            url.host_str()
+                .map(|host| format!("{}://{host}/…", url.scheme()))
+        })
+        .unwrap_or_else(|| value.to_string());
+
+    if console::measure_text_width(value) <= MAX_VISIBLE {
+        value.to_string()
+    } else if console::measure_text_width(&compact) <= MAX_VISIBLE {
+        compact
+    } else {
+        let mut shortened: String = compact.chars().take(MAX_VISIBLE - 1).collect();
+        shortened.push('…');
+        shortened
+    }
 }
 
 /// Print summons details
@@ -677,6 +740,25 @@ mod tests {
     #[test]
     fn test_display_name_falls_back_to_instance_when_friendly_empty() {
         assert_eq!(display_name("", "uuid-1234"), "uuid-1234");
+    }
+
+    #[test]
+    fn compact_url_keeps_host_visible_and_respects_cap() {
+        let compact = compact_deployment_url(
+            "https://my-service.deployments.basilica.ai/a/very/long/path?token=value",
+        );
+        assert!(compact.starts_with("https://my-service"));
+        assert!(compact.ends_with('…'));
+        assert!(console::measure_text_width(&compact) <= 36);
+    }
+
+    #[test]
+    fn compact_url_caps_pathological_long_hosts() {
+        let compact = compact_deployment_url(
+            "https://this-is-an-unusually-long-subdomain-for-a-deployment.basilica.ai/path",
+        );
+        assert!(console::measure_text_width(&compact) <= 36);
+        assert!(compact.ends_with('…'));
     }
 
     #[test]

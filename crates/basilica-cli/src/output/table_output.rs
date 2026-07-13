@@ -1,6 +1,7 @@
 //! Table formatting for CLI output
 
 use super::{format_cents, format_usd};
+use crate::cli::commands::ResolvedOutput;
 use crate::error::Result;
 use basilica_common::types::GpuOffering;
 use basilica_common::{types::GpuCategory, LocationProfile};
@@ -13,10 +14,134 @@ use basilica_sdk::{
     AvailableNode,
 };
 use chrono::{DateTime, Local, Utc};
-use console::style;
+use console::{style, Term};
 use rust_decimal::Decimal;
-use std::{collections::HashMap, str::FromStr};
-use tabled::{builder::Builder, settings::Style, Table, Tabled};
+use std::{collections::HashMap, io::IsTerminal, str::FromStr};
+use tabled::{
+    builder::Builder,
+    settings::{object::Columns, Modify, Style, Width},
+    Table, Tabled,
+};
+
+const MIN_NAME_WIDTH: usize = 12;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RenderContext {
+    pub is_tty: bool,
+    pub width: Option<usize>,
+    pub now: DateTime<Utc>,
+}
+
+impl RenderContext {
+    pub(crate) fn stdout() -> Self {
+        let is_tty = std::io::stdout().is_terminal();
+        let width = is_tty
+            .then(|| {
+                Term::stdout()
+                    .size_checked()
+                    .map(|(_, columns)| columns as usize)
+            })
+            .flatten();
+        Self {
+            is_tty,
+            width,
+            now: Utc::now(),
+        }
+    }
+}
+
+pub(crate) fn render_table_with_context(
+    mut wide: Table,
+    compact: Option<Table>,
+    output: ResolvedOutput,
+    context: RenderContext,
+    natural_name_width: Option<usize>,
+) -> String {
+    wide.with(Style::modern());
+
+    let use_compact = match output {
+        ResolvedOutput::Compact => true,
+        ResolvedOutput::Wide | ResolvedOutput::Json => false,
+        ResolvedOutput::Auto => {
+            context.is_tty
+                && context
+                    .width
+                    .is_some_and(|width| wide.total_width() > width)
+        }
+    };
+
+    let Some(mut table) = use_compact.then_some(compact).flatten() else {
+        return wide.to_string();
+    };
+    table.with(Style::modern());
+
+    if let (Some(width), Some(name_width)) = (context.width, natural_name_width) {
+        let overflow = table.total_width().saturating_sub(width);
+        if overflow > 0 && name_width > MIN_NAME_WIDTH {
+            let target = name_width.saturating_sub(overflow).max(MIN_NAME_WIDTH);
+            table.with(Modify::new(Columns::new(0..1)).with(Width::truncate(target).suffix("…")));
+        }
+    }
+
+    table.to_string()
+}
+
+fn print_standard_table(table: Table) {
+    let rendered = render_table_with_context(
+        table,
+        None,
+        ResolvedOutput::Auto,
+        RenderContext::stdout(),
+        None,
+    );
+    println!("{rendered}");
+}
+
+fn format_created(timestamp: DateTime<Utc>) -> String {
+    timestamp
+        .with_timezone(&Local)
+        .format("%y-%m-%d %H:%M")
+        .to_string()
+}
+
+pub(crate) fn format_created_str(timestamp: &str) -> String {
+    DateTime::parse_from_rfc3339(timestamp)
+        .map(|timestamp| format_created(timestamp.with_timezone(&Utc)))
+        .unwrap_or_else(|_| timestamp.to_string())
+}
+
+fn format_age(created: DateTime<Utc>, now: DateTime<Utc>) -> String {
+    let elapsed = now.signed_duration_since(created).num_minutes().max(0);
+    if elapsed >= 24 * 60 {
+        format!("{}d", elapsed / (24 * 60))
+    } else if elapsed >= 60 {
+        format!("{}h", elapsed / 60)
+    } else {
+        format!("{}m", elapsed)
+    }
+}
+
+pub(crate) fn format_age_str(created: &str, now: DateTime<Utc>) -> String {
+    DateTime::parse_from_rfc3339(created)
+        .map(|created| format_age(created.with_timezone(&Utc), now))
+        .unwrap_or_else(|_| "—".to_string())
+}
+
+fn compact_image_name(image: &str) -> String {
+    let without_digest = image.split('@').next().unwrap_or(image);
+    let last_slash = without_digest.rfind('/');
+    let without_tag = match without_digest.rfind(':') {
+        Some(colon) if last_slash.is_none_or(|slash| colon > slash) => &without_digest[..colon],
+        _ => without_digest,
+    };
+    let mut parts = without_tag.split('/');
+    let first = parts.next().unwrap_or(without_tag);
+    if first.contains('.') || first.contains(':') || first == "localhost" {
+        parts.collect::<Vec<_>>().join("/")
+    } else {
+        without_tag.to_string()
+    }
+}
 
 /// Format RFC3339 timestamp to YY-MM-DD HH:MM:SS format
 pub fn format_timestamp(timestamp: &str) -> String {
@@ -40,7 +165,7 @@ fn format_duration(seconds: i64) -> String {
 }
 
 /// Display rental items in table format
-pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
+pub fn display_rental_items(rentals: &[ApiRentalListItem], output: ResolvedOutput) -> Result<()> {
     if rentals.is_empty() {
         println!("{}", style("No Bourse rentals found").yellow());
         return Ok(());
@@ -63,23 +188,21 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
     };
 
     #[derive(Tabled)]
-    struct RentalRow {
+    struct WideRow {
         #[tabled(rename = "Name")]
         name: String,
         #[tabled(rename = "GPU")]
         gpu: String,
         #[tabled(rename = "State")]
         state: String,
-        #[tabled(rename = "SSH")]
-        ssh: String,
+        #[tabled(rename = "IP")]
+        ip: String,
         #[tabled(rename = "Ports (Host → Container)")]
         ports: String,
         #[tabled(rename = "Image")]
         image: String,
-        #[tabled(rename = "CPU")]
-        cpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "CPU/RAM")]
+        cpu_ram: String,
         #[tabled(rename = "Location")]
         location: String,
         #[tabled(rename = "Rate/hr")]
@@ -90,31 +213,20 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
         created: String,
     }
 
-    let rows: Vec<RentalRow> = rentals
+    let wide_rows: Vec<WideRow> = rentals
         .iter()
         .map(|rental| {
             // Format GPU info from specs
             let gpu = format_gpu_info(&rental.gpu_specs);
 
-            // Format CPU info
-            let cpu = rental
+            let cpu_ram = rental
                 .cpu_specs
                 .as_ref()
-                .map(|cpu| format!("{} ({} cores)", cpu.model, cpu.cores))
-                .unwrap_or_else(|| "Unknown".to_string());
-
-            // Format RAM info
-            let ram = rental
-                .cpu_specs
-                .as_ref()
-                .map(|cpu| format!("{} GB", cpu.memory_gb))
-                .unwrap_or_else(|| "Unknown".to_string());
+                .map(|cpu| format!("{} cores / {}GB", cpu.cores, cpu.memory_gb))
+                .unwrap_or_else(|| "—".to_string());
 
             // Format location
             let location = format_node_location(&rental.location);
-
-            // Format SSH availability
-            let ssh = if rental.has_ssh { "✓" } else { "✗" };
 
             // Format port mappings (show up to 2-3 ports)
             let ports = format_port_mappings(&rental.port_mappings, Some(2));
@@ -122,26 +234,66 @@ pub fn display_rental_items(rentals: &[ApiRentalListItem]) -> Result<()> {
             // Get pricing data for this rental
             let (rate_per_hour, total_cost) = get_rental_pricing(rental);
 
-            RentalRow {
+            WideRow {
                 name: rental.name.clone(),
                 gpu,
                 state: rental.state.to_string(),
-                ssh: ssh.to_string(),
+                ip: "—".to_string(),
                 ports,
-                image: rental.container_image.clone(),
-                cpu,
-                ram,
+                image: compact_image_name(&rental.container_image),
+                cpu_ram,
                 location,
                 rate_per_hour,
                 total_cost,
-                created: format_timestamp(&rental.created_at),
+                created: format_created_str(&rental.created_at),
             }
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    #[derive(Tabled)]
+    struct CompactRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "GPU")]
+        gpu: String,
+        #[tabled(rename = "State")]
+        state: String,
+        #[tabled(rename = "IP")]
+        ip: String,
+        #[tabled(rename = "Rate")]
+        rate: String,
+        #[tabled(rename = "Age")]
+        age: String,
+    }
+
+    let context = RenderContext::stdout();
+    let compact_rows: Vec<CompactRow> = rentals
+        .iter()
+        .map(|rental| CompactRow {
+            name: rental.name.clone(),
+            gpu: format_gpu_info(&rental.gpu_specs),
+            state: rental.state.to_string(),
+            // The Bourse list response currently exposes only `has_ssh`, not the host.
+            ip: "—".to_string(),
+            rate: rental
+                .hourly_cost
+                .map(|rate| format!("${rate:.2}/h"))
+                .unwrap_or_else(|| "—".to_string()),
+            age: format_age_str(&rental.created_at, context.now),
+        })
+        .collect();
+    let name_width = rentals
+        .iter()
+        .map(|rental| console::measure_text_width(&rental.name))
+        .max();
+    let rendered = render_table_with_context(
+        Table::new(wide_rows),
+        Some(Table::new(compact_rows)),
+        output,
+        context,
+        name_width,
+    );
+    println!("{rendered}");
 
     Ok(())
 }
@@ -220,9 +372,7 @@ pub fn display_config(config: &HashMap<String, String>) -> Result<()> {
 
     rows.sort_by_key(|r| r.key.clone());
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    print_standard_table(Table::new(rows));
 
     Ok(())
 }
@@ -251,9 +401,7 @@ pub fn display_api_keys(keys: &[ApiKeyInfo]) -> Result<()> {
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    print_standard_table(Table::new(rows));
 
     Ok(())
 }
@@ -340,9 +488,7 @@ pub fn display_available_nodes_detailed(
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(Table::new(rows));
 
     println!("\nTotal available nodes: {}", nodes.len());
 
@@ -400,9 +546,7 @@ pub fn display_community_cloud_categories(
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(Table::new(rows));
 
     let total_nodes: usize = aggregations.iter().map(|a| a.node_count).sum();
     println!("\nTotal available nodes: {}", total_nodes);
@@ -411,7 +555,10 @@ pub fn display_community_cloud_categories(
 }
 
 /// Display secure cloud GPU offerings in detailed format (individual offerings)
-pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Result<()> {
+pub fn display_secure_cloud_offerings_detailed(
+    offerings: &[GpuOffering],
+    output: ResolvedOutput,
+) -> Result<()> {
     if offerings.is_empty() {
         println!("No GPUs available matching your criteria.");
         return Ok(());
@@ -425,10 +572,8 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
         gpu_info: String,
         #[tabled(rename = "VRAM")]
         vram: String,
-        #[tabled(rename = "vCPU")]
-        vcpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "CPU/RAM")]
+        cpu_ram: String,
         #[tabled(rename = "STORAGE")]
         storage: String,
         #[tabled(rename = "INTERCONNECT")]
@@ -466,8 +611,10 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
                 provider: offering.provider.to_string(),
                 gpu_info,
                 vram,
-                vcpu: offering.vcpu_count.to_string(),
-                ram: format!("{} GB", offering.system_memory_gb),
+                cpu_ram: format!(
+                    "{} cores / {}GB",
+                    offering.vcpu_count, offering.system_memory_gb
+                ),
                 storage: offering.storage.clone().unwrap_or_else(|| "-".to_string()),
                 interconnect: offering
                     .interconnect
@@ -479,9 +626,53 @@ pub fn display_secure_cloud_offerings_detailed(offerings: &[GpuOffering]) -> Res
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    #[derive(Tabled)]
+    struct CompactOfferingRow {
+        #[tabled(rename = "PROVIDER")]
+        provider: String,
+        #[tabled(rename = "GPU")]
+        gpu: String,
+        #[tabled(rename = "VRAM")]
+        vram: String,
+        #[tabled(rename = "REGION")]
+        region: String,
+        #[tabled(rename = "RATE")]
+        rate: String,
+    }
+
+    let compact_rows = offerings.iter().map(|offering| {
+        let gpu = if offering.gpu_count == 1 {
+            offering.gpu_type.to_string()
+        } else {
+            format!("{}x {}", offering.gpu_count, offering.gpu_type)
+        };
+        CompactOfferingRow {
+            provider: offering.provider.to_string(),
+            gpu: if offering.is_spot {
+                format!("{gpu} (Spot)")
+            } else {
+                gpu
+            },
+            vram: offering
+                .gpu_memory_gb_per_gpu
+                .map(|memory| format!("{} GB", memory * offering.gpu_count))
+                .unwrap_or_else(|| "—".to_string()),
+            region: offering.region.clone(),
+            rate: format!(
+                "${:.2}/h",
+                offering.hourly_rate_per_gpu * Decimal::from(offering.gpu_count)
+            ),
+        }
+    });
+    let context = RenderContext::stdout();
+    let rendered = render_table_with_context(
+        Table::new(rows),
+        Some(Table::new(compact_rows)),
+        output,
+        context,
+        None,
+    );
+    println!("{rendered}");
 
     println!("\nTotal offerings: {}", offerings.len());
 
@@ -545,9 +736,7 @@ pub fn display_deposits(response: &ListDepositsResponse) -> Result<()> {
         ]);
     }
 
-    let mut table = builder.build();
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(builder.build());
 
     // Display totals
     println!();
@@ -613,9 +802,7 @@ pub fn display_card_purchases(response: &ListCardPurchasesResponse) -> Result<()
         }
     }
 
-    let mut table = builder.build();
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(builder.build());
 
     println!();
     println!("{}:", style("Total Card Payments").bold());
@@ -750,9 +937,7 @@ pub fn display_rental_usage_detail(usage: &RentalUsageResponse) -> Result<()> {
 
         println!("{}", style("Usage Data Points").bold());
         println!();
-        let mut table = Table::new(&rows);
-        table.with(Style::modern());
-        println!("{}", table);
+        print_standard_table(Table::new(&rows));
         if total_points > MAX_POINTS {
             println!(
                 "{}",
@@ -837,9 +1022,7 @@ pub fn display_usage_history(history: &UsageHistoryResponse) -> Result<()> {
         style(history.total_count).cyan()
     );
     println!();
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(Table::new(&rows));
     println!();
 
     let total_cost: Decimal = history
@@ -918,9 +1101,7 @@ pub fn display_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<()> {
 
     rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{table}");
+    print_standard_table(Table::new(&rows));
 
     Ok(())
 }
@@ -1003,9 +1184,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
 
     rows.sort_by_key(|r| std::cmp::Reverse(r.started.clone()));
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{table}");
+    print_standard_table(Table::new(&rows));
 
     Ok(())
 }
@@ -1013,6 +1192,7 @@ pub fn display_cpu_rental_history(rentals: &[&HistoricalRentalItem]) -> Result<(
 /// Display secure cloud rentals in table format
 pub fn display_secure_cloud_rentals(
     rentals: &[&basilica_sdk::types::SecureCloudRentalListItem],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if rentals.is_empty() {
         println!("{}", style("No Citadel rentals found").yellow());
@@ -1031,12 +1211,8 @@ pub fn display_secure_cloud_rentals(
         status: String,
         #[tabled(rename = "IP")]
         ip: String,
-        #[tabled(rename = "SSH")]
-        ssh: String,
-        #[tabled(rename = "CPU")]
-        cpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "CPU/RAM")]
+        cpu_ram: String,
         #[tabled(rename = "Region")]
         region: String,
         #[tabled(rename = "Rate/hr")]
@@ -1063,23 +1239,10 @@ pub fn display_secure_cloud_rentals(
                 }
             };
 
-            let ssh = if rental.ssh_command.is_some() {
-                "✓"
-            } else {
-                "✗"
+            let cpu_ram = match (rental.vcpu_count, rental.system_memory_gb) {
+                (Some(cores), Some(memory_gb)) => format!("{cores} cores / {memory_gb}GB"),
+                _ => "—".to_string(),
             };
-
-            // Format CPU
-            let cpu = rental
-                .vcpu_count
-                .map(|cores| format!("{} cores", cores))
-                .unwrap_or_else(|| "-".to_string());
-
-            // Format RAM
-            let ram = rental
-                .system_memory_gb
-                .map(|gb| format!("{} GB", gb))
-                .unwrap_or_else(|| "-".to_string());
 
             // Use accumulated cost from billing service - no fallback
             let total_cost = rental
@@ -1094,23 +1257,65 @@ pub fn display_secure_cloud_rentals(
                 gpu: gpu_str,
                 status: rental.status.clone(),
                 ip: rental.ip_address.clone().unwrap_or_else(|| "-".to_string()),
-                ssh: ssh.to_string(),
-                cpu,
-                ram,
+                cpu_ram,
                 region: rental
                     .location_code
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
                 hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
                 total_cost,
-                created: format_timestamp(&rental.created_at.to_rfc3339()),
+                created: format_created(rental.created_at),
             }
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    #[derive(Tabled)]
+    struct CompactRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "GPU")]
+        gpu: String,
+        #[tabled(rename = "State")]
+        state: String,
+        #[tabled(rename = "IP")]
+        ip: String,
+        #[tabled(rename = "Rate")]
+        rate: String,
+        #[tabled(rename = "Age")]
+        age: String,
+    }
+    let context = RenderContext::stdout();
+    let compact_rows = rentals.iter().map(|rental| {
+        let gpu = if rental.gpu_count > 1 {
+            format!("{}x {}", rental.gpu_count, rental.gpu_type.to_uppercase())
+        } else {
+            rental.gpu_type.to_uppercase()
+        };
+        CompactRow {
+            name: rental.name.clone(),
+            gpu: if rental.is_spot {
+                format!("{gpu} (Spot)")
+            } else {
+                gpu
+            },
+            state: rental.status.clone(),
+            ip: rental.ip_address.clone().unwrap_or_else(|| "—".to_string()),
+            rate: format!("${:.2}/h", rental.hourly_cost),
+            age: format_age(rental.created_at, context.now),
+        }
+    });
+    let name_width = rentals
+        .iter()
+        .map(|rental| console::measure_text_width(&rental.name))
+        .max();
+    let rendered = render_table_with_context(
+        Table::new(&rows),
+        Some(Table::new(compact_rows)),
+        output,
+        context,
+        name_width,
+    );
+    println!("{rendered}");
 
     Ok(())
 }
@@ -1118,6 +1323,7 @@ pub fn display_secure_cloud_rentals(
 /// Display CPU-only offerings in detailed table format
 pub fn display_cpu_offerings_detailed(
     offerings: &[basilica_sdk::types::CpuOffering],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if offerings.is_empty() {
         println!("{}", style("No CPU instances available").yellow());
@@ -1128,10 +1334,8 @@ pub fn display_cpu_offerings_detailed(
     struct CpuOfferingRow {
         #[tabled(rename = "PROVIDER")]
         provider: String,
-        #[tabled(rename = "vCPU")]
-        vcpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "SIZE")]
+        size: String,
         #[tabled(rename = "STORAGE")]
         storage: String,
         #[tabled(rename = "REGION")]
@@ -1144,8 +1348,10 @@ pub fn display_cpu_offerings_detailed(
         .iter()
         .map(|offering| CpuOfferingRow {
             provider: offering.provider.clone(),
-            vcpu: format!("{} cores", offering.vcpu_count),
-            ram: format!("{} GB", offering.system_memory_gb),
+            size: format!(
+                "{} cores / {}GB",
+                offering.vcpu_count, offering.system_memory_gb
+            ),
             storage: if offering.storage_gb > 0 {
                 format!("{} GB", offering.storage_gb)
             } else {
@@ -1159,9 +1365,37 @@ pub fn display_cpu_offerings_detailed(
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    #[derive(Tabled)]
+    struct CompactCpuOfferingRow {
+        #[tabled(rename = "PROVIDER")]
+        provider: String,
+        #[tabled(rename = "SIZE")]
+        size: String,
+        #[tabled(rename = "REGION")]
+        region: String,
+        #[tabled(rename = "RATE")]
+        rate: String,
+    }
+    let compact_rows = offerings.iter().map(|offering| CompactCpuOfferingRow {
+        provider: offering.provider.clone(),
+        size: format!(
+            "{} cores / {}GB",
+            offering.vcpu_count, offering.system_memory_gb
+        ),
+        region: offering.region.clone(),
+        rate: format!(
+            "${:.2}/h",
+            offering.hourly_rate.parse::<f64>().unwrap_or(0.0)
+        ),
+    });
+    let rendered = render_table_with_context(
+        Table::new(&rows),
+        Some(Table::new(compact_rows)),
+        output,
+        RenderContext::stdout(),
+        None,
+    );
+    println!("{rendered}");
 
     println!("\nTotal Citadel (CPU) offerings: {}", offerings.len());
 
@@ -1171,6 +1405,7 @@ pub fn display_cpu_offerings_detailed(
 /// Display CPU-only rentals in table format (no GPU column)
 pub fn display_cpu_rentals(
     rentals: &[&basilica_sdk::types::SecureCloudRentalListItem],
+    output: ResolvedOutput,
 ) -> Result<()> {
     if rentals.is_empty() {
         println!("{}", style("No CPU-only rentals found").yellow());
@@ -1183,16 +1418,12 @@ pub fn display_cpu_rentals(
         name: String,
         #[tabled(rename = "Provider")]
         provider: String,
-        #[tabled(rename = "vCPU")]
-        vcpu: String,
-        #[tabled(rename = "RAM")]
-        ram: String,
+        #[tabled(rename = "Size")]
+        size: String,
         #[tabled(rename = "State")]
         status: String,
         #[tabled(rename = "IP")]
         ip: String,
-        #[tabled(rename = "SSH")]
-        ssh: String,
         #[tabled(rename = "Region")]
         region: String,
         #[tabled(rename = "Rate/hr")]
@@ -1206,23 +1437,10 @@ pub fn display_cpu_rentals(
     let rows: Vec<CpuRentalRow> = rentals
         .iter()
         .map(|rental| {
-            let ssh = if rental.ssh_command.is_some() {
-                "✓"
-            } else {
-                "✗"
+            let size = match (rental.vcpu_count, rental.system_memory_gb) {
+                (Some(cores), Some(memory_gb)) => format!("{cores} cores / {memory_gb}GB"),
+                _ => "—".to_string(),
             };
-
-            // Format vCPU
-            let vcpu = rental
-                .vcpu_count
-                .map(|cores| format!("{} cores", cores))
-                .unwrap_or_else(|| "-".to_string());
-
-            // Format RAM
-            let ram = rental
-                .system_memory_gb
-                .map(|gb| format!("{} GB", gb))
-                .unwrap_or_else(|| "-".to_string());
 
             // Use accumulated cost from billing service
             let total_cost = rental
@@ -1234,25 +1452,59 @@ pub fn display_cpu_rentals(
             CpuRentalRow {
                 name: rental.name.clone(),
                 provider: rental.provider.clone(),
-                vcpu,
-                ram,
+                size,
                 status: rental.status.clone(),
                 ip: rental.ip_address.clone().unwrap_or_else(|| "-".to_string()),
-                ssh: ssh.to_string(),
                 region: rental
                     .location_code
                     .clone()
                     .unwrap_or_else(|| "-".to_string()),
                 hourly_cost: format!("${:.2}/hr", rental.hourly_cost),
                 total_cost,
-                created: format_timestamp(&rental.created_at.to_rfc3339()),
+                created: format_created(rental.created_at),
             }
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    #[derive(Tabled)]
+    struct CompactRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Size")]
+        size: String,
+        #[tabled(rename = "State")]
+        state: String,
+        #[tabled(rename = "IP")]
+        ip: String,
+        #[tabled(rename = "Rate")]
+        rate: String,
+        #[tabled(rename = "Age")]
+        age: String,
+    }
+    let context = RenderContext::stdout();
+    let compact_rows = rentals.iter().map(|rental| CompactRow {
+        name: rental.name.clone(),
+        size: match (rental.vcpu_count, rental.system_memory_gb) {
+            (Some(cores), Some(memory_gb)) => format!("{cores} cores / {memory_gb}GB"),
+            _ => "—".to_string(),
+        },
+        state: rental.status.clone(),
+        ip: rental.ip_address.clone().unwrap_or_else(|| "—".to_string()),
+        rate: format!("${:.2}/h", rental.hourly_cost),
+        age: format_age(rental.created_at, context.now),
+    });
+    let name_width = rentals
+        .iter()
+        .map(|rental| console::measure_text_width(&rental.name))
+        .max();
+    let rendered = render_table_with_context(
+        Table::new(&rows),
+        Some(Table::new(compact_rows)),
+        output,
+        context,
+        name_width,
+    );
+    println!("{rendered}");
 
     Ok(())
 }
@@ -1322,9 +1574,7 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
         })
         .collect();
 
-    let mut table = Table::new(&rows);
-    table.with(Style::modern());
-    println!("{}", table);
+    print_standard_table(Table::new(&rows));
 
     Ok(())
 }
@@ -1333,6 +1583,142 @@ pub fn display_volumes(volumes: &[VolumeResponse]) -> Result<()> {
 mod tests {
     use super::*;
     use basilica_sdk::types::{CardPurchaseStatus, CardPurchaseSummary};
+
+    #[derive(Tabled)]
+    struct WideTestRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "Provider")]
+        provider: String,
+        #[tabled(rename = "State")]
+        state: String,
+    }
+
+    #[derive(Tabled)]
+    struct CompactTestRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "State")]
+        state: String,
+    }
+
+    fn render_test_table(output: ResolvedOutput, is_tty: bool, width: usize) -> String {
+        let name = "training-rental-with-a-very-long-name".to_string();
+        render_table_with_context(
+            Table::new([WideTestRow {
+                name: name.clone(),
+                provider: "hyperstack".to_string(),
+                state: "provisioning".to_string(),
+            }]),
+            Some(Table::new([CompactTestRow {
+                name: name.clone(),
+                state: "provisioning".to_string(),
+            }])),
+            output,
+            RenderContext {
+                is_tty,
+                width: Some(width),
+                now: DateTime::UNIX_EPOCH,
+            },
+            Some(console::measure_text_width(&name)),
+        )
+    }
+
+    #[test]
+    fn wide_layout_golden() {
+        let rendered = render_test_table(ResolvedOutput::Wide, true, 40);
+        assert_eq!(
+            rendered,
+            "┌───────────────────────────────────────┬────────────┬──────────────┐\n\
+             │ Name                                  │ Provider   │ State        │\n\
+             ├───────────────────────────────────────┼────────────┼──────────────┤\n\
+             │ training-rental-with-a-very-long-name │ hyperstack │ provisioning │\n\
+             └───────────────────────────────────────┴────────────┴──────────────┘"
+        );
+    }
+
+    #[test]
+    fn compact_layout_golden() {
+        let rendered = render_test_table(ResolvedOutput::Compact, true, 100);
+        assert_eq!(
+            rendered,
+            "┌───────────────────────────────────────┬──────────────┐\n\
+             │ Name                                  │ State        │\n\
+             ├───────────────────────────────────────┼──────────────┤\n\
+             │ training-rental-with-a-very-long-name │ provisioning │\n\
+             └───────────────────────────────────────┴──────────────┘"
+        );
+    }
+
+    #[test]
+    fn auto_layout_selects_compact_at_injected_width() {
+        let rendered = render_test_table(ResolvedOutput::Auto, true, 55);
+        assert!(!rendered.contains("Provider"));
+        assert!(rendered.contains("State"));
+        assert!(rendered
+            .lines()
+            .all(|line| console::measure_text_width(line) <= 55));
+    }
+
+    #[test]
+    fn compact_layout_truncates_only_name_to_floor() {
+        let rendered = render_test_table(ResolvedOutput::Compact, true, 20);
+        assert_eq!(
+            rendered,
+            "┌──────────────┬──────────────┐\n\
+             │ Name         │ State        │\n\
+             ├──────────────┼──────────────┤\n\
+             │ training-re… │ provisioning │\n\
+             └──────────────┴──────────────┘"
+        );
+    }
+
+    #[test]
+    fn non_tty_auto_output_is_always_wide() {
+        let rendered = render_test_table(ResolvedOutput::Auto, false, 20);
+        assert!(rendered.contains("Provider"));
+        assert!(rendered.contains("training-rental-with-a-very-long-name"));
+    }
+
+    #[test]
+    fn relative_age_uses_injected_clock() {
+        let now = DateTime::parse_from_rfc3339("2026-07-13T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(format_age_str("2026-07-13T11:13:00Z", now), "47m");
+        assert_eq!(format_age_str("2026-07-13T10:00:00Z", now), "2h");
+        assert_eq!(format_age_str("2026-07-10T12:00:00Z", now), "3d");
+        assert_eq!(format_age_str("2026-07-14T12:00:00Z", now), "0m");
+    }
+
+    #[test]
+    fn image_names_drop_registry_tag_and_digest() {
+        assert_eq!(
+            compact_image_name("ghcr.io/one-covenant/trainer:latest"),
+            "one-covenant/trainer"
+        );
+        assert_eq!(compact_image_name("nvidia/cuda:12.4"), "nvidia/cuda");
+        assert_eq!(compact_image_name("ubuntu@sha256:abc"), "ubuntu");
+    }
+
+    #[test]
+    fn ansi_and_osc8_cells_use_visible_width() {
+        #[derive(Tabled)]
+        struct Row {
+            label: String,
+        }
+        let label =
+            "\x1b]8;;https://example.test/invoice\x1b\\\x1b[34;4mINV-1\x1b[0m\x1b]8;;\x1b\\";
+        let mut table = Table::new([Row {
+            label: label.to_string(),
+        }]);
+        table.with(Style::modern());
+        assert_eq!(table.total_width(), 9);
+        assert!(table
+            .to_string()
+            .lines()
+            .all(|line| tabled::grid::util::string::get_line_width(line) == 9));
+    }
 
     fn purchase(
         hosted_invoice_url: Option<&str>,

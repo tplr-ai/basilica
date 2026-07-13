@@ -162,12 +162,15 @@ impl Args {
                 gpu_type,
                 filters,
                 compute,
+                output,
             } => {
+                let output = crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
+                    .map_err(|message| CliError::Internal(color_eyre::eyre::eyre!(message)))?;
                 handlers::gpu_rental::handle_ls(
                     gpu_type.clone(),
                     filters.clone(),
                     *compute,
-                    self.json,
+                    output,
                     config,
                 )
                 .await?;
@@ -180,9 +183,14 @@ impl Args {
                 handlers::gpu_rental::handle_up(target.clone(), options.clone(), *compute, config)
                     .await?;
             }
-            Commands::Ps { compute, filters } => {
-                handlers::gpu_rental::handle_ps(filters.clone(), *compute, self.json, config)
-                    .await?;
+            Commands::Ps {
+                compute,
+                filters,
+                output,
+            } => {
+                let output = crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
+                    .map_err(|message| CliError::Internal(color_eyre::eyre::eyre!(message)))?;
+                handlers::gpu_rental::handle_ps(filters.clone(), *compute, output, config).await?;
             }
             Commands::Status { target } => {
                 handlers::gpu_rental::handle_status(target.clone(), self.json, config).await?;
@@ -218,6 +226,17 @@ impl Args {
                 use crate::cli::commands::TokenAction;
                 use crate::client::create_client;
 
+                let list_json = match action {
+                    TokenAction::List { output } => Some(
+                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
+                            .map_err(|message| {
+                                CliError::Internal(color_eyre::eyre::eyre!(message))
+                            })?
+                            .is_json(),
+                    ),
+                    _ => None,
+                };
+
                 // Create client with file-based auth (JWT required for token management)
                 let client = create_client(config).await?;
 
@@ -225,8 +244,9 @@ impl Args {
                     TokenAction::Create { name } => {
                         handlers::tokens::handle_create_token(&client, name.clone()).await?;
                     }
-                    TokenAction::List => {
-                        handlers::tokens::handle_list_tokens(&client, self.json).await?;
+                    TokenAction::List { .. } => {
+                        handlers::tokens::handle_list_tokens(&client, list_json.unwrap_or(false))
+                            .await?;
                     }
                     TokenAction::Revoke { name, yes } => {
                         handlers::tokens::handle_revoke_token(&client, name.clone(), *yes).await?;
@@ -261,6 +281,17 @@ impl Args {
                 use crate::cli::commands::FundAction;
                 use crate::client::create_authenticated_client;
 
+                let list_json = match action {
+                    Some(FundAction::List { output, .. }) => Some(
+                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
+                            .map_err(|message| {
+                                CliError::Internal(color_eyre::eyre::eyre!(message))
+                            })?
+                            .is_json(),
+                    ),
+                    None => None,
+                };
+
                 // Create authenticated client
                 let client = create_authenticated_client(config).await?;
 
@@ -268,9 +299,16 @@ impl Args {
                     None => {
                         handlers::fund::handle_fund(&client, *usd, *tao, self.json).await?;
                     }
-                    Some(FundAction::List { limit, offset }) => {
+                    Some(FundAction::List {
+                        limit,
+                        offset,
+                        output: _,
+                    }) => {
                         handlers::fund::list::handle_list_payments(
-                            &client, *limit, *offset, self.json,
+                            &client,
+                            *limit,
+                            *offset,
+                            list_json.unwrap_or(false),
                         )
                         .await?;
                     }
@@ -289,7 +327,9 @@ impl Args {
 
             // Deploy command
             Commands::Deploy(cmd) => {
-                handlers::deploy::handle_deploy(*cmd.clone(), config).await?;
+                let mut cmd = *cmd.clone();
+                cmd.json |= self.json;
+                handlers::deploy::handle_deploy(cmd, config).await?;
             }
 
             // Distributed training (`basilica train ...`).
@@ -301,6 +341,17 @@ impl Args {
             Commands::Volumes { action } => {
                 use crate::cli::commands::VolumeAction;
                 use crate::client::create_client;
+
+                let list_json = match action {
+                    VolumeAction::List { output } => Some(
+                        crate::cli::commands::ResolvedOutput::resolve(self.json, *output)
+                            .map_err(|message| {
+                                CliError::Internal(color_eyre::eyre::eyre!(message))
+                            })?
+                            .is_json(),
+                    ),
+                    _ => None,
+                };
 
                 // Create client with file-based auth (JWT required for volume management)
                 let client = create_client(config).await?;
@@ -324,8 +375,9 @@ impl Args {
                         )
                         .await?;
                     }
-                    VolumeAction::List => {
-                        handlers::volumes::handle_list_volumes(&client, self.json).await?;
+                    VolumeAction::List { .. } => {
+                        handlers::volumes::handle_list_volumes(&client, list_json.unwrap_or(false))
+                            .await?;
                     }
                     VolumeAction::Delete { volume, yes } => {
                         handlers::volumes::handle_delete_volume(

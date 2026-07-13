@@ -5,6 +5,43 @@ use std::path::PathBuf;
 
 use crate::handlers::gpu_rental::GpuTarget;
 
+/// Human and machine-readable formats supported by resource list commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    Compact,
+    Wide,
+    Json,
+}
+
+/// Fully resolved output mode after combining `--json` and `-o`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolvedOutput {
+    Auto,
+    Compact,
+    Wide,
+    Json,
+}
+
+impl ResolvedOutput {
+    pub fn resolve(json: bool, output: Option<OutputFormat>) -> Result<Self, String> {
+        match (json, output) {
+            (true, Some(OutputFormat::Compact | OutputFormat::Wide)) => Err(
+                "--json conflicts with -o compact and -o wide; use --json or -o json".to_string(),
+            ),
+            (true, None | Some(OutputFormat::Json)) | (false, Some(OutputFormat::Json)) => {
+                Ok(Self::Json)
+            }
+            (false, Some(OutputFormat::Compact)) => Ok(Self::Compact),
+            (false, Some(OutputFormat::Wide)) => Ok(Self::Wide),
+            (false, None) => Ok(Self::Auto),
+        }
+    }
+
+    pub const fn is_json(self) -> bool {
+        matches!(self, Self::Json)
+    }
+}
+
 /// CLI wrapper for ComputeCategory to implement ValueEnum
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum ComputeCategoryArg {
@@ -52,6 +89,10 @@ pub enum Commands {
 
         #[command(flatten)]
         filters: ListFilters,
+
+        /// Output format (auto-selects compact or wide when omitted)
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
     },
 
     /// Provision and start GPU instances
@@ -76,6 +117,10 @@ pub enum Commands {
 
         #[command(flatten)]
         filters: PsFilters,
+
+        /// Output format (auto-selects compact or wide when omitted)
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
     },
 
     /// Check instance status
@@ -273,6 +318,10 @@ pub enum FundAction {
         /// Offset for pagination, applied to both sources (default: 0)
         #[arg(long, default_value = "0")]
         offset: u32,
+
+        /// Output format
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
     },
 }
 
@@ -286,7 +335,11 @@ pub enum TokenAction {
     },
 
     /// List all API keys
-    List,
+    List {
+        /// Output format
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
+    },
 
     /// Revoke an API key
     Revoke {
@@ -352,7 +405,11 @@ pub enum VolumeAction {
 
     /// List all volumes
     #[command(alias = "ls")]
-    List,
+    List {
+        /// Output format
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
+    },
 
     /// Delete a volume (must be detached first)
     #[command(alias = "rm")]
@@ -988,7 +1045,11 @@ impl Default for LifecycleOptions {
 pub enum DeployAction {
     /// List all deployments
     #[command(name = "ls", visible_alias = "list")]
-    List,
+    List {
+        /// Output format (auto-selects compact or wide when omitted)
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
+    },
 
     /// Get deployment status
     #[command(name = "status", visible_alias = "get")]
@@ -1570,6 +1631,53 @@ mod train_command_tests {
     use clap::error::ErrorKind;
     use clap::Parser;
     use std::str::FromStr;
+
+    #[test]
+    fn list_output_format_resolves_json_alias_and_conflicts() {
+        assert_eq!(
+            ResolvedOutput::resolve(false, Some(OutputFormat::Json)),
+            Ok(ResolvedOutput::Json)
+        );
+        assert_eq!(
+            ResolvedOutput::resolve(true, Some(OutputFormat::Json)),
+            Ok(ResolvedOutput::Json)
+        );
+        assert!(ResolvedOutput::resolve(true, Some(OutputFormat::Compact)).is_err());
+        assert!(ResolvedOutput::resolve(true, Some(OutputFormat::Wide)).is_err());
+    }
+
+    #[test]
+    fn list_commands_parse_all_output_formats() {
+        for value in ["compact", "wide", "json"] {
+            Args::try_parse_from(["basilica", "ls", "-o", value]).unwrap();
+            Args::try_parse_from(["basilica", "ps", "--output", value]).unwrap();
+            Args::try_parse_from(["basilica", "tokens", "list", "-o", value]).unwrap();
+            Args::try_parse_from(["basilica", "fund", "list", "-o", value]).unwrap();
+            Args::try_parse_from(["basilica", "volumes", "list", "-o", value]).unwrap();
+            Args::try_parse_from(["basilica", "summon", "ls", "-o", value]).unwrap();
+        }
+    }
+
+    #[test]
+    fn output_flag_is_rejected_on_non_list_commands() {
+        let error =
+            Args::try_parse_from(["basilica", "status", "rental", "-o", "wide"]).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn global_json_conflicts_with_disagreeing_summon_output() {
+        let args =
+            Args::try_parse_from(["basilica", "--json", "summon", "ls", "--output", "compact"])
+                .unwrap();
+        let Commands::Deploy(command) = args.command else {
+            panic!("expected deploy command");
+        };
+        let Some(DeployAction::List { output }) = command.action else {
+            panic!("expected deploy list action");
+        };
+        assert!(ResolvedOutput::resolve(args.json || command.json, output).is_err());
+    }
 
     // -----------------------------------------------------------------
     // WorldSizeTriple parser.
