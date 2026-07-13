@@ -8,8 +8,13 @@ use crate::handlers::gpu_rental::GpuTarget;
 /// Human and machine-readable formats supported by resource list commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
+    /// Choose the human-readable layout automatically
+    Auto,
+    /// Show only the required columns
     Compact,
+    /// Show every column, even when the table exceeds the terminal width
     Wide,
+    /// Emit machine-readable JSON
     Json,
 }
 
@@ -25,12 +30,14 @@ pub enum ResolvedOutput {
 impl ResolvedOutput {
     pub fn resolve(json: bool, output: Option<OutputFormat>) -> Result<Self, String> {
         match (json, output) {
-            (true, Some(OutputFormat::Compact | OutputFormat::Wide)) => Err(
-                "--json conflicts with -o compact and -o wide; use --json or -o json".to_string(),
+            (true, Some(OutputFormat::Auto | OutputFormat::Compact | OutputFormat::Wide)) => Err(
+                "--json conflicts with -o auto, -o compact, and -o wide; use --json or -o json"
+                    .to_string(),
             ),
             (true, None | Some(OutputFormat::Json)) | (false, Some(OutputFormat::Json)) => {
                 Ok(Self::Json)
             }
+            (false, Some(OutputFormat::Auto)) => Ok(Self::Auto),
             (false, Some(OutputFormat::Compact)) => Ok(Self::Compact),
             (false, Some(OutputFormat::Wide)) => Ok(Self::Wide),
             (false, None) => Ok(Self::Auto),
@@ -90,7 +97,7 @@ pub enum Commands {
         #[command(flatten)]
         filters: ListFilters,
 
-        /// Output format (automatically adapts columns to terminal width when omitted)
+        /// Output format (default: auto; adapts columns to terminal width)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },
@@ -118,7 +125,7 @@ pub enum Commands {
         #[command(flatten)]
         filters: PsFilters,
 
-        /// Output format (automatically adapts columns to terminal width when omitted)
+        /// Output format (default: auto; adapts columns to terminal width)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },
@@ -319,7 +326,7 @@ pub enum FundAction {
         #[arg(long, default_value = "0")]
         offset: u32,
 
-        /// Output format
+        /// Output format (default: auto)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },
@@ -336,7 +343,7 @@ pub enum TokenAction {
 
     /// List all API keys
     List {
-        /// Output format
+        /// Output format (default: auto)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },
@@ -406,7 +413,7 @@ pub enum VolumeAction {
     /// List all volumes
     #[command(alias = "ls")]
     List {
-        /// Output format
+        /// Output format (default: auto)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },
@@ -1046,7 +1053,7 @@ pub enum DeployAction {
     /// List all deployments
     #[command(name = "ls", visible_alias = "list")]
     List {
-        /// Output format (auto-selects compact or wide when omitted)
+        /// Output format (default: auto)
         #[arg(short = 'o', long = "output", value_enum)]
         output: Option<OutputFormat>,
     },
@@ -1635,6 +1642,14 @@ mod train_command_tests {
     #[test]
     fn list_output_format_resolves_json_alias_and_conflicts() {
         assert_eq!(
+            ResolvedOutput::resolve(false, None),
+            Ok(ResolvedOutput::Auto)
+        );
+        assert_eq!(
+            ResolvedOutput::resolve(false, Some(OutputFormat::Auto)),
+            Ok(ResolvedOutput::Auto)
+        );
+        assert_eq!(
             ResolvedOutput::resolve(false, Some(OutputFormat::Json)),
             Ok(ResolvedOutput::Json)
         );
@@ -1642,13 +1657,14 @@ mod train_command_tests {
             ResolvedOutput::resolve(true, Some(OutputFormat::Json)),
             Ok(ResolvedOutput::Json)
         );
+        assert!(ResolvedOutput::resolve(true, Some(OutputFormat::Auto)).is_err());
         assert!(ResolvedOutput::resolve(true, Some(OutputFormat::Compact)).is_err());
         assert!(ResolvedOutput::resolve(true, Some(OutputFormat::Wide)).is_err());
     }
 
     #[test]
     fn list_commands_parse_all_output_formats() {
-        for value in ["compact", "wide", "json"] {
+        for value in ["auto", "compact", "wide", "json"] {
             Args::try_parse_from(["basilica", "ls", "-o", value]).unwrap();
             Args::try_parse_from(["basilica", "ps", "--output", value]).unwrap();
             Args::try_parse_from(["basilica", "tokens", "list", "-o", value]).unwrap();
@@ -1677,6 +1693,24 @@ mod train_command_tests {
             panic!("expected deploy list action");
         };
         assert!(ResolvedOutput::resolve(args.json || command.json, output).is_err());
+    }
+
+    #[test]
+    fn global_json_accepts_implicit_auto_but_conflicts_with_explicit_auto() {
+        let args = Args::try_parse_from(["basilica", "--json", "ls"]).unwrap();
+        let Commands::Ls { output, .. } = args.command else {
+            panic!("expected ls command");
+        };
+        assert_eq!(
+            ResolvedOutput::resolve(args.json, output),
+            Ok(ResolvedOutput::Json)
+        );
+
+        let args = Args::try_parse_from(["basilica", "--json", "ls", "-o", "auto"]).unwrap();
+        let Commands::Ls { output, .. } = args.command else {
+            panic!("expected ls command");
+        };
+        assert!(ResolvedOutput::resolve(args.json, output).is_err());
     }
 
     // -----------------------------------------------------------------
