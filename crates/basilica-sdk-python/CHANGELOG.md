@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `public` property on `DeploymentResponse` and the `Deployment` wrapper,
+  exposing whether the deployment is publicly accessible without a share
+  token. Defaults to `True` when the backend response omits the field, so
+  older backends keep the previous behavior.
+
+### Fixed
+
+- `Deployment` status refreshes no longer clear `share_token` / `share_url`
+  when the refreshed response carries `None` for them. The share token is
+  only returned once by the create call, so any later `refresh()` /
+  `wait_until_ready()` silently discarded it.
+
 ## [0.32.0] - 2026-06-29
 
 ### Changed

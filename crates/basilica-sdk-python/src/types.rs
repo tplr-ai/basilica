@@ -1528,6 +1528,8 @@ pub struct DeploymentResponse {
     #[pyo3(get)]
     pub created_at: String,
     #[pyo3(get)]
+    pub public: bool,
+    #[pyo3(get)]
     pub updated_at: Option<String>,
     #[pyo3(get)]
     pub pods: Option<Vec<PodInfo>>,
@@ -1614,6 +1616,7 @@ impl From<SdkDeploymentResponse> for DeploymentResponse {
             url: response.url,
             replicas: response.replicas.into(),
             created_at: response.created_at,
+            public: response.public,
             updated_at: response.updated_at,
             pods: response
                 .pods

@@ -1676,6 +1676,7 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
             message = None
             share_token = None
             share_url = None
+            public = False
             public_metadata = False
             replicas = FakeReplicas()
             distributed = {
@@ -1755,7 +1756,7 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
 
     def test_wrapper_carries_other_previously_dropped_fields(self) -> None:
         """`image`, `phase`, `message`, `share_token`, `share_url`,
-        `public_metadata` were all dropped by `Deployment._from_response`
+        `public`, `public_metadata` were all dropped by `Deployment._from_response`
         before this fix. They are part of the PyO3 binding's surface
         (see `crates/basilica-sdk-python/src/types.rs::DeploymentResponse`)
         and must reach the user.
@@ -1767,6 +1768,7 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
         assert deployment.message is None
         assert deployment.share_token is None
         assert deployment.share_url is None
+        assert deployment.public is False
         assert deployment.public_metadata is False
         # Pre-existing fields should still survive.
         assert deployment.name == "dlc-454-mock"
@@ -1775,6 +1777,28 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
         assert deployment.state == "running"
         assert deployment.created_at == "2026-05-02T10:00:00Z"
         assert deployment.updated_at == "2026-05-02T10:05:00Z"
+
+    def test_refresh_preserves_create_time_share_token_when_status_omits_it(
+        self,
+    ) -> None:
+        """Private deployment share tokens are one-time create response fields.
+
+        A later status refresh may return explicit None values, but the wrapper
+        must keep the token captured from the create response.
+        """
+        client = self._build_client()
+        deployment = client.get("dlc-454-mock")
+        deployment._share_token = "share-token-from-create"
+        deployment._share_url = (
+            "https://dlc-454-mock.deployments.basilica.ai?token=share-token-from-create"
+        )
+
+        deployment._copy_from_response(self._fake_pyo3_response())
+
+        assert deployment.share_token == "share-token-from-create"
+        assert deployment.share_url == (
+            "https://dlc-454-mock.deployments.basilica.ai?token=share-token-from-create"
+        )
 
     def test_NEGATIVE_coerce_to_dict_after_wrapper_carries_distributed(self) -> None:
         """The test PR #451 should have had.
