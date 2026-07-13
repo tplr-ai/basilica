@@ -161,7 +161,7 @@ const PS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::optional("Image", 3),
     AdaptiveColumn::optional("CPU/RAM", 2),
     AdaptiveColumn::optional("Location", 4),
-    AdaptiveColumn::optional("Cost/Hr", 6),
+    AdaptiveColumn::optional("Price/Hr", 6),
     AdaptiveColumn::optional("Total Cost", 1),
     AdaptiveColumn::required("Age"),
 ];
@@ -174,7 +174,7 @@ const PS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required("IP"),
     AdaptiveColumn::optional("CPU/RAM", 2),
     AdaptiveColumn::optional("Region", 3),
-    AdaptiveColumn::optional("Cost/Hr", 5),
+    AdaptiveColumn::optional("Price/Hr", 5),
     AdaptiveColumn::optional("Total Cost", 1),
     AdaptiveColumn::required("Age"),
 ];
@@ -186,7 +186,7 @@ const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::optional("State", 5),
     AdaptiveColumn::required("IP"),
     AdaptiveColumn::optional("Region", 2),
-    AdaptiveColumn::optional("Cost/Hr", 4),
+    AdaptiveColumn::optional("Price/Hr", 4),
     AdaptiveColumn::optional("Total Cost", 1),
     AdaptiveColumn::required("Age"),
 ];
@@ -510,7 +510,7 @@ pub fn display_rental_items(
         cpu_ram: String,
         #[tabled(rename = "Location")]
         location: String,
-        #[tabled(rename = "Cost/Hr")]
+        #[tabled(rename = "Price/Hr")]
         rate_per_hour: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -1498,7 +1498,7 @@ pub fn display_secure_cloud_rentals(
         cpu_ram: String,
         #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "Cost/Hr")]
+        #[tabled(rename = "Price/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -1673,7 +1673,7 @@ pub fn display_cpu_rentals(
         ip: String,
         #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "Cost/Hr")]
+        #[tabled(rename = "Price/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -2174,7 +2174,7 @@ mod tests {
                 ("Image", Some(3)),
                 ("CPU/RAM", Some(2)),
                 ("Location", Some(4)),
-                ("Cost/Hr", Some(6)),
+                ("Price/Hr", Some(6)),
                 ("Total Cost", Some(1)),
                 ("Age", None),
             ]
@@ -2189,7 +2189,7 @@ mod tests {
                 ("IP", None),
                 ("CPU/RAM", Some(2)),
                 ("Region", Some(3)),
-                ("Cost/Hr", Some(5)),
+                ("Price/Hr", Some(5)),
                 ("Total Cost", Some(1)),
                 ("Age", None),
             ]
@@ -2203,7 +2203,7 @@ mod tests {
                 ("State", Some(5)),
                 ("IP", None),
                 ("Region", Some(2)),
-                ("Cost/Hr", Some(4)),
+                ("Price/Hr", Some(4)),
                 ("Total Cost", Some(1)),
                 ("Age", None),
             ]
