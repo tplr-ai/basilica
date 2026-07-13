@@ -130,26 +130,26 @@ impl AdaptiveColumn {
 const LS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required_truncatable("GPU", 1, MIN_GPU_WIDTH),
     AdaptiveColumn::required("Available"),
-    AdaptiveColumn::required("Price/hr"),
+    AdaptiveColumn::required("Price/Hr"),
 ];
 
 const LS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
-    AdaptiveColumn::optional("PROVIDER", 4),
+    AdaptiveColumn::optional("Provider", 4),
     AdaptiveColumn::required_truncatable("GPU", 1, MIN_GPU_WIDTH),
     AdaptiveColumn::required("VRAM"),
     AdaptiveColumn::optional("CPU/RAM", 1),
-    AdaptiveColumn::optional("STORAGE", 2),
-    AdaptiveColumn::optional("INTERCONNECT", 3),
-    AdaptiveColumn::required("REGION"),
-    AdaptiveColumn::required("PRICE/HR"),
+    AdaptiveColumn::optional("Storage", 2),
+    AdaptiveColumn::optional("Interconnect", 3),
+    AdaptiveColumn::required("Region"),
+    AdaptiveColumn::required("Price/Hr"),
 ];
 
 const LS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
-    AdaptiveColumn::required("PROVIDER"),
-    AdaptiveColumn::required("SIZE"),
-    AdaptiveColumn::optional("STORAGE", 1),
-    AdaptiveColumn::required("REGION"),
-    AdaptiveColumn::required("PRICE/HR"),
+    AdaptiveColumn::required("Provider"),
+    AdaptiveColumn::required("Size"),
+    AdaptiveColumn::optional("Storage", 1),
+    AdaptiveColumn::required("Region"),
+    AdaptiveColumn::required("Price/Hr"),
 ];
 
 const PS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
@@ -161,7 +161,7 @@ const PS_BOURSE_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::optional("Image", 3),
     AdaptiveColumn::optional("CPU/RAM", 2),
     AdaptiveColumn::optional("Location", 4),
-    AdaptiveColumn::optional("Rate/hr", 6),
+    AdaptiveColumn::optional("Cost/Hr", 6),
     AdaptiveColumn::optional("Total Cost", 1),
     AdaptiveColumn::required("Age"),
 ];
@@ -174,7 +174,7 @@ const PS_CITADEL_GPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::required("IP"),
     AdaptiveColumn::optional("CPU/RAM", 2),
     AdaptiveColumn::optional("Region", 3),
-    AdaptiveColumn::optional("Rate/hr", 5),
+    AdaptiveColumn::optional("Cost/Hr", 5),
     AdaptiveColumn::optional("Total Cost", 1),
     AdaptiveColumn::required("Age"),
 ];
@@ -186,7 +186,7 @@ const PS_CITADEL_CPU_COLUMNS: &[AdaptiveColumn] = &[
     AdaptiveColumn::optional("State", 5),
     AdaptiveColumn::required("IP"),
     AdaptiveColumn::optional("Region", 2),
-    AdaptiveColumn::optional("Rate/hr", 4),
+    AdaptiveColumn::optional("Cost/Hr", 4),
     AdaptiveColumn::optional("Total Cost", 1),
     AdaptiveColumn::required("Age"),
 ];
@@ -510,7 +510,7 @@ pub fn display_rental_items(
         cpu_ram: String,
         #[tabled(rename = "Location")]
         location: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Cost/Hr")]
         rate_per_hour: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -802,7 +802,7 @@ pub fn display_community_cloud_categories(
         gpu: String,
         #[tabled(rename = "Available")]
         available: String,
-        #[tabled(rename = "Price/hr")]
+        #[tabled(rename = "Price/Hr")]
         price: String,
     }
 
@@ -871,7 +871,7 @@ pub fn display_secure_cloud_offerings_detailed(
 
     #[derive(Clone, Tabled)]
     struct OfferingRow {
-        #[tabled(rename = "PROVIDER")]
+        #[tabled(rename = "Provider")]
         provider: String,
         #[tabled(rename = "GPU")]
         gpu_info: String,
@@ -879,13 +879,13 @@ pub fn display_secure_cloud_offerings_detailed(
         vram: String,
         #[tabled(rename = "CPU/RAM")]
         cpu_ram: String,
-        #[tabled(rename = "STORAGE")]
+        #[tabled(rename = "Storage")]
         storage: String,
-        #[tabled(rename = "INTERCONNECT")]
+        #[tabled(rename = "Interconnect")]
         interconnect: String,
-        #[tabled(rename = "REGION")]
+        #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "PRICE/HR")]
+        #[tabled(rename = "Price/Hr")]
         price: String,
     }
 
@@ -1498,7 +1498,7 @@ pub fn display_secure_cloud_rentals(
         cpu_ram: String,
         #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Cost/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -1592,15 +1592,15 @@ pub fn display_cpu_offerings_detailed(
 
     #[derive(Clone, Tabled)]
     struct CpuOfferingRow {
-        #[tabled(rename = "PROVIDER")]
+        #[tabled(rename = "Provider")]
         provider: String,
-        #[tabled(rename = "SIZE")]
+        #[tabled(rename = "Size")]
         size: String,
-        #[tabled(rename = "STORAGE")]
+        #[tabled(rename = "Storage")]
         storage: String,
-        #[tabled(rename = "REGION")]
+        #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "PRICE/HR")]
+        #[tabled(rename = "Price/Hr")]
         price: String,
     }
 
@@ -1673,7 +1673,7 @@ pub fn display_cpu_rentals(
         ip: String,
         #[tabled(rename = "Region")]
         region: String,
-        #[tabled(rename = "Rate/hr")]
+        #[tabled(rename = "Cost/Hr")]
         hourly_cost: String,
         #[tabled(rename = "Total Cost")]
         total_cost: String,
@@ -2134,29 +2134,29 @@ mod tests {
     fn ls_adaptive_column_priorities_match_the_cli_contract() {
         assert_eq!(
             schema(LS_BOURSE_COLUMNS),
-            vec![("GPU", None), ("Available", None), ("Price/hr", None)]
+            vec![("GPU", None), ("Available", None), ("Price/Hr", None)]
         );
         assert_eq!(
             schema(LS_CITADEL_GPU_COLUMNS),
             vec![
-                ("PROVIDER", Some(4)),
+                ("Provider", Some(4)),
                 ("GPU", None),
                 ("VRAM", None),
                 ("CPU/RAM", Some(1)),
-                ("STORAGE", Some(2)),
-                ("INTERCONNECT", Some(3)),
-                ("REGION", None),
-                ("PRICE/HR", None),
+                ("Storage", Some(2)),
+                ("Interconnect", Some(3)),
+                ("Region", None),
+                ("Price/Hr", None),
             ]
         );
         assert_eq!(
             schema(LS_CITADEL_CPU_COLUMNS),
             vec![
-                ("PROVIDER", None),
-                ("SIZE", None),
-                ("STORAGE", Some(1)),
-                ("REGION", None),
-                ("PRICE/HR", None),
+                ("Provider", None),
+                ("Size", None),
+                ("Storage", Some(1)),
+                ("Region", None),
+                ("Price/Hr", None),
             ]
         );
     }
@@ -2174,7 +2174,7 @@ mod tests {
                 ("Image", Some(3)),
                 ("CPU/RAM", Some(2)),
                 ("Location", Some(4)),
-                ("Rate/hr", Some(6)),
+                ("Cost/Hr", Some(6)),
                 ("Total Cost", Some(1)),
                 ("Age", None),
             ]
@@ -2189,7 +2189,7 @@ mod tests {
                 ("IP", None),
                 ("CPU/RAM", Some(2)),
                 ("Region", Some(3)),
-                ("Rate/hr", Some(5)),
+                ("Cost/Hr", Some(5)),
                 ("Total Cost", Some(1)),
                 ("Age", None),
             ]
@@ -2203,7 +2203,7 @@ mod tests {
                 ("State", Some(5)),
                 ("IP", None),
                 ("Region", Some(2)),
-                ("Rate/hr", Some(4)),
+                ("Cost/Hr", Some(4)),
                 ("Total Cost", Some(1)),
                 ("Age", None),
             ]
