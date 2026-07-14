@@ -76,13 +76,14 @@ async fn run_async(args: Args) -> Result<()> {
 
     // Run and handle errors explicitly to show suggestions
     if let Err(err) = args.run().await {
+        let exit_code = err.exit_code();
         let mode = if json {
             basilica_cli::output::RenderMode::Json
         } else {
             basilica_cli::output::RenderMode::Human
         };
         let _ = basilica_cli::output::render_error(&err, mode, &mut std::io::stderr());
-        std::process::exit(1);
+        std::process::exit(exit_code);
     }
 
     Ok(())

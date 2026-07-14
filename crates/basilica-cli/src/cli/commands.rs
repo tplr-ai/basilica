@@ -174,6 +174,11 @@ pub enum Commands {
         /// Rental name or ID (optional)
         #[arg(long)]
         target: Option<String>,
+
+        /// Maximum total SSH execution duration in seconds, including connection setup
+        /// (unbounded by default)
+        #[arg(long, value_name = "SECS")]
+        timeout: Option<u64>,
     },
 
     /// SSH into instances
@@ -1636,8 +1641,54 @@ mod train_command_tests {
     use super::*;
     use crate::cli::args::Args;
     use clap::error::ErrorKind;
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
     use std::str::FromStr;
+
+    #[test]
+    fn exec_parses_optional_timeout_seconds() {
+        let args = Args::try_parse_from([
+            "basilica",
+            "exec",
+            "sleep 10",
+            "--target",
+            "rental-1",
+            "--timeout",
+            "7",
+        ])
+        .unwrap();
+
+        match args.command {
+            Commands::Exec {
+                command,
+                target,
+                timeout,
+            } => {
+                assert_eq!(command, "sleep 10");
+                assert_eq!(target.as_deref(), Some("rental-1"));
+                assert_eq!(timeout, Some(7));
+            }
+            other => panic!("expected exec command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn exec_has_no_timeout_by_default() {
+        let args = Args::try_parse_from(["basilica", "exec", "sleep 10"]).unwrap();
+
+        match args.command {
+            Commands::Exec { timeout, .. } => assert_eq!(timeout, None),
+            other => panic!("expected exec command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn exec_timeout_help_includes_connection_setup() {
+        let mut command = Args::command();
+        let exec = command.find_subcommand_mut("exec").unwrap();
+        let help = exec.render_long_help().to_string();
+
+        assert!(help.contains("including connection setup"));
+    }
 
     #[test]
     fn list_output_format_resolves_json_alias_and_conflicts() {

@@ -9,14 +9,16 @@ pub use key_matcher::{
 use crate::config::SshConfig;
 use crate::error::{CliError, Result};
 use basilica_common::ssh::{
-    SshConnectionConfig, SshConnectionDetails, SshConnectionManager, SshFileTransferManager,
+    validate_ssh_username, SshCommandStatus, SshConnectionConfig, SshConnectionDetails,
     StandardSshClient,
 };
 use basilica_sdk::types::{RentalStatusResponse, SshAccess};
 use color_eyre::eyre::eyre;
 use color_eyre::Section;
 use std::path::Path;
+use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
+use tokio::process::Command as TokioCommand;
 use tracing::{debug, info};
 
 /// SSH client for rental operations
@@ -36,8 +38,17 @@ pub enum SshProbeStatus {
 }
 
 impl SshClient {
-    /// Create new SSH client
+    /// Create a new SSH client without an execution timeout.
     pub fn new(config: &SshConfig) -> Result<Self> {
+        Self::build(config, None)
+    }
+
+    /// Create a new SSH client with an execution timeout.
+    pub fn with_execution_timeout(config: &SshConfig, execution_timeout: Duration) -> Result<Self> {
+        Self::build(config, Some(execution_timeout))
+    }
+
+    fn build(config: &SshConfig, execution_timeout: Option<Duration>) -> Result<Self> {
         // Create SSH connection config using configured timeout
         let connection_timeout = if config.connection_timeout > 0 {
             Duration::from_secs(config.connection_timeout)
@@ -47,7 +58,7 @@ impl SshClient {
 
         let ssh_config = SshConnectionConfig {
             connection_timeout,
-            execution_timeout: Duration::from_secs(3600),
+            execution_timeout,
             retry_attempts: 3,
             max_transfer_size: 1000 * 1024 * 1024, // 1000MB
             cleanup_remote_files: false,
@@ -67,6 +78,8 @@ impl SshClient {
         ssh_access: &SshAccess,
         private_key_path: std::path::PathBuf,
     ) -> Result<SshConnectionDetails> {
+        validate_ssh_username(&ssh_access.username).map_err(|error| eyre!(error))?;
+
         if !private_key_path.exists() {
             return Err(eyre!(
                 "SSH private key not found at: {}",
@@ -95,30 +108,15 @@ impl SshClient {
         ssh_access: &SshAccess,
         command: &str,
         private_key_path: std::path::PathBuf,
-    ) -> Result<()> {
+    ) -> Result<SshCommandStatus> {
         let details = self.ssh_access_to_connection_details(ssh_access, private_key_path)?;
 
-        debug!(
-            "Executing command via SSH: ssh -i {} -p {} {}@{} '{}'",
-            details.private_key_path.display(),
-            details.port,
-            details.username,
-            details.host,
-            command
-        );
+        debug!("Executing command via SSH");
 
-        let output = self
-            .client
-            .execute_command(&details, command, true)
+        self.client
+            .execute_command_passthrough(&details, command)
             .await
-            .map_err(|e| {
-                eyre!(e)
-                    .suggestion("Check if the rental is still active and SSH port is exposed")
-                    .note("Run 'basilica status <rental-id>' to check rental status")
-            })?;
-
-        println!("{}", output);
-        Ok(())
+            .map_err(|e| eyre!(e).into())
     }
 
     /// Execute a command with rental status (for backward compatibility)
@@ -480,6 +478,126 @@ impl SshClient {
         Ok(())
     }
 
+    fn scp_command(details: &SshConnectionDetails, program: &Path) -> Result<TokioCommand> {
+        if details.host.is_empty() {
+            return Err(eyre!("Host cannot be empty").into());
+        }
+        if details
+            .host
+            .contains(&[';', '&', '|', '$', '`', '\n', '\r'][..])
+        {
+            return Err(eyre!("Host contains invalid characters").into());
+        }
+        validate_ssh_username(&details.username).map_err(|error| eyre!(error))?;
+
+        let mut command = TokioCommand::new(program);
+        command
+            .arg("-i")
+            .arg(&details.private_key_path)
+            .arg("-P")
+            .arg(details.port.to_string())
+            .arg("-o")
+            .arg("StrictHostKeyChecking=no")
+            .arg("-o")
+            .arg("UserKnownHostsFile=/dev/null")
+            .arg("-o")
+            .arg("LogLevel=ERROR")
+            .arg("-o")
+            .arg("IdentitiesOnly=yes")
+            .arg("-o")
+            .arg(format!("ConnectTimeout={}", details.timeout.as_secs()))
+            .arg("-o")
+            .arg("ServerAliveInterval=15")
+            .arg("-o")
+            .arg("ServerAliveCountMax=3");
+
+        Ok(command)
+    }
+
+    fn scp_upload_command(
+        details: &SshConnectionDetails,
+        local_path: &Path,
+        remote_path: &str,
+        program: &Path,
+    ) -> Result<TokioCommand> {
+        let mut command = Self::scp_command(details, program)?;
+        command.arg("--").arg(local_path).arg(format!(
+            "{}@{}:{}",
+            details.username, details.host, remote_path
+        ));
+        Ok(command)
+    }
+
+    fn scp_download_command(
+        details: &SshConnectionDetails,
+        remote_path: &str,
+        local_path: &Path,
+        program: &Path,
+    ) -> Result<TokioCommand> {
+        let mut command = Self::scp_command(details, program)?;
+        command
+            .arg("--")
+            .arg(format!(
+                "{}@{}:{}",
+                details.username, details.host, remote_path
+            ))
+            .arg(local_path);
+        Ok(command)
+    }
+
+    async fn run_scp_with_stdio(
+        command: &mut TokioCommand,
+        stdin: Stdio,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> Result<()> {
+        let status = command
+            .stdin(stdin)
+            .stdout(stdout)
+            .stderr(stderr)
+            .kill_on_drop(true)
+            .status()
+            .await
+            .map_err(|error| {
+                CliError::Internal(
+                    eyre!("Failed to start SCP file transfer: {}", error)
+                        .suggestion("Ensure OpenSSH scp is installed and available in PATH"),
+                )
+            })?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Self::scp_exit_error(status))
+        }
+    }
+
+    fn scp_exit_error(status: ExitStatus) -> CliError {
+        if let Some(code) = status.code() {
+            return CliError::CommandExit {
+                code,
+                message: None,
+            };
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+
+            if let Some(signal) = status.signal() {
+                return CliError::CommandExit {
+                    code: 128 + signal,
+                    message: None,
+                };
+            }
+        }
+
+        CliError::CommandExit {
+            code: 1,
+            message: None,
+        }
+    }
+
     /// Upload file via SSH
     pub async fn upload_file(
         &self,
@@ -493,14 +611,14 @@ impl SshClient {
 
         info!("Uploading {} to {}", local_path, ssh_access.host);
 
-        self.client
-            .upload_file(&details, local, remote_path)
-            .await
-            .map_err(|e| {
-                eyre!("File upload failed: {}", e)
-                    .suggestion("Check file permissions and available disk space on the rental")
-                    .note("Ensure the local file exists and is readable")
-            })?;
+        let mut command = Self::scp_upload_command(&details, local, remote_path, Path::new("scp"))?;
+        Self::run_scp_with_stdio(
+            &mut command,
+            Stdio::inherit(),
+            Stdio::inherit(),
+            Stdio::inherit(),
+        )
+        .await?;
 
         info!("Upload completed successfully");
         Ok(())
@@ -519,14 +637,15 @@ impl SshClient {
 
         info!("Downloading {} from {}", remote_path, ssh_access.host);
 
-        self.client
-            .download_file(&details, remote_path, local)
-            .await
-            .map_err(|e| {
-                eyre!("File download failed: {}", e)
-                    .suggestion("Check that the remote file exists and you have read permissions")
-                    .note("Ensure the destination directory is writable")
-            })?;
+        let mut command =
+            Self::scp_download_command(&details, remote_path, local, Path::new("scp"))?;
+        Self::run_scp_with_stdio(
+            &mut command,
+            Stdio::inherit(),
+            Stdio::inherit(),
+            Stdio::inherit(),
+        )
+        .await?;
 
         info!("Download completed successfully");
         Ok(())
@@ -583,4 +702,150 @@ pub fn parse_ssh_credentials(credentials: &str) -> Result<(String, u16, String)>
     };
 
     Ok((host, 22, user))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::error::CliError;
+    use crate::ssh::SshClient;
+    use basilica_common::ssh::SshConnectionDetails;
+    use std::ffi::OsStr;
+    use std::fs::File;
+    use std::path::Path;
+    use std::process::Stdio;
+    use std::time::Duration;
+    use tokio::process::Command as TokioCommand;
+
+    fn connection_details(private_key_path: std::path::PathBuf) -> SshConnectionDetails {
+        SshConnectionDetails {
+            host: "example.test".to_string(),
+            username: "testuser".to_string(),
+            port: 2222,
+            private_key_path,
+            timeout: Duration::from_secs(7),
+        }
+    }
+
+    fn command_args(command: &TokioCommand) -> Vec<String> {
+        command
+            .as_std()
+            .get_args()
+            .map(OsStr::to_string_lossy)
+            .map(|argument| argument.into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn scp_commands_preserve_options_and_operand_order() {
+        let details = connection_details("/tmp/test-key".into());
+        let upload = SshClient::scp_upload_command(
+            &details,
+            Path::new("-local file"),
+            "/remote/upload",
+            Path::new("fake-scp"),
+        )
+        .unwrap();
+        let download = SshClient::scp_download_command(
+            &details,
+            "/remote/download",
+            Path::new("local file"),
+            Path::new("fake-scp"),
+        )
+        .unwrap();
+
+        let base_args = vec![
+            "-i",
+            "/tmp/test-key",
+            "-P",
+            "2222",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "LogLevel=ERROR",
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "ConnectTimeout=7",
+            "-o",
+            "ServerAliveInterval=15",
+            "-o",
+            "ServerAliveCountMax=3",
+            "--",
+        ];
+
+        assert_eq!(
+            command_args(&upload),
+            base_args
+                .iter()
+                .copied()
+                .chain(["-local file", "testuser@example.test:/remote/upload"])
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            command_args(&download),
+            base_args
+                .iter()
+                .copied()
+                .chain(["testuser@example.test:/remote/download", "local file"])
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn scp_runner_passes_through_stdio_and_exit_status() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let stdin_path = temp_dir.path().join("stdin");
+        let stdout_path = temp_dir.path().join("stdout");
+        let stderr_path = temp_dir.path().join("stderr");
+        std::fs::write(&stdin_path, "input-bytes\n").unwrap();
+
+        let mut command = TokioCommand::new("sh");
+        command.arg("-c").arg(
+            "IFS= read -r input; printf 'stdout:%s' \"$input\"; printf 'stderr:%s' \"$input\" >&2; exit 7",
+        );
+
+        let error = SshClient::run_scp_with_stdio(
+            &mut command,
+            Stdio::from(File::open(&stdin_path).unwrap()),
+            Stdio::from(File::create(&stdout_path).unwrap()),
+            Stdio::from(File::create(&stderr_path).unwrap()),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CliError::CommandExit {
+                code: 7,
+                message: None
+            }
+        ));
+        assert_eq!(std::fs::read(&stdout_path).unwrap(), b"stdout:input-bytes");
+        assert_eq!(std::fs::read(&stderr_path).unwrap(), b"stderr:input-bytes");
+    }
+
+    #[test]
+    fn scp_command_rejects_empty_remote_identity() {
+        let mut details = connection_details("/tmp/test-key".into());
+        details.host.clear();
+
+        assert!(SshClient::scp_command(&details, Path::new("scp")).is_err());
+
+        details.host = "example.test".to_string();
+        details.username.clear();
+        assert!(SshClient::scp_command(&details, Path::new("scp")).is_err());
+    }
+
+    #[test]
+    fn scp_command_rejects_option_like_username() {
+        let mut details = connection_details("/tmp/test-key".into());
+        details.username = "-oProxyCommand=echo injected".to_string();
+
+        assert!(SshClient::scp_command(&details, Path::new("scp")).is_err());
+    }
 }

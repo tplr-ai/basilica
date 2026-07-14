@@ -208,8 +208,18 @@ impl Args {
             Commands::Restart { target } => {
                 handlers::gpu_rental::handle_restart(target.clone(), config).await?;
             }
-            Commands::Exec { command, target } => {
-                handlers::gpu_rental::handle_exec(target.clone(), command.clone(), config).await?;
+            Commands::Exec {
+                command,
+                target,
+                timeout,
+            } => {
+                handlers::gpu_rental::handle_exec(
+                    target.clone(),
+                    command.clone(),
+                    *timeout,
+                    config,
+                )
+                .await?;
             }
             Commands::Ssh { target, options } => {
                 handlers::gpu_rental::handle_ssh(target.clone(), options.clone(), config).await?;
