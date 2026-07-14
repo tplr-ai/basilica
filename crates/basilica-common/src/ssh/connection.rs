@@ -589,6 +589,7 @@ impl StandardSshClient {
 
         debug!("Spawning SSH streaming command");
 
+        cmd.kill_on_drop(true);
         cmd.spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn SSH streaming command: {}", e))
     }
