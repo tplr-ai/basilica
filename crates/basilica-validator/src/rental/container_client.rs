@@ -83,6 +83,7 @@ impl ContainerClient {
             strict_host_key_checking: false,
             known_hosts_file: None,
             connection_timeout: Duration::from_secs(10),
+            execution_timeout: Some(Duration::from_secs(300)),
             ..Default::default()
         };
 
@@ -120,6 +121,7 @@ impl ContainerClient {
             strict_host_key_checking,
             known_hosts_file: known_hosts_file.clone(),
             connection_timeout: Duration::from_secs(10),
+            execution_timeout: Some(Duration::from_secs(300)),
             ..Default::default()
         };
 
@@ -720,30 +722,6 @@ impl ContainerClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn container_clients_do_not_enforce_an_execution_timeout() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let key_path = temp_dir.path().join("test_key");
-        std::fs::write(&key_path, "dummy_key").unwrap();
-
-        let default_client =
-            ContainerClient::new("user@example.com".to_string(), Some(key_path.clone())).unwrap();
-        let configured_client = ContainerClient::with_ssh_config(
-            "user@example.com".to_string(),
-            Some(key_path),
-            true,
-            None,
-            Some("ERROR".to_string()),
-        )
-        .unwrap();
-
-        assert_eq!(default_client.ssh_client.config().execution_timeout, None);
-        assert_eq!(
-            configured_client.ssh_client.config().execution_timeout,
-            None
-        );
-    }
 
     #[test]
     fn test_parse_ssh_connection_ipv4_with_port() {
