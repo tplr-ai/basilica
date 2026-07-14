@@ -560,6 +560,7 @@ impl SshClient {
             .stdin(stdin)
             .stdout(stdout)
             .stderr(stderr)
+            .kill_on_drop(true)
             .status()
             .await
             .map_err(|error| {
