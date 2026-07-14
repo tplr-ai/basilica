@@ -55,6 +55,24 @@ pub enum SshCommandStatus {
     TimedOut,
 }
 
+/// Validate a portable SSH account name before passing it to OpenSSH.
+pub fn validate_ssh_username(username: &str) -> Result<()> {
+    let mut characters = username.chars();
+    let Some(first) = characters.next() else {
+        return Err(anyhow::anyhow!("Username cannot be empty"));
+    };
+
+    if !(first.is_ascii_alphanumeric() || first == '_')
+        || !characters.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        })
+    {
+        return Err(anyhow::anyhow!("Username contains invalid characters"));
+    }
+
+    Ok(())
+}
+
 #[derive(Debug)]
 struct CapturedCommandOutput {
     status: SshCommandStatus,
@@ -194,16 +212,7 @@ impl StandardSshClient {
             return Err(anyhow::anyhow!("Host contains invalid characters"));
         }
 
-        if details.username.is_empty() {
-            return Err(anyhow::anyhow!("Username cannot be empty"));
-        }
-
-        if details
-            .username
-            .contains(&[';', '&', '|', '$', '`', '\n', '\r', '@'][..])
-        {
-            return Err(anyhow::anyhow!("Username contains invalid characters"));
-        }
+        validate_ssh_username(&details.username)?;
 
         if !details.private_key_path.exists() {
             return Err(anyhow::anyhow!(
@@ -1303,6 +1312,30 @@ exit 255
             .unwrap_err()
             .to_string()
             .contains("Username cannot be empty"));
+    }
+
+    #[test]
+    fn ssh_username_validation_accepts_portable_account_names() {
+        for username in ["root", "ubuntu22", "_service", "azure-user", "user.name"] {
+            validate_ssh_username(username).unwrap();
+        }
+    }
+
+    #[test]
+    fn ssh_username_validation_rejects_option_injection_and_invalid_names() {
+        for username in [
+            "-oProxyCommand=echo injected",
+            "user name",
+            "user@example.com",
+            "user/name",
+            "user\\name",
+            "usér",
+        ] {
+            assert!(
+                validate_ssh_username(username).is_err(),
+                "username should be rejected: {username}"
+            );
+        }
     }
 
     #[test]

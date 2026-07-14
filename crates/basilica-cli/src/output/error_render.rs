@@ -12,13 +12,6 @@ pub enum RenderMode {
 }
 
 pub fn render_error(err: &CliError, mode: RenderMode, w: &mut dyn Write) -> std::io::Result<()> {
-    if let CliError::CommandExit { message, .. } = err {
-        return match message {
-            Some(message) => writeln!(w, "{}", message),
-            None => Ok(()),
-        };
-    }
-
     match mode {
         RenderMode::Json => render_json(err, w),
         RenderMode::Human => render_human(err, w),
@@ -37,6 +30,11 @@ fn render_json(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
             "field": field,
             "hint": hint,
         }),
+        CliError::CommandExit { code, message } => serde_json::json!({
+            "error": "command_exit",
+            "code": code,
+            "message": message,
+        }),
         other => serde_json::json!({
             "error": "cli_error",
             "message": other.to_string(),
@@ -47,6 +45,10 @@ fn render_json(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
 
 fn render_human(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
     match err {
+        CliError::CommandExit { message, .. } => match message {
+            Some(message) => writeln!(w, "{}", message),
+            None => Ok(()),
+        },
         CliError::MissingInput { field, hint } => {
             writeln!(w, "error: missing input for '{}'", field)?;
             writeln!(w, "hint: {}", hint)
@@ -136,7 +138,21 @@ mod tests {
     }
 
     #[test]
-    fn command_exit_with_message_renders_exact_message() {
+    fn human_command_exit_with_message_renders_exact_message() {
+        let err = CliError::CommandExit {
+            code: 124,
+            message: Some("command timed out after 2s".into()),
+        };
+        let mut buf = Vec::new();
+
+        render_error(&err, RenderMode::Human, &mut buf).unwrap();
+
+        assert_eq!(buf, b"command timed out after 2s\n");
+        assert_eq!(err.exit_code(), 124);
+    }
+
+    #[test]
+    fn json_command_exit_with_message_is_structured() {
         let err = CliError::CommandExit {
             code: 124,
             message: Some("command timed out after 2s".into()),
@@ -145,7 +161,25 @@ mod tests {
 
         render_error(&err, RenderMode::Json, &mut buf).unwrap();
 
-        assert_eq!(buf, b"command timed out after 2s\n");
-        assert_eq!(err.exit_code(), 124);
+        let value: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(value["error"], "command_exit");
+        assert_eq!(value["code"], 124);
+        assert_eq!(value["message"], "command timed out after 2s");
+    }
+
+    #[test]
+    fn json_command_exit_without_message_includes_null_message() {
+        let err = CliError::CommandExit {
+            code: 3,
+            message: None,
+        };
+        let mut buf = Vec::new();
+
+        render_error(&err, RenderMode::Json, &mut buf).unwrap();
+
+        let value: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(value["error"], "command_exit");
+        assert_eq!(value["code"], 3);
+        assert!(value["message"].is_null());
     }
 }

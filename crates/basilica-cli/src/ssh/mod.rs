@@ -9,7 +9,8 @@ pub use key_matcher::{
 use crate::config::SshConfig;
 use crate::error::{CliError, Result};
 use basilica_common::ssh::{
-    SshCommandStatus, SshConnectionConfig, SshConnectionDetails, StandardSshClient,
+    validate_ssh_username, SshCommandStatus, SshConnectionConfig, SshConnectionDetails,
+    StandardSshClient,
 };
 use basilica_sdk::types::{RentalStatusResponse, SshAccess};
 use color_eyre::eyre::eyre;
@@ -77,6 +78,8 @@ impl SshClient {
         ssh_access: &SshAccess,
         private_key_path: std::path::PathBuf,
     ) -> Result<SshConnectionDetails> {
+        validate_ssh_username(&ssh_access.username).map_err(|error| eyre!(error))?;
+
         if !private_key_path.exists() {
             return Err(eyre!(
                 "SSH private key not found at: {}",
@@ -485,15 +488,7 @@ impl SshClient {
         {
             return Err(eyre!("Host contains invalid characters").into());
         }
-        if details.username.is_empty() {
-            return Err(eyre!("Username cannot be empty").into());
-        }
-        if details
-            .username
-            .contains(&[';', '&', '|', '$', '`', '\n', '\r', '@'][..])
-        {
-            return Err(eyre!("Username contains invalid characters").into());
-        }
+        validate_ssh_username(&details.username).map_err(|error| eyre!(error))?;
 
         let mut command = TokioCommand::new(program);
         command
@@ -843,6 +838,14 @@ mod tests {
 
         details.host = "example.test".to_string();
         details.username.clear();
+        assert!(SshClient::scp_command(&details, Path::new("scp")).is_err());
+    }
+
+    #[test]
+    fn scp_command_rejects_option_like_username() {
+        let mut details = connection_details("/tmp/test-key".into());
+        details.username = "-oProxyCommand=echo injected".to_string();
+
         assert!(SshClient::scp_command(&details, Path::new("scp")).is_err());
     }
 }
