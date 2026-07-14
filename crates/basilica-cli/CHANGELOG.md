@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `basilica exec --timeout <SECS>` for opt-in command deadlines.
+- `basilica exec --timeout <SECS>` for opt-in total SSH deadlines, including
+  connection setup. Timeouts exit with status 124 and may leave the remote
+  command running.
 - `ls`, `ps`, `tokens list`, `fund list`, `volumes list`, and `deploy ls` now
   support `--output auto|compact|wide|json`. The default `auto` mode adapts
   columns to interactive terminal width while non-interactive output remains
@@ -27,9 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global `--json` now applies consistently to all `deploy` subcommands.
 
 ### Fixed
-- SSH commands and file transfers now detect unresponsive sessions with
-  server-alive probes, and configured execution timeouts stop and reap the
-  local subprocess.
+- `basilica exec` and file transfers now detect unresponsive sessions with
+  server-alive probes. Timed-out or cancelled operations terminate and reap
+  the local SSH or SCP subprocess.
 - `basilica ps` now resolves Bourse SSH hosts for human-readable output, so
   access addresses are available alongside Citadel rental addresses.
 - `basilica deploy` with `--private` now prints the one-time share token after
@@ -41,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be retrieved later.
 
 ### Security
+- Debug logs for `basilica exec` and shared non-interactive SSH/SCP subprocesses
+  no longer expose private-key paths or complete command details.
+- Updated transitive `spin` dependencies to patched, non-yanked releases.
 - `basilica upgrade` now verifies the downloaded release archive against the
   published `.sha256` asset before replacing the running binary.
 
