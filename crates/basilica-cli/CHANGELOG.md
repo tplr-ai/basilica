@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-07-14
+
 ### Added
 - `basilica exec --timeout <SECS>` for opt-in total SSH deadlines, including
   connection setup. Timeouts exit with status 124 and may leave the remote
@@ -34,8 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--json` now renders subprocess exit codes and optional diagnostics as a
   structured `command_exit` error object.
 - `basilica exec` and file transfers now detect unresponsive sessions with
-  server-alive probes. Timed-out or cancelled exec operations terminate and
-  reap the local SSH subprocess.
+  server-alive probes. Timed-out or cancelled operations terminate and reap
+  the local SSH or SCP subprocess.
 - `basilica ps` now resolves Bourse SSH hosts for human-readable output, so
   access addresses are available alongside Citadel rental addresses.
 - `basilica deploy` with `--private` now prints the one-time share token after

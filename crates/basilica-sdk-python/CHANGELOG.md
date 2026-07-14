@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-07-14
+
 ### Added
 
 - `public` property on `DeploymentResponse` and the `Deployment` wrapper,
@@ -570,7 +572,9 @@ ticket SDK-S1.
 - Inline API documentation
 - Example code for common workflows
 
-[Unreleased]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.14.0...HEAD
+[Unreleased]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.33.0...HEAD
+[0.33.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.32.0...basilica-sdk-python-v0.33.0
+[0.32.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.31.2...basilica-sdk-python-v0.32.0
 [0.14.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.13.0...basilica-sdk-python-v0.14.0
 [0.13.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.12.0...basilica-sdk-python-v0.13.0
 [0.12.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.11.0...basilica-sdk-python-v0.12.0
