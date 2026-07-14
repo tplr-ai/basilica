@@ -36,8 +36,17 @@ pub enum SshProbeStatus {
 }
 
 impl SshClient {
-    /// Create new SSH client
-    pub fn new(config: &SshConfig, execution_timeout: Option<Duration>) -> Result<Self> {
+    /// Create a new SSH client without an execution timeout.
+    pub fn new(config: &SshConfig) -> Result<Self> {
+        Self::build(config, None)
+    }
+
+    /// Create a new SSH client with an execution timeout.
+    pub fn with_execution_timeout(config: &SshConfig, execution_timeout: Duration) -> Result<Self> {
+        Self::build(config, Some(execution_timeout))
+    }
+
+    fn build(config: &SshConfig, execution_timeout: Option<Duration>) -> Result<Self> {
         // Create SSH connection config using configured timeout
         let connection_timeout = if config.connection_timeout > 0 {
             Duration::from_secs(config.connection_timeout)

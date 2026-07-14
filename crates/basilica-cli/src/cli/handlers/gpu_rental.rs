@@ -867,7 +867,7 @@ async fn handle_rental_with_offering(
                 .await
                 .map_err(CliError::Internal)?;
 
-            let ssh_client = SshClient::new(&config.ssh, None)?;
+            let ssh_client = SshClient::new(&config.ssh)?;
             match retry_ssh_connection(
                 &ssh_client,
                 &ssh_access,
@@ -1109,7 +1109,7 @@ async fn handle_community_cloud_rental_with_selection(
                 .await
                 .map_err(CliError::Internal)?;
 
-            let ssh_client = SshClient::new(&config.ssh, None)?;
+            let ssh_client = SshClient::new(&config.ssh)?;
             match retry_ssh_connection(
                 &ssh_client,
                 &ssh_access,
@@ -2661,7 +2661,12 @@ pub async fn handle_exec(
     };
 
     // Use SSH client to execute command
-    let ssh_client = SshClient::new(&config.ssh, timeout.map(Duration::from_secs))?;
+    let ssh_client = match timeout {
+        Some(timeout_secs) => {
+            SshClient::with_execution_timeout(&config.ssh, Duration::from_secs(timeout_secs))?
+        }
+        None => SshClient::new(&config.ssh)?,
+    };
     let status = ssh_client
         .execute_command(&ssh_access, &command, private_key_path)
         .await?;
@@ -2726,7 +2731,7 @@ pub async fn handle_ssh(
     debug!("Using private key: {}", private_key_path.display());
 
     // Use SSH client to handle connection with options
-    let ssh_client = SshClient::new(&config.ssh, None)?;
+    let ssh_client = SshClient::new(&config.ssh)?;
 
     // Open interactive session with port forwarding options
     ssh_client
@@ -2814,7 +2819,7 @@ pub async fn handle_cp(
     );
 
     // Use SSH client for file transfer
-    let ssh_client = SshClient::new(&config.ssh, None).map_err(|e| eyre!(e))?;
+    let ssh_client = SshClient::new(&config.ssh).map_err(|e| eyre!(e))?;
 
     if is_upload {
         ssh_client
