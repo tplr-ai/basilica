@@ -6,6 +6,7 @@ pub mod deploy;
 pub mod fund;
 pub mod gpu_rental;
 pub mod gpu_rental_helpers;
+pub mod inference;
 pub mod region_mapping;
 pub mod skills;
 pub mod ssh_keys;
