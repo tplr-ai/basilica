@@ -249,6 +249,10 @@ pub enum Commands {
     /// Check your account balance
     Balance,
 
+    /// Managed inference: list models, view usage, inspect credentials
+    #[command(name = "inference")]
+    Inference(InferenceCommand),
+
     /// Upgrade the Basilica CLI to a newer version
     Upgrade {
         /// Specific version to upgrade to (e.g., "0.5.4")
@@ -316,6 +320,65 @@ pub enum SkillsAction {
 
     /// List available skills and install targets
     List,
+}
+
+/// Managed inference command with a shared endpoint override.
+///
+/// Endpoint resolution order: `--endpoint` flag >
+/// `BASILICA_INFERENCE_ENDPOINT` env var > built-in default
+/// (`https://inference.basilica.ai`).
+#[derive(Parser, Debug, Clone)]
+pub struct InferenceCommand {
+    #[command(subcommand)]
+    pub action: InferenceAction,
+
+    /// Override the inference gateway endpoint
+    /// (env: BASILICA_INFERENCE_ENDPOINT; default: https://inference.basilica.ai)
+    #[arg(long, global = true, value_name = "URL")]
+    pub endpoint: Option<String>,
+}
+
+/// Managed inference actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum InferenceAction {
+    /// List models available on the inference gateway
+    Models {
+        /// Output format (default: auto)
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
+    },
+
+    /// Show inference usage and spend, grouped by day and model
+    Usage {
+        /// Start date (inclusive), YYYY-MM-DD
+        #[arg(long, value_name = "DATE", value_parser = parse_usage_date)]
+        from: Option<chrono::NaiveDate>,
+
+        /// End date (inclusive), YYYY-MM-DD
+        #[arg(long, value_name = "DATE", value_parser = parse_usage_date)]
+        to: Option<chrono::NaiveDate>,
+
+        /// Filter by model name
+        #[arg(long, value_name = "NAME")]
+        model: Option<String>,
+
+        /// Filter by API key ID (kid)
+        #[arg(long, value_name = "KID")]
+        kid: Option<String>,
+
+        /// Output format (default: auto)
+        #[arg(short = 'o', long = "output", value_enum)]
+        output: Option<OutputFormat>,
+    },
+
+    /// Show the resolved inference endpoint, credential, and tenant
+    Whoami,
+}
+
+/// Parse a YYYY-MM-DD date filter value
+fn parse_usage_date(value: &str) -> Result<chrono::NaiveDate, String> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| format!("invalid date '{value}' (expected YYYY-MM-DD)"))
 }
 
 /// Fund management actions
@@ -475,6 +538,9 @@ impl Commands {
             | Commands::Volumes { .. }
             | Commands::Fund { .. }
             | Commands::Balance => true,
+
+            // Inference commands always require auth (API key or OAuth login)
+            Commands::Inference(_) => true,
 
             // Deploy commands: most require auth, except Metadata (public endpoint)
             Commands::Deploy(cmd) => !matches!(cmd.action, Some(DeployAction::Metadata { .. })),

@@ -690,9 +690,15 @@ basilica tokens create [name]          # Create API token
 basilica tokens list                   # List all tokens
 basilica tokens revoke [name]          # Revoke token
 
+# Managed Inference
+basilica inference models              # List models on the inference gateway
+basilica inference usage               # Usage & spend rollups (--from/--to/--model/--kid)
+basilica inference whoami              # Show resolved endpoint, credential, and tenant
+
 # Environment Setup
 export BASILICA_API_TOKEN="..."        # Set token
 export BASILICA_API_URL="https://..."  # Optional: custom API URL
+export BASILICA_INFERENCE_ENDPOINT="https://..."  # Optional: custom inference gateway
 
 # Python SDK
 pip install basilica-sdk               # Install from PyPI

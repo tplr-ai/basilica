@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `basilica inference` command group for the managed inference platform:
+  `models` lists the tenant-visible model catalog from the inference gateway,
+  `usage` shows per-day usage and spend rollups from the management plane
+  (`--from`/`--to`/`--model`/`--kid` filters, totals row, `--json`), and
+  `whoami` shows the resolved gateway endpoint, credential, and tenant. The
+  gateway endpoint resolves via `--endpoint` >
+  `BASILICA_INFERENCE_ENDPOINT` > `https://inference.basilica.ai`; all calls
+  authenticate with `BASILICA_API_TOKEN` or the `basilica login` session.
+
 ## [0.33.0] - 2026-07-14
 
 ### Added

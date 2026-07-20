@@ -334,6 +334,11 @@ impl Args {
                 handlers::balance::handle_check_balance(&client, self.json).await?;
             }
 
+            // Managed inference
+            Commands::Inference(cmd) => {
+                handlers::inference::handle_inference(cmd.clone(), config, self.json).await?;
+            }
+
             // Deploy command
             Commands::Deploy(cmd) => {
                 let mut cmd = *cmd.clone();
