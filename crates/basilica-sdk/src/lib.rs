@@ -8,6 +8,7 @@
 pub mod auth;
 pub mod client;
 pub mod error;
+pub mod inference;
 pub mod jobs;
 pub mod types;
 

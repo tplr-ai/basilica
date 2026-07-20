@@ -1524,6 +1524,7 @@ dependencies = [
  "etcetera",
  "oauth2",
  "reqwest 0.11.27",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1539,6 +1540,7 @@ version = "0.33.0"
 dependencies = [
  "basilica-sdk",
  "basilica-validator",
+ "chrono",
  "pyo3",
  "pyo3-stub-gen",
  "pyo3-stub-gen-derive",
