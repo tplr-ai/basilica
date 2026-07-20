@@ -21,6 +21,9 @@ service BillingService {
     rpc IngestTelemetry(stream TelemetryData) returns (IngestResponse);
     rpc GetUsageReport(UsageReportRequest) returns (UsageReportResponse);
 
+    // Usage record ingestion (metered per-token billing, e.g. managed inference)
+    rpc IngestUsageRecords(IngestUsageRecordsRequest) returns (IngestUsageRecordsResponse);
+
     // Miner delivery aggregation
     rpc GetMinerDelivery(GetMinerDeliveryRequest) returns (GetMinerDeliveryResponse);
 
@@ -358,4 +361,51 @@ message RevenueEvent {
 
 message GetRevenueEventsResponse {
     repeated RevenueEvent events = 1;
+}
+
+// Usage Record Ingestion Messages (metered per-token billing, e.g. managed inference)
+
+// One metered request's billable usage. Journaled by the producer and settled
+// asynchronously; request_id is billing's idempotency/dedup key (maps to
+// usage_event_id), so redelivered records are skipped, never double-debited.
+message UsageRecord {
+    string request_id = 1;        // Server-minted UUIDv7 for the metered request; dedup key (usage_event_id)
+    string tenant_id = 2;         // Tenant identifier (Auth0 subject, not a UUID)
+    string model = 3;             // Model the usage was metered against
+    uint32 prompt_tokens = 4;     // Billable prompt (input) tokens
+    uint32 completion_tokens = 5; // Billable completion (output) tokens
+    uint32 cached_tokens = 6;     // Cached input tokens, billed at the cached-input price
+    uint32 fanout = 7;            // Generation fan-out multiplier: max(n, best_of)
+    TokenPrice price = 8;         // Price snapshot stamped at admission; settlement never re-resolves it
+}
+
+// Per-token prices in credits per million tokens (Mtoken). Decimal strings,
+// matching the credit amount representation used across this service.
+message TokenPrice {
+    string input_per_million = 1;        // Decimal string; credits per Mtoken of prompt tokens
+    string output_per_million = 2;       // Decimal string; credits per Mtoken of completion tokens
+    string cached_input_per_million = 3; // Decimal string; credits per Mtoken of cached input tokens
+}
+
+message IngestUsageRecordsRequest {
+    repeated UsageRecord records = 1; // Batched for throughput only; each record settles independently, no ordering assumed
+}
+
+// Per-record settlement result (ACK/NACK). A batch-level status cannot express
+// partial settlement, so every submitted record gets its own result.
+message RecordResult {
+    string request_id = 1; // Echoes UsageRecord.request_id
+    Status status = 2;     // Settlement outcome for this record
+    string reason = 3;     // Human-readable detail; set for ARREARS/RETRY/REJECTED
+
+    enum Status {
+        SETTLED = 0;  // Full deduction applied
+        ARREARS = 1;  // Balance covered only part: deducted to zero, remainder booked to arrears
+        RETRY = 2;    // Transient billing-side fault; the producer keeps the record and redelivers
+        REJECTED = 3; // Terminal (e.g. ingest validation failure); no retry
+    }
+}
+
+message IngestUsageRecordsResponse {
+    repeated RecordResult results = 1; // One result per submitted record
 }
