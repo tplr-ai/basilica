@@ -211,7 +211,7 @@ tower-http = { version = "0.5", features = ["cors", "trace"] }
 crabtensor = { git = "https://github.com/one-covenant/crabtensor", branch = "main" }
 
 # Bittensor SDK
-bittensor = { git = "https://github.com/one-covenant/bittensor-rs", rev = "bd344ba62fbedc686e3814096bbf93cf9d34f7c9", package = "bittensor-rs" }
+bittensor = { git = "https://github.com/one-covenant/bittensor-rs", rev = "0f27fd41f67b45bdd806f510dbf70c46dccd773f", package = "bittensor-rs" }
 
 [workspace.metadata]
 # Workspace metadata for tooling
