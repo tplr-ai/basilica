@@ -115,6 +115,7 @@ pub mod billing {
     //! - Credit balance management and reservations
     //! - Rental lifecycle tracking with usage metrics
     //! - Real-time telemetry ingestion and aggregation
+    //! - Metered per-token usage record ingestion with per-record settlement results
     //! - Billing packages and rules engine
     pub use crate::basilca::billing::v1::*;
 }
@@ -417,5 +418,125 @@ mod tests {
                 .unwrap(),
             "test-signature"
         );
+    }
+
+    #[test]
+    fn test_usage_record_proto_round_trip() {
+        use prost::Message;
+
+        let record = billing::UsageRecord {
+            request_id: "018e4c2f-9f2a-7b3c-8d4e-5f6a7b8c9d0e".to_string(),
+            tenant_id: "auth0|user_12345".to_string(),
+            model: "llama-3.1-70b-instruct".to_string(),
+            prompt_tokens: 1024,
+            completion_tokens: 256,
+            cached_tokens: 512,
+            fanout: 3,
+            price: Some(billing::TokenPrice {
+                input_per_million: "0.15000000".to_string(),
+                output_per_million: "0.60000000".to_string(),
+                cached_input_per_million: "0.01500000".to_string(),
+            }),
+        };
+
+        let bytes = record.encode_to_vec();
+        let decoded = billing::UsageRecord::decode(&bytes[..]).expect("decode UsageRecord");
+
+        assert_eq!(decoded, record);
+        assert_eq!(decoded.request_id, "018e4c2f-9f2a-7b3c-8d4e-5f6a7b8c9d0e");
+        assert_eq!(decoded.tenant_id, "auth0|user_12345");
+        assert_eq!(decoded.model, "llama-3.1-70b-instruct");
+        assert_eq!(decoded.prompt_tokens, 1024);
+        assert_eq!(decoded.completion_tokens, 256);
+        assert_eq!(decoded.cached_tokens, 512);
+        assert_eq!(decoded.fanout, 3);
+        let price = decoded.price.expect("price snapshot survives round trip");
+        assert_eq!(price.input_per_million, "0.15000000");
+        assert_eq!(price.output_per_million, "0.60000000");
+        assert_eq!(price.cached_input_per_million, "0.01500000");
+    }
+
+    #[test]
+    fn test_ingest_usage_records_response_proto_round_trip() {
+        use prost::Message;
+
+        use billing::record_result::Status;
+
+        let response = billing::IngestUsageRecordsResponse {
+            results: vec![
+                billing::RecordResult {
+                    request_id: "req-settled".to_string(),
+                    status: Status::Settled as i32,
+                    reason: String::new(),
+                },
+                billing::RecordResult {
+                    request_id: "req-arrears".to_string(),
+                    status: Status::Arrears as i32,
+                    reason: "balance exhausted; remainder booked to arrears".to_string(),
+                },
+                billing::RecordResult {
+                    request_id: "req-retry".to_string(),
+                    status: Status::Retry as i32,
+                    reason: "transient storage error".to_string(),
+                },
+                billing::RecordResult {
+                    request_id: "req-rejected".to_string(),
+                    status: Status::Rejected as i32,
+                    reason: "token counts outside [0, registry_cap]".to_string(),
+                },
+            ],
+        };
+
+        let bytes = response.encode_to_vec();
+        let decoded =
+            billing::IngestUsageRecordsResponse::decode(&bytes[..]).expect("decode response");
+
+        assert_eq!(decoded, response);
+        assert_eq!(decoded.results.len(), 4);
+        assert_eq!(decoded.results[0].request_id, "req-settled");
+        assert_eq!(decoded.results[0].status(), Status::Settled);
+        assert_eq!(decoded.results[0].reason, "");
+        assert_eq!(decoded.results[1].request_id, "req-arrears");
+        assert_eq!(decoded.results[1].status(), Status::Arrears);
+        assert_eq!(
+            decoded.results[1].reason,
+            "balance exhausted; remainder booked to arrears"
+        );
+        assert_eq!(decoded.results[2].status(), Status::Retry);
+        assert_eq!(decoded.results[3].status(), Status::Rejected);
+        assert_eq!(
+            decoded.results[3].reason,
+            "token counts outside [0, registry_cap]"
+        );
+    }
+
+    #[test]
+    fn test_billing_service_stubs_include_ingest_usage_records() {
+        use billing::billing_service_client::BillingServiceClient;
+        use billing::billing_service_server::BillingService;
+        use billing::record_result::Status;
+
+        // Compile-time assertions: the bodies of these never-called functions are
+        // still type-checked, so the build fails if the generated stubs lose the RPC.
+
+        // Server: the generated BillingService trait must declare ingest_usage_records.
+        #[allow(dead_code)]
+        fn assert_server_trait_method<T: BillingService>() {
+            let _ = T::ingest_usage_records;
+        }
+
+        // Client: the generated BillingServiceClient must expose ingest_usage_records.
+        #[allow(dead_code)]
+        fn assert_client_method(client: &mut BillingServiceClient<tonic::transport::Channel>) {
+            std::mem::drop(client.ingest_usage_records(tonic::Request::new(
+                billing::IngestUsageRecordsRequest { records: vec![] },
+            )));
+        }
+
+        // Enum wire values are pinned by the proto contract.
+        assert_eq!(Status::Settled as i32, 0);
+        assert_eq!(Status::Arrears as i32, 1);
+        assert_eq!(Status::Retry as i32, 2);
+        assert_eq!(Status::Rejected as i32, 3);
     }
 }
