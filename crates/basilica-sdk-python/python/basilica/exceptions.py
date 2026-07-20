@@ -15,7 +15,13 @@ Exception Hierarchy:
     │   └── DeploymentFailed    - Deployment entered failed state
     ├── ResourceError           - GPU/node availability issues
     ├── StorageError            - Storage configuration errors
-    └── NetworkError            - Connection/API communication issues
+    ├── NetworkError            - Connection/API communication issues
+    └── InferenceError          - Managed Inference gateway errors
+        ├── InferenceAuthenticationError - 401 bad/expired API key
+        ├── InsufficientCreditsError     - 402 balance below floor
+        ├── InferenceQuotaExceededError  - 429 quota cap tripped (cap, retry_after)
+        ├── InferenceModelNotFoundError  - 404 unknown/unowned model
+        └── InferenceUnavailableError    - 503 pool saturated/unavailable
 
 Example:
     >>> from basilica.exceptions import DeploymentTimeout
@@ -610,4 +616,205 @@ class UDTerminalState(DistributedError):
             message=message,
             code="DISTRIBUTED_UD_TERMINAL_STATE",
             retryable=False,
+        )
+
+
+# =============================================================================
+# Managed Inference exceptions (MANAGED-INFERENCE-ENDPOINT-ARCHITECTURE §4).
+#
+# The inference gateway (https://inference.basilica.ai) answers failures with
+# OpenAI-style error JSON:
+#
+#     {"error": {"message": "...", "type": "...", "code": "...", "cap": "..."}}
+#
+# and maps them onto a small status vocabulary: 401 bad key, 402 insufficient
+# credits, 404 unknown/unowned model, 429 quota (naming the tripped cap:
+# rpm|tpm|concurrency|budget, plus Retry-After), 503 pool saturated. The
+# classes below mirror that contract 1:1 so operator automation can branch on
+# the typed exception and read structured attributes (notably `.cap` and
+# `.retry_after` on InferenceQuotaExceededError) instead of parsing strings.
+# =============================================================================
+
+
+class InferenceError(BasilicaError):
+    """
+    Base exception for Managed Inference gateway errors.
+
+    All exceptions raised by `client.inference` derive from this class; catch
+    it to handle any inference failure mode generically. (Like every SDK
+    error it also derives from `BasilicaError`.)
+
+    Attributes:
+        status_code: HTTP status returned by the gateway (401/402/404/429/503),
+            or None when the failure happened before/without an HTTP response.
+        error_type: The OpenAI `error.type` string from the gateway, if any.
+
+    Example:
+        >>> try:
+        ...     models = client.inference.list_models()
+        ... except InferenceError as e:
+        ...     print(f"Inference error (status={e.status_code}): {e}")
+    """
+
+    def __init__(
+        self,
+        message: str,
+        status_code: Optional[int] = None,
+        error_type: Optional[str] = None,
+        code: str = "INFERENCE_ERROR",
+        retryable: bool = False,
+    ):
+        self.status_code = status_code
+        self.error_type = error_type
+        super().__init__(message=message, code=code, retryable=retryable)
+
+
+class InferenceAuthenticationError(InferenceError):
+    """
+    Raised when the inference gateway rejects the API key (HTTP 401).
+
+    The gateway takes `Authorization: Bearer basilica_...` keys. This error
+    means the key is missing, malformed, expired, or revoked.
+
+    Resolution:
+        Create a key with `basilica tokens create`, then either set
+        BASILICA_API_TOKEN or pass `api_key=` to BasilicaClient.
+    """
+
+    def __init__(
+        self,
+        message: str = "Inference authentication failed",
+        error_type: Optional[str] = None,
+    ):
+        super().__init__(
+            message=message,
+            status_code=401,
+            error_type=error_type,
+            code="INFERENCE_AUTH_FAILED",
+            retryable=False,
+        )
+
+
+class InsufficientCreditsError(InferenceError):
+    """
+    Raised when the account balance is below the gateway's floor (HTTP 402).
+
+    The gateway enforces an affordability gate before any engine work; a 402
+    means the request was rejected without consuming credits. Top up the
+    account balance, then retry.
+
+    Attributes:
+        balance: Current balance as reported by the gateway, if included in
+            the error payload; None otherwise.
+    """
+
+    def __init__(
+        self,
+        message: str = "Insufficient credits",
+        error_type: Optional[str] = None,
+        balance: Optional[str] = None,
+    ):
+        self.balance = balance
+        super().__init__(
+            message=message,
+            status_code=402,
+            error_type=error_type,
+            code="INFERENCE_INSUFFICIENT_CREDITS",
+            retryable=False,
+        )
+
+
+class InferenceQuotaExceededError(InferenceError):
+    """
+    Raised when an admission quota cap trips (HTTP 429).
+
+    This is the operator-automation contract: the gateway rejects floods at
+    admission, naming which per-tenant cap tripped and how long to back off.
+    Both attributes are first-class here so callers can automate retries and
+    alerting without parsing the message string.
+
+    Attributes:
+        cap: Which cap tripped -- one of "rpm", "tpm", "concurrency",
+            "budget" -- or None if the gateway did not name one.
+        retry_after: Seconds to wait before retrying, from the gateway's
+            Retry-After header (or error body); None if not provided.
+
+    Example:
+        >>> try:
+        ...     client.inference.get_model("llama-3.1-70b-instruct")
+        ... except InferenceQuotaExceededError as e:
+        ...     time.sleep(e.retry_after or 1.0)
+        ...     alert(f"inference {e.cap} cap tripped")
+    """
+
+    def __init__(
+        self,
+        message: str = "Inference quota exceeded",
+        cap: Optional[str] = None,
+        retry_after: Optional[float] = None,
+        error_type: Optional[str] = None,
+    ):
+        self.cap = cap
+        self.retry_after = retry_after
+        super().__init__(
+            message=message,
+            status_code=429,
+            error_type=error_type,
+            code="INFERENCE_QUOTA_EXCEEDED",
+            retryable=True,
+        )
+
+
+class InferenceModelNotFoundError(InferenceError):
+    """
+    Raised when the requested model is unknown or unowned (HTTP 404).
+
+    The gateway returns 404 (not 403) for models the caller does not own --
+    e.g. another tenant's adapter -- to avoid confirming private names.
+
+    Attributes:
+        model: The model id that was requested, if known.
+    """
+
+    def __init__(
+        self,
+        message: str = "Inference model not found",
+        model: Optional[str] = None,
+        error_type: Optional[str] = None,
+    ):
+        self.model = model
+        super().__init__(
+            message=message,
+            status_code=404,
+            error_type=error_type,
+            code="INFERENCE_MODEL_NOT_FOUND",
+            retryable=False,
+        )
+
+
+class InferenceUnavailableError(InferenceError):
+    """
+    Raised when the serving pool is saturated or unavailable (HTTP 503).
+
+    The gateway sheds load before engine queues grow, so a 503 is a signal to
+    back off and retry, not a hard failure.
+
+    Attributes:
+        retry_after: Seconds to wait before retrying, from the gateway's
+            Retry-After header; None if not provided.
+    """
+
+    def __init__(
+        self,
+        message: str = "Inference pool unavailable",
+        retry_after: Optional[float] = None,
+        error_type: Optional[str] = None,
+    ):
+        self.retry_after = retry_after
+        super().__init__(
+            message=message,
+            status_code=503,
+            error_type=error_type,
+            code="INFERENCE_UNAVAILABLE",
+            retryable=True,
         )

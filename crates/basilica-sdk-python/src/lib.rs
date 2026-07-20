@@ -1,6 +1,7 @@
 //! Python bindings for the Basilica SDK
 #![allow(clippy::useless_conversion)]
 
+mod inference;
 mod types;
 
 use basilica_sdk::{
@@ -831,6 +832,9 @@ fn _basilica(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Core client
     m.add_class::<BasilicaClient>()?;
+
+    // Managed Inference client (basilica_sdk::inference bindings)
+    m.add_class::<inference::InferenceClient>()?;
 
     // Response types
     m.add_class::<types::HealthCheckResponse>()?;

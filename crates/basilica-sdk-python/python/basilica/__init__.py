@@ -206,6 +206,12 @@ from .exceptions import (
     DeploymentNotFound,
     DeploymentTimeout,
     DistributedError,
+    InferenceAuthenticationError,
+    InferenceError,
+    InferenceModelNotFoundError,
+    InferenceQuotaExceededError,
+    InferenceUnavailableError,
+    InsufficientCreditsError,
     NetworkError,
     QuotaExceeded,
     RateLimitError,
@@ -217,6 +223,7 @@ from .exceptions import (
     ValidationError,
     WorldSizeOutOfBounds,
 )
+from .inference import InferenceClient, InferenceModel, InferenceUsageRow
 from .source import SourcePackager
 from .spec import DeploymentSpec
 from .volume import Volume
@@ -480,6 +487,16 @@ __all__ = [
     "NetworkError",
     "RateLimitError",
     "SourceError",
+    # Managed Inference
+    "InferenceClient",
+    "InferenceModel",
+    "InferenceUsageRow",
+    "InferenceError",
+    "InferenceAuthenticationError",
+    "InsufficientCreditsError",
+    "InferenceQuotaExceededError",
+    "InferenceModelNotFoundError",
+    "InferenceUnavailableError",
     # Response types
     "HealthCheckResponse",
     "RentalResponse",
@@ -599,12 +616,48 @@ class BasilicaClient:
             base_url = os.environ.get("BASILICA_API_URL", DEFAULT_API_URL)
 
         self._base_url = base_url
+        self._api_key = api_key
+        self._inference_client: Optional[InferenceClient] = None
         self._client = _BasilicaClient(base_url, api_key)
 
     @property
     def base_url(self) -> str:
         """The API endpoint URL."""
         return self._base_url
+
+    @property
+    def inference(self) -> InferenceClient:
+        """
+        Managed Inference surface: model discovery, usage rollups, and the
+        OpenAI-SDK wiring for the gateway at https://inference.basilica.ai.
+
+        The gateway is OpenAI-compatible, so chat completions go through the
+        stock ``openai`` package, not wrapped methods here:
+
+            >>> from openai import OpenAI
+            >>> client = BasilicaClient()
+            >>> openai = OpenAI(**client.inference.openai_client_args())
+            >>> resp = openai.chat.completions.create(
+            ...     model="llama-3.1-70b-instruct",
+            ...     messages=[{"role": "user", "content": "hello"}],
+            ... )
+
+        What this surface owns:
+            >>> client.inference.list_models()          # model catalog
+            >>> client.inference.get_model("...")       # single model
+            >>> client.inference.usage(from_date=...)   # usage rollups (Decimal charges)
+
+        Gateway errors raise typed exceptions (see basilica.exceptions):
+        InferenceAuthenticationError (401), InsufficientCreditsError (402),
+        InferenceModelNotFoundError (404), InferenceQuotaExceededError (429,
+        with `.cap` and `.retry_after`), InferenceUnavailableError (503).
+        """
+        if self._inference_client is None:
+            self._inference_client = InferenceClient(
+                api_key=self._api_key,
+                api_base=self._base_url,
+            )
+        return self._inference_client
 
     def _build_deploy_request(
         self,
