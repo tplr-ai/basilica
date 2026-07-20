@@ -213,6 +213,9 @@ crabtensor = { git = "https://github.com/one-covenant/crabtensor", branch = "mai
 # Bittensor SDK
 bittensor = { git = "https://github.com/one-covenant/bittensor-rs", rev = "bd344ba62fbedc686e3814096bbf93cf9d34f7c9", package = "bittensor-rs" }
 
+[patch."https://github.com/one-covenant/bittensor-rs"]
+bittensor-rs = { path = "../bittensor-rs/bittensor-rs" }
+
 [workspace.metadata]
 # Workspace metadata for tooling
 rust-version = "1.80"
