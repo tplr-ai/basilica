@@ -1706,6 +1706,7 @@ dependencies = [
 [[package]]
 name = "bittensor-rs"
 version = "0.1.1"
+source = "git+https://github.com/one-covenant/bittensor-rs?rev=0f27fd41f67b45bdd806f510dbf70c46dccd773f#0f27fd41f67b45bdd806f510dbf70c46dccd773f"
 dependencies = [
  "anyhow",
  "async-trait",
