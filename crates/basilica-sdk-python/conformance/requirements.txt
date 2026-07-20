@@ -1,0 +1,8 @@
+# FR-1 conformance: pinned SDK + test runner (NFR-8).
+# If you bump `openai`, update OPENAI_SDK_PIN in test_openai_conformance.py in
+# the same change and re-run the full suite.
+openai==2.46.0
+# The mock gateway rides on httpx.MockTransport (openai's own HTTP layer);
+# pinned for reproducible transport/streaming semantics.
+httpx==0.28.1
+pytest==9.1.1

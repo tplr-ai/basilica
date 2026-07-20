@@ -1,0 +1,3 @@
+.venv-conformance/
+__pycache__/
+.pytest_cache/
