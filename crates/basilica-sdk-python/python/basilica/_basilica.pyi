@@ -582,6 +582,12 @@ class HealthCheckResponse:
     @property
     def total_validators(self) -> builtins.int: ...
 
+class InferenceClient:
+    r"""
+    Python wrapper for basilica_sdk::inference::InferenceClient
+    """
+    ...
+
 class ListAvailableNodesQuery:
     r"""
     Query parameters for listing available nodes

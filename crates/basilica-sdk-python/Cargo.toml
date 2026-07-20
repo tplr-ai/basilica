@@ -21,6 +21,7 @@ stub-gen = ["dep:pyo3-stub-gen", "dep:pyo3-stub-gen-derive"]
 [dependencies]
 basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client"] }
+chrono = { workspace = true }
 pyo3 = { workspace = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 pyo3-stub-gen-derive = { workspace = true, optional = true }

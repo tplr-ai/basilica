@@ -626,6 +626,60 @@ routes through the private `BasilicaClient._deploy_distributed_impl` /
 | `examples/21_distributed_torchrun.py` | `basilica.distributed(command=[torchrun ...])` factory + mid-run `scale()` |
 | `examples/22_distributed_with_bench.py` | `@basilica.distributed` decorator + bench-result inspection + JSON dump |
 
+## Managed Inference
+
+Basilica's inference gateway at `https://inference.basilica.ai` is OpenAI-compatible — it serves `POST /v1/chat/completions` and `POST /v1/completions` in the OpenAI wire format, authenticated with your `basilica_` API key as a Bearer token. The SDK's `client.inference` surface is the discovery/usage layer around it: model catalog, usage rollups, and the kwargs that point the stock `openai` SDK at the gateway.
+
+Chat completions are deliberately **not** re-wrapped: the wire contract is OpenAI's, so the canonical client is the official `openai` package, which tracks that schema as it evolves. Wire it up with `openai_client_args()`:
+
+```python
+from openai import OpenAI
+from basilica import BasilicaClient
+
+client = BasilicaClient()
+openai = OpenAI(**client.inference.openai_client_args())
+# -> {"base_url": "https://inference.basilica.ai/v1", "api_key": "basilica_..."}
+
+resp = openai.chat.completions.create(
+    model="llama-3.1-70b-instruct",
+    messages=[{"role": "user", "content": "hello"}],
+)
+```
+
+The three surface methods:
+
+```python
+# Model catalog (GET /v1/models)
+for model in client.inference.list_models():
+    print(model.id, model.owned_by)
+
+model = client.inference.get_model("llama-3.1-70b-instruct")  # GET /v1/models/{id}
+
+# Usage rollups (GET {api_base}/v1/inference/usage/summary)
+rows = client.inference.usage(
+    from_date="2026-07-01",   # datetime.date also accepted
+    to_date="2026-07-31",
+    model="llama-3.1-70b-instruct",  # optional
+    kid="key-abc",                  # optional, per-API-key filter
+)
+for row in rows:
+    # charge_credits is Decimal (never float), date is datetime.date
+    print(row.date, row.model, row.prompt_tokens, row.charge_credits)
+```
+
+Gateway errors raise typed exceptions mirroring its OpenAI error JSON — `InferenceAuthenticationError` (401), `InsufficientCreditsError` (402), `InferenceModelNotFoundError` (404), `InferenceUnavailableError` (503), and `InferenceQuotaExceededError` (429), the last exposing `cap` (`"rpm" | "tpm" | "concurrency" | "budget"`) and `retry_after` for operator automation:
+
+```python
+from basilica import InferenceQuotaExceededError
+
+try:
+    models = client.inference.list_models()
+except InferenceQuotaExceededError as e:
+    print(f"{e.cap} cap tripped; retry after {e.retry_after}s")
+```
+
+Async variants (`list_models_async`, `get_model_async`, `usage_async`) follow the same pattern as the rest of the client. Set `BASILICA_INFERENCE_ENDPOINT` to point the surface at a staging/local gateway.
+
 ## API Reference
 
 ### BasilicaClient
@@ -822,6 +876,13 @@ from basilica import (
     RendezvousUnavailable, # etcd rendezvous service unreachable
     UDTerminalState,       # UD is already terminal (e.g. scale on succeeded)
     QuotaExceeded,         # Namespace rank budget exceeded
+    # Managed Inference (client.inference):
+    InferenceError,                # Base inference-gateway error
+    InferenceAuthenticationError,  # 401 bad/expired API key
+    InsufficientCreditsError,      # 402 balance below floor
+    InferenceModelNotFoundError,   # 404 unknown/unowned model
+    InferenceQuotaExceededError,   # 429 quota cap (`.cap`, `.retry_after`)
+    InferenceUnavailableError,     # 503 pool saturated/unavailable
 )
 
 try:
@@ -915,6 +976,7 @@ client.stop_rental(rental.rental_id)
 |----------|-------------|---------|
 | `BASILICA_API_TOKEN` | API authentication token | Required |
 | `BASILICA_API_URL` | API endpoint URL | `https://api.basilica.ai` |
+| `BASILICA_INFERENCE_ENDPOINT` | Inference gateway origin (`client.inference`) | `https://inference.basilica.ai` |
 
 ## Examples
 
