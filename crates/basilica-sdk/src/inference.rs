@@ -44,7 +44,7 @@
 //! ```
 
 use crate::auth::TokenManager;
-use crate::client::{DEFAULT_API_URL, DEFAULT_TIMEOUT_SECS};
+use crate::client::DEFAULT_API_URL;
 use chrono::NaiveDate;
 use reqwest::{RequestBuilder, Response, StatusCode};
 use rust_decimal::Decimal;
@@ -64,6 +64,27 @@ const USAGE_SUMMARY_PATH: &str = "/v1/inference/usage/summary";
 
 /// Maximum characters of a raw error body retained in error messages
 const ERROR_EXCERPT_LEN: usize = 500;
+
+/// Connect timeout (seconds) for this client's HTTP transport.
+///
+/// Both hosts behind this client — the inference gateway and the
+/// management-plane API — serve lightweight JSON GETs, so a TCP/TLS
+/// handshake still incomplete after a few seconds is a dead or black-holed
+/// connection, not a slow one worth waiting on. Not caller-configurable.
+pub const CONNECT_TIMEOUT_SECS: u64 = 5;
+
+/// Default whole-request timeout (seconds), applied when the caller does not
+/// set one via [`InferenceClientBuilder::timeout`].
+///
+/// Matches the Python SDK's 30s inference timeout. This client only issues
+/// lightweight JSON GETs (`/v1/models`, `/v1/inference/usage/summary`); the
+/// gateway's long-stream chat completions go through the stock OpenAI client
+/// pointed at [`InferenceClient::openai_base_url`], not through this client,
+/// so a short ceiling is safe. It also bounds a hung management-plane
+/// connection, which previously could block `usage()` for the SDK-wide
+/// default of 20 minutes
+/// ([`DEFAULT_TIMEOUT_SECS`](crate::client::DEFAULT_TIMEOUT_SECS)).
+pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 // ============================================================================
 // Public types (wire contract)
@@ -461,7 +482,11 @@ impl InferenceClientBuilder {
         self
     }
 
-    /// Set the request timeout
+    /// Override the whole-request timeout.
+    ///
+    /// Precedence: this value wins over the built-in
+    /// [`DEFAULT_REQUEST_TIMEOUT_SECS`] (30s) default. The connect timeout
+    /// ([`CONNECT_TIMEOUT_SECS`], 5s) always applies and is unaffected.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
@@ -509,13 +534,7 @@ impl InferenceClientBuilder {
             ));
         };
 
-        let timeout = self
-            .timeout
-            .unwrap_or(Duration::from_secs(DEFAULT_TIMEOUT_SECS));
-        let http = reqwest::Client::builder()
-            .timeout(timeout)
-            .build()
-            .map_err(InferenceError::Transport)?;
+        let http = build_http_client(timeout_profile(self.timeout))?;
 
         let api_base = self.api_base.unwrap_or_else(|| DEFAULT_API_URL.to_string());
         let api_base = api_base.trim_end_matches('/').to_string();
@@ -534,6 +553,41 @@ impl InferenceClientBuilder {
             }),
         })
     }
+}
+
+// ============================================================================
+// HTTP timeout profile (private)
+// ============================================================================
+
+/// Effective timeout profile for the HTTP transport: how long to wait for a
+/// connection, and how long for the whole request
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TimeoutProfile {
+    connect: Duration,
+    request: Duration,
+}
+
+/// Resolve the effective timeout profile.
+///
+/// Precedence: a caller-set `request_override` (via
+/// [`InferenceClientBuilder::timeout`]) wins over the
+/// [`DEFAULT_REQUEST_TIMEOUT_SECS`] default; the connect timeout is always
+/// [`CONNECT_TIMEOUT_SECS`].
+fn timeout_profile(request_override: Option<Duration>) -> TimeoutProfile {
+    TimeoutProfile {
+        connect: Duration::from_secs(CONNECT_TIMEOUT_SECS),
+        request: request_override
+            .unwrap_or_else(|| Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS)),
+    }
+}
+
+/// Build the HTTP transport for a resolved profile
+fn build_http_client(profile: TimeoutProfile) -> Result<reqwest::Client, InferenceError> {
+    reqwest::Client::builder()
+        .connect_timeout(profile.connect)
+        .timeout(profile.request)
+        .build()
+        .map_err(InferenceError::Transport)
 }
 
 // ============================================================================
@@ -1341,6 +1395,75 @@ mod tests {
         let err = client.list_models().await.unwrap_err();
         assert!(matches!(err, InferenceError::Transport(_)), "{err:?}");
         assert!(err.is_retryable());
+    }
+
+    // ------------------------------------------------------------------
+    // Timeout profile
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn default_timeout_profile_is_5s_connect_30s_request() {
+        let profile = timeout_profile(None);
+        assert_eq!(profile.connect, Duration::from_secs(CONNECT_TIMEOUT_SECS));
+        assert_eq!(profile.connect, Duration::from_secs(5));
+        assert_eq!(
+            profile.request,
+            Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS)
+        );
+        assert_eq!(profile.request, Duration::from_secs(30));
+    }
+
+    #[test]
+    fn explicit_timeout_wins_over_request_default_only() {
+        let profile = timeout_profile(Some(Duration::from_secs(90)));
+        assert_eq!(profile.request, Duration::from_secs(90));
+        // The connect timeout is not caller-configurable
+        assert_eq!(profile.connect, Duration::from_secs(CONNECT_TIMEOUT_SECS));
+    }
+
+    #[test]
+    fn http_client_builds_from_default_and_overridden_profiles() {
+        build_http_client(timeout_profile(None)).unwrap();
+        build_http_client(timeout_profile(Some(Duration::from_millis(1)))).unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_timeout_governs_slow_responses_end_to_end() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_millis(500))
+                    .set_body_json(json!({"object": "list", "data": []})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // A 100ms override times out before the 500ms-delayed body arrives...
+        let fast = InferenceClient::builder()
+            .api_base(mock_server.uri())
+            .endpoint(mock_server.uri())
+            .with_api_key(TEST_KEY)
+            .timeout(Duration::from_millis(100))
+            .build()
+            .unwrap();
+        let err = fast.list_models().await.unwrap_err();
+        match err {
+            InferenceError::Transport(e) => assert!(e.is_timeout(), "{e:?}"),
+            other => panic!("expected a timeout, got {other:?}"),
+        }
+
+        // ...while a 5s override lets the same delayed response through
+        let slow = InferenceClient::builder()
+            .api_base(mock_server.uri())
+            .endpoint(mock_server.uri())
+            .with_api_key(TEST_KEY)
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let models = slow.list_models().await.unwrap();
+        assert!(models.is_empty());
     }
 
     // ------------------------------------------------------------------
