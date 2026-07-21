@@ -468,21 +468,25 @@ mod tests {
                     request_id: "req-settled".to_string(),
                     status: Status::Settled as i32,
                     reason: String::new(),
+                    remainder_credits: String::new(),
                 },
                 billing::RecordResult {
                     request_id: "req-arrears".to_string(),
                     status: Status::Arrears as i32,
                     reason: "balance exhausted; remainder booked to arrears".to_string(),
+                    remainder_credits: "0.75".to_string(),
                 },
                 billing::RecordResult {
                     request_id: "req-retry".to_string(),
                     status: Status::Retry as i32,
                     reason: "transient storage error".to_string(),
+                    remainder_credits: String::new(),
                 },
                 billing::RecordResult {
                     request_id: "req-rejected".to_string(),
                     status: Status::Rejected as i32,
                     reason: "token counts outside [0, registry_cap]".to_string(),
+                    remainder_credits: String::new(),
                 },
             ],
         };
@@ -496,12 +500,16 @@ mod tests {
         assert_eq!(decoded.results[0].request_id, "req-settled");
         assert_eq!(decoded.results[0].status(), Status::Settled);
         assert_eq!(decoded.results[0].reason, "");
+        // SETTLED carries no remainder: empty stays empty across the wire.
+        assert_eq!(decoded.results[0].remainder_credits, "");
         assert_eq!(decoded.results[1].request_id, "req-arrears");
         assert_eq!(decoded.results[1].status(), Status::Arrears);
         assert_eq!(
             decoded.results[1].reason,
             "balance exhausted; remainder booked to arrears"
         );
+        // ARREARS: the structured remainder survives encode/decode exactly.
+        assert_eq!(decoded.results[1].remainder_credits, "0.75");
         assert_eq!(decoded.results[2].status(), Status::Retry);
         assert_eq!(decoded.results[3].status(), Status::Rejected);
         assert_eq!(

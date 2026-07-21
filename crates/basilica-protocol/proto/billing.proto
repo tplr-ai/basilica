@@ -375,7 +375,10 @@ message UsageRecord {
     uint32 prompt_tokens = 4;     // Billable prompt (input) tokens
     uint32 completion_tokens = 5; // Billable completion (output) tokens
     uint32 cached_tokens = 6;     // Cached input tokens, billed at the cached-input price
-    uint32 fanout = 7;            // Generation fan-out multiplier: max(n, best_of)
+    // Generation fan-out, max(n, best_of) — used by the PRODUCER for
+    // admission-time estimation only. Token counts above are ALREADY
+    // fanout-inclusive; billing MUST NOT multiply fanout into the charge.
+    uint32 fanout = 7;
     TokenPrice price = 8;         // Price snapshot stamped at admission; settlement never re-resolves it
 }
 
