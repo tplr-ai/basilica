@@ -24,6 +24,7 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+utoipa = { workspace = true, optional = true }
 tracing = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
@@ -98,3 +99,5 @@ client = ["futures-util"]
 test-utils = []
 # Enable CLI support with clap derives
 cli = []
+# Enable OpenAPI schema generation support (requires Rust 1.75+)
+openapi = ["dep:utoipa"]
