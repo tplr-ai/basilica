@@ -41,7 +41,13 @@ classifiers = [
   "Topic :: System :: Distributed Computing",
   "Typing :: Typed",
 ]
-dependencies = []
+# openai: the inference binding delegates completions to the stock OpenAI
+# client (InferenceClient.openai_client_args), so the SDK must be importable
+# alongside it. The range documents the tested-compatible line; the exact
+# version verified against the gateway wire contract is pinned in
+# conformance/requirements.txt (see OPENAI_SDK_PIN in
+# conformance/test_openai_conformance.py).
+dependencies = ["openai>=2.46,<3"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "mypy>=1.0", "maturin>=1.0"]

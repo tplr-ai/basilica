@@ -496,6 +496,13 @@ jobs:
           cd crates/basilica-sdk-python
           python -m pytest tests/ -v || echo "No tests found yet"
 
+      - name: Run OpenAI conformance suite
+        run: |
+          cd crates/basilica-sdk-python
+          python -m venv conformance/.venv-conformance
+          conformance/.venv-conformance/bin/pip install -r conformance/requirements.txt
+          conformance/.venv-conformance/bin/python -m pytest conformance/ -q
+
       - name: Test examples (syntax check)
         run: |
           source .venv/bin/activate
