@@ -397,6 +397,11 @@ message RecordResult {
     string request_id = 1; // Echoes UsageRecord.request_id
     Status status = 2;     // Settlement outcome for this record
     string reason = 3;     // Human-readable detail; set for ARREARS/RETRY/REJECTED
+    // Structured remainder (credits, decimal string) booked to arrears when
+    // status == ARREARS. Machine-readable counterpart to `reason`: consumers
+    // must use THIS field for money math, never parse `reason`. Absent (empty)
+    // otherwise. Idempotent replays carry the originally recorded value.
+    string remainder_credits = 4;
 
     enum Status {
         SETTLED = 0;  // Full deduction applied
