@@ -98,6 +98,36 @@ impl BasilicaClient {
         })
     }
 
+    // ===== Derived clients =====
+
+    /// Create a managed-inference client sharing this client's auth and
+    /// management-plane base URL.
+    ///
+    /// The returned [`InferenceClient`](crate::inference::InferenceClient)
+    /// reuses this client's `Arc<TokenManager>`, so API-key pass-through and
+    /// JWT refresh behave exactly as they do for this client, and fetches
+    /// usage rollups from the same basilica-api base URL. The inference
+    /// gateway endpoint is resolved from `BASILICA_INFERENCE_ENDPOINT`,
+    /// falling back to the built-in default.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use basilica_sdk::ClientBuilder;
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let client = ClientBuilder::default().with_api_key("key").build()?;
+    /// let models = client.inference().list_models().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn inference(&self) -> crate::inference::InferenceClient {
+        crate::inference::InferenceClient::builder()
+            .api_base(&self.base_url)
+            .with_token_manager(Arc::clone(&self.token_manager))
+            .build()
+            .expect("InferenceClient build cannot fail with a shared token manager")
+    }
+
     // ===== Rentals =====
 
     /// Get rental status
@@ -1741,6 +1771,46 @@ mod tests {
             .build();
 
         assert!(client.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_inference_accessor_shares_auth_and_base_url() {
+        let mock_server = MockServer::start().await;
+
+        // The usage rollup lives on the management plane (same base URL as
+        // the parent client) and must carry the parent's access token.
+        Mock::given(method("GET"))
+            .and(path("/v1/inference/usage/summary"))
+            .and(header("Authorization", "Bearer test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"rows": []})))
+            .mount(&mock_server)
+            .await;
+
+        let client = ClientBuilder::default()
+            .base_url(mock_server.uri())
+            .with_tokens("test-token", "refresh-token")
+            .build()
+            .unwrap();
+
+        let inference = client.inference();
+
+        // api_base is inherited from the parent's base_url; the gateway
+        // endpoint follows the env/default resolution rules.
+        assert_eq!(inference.api_base(), mock_server.uri());
+        if std::env::var(crate::inference::INFERENCE_ENDPOINT_ENV).is_err() {
+            assert_eq!(
+                inference.endpoint(),
+                crate::inference::DEFAULT_INFERENCE_ENDPOINT
+            );
+        }
+
+        // The parent's token manager is reused: the parent's access token is
+        // sent to the management plane (the mock rejects any other token).
+        let rows = inference
+            .usage(crate::inference::UsageQuery::default())
+            .await
+            .unwrap();
+        assert!(rows.is_empty());
     }
 
     #[tokio::test]
