@@ -70,6 +70,8 @@ jobs:
               - 'crates/basilica-sdk-python/**'
               - 'crates/basilica-sdk/**'
               - 'crates/basilica-common/**'
+              - 'crates/basilica-validator/**'
+              - 'crates/basilica-protocol/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
             workspace:
@@ -473,6 +475,9 @@ jobs:
       - name: Test basilica-sdk
         run: |
           cargo nextest run -p basilica-sdk --all-features --no-fail-fast
+      - name: Test basilica-sdk doctests
+        run: |
+          cargo test --doc -p basilica-sdk
 
   # Build and test Python SDK
   test-python-sdk:
