@@ -62,6 +62,7 @@ jobs:
               - 'crates/basilica-cli/**'
               - 'crates/basilica-sdk/**'
               - 'crates/basilica-common/**'
+              - 'crates/basilica-validator/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/cli/**'
               - 'Cargo.toml'
