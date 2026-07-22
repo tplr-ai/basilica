@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `BasilicaClient::inference()` now returns `Result<InferenceClient, InferenceError>`
+  instead of panicking via `.expect(...)` when the underlying `reqwest::Client`
+  fails to build (TLS/resolver init). Callers should add `?` or handle the error.
+- Request timeouts on the inference client are floored at
+  `MIN_REQUEST_TIMEOUT_SECS` (1s): a `timeout = 0` previously produced a
+  zero-duration timeout that failed every call; values at or below the floor are
+  clamped (Rust, PyO3, and Python surfaces all inherit the clamp).
+
 ## [0.33.0] - 2026-07-14
 
 ### Added

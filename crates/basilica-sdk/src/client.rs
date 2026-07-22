@@ -110,22 +110,30 @@ impl BasilicaClient {
     /// gateway endpoint is resolved from `BASILICA_INFERENCE_ENDPOINT`,
     /// falling back to the built-in default.
     ///
+    /// # Errors
+    ///
+    /// Returns [`InferenceError::Transport`](crate::inference::InferenceError)
+    /// if the dedicated HTTP transport cannot be built (e.g. TLS backend
+    /// initialisation failure) — a library must not panic its callers.
+    ///
     /// # Example
     ///
     /// ```no_run
     /// # use basilica_sdk::ClientBuilder;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = ClientBuilder::default().with_api_key("key").build()?;
-    /// let models = client.inference().list_models().await?;
+    /// let models = client.inference()?.list_models().await?;
     /// # Ok(())
     /// # }
     /// ```
-    pub fn inference(&self) -> crate::inference::InferenceClient {
+    pub fn inference(
+        &self,
+    ) -> std::result::Result<crate::inference::InferenceClient, crate::inference::InferenceError>
+    {
         crate::inference::InferenceClient::builder()
             .api_base(&self.base_url)
             .with_token_manager(Arc::clone(&self.token_manager))
             .build()
-            .expect("InferenceClient build cannot fail with a shared token manager")
     }
 
     // ===== Rentals =====
@@ -1792,7 +1800,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let inference = client.inference();
+        let inference = client.inference().unwrap();
 
         // api_base is inherited from the parent's base_url; the gateway
         // endpoint follows the env/default resolution rules.
