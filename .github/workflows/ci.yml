@@ -49,6 +49,7 @@ jobs:
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/validator/**'
+              - 'scripts/gen-key.sh'
               - 'Cargo.toml'
               - 'Cargo.lock'
             miner:
@@ -56,6 +57,7 @@ jobs:
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/miner/**'
+              - 'scripts/gen-key.sh'
               - 'Cargo.toml'
               - 'Cargo.lock'
             basilica-cli:
