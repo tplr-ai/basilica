@@ -60,6 +60,7 @@ jobs:
               - 'Cargo.lock'
             basilica-cli:
               - 'crates/basilica-cli/**'
+              - 'crates/basilica-sdk/**'
               - 'crates/basilica-common/**'
               - 'crates/basilica-protocol/**'
               - 'scripts/cli/**'
@@ -422,6 +423,57 @@ jobs:
           cargo nextest run -p basilica-cli --all-features --no-fail-fast
           ./target/debug/basilica --help
 
+  # Build and test basilica-sdk (Rust)
+  build-sdk:
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    needs: changes
+    if: needs.changes.outputs.basilica-sdk-python == 'true' || needs.changes.outputs.workspace == 'true'
+    strategy:
+      matrix:
+        rust-version: [stable]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: ${{ matrix.rust-version }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: "shared-cache"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install protoc
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROTOC_VERSION=25.9
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          DOWNLOAD_URL=https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o /tmp/${PROTOC_ZIP} "${DOWNLOAD_URL}"; then
+              break
+            fi
+            if [ "${attempt}" = "5" ]; then
+              echo "ERROR: protoc download failed after 5 attempts" >&2
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done
+          sudo unzip -q -o /tmp/${PROTOC_ZIP} -d /usr/local
+          rm -f /tmp/${PROTOC_ZIP}
+          protoc --version
+      - name: Cache and install system dependencies
+        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        with:
+          packages: pkg-config libssl-dev xxd mold clang
+          version: 1.0
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        with:
+          tool: nextest
+      - name: Test basilica-sdk
+        run: |
+          cargo nextest run -p basilica-sdk --all-features --no-fail-fast
+
   # Build and test Python SDK
   test-python-sdk:
     runs-on: blacksmith-32vcpu-ubuntu-2404
@@ -494,7 +546,7 @@ jobs:
         run: |
           source .venv/bin/activate
           cd crates/basilica-sdk-python
-          python -m pytest tests/ -v || echo "No tests found yet"
+          python -m pytest tests/ -v
 
       - name: Run OpenAI conformance suite
         run: |
@@ -527,6 +579,7 @@ jobs:
       - build-validator
       - build-miner
       - build-cli
+      - build-sdk
       - test-python-sdk
     if: always()
     steps:
@@ -538,6 +591,7 @@ jobs:
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
                 ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
                 ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") && \
+                ("${{ needs.build-sdk.result }}" == "success" || "${{ needs.build-sdk.result }}" == "skipped") && \
                 ("${{ needs.test-python-sdk.result }}" == "success" || "${{ needs.test-python-sdk.result }}" == "skipped") ]]; then
             echo "All CI checks passed!"
             exit 0

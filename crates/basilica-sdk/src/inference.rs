@@ -86,6 +86,15 @@ pub const CONNECT_TIMEOUT_SECS: u64 = 5;
 /// ([`DEFAULT_TIMEOUT_SECS`](crate::client::DEFAULT_TIMEOUT_SECS)).
 pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 
+/// Minimum whole-request timeout (seconds). A caller-set
+/// [`InferenceClientBuilder::timeout`] below this floor is clamped up to it.
+///
+/// The floor exists for surfaces that express the timeout as integer
+/// seconds — notably the Python binding's `timeout_secs`: `timeout=0`
+/// produces a `Duration::ZERO`, which makes every request fail instantly.
+/// With the floor, zero behaves as 1s instead of "never usable".
+pub const MIN_REQUEST_TIMEOUT_SECS: u64 = 1;
+
 // ============================================================================
 // Public types (wire contract)
 // ============================================================================
@@ -487,6 +496,9 @@ impl InferenceClientBuilder {
     /// Precedence: this value wins over the built-in
     /// [`DEFAULT_REQUEST_TIMEOUT_SECS`] (30s) default. The connect timeout
     /// ([`CONNECT_TIMEOUT_SECS`], 5s) always applies and is unaffected.
+    /// Values below [`MIN_REQUEST_TIMEOUT_SECS`] (1s) — including
+    /// `Duration::ZERO` — are clamped up to that floor so a zero timeout
+    /// cannot turn every request into an instant failure.
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
@@ -572,12 +584,15 @@ struct TimeoutProfile {
 /// Precedence: a caller-set `request_override` (via
 /// [`InferenceClientBuilder::timeout`]) wins over the
 /// [`DEFAULT_REQUEST_TIMEOUT_SECS`] default; the connect timeout is always
-/// [`CONNECT_TIMEOUT_SECS`].
+/// [`CONNECT_TIMEOUT_SECS`]. The request timeout is floored at
+/// [`MIN_REQUEST_TIMEOUT_SECS`] so a zero/sub-second override (e.g. Python
+/// `timeout_secs=0`) cannot make every request fail instantly.
 fn timeout_profile(request_override: Option<Duration>) -> TimeoutProfile {
     TimeoutProfile {
         connect: Duration::from_secs(CONNECT_TIMEOUT_SECS),
         request: request_override
-            .unwrap_or_else(|| Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS)),
+            .unwrap_or_else(|| Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS))
+            .max(Duration::from_secs(MIN_REQUEST_TIMEOUT_SECS)),
     }
 }
 
@@ -1422,6 +1437,27 @@ mod tests {
     }
 
     #[test]
+    fn zero_and_sub_floor_timeouts_are_clamped_to_the_minimum() {
+        for override_ in [Duration::ZERO, Duration::from_millis(1)] {
+            let profile = timeout_profile(Some(override_));
+            assert_eq!(
+                profile.request,
+                Duration::from_secs(MIN_REQUEST_TIMEOUT_SECS),
+                "override {override_:?} must be floored to the minimum"
+            );
+            assert_eq!(profile.request, Duration::from_secs(1));
+            // The connect timeout is unaffected by the floor
+            assert_eq!(profile.connect, Duration::from_secs(CONNECT_TIMEOUT_SECS));
+        }
+    }
+
+    #[test]
+    fn timeouts_above_the_floor_pass_through_unclamped() {
+        let profile = timeout_profile(Some(Duration::from_secs(2)));
+        assert_eq!(profile.request, Duration::from_secs(2));
+    }
+
+    #[test]
     fn http_client_builds_from_default_and_overridden_profiles() {
         build_http_client(timeout_profile(None)).unwrap();
         build_http_client(timeout_profile(Some(Duration::from_millis(1)))).unwrap();
@@ -1434,18 +1470,19 @@ mod tests {
             .and(path("/v1/models"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .set_delay(Duration::from_millis(500))
+                    .set_delay(Duration::from_millis(2500))
                     .set_body_json(json!({"object": "list", "data": []})),
             )
             .mount(&mock_server)
             .await;
 
-        // A 100ms override times out before the 500ms-delayed body arrives...
+        // A 1s override (exactly the MIN_REQUEST_TIMEOUT_SECS floor) times
+        // out before the 2.5s-delayed body arrives...
         let fast = InferenceClient::builder()
             .api_base(mock_server.uri())
             .endpoint(mock_server.uri())
             .with_api_key(TEST_KEY)
-            .timeout(Duration::from_millis(100))
+            .timeout(Duration::from_secs(1))
             .build()
             .unwrap();
         let err = fast.list_models().await.unwrap_err();
@@ -1463,6 +1500,33 @@ mod tests {
             .build()
             .unwrap();
         let models = slow.list_models().await.unwrap();
+        assert!(models.is_empty());
+    }
+
+    #[tokio::test]
+    async fn zero_timeout_override_is_floored_not_instant_failure() {
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/models"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_millis(200))
+                    .set_body_json(json!({"object": "list", "data": []})),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Duration::ZERO (e.g. Python `timeout_secs=0`) would make every
+        // request fail instantly without the MIN_REQUEST_TIMEOUT_SECS floor;
+        // with the floor the 200ms-delayed response arrives in time.
+        let client = InferenceClient::builder()
+            .api_base(mock_server.uri())
+            .endpoint(mock_server.uri())
+            .with_api_key(TEST_KEY)
+            .timeout(Duration::ZERO)
+            .build()
+            .unwrap();
+        let models = client.list_models().await.unwrap();
         assert!(models.is_empty());
     }
 
