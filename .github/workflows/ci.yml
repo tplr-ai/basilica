@@ -581,6 +581,7 @@ jobs:
   ci-success:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs:
+      - changes
       - quick-checks
       - lint-complex
       - security-audit
@@ -593,7 +594,8 @@ jobs:
     steps:
       - name: Check if all jobs succeeded
         run: |
-          if [[ "${{ needs.quick-checks.result }}" == "success" && \
+          if [[ "${{ needs.changes.result }}" == "success" && \
+                "${{ needs.quick-checks.result }}" == "success" && \
                 "${{ needs.lint-complex.result }}" == "success" && \
                 "${{ needs.security-audit.result }}" == "success" && \
                 ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
