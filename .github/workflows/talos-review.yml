@@ -1,3 +1,4 @@
+# Posts this PR's signed event to Talos, which reviews and comments.
 name: Talos review
 
 on:
