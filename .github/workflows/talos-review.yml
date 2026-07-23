@@ -24,11 +24,14 @@ jobs:
             exit 0
           fi
           signature="sha256=$(python3 -c 'import hashlib, hmac, os; print(hmac.new(os.environ["TALOS_WEBHOOK_SECRET"].encode(), open(os.environ["GITHUB_EVENT_PATH"], "rb").read(), hashlib.sha256).hexdigest())')"
-          response="$(curl -sS --fail-with-body --max-time 60 \
+          if ! response="$(curl -sS --fail-with-body --max-time 60 \
             --retry 2 --retry-all-errors --retry-delay 5 -X POST \
             -H 'Content-Type: application/json' \
             -H 'X-GitHub-Event: pull_request' \
             -H "X-Hub-Signature-256: ${signature}" \
             --data-binary "@${GITHUB_EVENT_PATH}" \
-            "${TALOS_URL%/}/webhooks/github")"
+            "${TALOS_URL%/}/webhooks/github")"; then
+            echo "Talos request failed: ${response}" >&2
+            exit 1
+          fi
           echo "Talos response: ${response}"
