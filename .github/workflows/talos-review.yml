@@ -1,22 +1,26 @@
-# Posts this PR's signed event to Talos, which reviews and comments.
+# Posts this repo's signed PR events and @talos commands to Talos.
 name: Talos review
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
 
 permissions: {}
 
 jobs:
   review:
     name: Request Talos review
+    if: github.event_name != 'issue_comment' || contains(github.event.comment.body, '@talos')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Post signed pull_request event to Talos
+      - name: Post signed event to Talos
         env:
           TALOS_URL: ${{ vars.TALOS_URL || 'https://95.133.252.205.sslip.io' }}
           TALOS_WEBHOOK_SECRET: ${{ secrets.TALOS_WEBHOOK_SECRET }}
+          GH_EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           if [ -z "${TALOS_WEBHOOK_SECRET}" ]; then
@@ -27,7 +31,7 @@ jobs:
           if ! response="$(curl -sS --fail-with-body --max-time 60 \
             --retry 2 --retry-all-errors --retry-delay 5 -X POST \
             -H 'Content-Type: application/json' \
-            -H 'X-GitHub-Event: pull_request' \
+            -H "X-GitHub-Event: ${GH_EVENT}" \
             -H "X-Hub-Signature-256: ${signature}" \
             --data-binary "@${GITHUB_EVENT_PATH}" \
             "${TALOS_URL%/}/webhooks/github")"; then
