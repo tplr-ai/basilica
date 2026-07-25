@@ -15,6 +15,10 @@ env:
   RUSTFLAGS: "-Clink-arg=-fuse-ld=mold"
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: "clang"
 
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-{1}-{2}', github.workflow, github.event_name, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
   pull-requests: read
@@ -505,6 +509,7 @@ jobs:
   ci-success:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs:
+      - changes
       - quick-checks
       - lint-complex
       - security-audit
@@ -512,20 +517,74 @@ jobs:
       - build-miner
       - build-cli
       - test-python-sdk
-    if: always()
+    if: ${{ !cancelled() }}
     steps:
       - name: Check if all jobs succeeded
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          WORKSPACE_SELECTED: ${{ needs.changes.outputs.workspace }}
+          VALIDATOR_SELECTED: ${{ needs.changes.outputs.validator }}
+          VALIDATOR_RESULT: ${{ needs.build-validator.result }}
+          MINER_SELECTED: ${{ needs.changes.outputs.miner }}
+          MINER_RESULT: ${{ needs.build-miner.result }}
+          CLI_SELECTED: ${{ needs.changes.outputs['basilica-cli'] }}
+          CLI_RESULT: ${{ needs.build-cli.result }}
+          PYTHON_SELECTED: ${{ needs.changes.outputs['basilica-sdk-python'] }}
+          PYTHON_RESULT: ${{ needs.test-python-sdk.result }}
+          QUICK_CHECKS_RESULT: ${{ needs.quick-checks.result }}
+          LINT_COMPLEX_RESULT: ${{ needs.lint-complex.result }}
+          SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
         run: |
-          if [[ "${{ needs.quick-checks.result }}" == "success" && \
-                "${{ needs.lint-complex.result }}" == "success" && \
-                "${{ needs.security-audit.result }}" == "success" && \
-                ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
-                ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
-                ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") && \
-                ("${{ needs.test-python-sdk.result }}" == "success" || "${{ needs.test-python-sdk.result }}" == "skipped") ]]; then
-            echo "All CI checks passed!"
-            exit 0
-          else
-            echo "Some CI checks failed!"
-            exit 1
-          fi
+          set -euo pipefail
+
+          require_success() {
+            local job_name="$1"
+            local result="$2"
+            if [[ "$result" != "success" ]]; then
+              echo "::error::$job_name returned '$result'; expected 'success'"
+              return 1
+            fi
+          }
+
+          require_selector() {
+            local selector_name="$1"
+            local value="$2"
+            if [[ "$value" != "true" && "$value" != "false" ]]; then
+              echo "::error::$selector_name has malformed or missing value '$value'"
+              return 1
+            fi
+          }
+
+          require_lane_result() {
+            local lane_name="$1"
+            local selected="$2"
+            local result="$3"
+            local expected="skipped"
+
+            if [[ "$selected" == "true" || "$WORKSPACE_SELECTED" == "true" ]]; then
+              expected="success"
+            fi
+
+            if [[ "$result" != "$expected" ]]; then
+              echo "::error::$lane_name returned '$result'; expected '$expected'"
+              return 1
+            fi
+          }
+
+          require_success "changes" "$CHANGES_RESULT"
+          require_success "quick-checks" "$QUICK_CHECKS_RESULT"
+          require_success "lint-complex" "$LINT_COMPLEX_RESULT"
+          require_success "security-audit" "$SECURITY_AUDIT_RESULT"
+
+          require_selector "workspace selector" "$WORKSPACE_SELECTED"
+          require_selector "validator selector" "$VALIDATOR_SELECTED"
+          require_selector "miner selector" "$MINER_SELECTED"
+          require_selector "CLI selector" "$CLI_SELECTED"
+          require_selector "Python SDK selector" "$PYTHON_SELECTED"
+
+          require_lane_result "build-validator" "$VALIDATOR_SELECTED" "$VALIDATOR_RESULT"
+          require_lane_result "build-miner" "$MINER_SELECTED" "$MINER_RESULT"
+          require_lane_result "build-cli" "$CLI_SELECTED" "$CLI_RESULT"
+          require_lane_result "test-python-sdk" "$PYTHON_SELECTED" "$PYTHON_RESULT"
+
+          echo "All CI checks passed!"
