@@ -164,6 +164,20 @@ jobs:
         # the subnet stack that inherits the current noise.
         continue-on-error: true
         run: cargo audit --deny warnings
+
+  semgrep:
+    name: Semgrep SAST
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/semgrep.yml
+
+  secret-scan:
+    name: Secret Scan
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gitleaks.yml
+
   lint-complex:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: quick-checks
@@ -515,6 +529,8 @@ jobs:
       - quick-checks
       - lint-complex
       - security-audit
+      - semgrep
+      - secret-scan
       - build-validator
       - build-miner
       - build-cli
@@ -536,6 +552,8 @@ jobs:
           QUICK_CHECKS_RESULT: ${{ needs.quick-checks.result }}
           LINT_COMPLEX_RESULT: ${{ needs.lint-complex.result }}
           SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
+          SEMGREP_RESULT: ${{ needs.semgrep.result }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
         run: |
           set -euo pipefail
 
@@ -577,6 +595,8 @@ jobs:
           require_success "quick-checks" "$QUICK_CHECKS_RESULT"
           require_success "lint-complex" "$LINT_COMPLEX_RESULT"
           require_success "security-audit" "$SECURITY_AUDIT_RESULT"
+          require_success "semgrep" "$SEMGREP_RESULT"
+          require_success "secret-scan" "$SECRET_SCAN_RESULT"
 
           require_selector "workspace selector" "$WORKSPACE_SELECTED"
           require_selector "validator selector" "$VALIDATOR_SELECTED"

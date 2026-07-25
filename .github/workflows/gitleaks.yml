@@ -1,9 +1,7 @@
 name: Gitleaks
 
 on:
-  pull_request:
-  push:
-    branches: [main, develop]
+  workflow_call:
 
 permissions:
   contents: read
@@ -65,13 +63,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            BASE_SHA="$PR_BASE_SHA"
-            HEAD_SHA="$PR_HEAD_SHA"
-          else
-            BASE_SHA="$PUSH_BEFORE_SHA"
-            HEAD_SHA="$PUSH_HEAD_SHA"
-          fi
+          case "$EVENT_NAME" in
+            pull_request)
+              BASE_SHA="$PR_BASE_SHA"
+              HEAD_SHA="$PR_HEAD_SHA"
+              ;;
+            push)
+              BASE_SHA="$PUSH_BEFORE_SHA"
+              HEAD_SHA="$PUSH_HEAD_SHA"
+              ;;
+            workflow_dispatch)
+              BASE_SHA="0000000000000000000000000000000000000000"
+              HEAD_SHA="$PUSH_HEAD_SHA"
+              ;;
+            *)
+              echo "::error::Unsupported event: $EVENT_NAME"
+              exit 1
+              ;;
+          esac
 
           git cat-file -e "${HEAD_SHA}^{commit}"
 

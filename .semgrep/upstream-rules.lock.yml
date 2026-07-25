@@ -12,15 +12,4 @@ community_rules:
   policy: advisory
   reviewed_at: 2026-07-25
   paths:
-    - rust/lang/security
-    - python/lang/security
-    - python/fastapi/security
-    - python/jwt/security
-    - python/requests/security
-    - python/sh/security
-    - bash/lang/security
-    - bash/curl/security
-    - dockerfile/security
-    - dockerfile/audit
-    - yaml/github-actions/security
-    - yaml/docker-compose/security
+    - rust
