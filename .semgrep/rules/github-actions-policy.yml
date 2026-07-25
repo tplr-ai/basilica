@@ -1,0 +1,12 @@
+rules:
+  - id: basilica.github-actions.no-pull-request-target
+    message: Use pull_request with read-only permissions; pull_request_target is forbidden.
+    severity: ERROR
+    languages: [generic]
+    pattern-regex: '(?m)^[ \t]*pull_request_target[ \t]*:'
+
+  - id: basilica.github-actions.no-packages-write
+    message: Public-repository workflows must not publish container packages.
+    severity: ERROR
+    languages: [generic]
+    pattern-regex: '(?m)^[ \t]*packages[ \t]*:[ \t]*write[ \t]*(?:#.*)?$'

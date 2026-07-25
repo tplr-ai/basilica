@@ -1,0 +1,26 @@
+version: 1
+
+scanner:
+  image: semgrep/semgrep
+  version: 1.170.1
+  digest: sha256:98c2572fced2474539fd27cab3207ebd8e95e4e7aab4c3b381fdc5e2641d9941
+
+community_rules:
+  repository: https://github.com/semgrep/semgrep-rules
+  revision: 81634cfc9e68dc5f238a8062909a60ba34500648
+  license: Semgrep Rules License 1.0
+  policy: advisory
+  reviewed_at: 2026-07-25
+  paths:
+    - rust/lang/security
+    - python/lang/security
+    - python/fastapi/security
+    - python/jwt/security
+    - python/requests/security
+    - python/sh/security
+    - bash/lang/security
+    - bash/curl/security
+    - dockerfile/security
+    - dockerfile/audit
+    - yaml/github-actions/security
+    - yaml/docker-compose/security
