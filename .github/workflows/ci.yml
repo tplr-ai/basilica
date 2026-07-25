@@ -501,7 +501,12 @@ jobs:
 
       - name: Run Python tests
         working-directory: crates/basilica-sdk-python
-        run: uv run --no-sync python -m pytest tests/ -v
+        # Live tests require external credentials and may create chargeable
+        # deployments. Keep normal CI limited to hermetic unit/regression tests.
+        run: |
+          uv run --no-sync python -m pytest tests/ -v \
+            --ignore=tests/test_dns_propagation_e2e.py \
+            --ignore=tests/test_gpu_flavour_preferences.py
 
       - name: Audit Python dependencies
         if: matrix.python-version == '3.12'
