@@ -20,7 +20,6 @@ cd "$PROJECT_ROOT"
 COMPONENTS=(
   "miner"
   "validator"
-  "cli"
 )
 
 FAILED=()
@@ -78,4 +77,3 @@ else
     echo "  docker push ${REGISTRY}/basilica-${comp}:${TAG}"
   done
 fi
-

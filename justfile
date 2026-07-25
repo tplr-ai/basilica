@@ -116,15 +116,6 @@ docker-build-validator TAG="latest":
     if [[ "$CLEAN_TAG" == TAG=* ]]; then CLEAN_TAG="${CLEAN_TAG#TAG=}"; fi
     BITTENSOR_NETWORK=finney ./scripts/validator/build.sh --image-name ghcr.io/one-covenant/basilica/validator --image-tag "$CLEAN_TAG"
 
-# Build CLI Docker image
-docker-build-cli TAG="latest":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    chmod +x scripts/cli/build.sh
-    CLEAN_TAG="{{TAG}}"
-    if [[ "$CLEAN_TAG" == TAG=* ]]; then CLEAN_TAG="${CLEAN_TAG#TAG=}"; fi
-    ./scripts/cli/build.sh --image-name ghcr.io/one-covenant/basilica/cli --image-tag "$CLEAN_TAG"
-
 # =============================================================================
 # DEPLOYMENT COMMANDS
 # =============================================================================
