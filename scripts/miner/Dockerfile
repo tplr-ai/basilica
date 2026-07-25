@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.88-slim-bookworm AS builder
+FROM rust:1.88-slim-bookworm@sha256:38bc5a86d998772d4aec2348656ed21438d20fcdce2795b56ca434cf21430d89 AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -70,7 +70,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-regist
     cp /tmp/target/${BUILD_MODE}/basilica-miner /workspace/basilica-miner
 
 # Runtime image
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

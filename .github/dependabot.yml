@@ -53,3 +53,25 @@ updates:
     commit-message:
       prefix: deps
       include: scope
+
+  # Surviving localnet Docker build inputs. Keep each directory independent so
+  # digest refreshes remain small and reviewable.
+  - package-ecosystem: docker
+    directory: /scripts/miner
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+      include: scope
+
+  - package-ecosystem: docker
+    directory: /scripts/validator
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: deps
+      include: scope
