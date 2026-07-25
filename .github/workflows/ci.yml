@@ -433,6 +433,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.32"
+          working-directory: crates/basilica-sdk-python
+
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -467,43 +473,39 @@ jobs:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
 
-      - name: Create virtual environment
-        run: python -m venv .venv
-
-      - name: Install maturin
-        run: |
-          source .venv/bin/activate
-          pip install maturin pytest pytest-asyncio
+      - name: Install locked Python dependencies
+        working-directory: crates/basilica-sdk-python
+        run: uv sync --frozen --extra dev --no-install-project
 
       - name: Run Python SDK clippy
         if: matrix.python-version == '3.12'
         run: cargo clippy -p basilica-sdk-python --all-targets -- -D warnings
 
       - name: Build and install Python SDK
-        run: |
-          source .venv/bin/activate
-          cd crates/basilica-sdk-python
-          maturin develop --release
+        working-directory: crates/basilica-sdk-python
+        run: uv run --no-sync maturin develop --release
 
       - name: Run Python tests
-        run: |
-          source .venv/bin/activate
-          cd crates/basilica-sdk-python
-          python -m pytest tests/ -v || echo "No tests found yet"
+        working-directory: crates/basilica-sdk-python
+        run: uv run --no-sync python -m pytest tests/ -v
+
+      - name: Audit Python dependencies
+        if: matrix.python-version == '3.12'
+        working-directory: crates/basilica-sdk-python
+        run: uv run --no-sync pip-audit --local
 
       - name: Test examples (syntax check)
+        working-directory: crates/basilica-sdk-python
         run: |
-          source .venv/bin/activate
-          cd crates/basilica-sdk-python/examples
-          for example in *.py; do
+          for example in examples/*.py; do
             echo "Checking $example..."
-            python -m py_compile "$example"
+            uv run --no-sync python -m py_compile "$example"
           done
 
       - name: Test import
+        working-directory: crates/basilica-sdk-python
         run: |
-          source .venv/bin/activate
-          python -c 'import basilica; print(f"SDK imported successfully. API URL: {basilica.DEFAULT_API_URL}")'
+          uv run --no-sync python -c 'import basilica; print(f"SDK imported successfully. API URL: {basilica.DEFAULT_API_URL}")'
 
   # Final status check
   ci-success:

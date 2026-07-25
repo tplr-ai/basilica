@@ -42,3 +42,14 @@ updates:
         update-types: [version-update:semver-major]
       - dependency-name: oauth2
         update-types: [version-update:semver-major]
+
+  # Python SDK dependencies locked by uv.
+  - package-ecosystem: uv
+    directory: /crates/basilica-sdk-python
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
+      include: scope
