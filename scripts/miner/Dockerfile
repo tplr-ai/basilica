@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.88-slim-bookworm@sha256:38bc5a86d998772d4aec2348656ed21438d20fcdce2795b56ca434cf21430d89 AS builder
+FROM rust:1.97.1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -23,7 +23,7 @@ COPY crates/ ./crates/
 # Fetch dependencies with cache mount
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-registry \
     --mount=type=cache,target=/usr/local/cargo/git,id=basilica-cargo-git \
-    cargo fetch
+    cargo fetch --locked
 
 # Build arguments
 ARG BUILD_MODE=release
@@ -55,15 +55,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-regist
     fi && \
     if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p basilica-miner --features "$FEATURES"; \
+            cargo build --locked --release -p basilica-miner --features "$FEATURES"; \
         else \
-            cargo build --release -p basilica-miner; \
+            cargo build --locked --release -p basilica-miner; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p basilica-miner --features "$FEATURES"; \
+            cargo build --locked -p basilica-miner --features "$FEATURES"; \
         else \
-            cargo build -p basilica-miner; \
+            cargo build --locked -p basilica-miner; \
         fi; \
     fi && \
     # Copy binary out of cache mount to a regular layer

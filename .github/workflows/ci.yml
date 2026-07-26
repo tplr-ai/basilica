@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -38,46 +38,19 @@ jobs:
       - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
         id: changes
         with:
-          filters: |
-            validator:
-              - 'crates/basilica-validator/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/validator/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            miner:
-              - 'crates/basilica-miner/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/miner/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            basilica-cli:
-              - 'crates/basilica-cli/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/cli/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            basilica-sdk-python:
-              - 'crates/basilica-sdk-python/**'
-              - 'crates/basilica-sdk/**'
-              - 'crates/basilica-common/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            workspace:
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - '.github/workflows/**'
+          # Pushes compare the pushed commit range. Pull requests ignore this
+          # input and compare against their PR base.
+          base: ${{ github.event_name == 'push' && github.ref || '' }}
+          filters: .github/ci/path-filters.yml
 
   quick-checks:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: rustfmt, clippy
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup show
+          rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -113,6 +86,8 @@ jobs:
           tool: nextest
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Check Rust toolchain consistency
+        run: ./scripts/ci/check-rust-toolchain-consistency.sh
       - name: Check basilica-sdk-python version consistency
         # Guard: maturin uses pyproject.toml for the wheel version, while the
         # Rust crate reads Cargo.toml. When these drift, a tag-triggered
@@ -130,10 +105,10 @@ jobs:
           fi
       - name: Quick check builds
         run: |
-          cargo check -p basilica-common -p basilica-protocol
+          cargo check --locked -p basilica-common -p basilica-protocol
       - name: Run clippy on core packages
         run: |
-          cargo clippy -p basilica-common -p basilica-protocol --all-targets -- -D warnings
+          cargo clippy --locked -p basilica-common -p basilica-protocol --all-targets -- -D warnings
 
   # Supply-chain checks: advisories, licenses, bans, sources.
   # Policy lives in `deny.toml`.
@@ -141,7 +116,8 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - name: cargo deny check
         # Use the official cargo-deny-action: it installs cargo-deny and
         # manages the advisory-db fetch reliably. The direct `cargo deny`
@@ -183,9 +159,10 @@ jobs:
     needs: quick-checks
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: rustfmt, clippy
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup show
+          rustup component add clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -221,25 +198,20 @@ jobs:
           tool: nextest
       - name: Run clippy on complex packages
         run: |
-          cargo clippy -p basilica-miner --all-targets --all-features -- -D warnings
-          cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
-          cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
-          cargo clippy -p basilica-sdk --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-miner --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-validator --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-cli --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-sdk --all-targets --all-features -- -D warnings
 
   # Build and test validator
   build-validator:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.validator == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -282,8 +254,8 @@ jobs:
       - name: Build and test validator
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p basilica-validator
-          cargo nextest run -p basilica-validator --all-features --no-fail-fast
+          cargo build --locked -p basilica-validator
+          cargo nextest run --locked -p basilica-validator --all-features --no-fail-fast
           ./target/debug/basilica-validator --help
       - name: Clean up space before Docker build
         run: |
@@ -307,15 +279,10 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.miner == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -358,8 +325,8 @@ jobs:
       - name: Build and test miner
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p basilica-miner
-          cargo nextest run -p basilica-miner --lib --no-fail-fast
+          cargo build --locked -p basilica-miner
+          cargo nextest run --locked -p basilica-miner --lib --no-fail-fast
           ./target/debug/basilica-miner --help
       - name: Clean up space before Docker build
         run: |
@@ -383,15 +350,10 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.basilica-cli == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -427,8 +389,8 @@ jobs:
           tool: nextest
       - name: Build and test basilica-cli
         run: |
-          cargo build -p basilica-cli
-          cargo nextest run -p basilica-cli --all-features --no-fail-fast
+          cargo build --locked -p basilica-cli
+          cargo nextest run --locked -p basilica-cli --all-features --no-fail-fast
           ./target/debug/basilica --help
 
   # Build and test Python SDK
@@ -453,7 +415,8 @@ jobs:
           version: "0.11.32"
           working-directory: crates/basilica-sdk-python
 
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Install pinned Rust toolchain
+        run: rustup show
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -489,15 +452,17 @@ jobs:
 
       - name: Install locked Python dependencies
         working-directory: crates/basilica-sdk-python
-        run: uv sync --frozen --extra dev --no-install-project
+        run: uv sync --locked --extra dev --no-install-project
 
       - name: Run Python SDK clippy
         if: matrix.python-version == '3.12'
-        run: cargo clippy -p basilica-sdk-python --all-targets -- -D warnings
+        run: |
+          rustup component add clippy
+          cargo clippy --locked -p basilica-sdk-python --all-targets -- -D warnings
 
       - name: Build and install Python SDK
         working-directory: crates/basilica-sdk-python
-        run: uv run --no-sync maturin develop --release
+        run: uv run --no-sync maturin develop --release --locked
 
       - name: Run Python tests
         working-directory: crates/basilica-sdk-python

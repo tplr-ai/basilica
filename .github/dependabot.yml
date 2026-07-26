@@ -7,33 +7,41 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 10
     commit-message:
       prefix: ci
       include: scope
     groups:
-      # Bundle actions from the same publisher to reduce PR churn.
-      actions:
+      github-actions-patch-minor:
+        applies-to: version-updates
         patterns:
-          - "actions/*"
-      rust-toolchain-and-cache:
-        patterns:
-          - "dtolnay/rust-toolchain"
-          - "Swatinem/rust-cache"
-          - "taiki-e/install-action"
+          - "*"
+        update-types:
+          - patch
+          - minor
 
   # Rust workspace dependencies.
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 10
     commit-message:
       prefix: deps
       include: scope
+    groups:
+      cargo-patch-minor:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - patch
+          - minor
     # Pre-emptively ignore the majors that would require a real migration;
     # bump these by hand when we're ready.
     ignore:
@@ -47,20 +55,30 @@ updates:
   - package-ecosystem: uv
     directory: /crates/basilica-sdk-python
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 10
     commit-message:
       prefix: deps
       include: scope
+    groups:
+      uv-patch-minor:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - patch
+          - minor
 
   # Surviving localnet Docker build inputs. Keep each directory independent so
   # digest refreshes remain small and reviewable.
   - package-ecosystem: docker
     directory: /scripts/miner
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
     commit-message:
       prefix: deps
@@ -69,8 +87,9 @@ updates:
   - package-ecosystem: docker
     directory: /scripts/validator
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
+    cooldown:
+      default-days: 14
     open-pull-requests-limit: 5
     commit-message:
       prefix: deps
