@@ -14,16 +14,13 @@ Bittensor neuron that manages executor fleets and handles validator communicatio
 # Deploy with systemd
 ./deploy.sh -s root@miner.example.com:46088 -d systemd
 
-# Deploy with docker
-./deploy.sh -s root@miner.example.com:46088 -d docker
-
 # Run locally for development
 docker-compose -f compose.dev.yml up
 ```
 
 ## Deployment Modes
 
-The miner supports three deployment modes:
+The miner supports two deployment modes:
 
 ### Binary Mode (Default)
 Deploys the miner binary and runs it with nohup:
@@ -38,20 +35,14 @@ Deploys the miner binary and manages it as a systemd service:
 ./deploy.sh -s root@miner.example.com:46088 -d systemd
 ```
 
-### Docker Mode
-Deploys using docker-compose with public registry images:
-```bash
-./deploy.sh -s root@miner.example.com:46088 -d docker
-```
-
 ## Files
 
 - `Dockerfile` - Container image definition
 - `build.sh` - Build script for Docker image and binary
 - `deploy.sh` - Multi-mode deployment script
 - `systemd/basilica-miner.service` - Systemd service definition
-- `compose.prod.yml` - Production docker-compose with watchtower
 - `compose.dev.yml` - Development docker-compose with local build
+- `compose.local.yml` - Localnet-oriented docker-compose configuration
 
 ## Configuration
 
@@ -81,7 +72,7 @@ Usage: ./deploy.sh [OPTIONS]
 
 OPTIONS:
     -s, --server USER@HOST:PORT      Server connection
-    -d, --deploy-mode MODE           Deployment mode: binary, systemd, docker (default: binary)
+    -d, --deploy-mode MODE           Deployment mode: binary, systemd (default: binary)
     -c, --config FILE                Config file path (default: config/miner.correct.toml)
     -w, --sync-wallets               Sync local wallets to remote server
     -f, --follow-logs                Stream logs after deployment
@@ -127,18 +118,6 @@ ssh root@miner.example.com -p 46088 "journalctl -u basilica-miner -f"
 
 # Restart service
 ssh root@miner.example.com -p 46088 "systemctl restart basilica-miner"
-```
-
-### Docker Mode
-```bash
-# Check status
-ssh root@miner.example.com -p 46088 "cd /opt/basilica && docker-compose ps"
-
-# View logs
-ssh root@miner.example.com -p 46088 "cd /opt/basilica && docker-compose logs -f"
-
-# Restart containers
-ssh root@miner.example.com -p 46088 "cd /opt/basilica && docker-compose restart"
 ```
 
 ## SSH Key Management

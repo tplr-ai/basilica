@@ -93,7 +93,7 @@ audit:
 # DOCKER BUILDS
 # =============================================================================
 
-# Build all public Docker images
+# Build all local Docker images
 docker-build-all TAG="latest":
     #!/usr/bin/env bash
     TAG="{{TAG}}" ./scripts/build-images.sh
@@ -105,7 +105,7 @@ docker-build-miner TAG="latest":
     chmod +x scripts/miner/build.sh
     CLEAN_TAG="{{TAG}}"
     if [[ "$CLEAN_TAG" == TAG=* ]]; then CLEAN_TAG="${CLEAN_TAG#TAG=}"; fi
-    ./scripts/miner/build.sh --image-name ghcr.io/one-covenant/basilica/miner --image-tag "$CLEAN_TAG"
+    ./scripts/miner/build.sh --image-name basilica/miner --image-tag "$CLEAN_TAG"
 
 # Build validator Docker image
 docker-build-validator TAG="latest":
@@ -114,7 +114,7 @@ docker-build-validator TAG="latest":
     chmod +x scripts/validator/build.sh
     CLEAN_TAG="{{TAG}}"
     if [[ "$CLEAN_TAG" == TAG=* ]]; then CLEAN_TAG="${CLEAN_TAG#TAG=}"; fi
-    BITTENSOR_NETWORK=finney ./scripts/validator/build.sh --image-name ghcr.io/one-covenant/basilica/validator --image-tag "$CLEAN_TAG"
+    BITTENSOR_NETWORK=finney ./scripts/validator/build.sh --image-name basilica/validator --image-tag "$CLEAN_TAG"
 
 # =============================================================================
 # DEPLOYMENT COMMANDS
