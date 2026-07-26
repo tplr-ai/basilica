@@ -76,7 +76,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-regist
 FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04@sha256:44e43f0e0bcca1fc6fdc775e6002c67834bf78d39eb1fd76825240fc79ba4a49
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \
+    apt-get install -y --only-upgrade gnupg && \
+    apt-get install -y \
     libssl3 \
     ca-certificates \
     curl \

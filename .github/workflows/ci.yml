@@ -129,17 +129,6 @@ jobs:
           # Respect `all-features = false` in deny.toml; the action default
           # of `--all-features` would otherwise override it.
           arguments: ""
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
-        with:
-          tool: cargo-audit
-      - name: cargo audit (advisory only)
-        # cargo-audit runs in addition to cargo-deny to surface anything the
-        # policy in deny.toml does not cover (e.g. non-security informational
-        # advisories). Non-blocking for now — tighten after 0.27.0 removes
-        # the subnet stack that inherits the current noise.
-        continue-on-error: true
-        run: cargo audit --deny warnings
 
   semgrep:
     name: Semgrep SAST
@@ -266,13 +255,16 @@ jobs:
           chmod +x scripts/validator/build.sh
           BITTENSOR_NETWORK=finney ./scripts/validator/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
         with:
           image-ref: basilica/validator:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
 
   # Build and test miner
   build-miner:
@@ -337,13 +329,16 @@ jobs:
           chmod +x scripts/miner/build.sh
           BITTENSOR_NETWORK=finney ./scripts/miner/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
         with:
           image-ref: basilica/miner:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
 
   # Build and test basilica-cli
   build-cli:
