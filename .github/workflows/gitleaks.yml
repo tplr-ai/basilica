@@ -6,6 +6,11 @@ on:
 permissions:
   contents: read
 
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_LINUX_ARM64_SHA256: "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
+  GITLEAKS_LINUX_X64_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
 jobs:
   gitleaks:
     name: gitleaks/required
@@ -22,28 +27,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          read -r VERSION < .github/gitleaks/version.txt
 
           case "$(uname -m)" in
-            x86_64) ARCHIVE="gitleaks_${VERSION}_linux_x64.tar.gz" ;;
-            aarch64|arm64) ARCHIVE="gitleaks_${VERSION}_linux_arm64.tar.gz" ;;
+            x86_64|amd64)
+              ARCH="x64"
+              EXPECTED="$GITLEAKS_LINUX_X64_SHA256"
+              ;;
+            aarch64|arm64)
+              ARCH="arm64"
+              EXPECTED="$GITLEAKS_LINUX_ARM64_SHA256"
+              ;;
             *)
               echo "::error::Unsupported runner architecture: $(uname -m)"
               exit 1
               ;;
           esac
 
-          EXPECTED="$(awk -v archive="$ARCHIVE" '$2 == archive { print $1 }' .github/gitleaks/checksums.txt)"
-          if [[ -z "$EXPECTED" ]]; then
-            echo "::error::No checksum recorded for $ARCHIVE"
-            exit 1
-          fi
+          ARCHIVE="gitleaks_${GITLEAKS_VERSION}_linux_${ARCH}.tar.gz"
 
           DOWNLOAD_DIR="$RUNNER_TEMP/gitleaks-download"
           BIN_DIR="$RUNNER_TEMP/gitleaks-bin"
           mkdir -p "$DOWNLOAD_DIR" "$BIN_DIR"
           curl --fail --location --silent --show-error \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${ARCHIVE}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${ARCHIVE}" \
             --output "$DOWNLOAD_DIR/$ARCHIVE"
 
           printf '%s  %s\n' "$EXPECTED" "$DOWNLOAD_DIR/$ARCHIVE" | sha256sum --check -
