@@ -528,7 +528,7 @@ check_existing_installation() {
 
         echo
         # Check if we're in a pipe (common when using curl | bash)
-        if [ ! -t 0 ]; then
+        if [ -n "${BASILICA_NON_INTERACTIVE:-}" ] || [ ! -t 0 ]; then
             print_info "Running in non-interactive mode, proceeding with replacement..."
             print_info "To cancel, press Ctrl+C within 3 seconds..."
             sleep 3
@@ -608,6 +608,47 @@ setup_shells() {
     done
 }
 
+# Offer to install Basilica skills when a controlling terminal is available.
+# Reading from /dev/tty keeps the prompt interactive for `curl | bash` installs.
+prompt_install_skills() {
+    if [ -n "${BASILICA_NON_INTERACTIVE:-}" ]; then
+        return
+    fi
+
+    local prompt_input_fd
+    local prompt_output_fd
+    if [ -t 0 ]; then
+        prompt_input_fd=0
+        prompt_output_fd=2
+    elif { exec 3<>/dev/tty; } 2>/dev/null; then
+        prompt_input_fd=3
+        prompt_output_fd=3
+    else
+        return
+    fi
+
+    echo
+    printf "Would you like to install Basilica skills for your AI coding tools? [y/N]: " >&"$prompt_output_fd"
+
+    local response
+    if ! read -r -u "$prompt_input_fd" response 2>/dev/null; then
+        return
+    fi
+
+    case "$response" in
+        [yY][eE][sS]|[yY])
+            print_step "Installing Basilica skills..."
+            if ! "$INSTALL_DIR/$BINARY_NAME" skills install <&"$prompt_input_fd"; then
+                print_warning "Basilica CLI was installed, but Basilica skills installation failed"
+                print_info "Retry with: basilica skills install"
+            fi
+            ;;
+        *)
+            print_info "Skipping Basilica skills installation"
+            ;;
+    esac
+}
+
 # Show completion message
 show_completion() {
     local installed_shells
@@ -651,6 +692,7 @@ main() {
     install_binary
     setup_shells
     show_completion
+    prompt_install_skills
 }
 
 # Run main function
