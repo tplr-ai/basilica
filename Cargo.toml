@@ -162,7 +162,7 @@ shellexpand = "3.1"
 etcetera = "0.8"
 color-eyre = "0.6"
 oauth2 = "4.4"
-webbrowser = "0.8"
+webbrowser = "1.2"
 
 # Python bindings
 # abi3-py310 = stable ABI for Python 3.10+, works with 3.10, 3.11, 3.12, etc.
