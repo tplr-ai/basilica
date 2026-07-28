@@ -73,7 +73,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-regist
     cp /tmp/target/${BUILD_MODE}/basilica-validator /workspace/basilica-validator
 
 # Runtime image
-FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04@sha256:44e43f0e0bcca1fc6fdc775e6002c67834bf78d39eb1fd76825240fc79ba4a49
+FROM nvidia/cuda:13.3.0-runtime-ubuntu24.04@sha256:789e629e49401647e22b7054ae9c6c4f6427dba68010ba428deb4cc6b063676e
 
 # Install runtime dependencies
 RUN apt-get update && \
