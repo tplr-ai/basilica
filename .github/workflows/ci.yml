@@ -76,12 +76,12 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Check formatting
@@ -123,7 +123,7 @@ jobs:
         # manages the advisory-db fetch reliably. The direct `cargo deny`
         # install path fails on these runners because the advisory-db
         # metadata lookup does not handle a missing per-db directory.
-        uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb # v2.0.17
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
         with:
           command: check
           # Respect `all-features = false` in deny.toml; the action default
@@ -177,12 +177,12 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Run clippy on complex packages
@@ -226,16 +226,16 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@ac083cc84672d01c60d5e8561d0a939b697de542 # v1
+        uses: useblacksmith/setup-docker-builder@5fe3b77775f1dd55595beb998036fe1f2cf47118 # v1
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
@@ -300,16 +300,16 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@ac083cc84672d01c60d5e8561d0a939b697de542 # v1
+        uses: useblacksmith/setup-docker-builder@5fe3b77775f1dd55595beb998036fe1f2cf47118 # v1
       - name: Generate test key
         run: |
           chmod +x scripts/gen-key.sh
@@ -374,12 +374,12 @@ jobs:
           rm -f /tmp/${PROTOC_ZIP}
           protoc --version
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2
         with:
           tool: nextest
       - name: Build and test basilica-cli
@@ -405,7 +405,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
         with:
           version: "0.11.32"
           working-directory: crates/basilica-sdk-python
@@ -440,7 +440,7 @@ jobs:
           protoc --version
 
       - name: Cache and install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@2c09a5e66da6c8016428a2172bd76e5e4f14bb17 # latest
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # latest
         with:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
