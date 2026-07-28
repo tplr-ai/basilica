@@ -64,7 +64,8 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i python3.10 --manifest-path crates/basilica-sdk-python/Cargo.toml
+          args: --release --locked --out dist -i python3.10 --manifest-path crates/basilica-sdk-python/Cargo.toml
+          rust-toolchain: "1.97.1"
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
@@ -102,7 +103,8 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --manifest-path crates/basilica-sdk-python/Cargo.toml
+          args: --release --locked --out dist --manifest-path crates/basilica-sdk-python/Cargo.toml
+          rust-toolchain: "1.97.1"
           sccache: 'true'
 
       - name: Upload wheels
@@ -149,6 +151,7 @@ jobs:
         with:
           command: sdist
           args: --out dist --manifest-path crates/basilica-sdk-python/Cargo.toml
+          rust-toolchain: "1.97.1"
 
       - name: Upload sdist
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

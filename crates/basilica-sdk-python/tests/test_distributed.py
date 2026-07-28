@@ -1728,11 +1728,10 @@ class TestIssue454DeploymentWrapperCarriesDistributed:
         underneath so the wrapper path (`get` -> `get_deployment` ->
         `Deployment._from_response`) executes for real.
         """
-        client = BasilicaClient(
-            base_url="https://api.test.invalid",
-            api_key="fake-test-token",
-        )
-        # Replace the PyO3 inner client with a mock that returns our fixture.
+        # Bypass the real PyO3 constructor: this is a wrapper unit test and must
+        # not initialize network clients or inspect host proxy configuration.
+        client = BasilicaClient.__new__(BasilicaClient)
+        client._base_url = "https://api.test.invalid"
         # `BasilicaClient.get_deployment` delegates to `self._client.get_deployment`.
         client._client = MagicMock()
         client._client.get_deployment.return_value = self._fake_pyo3_response()

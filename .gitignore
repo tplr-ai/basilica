@@ -95,6 +95,7 @@ backup/*.sql
 # Runtime State
 *.pid
 *.lock
+!crates/basilica-sdk-python/uv.lock
 tmp/
 temp/
 .venv/

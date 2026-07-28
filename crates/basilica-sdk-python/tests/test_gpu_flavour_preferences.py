@@ -6,8 +6,16 @@ Tests the full SDK path: type construction -> API call -> response parsing.
 Note: Tests that hit /v2/secure-cloud/gpu-prices require a token with
 secure-cloud permissions. They are skipped when the token lacks access.
 """
+import os
+
 import pytest
 from basilica import BasilicaClient, GpuPriceQuery
+
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("BASILICA_RUN_LIVE_TESTS") != "1",
+    reason="set BASILICA_RUN_LIVE_TESTS=1 to run chargeable live GPU tests",
+)
 
 
 @pytest.fixture(scope="module")

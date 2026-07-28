@@ -4,23 +4,22 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-REGISTRY="${REGISTRY:-ghcr.io/one-covenant}"
+IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-basilica}"
 TAG="${TAG:-latest}"
 PLATFORM="${PLATFORM:-linux/amd64}"
 
-echo "Building Basilica Public Docker images"
-echo "Registry: $REGISTRY"
+echo "Building Basilica local Docker images"
+echo "Image namespace: $IMAGE_NAMESPACE"
 echo "Tag: $TAG"
 echo "Platform: $PLATFORM"
 echo "----------------------------------------"
 
 cd "$PROJECT_ROOT"
 
-# Public components only
+# Localnet components
 COMPONENTS=(
   "miner"
   "validator"
-  "cli"
 )
 
 FAILED=()
@@ -34,7 +33,7 @@ for component in "${COMPONENTS[@]}"; do
     continue
   fi
 
-  image_name="${REGISTRY}/basilica-${component}:${TAG}"
+  image_name="${IMAGE_NAMESPACE}/${component}:${TAG}"
   echo ""
   echo "🔨 Building $component..."
   echo "   Image: $image_name"
@@ -71,11 +70,5 @@ if [ ${#FAILED[@]} -gt 0 ]; then
   exit 1
 else
   echo ""
-  echo "🎉 All public images built successfully!"
-  echo ""
-  echo "To push images to registry:"
-  for comp in "${SUCCEEDED[@]}"; do
-    echo "  docker push ${REGISTRY}/basilica-${comp}:${TAG}"
-  done
+  echo "🎉 All local images built successfully!"
 fi
-

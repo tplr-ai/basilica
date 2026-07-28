@@ -1,0 +1,56 @@
+# Pull-request CI routing policy. Component filters include their internal
+# dependency closure and any local Docker inputs consumed by that lane.
+
+validator:
+  - 'crates/basilica-validator/**'
+  - 'crates/basilica-common/**'
+  - 'crates/basilica-protocol/**'
+  - 'scripts/validator/**'
+  - 'scripts/gen-key.sh'
+  - 'bin/executor-binary/**'
+  - 'bin/validator-binary/**'
+  - '.dockerignore'
+  - '.trivyignore.yaml'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+
+miner:
+  - 'crates/basilica-miner/**'
+  - 'crates/basilica-common/**'
+  - 'crates/basilica-protocol/**'
+  - 'scripts/miner/**'
+  - 'scripts/gen-key.sh'
+  - '.dockerignore'
+  - '.trivyignore.yaml'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+
+basilica-cli:
+  - 'crates/basilica-cli/**'
+  - 'crates/basilica-sdk/**'
+  - 'crates/basilica-validator/**'
+  - 'crates/basilica-common/**'
+  - 'crates/basilica-protocol/**'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+
+basilica-sdk-python:
+  - 'crates/basilica-sdk-python/**'
+  - 'crates/basilica-sdk/**'
+  - 'crates/basilica-validator/**'
+  - 'crates/basilica-common/**'
+  - 'crates/basilica-protocol/**'
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+
+workspace:
+  - 'Cargo.toml'
+  - 'Cargo.lock'
+  - '.cargo/**'
+  - '.config/nextest.toml'
+  - 'rust-toolchain*'
+  - 'justfile'
+  - 'scripts/ci/**'
+  - '.github/workflows/**'
+  - '.github/actions/**'
+  - '.github/ci/path-filters.yml'

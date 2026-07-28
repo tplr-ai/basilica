@@ -1,0 +1,26 @@
+# Version-control metadata and pinned upstream rules are not scan targets.
+/.git/
+/.semgrep-community-rules/
+
+# Compiled and generated build outputs.
+/target/
+**/target/
+/build/
+**/*.so
+
+# Dependency, virtual-environment, cache, and coverage outputs.
+/node_modules/
+/.venv/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+/coverage/
+/.worktrees/
+
+# Generated local runtime data and credentials.
+/scripts/localtest/data/
+/scripts/localtest/keys/
+/scripts/*/service-wallet/
+
+# These SAST exclusions do not provide secret-scanning or git-history coverage.
