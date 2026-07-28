@@ -628,12 +628,11 @@ prompt_install_skills() {
     fi
 
     echo
-    printf "Would you like to install Basilica skills for your AI coding tools? [y/N] (defaults to No in 3s): " >&"$prompt_output_fd"
+    printf "Would you like to install Basilica skills for your AI coding tools? [y/N]: " >&"$prompt_output_fd"
 
-    local response=""
-    if ! read -r -t 3 -u "$prompt_input_fd" response 2>/dev/null; then
-        echo >&"$prompt_output_fd" || true
-        response=""
+    local response
+    if ! read -r -u "$prompt_input_fd" response 2>/dev/null; then
+        return
     fi
 
     case "$response" in
