@@ -21,7 +21,7 @@ permissions:
 jobs:
   extract-version:
     name: Extract version from tag
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -52,10 +52,10 @@ jobs:
       matrix:
         include:
           - target: x86_64
-            runner: ubuntu-latest
+            runner: blacksmith-4vcpu-ubuntu-2404
             protoc_arch: linux-x86_64
           - target: aarch64
-            runner: ubuntu-24.04-arm
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
             protoc_arch: linux-aarch_64
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -116,7 +116,7 @@ jobs:
   build-sdist:
     name: Build source distribution
     needs: extract-version
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -162,7 +162,7 @@ jobs:
   publish-to-pypi:
     name: Publish to PyPI
     needs: [extract-version, build-wheels-linux, build-wheels-macos, build-sdist]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     environment: pypi
     permissions:
       id-token: write  # Required for trusted publishing
@@ -194,7 +194,7 @@ jobs:
   create-github-release:
     name: Create GitHub Release
     needs: [extract-version, publish-to-pypi]
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
