@@ -14,16 +14,13 @@ Bittensor neuron for verification and scoring of miners and executors.
 # Deploy with systemd
 ./deploy.sh -s root@validator.example.com:9001 -d systemd
 
-# Deploy with docker
-./deploy.sh -s root@validator.example.com:9001 -d docker
-
 # Run locally for development
 docker-compose -f compose.dev.yml up
 ```
 
 ## Deployment Modes
 
-The validator supports three deployment modes:
+The validator supports two deployment modes:
 
 ### Binary Mode (Default)
 Deploys the validator binary and runs it with nohup:
@@ -38,20 +35,14 @@ Deploys the validator binary and manages it as a systemd service:
 ./deploy.sh -s root@validator.example.com:9001 -d systemd
 ```
 
-### Docker Mode
-Deploys using docker-compose with public registry images:
-```bash
-./deploy.sh -s root@validator.example.com:9001 -d docker
-```
-
 ## Files
 
 - `Dockerfile` - Container image definition
 - `build.sh` - Build script for Docker image and binary
 - `deploy.sh` - Multi-mode deployment script
 - `systemd/basilica-validator.service` - Systemd service definition
-- `compose.prod.yml` - Production docker-compose with watchtower
 - `compose.dev.yml` - Development docker-compose with local build
+- `compose.local.yml` - Localnet-oriented docker-compose configuration
 
 ## Configuration
 
@@ -81,7 +72,7 @@ Usage: ./deploy.sh [OPTIONS]
 
 OPTIONS:
     -s, --server USER@HOST:PORT      Server connection
-    -d, --deploy-mode MODE           Deployment mode: binary, systemd, docker (default: binary)
+    -d, --deploy-mode MODE           Deployment mode: binary, systemd (default: binary)
     -c, --config FILE                Config file path (default: config/validator.correct.toml)
     -w, --sync-wallets               Sync local wallets to remote server
     -f, --follow-logs                Stream logs after deployment
@@ -131,18 +122,6 @@ ssh root@validator.example.com -p 9001 "journalctl -u basilica-validator -f"
 
 # Restart service
 ssh root@validator.example.com -p 9001 "systemctl restart basilica-validator"
-```
-
-### Docker Mode
-```bash
-# Check status
-ssh root@validator.example.com -p 9001 "cd /opt/basilica && docker-compose ps"
-
-# View logs
-ssh root@validator.example.com -p 9001 "cd /opt/basilica && docker-compose logs -f"
-
-# Restart containers
-ssh root@validator.example.com -p 9001 "cd /opt/basilica && docker-compose restart"
 ```
 
 ## SSH Keys

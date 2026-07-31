@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.88-slim-bookworm AS builder
+FROM rust:1.97.1-bookworm@sha256:77fac8b98f9f46062bb680b6d25d5bcaabfc400143952ebc572e924bcbedc3fa AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -23,7 +23,7 @@ COPY crates/ ./crates/
 # Fetch dependencies with cache mount
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-registry \
     --mount=type=cache,target=/usr/local/cargo/git,id=basilica-cargo-git \
-    cargo fetch
+    cargo fetch --locked
 
 # Build arguments
 ARG BUILD_MODE=release
@@ -58,25 +58,27 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=basilica-cargo-regist
     fi && \
     if [ "$BUILD_MODE" = "release" ]; then \
         if [ -n "$FEATURES" ]; then \
-            cargo build --release -p basilica-validator --bin basilica-validator --features "$FEATURES"; \
+            cargo build --locked --release -p basilica-validator --bin basilica-validator --features "$FEATURES"; \
         else \
-            cargo build --release -p basilica-validator --bin basilica-validator; \
+            cargo build --locked --release -p basilica-validator --bin basilica-validator; \
         fi; \
     else \
         if [ -n "$FEATURES" ]; then \
-            cargo build -p basilica-validator --bin basilica-validator --features "$FEATURES"; \
+            cargo build --locked -p basilica-validator --bin basilica-validator --features "$FEATURES"; \
         else \
-            cargo build -p basilica-validator --bin basilica-validator; \
+            cargo build --locked -p basilica-validator --bin basilica-validator; \
         fi; \
     fi && \
     # Copy binary out of cache mount to a regular layer
     cp /tmp/target/${BUILD_MODE}/basilica-validator /workspace/basilica-validator
 
 # Runtime image
-FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04
+FROM nvidia/cuda:12.8.0-runtime-ubuntu24.04@sha256:44e43f0e0bcca1fc6fdc775e6002c67834bf78d39eb1fd76825240fc79ba4a49
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && \
+    apt-get install -y --only-upgrade gnupg && \
+    apt-get install -y \
     libssl3 \
     ca-certificates \
     curl \

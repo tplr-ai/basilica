@@ -1,0 +1,65 @@
+title = "Basilica secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Auth0 client IDs are public application identifiers"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^crates/basilica-common/build\.rs$''']
+regexes = ['''AUTH0_CLIENT_ID''']
+
+[[allowlists]]
+description = "Crypto implementation and tests assert generated PEM framing"
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^crates/basilica-common/src/crypto/keys\.rs$''',
+  '''^crates/basilica-common/src/crypto/ed25519\.rs$''',
+  '''^crates/basilica-common/src/crypto/p256\.rs$''',
+  '''^crates/basilica-common/tests/crypto_integration\.rs$''',
+]
+regexes = [
+  '''assert!.*BEGIN PRIVATE KEY''',
+  '''contains.*BEGIN PRIVATE KEY''',
+  '''format!.*BEGIN PRIVATE KEY''',
+]
+
+[[allowlists]]
+description = "Documented cryptography examples use fixed non-secret test values"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''^crates/basilica-common/src/crypto/aead\.rs$''',
+  '''^crates/basilica-sdk/src/types\.rs$''',
+]
+regexes = [
+  '''0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef''',
+  '''abc123def456''',
+]
+
+[[allowlists]]
+description = "Getting-started token is a fixed public placeholder"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^docs/GETTING-STARTED\.md$''']
+regexes = [
+  '''basilica_1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z''',
+  '''Client initialized with token: basilica_1a2b3c4d5e''',
+]
+
+[[allowlists]]
+description = "Exact deterministic localnet identity fixtures are intentionally public"
+paths = [
+  '''^scripts/localnet/ssh-keys/miner_node_key$''',
+  '''^scripts/localnet/wallets/alice/coldkey$''',
+  '''^scripts/localnet/wallets/miner_1/coldkey$''',
+  '''^scripts/localnet/wallets/miner_1/hotkeys/default$''',
+  '''^scripts/localnet/wallets/validator/coldkey$''',
+  '''^scripts/localnet/wallets/validator/hotkeys/default$''',
+]

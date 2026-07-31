@@ -2,18 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
   workflow_dispatch:
-    inputs:
-      build_images:
-        description: Build and push all Docker images
-        required: false
-        default: "false"
-      image_tag:
-        description: Tag to apply to images when building via workflow_dispatch
-        required: false
-        default: "k3_test"
 
 env:
   CARGO_TERM_COLOR: always
@@ -23,6 +14,10 @@ env:
   RUSTUP_MAX_RETRIES: 10
   RUSTFLAGS: "-Clink-arg=-fuse-ld=mold"
   CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: "clang"
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-{1}-{2}', github.workflow, github.event_name, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -43,52 +38,19 @@ jobs:
       - uses: dorny/paths-filter@4512585405083f25c027a35db413c2b3b9006d50 # v2
         id: changes
         with:
-          filters: |
-            validator:
-              - 'crates/basilica-validator/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/validator/**'
-              - 'scripts/gen-key.sh'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            miner:
-              - 'crates/basilica-miner/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/miner/**'
-              - 'scripts/gen-key.sh'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            basilica-cli:
-              - 'crates/basilica-cli/**'
-              - 'crates/basilica-sdk/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-validator/**'
-              - 'crates/basilica-protocol/**'
-              - 'scripts/cli/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            basilica-sdk-python:
-              - 'crates/basilica-sdk-python/**'
-              - 'crates/basilica-sdk/**'
-              - 'crates/basilica-common/**'
-              - 'crates/basilica-validator/**'
-              - 'crates/basilica-protocol/**'
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-            workspace:
-              - 'Cargo.toml'
-              - 'Cargo.lock'
-              - '.github/workflows/**'
+          # Pushes compare the pushed commit range. Pull requests ignore this
+          # input and compare against their PR base.
+          base: ${{ github.event_name == 'push' && github.ref || '' }}
+          filters: .github/ci/path-filters.yml
 
   quick-checks:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: rustfmt, clippy
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup show
+          rustup component add rustfmt clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -124,6 +86,8 @@ jobs:
           tool: nextest
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Check Rust toolchain consistency
+        run: ./scripts/ci/check-rust-toolchain-consistency.sh
       - name: Check basilica-sdk-python version consistency
         # Guard: maturin uses pyproject.toml for the wheel version, while the
         # Rust crate reads Cargo.toml. When these drift, a tag-triggered
@@ -141,10 +105,10 @@ jobs:
           fi
       - name: Quick check builds
         run: |
-          cargo check -p basilica-common -p basilica-protocol
+          cargo check --locked -p basilica-common -p basilica-protocol
       - name: Run clippy on core packages
         run: |
-          cargo clippy -p basilica-common -p basilica-protocol --all-targets -- -D warnings
+          cargo clippy --locked -p basilica-common -p basilica-protocol --all-targets -- -D warnings
 
   # Supply-chain checks: advisories, licenses, bans, sources.
   # Policy lives in `deny.toml`.
@@ -152,7 +116,8 @@ jobs:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - name: cargo deny check
         # Use the official cargo-deny-action: it installs cargo-deny and
         # manages the advisory-db fetch reliably. The direct `cargo deny`
@@ -164,25 +129,29 @@ jobs:
           # Respect `all-features = false` in deny.toml; the action default
           # of `--all-features` would otherwise override it.
           arguments: ""
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@055f5df8c3f65ea01cd41e9dc855becd88953486 # v2
-        with:
-          tool: cargo-audit
-      - name: cargo audit (advisory only)
-        # cargo-audit runs in addition to cargo-deny to surface anything the
-        # policy in deny.toml does not cover (e.g. non-security informational
-        # advisories). Non-blocking for now — tighten after 0.27.0 removes
-        # the subnet stack that inherits the current noise.
-        continue-on-error: true
-        run: cargo audit --deny warnings
+
+  semgrep:
+    name: Semgrep SAST
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/semgrep.yml
+
+  secret-scan:
+    name: Secret Scan
+    permissions:
+      contents: read
+    uses: ./.github/workflows/gitleaks.yml
+
   lint-complex:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: quick-checks
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          components: rustfmt, clippy
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup show
+          rustup component add clippy
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -218,25 +187,20 @@ jobs:
           tool: nextest
       - name: Run clippy on complex packages
         run: |
-          cargo clippy -p basilica-miner --all-targets --all-features -- -D warnings
-          cargo clippy -p basilica-validator --all-targets --all-features -- -D warnings
-          cargo clippy -p basilica-cli --all-targets --all-features -- -D warnings
-          cargo clippy -p basilica-sdk --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-miner --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-validator --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-cli --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p basilica-sdk --all-targets --all-features -- -D warnings
 
   # Build and test validator
   build-validator:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.validator == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -279,8 +243,8 @@ jobs:
       - name: Build and test validator
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p basilica-validator
-          cargo nextest run -p basilica-validator --all-features --no-fail-fast
+          cargo build --locked -p basilica-validator
+          cargo nextest run --locked -p basilica-validator --all-features --no-fail-fast
           ./target/debug/basilica-validator --help
       - name: Clean up space before Docker build
         run: |
@@ -291,28 +255,26 @@ jobs:
           chmod +x scripts/validator/build.sh
           BITTENSOR_NETWORK=finney ./scripts/validator/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
         with:
           image-ref: basilica/validator:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
 
   # Build and test miner
   build-miner:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.miner == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -355,8 +317,8 @@ jobs:
       - name: Build and test miner
         run: |
           export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
-          cargo build -p basilica-miner
-          cargo nextest run -p basilica-miner --lib --no-fail-fast
+          cargo build --locked -p basilica-miner
+          cargo nextest run --locked -p basilica-miner --lib --no-fail-fast
           ./target/debug/basilica-miner --help
       - name: Clean up space before Docker build
         run: |
@@ -367,28 +329,26 @@ jobs:
           chmod +x scripts/miner/build.sh
           BITTENSOR_NETWORK=finney ./scripts/miner/build.sh --no-extract
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IGNOREFILE: .trivyignore.yaml
         with:
           image-ref: basilica/miner:latest
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
 
   # Build and test basilica-cli
   build-cli:
     runs-on: blacksmith-32vcpu-ubuntu-2404
     needs: changes
     if: needs.changes.outputs.basilica-cli == 'true' || needs.changes.outputs.workspace == 'true'
-    strategy:
-      matrix:
-        rust-version: [stable]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: rustfmt
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: "shared-cache"
@@ -424,8 +384,8 @@ jobs:
           tool: nextest
       - name: Build and test basilica-cli
         run: |
-          cargo build -p basilica-cli
-          cargo nextest run -p basilica-cli --all-features --no-fail-fast
+          cargo build --locked -p basilica-cli
+          cargo nextest run --locked -p basilica-cli --all-features --no-fail-fast
           ./target/debug/basilica --help
 
   # Build and test basilica-sdk (Rust)
@@ -498,7 +458,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.32"
+          working-directory: crates/basilica-sdk-python
+
+      - name: Install pinned Rust toolchain
+        run: rustup show
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
@@ -532,29 +499,33 @@ jobs:
           packages: pkg-config libssl-dev xxd mold clang python3-dev
           version: 1.0
 
-      - name: Create virtual environment
-        run: python -m venv .venv
-
-      - name: Install maturin
-        run: |
-          source .venv/bin/activate
-          pip install maturin pytest pytest-asyncio
+      - name: Install locked Python dependencies
+        working-directory: crates/basilica-sdk-python
+        run: uv sync --locked --extra dev --no-install-project
 
       - name: Run Python SDK clippy
         if: matrix.python-version == '3.12'
-        run: cargo clippy -p basilica-sdk-python --all-targets -- -D warnings
+        run: |
+          rustup component add clippy
+          cargo clippy --locked -p basilica-sdk-python --all-targets -- -D warnings
 
       - name: Build and install Python SDK
-        run: |
-          source .venv/bin/activate
-          cd crates/basilica-sdk-python
-          maturin develop --release
+        working-directory: crates/basilica-sdk-python
+        run: uv run --no-sync maturin develop --release --locked
 
       - name: Run Python tests
+        working-directory: crates/basilica-sdk-python
+        # Live tests require external credentials and may create chargeable
+        # deployments. Keep normal CI limited to hermetic unit/regression tests.
         run: |
-          source .venv/bin/activate
-          cd crates/basilica-sdk-python
-          python -m pytest tests/ -v
+          uv run --no-sync python -m pytest tests/ -v \
+            --ignore=tests/test_dns_propagation_e2e.py \
+            --ignore=tests/test_gpu_flavour_preferences.py
+
+      - name: Audit Python dependencies
+        if: matrix.python-version == '3.12'
+        working-directory: crates/basilica-sdk-python
+        run: uv run --no-sync pip-audit --local
 
       - name: Run OpenAI conformance suite
         run: |
@@ -564,18 +535,17 @@ jobs:
           conformance/.venv-conformance/bin/python -m pytest conformance/ -q
 
       - name: Test examples (syntax check)
+        working-directory: crates/basilica-sdk-python
         run: |
-          source .venv/bin/activate
-          cd crates/basilica-sdk-python/examples
-          for example in *.py; do
+          for example in examples/*.py; do
             echo "Checking $example..."
-            python -m py_compile "$example"
+            uv run --no-sync python -m py_compile "$example"
           done
 
       - name: Test import
+        working-directory: crates/basilica-sdk-python
         run: |
-          source .venv/bin/activate
-          python -c 'import basilica; print(f"SDK imported successfully. API URL: {basilica.DEFAULT_API_URL}")'
+          uv run --no-sync python -c 'import basilica; print(f"SDK imported successfully. API URL: {basilica.DEFAULT_API_URL}")'
 
   # Final status check
   ci-success:
@@ -585,130 +555,85 @@ jobs:
       - quick-checks
       - lint-complex
       - security-audit
+      - semgrep
+      - secret-scan
       - build-validator
       - build-miner
       - build-cli
       - build-sdk
       - test-python-sdk
-    if: always()
+    if: ${{ !cancelled() }}
     steps:
       - name: Check if all jobs succeeded
-        run: |
-          if [[ "${{ needs.changes.result }}" == "success" && \
-                "${{ needs.quick-checks.result }}" == "success" && \
-                "${{ needs.lint-complex.result }}" == "success" && \
-                "${{ needs.security-audit.result }}" == "success" && \
-                ("${{ needs.build-validator.result }}" == "success" || "${{ needs.build-validator.result }}" == "skipped") && \
-                ("${{ needs.build-miner.result }}" == "success" || "${{ needs.build-miner.result }}" == "skipped") && \
-                ("${{ needs.build-cli.result }}" == "success" || "${{ needs.build-cli.result }}" == "skipped") && \
-                ("${{ needs.build-sdk.result }}" == "success" || "${{ needs.build-sdk.result }}" == "skipped") && \
-                ("${{ needs.test-python-sdk.result }}" == "success" || "${{ needs.test-python-sdk.result }}" == "skipped") ]]; then
-            echo "All CI checks passed!"
-            exit 0
-          else
-            echo "Some CI checks failed!"
-            exit 1
-          fi
-
-  # Manual: Build and push all images (workflow_dispatch only)
-  build-images:
-    if: |
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.build_images == 'true') ||
-      (github.event_name == 'pull_request' && (
-        contains(github.event.pull_request.title, 'build-images') ||
-        contains(github.event.pull_request.body, 'build-images') ||
-        contains(join(github.event.pull_request.labels.*.name, ' '), 'build-images')
-      ))
-    runs-on: blacksmith-32vcpu-ubuntu-2404
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@ac083cc84672d01c60d5e8561d0a939b697de542 # v1
-
-      - name: Resolve image tag
-        shell: bash
-        run: |
-          TAG="${{ github.event.inputs.image_tag }}"
-          if [[ "$TAG" == TAG=* ]]; then TAG="${TAG#TAG=}"; fi
-          if [[ -z "$TAG" ]]; then TAG="k3_test"; fi
-          echo "TAG=$TAG" >> $GITHUB_ENV
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build validator image
         env:
-          BITTENSOR_NETWORK: finney
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          WORKSPACE_SELECTED: ${{ needs.changes.outputs.workspace }}
+          VALIDATOR_SELECTED: ${{ needs.changes.outputs.validator }}
+          VALIDATOR_RESULT: ${{ needs.build-validator.result }}
+          MINER_SELECTED: ${{ needs.changes.outputs.miner }}
+          MINER_RESULT: ${{ needs.build-miner.result }}
+          CLI_SELECTED: ${{ needs.changes.outputs['basilica-cli'] }}
+          CLI_RESULT: ${{ needs.build-cli.result }}
+          PYTHON_SELECTED: ${{ needs.changes.outputs['basilica-sdk-python'] }}
+          PYTHON_RESULT: ${{ needs.test-python-sdk.result }}
+          QUICK_CHECKS_RESULT: ${{ needs.quick-checks.result }}
+          LINT_COMPLEX_RESULT: ${{ needs.lint-complex.result }}
+          SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
+          SEMGREP_RESULT: ${{ needs.semgrep.result }}
+          SECRET_SCAN_RESULT: ${{ needs.secret-scan.result }}
         run: |
-          ./scripts/validator/build.sh \
-            --image-name ghcr.io/one-covenant/basilica/validator \
-            --image-tag "$TAG" \
-            --no-extract
-      - name: Scan validator image
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
-        with:
-          image-ref: ghcr.io/one-covenant/basilica/validator:${{ env.TAG }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
+          set -euo pipefail
 
-      - name: Push validator image
-        run: |
-          ./scripts/validator/push.sh \
-            --source-image ghcr.io/one-covenant/basilica/validator \
-            --target-image ghcr.io/one-covenant/basilica/validator \
-            --tag "$TAG"
+          require_success() {
+            local job_name="$1"
+            local result="$2"
+            if [[ "$result" != "success" ]]; then
+              echo "::error::$job_name returned '$result'; expected 'success'"
+              return 1
+            fi
+          }
 
-      - name: Build miner image
-        env:
-          BITTENSOR_NETWORK: finney
-        run: |
-          ./scripts/miner/build.sh \
-            --image-name ghcr.io/one-covenant/basilica/miner \
-            --image-tag "$TAG" \
-            --no-extract
-      - name: Scan miner image
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
-        with:
-          image-ref: ghcr.io/one-covenant/basilica/miner:${{ env.TAG }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
+          require_selector() {
+            local selector_name="$1"
+            local value="$2"
+            if [[ "$value" != "true" && "$value" != "false" ]]; then
+              echo "::error::$selector_name has malformed or missing value '$value'"
+              return 1
+            fi
+          }
 
-      - name: Push miner image
-        run: |
-          ./scripts/miner/push.sh \
-            --source-image ghcr.io/one-covenant/basilica/miner \
-            --target-image ghcr.io/one-covenant/basilica/miner \
-            --tag "$TAG"
+          require_lane_result() {
+            local lane_name="$1"
+            local selected="$2"
+            local result="$3"
+            local expected="skipped"
 
-      - name: Build CLI image (single-arch)
-        run: |
-          ./scripts/cli/build.sh \
-            --single-arch \
-            --image-name ghcr.io/one-covenant/basilica/cli \
-            --image-tag "$TAG" \
-            --no-extract
-      - name: Scan CLI image
-        uses: aquasecurity/trivy-action@876cf04c63f65e9799bcf1043b584e72469c7143 # master
-        with:
-          image-ref: ghcr.io/one-covenant/basilica/cli:${{ env.TAG }}
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '0'
-          trivyignores: '.trivyignore.yaml'
+            if [[ "$selected" == "true" || "$WORKSPACE_SELECTED" == "true" ]]; then
+              expected="success"
+            fi
 
-      - name: Push CLI image
-        run: |
-          docker push ghcr.io/one-covenant/basilica/cli:"$TAG"
+            if [[ "$result" != "$expected" ]]; then
+              echo "::error::$lane_name returned '$result'; expected '$expected'"
+              return 1
+            fi
+          }
+
+          require_success "changes" "$CHANGES_RESULT"
+          require_success "quick-checks" "$QUICK_CHECKS_RESULT"
+          require_success "lint-complex" "$LINT_COMPLEX_RESULT"
+          require_success "security-audit" "$SECURITY_AUDIT_RESULT"
+          require_success "semgrep" "$SEMGREP_RESULT"
+          require_success "secret-scan" "$SECRET_SCAN_RESULT"
+
+          require_selector "workspace selector" "$WORKSPACE_SELECTED"
+          require_selector "validator selector" "$VALIDATOR_SELECTED"
+          require_selector "miner selector" "$MINER_SELECTED"
+          require_selector "CLI selector" "$CLI_SELECTED"
+          require_selector "Python SDK selector" "$PYTHON_SELECTED"
+
+          require_lane_result "build-validator" "$VALIDATOR_SELECTED" "$VALIDATOR_RESULT"
+          require_lane_result "build-miner" "$MINER_SELECTED" "$MINER_RESULT"
+          require_lane_result "build-cli" "$CLI_SELECTED" "$CLI_RESULT"
+          require_lane_result "test-python-sdk" "$PYTHON_SELECTED" "$PYTHON_RESULT"
+
+          echo "All CI checks passed!"
