@@ -1,0 +1,213 @@
+"""RL training namespace: GRPO post-training on the Basilica RL Training API.
+
+    >>> from basilica import BasilicaClient
+    >>> client = BasilicaClient()               # BASILICA_API_TOKEN / CLI login
+    >>> client.rl.create_cluster(
+    ...     name="my-pool",
+    ...     base_model="Qwen/Qwen2.5-7B-Instruct",
+    ...     gpu_model="H100",
+    ... )
+    >>> client.rl.wait_cluster("my-pool")
+    >>> job = client.rl.create_job(
+    ...     cluster="my-pool", max_steps=50,
+    ...     reward_name="my-reward", reward_source=REWARD_PY,
+    ...     dataset_name="my-data", dataset_repo="openai/gsm8k",
+    ...     dataset_config="main", dataset_split="train",
+    ...     prompt_column="question", answer_column="answer",
+    ... )
+    >>> final = client.rl.wait_job(job["name"])  # {phase, step, metrics, artifactURI}
+
+THIN WRAPPER over the compiled core (#1509 review round): this module builds
+the ergonomic kwargs into wire dicts and hands them to the Rust binding's
+``rl_*`` methods, which serde-validate against the core's typed DTOs
+(``basilica_sdk::rl`` — the compile-time-shared contract with the server)
+and send through the core transport. That inherits the full auth chain
+(explicit key, BASILICA_API_TOKEN, and the CLI-login token fallback the
+earlier pure-python transport could not reach) and the core's error
+mapping: non-2xx surfaces as ValueError (bad request), PermissionError
+(authz), ConnectionError (transport), FileNotFoundError (not found), or
+RuntimeError (server error), each carrying the server's message verbatim.
+
+The ``body=`` escape hatch on every create call sends a raw dict; unknown
+fields survive the typed round-trip verbatim (serde-flatten catch-alls in
+the core DTOs), so server-side schema additions never strand you on an SDK
+release.
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from typing import Any, Optional
+
+_TERMINAL_JOB_PHASES = frozenset({"Succeeded", "Failed", "TimedOut"})
+
+
+def _drop_none(d: dict) -> dict:
+    return {k: v for k, v in d.items() if v is not None}
+
+
+class RlNamespace:
+    """The ``client.rl`` surface. Constructed by BasilicaClient; hold no
+    credentials here — the compiled core owns auth and transport."""
+
+    def __init__(self, core: Any):
+        self._core = core
+
+    # -- clusters ----------------------------------------------------------
+
+    def create_cluster(
+        self,
+        *,
+        base_model: str,
+        gpu_model: str,
+        trainer_gpus: int = 4,
+        rollout_gpus: int = 4,
+        name: Optional[str] = None,
+        min_memory_gb: Optional[int] = None,
+        idle_ttl: Optional[str] = None,
+        body: Optional[dict] = None,
+    ) -> dict:
+        """POST /rl/clusters — a warm trainer+rollout GPU pool.
+
+        Certified shapes: 4+4 (H100 for <16B models, H200-class for >=16B —
+        admission rejects bad pairings with an actionable message).
+        ``body`` overrides everything (raw wire dict, escape hatch).
+        """
+        if body is None:
+
+            def fleet(count: int) -> dict:
+                return {
+                    "replicas": 1,
+                    "gpu": _drop_none(
+                        {"model": gpu_model, "count": count, "minMemoryGb": min_memory_gb}
+                    ),
+                }
+
+            body = _drop_none(
+                {
+                    "name": name,
+                    "baseModel": base_model,
+                    "trainer": fleet(trainer_gpus),
+                    "rollout": fleet(rollout_gpus),
+                    "idleTtl": idle_ttl,
+                }
+            )
+        return json.loads(self._core.rl_create_cluster(json.dumps(body)))
+
+    def get_cluster(self, name: str) -> dict:
+        return json.loads(self._core.rl_get_cluster(name))
+
+    def wait_cluster(
+        self, name: str, timeout_s: float = 1800.0, poll_s: float = 15.0
+    ) -> dict:
+        """Poll until phase == Ready (raises TimeoutError otherwise)."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            cluster = self.get_cluster(name)
+            if cluster.get("phase") == "Ready":
+                return cluster
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"cluster {name!r} not Ready after {timeout_s}s "
+                    f"(last phase: {cluster.get('phase')!r})"
+                )
+            time.sleep(poll_s)
+
+    # -- jobs --------------------------------------------------------------
+
+    def create_job(
+        self,
+        *,
+        cluster: str,
+        max_steps: int,
+        name: Optional[str] = None,
+        algorithm: str = "grpo",
+        # custom reward (user:<name> + inline source); omit for the builtin
+        reward_name: Optional[str] = None,
+        reward_source: Optional[str] = None,
+        judge: bool = False,
+        judge_model: Optional[str] = None,
+        # custom dataset (public HF repo + column mapping); omit for builtin
+        dataset_name: Optional[str] = None,
+        dataset_repo: Optional[str] = None,
+        dataset_split: Optional[str] = None,
+        dataset_config: Optional[str] = None,
+        prompt_column: Optional[str] = None,
+        answer_column: Optional[str] = None,
+        lr: Optional[str] = None,
+        body: Optional[dict] = None,
+    ) -> dict:
+        """POST /rl/jobs — a GRPO training job on a Ready cluster.
+
+        The reward is any deterministic stdlib-Python
+        ``reward(prompt, completion, **ctx) -> float``; it runs in an
+        isolated credential-free pod. ``judge=True`` exposes
+        ``ctx["judge"](prompt)`` backed by an in-cluster judge model
+        (requires a custom reward). ``body`` overrides everything.
+        """
+        if body is None:
+            reward = None
+            if reward_name is not None:
+                if reward_source is None:
+                    raise ValueError("reward_source is required with reward_name")
+                reward = {"ref": f"user:{reward_name}", "source": reward_source}
+                if judge or judge_model:
+                    reward["judge"] = _drop_none({"model": judge_model}) or {}
+            elif judge or judge_model:
+                raise ValueError(
+                    "judge requires a custom reward (it is called from your reward code)"
+                )
+            dataset = None
+            if dataset_name is not None:
+                dataset = {
+                    "ref": f"user:{dataset_name}",
+                    "hf": _drop_none(
+                        {
+                            "repo": dataset_repo,
+                            "config": dataset_config,
+                            "split": dataset_split,
+                            "promptColumn": prompt_column,
+                            "answerColumn": answer_column,
+                        }
+                    ),
+                }
+            body = _drop_none(
+                {
+                    "clusterRef": cluster,
+                    "name": name,
+                    "algorithm": algorithm,
+                    "maxSteps": max_steps,
+                    "reward": reward,
+                    "dataset": dataset,
+                    "lr": lr,
+                }
+            )
+        return json.loads(self._core.rl_create_job(json.dumps(body)))
+
+    def get_job(self, name: str) -> dict:
+        return json.loads(self._core.rl_get_job(name))
+
+    def wait_job(
+        self, name: str, timeout_s: float = 6 * 3600.0, poll_s: float = 30.0
+    ) -> dict:
+        """Poll until the job is terminal (Succeeded/Failed/TimedOut) and
+        return the final document either way — check ``phase`` yourself;
+        raising on Failed would hide the failure detail behind an
+        exception."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            job = self.get_job(name)
+            if job.get("phase") in _TERMINAL_JOB_PHASES:
+                return job
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"job {name!r} not terminal after {timeout_s}s "
+                    f"(last phase: {job.get('phase')!r})"
+                )
+            time.sleep(poll_s)
+
+    # -- manifest (declarative: one document -> cluster and/or job) --------
+
+    def submit_manifest(self, manifest: dict) -> dict:
+        return json.loads(self._core.rl_submit_manifest(json.dumps(manifest)))

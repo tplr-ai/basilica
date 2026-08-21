@@ -99,6 +99,84 @@ impl BasilicaClient {
         Ok(response.into())
     }
 
+    // ===== RL Training API (GRPO post-training) =====
+    //
+    // JSON-string boundary by design (the line-317 precedent: nine nested
+    // pyclass mirrors would be pure boilerplate): the Python side builds the
+    // wire dict, this layer serde-validates it against the CORE's typed DTOs
+    // (basilica_sdk::rl — the compile-time-shared contract with the server)
+    // and sends through the core client, inheriting its auth chain including
+    // the CLI-login token fallback. Responses return as JSON for the thin
+    // Python wrapper to expose as dicts.
+
+    /// Create a warm RL cluster. `request_json` must match
+    /// basilica_sdk::rl::CreateRlClusterRequest.
+    fn rl_create_cluster(&self, py: Python, request_json: String) -> PyResult<String> {
+        let request: basilica_sdk::rl::CreateRlClusterRequest = serde_json::from_str(&request_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid RL cluster request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.create_rl_cluster(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Get an RL cluster's status (phase, modelLoaded, activeJobName).
+    fn rl_get_cluster(&self, py: Python, name: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_cluster(&name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Submit a GRPO training job. `request_json` must match
+    /// basilica_sdk::rl::CreateRlJobRequest.
+    fn rl_create_job(&self, py: Python, request_json: String) -> PyResult<String> {
+        let request: basilica_sdk::rl::CreateRlJobRequest = serde_json::from_str(&request_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid RL job request: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.create_rl_job(request).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Get an RL job's status (phase, step, metrics, artifactURI).
+    fn rl_get_job(&self, py: Python, name: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.get_rl_job(&name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Submit a declarative RL manifest (one document -> cluster and/or job).
+    fn rl_submit_manifest(&self, py: Python, manifest_json: String) -> PyResult<String> {
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid RL manifest: {e}")))?;
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.submit_rl_manifest(manifest).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// List available nodes
     ///
     /// Args:
