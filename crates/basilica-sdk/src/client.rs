@@ -1713,7 +1713,7 @@ mod tests {
                 "delete_api_keys": false,
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "cutoff": "2026-07-04T00:00:00Z",
+                "revoked_at": "2026-07-04T00:00:00Z",
                 "api_keys_revoked": 0,
             })))
             .mount(&mock_server)
@@ -1727,7 +1727,10 @@ mod tests {
 
         let response = client.revoke_all_sessions(false).await.unwrap();
 
-        assert_eq!(response.cutoff.to_rfc3339(), "2026-07-04T00:00:00+00:00");
+        assert_eq!(
+            response.revoked_at.to_rfc3339(),
+            "2026-07-04T00:00:00+00:00"
+        );
         assert_eq!(response.api_keys_revoked, 0);
     }
 
@@ -1742,7 +1745,7 @@ mod tests {
                 "delete_api_keys": true,
             })))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "cutoff": "2026-07-04T00:00:00Z",
+                "revoked_at": "2026-07-04T00:00:00Z",
                 "api_keys_revoked": 3,
             })))
             .mount(&mock_server)
@@ -1756,7 +1759,10 @@ mod tests {
 
         let response = client.revoke_all_sessions(true).await.unwrap();
 
-        assert_eq!(response.cutoff.to_rfc3339(), "2026-07-04T00:00:00+00:00");
+        assert_eq!(
+            response.revoked_at.to_rfc3339(),
+            "2026-07-04T00:00:00+00:00"
+        );
         assert_eq!(response.api_keys_revoked, 3);
     }
 
