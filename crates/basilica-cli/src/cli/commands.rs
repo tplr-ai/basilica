@@ -210,7 +210,19 @@ pub enum Commands {
     },
 
     /// Log out of Basilica
-    Logout,
+    Logout {
+        /// Log out from all sessions for the current Basilica user
+        #[arg(long)]
+        all_sessions: bool,
+
+        /// Also revoke Basilica API keys; requires --all-sessions
+        #[arg(long, requires = "all_sessions")]
+        delete_api_keys: bool,
+
+        /// Skip the confirmation prompt for --all-sessions
+        #[arg(long, short = 'y', requires = "all_sessions")]
+        yes: bool,
+    },
 
     /// Test authentication token
     #[cfg(debug_assertions)]
@@ -484,7 +496,7 @@ impl Commands {
 
             // Authentication commands don't require auth
             Commands::Login { .. }
-            | Commands::Logout
+            | Commands::Logout { .. }
             | Commands::Upgrade { .. }
             | Commands::Skills(_) => false,
 
@@ -1643,6 +1655,98 @@ mod train_command_tests {
     use clap::error::ErrorKind;
     use clap::{CommandFactory, Parser};
     use std::str::FromStr;
+
+    #[test]
+    fn logout_parses_local_logout() {
+        let args = Args::try_parse_from(["basilica", "logout"]).unwrap();
+
+        match args.command {
+            Commands::Logout {
+                all_sessions,
+                delete_api_keys,
+                yes,
+            } => {
+                assert!(!all_sessions);
+                assert!(!delete_api_keys);
+                assert!(!yes);
+            }
+            other => panic!("expected logout command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn logout_parses_all_sessions_logout() {
+        let args = Args::try_parse_from(["basilica", "logout", "--all-sessions"]).unwrap();
+
+        match args.command {
+            Commands::Logout {
+                all_sessions,
+                delete_api_keys,
+                yes,
+            } => {
+                assert!(all_sessions);
+                assert!(!delete_api_keys);
+                assert!(!yes);
+            }
+            other => panic!("expected logout command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn logout_parses_all_sessions_with_api_key_deletion() {
+        let args =
+            Args::try_parse_from(["basilica", "logout", "--all-sessions", "--delete-api-keys"])
+                .unwrap();
+
+        match args.command {
+            Commands::Logout {
+                all_sessions,
+                delete_api_keys,
+                yes,
+            } => {
+                assert!(all_sessions);
+                assert!(delete_api_keys);
+                assert!(!yes);
+            }
+            other => panic!("expected logout command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn logout_rejects_api_key_deletion_without_all_sessions() {
+        let err = Args::try_parse_from(["basilica", "logout", "--delete-api-keys"]).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn logout_parses_all_sessions_yes() {
+        let args = Args::try_parse_from(["basilica", "logout", "--all-sessions", "--yes"]).unwrap();
+
+        match args.command {
+            Commands::Logout {
+                all_sessions, yes, ..
+            } => {
+                assert!(all_sessions);
+                assert!(yes);
+            }
+            other => panic!("expected logout command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn logout_rejects_yes_without_all_sessions() {
+        let err = Args::try_parse_from(["basilica", "logout", "--yes"]).unwrap_err();
+
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn logout_does_not_require_global_auth_retry() {
+        let args = Args::try_parse_from(["basilica", "logout", "--all-sessions"]).unwrap();
+
+        assert!(!args.command.requires_auth());
+    }
 
     #[test]
     fn exec_parses_optional_timeout_seconds() {

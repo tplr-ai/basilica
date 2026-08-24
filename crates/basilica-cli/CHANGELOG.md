@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `basilica logout --all-sessions` can now revoke all active login sessions for
+  the current user, with `--delete-api-keys` available for emergency account
+  lockdown when API keys may also need to be revoked.
+
 ## [0.33.0] - 2026-07-14
 
 ### Added

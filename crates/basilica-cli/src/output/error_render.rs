@@ -3,7 +3,13 @@
 //! itself stays renderer-agnostic and does not need to implement `Serialize`.
 
 use crate::error::CliError;
+use basilica_sdk::error::ApiError;
+use color_eyre::eyre::{eyre, Report};
+use color_eyre::Section;
 use std::io::Write;
+
+const REVOKED_TOKEN_ERROR: &str = "your saved login token has been revoked";
+const REVOKED_TOKEN_HINT: &str = "Run `basilica login` to sign in again";
 
 #[derive(Copy, Clone, Debug)]
 pub enum RenderMode {
@@ -18,8 +24,31 @@ pub fn render_error(err: &CliError, mode: RenderMode, w: &mut dyn Write) -> std:
     }
 }
 
+pub fn into_report(err: CliError) -> Report {
+    match err {
+        CliError::Api(ApiError::Authentication { kind, .. }) if kind.is_revoked_token() => {
+            eyre!(REVOKED_TOKEN_ERROR).suggestion(REVOKED_TOKEN_HINT)
+        }
+        CliError::MissingInput { field, hint } => {
+            eyre!("missing input for '{}'", field).suggestion(hint)
+        }
+        CliError::MissingPrerequisite { field, hint } => {
+            eyre!("missing prerequisite for '{}'", field).suggestion(hint)
+        }
+        CliError::Internal(report) => report,
+        other => eyre!(other),
+    }
+}
+
 fn render_json(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
     let payload = match err {
+        CliError::Api(ApiError::Authentication { kind, .. }) if kind.is_revoked_token() => {
+            serde_json::json!({
+                "error": "authentication_revoked",
+                "message": REVOKED_TOKEN_ERROR,
+                "hint": REVOKED_TOKEN_HINT,
+            })
+        }
         CliError::MissingInput { field, hint } => serde_json::json!({
             "error": "missing_input",
             "field": field,
@@ -45,6 +74,10 @@ fn render_json(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
 
 fn render_human(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
     match err {
+        CliError::Api(ApiError::Authentication { kind, .. }) if kind.is_revoked_token() => {
+            writeln!(w, "error: {REVOKED_TOKEN_ERROR}")?;
+            writeln!(w, "hint: {REVOKED_TOKEN_HINT}")
+        }
         CliError::CommandExit { message, .. } => match message {
             Some(message) => writeln!(w, "{}", message),
             None => Ok(()),
@@ -65,6 +98,7 @@ fn render_human(err: &CliError, w: &mut dyn Write) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use basilica_sdk::error::AuthenticationErrorKind;
     use color_eyre::eyre::eyre;
 
     #[test]
@@ -106,6 +140,37 @@ mod tests {
         assert!(s.contains("missing input"));
         assert!(s.contains("rental"));
         assert!(s.contains("<rental-name-or-id>"));
+    }
+
+    #[test]
+    fn human_render_revoked_token_guides_relogin() {
+        let err = CliError::Api(ApiError::Authentication {
+            message: "Token has been revoked".into(),
+            kind: AuthenticationErrorKind::RevokedToken,
+        });
+        let mut buf = Vec::new();
+
+        render_error(&err, RenderMode::Human, &mut buf).unwrap();
+
+        let s = String::from_utf8(buf).unwrap();
+        assert!(s.contains("login token has been revoked"));
+        assert!(s.contains("basilica login"));
+        assert!(!s.contains("internet connection"));
+    }
+
+    #[test]
+    fn json_render_revoked_token_guides_relogin() {
+        let err = CliError::Api(ApiError::Authentication {
+            message: "Token has been revoked".into(),
+            kind: AuthenticationErrorKind::RevokedToken,
+        });
+        let mut buf = Vec::new();
+
+        render_error(&err, RenderMode::Json, &mut buf).unwrap();
+
+        let v: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+        assert_eq!(v["error"], "authentication_revoked");
+        assert!(v["hint"].as_str().unwrap().contains("basilica login"));
     }
 
     #[test]

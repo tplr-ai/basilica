@@ -797,7 +797,7 @@ impl BasilicaClient {
             ApiError::NotFound { resource } => {
                 PyKeyError::new_err(format!("Not found: {}", resource))
             }
-            ApiError::Authentication { message } | ApiError::MissingAuthentication { message } => {
+            ApiError::Authentication { message, .. } | ApiError::MissingAuthentication { message } => {
                 PyPermissionError::new_err(format!("Authentication error: {}. Please provide a valid API key or set BASILICA_API_TOKEN environment variable.", message))
             }
             ApiError::Authorization { message } => PyPermissionError::new_err(message),

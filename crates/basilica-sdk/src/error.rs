@@ -3,6 +3,32 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Classification for authentication failures returned by the API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthenticationErrorKind {
+    /// Saved token was explicitly revoked and the user must log in again.
+    RevokedToken,
+    /// Generic expired, invalid, or otherwise unusable authentication.
+    Other,
+}
+
+impl AuthenticationErrorKind {
+    /// Classify an API authentication error from its structured code.
+    pub fn from_api_error(code: &str, message: &str) -> Self {
+        match code {
+            "BASILICA_API_AUTH_REVOKED" => Self::RevokedToken,
+            // Legacy API responses used the generic auth code for revoked tokens.
+            _ if message.eq_ignore_ascii_case("Token has been revoked") => Self::RevokedToken,
+            _ => Self::Other,
+        }
+    }
+
+    /// Whether this authentication error means the saved token was revoked.
+    pub fn is_revoked_token(self) -> bool {
+        matches!(self, Self::RevokedToken)
+    }
+}
+
 /// Main error type for the Basilica SDK
 #[derive(Debug, Error)]
 pub enum ApiError {
@@ -16,7 +42,10 @@ pub enum ApiError {
 
     /// Authentication error (expired/invalid token)
     #[error("Authentication error: {message}")]
-    Authentication { message: String },
+    Authentication {
+        message: String,
+        kind: AuthenticationErrorKind,
+    },
 
     /// Authorization error
     #[error("Authorization error: {message}")]

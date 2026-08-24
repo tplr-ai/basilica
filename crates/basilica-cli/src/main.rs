@@ -77,13 +77,29 @@ async fn run_async(args: Args) -> Result<()> {
     // Run and handle errors explicitly to show suggestions
     if let Err(err) = args.run().await {
         let exit_code = err.exit_code();
-        let mode = if json {
-            basilica_cli::output::RenderMode::Json
-        } else {
-            basilica_cli::output::RenderMode::Human
-        };
-        let _ = basilica_cli::output::render_error(&err, mode, &mut std::io::stderr());
-        std::process::exit(exit_code);
+
+        if json {
+            let _ = basilica_cli::output::render_error(
+                &err,
+                basilica_cli::output::RenderMode::Json,
+                &mut std::io::stderr(),
+            );
+            std::process::exit(exit_code);
+        }
+
+        // CommandExit carries a child process's status and renders its own bare
+        // message, so it keeps the plain renderer and its own exit code.
+        // Everything else goes through the report, which carries suggestions.
+        if matches!(err, basilica_cli::CliError::CommandExit { .. }) {
+            let _ = basilica_cli::output::render_error(
+                &err,
+                basilica_cli::output::RenderMode::Human,
+                &mut std::io::stderr(),
+            );
+            std::process::exit(exit_code);
+        }
+
+        return Err(basilica_cli::output::into_report(err));
     }
 
     Ok(())
