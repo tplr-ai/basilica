@@ -7,7 +7,6 @@ use super::refresh::refresh_access_token;
 use super::token_store::TokenStore;
 use super::types::{get_sdk_data_dir, AuthError, AuthMethod, AuthResult, TokenSet};
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
@@ -19,9 +18,6 @@ pub struct TokenManager {
 }
 
 impl TokenManager {
-    /// Pre-emptive refresh threshold (60 minutes before expiry)
-    const REFRESH_THRESHOLD: Duration = Duration::from_secs(3600);
-
     /// Create a new token manager with direct tokens
     pub fn new_direct(access_token: String, refresh_token: String) -> Self {
         let tokens = TokenSet::new(access_token, refresh_token);
@@ -108,12 +104,10 @@ impl TokenManager {
     }
 
     /// Check if token should be refreshed
+    ///
+    /// Defers to `TokenSet`, so this manager and the CLI renew on the same
+    /// schedule instead of each carrying its own threshold.
     fn should_refresh(&self, token_set: &TokenSet) -> bool {
-        if token_set.is_expired() {
-            return true;
-        }
-
-        // Pre-emptive refresh if expiring within threshold
-        token_set.expires_within(Self::REFRESH_THRESHOLD)
+        token_set.is_expired() || token_set.needs_refresh()
     }
 }
