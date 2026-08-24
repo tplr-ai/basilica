@@ -33,6 +33,18 @@ ignore = [
     "RUSTSEC-2026-0099",  # wildcard-CN name constraints accepted
     "RUSTSEC-2026-0104",  # CRL parsing reachable panic; 0.101.x has no upstream patch (added 2026-04-23)
 
+    # h2 0.3.x reaches us only through hyper 0.14, which is pulled by the same
+    # axum 0.6 / tonic 0.10 / kube 0.88 / reqwest 0.11 stack as the entries
+    # above. The fix is >=0.4.16, a different major line, and 0.3 has had no
+    # backport since 0.3.27 (July 2025), so this cannot be resolved by a bump —
+    # it goes when that stack does, in the 0.27.0 subnet cleanup.
+    #
+    # The id form is the only one that applies to vulnerabilities; `crate = ...`
+    # covers yanked crates only. Masking by id is acceptable here because this
+    # advisory is defined as "fixed in >=0.4.16", so it can never match the
+    # 0.4.17 we pin in this same change — only the unfixable 0.3.x path.
+    "RUSTSEC-2026-0258",  # h2 unbounded empty DATA frames (0.3.x only)
+
     # Unmaintained transitives through the subnet stack. Treated as advisories
     # because cargo-deny surfaces them; functional risk is low.
     "RUSTSEC-2024-0436",  # paste unmaintained

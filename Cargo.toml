@@ -133,7 +133,7 @@ tonic-health = "0.10.2"
 governor = "0.6"
 jsonwebtoken = "9.2"
 async-stream = "0.3"
-lru = "0.16"
+lru = "0.18"
 eventsource-stream = "0.2"
 fastrand = "2.0"
 aws-config = { version = "1.0", features = ["behavior-version-latest"] }
@@ -162,7 +162,11 @@ shellexpand = "3.1"
 etcetera = "0.8"
 color-eyre = "0.6"
 oauth2 = "4.4"
-webbrowser = "0.8"
+# `hardened` rejects non-HTTP(S) URLs before they reach the OS handler. Both
+# call sites open an https URL (the Auth0 authorize page and the Stripe
+# checkout page), so the restriction costs nothing and closes the argument-
+# injection class described in GHSA-2ph8-5cr8-hr33.
+webbrowser = { version = "1.2", features = ["hardened"] }
 
 # Python bindings
 # abi3-py310 = stable ABI for Python 3.10+, works with 3.10, 3.11, 3.12, etc.
