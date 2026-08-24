@@ -1,0 +1,78 @@
+name: Semgrep SAST
+
+on:
+  workflow_call:
+  schedule:
+    - cron: "37 4 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('semgrep-pr-{0}', github.event.pull_request.number) || format('semgrep-{0}-{1}', github.event_name, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  advisory:
+    name: semgrep/rust-advisory
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    container:
+      image: semgrep/semgrep:1.170.1@sha256:98c2572fced2474539fd27cab3207ebd8e95e4e7aab4c3b381fdc5e2641d9941
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout pinned Semgrep CE rules
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          repository: semgrep/semgrep-rules
+          ref: 81634cfc9e68dc5f238a8062909a60ba34500648
+          path: .semgrep-community-rules
+          persist-credentials: false
+
+      - name: Scan Rust with Semgrep CE
+        env:
+          BASELINE_COMMIT: ${{ github.event.pull_request.base.sha }}
+          SEMGREP_ENABLE_VERSION_CHECK: "0"
+          SEMGREP_SEND_METRICS: "off"
+        run: |
+          set -- scan \
+            --oss-only \
+            --no-error \
+            --verbose \
+            --metrics off \
+            --disable-version-check \
+            --config .semgrep-community-rules/rust \
+            --sarif-output semgrep.sarif
+
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            set -- "$@" --baseline-commit "$BASELINE_COMMIT"
+          fi
+
+          semgrep "$@" .
+
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: semgrep-sarif-${{ github.run_id }}
+          path: semgrep.sarif
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload SARIF to GitHub code scanning
+        if: >-
+          github.event_name != 'pull_request' ||
+          (github.event.pull_request.head.repo.full_name == github.repository &&
+          github.actor != 'dependabot[bot]')
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep-ce-rust-advisory

@@ -42,7 +42,7 @@ mod tests {
             // Seed miner_nodes table with online status (unique IP per miner)
             let uid = profile.miner_uid.as_u16();
             let node_ip = format!("10.0.{}.{}", uid / 256, uid % 256);
-            let node_key = format!("{}:{}", &miner_id, &node_id);
+            let node_key = format!("{}:{}", miner_id, node_id);
             sqlx::query(
                 "INSERT OR REPLACE INTO miner_nodes (id, miner_id, node_id, ssh_endpoint, node_ip, gpu_count, status, created_at)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)"

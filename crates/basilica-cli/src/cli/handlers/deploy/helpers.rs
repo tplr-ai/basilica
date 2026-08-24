@@ -233,16 +233,19 @@ pub fn print_share_token_info(token: &str, share_url: &str) {
 }
 
 /// Print summons table
-pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
+pub fn print_deployments_table(
+    deployments: &[DeploymentSummary],
+    output: crate::cli::commands::ResolvedOutput,
+) {
     if deployments.is_empty() {
         print_info("No summons found");
         return;
     }
 
-    use tabled::{settings::Style, Table, Tabled};
+    use tabled::{Table, Tabled};
 
     #[derive(Tabled)]
-    struct Row {
+    struct WideRow {
         #[tabled(rename = "Name")]
         name: String,
         #[tabled(rename = "State")]
@@ -259,9 +262,9 @@ pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
         created: String,
     }
 
-    let rows: Vec<Row> = deployments
+    let wide_rows: Vec<WideRow> = deployments
         .iter()
-        .map(|d| Row {
+        .map(|d| WideRow {
             name: display_name(&d.friendly_name, &d.instance_name).to_string(),
             state: d.state.clone(),
             access: if d.public {
@@ -276,13 +279,140 @@ pub fn print_deployments_table(deployments: &[DeploymentSummary]) {
             },
             replicas: format!("{}/{}", d.replicas.ready, d.replicas.desired),
             url: d.url.clone(),
-            created: crate::output::table_output::format_timestamp(&d.created_at),
+            created: crate::output::table_output::format_created_str(&d.created_at),
         })
         .collect();
 
-    let mut table = Table::new(rows);
-    table.with(Style::modern());
-    println!("{table}");
+    #[derive(Tabled)]
+    struct CompactRow {
+        #[tabled(rename = "Name")]
+        name: String,
+        #[tabled(rename = "State")]
+        state: String,
+        #[tabled(rename = "URL")]
+        url: String,
+        #[tabled(rename = "Replicas")]
+        replicas: String,
+        #[tabled(rename = "Age")]
+        age: String,
+    }
+
+    let context = crate::output::table_output::RenderContext::stdout();
+    let full_compact_rows = deployments.iter().map(|deployment| CompactRow {
+        name: display_name(&deployment.friendly_name, &deployment.instance_name).to_string(),
+        state: deployment.state.clone(),
+        url: deployment.url.clone(),
+        replicas: format!(
+            "{}/{}",
+            deployment.replicas.ready, deployment.replicas.desired
+        ),
+        age: crate::output::table_output::format_age_str(&deployment.created_at, context.now),
+    });
+    let name_width = deployments
+        .iter()
+        .map(|deployment| {
+            console::measure_text_width(display_name(
+                &deployment.friendly_name,
+                &deployment.instance_name,
+            ))
+        })
+        .max();
+    let natural_url_width = deployments
+        .iter()
+        .map(|deployment| console::measure_text_width(&deployment.url))
+        .max()
+        .unwrap_or(3);
+    let mut compact_table = Table::new(full_compact_rows);
+    compact_table.with(tabled::settings::Style::modern());
+    let url_budget = matches!(
+        output,
+        crate::cli::commands::ResolvedOutput::Auto | crate::cli::commands::ResolvedOutput::Compact
+    )
+    .then(|| {
+        compact_url_budget(
+            context,
+            compact_table.total_width(),
+            name_width,
+            natural_url_width,
+        )
+    })
+    .flatten();
+    if let Some(max_visible) = url_budget {
+        let linked_rows = deployments.iter().map(|deployment| CompactRow {
+            name: display_name(&deployment.friendly_name, &deployment.instance_name).to_string(),
+            state: deployment.state.clone(),
+            url: compact_deployment_url(&deployment.url, Some(max_visible)),
+            replicas: format!(
+                "{}/{}",
+                deployment.replicas.ready, deployment.replicas.desired
+            ),
+            age: crate::output::table_output::format_age_str(&deployment.created_at, context.now),
+        });
+        compact_table = Table::new(linked_rows);
+    }
+    let rendered = crate::output::table_output::render_table_with_context(
+        Table::new(wide_rows),
+        Some(compact_table),
+        output,
+        context,
+        name_width,
+    );
+    println!("{rendered}");
+}
+
+const MIN_COMPACT_URL_WIDTH: usize = 12;
+
+fn compact_url_budget(
+    context: crate::output::table_output::RenderContext,
+    compact_table_width: usize,
+    natural_name_width: Option<usize>,
+    natural_url_width: usize,
+) -> Option<usize> {
+    if !context.is_tty {
+        return None;
+    }
+    let terminal_width = context.width?;
+    let reducible_name_width = natural_name_width
+        .unwrap_or_default()
+        .saturating_sub(crate::output::table_output::MIN_NAME_WIDTH);
+    let minimum_table_width = compact_table_width.saturating_sub(reducible_name_width);
+    let overflow = minimum_table_width.saturating_sub(terminal_width);
+
+    (overflow > 0).then(|| {
+        natural_url_width
+            .saturating_sub(overflow)
+            .max(MIN_COMPACT_URL_WIDTH)
+    })
+}
+
+fn compact_deployment_url(value: &str, max_visible: Option<usize>) -> String {
+    let Some(max_visible) = max_visible else {
+        return value.to_string();
+    };
+    if console::measure_text_width(value) <= max_visible {
+        return value.to_string();
+    }
+
+    let Ok(url) = url::Url::parse(value) else {
+        return value.to_string();
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return value.to_string();
+    }
+    let Some(host) = url.host_str() else {
+        return value.to_string();
+    };
+
+    let compact = format!("{}://{host}/…", url.scheme());
+    let label = if console::measure_text_width(&compact) <= max_visible {
+        compact
+    } else {
+        let mut shortened: String = compact.chars().take(max_visible - 1).collect();
+        shortened.push('…');
+        shortened
+    };
+
+    crate::output::table_output::link_cell(&label, url.as_str())
 }
 
 /// Print summons details
@@ -680,6 +810,67 @@ mod tests {
     }
 
     #[test]
+    fn compact_url_keeps_host_visible_and_respects_cap() {
+        let url = "https://my-service.deployments.basilica.ai/a/very/long/path?mode=stream";
+        let compact = compact_deployment_url(url, Some(36));
+        assert!(compact.contains(&format!("\x1b]8;;{url}\x1b\\")));
+        assert!(compact.contains('…'));
+        assert!(tabled::grid::util::string::get_line_width(&compact) <= 36);
+        assert!(compact.ends_with("\x1b]8;;\x1b\\"));
+    }
+
+    #[test]
+    fn compact_url_caps_pathological_long_hosts() {
+        let url = "https://this-is-an-unusually-long-subdomain-for-a-deployment.basilica.ai/path";
+        let compact = compact_deployment_url(url, Some(36));
+        assert!(compact.contains(&format!("\x1b]8;;{url}\x1b\\")));
+        assert!(tabled::grid::util::string::get_line_width(&compact) <= 36);
+        assert!(compact.contains('…'));
+    }
+
+    #[test]
+    fn compact_url_keeps_short_urls_plain() {
+        let url = "https://app.basilica.ai";
+        assert_eq!(compact_deployment_url(url, Some(36)), url);
+    }
+
+    #[test]
+    fn compact_url_keeps_non_tty_output_complete_and_plain() {
+        let url = "https://my-service.deployments.basilica.ai/a/very/long/path?mode=stream";
+        let compact = compact_deployment_url(url, None);
+        assert_eq!(compact, url);
+        assert!(!compact.contains('\x1b'));
+    }
+
+    #[test]
+    fn compact_url_does_not_link_non_http_targets() {
+        let url = "ftp://downloads.example.test/a/very/long/archive/location/file.tar.zst";
+        let compact = compact_deployment_url(url, Some(36));
+        assert_eq!(compact, url);
+        assert!(!compact.contains('\x1b'));
+    }
+
+    #[test]
+    fn compact_url_budget_preserves_url_when_name_can_absorb_overflow() {
+        let context = crate::output::table_output::RenderContext {
+            is_tty: true,
+            width: Some(110),
+            now: chrono::DateTime::UNIX_EPOCH,
+        };
+        assert_eq!(compact_url_budget(context, 120, Some(40), 60), None);
+    }
+
+    #[test]
+    fn compact_url_budget_uses_only_the_unavoidable_overflow() {
+        let context = crate::output::table_output::RenderContext {
+            is_tty: true,
+            width: Some(80),
+            now: chrono::DateTime::UNIX_EPOCH,
+        };
+        assert_eq!(compact_url_budget(context, 120, Some(40), 60), Some(52));
+    }
+
+    #[test]
     fn test_sanitize_ansi_mixed_content() {
         // Mix of allowed SGR and disallowed CSI
         let input = "\x1b[31mRed\x1b[0m \x1b[2JCleared \x1b[32mGreen\x1b[0m";
@@ -704,6 +895,7 @@ mod tests {
                 ready: 0,
             },
             created_at: "".into(),
+            public: true,
             updated_at: None,
             pods: None,
             phase: Some("starting".into()),

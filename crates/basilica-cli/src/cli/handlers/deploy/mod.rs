@@ -1,6 +1,6 @@
 //! Deploy command handlers
 
-use crate::cli::commands::{DeployAction, DeployCommand};
+use crate::cli::commands::{DeployAction, DeployCommand, ResolvedOutput};
 use crate::client::create_authenticated_client;
 use crate::config::CliConfig;
 use crate::error::{CliError, DeployError};
@@ -28,6 +28,15 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
         validation::validate_deployment_request(&cmd)?;
     }
 
+    // Validate output flags before authentication or network activity.
+    let list_output = match &cmd.action {
+        Some(DeployAction::List { output }) => Some(
+            ResolvedOutput::resolve(cmd.json, *output)
+                .map_err(|message| CliError::Internal(color_eyre::eyre::eyre!(message)))?,
+        ),
+        _ => None,
+    };
+
     // Create authenticated client
     let client = create_authenticated_client(config).await?;
 
@@ -36,7 +45,14 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
     let show_phases = cmd.show_phases;
 
     match cmd.action {
-        Some(DeployAction::List) => handle_list(&client, json).await,
+        Some(DeployAction::List { .. }) => {
+            let output = list_output.ok_or_else(|| {
+                CliError::Internal(color_eyre::eyre::eyre!(
+                    "deployment list output was not resolved"
+                ))
+            })?;
+            handle_list(&client, output).await
+        }
         Some(DeployAction::Status { name, show_token }) => {
             let resolved = helpers::resolve_deployment_name(name, &client).await?;
             handle_status(&client, &resolved, json, show_phases, show_token).await
@@ -101,16 +117,19 @@ pub async fn handle_deploy(cmd: DeployCommand, config: &CliConfig) -> Result<(),
 }
 
 /// List all deployments
-async fn handle_list(client: &basilica_sdk::BasilicaClient, json: bool) -> Result<(), CliError> {
+async fn handle_list(
+    client: &basilica_sdk::BasilicaClient,
+    output: ResolvedOutput,
+) -> Result<(), CliError> {
     let spinner = create_spinner("Fetching summons...");
     let result = client.list_deployments().await;
     complete_spinner_and_clear(spinner);
     let response = result.map_err(CliError::Api)?;
 
-    if json {
+    if output.is_json() {
         json_output(&response)?;
     } else {
-        helpers::print_deployments_table(&response.deployments);
+        helpers::print_deployments_table(&response.deployments, output);
     }
 
     Ok(())

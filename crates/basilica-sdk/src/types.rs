@@ -39,22 +39,23 @@ pub struct RentalResponse {
     pub container_info: basilica_validator::rental::ContainerInfo,
 }
 
-/// Health check response
+// Health check response
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct HealthCheckResponse {
-    /// Service status
+    // Service status
     pub status: String,
 
-    /// Service version
+    // Service version
     pub version: String,
 
-    /// Timestamp
+    // Timestamp
     pub timestamp: chrono::DateTime<chrono::Utc>,
 
-    /// Healthy validators count
+    // Healthy validators count
     pub healthy_validators: usize,
 
-    /// Total validators count
+    // Total validators count
     pub total_validators: usize,
 }
 
@@ -171,49 +172,50 @@ pub struct LogStreamQuery {
     pub since_seconds: Option<u32>,
 }
 
-/// Start rental request with GPU-based node selection
+// Start rental request with GPU-based node selection
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StartRentalApiRequest {
-    /// Optional user-facing rental name
+    /// Optional user-facing rental name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
-    /// GPU category: "H100", "A100", "B200", etc. (required)
+    /// GPU category, such as `H100`, `A100`, or `B200`.
     pub gpu_category: String,
 
-    /// Number of GPUs required (required)
+    /// Number of GPUs required.
     pub gpu_count: u32,
 
-    /// Minimum GPU memory in GB (e.g., 80 for 80GB)
+    /// Minimum GPU memory in GB.
     #[serde(default)]
     pub min_memory_gb: Option<u32>,
 
-    /// Maximum acceptable cents/GPU-hour
+    /// Maximum acceptable cents per GPU-hour.
     pub max_hourly_rate_cents: u32,
 
-    /// Container image to run
+    /// Container image to run.
     pub container_image: String,
 
-    /// SSH public key
+    /// SSH public key installed in the rental.
     pub ssh_public_key: String,
 
-    /// Environment variables
+    /// Environment variables supplied to the container.
     #[serde(default)]
     pub environment: std::collections::HashMap<String, String>,
 
-    /// Port mappings
+    /// Container-to-host port mappings.
     #[serde(default)]
     pub ports: Vec<PortMappingRequest>,
 
-    /// Resource requirements
+    /// Requested compute and storage resources.
     #[serde(default)]
     pub resources: ResourceRequirementsRequest,
 
-    /// Command to run
+    /// Command executed in the container.
     #[serde(default)]
     pub command: Vec<String>,
 
-    /// Volume mounts
+    /// Host paths mounted into the container.
     #[serde(default)]
     pub volumes: Vec<VolumeMountRequest>,
 }
@@ -378,16 +380,16 @@ pub struct SshKeyResponse {
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StartSecureCloudRentalRequest {
-    /// Optional user-facing rental name
+    /// Optional user-facing rental name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 
-    /// Offering ID from list_gpu_prices endpoint
+    /// Offering ID returned by the GPU or CPU price endpoint.
     pub offering_id: String,
 
-    /// User's registered SSH key ID (NOT the public key string)
-    /// Must be a key owned by the authenticated user
+    /// ID of an SSH key registered by the authenticated user.
     pub ssh_public_key_id: String,
 }
 
@@ -1016,6 +1018,9 @@ pub struct DeploymentResponse {
     pub url: String,
     pub replicas: ReplicaStatus,
     pub created_at: String,
+    /// Whether deployment is publicly accessible (no token required).
+    #[serde(default = "default_public")]
+    pub public: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1877,34 +1882,36 @@ pub struct ListVolumesResponse {
     pub total_count: u32,
 }
 
-/// Create volume request
+// Create volume request
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateVolumeRequest {
-    /// Volume name (unique per user, case-insensitive)
+    /// Volume name, unique per user and compared case-insensitively.
     pub name: String,
 
-    /// Optional description
+    /// Optional human-readable description.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Size in GB (1-10240)
+    /// Requested size in GB, from 1 through 10240.
     pub size_gb: u32,
 
-    /// Availability-zone root (e.g., "cyan")
+    /// Availability-zone root, such as `cyan`.
     pub provider: String,
 
-    /// Basilica region segment (e.g., "us-texas-1", "ca-quebec-1")
+    /// Basilica region segment, such as `us-texas-1`.
     pub region: String,
 }
 
-/// Attach volume request
+// Attach volume request
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AttachVolumeRequest {
-    /// Rental name to attach the volume to
+    /// User-facing rental name. Supply this or `rental_id`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rental_name: Option<String>,
 
-    /// Rental ID to attach the volume to
+    /// Rental ID. Supply this or `rental_name`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rental_id: Option<String>,
 }
@@ -2233,6 +2240,37 @@ mod tests {
             response.share_url,
             Some("https://example.com?token=abc123".to_string())
         );
+    }
+
+    #[test]
+    fn test_deployment_response_public_field_defaults_for_old_backends() {
+        let json = r#"{
+            "instanceName": "my-app",
+            "userId": "user123",
+            "namespace": "u-user123",
+            "state": "Running",
+            "url": "https://example.com",
+            "replicas": {"desired": 1, "ready": 1},
+            "createdAt": "2024-01-01T00:00:00Z"
+        }"#;
+        let response: DeploymentResponse = serde_json::from_str(json).unwrap();
+        assert!(response.public);
+    }
+
+    #[test]
+    fn test_deployment_response_public_field_explicit_private() {
+        let json = r#"{
+            "instanceName": "my-app",
+            "userId": "user123",
+            "namespace": "u-user123",
+            "state": "Running",
+            "url": "https://example.com",
+            "replicas": {"desired": 1, "ready": 1},
+            "createdAt": "2024-01-01T00:00:00Z",
+            "public": false
+        }"#;
+        let response: DeploymentResponse = serde_json::from_str(json).unwrap();
+        assert!(!response.public);
     }
 
     #[test]
@@ -2808,6 +2846,7 @@ mod tests {
                 ready: 2,
             },
             created_at: "2026-05-02T10:00:00Z".to_string(),
+            public: true,
             updated_at: Some("2026-05-02T10:05:00Z".to_string()),
             pods: None,
             phase: Some("Running".to_string()),

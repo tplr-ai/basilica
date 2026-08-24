@@ -14,12 +14,19 @@ import sys
 import time
 import socket
 import httpx
+import pytest
 from urllib.parse import urlparse
 
 # Add the SDK to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
 
 from basilica import BasilicaClient, Deployment
+
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("BASILICA_RUN_LIVE_TESTS") != "1",
+    reason="set BASILICA_RUN_LIVE_TESTS=1 to run chargeable live deployment tests",
+)
 
 
 def test_dns_resolves_after_wait_until_ready():
@@ -36,9 +43,7 @@ def test_dns_resolves_after_wait_until_ready():
     If the fix works, steps 3 and 4 should succeed without DNS errors.
     """
     api_token = os.environ.get("BASILICA_API_TOKEN")
-    if not api_token:
-        print("SKIP: BASILICA_API_TOKEN not set")
-        return False
+    assert api_token, "BASILICA_API_TOKEN must be set for live deployment tests"
 
     # Generate unique deployment name
     deployment_name = f"dns-test-{int(time.time())}"
@@ -117,20 +122,21 @@ def test_dns_resolves_after_wait_until_ready():
         if dns_success and http_success:
             print(f"\n      SUCCESS: DNS propagation fix is working!")
             print(f"      The deployment URL was usable immediately after wait_until_ready() returned.")
-            return True
         else:
             print(f"\n      FAILURE: DNS propagation issue still exists!")
             if not dns_success:
                 print(f"      DNS resolution failed immediately after wait_until_ready().")
             if not http_success:
                 print(f"      HTTP request failed - could be DNS or other network issue.")
-            return False
+
+        assert dns_success, "DNS did not resolve after wait_until_ready() returned"
+        assert http_success, "deployment URL was not reachable after becoming ready"
 
     except Exception as e:
         print(f"\n      ERROR: Test failed with exception: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        raise
 
     finally:
         # Cleanup
@@ -144,5 +150,4 @@ def test_dns_resolves_after_wait_until_ready():
 
 
 if __name__ == "__main__":
-    success = test_dns_resolves_after_wait_until_ready()
-    sys.exit(0 if success else 1)
+    test_dns_resolves_after_wait_until_ready()

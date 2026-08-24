@@ -5,13 +5,18 @@ use crate::github_releases::{
     find_latest_cli_release, format_cli_tag, is_version_supported, GitHubConfig,
     MIN_SUPPORTED_VERSION,
 };
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Result as EyreResult};
 use console::style;
 use self_update::cargo_crate_version;
+use self_update::Checksum;
 use semver::Version;
+use std::time::Duration;
 
 /// Short alias name for the CLI binary
 const CLI_ALIAS: &str = "bs";
+const BINARY_NAME: &str = "basilica";
+const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// Resolve the actual binary path by following symlinks.
 ///
@@ -21,6 +26,72 @@ const CLI_ALIAS: &str = "bs";
 fn resolve_binary_path() -> Option<std::path::PathBuf> {
     let current_exe = std::env::current_exe().ok()?;
     Some(std::fs::canonicalize(&current_exe).unwrap_or(current_exe))
+}
+
+fn parse_sha256_file(contents: &str) -> Option<String> {
+    let digest = contents.split_whitespace().next()?.to_lowercase();
+
+    if digest.len() == 64 && digest.chars().all(|c| c.is_ascii_hexdigit()) {
+        Some(digest)
+    } else {
+        None
+    }
+}
+
+fn release_download_client() -> EyreResult<reqwest::blocking::Client> {
+    reqwest::blocking::Client::builder()
+        .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
+        .timeout(DOWNLOAD_TIMEOUT)
+        .build()
+        .map_err(|e| eyre!("Failed to configure release download client: {}", e))
+}
+
+fn download_url_to_string(url: &str) -> EyreResult<String> {
+    let client = release_download_client()?;
+    let response = client
+        .get(url)
+        .header("Accept", "application/octet-stream")
+        .header("User-Agent", "basilica-cli")
+        .send()
+        .map_err(|e| eyre!("Failed to download checksum file: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(eyre!(
+            "Download request failed with status: {}",
+            response.status()
+        ));
+    }
+
+    response
+        .text()
+        .map_err(|e| eyre!("Failed to read checksum file: {}", e))
+}
+
+fn map_update_error(error: self_update::errors::Error, config: &GitHubConfig) -> CliError {
+    let error_msg = format!("{}", error);
+    if error_msg.contains("permission") || error_msg.contains("Permission") {
+        CliError::Internal(eyre!(
+            "Failed to replace binary: {}. You may need elevated permissions.\n\
+             Try running: sudo -E basilica upgrade",
+            error
+        ))
+    } else if error.http_status() == Some(404) {
+        CliError::Internal(eyre!(
+            "Release not found. Please check that the version exists.\n\
+             View available releases: https://github.com/{}/{}/releases",
+            config.owner,
+            config.repo
+        ))
+    } else if error_msg.contains("target") || error_msg.contains("asset") {
+        CliError::Internal(eyre!(
+            "No binary available for your platform.\n\
+             Supported platforms: Linux (x86_64, aarch64), macOS (x86_64, aarch64)\n\
+             Error: {}",
+            error
+        ))
+    } else {
+        CliError::Internal(eyre!("Update failed: {}", error))
+    }
 }
 
 /// Handle the upgrade command
@@ -73,69 +144,78 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
         }
     };
 
-    // Configure and execute the update
     let config = GitHubConfig::basilica();
     let resolved_exe = resolve_binary_path()
         .ok_or_else(|| CliError::Internal(eyre!("Failed to determine executable path")))?;
-    let mut update_builder = self_update::backends::github::Update::configure();
+    let bin_dir = resolved_exe
+        .parent()
+        .ok_or_else(|| CliError::Internal(eyre!("Failed to determine binary directory")))?
+        .to_path_buf();
+    let target = self_update::get_target();
 
+    let mut update_builder = self_update::backends::github::Update::configure();
     update_builder
         .repo_owner(config.owner)
         .repo_name(config.repo)
-        .bin_name("basilica")
-        .bin_install_path(resolved_exe.parent().unwrap())
+        .bin_name(BINARY_NAME)
+        .bin_install_path(&resolved_exe)
         .current_version(current_version)
         .show_download_progress(true)
         .show_output(false)
         .no_confirm(true)
-        .target_version_tag(&target_tag);
+        .release_tag(&target_tag)
+        .timeout(DOWNLOAD_TIMEOUT);
+
+    println!("Downloading release assets for {}", style(target).cyan());
+
+    // Fetch release metadata up front to locate and verify the published checksum
+    // asset before any bytes of the running binary are touched.
+    let release = update_builder
+        .build()
+        .map_err(|e| CliError::Internal(eyre!("Failed to configure updater: {}", e)))?
+        .get_release_version(&target_tag)
+        .map_err(|e| map_update_error(e, &config))?;
+
+    let checksum_asset = release.asset_for(target, Some(".sha256")).ok_or_else(|| {
+        CliError::Internal(eyre!(
+            "No `.sha256` checksum asset found for target `{}`",
+            target
+        ))
+    })?;
+    let checksum_contents =
+        download_url_to_string(checksum_asset.download_url()).map_err(CliError::Internal)?;
+    let expected_checksum = parse_sha256_file(&checksum_contents).ok_or_else(|| {
+        CliError::Internal(eyre!(
+            "Release checksum file did not contain a valid SHA-256 digest"
+        ))
+    })?;
+
+    update_builder.verify_checksum(Checksum::Sha256(expected_checksum));
 
     // Change CWD to the binary's directory so that self_replace's
     // read_link() → relative path resolves correctly
-    if let Some(bin_dir) = resolved_exe.parent() {
-        std::env::set_current_dir(bin_dir).expect("failed to set CWD to binary's parent directory");
-    }
+    std::env::set_current_dir(&bin_dir).map_err(|e| {
+        CliError::Internal(eyre!(
+            "failed to set CWD to binary's parent directory: {}",
+            e
+        ))
+    })?;
 
-    // Build and execute the update
+    // The running binary is not touched until the archive is downloaded and its
+    // checksum verified against the published `.sha256` asset configured above.
     let status = update_builder
         .build()
         .map_err(|e| CliError::Internal(eyre!("Failed to configure updater: {}", e)))?
         .update()
-        .map_err(|e| {
-            // Provide helpful error messages for common failures
-            let error_msg = format!("{}", e);
-            if error_msg.contains("permission") || error_msg.contains("Permission") {
-                CliError::Internal(eyre!(
-                    "Failed to replace binary: {}. You may need elevated permissions.\n\
-                     Try running: sudo -E basilica upgrade",
-                    e
-                ))
-            } else if error_msg.contains("not found") || error_msg.contains("404") {
-                CliError::Internal(eyre!(
-                    "Release not found. Please check that the version exists.\n\
-                     View available releases: https://github.com/{}/{}/releases",
-                    config.owner,
-                    config.repo
-                ))
-            } else if error_msg.contains("target") || error_msg.contains("asset") {
-                CliError::Internal(eyre!(
-                    "No binary available for your platform.\n\
-                     Supported platforms: Linux (x86_64, aarch64), macOS (x86_64, aarch64)\n\
-                     Error: {}",
-                    e
-                ))
-            } else {
-                CliError::Internal(eyre!("Update failed: {}", e))
-            }
-        })?;
+        .map_err(|e| map_update_error(e, &config))?;
 
     // Display results
     match status {
-        self_update::Status::UpToDate(v) => {
+        self_update::VersionStatus::UpToDate(v) => {
             println!("{}", style("Already up to date!").green());
             println!("Current version: {}", style(v).cyan());
         }
-        self_update::Status::Updated(v) => {
+        self_update::VersionStatus::Updated(v) => {
             println!(
                 "\n{} Updated to version {}",
                 style("✓").green().bold(),
@@ -147,6 +227,11 @@ pub fn handle_upgrade(version: Option<String>, dry_run: bool) -> Result<(), CliE
                 style("basilica --version").cyan(),
                 style("bs --version").cyan()
             );
+        }
+        _ => {
+            return Err(CliError::Internal(eyre!(
+                "Updater returned an unsupported status"
+            )));
         }
     }
 
@@ -214,4 +299,41 @@ fn handle_dry_run(current_version: &str) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_sha256_file_accepts_shasum_format() {
+        let checksum = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD  basilica-0.1.0-x86_64-unknown-linux-gnu.tar.gz\n";
+
+        assert_eq!(
+            parse_sha256_file(checksum),
+            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_sha256_file_accepts_sha256sum_format() {
+        let checksum = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad *basilica-0.1.0-x86_64-unknown-linux-gnu.tar.gz\n";
+
+        assert_eq!(
+            parse_sha256_file(checksum),
+            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_sha256_file_rejects_garbage() {
+        assert_eq!(parse_sha256_file("not-a-checksum archive.tar.gz"), None);
+        assert_eq!(parse_sha256_file("abcd"), None);
+        assert_eq!(
+            parse_sha256_file(
+                "zz7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad archive"
+            ),
+            None
+        );
+    }
 }

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-07-14
+
+### Added
+- `public` field on `DeploymentResponse`, mirroring the API wire shape for the
+  deployment access mode (`true` = publicly accessible, `false` = share-token
+  gated). Missing values default to `true` for older backends, matching the
+  existing `DeploymentSummary` behavior; previously detail responses had no
+  `public` field at all, so private deployments could be misclassified as
+  public.
+
 ## [0.32.0] - 2026-06-29
 
 ### Changed

@@ -102,6 +102,10 @@ pub enum CliError {
     #[error("missing prerequisite: {field}")]
     MissingPrerequisite { field: String, hint: String },
 
+    /// A child command's exit status should become the CLI process exit status.
+    #[error("command exited with status {code}")]
+    CommandExit { code: i32, message: Option<String> },
+
     /// Everything else (using color-eyre's Report for rich errors)
     #[error(transparent)]
     Internal(#[from] Report),
@@ -109,3 +113,13 @@ pub enum CliError {
 
 /// Result type alias for CLI operations
 pub type Result<T> = std::result::Result<T, CliError>;
+
+impl CliError {
+    /// Exit code that the CLI process should return for this error.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::CommandExit { code, .. } => *code,
+            _ => 1,
+        }
+    }
+}

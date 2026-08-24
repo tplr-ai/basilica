@@ -21,7 +21,7 @@ Deploy Basilica validator component to remote server.
 
 OPTIONS:
     -s, --server USER@HOST:PORT      Server connection
-    -d, --deploy-mode MODE           Deployment mode: binary, systemd, docker (default: binary)
+    -d, --deploy-mode MODE           Deployment mode: binary, systemd (default: binary)
     -c, --config FILE                Config file path (default: config/validator.correct.toml)
     -w, --sync-wallets               Sync local wallets to remote server
     -f, --follow-logs                Stream logs after deployment
@@ -33,7 +33,6 @@ OPTIONS:
 DEPLOYMENT MODES:
     binary   - Deploy binary with nohup (default)
     systemd  - Deploy binary with systemd service management
-    docker   - Deploy using docker compose with public images
 
 EXAMPLES:
     # Deploy validator with binary mode (default)
@@ -41,9 +40,6 @@ EXAMPLES:
 
     # Deploy validator with systemd
     $0 -s root@64.247.196.98:9001 -d systemd
-
-    # Deploy validator with docker
-    $0 -s root@64.247.196.98:9001 -d docker
 
     # Deploy with custom config
     $0 -s root@64.247.196.98:9001 -c config/validator.prod.toml
@@ -98,11 +94,6 @@ validate_config() {
 }
 
 build_service() {
-    if [[ "$DEPLOY_MODE" == "docker" ]]; then
-        log "Docker mode: skipping local build"
-        return
-    fi
-
     log "Building validator..."
     if [[ ! -f "scripts/validator/build.sh" ]]; then
         log "ERROR: Build script scripts/validator/build.sh not found"
@@ -248,51 +239,6 @@ deploy_systemd() {
     fi
 }
 
-deploy_docker() {
-    log "Deploying validator in docker mode"
-
-    log "Stopping existing validator containers"
-    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml down 2>/dev/null || true"
-
-    log "Creating directories for validator"
-    ssh_cmd "mkdir -p /opt/basilica/config"
-    scp_file "$CONFIG_FILE" "/opt/basilica/config/validator.toml"
-
-    ssh_cmd "mkdir -p /opt/basilica/data && chmod 755 /opt/basilica/data"
-
-    log "Deploying docker compose files"
-    if [[ ! -f "scripts/validator/compose.prod.yml" ]]; then
-        log "ERROR: Docker compose file not found: scripts/validator/compose.prod.yml"
-        exit 1
-    fi
-
-    scp_file "scripts/validator/compose.prod.yml" "/opt/basilica/"
-
-    # Deploy telemetry config for Alloy
-    ssh_cmd "mkdir -p /opt/basilica/telemetry"
-    if [[ -f "scripts/validator/telemetry/alloy.yml" ]]; then
-        scp_file "scripts/validator/telemetry/alloy.yml" "/opt/basilica/telemetry/"
-    fi
-
-    # Deploy .env file if it exists
-    if [[ -f "scripts/validator/.env" ]]; then
-        scp_file "scripts/validator/.env" "/opt/basilica/"
-    fi
-
-    log "Pulling and starting validator container"
-    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml pull"
-    ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml up -d"
-
-    sleep 5
-    if ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml ps | grep -q 'Up'"; then
-        log "Validator container started successfully"
-    else
-        log "ERROR: Validator container failed to start"
-        ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml logs --tail=20"
-        exit 1
-    fi
-}
-
 deploy_service() {
     case "$DEPLOY_MODE" in
         binary)
@@ -300,9 +246,6 @@ deploy_service() {
             ;;
         systemd)
             deploy_systemd
-            ;;
-        docker)
-            deploy_docker
             ;;
         *)
             log "ERROR: Unknown deployment mode: $DEPLOY_MODE"
@@ -329,13 +272,6 @@ health_check_service() {
                 log "Validator service not active"
             fi
             ;;
-        docker)
-            if ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml ps | grep -q 'Up'"; then
-                log "Validator container running"
-            else
-                log "Validator container not running"
-            fi
-            ;;
     esac
 }
 
@@ -347,9 +283,6 @@ follow_logs_service() {
             ;;
         systemd)
             ssh_cmd "journalctl -u basilica-validator -f"
-            ;;
-        docker)
-            ssh_cmd "cd /opt/basilica && docker compose -f compose.prod.yml logs -f"
             ;;
     esac
 }
@@ -363,8 +296,8 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--deploy-mode)
             DEPLOY_MODE="$2"
-            if [[ "$DEPLOY_MODE" != "binary" && "$DEPLOY_MODE" != "systemd" && "$DEPLOY_MODE" != "docker" ]]; then
-                echo "ERROR: Invalid deployment mode: $DEPLOY_MODE. Must be binary, systemd, or docker"
+            if [[ "$DEPLOY_MODE" != "binary" && "$DEPLOY_MODE" != "systemd" ]]; then
+                echo "ERROR: Invalid deployment mode: $DEPLOY_MODE. Must be binary or systemd"
                 exit 1
             fi
             shift 2
@@ -406,17 +339,6 @@ done
 if [[ -z "$SERVER_USER" || -z "$SERVER_HOST" || -z "$SERVER_PORT" ]]; then
     echo "ERROR: Server connection required (-s)"
     usage
-fi
-
-# Validate deployment mode specific requirements
-if [[ "$DEPLOY_MODE" == "docker" && "$SYNC_WALLETS" == "true" ]]; then
-    log "WARNING: Wallet sync not supported in docker mode"
-    SYNC_WALLETS=false
-fi
-
-if [[ "$DEPLOY_MODE" == "docker" && -n "$VERITAS_BINARIES_DIR" ]]; then
-    log "WARNING: Veritas binaries deployment not supported in docker mode"
-    VERITAS_BINARIES_DIR=""
 fi
 
 log "Deployment mode: $DEPLOY_MODE"

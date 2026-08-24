@@ -12,6 +12,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the current user, with `--delete-api-keys` available for emergency account
   lockdown when API keys may also need to be revoked.
 
+## [0.33.0] - 2026-07-14
+
+### Added
+- `basilica exec --timeout <SECS>` for opt-in total SSH deadlines, including
+  connection setup. Timeouts exit with status 124 and may leave the remote
+  command running.
+- `ls`, `ps`, `tokens list`, `fund list`, `volumes list`, and `deploy ls` now
+  support `--output auto|compact|wide|json`. The default `auto` mode adapts
+  columns to interactive terminal width while non-interactive output remains
+  wide and terminal-width-independent.
+
+### Changed
+- `basilica exec` now streams stdout and stderr unchanged, returns the SSH exit
+  code, and leaves command duration unbounded by default.
+- `basilica cp` now delegates terminal input, output, exit status, and interrupt
+  handling directly to the system `scp`, including native transfer progress.
+- CLI tables now prioritize useful columns on narrow terminals, keep truncated
+  deployment URLs and funding transaction hashes actionable, and use consistent
+  headers and hourly pricing.
+- Human-readable tables now group related hardware details, shorten long GPU and
+  container-image labels, and display active-resource timestamps to the minute.
+- Interactive `basilica ps` output now summarizes the total rentals, combined
+  hourly price, and accrued cost.
+- Global `--json` now applies consistently to all `deploy` subcommands.
+
+### Fixed
+- `--json` now renders subprocess exit codes and optional diagnostics as a
+  structured `command_exit` error object.
+- `basilica exec` and file transfers now detect unresponsive sessions with
+  server-alive probes. Timed-out or cancelled operations terminate and reap
+  the local SSH or SCP subprocess.
+- `basilica ps` now resolves Bourse SSH hosts for human-readable output, so
+  access addresses are available alongside Citadel rental addresses.
+- `basilica deploy` with `--private` now prints the one-time share token after
+  waiting for the deployment to become ready. The token is only returned by
+  the create call, so the ready-wait status response dropped it and the CLI
+  always warned `Share token was not generated` even when a token existed.
+- `basilica deploy --private --detach` now prints the share token before
+  exiting; previously detached mode never displayed it, and the token cannot
+  be retrieved later.
+
+### Security
+- SSH usernames are validated as portable account names before being passed to
+  OpenSSH, preventing option-like values from being interpreted as SSH flags.
+- Debug logs for `basilica exec`, shared non-interactive SSH subprocesses, and
+  automated SCP transfers no longer expose private-key paths or complete
+  command details.
+- Updated transitive `spin` dependencies to patched, non-yanked releases.
+- `basilica upgrade` now verifies the downloaded release archive against the
+  published `.sha256` asset before replacing the running binary.
+
 ## [0.32.1] - 2026-07-02
 
 ### Added

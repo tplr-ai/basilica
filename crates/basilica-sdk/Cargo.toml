@@ -1,6 +1,6 @@
 [package]
 name = "basilica-sdk"
-version = "0.32.0"
+version = "0.33.0"
 edition = "2021"
 authors = ["Basilica Team"]
 description = "SDK for interacting with the Basilica GPU rental network"
@@ -24,6 +24,8 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 chrono = { workspace = true }
 
+# OpenAPI schema support (optional)
+utoipa = { workspace = true, optional = true }
 
 # Auth dependencies (moved from CLI)
 oauth2 = { workspace = true }
@@ -42,3 +44,4 @@ tokio = { workspace = true, features = ["full", "test-util"] }
 [features]
 default = []
 client = []
+openapi = ["dep:utoipa", "basilica-validator/openapi"]

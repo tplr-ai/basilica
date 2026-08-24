@@ -75,7 +75,7 @@ mod ssh_tests {
     fn test_validator_ssh_client_with_config() {
         let ssh_config = SshConnectionConfig {
             connection_timeout: Duration::from_secs(60),
-            execution_timeout: Duration::from_secs(300),
+            execution_timeout: Some(Duration::from_secs(300)),
             max_transfer_size: 50 * 1024 * 1024, // 50MB
             retry_attempts: 5,
             cleanup_remote_files: false,

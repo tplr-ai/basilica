@@ -1,0 +1,117 @@
+name: Gitleaks
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_LINUX_ARM64_SHA256: "e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080"
+  GITLEAKS_LINUX_X64_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+jobs:
+  gitleaks:
+    name: gitleaks/required
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install verified Gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$(uname -m)" in
+            x86_64|amd64)
+              ARCH="x64"
+              EXPECTED="$GITLEAKS_LINUX_X64_SHA256"
+              ;;
+            aarch64|arm64)
+              ARCH="arm64"
+              EXPECTED="$GITLEAKS_LINUX_ARM64_SHA256"
+              ;;
+            *)
+              echo "::error::Unsupported runner architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
+
+          ARCHIVE="gitleaks_${GITLEAKS_VERSION}_linux_${ARCH}.tar.gz"
+
+          DOWNLOAD_DIR="$RUNNER_TEMP/gitleaks-download"
+          BIN_DIR="$RUNNER_TEMP/gitleaks-bin"
+          mkdir -p "$DOWNLOAD_DIR" "$BIN_DIR"
+          curl --fail --location --silent --show-error \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${ARCHIVE}" \
+            --output "$DOWNLOAD_DIR/$ARCHIVE"
+
+          printf '%s  %s\n' "$EXPECTED" "$DOWNLOAD_DIR/$ARCHIVE" | sha256sum --check -
+          tar -xzf "$DOWNLOAD_DIR/$ARCHIVE" -C "$DOWNLOAD_DIR" gitleaks
+          install -m 0755 "$DOWNLOAD_DIR/gitleaks" "$BIN_DIR/gitleaks"
+          echo "$BIN_DIR" >> "$GITHUB_PATH"
+
+      - name: Resolve exact commit range
+        id: range
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          case "$EVENT_NAME" in
+            pull_request)
+              BASE_SHA="$PR_BASE_SHA"
+              HEAD_SHA="$PR_HEAD_SHA"
+              ;;
+            push)
+              BASE_SHA="$PUSH_BEFORE_SHA"
+              HEAD_SHA="$PUSH_HEAD_SHA"
+              ;;
+            workflow_dispatch)
+              BASE_SHA="0000000000000000000000000000000000000000"
+              HEAD_SHA="$PUSH_HEAD_SHA"
+              ;;
+            *)
+              echo "::error::Unsupported event: $EVENT_NAME"
+              exit 1
+              ;;
+          esac
+
+          git cat-file -e "${HEAD_SHA}^{commit}"
+
+          if [[ "$BASE_SHA" =~ ^0+$ ]]; then
+            if PARENT_SHA="$(git rev-parse "${HEAD_SHA}^" 2>/dev/null)"; then
+              RANGE="${PARENT_SHA}..${HEAD_SHA}"
+            else
+              RANGE="$HEAD_SHA"
+            fi
+          else
+            git cat-file -e "${BASE_SHA}^{commit}"
+            RANGE="${BASE_SHA}..${HEAD_SHA}"
+          fi
+
+          echo "Scanning commit range: $RANGE"
+          echo "range=$RANGE" >> "$GITHUB_OUTPUT"
+
+      - name: Scan changed history
+        env:
+          SCAN_RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          gitleaks git . \
+            --config .gitleaks.toml \
+            --log-opts="$SCAN_RANGE" \
+            --redact=100 \
+            --no-banner \
+            --no-color \
+            --verbose

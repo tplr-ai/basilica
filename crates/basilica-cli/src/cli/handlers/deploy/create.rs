@@ -116,6 +116,8 @@ pub async fn handle_create(
     let actual_name = response.instance_name.clone();
     let display =
         super::helpers::display_name(&response.friendly_name, &response.instance_name).to_string();
+    let initial_share_token = response.share_token.clone();
+    let initial_share_url = response.share_url.clone();
 
     // 15. Wait for ready if not detached
     if !cmd.lifecycle.detach {
@@ -128,7 +130,12 @@ pub async fn handle_create(
         .await?;
 
         match result {
-            WaitResult::Ready(deployment) => {
+            WaitResult::Ready(mut deployment) => {
+                preserve_initial_share_token(
+                    &mut deployment,
+                    &initial_share_token,
+                    &initial_share_url,
+                );
                 if cmd.json {
                     crate::output::json_output(&deployment)?;
                 } else {
@@ -171,9 +178,34 @@ pub async fn handle_create(
     } else {
         print_success(&format!("Summons '{}' created (detached mode)", display));
         println!("  Check status: basilica summon status {}", display);
+        if !is_public {
+            match (&initial_share_token, &initial_share_url) {
+                (Some(token), Some(share_url)) => {
+                    super::helpers::print_share_token_info(token, share_url);
+                }
+                _ => {
+                    crate::output::print_warning(
+                        "Share token was not generated. Use 'deploy share-token regenerate' to create one.",
+                    );
+                }
+            }
+        }
     }
 
     Ok(())
+}
+
+fn preserve_initial_share_token(
+    deployment: &mut DeploymentResponse,
+    initial_share_token: &Option<String>,
+    initial_share_url: &Option<String>,
+) {
+    if deployment.share_token.is_none() {
+        deployment.share_token = initial_share_token.clone();
+    }
+    if deployment.share_url.is_none() {
+        deployment.share_url = initial_share_url.clone();
+    }
 }
 
 /// Create deployment with exponential backoff retry and jitter
@@ -581,5 +613,81 @@ fn auto_health_check_for_framework(
             )
         }
         _ => (None, None, None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use basilica_sdk::types::ReplicaStatus;
+
+    fn deployment_response() -> DeploymentResponse {
+        DeploymentResponse {
+            instance_name: "uuid-1".to_string(),
+            friendly_name: "private-app".to_string(),
+            user_id: "user-1".to_string(),
+            namespace: "u-user-1".to_string(),
+            image: "python:3.11-slim".to_string(),
+            state: "Active".to_string(),
+            url: "https://uuid-1.deployments.basilica.ai".to_string(),
+            replicas: ReplicaStatus {
+                desired: 1,
+                ready: 1,
+            },
+            created_at: "2026-07-09T00:00:00Z".to_string(),
+            public: false,
+            updated_at: None,
+            pods: None,
+            phase: Some("ready".to_string()),
+            message: None,
+            progress: None,
+            share_token: None,
+            share_url: None,
+            websocket: None,
+            public_metadata: false,
+            distributed: None,
+            container_statuses: Vec::new(),
+            phase_progress: 0,
+        }
+    }
+
+    #[test]
+    fn preserve_initial_share_token_restores_one_time_create_token() {
+        let mut ready_response = deployment_response();
+
+        preserve_initial_share_token(
+            &mut ready_response,
+            &Some("token-1".to_string()),
+            &Some("https://uuid-1.deployments.basilica.ai?token=token-1".to_string()),
+        );
+
+        assert_eq!(ready_response.share_token.as_deref(), Some("token-1"));
+        assert_eq!(
+            ready_response.share_url.as_deref(),
+            Some("https://uuid-1.deployments.basilica.ai?token=token-1")
+        );
+    }
+
+    #[test]
+    fn preserve_initial_share_token_does_not_overwrite_existing_token() {
+        let mut ready_response = deployment_response();
+        ready_response.share_token = Some("existing-token".to_string());
+        ready_response.share_url =
+            Some("https://uuid-1.deployments.basilica.ai?token=existing-token".to_string());
+
+        preserve_initial_share_token(
+            &mut ready_response,
+            &Some("initial-token".to_string()),
+            &Some("https://uuid-1.deployments.basilica.ai?token=initial-token".to_string()),
+        );
+
+        assert_eq!(
+            ready_response.share_token.as_deref(),
+            Some("existing-token")
+        );
+        assert_eq!(
+            ready_response.share_url.as_deref(),
+            Some("https://uuid-1.deployments.basilica.ai?token=existing-token")
+        );
     }
 }

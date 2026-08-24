@@ -83,7 +83,7 @@ impl ContainerClient {
             strict_host_key_checking: false,
             known_hosts_file: None,
             connection_timeout: Duration::from_secs(10),
-            execution_timeout: Duration::from_secs(300),
+            execution_timeout: Some(Duration::from_secs(300)),
             ..Default::default()
         };
 
@@ -121,7 +121,7 @@ impl ContainerClient {
             strict_host_key_checking,
             known_hosts_file: known_hosts_file.clone(),
             connection_timeout: Duration::from_secs(10),
-            execution_timeout: Duration::from_secs(300),
+            execution_timeout: Some(Duration::from_secs(300)),
             ..Default::default()
         };
 

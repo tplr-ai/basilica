@@ -64,7 +64,8 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i python3.10 --manifest-path crates/basilica-sdk-python/Cargo.toml
+          args: --release --locked --out dist -i python3.10 --manifest-path crates/basilica-sdk-python/Cargo.toml
+          rust-toolchain: "1.97.1"
           sccache: 'true'
           manylinux: auto
           before-script-linux: |
@@ -102,7 +103,8 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist --manifest-path crates/basilica-sdk-python/Cargo.toml
+          args: --release --locked --out dist --manifest-path crates/basilica-sdk-python/Cargo.toml
+          rust-toolchain: "1.97.1"
           sccache: 'true'
 
       - name: Upload wheels
@@ -149,6 +151,7 @@ jobs:
         with:
           command: sdist
           args: --out dist --manifest-path crates/basilica-sdk-python/Cargo.toml
+          rust-toolchain: "1.97.1"
 
       - name: Upload sdist
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -237,21 +240,19 @@ jobs:
             import basilica
 
             # Client auto-detects BASILICA_API_TOKEN environment variable
-            client = basilica.BasilicaClient("https://api.basilica.ai")
+            client = basilica.BasilicaClient()
 
-            # List available nodes
-            nodes = client.list_nodes()
-            print(f"Found {len(nodes)} available GPU nodes")
+            # Check the API connection
+            health = client.health_check()
+            print(f"API status: {health.status}")
 
-            # Start a rental
-            rental = client.start_rental(
-                basilica.StartRentalApiRequest(
-                    node_selection=basilica.node_by_gpu(
-                        basilica.GpuRequirements(gpu_type="h100", gpu_count=1)
-                    )
+            # List current secure-cloud GPU offerings
+            offerings = client.list_secure_cloud_gpus()
+            for offering in offerings[:5]:
+                print(
+                    f"{offering.gpu_count}x {offering.gpu_type} "
+                    f"@ ${offering.hourly_rate}/hr ({offering.provider})"
                 )
-            )
-            print(f"Rental ID: {rental.rental_id}")
             ```
 
             ## Documentation

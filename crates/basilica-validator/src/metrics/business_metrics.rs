@@ -102,7 +102,7 @@ impl ValidatorBusinessMetrics {
             let total_gpu_count = {
                 let stats = self.node_stats.read().await;
                 let mut miner_total = 0u32;
-                for (exec_id, _exec_stats) in stats.iter() {
+                for exec_id in stats.keys() {
                     if exec_id.contains(&miner_uid.to_string()) {
                         // In real implementation, would track GPU counts per node
                         miner_total += gpu_count as u32;

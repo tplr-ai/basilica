@@ -6,8 +6,10 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
+use tokio::io::AsyncReadExt;
+use tokio::process::{Child, Command};
 use tokio::time::timeout;
 use tracing::{debug, info, warn};
 
@@ -16,8 +18,8 @@ use tracing::{debug, info, warn};
 pub struct SshConnectionConfig {
     /// Connection timeout
     pub connection_timeout: Duration,
-    /// Command execution timeout
-    pub execution_timeout: Duration,
+    /// Optional command and file-transfer execution timeout
+    pub execution_timeout: Option<Duration>,
     /// Maximum file transfer size in bytes
     pub max_transfer_size: u64,
     /// Number of retry attempts
@@ -34,7 +36,7 @@ impl Default for SshConnectionConfig {
     fn default() -> Self {
         Self {
             connection_timeout: Duration::from_secs(30),
-            execution_timeout: Duration::from_secs(300),
+            execution_timeout: None,
             max_transfer_size: 100 * 1024 * 1024, // 100MB
             retry_attempts: 3,
             cleanup_remote_files: true,
@@ -42,6 +44,40 @@ impl Default for SshConnectionConfig {
             known_hosts_file: None,
         }
     }
+}
+
+/// Outcome of an SSH command whose output is passed through to the caller.
+#[derive(Debug)]
+pub enum SshCommandStatus {
+    /// The SSH subprocess exited normally with this status.
+    Exited(ExitStatus),
+    /// The configured execution timeout expired and the SSH subprocess was reaped.
+    TimedOut,
+}
+
+/// Validate a portable SSH account name before passing it to OpenSSH.
+pub fn validate_ssh_username(username: &str) -> Result<()> {
+    let mut characters = username.chars();
+    let Some(first) = characters.next() else {
+        return Err(anyhow::anyhow!("Username cannot be empty"));
+    };
+
+    if !(first.is_ascii_alphanumeric() || first == '_')
+        || !characters.all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        })
+    {
+        return Err(anyhow::anyhow!("Username contains invalid characters"));
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+struct CapturedCommandOutput {
+    status: SshCommandStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
 }
 
 /// SSH connection details
@@ -158,6 +194,8 @@ impl StandardSshClient {
             "ConnectTimeout={}",
             self.config.connection_timeout.as_secs()
         ));
+        options.push("ServerAliveInterval=15".to_string());
+        options.push("ServerAliveCountMax=3".to_string());
         Ok(options)
     }
 
@@ -174,16 +212,7 @@ impl StandardSshClient {
             return Err(anyhow::anyhow!("Host contains invalid characters"));
         }
 
-        if details.username.is_empty() {
-            return Err(anyhow::anyhow!("Username cannot be empty"));
-        }
-
-        if details
-            .username
-            .contains(&[';', '&', '|', '$', '`', '\n', '\r', '@'][..])
-        {
-            return Err(anyhow::anyhow!("Username contains invalid characters"));
-        }
+        validate_ssh_username(&details.username)?;
 
         if !details.private_key_path.exists() {
             return Err(anyhow::anyhow!(
@@ -567,10 +596,141 @@ impl StandardSshClient {
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
-        debug!("Spawning SSH streaming command: {:?}", cmd);
+        debug!("Spawning SSH streaming command");
 
+        cmd.kill_on_drop(true);
         cmd.spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn SSH streaming command: {}", e))
+    }
+
+    async fn wait_for_child(&self, child: &mut Child) -> Result<SshCommandStatus> {
+        let Some(execution_timeout) = self.config.execution_timeout else {
+            return child
+                .wait()
+                .await
+                .map(SshCommandStatus::Exited)
+                .map_err(Into::into);
+        };
+
+        match timeout(execution_timeout, child.wait()).await {
+            Ok(status) => Ok(SshCommandStatus::Exited(status?)),
+            Err(_) => {
+                child.start_kill().map_err(|error| {
+                    anyhow::anyhow!("Failed to kill timed-out subprocess: {}", error)
+                })?;
+                child.wait().await.map_err(|error| {
+                    anyhow::anyhow!("Failed to reap timed-out subprocess: {}", error)
+                })?;
+                Ok(SshCommandStatus::TimedOut)
+            }
+        }
+    }
+
+    async fn execute_process(
+        &self,
+        command: &mut Command,
+        capture_output: bool,
+    ) -> Result<CapturedCommandOutput> {
+        command.stdin(Stdio::null());
+        if capture_output {
+            command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        } else {
+            command.stdout(Stdio::null()).stderr(Stdio::null());
+        }
+        command.kill_on_drop(true);
+
+        let mut child = command.spawn()?;
+        let stdout_task = child.stdout.take().map(|mut stdout| {
+            tokio::spawn(async move {
+                let mut output = Vec::new();
+                stdout.read_to_end(&mut output).await?;
+                Ok::<_, std::io::Error>(output)
+            })
+        });
+        let stderr_task = child.stderr.take().map(|mut stderr| {
+            tokio::spawn(async move {
+                let mut output = Vec::new();
+                stderr.read_to_end(&mut output).await?;
+                Ok::<_, std::io::Error>(output)
+            })
+        });
+
+        let status = self.wait_for_child(&mut child).await?;
+        let stdout = match stdout_task {
+            Some(task) => task.await??,
+            None => Vec::new(),
+        };
+        let stderr = match stderr_task {
+            Some(task) => task.await??,
+            None => Vec::new(),
+        };
+
+        Ok(CapturedCommandOutput {
+            status,
+            stdout,
+            stderr,
+        })
+    }
+
+    /// Execute an SSH command with byte-for-byte stdout and stderr pass-through.
+    pub async fn execute_command_passthrough(
+        &self,
+        details: &SshConnectionDetails,
+        command: &str,
+    ) -> Result<SshCommandStatus> {
+        self.execute_command_passthrough_with_program(details, command, Path::new("ssh"))
+            .await
+    }
+
+    async fn execute_command_passthrough_with_program(
+        &self,
+        details: &SshConnectionDetails,
+        command: &str,
+        program: &Path,
+    ) -> Result<SshCommandStatus> {
+        self.execute_command_with_program_and_stdio(
+            details,
+            command,
+            program,
+            Stdio::inherit(),
+            Stdio::inherit(),
+        )
+        .await
+    }
+
+    async fn execute_command_with_program_and_stdio(
+        &self,
+        details: &SshConnectionDetails,
+        command: &str,
+        program: &Path,
+        stdout: Stdio,
+        stderr: Stdio,
+    ) -> Result<SshCommandStatus> {
+        self.validate_connection_details(details)?;
+
+        let mut cmd = Command::new(program);
+        cmd.arg("-i")
+            .arg(&details.private_key_path)
+            .arg("-p")
+            .arg(details.port.to_string());
+
+        for option in self.connection_options(true)? {
+            cmd.arg("-o").arg(option);
+        }
+
+        cmd.arg(format!("{}@{}", details.username, details.host))
+            .arg(command)
+            .stdin(Stdio::null())
+            .stdout(stdout)
+            .stderr(stderr);
+
+        debug!("Executing SSH command with pass-through output");
+
+        cmd.kill_on_drop(true);
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn SSH command: {}", e))?;
+        self.wait_for_child(&mut child).await
     }
 
     /// Internal SSH command execution
@@ -593,24 +753,28 @@ impl StandardSshClient {
         cmd.arg(format!("{}@{}", details.username, details.host))
             .arg(command);
 
-        if !capture_output {
-            cmd.stdout(Stdio::null()).stderr(Stdio::null());
-        }
+        debug!("Executing SSH command");
 
-        debug!("Executing SSH command: {:?}", cmd);
-
-        let output = cmd
-            .output()
+        let output = self
+            .execute_process(&mut cmd, capture_output)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to execute SSH command: {}", e))?;
 
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            debug!("Command executed successfully");
-            Ok(stdout)
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            debug!("SSH command failed: {}", stderr);
-            Err(anyhow::anyhow!("SSH command failed: {}", stderr))
+        match output.status {
+            SshCommandStatus::Exited(status) if status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                debug!("Command executed successfully");
+                Ok(stdout)
+            }
+            SshCommandStatus::Exited(_) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                debug!("SSH command failed: {}", stderr);
+                Err(anyhow::anyhow!("SSH command failed: {}", stderr))
+            }
+            SshCommandStatus::TimedOut => {
+                debug!("Command execution timed out");
+                Err(anyhow::anyhow!("Command execution timed out"))
+            }
         }
     }
 }
@@ -631,14 +795,11 @@ impl SshConnectionManager for StandardSshClient {
 
         self.validate_connection_details(details)?;
 
-        let result = timeout(
-            self.config.connection_timeout,
-            self.execute_ssh_command(details, "echo 'connection_test'", true),
-        )
-        .await;
-
-        match result {
-            Ok(Ok(output)) => {
+        match self
+            .execute_ssh_command(details, "echo 'connection_test'", true)
+            .await
+        {
+            Ok(output) => {
                 if output.trim() == "connection_test" {
                     info!("SSH connection test successful");
                     Ok(())
@@ -646,13 +807,9 @@ impl SshConnectionManager for StandardSshClient {
                     Err(anyhow::anyhow!("Unexpected response from connection test"))
                 }
             }
-            Ok(Err(e)) => {
+            Err(e) => {
                 debug!("SSH connection test failed: {}", e);
                 Err(e)
-            }
-            Err(_) => {
-                debug!("SSH connection test timed out");
-                Err(anyhow::anyhow!("Connection test timed out"))
             }
         }
     }
@@ -667,19 +824,8 @@ impl SshConnectionManager for StandardSshClient {
 
         self.validate_connection_details(details)?;
 
-        let result = timeout(
-            self.config.execution_timeout,
-            self.execute_ssh_command(details, command, capture_output),
-        )
-        .await;
-
-        match result {
-            Ok(result) => result,
-            Err(_) => {
-                debug!("Command execution timed out");
-                Err(anyhow::anyhow!("Command execution timed out"))
-            }
-        }
+        self.execute_ssh_command(details, command, capture_output)
+            .await
     }
 
     async fn execute_command_with_retry(
@@ -762,29 +908,21 @@ impl SshFileTransferManager for StandardSshClient {
             details.username, details.host, remote_path
         ));
 
-        debug!("Executing SCP command: {:?}", cmd);
+        debug!("Executing SCP upload command");
 
-        let result = timeout(self.config.execution_timeout, async {
-            let output = cmd.output()?;
-            if output.status.success() {
-                Ok(())
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(anyhow::anyhow!("SCP upload failed: {}", stderr))
-            }
-        })
-        .await;
+        let output = self.execute_process(&mut cmd, true).await?;
 
-        match result {
-            Ok(Ok(())) => {
+        match output.status {
+            SshCommandStatus::Exited(status) if status.success() => {
                 info!("File upload successful");
                 Ok(())
             }
-            Ok(Err(e)) => {
-                debug!("File upload failed: {}", e);
-                Err(e)
+            SshCommandStatus::Exited(_) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                debug!("File upload failed: {}", stderr);
+                Err(anyhow::anyhow!("SCP upload failed: {}", stderr))
             }
-            Err(_) => {
+            SshCommandStatus::TimedOut => {
                 debug!("File upload timed out");
                 Err(anyhow::anyhow!("File upload timed out"))
             }
@@ -823,29 +961,21 @@ impl SshFileTransferManager for StandardSshClient {
         ))
         .arg(local_path);
 
-        debug!("Executing SCP download command: {:?}", cmd);
+        debug!("Executing SCP download command");
 
-        let result = timeout(self.config.execution_timeout, async {
-            let output = cmd.output()?;
-            if output.status.success() {
-                Ok(())
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                Err(anyhow::anyhow!("SCP download failed: {}", stderr))
-            }
-        })
-        .await;
+        let output = self.execute_process(&mut cmd, true).await?;
 
-        match result {
-            Ok(Ok(())) => {
+        match output.status {
+            SshCommandStatus::Exited(status) if status.success() => {
                 info!("File download successful");
                 Ok(())
             }
-            Ok(Err(e)) => {
-                debug!("File download failed: {}", e);
-                Err(e)
+            SshCommandStatus::Exited(_) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                debug!("File download failed: {}", stderr);
+                Err(anyhow::anyhow!("SCP download failed: {}", stderr))
             }
-            Err(_) => {
+            SshCommandStatus::TimedOut => {
                 debug!("File download timed out");
                 Err(anyhow::anyhow!("File download timed out"))
             }
@@ -925,12 +1055,166 @@ mod tests {
     fn test_ssh_connection_config_default() {
         let config = SshConnectionConfig::default();
         assert_eq!(config.connection_timeout, Duration::from_secs(30));
-        assert_eq!(config.execution_timeout, Duration::from_secs(300));
+        assert_eq!(config.execution_timeout, None);
         assert_eq!(config.max_transfer_size, 100 * 1024 * 1024);
         assert_eq!(config.retry_attempts, 3);
         assert!(config.cleanup_remote_files);
         assert!(!config.strict_host_key_checking);
         assert!(config.known_hosts_file.is_none());
+    }
+
+    #[tokio::test]
+    async fn process_execution_captures_streams_and_nonzero_status() {
+        let client = StandardSshClient::new();
+        let mut command = Command::new("sh");
+        command
+            .arg("-c")
+            .arg("printf stdout-bytes; printf stderr-bytes >&2; exit 3");
+
+        let output = client.execute_process(&mut command, true).await.unwrap();
+
+        match output.status {
+            SshCommandStatus::Exited(status) => assert_eq!(status.code(), Some(3)),
+            SshCommandStatus::TimedOut => panic!("command unexpectedly timed out"),
+        }
+        assert_eq!(output.stdout, b"stdout-bytes");
+        assert_eq!(output.stderr, b"stderr-bytes");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn execution_timeout_kills_and_reaps_child() {
+        let client = StandardSshClient::with_config(SshConnectionConfig {
+            execution_timeout: Some(Duration::from_millis(50)),
+            ..SshConnectionConfig::default()
+        });
+        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = child.id().unwrap();
+
+        let status = client.wait_for_child(&mut child).await.unwrap();
+
+        assert!(matches!(status, SshCommandStatus::TimedOut));
+        assert_eq!(unsafe { libc::kill(pid as i32, 0) }, -1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn passthrough_preserves_streams_status_timeout_and_cancellation() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let fake_ssh = temp_dir.path().join("fake-ssh");
+        let private_key = temp_dir.path().join("key");
+        let cancellation_pid_file = temp_dir.path().join("cancel-pid");
+        let stdout_file = temp_dir.path().join("stdout");
+        let stderr_file = temp_dir.path().join("stderr");
+        std::fs::write(
+            &fake_ssh,
+            r#"#!/bin/sh
+for last_arg do :; done
+case "$last_arg" in
+  success) printf 'stdout-bytes'; printf 'stderr-bytes' >&2; exit 0 ;;
+  exit-3) exit 3 ;;
+  hang) exec sleep 30 ;;
+  cancel:*) printf '%s' "$$" > "${last_arg#cancel:}"; exec sleep 30 ;;
+esac
+exit 255
+"#,
+        )
+        .unwrap();
+        std::fs::set_permissions(&fake_ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(&private_key, "test-key").unwrap();
+        let details = SshConnectionDetails {
+            host: "example.test".to_string(),
+            username: "testuser".to_string(),
+            port: 22,
+            private_key_path: private_key,
+            timeout: Duration::from_secs(30),
+        };
+        let client = StandardSshClient::new();
+
+        let success = client
+            .execute_command_with_program_and_stdio(
+                &details,
+                "success",
+                &fake_ssh,
+                Stdio::from(std::fs::File::create(&stdout_file).unwrap()),
+                Stdio::from(std::fs::File::create(&stderr_file).unwrap()),
+            )
+            .await
+            .unwrap();
+        let failure = client
+            .execute_command_with_program_and_stdio(
+                &details,
+                "exit-3",
+                &fake_ssh,
+                Stdio::null(),
+                Stdio::null(),
+            )
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            success,
+            SshCommandStatus::Exited(status) if status.success()
+        ));
+        assert_eq!(std::fs::read(&stdout_file).unwrap(), b"stdout-bytes");
+        assert_eq!(std::fs::read(&stderr_file).unwrap(), b"stderr-bytes");
+        assert!(matches!(
+            failure,
+            SshCommandStatus::Exited(status) if status.code() == Some(3)
+        ));
+
+        let timeout_client = StandardSshClient::with_config(SshConnectionConfig {
+            execution_timeout: Some(Duration::from_millis(50)),
+            ..SshConnectionConfig::default()
+        });
+        let timeout_status = timeout_client
+            .execute_command_passthrough_with_program(&details, "hang", &fake_ssh)
+            .await
+            .unwrap();
+
+        assert!(matches!(timeout_status, SshCommandStatus::TimedOut));
+
+        {
+            let cancellation_command = format!("cancel:{}", cancellation_pid_file.display());
+            let cancellation = client.execute_command_with_program_and_stdio(
+                &details,
+                &cancellation_command,
+                &fake_ssh,
+                Stdio::null(),
+                Stdio::null(),
+            );
+            tokio::pin!(cancellation);
+            let wait_until_started = async {
+                while !cancellation_pid_file.exists() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            };
+
+            tokio::time::timeout(Duration::from_secs(5), async {
+                tokio::select! {
+                    result = &mut cancellation => {
+                        panic!("fake SSH exited before cancellation: {result:?}")
+                    }
+                    () = wait_until_started => {}
+                }
+            })
+            .await
+            .unwrap();
+        }
+
+        let cancelled_pid: i32 = std::fs::read_to_string(&cancellation_pid_file)
+            .unwrap()
+            .parse()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while unsafe { libc::kill(cancelled_pid, 0) } == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
     }
 
     #[test]
@@ -948,6 +1232,8 @@ mod tests {
                 "IdentitiesOnly=yes".to_string(),
                 "BatchMode=yes".to_string(),
                 "ConnectTimeout=30".to_string(),
+                "ServerAliveInterval=15".to_string(),
+                "ServerAliveCountMax=3".to_string(),
             ]
         );
     }
@@ -971,6 +1257,8 @@ mod tests {
                 "LogLevel=ERROR".to_string(),
                 "IdentitiesOnly=yes".to_string(),
                 "ConnectTimeout=7".to_string(),
+                "ServerAliveInterval=15".to_string(),
+                "ServerAliveCountMax=3".to_string(),
             ]
         );
     }
@@ -995,6 +1283,8 @@ mod tests {
                 "LogLevel=ERROR".to_string(),
                 "IdentitiesOnly=yes".to_string(),
                 "ConnectTimeout=7".to_string(),
+                "ServerAliveInterval=15".to_string(),
+                "ServerAliveCountMax=3".to_string(),
             ]
         );
     }
@@ -1022,6 +1312,30 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Username cannot be empty"));
+    }
+
+    #[test]
+    fn ssh_username_validation_accepts_portable_account_names() {
+        for username in ["root", "ubuntu22", "_service", "azure-user", "user.name"] {
+            validate_ssh_username(username).unwrap();
+        }
+    }
+
+    #[test]
+    fn ssh_username_validation_rejects_option_injection_and_invalid_names() {
+        for username in [
+            "-oProxyCommand=echo injected",
+            "user name",
+            "user@example.com",
+            "user/name",
+            "user\\name",
+            "usér",
+        ] {
+            assert!(
+                validate_ssh_username(username).is_err(),
+                "username should be rejected: {username}"
+            );
+        }
     }
 
     #[test]

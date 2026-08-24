@@ -94,10 +94,13 @@ pub async fn handle_create_token(
 }
 
 /// Handle listing all tokens
-pub async fn handle_list_tokens(client: &BasilicaClient, json: bool) -> Result<(), CliError> {
+pub async fn handle_list_tokens(
+    client: &BasilicaClient,
+    output: crate::cli::commands::ResolvedOutput,
+) -> Result<(), CliError> {
     let keys = client.list_api_keys().await.map_err(CliError::Api)?;
 
-    if json {
+    if output.is_json() {
         json_output(&keys)?;
         return Ok(());
     }
@@ -109,7 +112,7 @@ pub async fn handle_list_tokens(client: &BasilicaClient, json: bool) -> Result<(
             style("basilica").cyan()
         );
     } else {
-        table_output::display_api_keys(&keys).map_err(|e| {
+        table_output::display_api_keys(&keys, output).map_err(|e| {
             CliError::Internal(color_eyre::eyre::eyre!("Failed to display API keys: {}", e))
         })?;
     }
