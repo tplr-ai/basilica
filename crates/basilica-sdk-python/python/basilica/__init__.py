@@ -452,6 +452,18 @@ try:
     __version__ = _pkg_version("basilica-sdk")
 except PackageNotFoundError:
     __version__ = "0.0.0+unknown"
+
+
+def __getattr__(name):
+    # PEP 562: `from basilica import RlNamespace` must work because it is in
+    # __all__, but basilica.rl stays lazily imported (mirrors the .rl property)
+    if name == "RlNamespace":
+        from basilica.rl import RlNamespace
+
+        return RlNamespace
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     # Main client
     "BasilicaClient",

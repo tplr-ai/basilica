@@ -148,15 +148,30 @@ def test_builtin_job_minimal_body(server):
 
 def test_raw_body_escape_hatch_preserves_unknown_fields(server):
     # serde-flatten catch-alls in the core DTOs: a field this SDK version
-    # doesn't know must SURVIVE the typed round-trip verbatim.
+    # doesn't know must SURVIVE the typed round-trip verbatim. body= needs
+    # no placeholder kwargs — it replaces the built request entirely.
     base, rec = server
     raw = {"clusterRef": "x", "algorithm": "grpo", "maxSteps": 1, "futureField": True}
     rec.responses = [(200, {"name": "j1", "uid": "u2", "phase": "Pending"})]
-    rl(base).create_job(cluster="ignored", max_steps=99, body=raw)
+    rl(base).create_job(body=raw)
     (r,) = rec.requests
     assert r["body"]["futureField"] is True
     assert r["body"]["maxSteps"] == 1
     assert r["body"]["clusterRef"] == "x"
+
+
+def test_orphan_kwargs_raise_instead_of_silently_dropping(server):
+    # reward_source without reward_name (or dataset fields without
+    # dataset_name) would otherwise silently run the BUILTIN reward/dataset
+    # on a paid GPU job.
+    base, rec = server
+    with pytest.raises(ValueError, match="reward_name is required"):
+        rl(base).create_job(cluster="c", max_steps=3, reward_source="def reward(): ...")
+    with pytest.raises(ValueError, match="dataset_name is required"):
+        rl(base).create_job(cluster="c", max_steps=3, dataset_repo="openai/gsm8k")
+    with pytest.raises(ValueError, match="cluster and max_steps are required"):
+        rl(base).create_job(reward_name="r", reward_source="...")
+    assert rec.requests == []
 
 
 def test_wait_job_polls_to_terminal(server):
@@ -206,3 +221,52 @@ def test_manifest_posts_verbatim(server):
     rl(base).submit_manifest(doc)
     (r,) = rec.requests
     assert (r["method"], r["path"], r["body"]) == ("POST", "/rl/manifest", doc)
+
+
+def test_wait_cluster_polls_to_ready(server):
+    base, rec = server
+    rec.responses = [
+        (200, {"name": "c1", "uid": "u1", "phase": "Provisioning"}),
+        (200, {"name": "c1", "uid": "u1", "phase": "Warming"}),
+        (200, {"name": "c1", "uid": "u1", "phase": "Ready"}),
+    ]
+    final = rl(base).wait_cluster("c1", timeout_s=30, poll_s=0.01)
+    assert final["phase"] == "Ready"
+    assert len(rec.requests) == 3
+    assert all(r["path"] == "/rl/clusters/c1" for r in rec.requests)
+
+
+def test_wait_cluster_raises_immediately_on_terminating(server):
+    # Terminating can never become Ready: waiting out the full timeout would
+    # hide the failure. (Degraded, by contrast, keeps polling — it recovers.)
+    base, rec = server
+    rec.responses = [(200, {"name": "c1", "uid": "u1", "phase": "Terminating"})]
+    with pytest.raises(RuntimeError, match="entered Terminating"):
+        rl(base).wait_cluster("c1", timeout_s=30, poll_s=0.01)
+    assert len(rec.requests) == 1
+
+
+def test_wait_job_survives_transient_poll_errors(server):
+    # A single LB 502 mid-wait must not abort a multi-hour poll; only
+    # CONSECUTIVE failures beyond the budget give up.
+    base, rec = server
+    rec.responses = [
+        (200, {"phase": "Running"}),
+        (500, _api_error("upstream blip", code="BASILICA_API_INTERNAL_ERROR")),
+        (500, _api_error("upstream blip", code="BASILICA_API_INTERNAL_ERROR")),
+        (200, {"phase": "Succeeded"}),
+    ]
+    final = rl(base).wait_job("j1", timeout_s=30, poll_s=0.01)
+    assert final["phase"] == "Succeeded"
+    assert len(rec.requests) == 4
+
+
+def test_invalid_name_rejected_client_side(server):
+    # names become URL path segments + k8s object names: DNS-1035 is checked
+    # in the core before any HTTP
+    base, rec = server
+    with pytest.raises(ValueError, match="DNS-1035"):
+        rl(base).get_job("Bad/Name")
+    with pytest.raises(ValueError, match="DNS-1035"):
+        rl(base).get_cluster("-leading-dash")
+    assert rec.requests == []
