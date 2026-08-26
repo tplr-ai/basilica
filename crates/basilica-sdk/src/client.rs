@@ -42,6 +42,10 @@ use crate::{
         CreateJobRequest, CreateJobResponse, DeleteJobResponse, JobLogsResponse, JobStatusResponse,
         ReadFileRequest, ReadFileResponse, ResumeJobResponse, SuspendJobResponse,
     },
+    rl::{
+        CreateRlClusterRequest, CreateRlClusterResponse, CreateRlJobRequest, CreateRlJobResponse,
+        RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest, RlManifestResponse,
+    },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
         CardPurchaseSummary, CreateApiKeyRequest, CreateCardPurchaseRequest,
@@ -325,6 +329,66 @@ impl BasilicaClient {
     pub async fn suspend_job(&self, job_id: &str) -> Result<SuspendJobResponse> {
         let path = format!("/v2/jobs/{}/suspend", job_id);
         self.post(&path, &serde_json::json!({})).await
+    }
+
+    // ----- RL Training API (GRPO post-training) --------------------------
+
+    /// RL names become URL path segments and Kubernetes object names, so the
+    /// server enforces DNS-1035. Checking it client-side keeps a malformed
+    /// name from ever reaching the path (and yields a clearer error).
+    fn validate_rl_name(name: &str) -> Result<()> {
+        let dns1035 = !name.is_empty()
+            && name.len() <= 63
+            && name.starts_with(|c: char| c.is_ascii_lowercase())
+            && !name.ends_with('-')
+            && name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        if dns1035 {
+            Ok(())
+        } else {
+            Err(ApiError::InvalidRequest {
+                message: format!(
+                    "invalid RL resource name {name:?}: must be DNS-1035 \
+                     (lowercase alphanumeric or '-', start with a letter, \
+                     not end with '-', max 63 chars)"
+                ),
+            })
+        }
+    }
+
+    /// Create a warm RL cluster. Poll [`get_rl_cluster`](Self::get_rl_cluster)
+    /// until its phase is `Ready`.
+    pub async fn create_rl_cluster(
+        &self,
+        request: CreateRlClusterRequest,
+    ) -> Result<CreateRlClusterResponse> {
+        self.post("/rl/clusters", &request).await
+    }
+
+    /// Get a cluster's status.
+    pub async fn get_rl_cluster(&self, name: &str) -> Result<RlClusterStatusResponse> {
+        Self::validate_rl_name(name)?;
+        self.get(&format!("/rl/clusters/{}", name)).await
+    }
+
+    /// Submit a GRPO training job to a Ready cluster.
+    pub async fn create_rl_job(&self, request: CreateRlJobRequest) -> Result<CreateRlJobResponse> {
+        self.post("/rl/jobs", &request).await
+    }
+
+    /// Get a job's status (phase, step, metrics, `artifactURI`).
+    pub async fn get_rl_job(&self, name: &str) -> Result<RlJobStatusResponse> {
+        Self::validate_rl_name(name)?;
+        self.get(&format!("/rl/jobs/{}", name)).await
+    }
+
+    /// Submit a declarative manifest (renders a cluster and/or a job).
+    pub async fn submit_rl_manifest(
+        &self,
+        manifest: RlManifestRequest,
+    ) -> Result<RlManifestResponse> {
+        self.post("/rl/manifest", &manifest).await
     }
 
     /// Resume a suspended job

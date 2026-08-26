@@ -452,9 +452,23 @@ try:
     __version__ = _pkg_version("basilica-sdk")
 except PackageNotFoundError:
     __version__ = "0.0.0+unknown"
+
+
+def __getattr__(name):
+    # PEP 562: `from basilica import RlNamespace` must work because it is in
+    # __all__, but basilica.rl stays lazily imported (mirrors the .rl property)
+    if name == "RlNamespace":
+        from basilica.rl import RlNamespace
+
+        return RlNamespace
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     # Main client
     "BasilicaClient",
+    # RL training namespace (client.rl; module: basilica.rl)
+    "RlNamespace",
     # Decorator API
     "deployment",
     "DeployedFunction",
@@ -600,11 +614,24 @@ class BasilicaClient:
 
         self._base_url = base_url
         self._client = _BasilicaClient(base_url, api_key)
+        self._rl = None
 
     @property
     def base_url(self) -> str:
         """The API endpoint URL."""
         return self._base_url
+
+    @property
+    def rl(self) -> "RlNamespace":
+        """RL training namespace (GRPO post-training): clusters, jobs,
+        manifests. Thin wrapper over the compiled core's rl_* methods —
+        inherits the full auth chain incl. the CLI-login fallback. See
+        :mod:`basilica.rl`."""
+        if self._rl is None:
+            from basilica.rl import RlNamespace
+
+            self._rl = RlNamespace(self._client)
+        return self._rl
 
     def _build_deploy_request(
         self,
