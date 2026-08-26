@@ -44,7 +44,8 @@ use crate::{
     },
     rl::{
         CreateRlClusterRequest, CreateRlClusterResponse, CreateRlJobRequest, CreateRlJobResponse,
-        RlClusterStatusResponse, RlJobStatusResponse, RlManifestRequest, RlManifestResponse,
+        DeleteRlClusterResponse, DeleteRlJobResponse, RlClusterStatusResponse, RlJobStatusResponse,
+        RlManifestRequest, RlManifestResponse,
     },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
@@ -381,6 +382,22 @@ impl BasilicaClient {
     pub async fn get_rl_job(&self, name: &str) -> Result<RlJobStatusResponse> {
         Self::validate_rl_name(name)?;
         self.get(&format!("/rl/jobs/{}", name)).await
+    }
+
+    /// Delete a cluster. Refused with an actionable 400 while a job is
+    /// active (the error names the blocking job) — delete the job first;
+    /// that IS the cancel path. Deleting the namespace's last cluster also
+    /// tears down its RL prerequisites server-side.
+    pub async fn delete_rl_cluster(&self, name: &str) -> Result<DeleteRlClusterResponse> {
+        Self::validate_rl_name(name)?;
+        self.delete(&format!("/rl/clusters/{}", name)).await
+    }
+
+    /// Delete a job — valid in any phase. Deleting a running job IS the
+    /// cancel path: the operator's stop ladder owns pod teardown.
+    pub async fn delete_rl_job(&self, name: &str) -> Result<DeleteRlJobResponse> {
+        Self::validate_rl_name(name)?;
+        self.delete(&format!("/rl/jobs/{}", name)).await
     }
 
     /// Submit a declarative manifest (renders a cluster and/or a job).

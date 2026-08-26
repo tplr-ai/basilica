@@ -248,6 +248,22 @@ pub struct RlManifestResponse {
     pub job: Option<CreateRlJobResponse>,
 }
 
+/// Response after deleting a cluster (`DELETE /rl/clusters/{name}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRlClusterResponse {
+    /// The deleted cluster's name.
+    pub name: String,
+}
+
+/// Response after deleting a job (`DELETE /rl/jobs/{name}`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRlJobResponse {
+    /// The deleted job's name.
+    pub name: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,6 +310,17 @@ mod tests {
         // but a null in a non-Option server slot would 400)
         assert!(v.get("name").is_none());
         assert!(v.get("lr").is_none());
+    }
+
+    #[test]
+    fn delete_response_wire_shape() {
+        // The server serializes camelCase; both delete responses carry only
+        // `name`. Pin the deserialization so a server-side field rename is
+        // caught here, not by a user.
+        let c: DeleteRlClusterResponse = serde_json::from_str(r#"{"name":"my-pool"}"#).unwrap();
+        assert_eq!(c.name, "my-pool");
+        let j: DeleteRlJobResponse = serde_json::from_str(r#"{"name":"my-pool-job"}"#).unwrap();
+        assert_eq!(j.name, "my-pool-job");
     }
 
     #[test]
