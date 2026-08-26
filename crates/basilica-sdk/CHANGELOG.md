@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-27
+
+### Added
+
+- **RL training client surface (beta, staging-only):** typed DTOs and
+  methods for the managed GRPO training API — cluster/job create, status
+  reads, manifest submission, and `delete_rl_cluster` / `delete_rl_job`
+  (`DeleteRlClusterResponse` / `DeleteRlJobResponse`). Deleting a running
+  job is the cancel path; a cluster delete under an active job is refused
+  with the blocking job named. Routes exist on the staging API only in
+  this release; minimum backend: the 2026-08-27 staging deploy
+  (backend #1525 + #1536).
+
 ## [0.33.0] - 2026-07-14
 
 ### Added
