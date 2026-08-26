@@ -110,6 +110,18 @@ class RlNamespace:
     def get_cluster(self, name: str) -> dict:
         return json.loads(self._core.rl_get_cluster(name))
 
+    def delete_cluster(self, name: str) -> dict:
+        """Delete a cluster. Refused (ValueError) while a job is active —
+        the error names the blocking job; delete the job first (that IS the
+        cancel path). Deleting the namespace's last cluster also tears down
+        its RL prerequisites server-side."""
+        return json.loads(self._core.rl_delete_cluster(name))
+
+    def delete_job(self, name: str) -> dict:
+        """Delete a job — valid in any phase. Deleting a running job IS the
+        cancel path (pods are torn down by the operator's stop ladder)."""
+        return json.loads(self._core.rl_delete_job(name))
+
     def wait_cluster(
         self, name: str, timeout_s: float = 1800.0, poll_s: float = 15.0
     ) -> dict:

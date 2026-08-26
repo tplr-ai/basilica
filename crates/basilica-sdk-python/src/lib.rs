@@ -124,6 +124,32 @@ impl BasilicaClient {
         serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Delete an RL cluster (refused with an actionable error while a job
+    /// is active — delete the job first; that is the cancel path).
+    fn rl_delete_cluster(&self, py: Python, name: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.delete_rl_cluster(&name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Delete an RL job — valid in any phase; deleting a running job IS the
+    /// cancel path.
+    fn rl_delete_job(&self, py: Python, name: String) -> PyResult<String> {
+        let client = Arc::clone(&self.inner);
+        let response = py
+            .detach(|| {
+                self.runtime
+                    .block_on(async move { client.delete_rl_job(&name).await })
+            })
+            .map_err(|e| self.map_error_to_python(e))?;
+        serde_json::to_string(&response).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Get an RL cluster's status (phase, modelLoaded, activeJobName).
     fn rl_get_cluster(&self, py: Python, name: String) -> PyResult<String> {
         let client = Arc::clone(&self.inner);
