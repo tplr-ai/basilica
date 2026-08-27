@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-27
+
+Version-lockstep release with basilica-sdk 0.34.0 (the RL training beta
+lives in the SDK only). No CLI-surface changes; RL commands are
+deliberately absent while the RL API is in staging beta.
+
 ## [0.33.0] - 2026-07-14
 
 ### Added

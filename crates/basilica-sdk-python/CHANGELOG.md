@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-08-27
+
+### Added
+
+- **RL training namespace `client.rl` (beta, staging-only).** First release
+  carrying the managed GRPO training surface: `create_cluster`, `create_job`,
+  `get_cluster`, `get_job`, `wait_cluster`, `wait_job`, `submit_manifest`,
+  and the delete pair `delete_cluster` / `delete_job` (deleting a running
+  job IS the cancel path; deleting a cluster is refused while a job is
+  active, and the error names the blocking job).
+
+  The RL routes exist only on the staging API in this release. The client
+  defaults to production, so point it at staging explicitly:
+
+  ```python
+  from basilica import BasilicaClient
+  client = BasilicaClient(base_url="https://api-staging.basilica.ai",
+                          api_key="...")
+  ```
+
+  or set `BASILICA_API_URL=https://api-staging.basilica.ai`.
+
+  Minimum backend version: the staging deploy of 2026-08-27 (backend
+  #1525 + #1536). Against an older backend the delete methods return 404.
+
+  The CLI intentionally carries no RL commands in this release — the RL
+  surface is SDK-only while in beta.
+
 ## [0.33.0] - 2026-07-14
 
 ### Added
@@ -572,7 +600,8 @@ ticket SDK-S1.
 - Inline API documentation
 - Example code for common workflows
 
-[Unreleased]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.33.0...HEAD
+[Unreleased]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.34.0...HEAD
+[0.34.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.33.0...basilica-sdk-python-v0.34.0
 [0.33.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.32.0...basilica-sdk-python-v0.33.0
 [0.32.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.31.2...basilica-sdk-python-v0.32.0
 [0.14.0]: https://github.com/one-covenant/basilica/compare/basilica-sdk-python-v0.13.0...basilica-sdk-python-v0.14.0
