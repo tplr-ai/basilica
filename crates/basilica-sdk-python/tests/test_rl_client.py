@@ -43,7 +43,7 @@ class _Recorder(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    do_GET = do_POST = _handle
+    do_GET = do_POST = do_DELETE = _handle
 
     def log_message(self, *_):
         pass
@@ -270,3 +270,41 @@ def test_invalid_name_rejected_client_side(server):
     with pytest.raises(ValueError, match="DNS-1035"):
         rl(base).get_cluster("-leading-dash")
     assert rec.requests == []
+
+
+# ----- delete surface error mapping (#561, the Talos LOW from #559) --------
+
+
+def test_delete_cluster_refusal_maps_to_valueerror_naming_the_job(server):
+    """The active-job 400 refusal surfaces as ValueError carrying the
+    server's message verbatim — including the blocking job's name, which is
+    the part callers act on (delete that job first)."""
+    base, rec = server
+    rec.responses = [
+        (400, _api_error("cluster my-pool has an active job (my-job); delete the job first"))
+    ]
+    with pytest.raises(ValueError, match=r"my-job"):
+        rl(base).delete_cluster("my-pool")
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("DELETE", "/rl/clusters/my-pool")
+    assert r["auth"] == "Bearer test-key"
+
+
+def test_delete_job_wire_shape(server):
+    base, rec = server
+    rec.responses = [(200, {"name": "my-job"})]
+    assert rl(base).delete_job("my-job") == {"name": "my-job"}
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("DELETE", "/rl/jobs/my-job")
+    assert r["auth"] == "Bearer test-key"
+
+
+def test_delete_cluster_not_found_maps_per_the_error_table(server):
+    """404 maps to the not-found exception class (pinned to the observed
+    live behavior of the published wheel)."""
+    base, rec = server
+    rec.responses = [
+        (404, _api_error("rl cluster not found: absent", code="BASILICA_API_NOT_FOUND"))
+    ]
+    with pytest.raises(KeyError, match=r"not found"):
+        rl(base).delete_cluster("absent")

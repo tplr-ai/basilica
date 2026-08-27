@@ -24,7 +24,7 @@ methods, which serde-validate against the core's typed DTOs
 and send through the core transport. That inherits the full auth chain
 (explicit key, BASILICA_API_TOKEN, and the CLI-login token fallback) and
 the core's error mapping: non-2xx surfaces as ValueError (bad request),
-PermissionError (authz), ConnectionError (transport), FileNotFoundError
+PermissionError (authz), ConnectionError (transport), KeyError
 (not found), or RuntimeError (server error), each carrying the server's
 message verbatim.
 
