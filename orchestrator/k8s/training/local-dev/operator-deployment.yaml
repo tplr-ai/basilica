@@ -1,0 +1,79 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: basilica-operator
+  namespace: basilica-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: basilica-operator
+rules:
+  # TrainingSession CRD
+  - apiGroups: ["basilica.ai"]
+    resources: ["trainingsessions", "trainingsessions/status"]
+    verbs: ["*"]
+  # Pods, Services
+  - apiGroups: [""]
+    resources: ["pods", "services", "namespaces", "configmaps", "secrets"]
+    verbs: ["*"]
+  # Gateway API
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["*"]
+  # Deployments
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["*"]
+  # Events
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: basilica-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: basilica-operator
+subjects:
+  - kind: ServiceAccount
+    name: basilica-operator
+    namespace: basilica-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: basilica-operator
+  namespace: basilica-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: basilica-operator
+  template:
+    metadata:
+      labels:
+        app: basilica-operator
+    spec:
+      serviceAccountName: basilica-operator
+      containers:
+        - name: operator
+          image: basilica-operator:local
+          imagePullPolicy: Never
+          env:
+            - name: RUST_LOG
+              value: "info,basilica_operator=debug"
+            - name: TRAINING_IMAGE
+              # CPU-only training image for local dev
+              value: "basilica-training:local"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
