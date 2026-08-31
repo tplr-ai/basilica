@@ -45,7 +45,8 @@ use crate::{
     rl::{
         CreateRlClusterRequest, CreateRlClusterResponse, CreateRlJobRequest, CreateRlJobResponse,
         DeleteRlClusterResponse, DeleteRlJobResponse, RlClusterStatusResponse, RlJobStatusResponse,
-        RlManifestRequest, RlManifestResponse,
+        RlManifestRequest, RlManifestResponse, RotateRelayCredentialsRequest,
+        RotateRlCredentialsResponse,
     },
     types::{
         ApiKeyInfo, ApiKeyResponse, ApiListRentalsResponse, BalanceResponse, CardPurchaseResponse,
@@ -382,6 +383,22 @@ impl BasilicaClient {
     pub async fn get_rl_job(&self, name: &str) -> Result<RlJobStatusResponse> {
         Self::validate_rl_name(name)?;
         self.get(&format!("/rl/jobs/{}", name)).await
+    }
+
+    /// Rotate a BYO cluster's relay storage credentials (#1577). Only for
+    /// clusters created with the INLINE key pair (platform-managed secret);
+    /// clusters using `credentialsSecret` update their own secret instead.
+    /// Sequencing: create the NEW key at your provider first, call this,
+    /// then revoke the OLD key after the returned `rotatedAt` (+ a few
+    /// seconds for the relay daemon to restart on the new material).
+    pub async fn rotate_rl_cluster_credentials(
+        &self,
+        name: &str,
+        request: RotateRelayCredentialsRequest,
+    ) -> Result<RotateRlCredentialsResponse> {
+        Self::validate_rl_name(name)?;
+        self.post(&format!("/rl/clusters/{}/credentials", name), &request)
+            .await
     }
 
     /// Delete a cluster. Refused with an actionable 400 while a job is

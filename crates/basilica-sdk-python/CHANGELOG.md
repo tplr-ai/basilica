@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-31
+
+### Added
+
+- **Bring-your-own storage for RL clusters (beta, staging-only).**
+  `client.rl.create_cluster(relay={...})` points a cluster's weight-sync
+  relay at your own S3-compatible bucket (R2/S3; `mode: "byo"` with
+  endpoint/bucket/optional `basePrefix`, and either an inline key pair —
+  write-only, converted to a namespaced secret, never echoed — or a
+  `credentialsSecret` you manage). The create response gains
+  `effectivePrefix`, the uid-scoped key prefix all cluster data lands
+  under — scope your IAM grant to it. The same `relay` dict works inside
+  a manifest's `cluster` block. See `docs/BYO-RELAY-USER-GUIDE.md` in the
+  platform repo for endpoint requirements, the IAM template, and the
+  compatibility matrix.
+- **`client.rl.rotate_credentials(name, access_key_id=…,
+  secret_access_key=…)`** rotates a BYO cluster's credentials (inline-pair
+  clusters only). Create the new key first, rotate, then revoke the old
+  key after the returned `rotatedAt` — the relay daemon restarts onto the
+  new material within seconds.
+
 ## [0.34.0] - 2026-08-27
 
 ### Added
