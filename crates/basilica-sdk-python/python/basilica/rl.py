@@ -73,12 +73,30 @@ class RlNamespace:
         name: Optional[str] = None,
         min_memory_gb: Optional[int] = None,
         idle_ttl: Optional[str] = None,
+        relay: Optional[dict] = None,
         body: Optional[dict] = None,
     ) -> dict:
         """POST /rl/clusters — a warm trainer+rollout GPU pool.
 
         Certified shapes: 4+4 (H100 for <16B models, H200-class for >=16B —
         admission rejects bad pairings with an actionable message).
+
+        ``relay`` selects bring-your-own storage (wire-shaped dict; the same
+        dict works inside a manifest's ``cluster`` block)::
+
+            relay={
+                "mode": "byo",
+                "endpoint": "https://<acct>.r2.cloudflarestorage.com",
+                "bucket": "my-weights",
+                "basePrefix": "teams/rl/",          # optional
+                "accessKeyId": "...",               # write-only: becomes a
+                "secretAccessKey": "...",           #   secret, never echoed
+                # or instead of the pair: "credentialsSecret": "my-secret"
+            }
+
+        The response then carries ``effectivePrefix`` — the uid-scoped key
+        prefix all cluster data lands under; tighten your IAM grant to it.
+        Omit ``relay`` for platform-managed storage (today's behavior).
         ``body`` replaces the built request entirely (raw wire dict, escape
         hatch) — no other kwargs are consulted when it is given.
         """
@@ -103,9 +121,28 @@ class RlNamespace:
                     "trainer": fleet(trainer_gpus),
                     "rollout": fleet(rollout_gpus),
                     "idleTtl": idle_ttl,
+                    "relay": relay,
                 }
             )
         return json.loads(self._core.rl_create_cluster(json.dumps(body)))
+
+    def rotate_credentials(
+        self, name: str, *, access_key_id: str, secret_access_key: str
+    ) -> dict:
+        """POST /rl/clusters/{name}/credentials — rotate a BYO cluster's
+        storage credentials (only clusters created with the inline pair;
+        clusters using ``credentialsSecret`` update their own secret).
+
+        Sequencing: create the NEW key at your provider first (both keys
+        valid), call this, then revoke the OLD key after the returned
+        ``rotatedAt`` plus a few seconds — the relay daemon restarts onto
+        the new material in that window; in-flight transfers finish on the
+        old key. Revoking first fails the running job with
+        ``RelayAuthFailed`` (recoverable, but wastes the retry window)."""
+        req = {"accessKeyId": access_key_id, "secretAccessKey": secret_access_key}
+        return json.loads(
+            self._core.rl_rotate_cluster_credentials(name, json.dumps(req))
+        )
 
     def get_cluster(self, name: str) -> dict:
         return json.loads(self._core.rl_get_cluster(name))

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-08-31
+
+### Added
+
+- **BYO relay storage DTOs (server #1574/#1577).** `RlRelayRequest` /
+  `RlRelayMode` typed on `CreateRlClusterRequest.relay` (omitted → the
+  platform relay, byte-identical wire shape); `CreateRlClusterResponse`
+  gains the optional `effectivePrefix` (tolerant of servers that omit
+  it). `rotate_rl_cluster_credentials()` +
+  `RotateRelayCredentialsRequest`/`RotateRlCredentialsResponse` for the
+  credential-rotation endpoint. Credential-bearing request DTOs carry
+  hand-written `Debug` impls that redact key material, so client-side
+  request tracing cannot leak it.
+
 ## [0.34.0] - 2026-08-27
 
 ### Added

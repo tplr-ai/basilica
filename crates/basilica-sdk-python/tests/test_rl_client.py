@@ -308,3 +308,69 @@ def test_delete_cluster_not_found_maps_per_the_error_table(server):
     ]
     with pytest.raises(KeyError, match=r"not found"):
         rl(base).delete_cluster("absent")
+
+
+def test_create_cluster_relay_wire_shape(server):
+    # #1578: the relay dict passes through verbatim (already wire-shaped),
+    # and the response's effectivePrefix reaches the caller.
+    base, rec = server
+    rec.responses = [(200, {
+        "name": "byo-pool", "uid": "u1", "phase": "Provisioning",
+        "effectivePrefix": "teams/rl/u1/",
+    })]
+    out = rl(base).create_cluster(
+        name="byo-pool",
+        base_model="Qwen/Qwen2.5-7B-Instruct",
+        gpu_model="H100",
+        relay={
+            "mode": "byo",
+            "endpoint": "https://acc.r2.cloudflarestorage.com",
+            "bucket": "my-weights",
+            "basePrefix": "teams/rl/",
+            "accessKeyId": "AK",
+            "secretAccessKey": "SK",
+        },
+    )
+    (r,) = rec.requests
+    assert r["body"]["relay"] == {
+        "mode": "byo",
+        "endpoint": "https://acc.r2.cloudflarestorage.com",
+        "bucket": "my-weights",
+        "basePrefix": "teams/rl/",
+        "accessKeyId": "AK",
+        "secretAccessKey": "SK",
+    }
+    assert out["effectivePrefix"] == "teams/rl/u1/"
+
+
+def test_create_cluster_without_relay_is_wire_identical(server):
+    # Omitting relay must serialize NO relay key at all (deny_unknown_fields
+    # servers predating BYO would 400 on an unexpected null).
+    base, rec = server
+    rec.responses = [(200, {"name": "p", "uid": "u", "phase": "Provisioning"})]
+    rl(base).create_cluster(base_model="m/m", gpu_model="H100")
+    (r,) = rec.requests
+    assert "relay" not in r["body"]
+
+
+def test_rotate_credentials_wire_shape(server):
+    base, rec = server
+    rec.responses = [(200, {"name": "byo-pool",
+                            "rotatedAt": "2026-08-31T12:00:00+00:00"})]
+    out = rl(base).rotate_credentials(
+        "byo-pool", access_key_id="NEWAK", secret_access_key="NEWSK"
+    )
+    (r,) = rec.requests
+    assert (r["method"], r["path"]) == ("POST", "/rl/clusters/byo-pool/credentials")
+    assert r["body"] == {"accessKeyId": "NEWAK", "secretAccessKey": "NEWSK"}
+    assert out["rotatedAt"].startswith("2026-08-31")
+
+
+def test_rotate_credentials_maps_errors(server):
+    # A platform-mode cluster refuses rotation with an actionable 400 ->
+    # ValueError carrying the server message.
+    base, rec = server
+    rec.responses = [(400, _api_error(
+        "RelayModeInvalid: cluster plat uses platform-managed storage"))]
+    with pytest.raises(ValueError, match="RelayModeInvalid"):
+        rl(base).rotate_credentials("plat", access_key_id="A", secret_access_key="B")

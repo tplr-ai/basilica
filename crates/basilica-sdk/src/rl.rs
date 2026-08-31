@@ -58,11 +58,105 @@ pub struct CreateRlClusterRequest {
     /// Optional idle-TTL (e.g. `30m`) after which an idle cluster reaps itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idle_ttl: Option<String>,
+    /// Bring-your-own relay storage (#1578; server #1574). Omit for the
+    /// platform relay — today's behavior, byte-identical on the wire.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relay: Option<RlRelayRequest>,
     /// Forward-compat catch-all: fields this SDK version doesn't know are
     /// preserved verbatim on the wire (the `body=` escape hatch depends on
     /// this — server-side schema additions must never be silently dropped).
     #[serde(flatten)]
     pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Relay storage mode. Serialized lowercase (`byo` | `platform`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RlRelayMode {
+    /// User-supplied S3-compatible storage.
+    Byo,
+    /// The platform-managed relay (the default when the block is omitted).
+    Platform,
+}
+
+/// BYO relay block (mirrors the server's `RlRelayRequest`, #1574).
+///
+/// Credentials are WRITE-ONLY on the platform: they become a namespaced
+/// secret at create and are never echoed by any response or log. The
+/// hand-written `Debug` below redacts them on the CLIENT side too, so an
+/// application that traces its requests cannot leak them either.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RlRelayRequest {
+    /// Storage mode.
+    pub mode: RlRelayMode,
+    /// S3-compatible endpoint URL — https with a public-CA cert and a DNS
+    /// hostname (IP literals are rejected).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    /// Bucket name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bucket: Option<String>,
+    /// Region (S3 dialects; R2 uses `auto`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    /// Organizational prefix inside the bucket; the platform appends
+    /// `<cluster-uid>/` — see `effectivePrefix` on the create response.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_prefix: Option<String>,
+    /// Name of an existing namespaced secret you manage (keys
+    /// `access_key_id` / `secret_access_key`). Mutually exclusive with the
+    /// inline pair.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credentials_secret: Option<String>,
+    /// Inline access key id (write-only; becomes a platform-managed secret).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_key_id: Option<String>,
+    /// Inline secret access key (write-only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_access_key: Option<String>,
+}
+
+impl std::fmt::Debug for RlRelayRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RlRelayRequest")
+            .field("mode", &self.mode)
+            .field("endpoint", &self.endpoint)
+            .field("bucket", &self.bucket)
+            .field("region", &self.region)
+            .field("base_prefix", &self.base_prefix)
+            .field("credentials_secret", &self.credentials_secret)
+            .field(
+                "access_key_id",
+                &self.access_key_id.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "secret_access_key",
+                &self.secret_access_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
+/// Rotate a BYO cluster's relay credentials
+/// (`POST /rl/clusters/{name}/credentials`, #1577). Applies only to
+/// clusters created with the inline pair (platform-managed secret).
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotateRelayCredentialsRequest {
+    /// Replacement access key id (write-only).
+    pub access_key_id: String,
+    /// Replacement secret access key (write-only).
+    pub secret_access_key: String,
+}
+
+impl std::fmt::Debug for RotateRelayCredentialsRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RotateRelayCredentialsRequest")
+            .field("access_key_id", &"<redacted>")
+            .field("secret_access_key", &"<redacted>")
+            .finish()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +267,24 @@ pub struct CreateRlClusterResponse {
     pub uid: String,
     /// Lifecycle phase at creation (`Provisioning`).
     pub phase: String,
+    /// BYO only: the uid-scoped storage key prefix
+    /// (`<basePrefix><cluster-uid>/`) everything the cluster stores lands
+    /// under — tighten your IAM grant to it. Absent for platform-managed
+    /// storage and on servers predating #1574.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_prefix: Option<String>,
+}
+
+/// Response after rotating a cluster's storage credentials (#1577).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RotateRlCredentialsResponse {
+    /// The cluster whose credentials were rotated.
+    pub name: String,
+    /// When the rotation was applied (RFC 3339). The relay daemon restarts
+    /// with the new key material within seconds of this instant — keep the
+    /// OLD key valid until then, then revoke it.
+    pub rotated_at: String,
 }
 
 /// Cluster status (`GET /rl/clusters/{name}`).
@@ -345,6 +457,7 @@ mod tests {
                 },
             },
             idle_ttl: Some("30m".into()),
+            relay: None,
             extra: Default::default(),
         };
         let v = serde_json::to_value(&req).unwrap();
@@ -352,6 +465,82 @@ mod tests {
         assert_eq!(v["trainer"]["gpu"]["count"], 4);
         assert_eq!(v["idleTtl"], "30m");
         assert!(v["trainer"]["gpu"].get("minMemoryGb").is_none());
+        // No relay block => byte-identical to the pre-#1578 wire shape.
+        assert!(v.get("relay").is_none());
+    }
+
+    #[test]
+    fn relay_request_wire_shape() {
+        let relay = RlRelayRequest {
+            mode: RlRelayMode::Byo,
+            endpoint: Some("https://acc.r2.cloudflarestorage.com".into()),
+            bucket: Some("my-weights".into()),
+            region: None,
+            base_prefix: Some("teams/rl/".into()),
+            credentials_secret: None,
+            access_key_id: Some("AK".into()),
+            secret_access_key: Some("SK".into()),
+        };
+        let v = serde_json::to_value(&relay).unwrap();
+        // The server's deny_unknown_fields DTO expects exactly these names.
+        assert_eq!(v["mode"], "byo");
+        assert_eq!(v["basePrefix"], "teams/rl/");
+        assert_eq!(v["accessKeyId"], "AK");
+        assert_eq!(v["secretAccessKey"], "SK");
+        assert!(v.get("region").is_none());
+        assert!(v.get("credentialsSecret").is_none());
+    }
+
+    #[test]
+    fn relay_debug_redacts_credentials() {
+        let relay = RlRelayRequest {
+            mode: RlRelayMode::Byo,
+            endpoint: None,
+            bucket: None,
+            region: None,
+            base_prefix: None,
+            credentials_secret: None,
+            access_key_id: Some("SUPERSECRETAK".into()),
+            secret_access_key: Some("SUPERSECRETSK".into()),
+        };
+        let dbg = format!("{relay:?}");
+        assert!(!dbg.contains("SUPERSECRET"), "Debug must redact: {dbg}");
+        assert!(dbg.contains("<redacted>"));
+        let rot = RotateRelayCredentialsRequest {
+            access_key_id: "SUPERSECRETAK".into(),
+            secret_access_key: "SUPERSECRETSK".into(),
+        };
+        let dbg = format!("{rot:?}");
+        assert!(!dbg.contains("SUPERSECRET"), "Debug must redact: {dbg}");
+    }
+
+    #[test]
+    fn cluster_response_effective_prefix_is_optional() {
+        // Old servers (pre-#1574) omit it; BYO creates carry it.
+        let old: CreateRlClusterResponse =
+            serde_json::from_str(r#"{"name":"p","uid":"u","phase":"Provisioning"}"#).unwrap();
+        assert_eq!(old.effective_prefix, None);
+        let byo: CreateRlClusterResponse = serde_json::from_str(
+            r#"{"name":"p","uid":"u","phase":"Provisioning","effectivePrefix":"teams/rl/u/"}"#,
+        )
+        .unwrap();
+        assert_eq!(byo.effective_prefix.as_deref(), Some("teams/rl/u/"));
+    }
+
+    #[test]
+    fn rotation_wire_shapes() {
+        let req = RotateRelayCredentialsRequest {
+            access_key_id: "AK".into(),
+            secret_access_key: "SK".into(),
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["accessKeyId"], "AK");
+        assert_eq!(v["secretAccessKey"], "SK");
+        let resp: RotateRlCredentialsResponse =
+            serde_json::from_str(r#"{"name":"p","rotatedAt":"2026-08-31T12:00:00+00:00"}"#)
+                .unwrap();
+        assert_eq!(resp.name, "p");
+        assert!(resp.rotated_at.starts_with("2026-08-31"));
     }
 
     #[test]
