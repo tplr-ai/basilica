@@ -129,9 +129,11 @@ class RlNamespace:
     def rotate_credentials(
         self, name: str, *, access_key_id: str, secret_access_key: str
     ) -> dict:
-        """POST /rl/clusters/{name}/credentials — rotate a BYO cluster's
-        storage credentials (only clusters created with the inline pair;
-        clusters using ``credentialsSecret`` update their own secret).
+        """Rotate the storage credentials of a bring-your-own-storage cluster.
+
+        POST /rl/clusters/{name}/credentials. Applies only to clusters
+        created with the inline key pair (platform-managed secret);
+        clusters using ``credentialsSecret`` update their own secret.
 
         Sequencing: create the NEW key at your provider first (both keys
         valid), call this, then revoke the OLD key after the returned

@@ -117,6 +117,11 @@ pub struct RlRelayRequest {
     pub secret_access_key: Option<String>,
 }
 
+// Redaction policy (deliberate asymmetry): only the two key-material
+// fields are redacted. The remaining fields — endpoint, bucket, region,
+// basePrefix, and the credentialsSecret NAME — are non-secret storage
+// coordinates (the same values appear in the CR spec and cluster status),
+// and printing them is what makes a traced request debuggable.
 impl std::fmt::Debug for RlRelayRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RlRelayRequest")
@@ -383,6 +388,14 @@ mod tests {
     // The SDK request DTOs must serialize to the exact wire shape the server's
     // deny_unknown_fields DTOs accept. These pin the field renames and casing
     // that the server contract depends on.
+    //
+    // Coverage split (deliberate): these are SERIALIZATION tests only. The
+    // HTTP-level contract — method, path, auth header, body-on-the-wire,
+    // and error mapping for every rl_* call including credential rotation —
+    // is pinned by the Python suite's recorded-HTTP harness
+    // (crates/basilica-sdk-python/tests/test_rl_client.py), which exercises
+    // the COMPILED core transport end to end. A Rust-side HTTP harness
+    // would duplicate that coverage one layer lower.
     #[test]
     fn job_request_wire_shape() {
         let req = CreateRlJobRequest {
