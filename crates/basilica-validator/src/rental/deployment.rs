@@ -10,6 +10,28 @@ use tracing::{debug, info, warn};
 use super::container_client::ContainerClient;
 use super::types::{ContainerInfo, ContainerSpec};
 
+const BASILICA_SSH_LOGIN_BANNER: &str = r#"             #######           
+ ######  #############        
+########################      
+   #######################    
+    ########        #######   
+   ##########         ######  
+   ###########         ###### 
+  #####  ######         ######
+  #####   #####          #####
+ #####    ######         #####
+ #####    ######         #####
+ #####    ######         #####
+ #####    ######         #####
+ #####    ######         #####
+ #####    ######         #####
+ #####     #####         #####
+ #####     #####         #####
+ #####      ##################
+ #####        ################
+  ####          ##############
+"#;
+
 /// Container deployment manager
 pub struct DeploymentManager {
     /// Deployment configuration
@@ -572,22 +594,45 @@ impl DeploymentManager {
             client.execute_ssh_command(&add_key_alt).await?;
         }
 
-        // Configure SSH to allow root login with key
-        let config_ssh = format!(
-            "docker exec {container_id} bash -c 'echo \"PermitRootLogin prohibit-password\" >> /etc/ssh/sshd_config && \
-             echo \"PubkeyAuthentication yes\" >> /etc/ssh/sshd_config && \
-             echo \"PasswordAuthentication no\" >> /etc/ssh/sshd_config'"
+        // Install Basilica SSH banner content.
+        let set_login_banner = format!(
+            r#"docker exec {container_id} sh -c "cat > /etc/issue.net <<'BASILICA_EOF'
+{banner}
+BASILICA_EOF""#,
+            banner = BASILICA_SSH_LOGIN_BANNER
         );
-        let _ = client.execute_ssh_command(&config_ssh).await;
+        if let Err(e) = client.execute_ssh_command(&set_login_banner).await {
+            debug!("Failed to install Basilica SSH daemon banner: {}", e);
+        }
+
+        // Configure SSH access and enforce Basilica banner settings.
+        // OpenSSH uses first-match-wins semantics, so comment existing directives first.
+        let config_ssh = format!(
+            r#"docker exec {container_id} sh -c "sed -i 's/^[[:space:]]*\(Banner\|PrintMotd\|PermitRootLogin\|PubkeyAuthentication\|PasswordAuthentication\)[[:space:]].*/# basilica-override: &/' /etc/ssh/sshd_config 2>/dev/null || true
+cat >> /etc/ssh/sshd_config <<'BASILICA_SSHD_EOF'
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication no
+Banner /etc/issue.net
+PrintMotd no
+BASILICA_SSHD_EOF""#
+        );
+        if let Err(e) = client.execute_ssh_command(&config_ssh).await {
+            warn!("Failed to configure sshd settings: {}", e);
+        }
 
         // Start SSH service (try multiple methods)
         info!("Starting SSH service in container {}", container_id);
 
         // Try systemctl first (for systemd-based systems)
-        let start_systemctl = format!("docker exec {container_id} systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null");
+        let start_systemctl = format!(
+            "docker exec {container_id} sh -c 'systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null'"
+        );
         if client.execute_ssh_command(&start_systemctl).await.is_err() {
             // Try service command
-            let start_service = format!("docker exec {container_id} service ssh start 2>/dev/null || service sshd start 2>/dev/null");
+            let start_service = format!(
+                "docker exec {container_id} sh -c 'service ssh restart 2>/dev/null || service sshd restart 2>/dev/null || service ssh start 2>/dev/null || service sshd start 2>/dev/null'"
+            );
             if client.execute_ssh_command(&start_service).await.is_err() {
                 // Try running sshd directly
                 let start_direct = format!("docker exec -d {container_id} /usr/sbin/sshd -D");
