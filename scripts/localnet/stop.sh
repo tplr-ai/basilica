@@ -13,6 +13,11 @@ cd "${SCRIPT_DIR}"
 
 # Parse arguments
 CLEAN=false
+COMPOSE_ARGS=()
+
+if [ -n "${MG_COMPOSE_OVERRIDE_FILE:-}" ]; then
+    COMPOSE_ARGS+=(-f "${MG_COMPOSE_OVERRIDE_FILE}")
+fi
 
 for arg in "$@"; do
     case $arg in
@@ -47,7 +52,7 @@ echo ""
 # Stop containers (include all profiles so compose sees every service)
 if [ "$CLEAN" = true ]; then
     echo "[1/3] Stopping containers and removing volumes..."
-    docker compose --profile network --profile validator --profile miner down -v 2>/dev/null || true
+    docker compose "${COMPOSE_ARGS[@]}" --profile network --profile validator --profile miner down -v 2>/dev/null || true
 
     echo ""
     echo "[2/3] Removing orphaned volumes..."
@@ -61,7 +66,7 @@ if [ "$CLEAN" = true ]; then
     docker network rm basilica-localnet 2>/dev/null || true
 else
     echo "[1/3] Stopping containers..."
-    docker compose --profile network --profile validator --profile miner down 2>/dev/null || true
+    docker compose "${COMPOSE_ARGS[@]}" --profile network --profile validator --profile miner down 2>/dev/null || true
 
     echo ""
     echo "[2/3] Skipping volume removal (use --clean to remove)"
@@ -75,10 +80,10 @@ echo "========================================"
 echo ""
 
 # Show status
-RUNNING=$(docker compose ps -q 2>/dev/null | wc -l | tr -d ' ')
+RUNNING=$(docker compose "${COMPOSE_ARGS[@]}" ps -q 2>/dev/null | wc -l | tr -d ' ')
 if [ "$RUNNING" -gt 0 ]; then
     echo "Warning: Some containers may still be running:"
-    docker compose ps 2>/dev/null
+    docker compose "${COMPOSE_ARGS[@]}" ps 2>/dev/null
 else
     echo "All containers stopped."
 fi

@@ -48,6 +48,11 @@ show_help() {
 # Parse arguments
 PROFILE="${1:-all}"
 BUILD_FLAG=""
+COMPOSE_ARGS=()
+
+if [ -n "${MG_COMPOSE_OVERRIDE_FILE:-}" ]; then
+    COMPOSE_ARGS+=(-f "${MG_COMPOSE_OVERRIDE_FILE}")
+fi
 
 for arg in "$@"; do
     case $arg in
@@ -223,7 +228,7 @@ docker network create basilica-localnet --subnet 172.28.0.0/16 2>/dev/null && \
 # This prevents race conditions where validator starts before wallets exist
 
 echo "[1/4] Starting subtensor (network profile)..."
-docker compose --profile network up -d ${BUILD_FLAG}
+docker compose "${COMPOSE_ARGS[@]}" --profile network up -d ${BUILD_FLAG}
 
 echo ""
 echo "[2/4] Waiting for Subtensor..."
@@ -241,7 +246,7 @@ else
     echo ""
     echo "[4/4] Starting remaining services for profile: ${PROFILE}..."
 
-    docker compose --profile "${PROFILE}" up -d ${BUILD_FLAG}
+    docker compose "${COMPOSE_ARGS[@]}" --profile "${PROFILE}" up -d ${BUILD_FLAG}
 
     echo ""
     echo "Waiting for services..."
@@ -266,7 +271,7 @@ echo ""
 
 # Display running services
 echo "Running services:"
-docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -20
+docker compose "${COMPOSE_ARGS[@]}" ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -20
 
 echo ""
 echo "Endpoints:"
