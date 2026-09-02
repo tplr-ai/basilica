@@ -13,7 +13,7 @@ jobs:
   review:
     name: Request Talos review
     if: github.event_name != 'issue_comment' || contains(github.event.comment.body, '@talos')
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - name: Post signed event to Talos
