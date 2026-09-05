@@ -5,7 +5,9 @@ description: Use when the user broadly wants to operate Basilica as a cloud plat
 
 # Basilica Cloud Operator
 
-This is the top-level routing skill for Basilica customer operations.
+This is a checkout routing adapter. The authoritative installed customer skill
+is **use-basilica** from **one-covenant/basilica-skills**. The adjacent entries
+route task categories to that single maintained command reference.
 
 Use it when the user says things like:
 
@@ -48,19 +50,21 @@ Pick one of these control planes first:
 - when creating a rental, tear it down after the task unless the user explicitly wants to keep it
 
 When the adjacent skills are unavailable, use the installed `use-basilica` skill
-or the [published operator playbook](https://github.com/one-covenant/basilica/blob/main/docs/agent-cloud-ops.md).
+or the [pinned customer skill](https://github.com/one-covenant/basilica-skills/blob/7368f8d4f8156e46a3067501afa7e2f09785eb5b/skills/use-basilica/SKILL.md).
 
 ## Canonical Source Paths
 
 The following are contributor references relative to a Basilica checkout root.
 Without a checkout, use the [source repository](https://github.com/one-covenant/basilica)
-or the published playbook above; do not assume these paths exist locally.
+or the pinned customer skill above; do not assume these paths exist locally.
 
 - `AGENTS.md`
 - `crates/basilica-cli/src/cli/`
 - `crates/basilica-sdk-python/`
 - `examples/`
 
-## TODOs
+## Publication
 
-- add a task-oriented checklist once there are stable end-to-end scripts for fund -> deploy -> cleanup
+Installed customer guidance changes in **basilica-skills**, followed by a public
+CLI manifest update and release. See the
+[distribution guide](https://github.com/one-covenant/basilica/blob/main/docs/AGENT-SKILLS.md).

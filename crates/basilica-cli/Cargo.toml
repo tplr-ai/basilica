@@ -78,7 +78,8 @@ basilica-common = { path = "../basilica-common" }
 basilica-sdk = { path = "../basilica-sdk" }
 basilica-validator = { path = "../basilica-validator", features = ["client", "cli"] }
 
+tempfile = { workspace = true }
+
 [dev-dependencies]
 serial_test = "3"
 assert_cmd = "2"
-tempfile = { workspace = true }

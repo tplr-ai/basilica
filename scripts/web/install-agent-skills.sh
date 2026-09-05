@@ -1,106 +1,38 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# Basilica agent skills installer
-# Usage:
-#   curl -fsSL https://basilica.ai/agents/install.sh | bash
-#   curl -fsSL https://basilica.ai/agents/install.sh | bash -s -- --cursor-only
-
-BASE_URL="${BASILICA_AGENT_BASE_URL:-https://basilica.ai}"
-INSTALL_CURSOR=1
-INSTALL_CLAUDE=1
-INSTALL_CODEX=1
-
+# Compatibility entry point. The CLI owns bundle identity, version, destinations,
+# upgrade/migration and uninstall. This script downloads no independent skills.
+agents=(--agent universal --agent claude-code)
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --cursor-only)
-      INSTALL_CURSOR=1
-      INSTALL_CLAUDE=0
-      INSTALL_CODEX=0
-      shift
-      ;;
-    --claude-only)
-      INSTALL_CURSOR=0
-      INSTALL_CLAUDE=1
-      INSTALL_CODEX=0
-      shift
-      ;;
-    --codex-only)
-      INSTALL_CURSOR=0
-      INSTALL_CLAUDE=0
-      INSTALL_CODEX=1
-      shift
-      ;;
+    --cursor-only) agents=(--agent cursor); shift ;;
+    --claude-only) agents=(--agent claude-code); shift ;;
+    --codex-only) agents=(--agent codex); shift ;;
+    -h|--help)
+      echo 'Usage: install-agent-skills.sh [--cursor-only|--claude-only|--codex-only]'
+      echo 'Delegates to basilica skills install -y; install the current Basilica CLI first.'
+      exit 0 ;;
     --base-url)
-      BASE_URL="$2"
-      shift 2
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      echo "Usage: $0 [--cursor-only|--claude-only|--codex-only] [--base-url URL]" >&2
-      exit 1
-      ;;
+      echo 'The standalone website bundle is retired. --base-url is no longer supported.' >&2
+      echo 'Use BASILICA_SKILLS_TARBALL_URL only to mirror the CLI-pinned archive; its contents are verified.' >&2
+      exit 1 ;;
+    *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
-
-if ! command -v curl >/dev/null 2>&1; then
-  echo "curl is required" >&2
+if [[ -n "${BASILICA_AGENT_BASE_URL:-}" ]]; then
+  echo 'BASILICA_AGENT_BASE_URL belongs to the retired standalone bundle; unset it and use the CLI installer.' >&2
   exit 1
 fi
-
-SKILLS=(
-  "basilica-cloud-operator"
-  "basilica-account-ops"
-  "basilica-rentals-ops"
-  "basilica-serverless-ops"
-  "basilica-sdk-ops"
-)
-
-fetch_file() {
-  local url="$1"
-  local out="$2"
-  curl -fsSL "$url" -o "$out"
-}
-
-install_skill_set() {
-  local root="$1"
-  local kind="$2"
-
-  mkdir -p "$root"
-
-  for skill in "${SKILLS[@]}"; do
-    local skill_dir="$root/$skill"
-    mkdir -p "$skill_dir"
-    fetch_file "$BASE_URL/agents/$skill/SKILL.md" "$skill_dir/SKILL.md"
-  done
-
-  fetch_file "$BASE_URL/agents/cloud-ops.md" "$root/BASILICA-CLOUD-OPS.md"
-
-  echo "Installed Basilica skills for $kind at $root"
-}
-
-if [[ "$INSTALL_CURSOR" -eq 1 ]]; then
-  install_skill_set "$HOME/.cursor/skills" "Cursor"
+if ! command -v basilica >/dev/null 2>&1; then
+  echo 'Install the Basilica CLI from https://basilica.ai/install.sh, then rerun this command.' >&2
+  exit 1
 fi
-
-if [[ "$INSTALL_CLAUDE" -eq 1 ]]; then
-  install_skill_set "$HOME/.claude/skills" "Claude"
-fi
-
-if [[ "$INSTALL_CODEX" -eq 1 ]]; then
-  install_skill_set "$HOME/.codex/skills" "Codex"
-fi
-
-cat <<EOF
-
-Basilica agent bundle installed.
-
-Primary skill:
-  basilica-cloud-operator
-
-Reference:
-  $BASE_URL/agents/cloud-ops.md
-  $BASE_URL/llms-full.txt
-
-If your agent was already running, restart it so it reloads installed skills.
-EOF
+# Older CLI releases download an unversioned bundle. Require the manifest-aware
+# contract rather than silently delegating to the deprecated implementation.
+identity="$(basilica skills list --agent universal)"
+case "$identity" in
+  *'Bundle version:'*) ;;
+  *) echo 'Upgrade Basilica: this CLI predates versioned skill bundles.' >&2; exit 1 ;;
+esac
+exec basilica skills install -y "${agents[@]}"

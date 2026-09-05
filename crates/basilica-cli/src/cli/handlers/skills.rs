@@ -13,11 +13,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
-const DEFAULT_TARBALL_URL: &str =
-    "https://github.com/one-covenant/basilica-skills/archive/refs/heads/main.tar.gz";
+mod storage;
 const TARBALL_URL_ENV: &str = "BASILICA_SKILLS_TARBALL_URL";
 const SKILLS_DIR: &str = "skills";
-const CURATED_SKILLS: &[&str] = &["use-basilica"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CodingTool {
@@ -54,7 +52,10 @@ pub async fn handle_skills(cmd: SkillsCommand) -> Result<(), CliError> {
 }
 
 fn tarball_url() -> String {
-    std::env::var(TARBALL_URL_ENV).unwrap_or_else(|_| DEFAULT_TARBALL_URL.to_string())
+    std::env::var(TARBALL_URL_ENV).unwrap_or_else(|_| {
+        let manifest = storage::bundle();
+        format!("{}/archive/{}.tar.gz", manifest.source, manifest.revision)
+    })
 }
 
 fn home_dir() -> Result<PathBuf, CliError> {
@@ -233,6 +234,11 @@ fn extract_skill_files(tarball_bytes: &[u8]) -> Result<SkillFiles, CliError> {
         if skills_dir_component.as_os_str() != SKILLS_DIR {
             continue;
         }
+        if !entry.header().entry_type().is_file() {
+            return Err(CliError::Internal(eyre!(
+                "Skills archive contains a link or special file"
+            )));
+        }
         let Some(skill_component) = components.next() else {
             continue;
         };
@@ -252,10 +258,13 @@ fn extract_skill_files(tarball_bytes: &[u8]) -> Result<SkillFiles, CliError> {
         entry
             .read_to_end(&mut contents)
             .map_err(|e| CliError::Internal(eyre!("Failed to read archive file: {}", e)))?;
-        skills
-            .entry(skill_name)
-            .or_default()
-            .push((rel_path, contents));
+        let files = skills.entry(skill_name).or_default();
+        if files.iter().any(|(existing, _)| existing == &rel_path) {
+            return Err(CliError::Internal(eyre!(
+                "Skills archive contains duplicate paths"
+            )));
+        }
+        files.push((rel_path, contents));
     }
 
     skills.retain(|_, files| files.iter().any(|(path, _)| path == Path::new("SKILL.md")));
@@ -268,7 +277,8 @@ fn extract_skill_files(tarball_bytes: &[u8]) -> Result<SkillFiles, CliError> {
 }
 
 fn curated_skill_files(skills: SkillFiles) -> SkillFiles {
-    let curated: BTreeSet<&str> = CURATED_SKILLS.iter().copied().collect();
+    let manifest = storage::bundle();
+    let curated: BTreeSet<&str> = manifest.skills.iter().map(String::as_str).collect();
     skills
         .into_iter()
         .filter(|(name, _)| curated.contains(name.as_str()))
@@ -286,6 +296,13 @@ fn join_rel(dir: &Path, rel: &Path) -> PathBuf {
 }
 
 fn install_files(targets: &[InstallTarget], skills: &SkillFiles) -> Result<usize, CliError> {
+    // Validate every selected destination before changing any installation.
+    for target in targets {
+        for skill in skills.keys() {
+            storage::check_replace(&target.skills_dir.join(skill), skill)
+                .map_err(|error| CliError::Internal(eyre!(error)))?;
+        }
+    }
     let mut installed = 0;
     for target in targets {
         std::fs::create_dir_all(&target.skills_dir).map_err(|e| {
@@ -298,31 +315,13 @@ fn install_files(targets: &[InstallTarget], skills: &SkillFiles) -> Result<usize
 
         for (skill_name, files) in skills {
             let skill_dir = target.skills_dir.join(skill_name);
-            if skill_dir.exists() {
-                std::fs::remove_dir_all(&skill_dir).map_err(|e| {
-                    CliError::Internal(eyre!(
-                        "Failed to replace existing skill {}: {}",
-                        skill_dir.display(),
-                        e
-                    ))
-                })?;
-            }
-
-            for (rel, contents) in files {
-                let path = join_rel(&skill_dir, rel);
-                if let Some(parent) = path.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| {
-                        CliError::Internal(eyre!(
-                            "Failed to create directory {}: {}",
-                            parent.display(),
-                            e
-                        ))
-                    })?;
-                }
-                std::fs::write(&path, contents).map_err(|e| {
-                    CliError::Internal(eyre!("Failed to write {}: {}", path.display(), e))
-                })?;
-            }
+            storage::install(&skill_dir, skill_name, files).map_err(|error| {
+                CliError::Internal(eyre!(
+                    "Failed to install {}: {}",
+                    skill_dir.display(),
+                    error
+                ))
+            })?;
 
             installed += 1;
             println!(
@@ -379,7 +378,14 @@ async fn install_skills(agent_filter: &[String], yes: bool) -> Result<(), CliErr
         )));
     }
 
+    storage::verify_bundle(&skills).map_err(|error| CliError::Internal(eyre!(error)))?;
+    let manifest = storage::bundle();
+    println!(
+        "Bundle source: {}\nBundle version: {}",
+        manifest.source, manifest.revision
+    );
     let installed = install_files(&targets, &skills)?;
+    clean_legacy(&home, &tools, false)?;
     println!(
         "\n{} Installed {} target{}. Restart your agent tool to load new skills.",
         style("✓").green().bold(),
@@ -412,55 +418,7 @@ fn uninstall_skills(agent_filter: &[String], yes: bool) -> Result<(), CliError> 
         return Ok(());
     }
 
-    let mut removed = 0;
-    let mut removed_paths = BTreeSet::new();
-    for target in &targets {
-        for skill in CURATED_SKILLS {
-            let skill_dir = target.skills_dir.join(skill);
-            let resolved_skill_dir = resolved_skill_dir(target, skill);
-            if removed_paths.contains(&resolved_skill_dir) {
-                removed += 1;
-                println!(
-                    "{} Removed {} from {} -> {}",
-                    style("✓").green(),
-                    style(skill).red(),
-                    target.tool_name,
-                    skill_dir.display()
-                );
-                continue;
-            }
-
-            match std::fs::remove_dir_all(&skill_dir) {
-                Ok(()) => {
-                    removed_paths.insert(resolved_skill_dir);
-                    removed += 1;
-                    println!(
-                        "{} Removed {} from {} -> {}",
-                        style("✓").green(),
-                        style(skill).red(),
-                        target.tool_name,
-                        skill_dir.display()
-                    );
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    println!(
-                        "{} {}: {} not installed -> {}",
-                        style("-").dim(),
-                        target.tool_name,
-                        skill,
-                        skill_dir.display()
-                    );
-                }
-                Err(e) => {
-                    return Err(CliError::Internal(eyre!(
-                        "Failed to remove {}: {}",
-                        skill_dir.display(),
-                        e
-                    )));
-                }
-            }
-        }
-    }
+    let removed = clean_legacy(&home, &tools, true)?;
     println!(
         "\n{} Removed {} target{}.",
         style("✓").green().bold(),
@@ -470,13 +428,70 @@ fn uninstall_skills(agent_filter: &[String], yes: bool) -> Result<(), CliError> 
     Ok(())
 }
 
+fn legacy_roots(home: &Path, tools: &[CodingTool]) -> Vec<PathBuf> {
+    let mut roots = build_targets(tools)
+        .into_iter()
+        .map(|target| target.skills_dir)
+        .collect::<Vec<_>>();
+    if tools.iter().any(|tool| tool.slug == "universal") {
+        roots.extend([home.join(".cursor/skills"), home.join(".codex/skills")]);
+    }
+    roots
+}
+
+fn clean_legacy(home: &Path, tools: &[CodingTool], uninstall: bool) -> Result<usize, CliError> {
+    let manifest = storage::bundle();
+    let targets = build_targets(tools);
+    let active_paths = targets
+        .iter()
+        .flat_map(|target| {
+            manifest
+                .skills
+                .iter()
+                .map(|skill| resolved_skill_dir(target, skill))
+        })
+        .collect::<BTreeSet<_>>();
+    let mut removed = 0;
+    let mut visited = BTreeSet::new();
+    for root in legacy_roots(home, tools) {
+        let canonical = root.canonicalize().unwrap_or_else(|_| root.clone());
+        if !visited.insert(canonical.clone()) {
+            continue;
+        }
+        let names = manifest
+            .legacy_files
+            .keys()
+            .chain(manifest.skills.iter())
+            .collect::<BTreeSet<_>>();
+        for name in names {
+            if !uninstall && active_paths.contains(&canonical.join(name)) {
+                continue;
+            }
+            let path = root.join(name);
+            if storage::remove_owned(&path, name)
+                .map_err(|error| CliError::Internal(eyre!(error)))?
+            {
+                println!("{} Removed {}", style("✓").green(), path.display());
+                removed += 1;
+            }
+        }
+        storage::remove_legacy_playbook(&root).map_err(|error| CliError::Internal(eyre!(error)))?;
+    }
+    Ok(removed)
+}
+
 fn list_skills(agent_filter: &[String]) -> Result<(), CliError> {
     let home = home_dir()?;
     let tools = resolve_tools(&home, agent_filter)?;
     let targets = build_targets(&tools);
 
+    let manifest = storage::bundle();
+    println!(
+        "Available bundle source: {}\nBundle version: {}",
+        manifest.source, manifest.revision
+    );
     println!("Available skills:");
-    for skill in CURATED_SKILLS {
+    for skill in &manifest.skills {
         println!("  {}", style(skill).cyan());
     }
 
@@ -487,10 +502,11 @@ fn list_skills(agent_filter: &[String]) -> Result<(), CliError> {
     }
 
     for target in &targets {
-        let installed = CURATED_SKILLS
+        let installed = manifest
+            .skills
             .iter()
             .filter(|skill| target.skills_dir.join(skill).join("SKILL.md").is_file())
-            .copied()
+            .map(String::as_str)
             .collect::<Vec<_>>();
         let installed_text = if installed.is_empty() {
             "none".to_string()
@@ -503,6 +519,13 @@ fn list_skills(agent_filter: &[String]) -> Result<(), CliError> {
             target.skills_dir.display(),
             installed_text
         );
+        for skill in &installed {
+            println!(
+                "    {} installed version: {}",
+                skill,
+                storage::installed_version(&target.skills_dir.join(skill))
+            );
+        }
     }
     Ok(())
 }
@@ -536,6 +559,29 @@ mod tests {
         }
         let encoder = builder.into_inner().unwrap();
         encoder.finish().unwrap()
+    }
+
+    #[test]
+    fn pinned_archive_installs_exact_manifest_and_rejects_modified_content() {
+        let archive = include_bytes!("skills/pinned-bundle.tar.gz");
+        let mut skills = curated_skill_files(extract_skill_files(archive).unwrap());
+        storage::verify_bundle(&skills).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let target = InstallTarget {
+            tool_name: "Test".into(),
+            skills_dir: root.path().join("skills"),
+        };
+        install_files(std::slice::from_ref(&target), &skills).unwrap();
+        assert_eq!(
+            storage::installed_version(&target.skills_dir.join("use-basilica")),
+            storage::bundle().revision
+        );
+        install_files(std::slice::from_ref(&target), &skills).unwrap();
+        assert!(
+            storage::remove_owned(&target.skills_dir.join("use-basilica"), "use-basilica").unwrap()
+        );
+        skills.get_mut("use-basilica").unwrap()[0].1.push(b'!');
+        assert!(storage::verify_bundle(&skills).is_err());
     }
 
     #[test]
@@ -671,10 +717,10 @@ mod tests {
         };
         std::fs::create_dir_all(target.skills_dir.join("other")).unwrap();
         std::fs::write(target.skills_dir.join("other").join("SKILL.md"), "other").unwrap();
-        std::fs::create_dir_all(target.skills_dir.join("use-basilica")).unwrap();
-        std::fs::write(
-            target.skills_dir.join("use-basilica").join("old.txt"),
-            "old",
+        storage::install(
+            &target.skills_dir.join("use-basilica"),
+            "use-basilica",
+            &[(PathBuf::from("old.txt"), b"old".to_vec())],
         )
         .unwrap();
 

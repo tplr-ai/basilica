@@ -1,0 +1,33 @@
+{
+  "source": "https://github.com/one-covenant/basilica-skills",
+  "revision": "7368f8d4f8156e46a3067501afa7e2f09785eb5b",
+  "skills": [
+    "use-basilica"
+  ],
+  "legacy_files": {
+    "basilica-cloud-operator": {
+      "SKILL.md": "69e94346959bcb044653164b95645cb8b095a39d0122f357508da2cb5e2f4bc3"
+    },
+    "basilica-account-ops": {
+      "SKILL.md": "558901aa840a9c9bdcbe1b783c29bb7b191b8db5723143aed1fd85f30a90530e"
+    },
+    "basilica-rentals-ops": {
+      "SKILL.md": "58d859fd58889e3547eb9a0f2d145bb2c0dbd116c0bf040ac0e035bc307567cc"
+    },
+    "basilica-serverless-ops": {
+      "SKILL.md": "f0c7bae96a0c98fb8870837ac7b548144e4016c859e75342a37588e80c4e2632"
+    },
+    "basilica-sdk-ops": {
+      "SKILL.md": "8444c296cd54806a1427a0784af81aefd6eb3e0aec7c8bf0eecbfe4c69283dff"
+    },
+    "use-basilica": {
+      "SKILL.md": "618b3f667d2a3cd768d9b927a70d8c0c19ef43e7b915fb0a084607bffe4b132a"
+    }
+  },
+  "legacy_playbook_sha256": "061cab2987eb5c783294252addd029da7c357e0ea159bad03c400b43ceb63e1e",
+  "files": {
+    "use-basilica": {
+      "SKILL.md": "618b3f667d2a3cd768d9b927a70d8c0c19ef43e7b915fb0a084607bffe4b132a"
+    }
+  }
+}
