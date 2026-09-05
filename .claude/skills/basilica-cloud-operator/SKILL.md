@@ -19,15 +19,16 @@ Use it when the user says things like:
 
 ## Routing
 
-Delegate to the narrower skill that matches the task:
+Open the narrower skill that matches the task. Links resolve relative to this
+skill directory, including when the bundle is installed outside a checkout:
 
-- `basilica/.claude/skills/basilica-account-ops/SKILL.md`
+- [basilica-account-ops](../basilica-account-ops/SKILL.md)
   - auth, tokens, balance, funding, deposits
-- `basilica/.claude/skills/basilica-rentals-ops/SKILL.md`
+- [basilica-rentals-ops](../basilica-rentals-ops/SKILL.md)
   - direct machines, SSH, volumes, file copy, teardown
-- `basilica/.claude/skills/basilica-serverless-ops/SKILL.md`
+- [basilica-serverless-ops](../basilica-serverless-ops/SKILL.md)
   - managed deploys, inference endpoints, OpenClaw, Tau, logs, scale, delete
-- `basilica/.claude/skills/basilica-sdk-ops/SKILL.md`
+- [basilica-sdk-ops](../basilica-sdk-ops/SKILL.md)
   - Python automation, scripts, notebooks, SDK caveats
 
 ## First Decision
@@ -46,7 +47,14 @@ Pick one of these control planes first:
 - when creating a deployment, set a TTL unless the user explicitly wants persistence
 - when creating a rental, tear it down after the task unless the user explicitly wants to keep it
 
+When the adjacent skills are unavailable, use the installed `use-basilica` skill
+or the [published operator playbook](https://github.com/one-covenant/basilica/blob/main/docs/agent-cloud-ops.md).
+
 ## Canonical Source Paths
+
+The following are contributor references relative to a Basilica checkout root.
+Without a checkout, use the [source repository](https://github.com/one-covenant/basilica)
+or the published playbook above; do not assume these paths exist locally.
 
 - `AGENTS.md`
 - `crates/basilica-cli/src/cli/`

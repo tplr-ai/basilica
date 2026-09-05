@@ -10,20 +10,21 @@ Start here:
 
 ## What To Use
 
-Use these repo-local skills for agent work:
+Paths below resolve from this repository root, regardless of the checkout name.
+Use these repo-local skills for platform operations:
 
-- `basilica/.claude/skills/basilica-account-ops/SKILL.md`
+- `.claude/skills/basilica-account-ops/SKILL.md`
   - login, device-code auth, API tokens, balance, TAO funding, deposit tracking
-- `basilica/.claude/skills/basilica-rentals-ops/SKILL.md`
+- `.claude/skills/basilica-rentals-ops/SKILL.md`
   - machine discovery, SSH keys, direct rentals, volumes, copy/exec/ssh, teardown
-- `basilica/.claude/skills/basilica-serverless-ops/SKILL.md`
+- `.claude/skills/basilica-serverless-ops/SKILL.md`
   - `basilica deploy`, `summon`, vLLM, SGLang, OpenClaw, Tau, scale/logs/share-token
-- `basilica/.claude/skills/basilica-sdk-ops/SKILL.md`
+- `.claude/skills/basilica-sdk-ops/SKILL.md`
   - Python automation, SDK caveats, blocking deploy semantics, low-level API gaps
 
 For a single end-to-end playbook with copyable flows, use:
 
-- `basilica/docs/agent-cloud-ops.md`
+- `docs/agent-cloud-ops.md`
   - auth, funding, rentals, deploys, inference, OpenClaw, Tau, SDK, cleanup
 
 ## Routing
