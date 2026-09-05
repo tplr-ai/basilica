@@ -952,24 +952,29 @@ For complete working examples, see the [examples directory](https://github.com/o
 git clone https://github.com/one-covenant/basilica.git
 cd basilica/crates/basilica-sdk-python
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install maturin and build
-pip install maturin
-maturin develop
-
-# Test import
-python -c "from basilica import BasilicaClient; print('OK')"
+# Use uv 0.11.32, matching CI; older uv cannot read this lockfile.
+# Install the complete locked development environment (includes httpx)
+uv sync --locked --extra dev --no-install-project
+uv run --no-sync maturin develop --release --locked
+uv run --no-sync python -c "from basilica import BasilicaClient; print('OK')"
 ```
 
 ### Running Tests
 
+Run from this SDK directory after the setup above. These are the CI exclusions
+for live tests, which require separate authorization and cleanup:
+
 ```bash
-pip install pytest
-pytest tests/ -v
+uv run --no-sync python -m pytest tests/ --collect-only -q \
+  --ignore=tests/test_dns_propagation_e2e.py \
+  --ignore=tests/test_gpu_flavour_preferences.py
+uv run --no-sync python -m pytest tests/ -v \
+  --ignore=tests/test_dns_propagation_e2e.py \
+  --ignore=tests/test_gpu_flavour_preferences.py
 ```
+
+See [the contributor guide](../../docs/DEVELOPMENT.md) for prerequisites,
+Rust checks, and separation of hermetic and live validation.
 
 ## Architecture
 

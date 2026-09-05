@@ -2,6 +2,8 @@
 
 This repository is the customer-facing surface for Basilica: the `basilica` CLI, the Python and Rust SDKs, and runnable examples. All agent work should target this surface.
 
+For contributor setup and CI-aligned checks, read [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
 Start here:
 
 - CLI source: `crates/basilica-cli/src/`
