@@ -109,4 +109,3 @@ Rules:
 - User-facing runbook: [distributed runbook](https://github.com/one-covenant/basilica-backend/blob/main/docs/runbooks/USER-RUNBOOK-DISTRIBUTED-NCCL.md)
   and [custom trainer image guide](https://github.com/one-covenant/basilica-backend/blob/main/docs/runbooks/BRINGING-YOUR-OWN-TRAINER-IMAGE.md)
   in the separate backend repository (access required).
-

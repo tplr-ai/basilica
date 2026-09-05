@@ -26,6 +26,12 @@ miner:
   - 'Cargo.lock'
 
 basilica-cli:
+  - 'AGENTS.md'
+  - 'CLAUDE.md'
+  - '.claude/skills/**'
+  - 'docs/agent-cloud-ops.md'
+  - 'docs/AGENT-SKILLS.md'
+  - 'scripts/web/install-agent-skills.sh'
   - 'crates/basilica-cli/**'
   - 'crates/basilica-sdk/**'
   - 'crates/basilica-validator/**'

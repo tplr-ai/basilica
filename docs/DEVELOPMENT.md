@@ -34,7 +34,7 @@ These checks do not create platform resources or use a Kubernetes context.
 | Miner / validator | `crates/basilica-miner/src/`, `crates/basilica-validator/src/` | `cargo clippy --locked -p basilica-miner -p basilica-validator --all-targets --all-features -- -D warnings`; select deterministic unit tests before running integration tests |
 | Python SDK / managed training | `crates/basilica-sdk-python/python/basilica/`, `crates/basilica-sdk-python/src/` | Locked Python workflow below; `cargo clippy --locked -p basilica-sdk-python --all-targets -- -D warnings` |
 | Localnet and its diagnostics | `scripts/localnet/` | `for script in scripts/localnet/*.sh; do bash -n "$script" || exit; done`; inspect selected Compose profile; runtime checks require an isolated localnet |
-| Agent skills and examples | `.claude/skills/`, `docs/agent-cloud-ops.md` | Check local links and CLI parser contracts without running authenticated handlers; Python examples may be syntax-checked without execution |
+| Agent skills and examples | `.claude/skills/`, `docs/agent-cloud-ops.md` | `python3 scripts/ci/check-agent-instructions.py`; `python3 scripts/ci/test-agent-instructions.py`; `python3 scripts/ci/test-agent-installer.py`; `cargo test --locked -p basilica-cli --lib agent_rental_playbook` (parser only, no handlers) |
 
 ## Python SDK: clean CI-equivalent environment
 

@@ -1851,12 +1851,9 @@ mod train_command_tests {
                 Args::try_parse_from(&args).unwrap_or_else(|error| {
                     panic!("documented agent command does not parse: {line}: {error}")
                 });
-                if args.iter().any(|arg| *arg == "up") {
+                if args.contains(&"up") {
                     for required in ["--offering-id", "--name", "--detach"] {
-                        assert!(
-                            args.iter().any(|arg| *arg == required),
-                            "{line}: missing {required}"
-                        );
+                        assert!(args.contains(&required), "{line}: missing {required}");
                     }
                 }
                 parsed += 1;
