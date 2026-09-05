@@ -36,6 +36,10 @@ These checks do not create platform resources or use a Kubernetes context.
 | Localnet and its diagnostics | `scripts/localnet/` | `for script in scripts/localnet/*.sh; do bash -n "$script" || exit; done`; inspect selected Compose profile; runtime checks require an isolated localnet |
 | Agent skills and examples | `.claude/skills/`, `docs/agent-cloud-ops.md` | `python3 scripts/ci/check-agent-instructions.py`; `python3 scripts/ci/test-agent-instructions.py`; `python3 scripts/ci/test-agent-installer.py`; `cargo test --locked -p basilica-cli --lib agent_rental_playbook` (parser only, no handlers) |
 
+For changes to the CI workflow, install actionlint and run
+`actionlint .github/workflows/ci.yml`. The checked-in `.github/actionlint.yaml`
+declares the Blacksmith runner label used by this repository.
+
 ## Python SDK: clean CI-equivalent environment
 
 Run from `crates/basilica-sdk-python/`:

@@ -248,7 +248,8 @@ jobs:
           ./scripts/gen-key.sh
       - name: Build and test validator
         run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          export VALIDATOR_PUBLIC_KEY
           cargo build --locked -p basilica-validator
           cargo nextest run --locked -p basilica-validator --all-features --no-fail-fast
           ./target/debug/basilica-validator --help
@@ -322,7 +323,8 @@ jobs:
           ./scripts/gen-key.sh
       - name: Build and test miner
         run: |
-          export VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          VALIDATOR_PUBLIC_KEY=$(cat public_key.hex)
+          export VALIDATOR_PUBLIC_KEY
           cargo build --locked -p basilica-miner
           cargo nextest run --locked -p basilica-miner --lib --no-fail-fast
           ./target/debug/basilica-miner --help
