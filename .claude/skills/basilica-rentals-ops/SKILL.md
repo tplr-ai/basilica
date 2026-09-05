@@ -81,13 +81,34 @@ Useful filters supported by the CLI include:
 
 ## Start A Rental
 
-Example: single-machine rental
+For agent shells, first discover an available offering:
 
 ```bash
-basilica up h100 --gpu-count 1
+basilica --json ls --compute citadel
 ```
 
-Example: large multi-GPU box
+After the user authorizes the rental, choose an offering ID from that response,
+supply a unique name, and create it detached:
+
+```bash
+basilica --json up --offering-id "$OFFERING_ID" --name agent-training --detach
+basilica --json ps
+basilica --json status "$RENTAL_ID"
+```
+
+Set `OFFERING_ID` to the selected real offering and `RENTAL_ID` to the returned
+rental ID. Offering selection already determines compute, GPU count and region;
+do not combine `--offering-id` with GPU/compute selection filters. Register an
+SSH key before creation using the account's established key workflow. Detached
+rentals continue billing: inspect readiness, finish the task, then run
+`basilica down "$RENTAL_ID"` unless the user asked to keep it.
+
+A structured `MissingInput` error identifies missing input and a recovery hint.
+Supply the requested value or discover an offering; retrying an interactive
+selection command with only `--name` will still fail. Documentation/parser checks
+must never execute rental creation.
+
+Interactive terminal only (opens offering selection):
 
 ```bash
 basilica up h200 --gpu-count 8 --compute secure-cloud

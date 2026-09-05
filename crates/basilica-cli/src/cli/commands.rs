@@ -1825,6 +1825,50 @@ mod train_command_tests {
     }
 
     #[test]
+    fn agent_rental_playbook_commands_parse_without_running_handlers() {
+        let guide = include_str!("../../../../docs/agent-cloud-ops.md");
+        let flow = guide
+            .split("For agent shells, first discover an available offering:")
+            .nth(1)
+            .expect("agent rental workflow is documented")
+            .split("Interactive terminal only")
+            .next()
+            .unwrap();
+        let mut in_shell = false;
+        let mut parsed = 0;
+        for line in flow.lines() {
+            if line == "```bash" {
+                in_shell = true;
+            } else if line == "```" {
+                in_shell = false;
+            } else if in_shell && line.starts_with("basilica ") {
+                // These examples quote single-token environment variables.
+                // They intentionally contain no pipelines or shell execution.
+                let args = line
+                    .split_ascii_whitespace()
+                    .map(|arg| arg.trim_matches('"'))
+                    .collect::<Vec<_>>();
+                Args::try_parse_from(&args).unwrap_or_else(|error| {
+                    panic!("documented agent command does not parse: {line}: {error}")
+                });
+                if args.iter().any(|arg| *arg == "up") {
+                    for required in ["--offering-id", "--name", "--detach"] {
+                        assert!(
+                            args.iter().any(|arg| *arg == required),
+                            "{line}: missing {required}"
+                        );
+                    }
+                }
+                parsed += 1;
+            }
+        }
+        assert_eq!(
+            parsed, 4,
+            "discovery, create, list, status must be validated"
+        );
+    }
+
+    #[test]
     fn up_offering_id_conflicts_with_compute() {
         let err = Args::try_parse_from([
             "basilica",
