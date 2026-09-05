@@ -45,24 +45,22 @@ show_help() {
     echo "See also: ./stop.sh, ./restart.sh, ./test.sh"
 }
 
-# Parse arguments
-PROFILE="${1:-all}"
+# Parse arguments without treating --build as a profile.
+PROFILE="all"
+PROFILE_SET=false
 BUILD_FLAG=""
-
 for arg in "$@"; do
-    case $arg in
-        -h|--help)
-            show_help
-            exit 0
-            ;;
-        --build)
-            BUILD_FLAG="--build"
-            shift
-            ;;
-        -*)
-            echo "Unknown option: $arg"
-            echo "Run './start.sh --help' for usage"
-            exit 1
+    case "$arg" in
+        -h|--help) show_help; exit 0 ;;
+        --build) BUILD_FLAG="--build" ;;
+        -*) echo "Unknown option: $arg" >&2; exit 1 ;;
+        *)
+            if [ "$PROFILE_SET" = true ]; then
+                echo "Only one profile may be selected" >&2
+                exit 1
+            fi
+            PROFILE="$arg"
+            PROFILE_SET=true
             ;;
     esac
 done
@@ -154,7 +152,7 @@ wait_for_service() {
     local attempt=1
 
     echo -n "  Waiting for ${name}..."
-    while [ $attempt -le $max_attempts ]; do
+    while [ "$attempt" -le "$max_attempts" ]; do
         if curl -sf "${url}" > /dev/null 2>&1; then
             echo " Ready!"
             return 0
@@ -176,7 +174,7 @@ wait_for_port() {
     local attempt=1
 
     echo -n "  Waiting for ${name}..."
-    while [ $attempt -le $max_attempts ]; do
+    while [ "$attempt" -le "$max_attempts" ]; do
         if nc -z "${host}" "${port}" 2>/dev/null; then
             echo " Ready!"
             return 0
@@ -290,7 +288,7 @@ esac
 
 echo ""
 echo "Commands:"
-echo "  Check health:  ./test.sh"
+echo "  Check health:  ./test.sh ${PROFILE}"
 echo "  View logs:     docker compose logs -f [service]"
 echo "  Stop:          docker compose down"
 echo ""

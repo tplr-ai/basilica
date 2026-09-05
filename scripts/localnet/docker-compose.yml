@@ -3,7 +3,8 @@
 #   docker compose --profile network up -d      # Subtensor only
 #   docker compose --profile validator up -d    # + Validator
 #   docker compose --profile miner up -d        # + Miner
-#   docker compose up -d                        # Everything
+#   docker compose --profile all up -d          # Everything
+# A profile is required when using Compose directly.
 
 services:
   # =============================================================================
@@ -48,7 +49,7 @@ services:
         BITTENSOR_NETWORK: "local"
         METADATA_CHAIN_ENDPOINT: "ws://subtensor:9944"
     container_name: basilica-validator
-    profiles: ["validator", "miner"]
+    profiles: ["validator", "miner", "all"]
     restart: unless-stopped
     depends_on:
       subtensor:
@@ -89,7 +90,7 @@ services:
         BITTENSOR_NETWORK: "local"
         METADATA_CHAIN_ENDPOINT: "ws://subtensor:9944"
     container_name: basilica-miner
-    profiles: ["miner"]
+    profiles: ["miner", "all"]
     restart: unless-stopped
     depends_on:
       subtensor:
@@ -107,7 +108,6 @@ services:
       - ./wallets:/var/lib/basilica/miner/.bittensor/wallets:ro
     ports:
       - "8092:50051"  # gRPC server (validator communications)
-      - "8091:8091"   # Bittensor axon port
       - "9091:9090"   # Metrics
     networks:
       basilica-localnet:
